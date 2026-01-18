@@ -35,24 +35,24 @@ export default function UserProfile() {
     {
       title: "Cuenta",
       items: [
-        { icon: User, label: "Información personal", path: "/profile/edit" },
-        { icon: Car, label: "Mis vehículos", path: "/vehicles" },
-        { icon: CreditCard, label: "Métodos de pago", path: "/payment-methods" },
+        { icon: User, label: "Información personal", path: "/settings/personal" },
+        { icon: Car, label: "Mis vehículos", path: "/settings/vehicles" },
+        { icon: CreditCard, label: "Métodos de pago", path: "/settings/payment" },
       ],
     },
     {
       title: "Preferencias",
       items: [
         { icon: Bell, label: "Notificaciones", path: "/settings/notifications" },
-        { icon: Settings, label: "Configuración", path: "/settings" },
+        { icon: Settings, label: "Configuración", path: "/settings/config" },
       ],
     },
     {
       title: "Soporte",
       items: [
-        { icon: HelpCircle, label: "Centro de ayuda", path: "/help" },
-        { icon: FileText, label: "Términos y condiciones", path: "/terms" },
-        { icon: Shield, label: "Política de privacidad", path: "/privacy" },
+        { icon: HelpCircle, label: "Centro de ayuda", path: "/support" },
+        { icon: FileText, label: "Términos y condiciones", path: "/support" },
+        { icon: Shield, label: "Política de privacidad", path: "/support" },
       ],
     },
   ];

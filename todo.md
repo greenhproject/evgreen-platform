@@ -268,3 +268,22 @@
 
 - [x] BUG: Widget de chat de IA no permite scroll en móvil, campo de entrada queda bloqueado
 - [x] BUG: Usuarios admin@greenhproject.com y soporte@greenhproject.com no pueden ingresar, vuelven a la landing (corregido: ahora se vinculan por email)
+
+## Bugs y Mejoras Reportados - 18 Enero 2026 (Segunda Ronda)
+
+### Mapa
+- [x] BUG: No muestra las estaciones creadas en el mapa (corregido: ahora carga estaciones y centra en Colombia)
+
+### Páginas Cliente (404 y funcionalidad)
+- [x] BUG: Varias páginas muestran 404 (creadas: Notifications, PersonalInfo, Vehicles, PaymentMethods, Config)
+- [x] BUG: Notificaciones no funcionan (verificado: funcionan correctamente)
+
+### Páginas Soporte/Técnico
+- [x] BUG: Varias páginas en 404 (creadas: Alerts, Diagnostics, OCPPLogs, Maintenance, Settings)
+
+### Páginas Inversionista
+- [x] BUG: Varias páginas en 404 (creadas: Earnings, Settlements)
+- [x] MEJORA: No es claro cómo mostrar/configurar tarifas dinámicas (mejorado en admin)
+
+### Admin
+- [x] MEJORA: Mejorar configuración de tarifas dinámicas (añadido gráfico de precios, configuración de pesos, panel completo)
