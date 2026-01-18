@@ -20,6 +20,7 @@ import UserSupport from "./pages/user/Support";
 import StationDetail from "./pages/user/StationDetail";
 import ChargingSession from "./pages/user/ChargingSession";
 import AIAssistant from "./pages/user/AIAssistant";
+import ScanPage from "./pages/user/Scan";
 import UserSettingsNotifications from "./pages/user/settings/Notifications";
 import UserSettingsPersonalInfo from "./pages/user/settings/PersonalInfo";
 import UserSettingsVehicles from "./pages/user/settings/Vehicles";
@@ -180,6 +181,8 @@ function Router() {
       <Route path="/settings/notifications" component={UserSettingsNotifications} />
       <Route path="/settings/personal" component={UserSettingsPersonalInfo} />
       <Route path="/settings/vehicles" component={UserSettingsVehicles} />
+      <Route path="/scan" component={ScanPage} />
+      <Route path="/vehicles" component={UserSettingsVehicles} />
       <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
       <Route path="/settings/config" component={UserSettingsConfig} />
 
