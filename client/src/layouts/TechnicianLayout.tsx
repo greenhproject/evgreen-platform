@@ -192,13 +192,18 @@ function TechnicianLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <Zap className="h-5 w-5 text-amber-500 shrink-0" />
-                  <span className="font-bold tracking-tight truncate text-amber-500">
-                    Green EV
-                  </span>
-                  <span className="text-xs bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full font-medium">
-                    Técnico
-                  </span>
+                  <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-amber-500 to-amber-400 flex items-center justify-center shrink-0">
+                    <Zap className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-bold tracking-tight text-lg leading-none">
+                      <span className="text-amber-500">EV</span>
+                      <span className="text-foreground">Green</span>
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">
+                      Técnico
+                    </span>
+                  </div>
                 </div>
               ) : null}
             </div>

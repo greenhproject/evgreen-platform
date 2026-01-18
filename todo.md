@@ -417,3 +417,11 @@
 ## Bugs Reportados - 18 Enero 2026 (Décima Ronda)
 
 - [x] BUG: Botón "Ver detalles" de estación no funciona - Implementado modal completo con ubicación, descripción, conectores, estadísticas y acciones
+
+
+## Rebranding - 18 Enero 2026
+
+- [x] Cambiar nombre de plataforma de "Green EV" a "EVGreen" - Actualizado en toda la aplicación
+- [x] Actualizar logo con diseño moderno tipo startup - Logo con icono de rayo en círculo verde + texto "EVGreen" en bold
+- [x] Actualizar textos en toda la aplicación - Layouts, landing, dashboard, sesiones, notificaciones, wallet, perfil
+- [x] Mantener "by Green House Project" donde corresponda - Incluido en footer y layouts

@@ -198,7 +198,7 @@ export default function Config() {
 
           {/* Versión */}
           <p className="text-center text-sm text-muted-foreground">
-            Green EV v1.0.0
+            EVGreen v1.0.0
           </p>
         </div>
       </div>

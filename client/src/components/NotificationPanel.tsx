@@ -24,7 +24,7 @@ const sampleNotifications: Notification[] = [
     id: 1,
     type: "CHARGING",
     title: "Carga completada",
-    message: "Tu sesión de carga en Green EV Mosquera ha finalizado. Total: 25.4 kWh",
+    message: "Tu sesión de carga en EVGreen Mosquera ha finalizado. Total: 25.4 kWh",
     read: false,
     createdAt: new Date(Date.now() - 1000 * 60 * 30), // hace 30 min
     actionUrl: "/history"
@@ -49,7 +49,7 @@ const sampleNotifications: Notification[] = [
   {
     id: 4,
     type: "SYSTEM",
-    title: "Bienvenido a Green EV",
+    title: "Bienvenido a EVGreen",
     message: "Gracias por unirte. Explora las estaciones de carga cerca de ti.",
     read: true,
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24), // hace 1 día

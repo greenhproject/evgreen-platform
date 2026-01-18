@@ -481,7 +481,7 @@ export default function StationDetail() {
               <div className="flex items-start gap-3">
                 <Info className="w-5 h-5 text-muted-foreground mt-0.5" />
                 <div className="text-sm text-muted-foreground">
-                  {station.description || "Estación de carga operada por Green EV. Disponible las 24 horas del día, los 7 días de la semana."}
+                  {station.description || "Estación de carga operada por EVGreen. Disponible las 24 horas del día, los 7 días de la semana."}
                 </div>
               </div>
             </Card>
