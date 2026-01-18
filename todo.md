@@ -287,3 +287,34 @@
 
 ### Admin
 - [x] MEJORA: Mejorar configuración de tarifas dinámicas (añadido gráfico de precios, configuración de pesos, panel completo)
+
+
+## Mejoras de IA - 18 Enero 2026 (Integración Profunda)
+
+### Landing Page - Destacar IA como Diferenciador
+- [x] Agregar sección hero destacando IA como diferenciador
+- [x] Mostrar casos de uso de IA (recomendaciones, planificación, ahorro)
+- [x] Agregar animaciones/visuales llamativos sobre IA
+- [x] Testimonios o estadísticas de ahorro con IA (25% ahorro promedio)
+
+### Integración de IA con Datos Reales
+- [x] Crear servicio de contexto que recopile datos de la plataforma (context-service.ts)
+- [x] IA accede a estaciones reales (ubicación, disponibilidad, precios)
+- [x] IA accede a historial de cargas del usuario
+- [x] IA accede a patrones de uso y demanda
+- [x] IA accede a tarifas dinámicas actuales
+
+### Chat de IA Contextual
+- [x] Respuestas basadas en datos reales de la plataforma (system prompt con contexto)
+- [x] Recomendaciones personalizadas según historial del usuario
+- [x] Mostrar estaciones cercanas con precios actuales
+- [x] Sugerir mejores horarios basados en tarifas dinámicas
+- [x] Alertas proactivas de oportunidades de ahorro
+
+### Integración de IA en Módulos
+- [x] Widget de IA en mapa con sugerencias de estaciones (AIInsightCard)
+- [x] IA en detalle de estación con análisis de mejor momento para cargar
+- [x] IA en historial con análisis de patrones de consumo
+- [ ] IA en billetera con proyecciones de gasto (pendiente)
+- [x] Dashboard de inversionista con predicciones de IA (InvestorInsights)
+- [ ] Dashboard de admin con insights de IA sobre la red (pendiente)

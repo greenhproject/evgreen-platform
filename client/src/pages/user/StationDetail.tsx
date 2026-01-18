@@ -28,6 +28,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AIInsightCard } from "@/components/AIInsightCard";
 
 // Componente de tarifa dinámica del kWh
 function DynamicPricingCard({ stationId }: { stationId: number }) {
@@ -452,6 +453,23 @@ export default function StationDetail() {
 
           {/* Tarifas con Precio Dinámico */}
           <DynamicPricingCard stationId={stationId} />
+
+          {/* Sugerencia de IA */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+          >
+            <AIInsightCard 
+              type="station" 
+              stationId={stationId}
+              onAskAI={(question) => {
+                // Abrir el chat de IA con la pregunta
+                const chatButton = document.querySelector('[data-ai-chat-trigger]') as HTMLButtonElement;
+                if (chatButton) chatButton.click();
+              }}
+            />
+          </motion.div>
 
           {/* Información adicional */}
           <motion.div

@@ -14,6 +14,7 @@ import {
   TrendingUp,
   ChevronRight
 } from "lucide-react";
+import { AIInsightCard } from "@/components/AIInsightCard";
 
 export default function UserHistory() {
   const { data: transactions, isLoading } = trpc.transactions.getMyHistory.useQuery({
@@ -100,6 +101,21 @@ export default function UserHistory() {
             </Card>
           </motion.div>
         </div>
+
+        {/* Sugerencia de IA */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <AIInsightCard 
+            type="history"
+            onAskAI={(question) => {
+              const chatButton = document.querySelector('[data-ai-chat-trigger]') as HTMLButtonElement;
+              if (chatButton) chatButton.click();
+            }}
+          />
+        </motion.div>
 
         {/* Lista de transacciones */}
         <Tabs defaultValue="all" className="w-full">
