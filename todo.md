@@ -267,3 +267,4 @@
 ## Bugs Reportados - 18 Enero 2026
 
 - [x] BUG: Widget de chat de IA no permite scroll en móvil, campo de entrada queda bloqueado
+- [x] BUG: Usuarios admin@greenhproject.com y soporte@greenhproject.com no pueden ingresar, vuelven a la landing (corregido: ahora se vinculan por email)
