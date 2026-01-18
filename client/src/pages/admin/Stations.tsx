@@ -15,6 +15,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -97,6 +98,8 @@ export default function AdminStations() {
   const [editingStation, setEditingStation] = useState<any>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [stationToDelete, setStationToDelete] = useState<any>(null);
+  const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [viewingStation, setViewingStation] = useState<any>(null);
   
   // Estado del formulario
   const [formData, setFormData] = useState<StationFormData>(initialFormData);
@@ -1026,7 +1029,15 @@ export default function AdminStations() {
                       >
                         <Pencil className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" title="Ver detalles">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        title="Ver detalles"
+                        onClick={() => {
+                          setViewingStation(station);
+                          setShowDetailsDialog(true);
+                        }}
+                      >
                         <Eye className="w-4 h-4" />
                       </Button>
                       <Button 
@@ -1074,6 +1085,180 @@ export default function AdminStations() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Modal de ver detalles de estación */}
+      <Dialog open={showDetailsDialog} onOpenChange={(open) => {
+        setShowDetailsDialog(open);
+        if (!open) setViewingStation(null);
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-primary" />
+              {viewingStation?.name}
+            </DialogTitle>
+            <DialogDescription>
+              ID: {viewingStation?.ocppIdentity || 'Sin ID OCPP'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {viewingStation && (
+            <div className="space-y-6">
+              {/* Estado general */}
+              <div className="flex items-center gap-4">
+                <Badge variant={viewingStation.isActive ? "default" : "secondary"}>
+                  {viewingStation.isActive ? "Activa" : "Inactiva"}
+                </Badge>
+                <Badge variant={viewingStation.isPublic ? "outline" : "secondary"}>
+                  {viewingStation.isPublic ? "Pública" : "Privada"}
+                </Badge>
+                <Badge variant={viewingStation.status === "ONLINE" ? "default" : "destructive"}>
+                  {viewingStation.status === "ONLINE" ? "En línea" : "Fuera de línea"}
+                </Badge>
+              </div>
+
+              {/* Información de ubicación */}
+              <div className="space-y-3">
+                <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Ubicación</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Dirección</p>
+                    <p className="font-medium">{viewingStation.address}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Ciudad</p>
+                    <p className="font-medium">{viewingStation.city}, {viewingStation.department}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Coordenadas</p>
+                    <p className="font-medium text-sm">
+                      {viewingStation.latitude}, {viewingStation.longitude}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Propietario ID</p>
+                    <p className="font-medium">{viewingStation.ownerId || 'Sin asignar'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Descripción */}
+              {viewingStation.description && (
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Descripción</h4>
+                  <p className="text-sm text-muted-foreground p-4 bg-muted/30 rounded-lg">
+                    {viewingStation.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Conectores */}
+              <div className="space-y-3">
+                <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+                  Conectores ({viewingStation.evses?.length || 0})
+                </h4>
+                {viewingStation.evses && viewingStation.evses.length > 0 ? (
+                  <div className="space-y-2">
+                    {viewingStation.evses.map((evse: any, index: number) => (
+                      <div 
+                        key={evse.id || index} 
+                        className="flex items-center justify-between p-3 bg-muted/30 rounded-lg"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                            evse.status === 'AVAILABLE' ? 'bg-green-500/20' : 
+                            evse.status === 'CHARGING' ? 'bg-blue-500/20' : 'bg-muted'
+                          }`}>
+                            <Zap className={`w-5 h-5 ${
+                              evse.status === 'AVAILABLE' ? 'text-green-500' : 
+                              evse.status === 'CHARGING' ? 'text-blue-500' : 'text-muted-foreground'
+                            }`} />
+                          </div>
+                          <div>
+                            <div className="font-medium text-sm">
+                              #{evse.evseIdLocal || index + 1} - {getConnectorLabel(evse.connectorType)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {evse.powerKw} kW • {evse.chargeType}
+                            </div>
+                          </div>
+                        </div>
+                        <Badge variant={
+                          evse.status === 'AVAILABLE' ? 'default' : 
+                          evse.status === 'CHARGING' ? 'secondary' : 'outline'
+                        }>
+                          {evse.status === 'AVAILABLE' ? 'Disponible' : 
+                           evse.status === 'CHARGING' ? 'Cargando' : 
+                           evse.status === 'UNAVAILABLE' ? 'No disponible' : evse.status}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground p-4 bg-muted/30 rounded-lg text-center">
+                    No hay conectores configurados
+                  </p>
+                )}
+              </div>
+
+              {/* Estadísticas rápidas */}
+              <div className="space-y-3">
+                <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Estadísticas</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 bg-muted/30 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-primary">
+                      {viewingStation.evses?.filter((e: any) => e.status === 'AVAILABLE').length || 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Disponibles</p>
+                  </div>
+                  <div className="p-3 bg-muted/30 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-blue-500">
+                      {viewingStation.evses?.filter((e: any) => e.status === 'CHARGING').length || 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Cargando</p>
+                  </div>
+                  <div className="p-3 bg-muted/30 rounded-lg text-center">
+                    <p className="text-2xl font-bold">
+                      {viewingStation.evses?.length || 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Total</p>
+                  </div>
+                  <div className="p-3 bg-muted/30 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-yellow-500">
+                      {viewingStation.evses?.filter((e: any) => e.chargeType === 'DC').length || 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">DC Rápidos</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Acciones */}
+              <div className="flex gap-2 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    setShowDetailsDialog(false);
+                    loadStationForEdit(viewingStation);
+                  }}
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Editar estación
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    window.open(`https://www.google.com/maps?q=${viewingStation.latitude},${viewingStation.longitude}`, '_blank');
+                  }}
+                >
+                  <MapPin className="w-4 h-4 mr-2" />
+                  Ver en mapa
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

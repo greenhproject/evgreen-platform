@@ -412,3 +412,8 @@
 - [x] MEJORA: Agregar botón de eliminar conectores existentes - Implementado con diálogo de confirmación
 - [x] MEJORA: Agregar botón de editar conectores existentes - Implementado selector de estado (Disponible/No disponible/Con falla)
 - [x] BUG: Hay conectores duplicados que necesitan ser eliminados - Ahora se pueden eliminar desde el formulario de edición
+
+
+## Bugs Reportados - 18 Enero 2026 (Décima Ronda)
+
+- [x] BUG: Botón "Ver detalles" de estación no funciona - Implementado modal completo con ubicación, descripción, conectores, estadísticas y acciones
