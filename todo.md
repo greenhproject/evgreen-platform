@@ -346,3 +346,11 @@
 - [x] Revisar sección hero en móvil
 - [x] Revisar sección de IA en móvil
 - [x] Revisar footer en móvil
+
+
+## Bugs Reportados - 18 Enero 2026 (Tercera Ronda)
+
+- [x] BUG: Tarjeta de sugerencia de IA es invasiva y el botón X no la cierra (corregido: botón más visible con hover)
+- [x] BUG: Widget de chat de IA tapa el menú de perfil en la barra inferior (corregido: bottom-24 en móvil)
+- [x] BUG: Botón del rayo (iniciar carga) muestra error 404 (creada página /scan)
+- [x] BUG: Ícono de escaneo QR muestra error 404 (redirige a /scan)

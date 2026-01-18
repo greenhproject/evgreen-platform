@@ -83,7 +83,7 @@ export function AIInsightCard({ type, stationId, className, onAskAI }: AIInsight
             </div>
             <CardTitle className="text-sm font-medium">Sugerencia de IA</CardTitle>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {insights.length > 1 && (
               <Badge variant="outline" className="text-xs">
                 {currentInsightIndex + 1}/{insights.length}
@@ -92,10 +92,15 @@ export function AIInsightCard({ type, stationId, className, onAskAI }: AIInsight
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
-              onClick={() => setDismissed(true)}
+              className="h-8 w-8 hover:bg-destructive/20 rounded-full"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDismissed(true);
+              }}
+              aria-label="Cerrar sugerencia"
             >
-              <X className="h-3 w-3" />
+              <X className="h-4 w-4" />
             </Button>
           </div>
         </div>
