@@ -425,3 +425,8 @@
 - [x] Actualizar logo con diseño moderno tipo startup - Logo con icono de rayo en círculo verde + texto "EVGreen" en bold
 - [x] Actualizar textos en toda la aplicación - Layouts, landing, dashboard, sesiones, notificaciones, wallet, perfil
 - [x] Mantener "by Green House Project" donde corresponda - Incluido en footer y layouts
+
+
+## Bugs Reportados - 18 Enero 2026 (Undécima Ronda)
+
+- [x] BUG: Botón "Ver estaciones disponibles" en landing page no funciona - Corregido: ahora navega a /map
