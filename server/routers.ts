@@ -419,6 +419,51 @@ const tariffsRouter = router({
       await db.updateTariff(input.id, input.data);
       return { success: true };
     }),
+
+  // Actualizar tarifa por estación (para inversionistas)
+  updateByStation: protectedProcedure
+    .input(z.object({
+      stationId: z.number(),
+      pricePerKwh: z.number(),
+      reservationFee: z.number(),
+      idleFeePerMin: z.number(),
+      connectionFee: z.number(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const station = await db.getChargingStationById(input.stationId);
+      if (!station) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+      }
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && station.ownerId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para modificar esta estación" });
+      }
+      
+      // Buscar tarifa activa de la estación
+      const tariff = await db.getActiveTariffByStationId(input.stationId);
+      
+      if (tariff) {
+        // Actualizar tarifa existente
+        await db.updateTariff(tariff.id, {
+          pricePerKwh: input.pricePerKwh.toString(),
+          reservationFee: input.reservationFee.toString(),
+          overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
+          pricePerSession: input.connectionFee.toString(),
+        });
+      } else {
+        // Crear nueva tarifa
+        await db.createTariff({
+          stationId: input.stationId,
+          name: "Tarifa Estándar",
+          pricePerKwh: input.pricePerKwh.toString(),
+          reservationFee: input.reservationFee.toString(),
+          overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
+          pricePerSession: input.connectionFee.toString(),
+          isActive: true,
+        });
+      }
+      
+      return { success: true };
+    }),
 });
 
 // ============================================================================
