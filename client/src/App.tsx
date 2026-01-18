@@ -1,14 +1,13 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch, Redirect, useLocation } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useEffect } from "react";
 
 // Páginas públicas
-import Home from "./pages/Home";
 import Landing from "./pages/Landing";
 
 // Páginas de usuario
@@ -44,18 +43,19 @@ import AdminReports from "./pages/admin/Reports";
 import AdminSettings from "./pages/admin/Settings";
 
 // Layouts
-import UserLayout from "./layouts/UserLayout";
-import DashboardLayout from "./components/DashboardLayout";
+import AdminLayout from "./layouts/AdminLayout";
+import InvestorLayout from "./layouts/InvestorLayout";
+import TechnicianLayout from "./layouts/TechnicianLayout";
 
 // Función para obtener la ruta de inicio según el rol
 function getHomeRouteByRole(role: string | undefined): string {
   switch (role) {
     case "admin":
-      return "/admin/dashboard";
+      return "/admin";
     case "investor":
-      return "/investor/dashboard";
+      return "/investor";
     case "technician":
-      return "/technician/dashboard";
+      return "/technician";
     case "user":
     default:
       return "/map";
@@ -123,7 +123,7 @@ function ProtectedRoute({
 }
 
 function Router() {
-  const { user, loading, isAuthenticated } = useAuth();
+  const { loading } = useAuth();
 
   // Mientras carga, mostrar loading
   if (loading) {
@@ -161,109 +161,126 @@ function Router() {
       <Route path="/support" component={UserSupport} />
 
       {/* ============================================
-          RUTAS DE INVERSIONISTA
+          RUTAS DE INVERSIONISTA (con layout)
           ============================================ */}
       <Route path="/investor">
         <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorDashboard />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/investor/dashboard">
-        <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorDashboard />
+          <InvestorLayout>
+            <InvestorDashboard />
+          </InvestorLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/investor/stations">
         <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorStations />
+          <InvestorLayout>
+            <InvestorStations />
+          </InvestorLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/investor/transactions">
         <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorTransactions />
+          <InvestorLayout>
+            <InvestorTransactions />
+          </InvestorLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/investor/reports">
         <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorReports />
+          <InvestorLayout>
+            <InvestorReports />
+          </InvestorLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/investor/settings">
         <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorSettings />
+          <InvestorLayout>
+            <InvestorSettings />
+          </InvestorLayout>
         </ProtectedRoute>
       </Route>
 
       {/* ============================================
-          RUTAS DE TÉCNICO
+          RUTAS DE TÉCNICO (con layout)
           ============================================ */}
       <Route path="/technician">
         <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianDashboard />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/dashboard">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianDashboard />
+          <TechnicianLayout>
+            <TechnicianDashboard />
+          </TechnicianLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/technician/tickets">
         <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianTickets />
+          <TechnicianLayout>
+            <TechnicianTickets />
+          </TechnicianLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/technician/stations">
         <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianStations />
+          <TechnicianLayout>
+            <TechnicianStations />
+          </TechnicianLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/technician/logs">
         <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLogs />
+          <TechnicianLayout>
+            <TechnicianLogs />
+          </TechnicianLayout>
         </ProtectedRoute>
       </Route>
 
       {/* ============================================
-          RUTAS DE ADMINISTRACIÓN
+          RUTAS DE ADMINISTRACIÓN (con layout)
           ============================================ */}
       <Route path="/admin">
         <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminDashboard />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/dashboard">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminDashboard />
+          <AdminLayout>
+            <AdminDashboard />
+          </AdminLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/stations">
         <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminStations />
+          <AdminLayout>
+            <AdminStations />
+          </AdminLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/users">
         <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminUsers />
+          <AdminLayout>
+            <AdminUsers />
+          </AdminLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/transactions">
         <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminTransactions />
+          <AdminLayout>
+            <AdminTransactions />
+          </AdminLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/tariffs">
         <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminTariffs />
+          <AdminLayout>
+            <AdminTariffs />
+          </AdminLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/reports">
         <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminReports />
+          <AdminLayout>
+            <AdminReports />
+          </AdminLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/settings">
         <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminSettings />
+          <AdminLayout>
+            <AdminSettings />
+          </AdminLayout>
         </ProtectedRoute>
       </Route>
 

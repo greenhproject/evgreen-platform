@@ -140,3 +140,13 @@
 - [x] BUG: Usuario administrador greenhproject@gmail.com entra como cliente final en lugar de admin
 - [x] Verificar asignación de rol admin en base de datos (ya estaba correcto)
 - [x] Verificar redirección según rol en App.tsx (corregido con RoleBasedRedirect)
+
+## Nuevas Tareas - Solicitud del Usuario
+
+- [x] Crear estación de carga simulada en Cra 1 Este No 2-26, Mosquera, Cundinamarca
+- [x] Crear usuario info@greenhproject.com como cliente (user)
+- [x] Crear usuario admin@greenhproject.com como inversionista (investor)
+- [x] Crear usuario soporte@greenhproject.com como técnico (technician)
+- [x] Implementar panel de navegación lateral en dashboard de admin
+- [x] Implementar panel de navegación lateral en dashboard de inversionista
+- [x] Implementar panel de navegación lateral en dashboard de técnico
