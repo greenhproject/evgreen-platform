@@ -21,8 +21,10 @@ import {
   Wallet,
   CreditCard,
   Car,
-  X
+  X,
+  Sparkles
 } from "lucide-react";
+import { AIInsightCard } from "@/components/AIInsightCard";
 
 // Tipo inferido del API - usamos any para flexibilidad con datos del backend
 type StationData = {
@@ -256,6 +258,19 @@ export default function UserMap() {
               <Filter className="w-5 h-5" />
             </Button>
           </div>
+        </div>
+
+        {/* Widget de sugerencia de IA */}
+        <div className="absolute left-4 top-24 right-20 max-w-sm">
+          <AIInsightCard 
+            type="map" 
+            className="bg-card/95 backdrop-blur-sm shadow-lg"
+            onAskAI={(question) => {
+              // Abrir el chat de IA con la pregunta
+              const chatButton = document.querySelector('[data-ai-chat-trigger]') as HTMLButtonElement;
+              if (chatButton) chatButton.click();
+            }}
+          />
         </div>
 
         {/* Botones flotantes */}

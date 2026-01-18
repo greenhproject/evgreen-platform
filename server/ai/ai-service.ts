@@ -24,6 +24,7 @@ import type {
   InvestorInsightRequest,
   ConversationContext,
 } from "./types";
+import { getAIContext, type AIContext } from "./context-service";
 
 // ============================================================================
 // SERVICIO DE IA
@@ -233,7 +234,7 @@ class AIService {
   // ============================================================================
 
   /**
-   * Procesar mensaje de chat del usuario
+   * Procesar mensaje de chat del usuario con contexto real de la plataforma
    */
   async chat(
     userMessage: string,
@@ -244,7 +245,19 @@ class AIService {
       throw new Error("El chat de IA está deshabilitado");
     }
 
-    const systemPrompt = this.buildChatSystemPrompt(context);
+    // Obtener contexto real de la plataforma
+    let platformContext: AIContext | null = null;
+    try {
+      platformContext = await getAIContext(
+        context.userId,
+        context.currentLocation?.latitude,
+        context.currentLocation?.longitude
+      );
+    } catch (error) {
+      console.error('[AIService] Error getting platform context:', error);
+    }
+
+    const systemPrompt = this.buildChatSystemPromptWithContext(context, platformContext);
     const messages: AIMessage[] = [
       { role: "system", content: systemPrompt },
       ...conversationHistory,
@@ -254,42 +267,97 @@ class AIService {
     return this.complete(messages);
   }
 
-  private buildChatSystemPrompt(context: ConversationContext): string {
+  private buildChatSystemPromptWithContext(context: ConversationContext, platformContext: AIContext | null): string {
     let prompt = `Eres el asistente virtual de Green EV, una plataforma de carga de vehículos eléctricos en Colombia.
-Tu nombre es "EV Assistant" y tu objetivo es ayudar a los usuarios con todo lo relacionado a la carga de vehículos eléctricos.
+Tu nombre es "EV Assistant" y tu objetivo es ayudar a los usuarios con información REAL y ACTUALIZADA de nuestra plataforma.
 
-Información del usuario:
+=== INFORMACIÓN DEL USUARIO ===
 - Nombre: ${context.userName || "Usuario"}
 - Rol: ${context.userRole}
 `;
 
+    // Agregar contexto del usuario desde la plataforma
+    if (platformContext?.user) {
+      const u = platformContext.user;
+      prompt += `
+=== HISTORIAL DEL USUARIO EN LA PLATAFORMA ===
+- Total de cargas realizadas: ${u.totalCharges}
+- Energía total consumida: ${u.totalEnergyKwh.toFixed(1)} kWh
+- Gasto total: $${u.totalSpent.toLocaleString('es-CO')} COP
+- Promedio por carga: ${u.averageChargeKwh.toFixed(1)} kWh
+- Saldo en billetera: $${u.walletBalance.toLocaleString('es-CO')} COP
+- Estaciones favoritas: ${u.favoriteStations.length > 0 ? u.favoriteStations.join(', ') : 'Ninguna aún'}
+- Horarios preferidos de carga: ${u.preferredChargingTimes.length > 0 ? u.preferredChargingTimes.join(', ') : 'No determinado'}
+`;
+    }
+
     if (context.vehicle) {
       prompt += `
-Vehículo registrado:
+=== VEHÍCULO REGISTRADO ===
 - ${context.vehicle.brand} ${context.vehicle.model}
 - Capacidad de batería: ${context.vehicle.batteryCapacity} kWh
 - Tipo de conector: ${context.vehicle.connectorType}
 `;
     }
 
-    if (context.currentLocation) {
+    // Agregar estaciones cercanas con datos reales
+    if (platformContext?.nearbyStations && platformContext.nearbyStations.length > 0) {
       prompt += `
-Ubicación actual: ${context.currentLocation.latitude}, ${context.currentLocation.longitude}
+=== ESTACIONES CERCANAS (DATOS EN TIEMPO REAL) ===
+`;
+      for (const station of platformContext.nearbyStations.slice(0, 5)) {
+        const distanceText = station.distance ? `${station.distance.toFixed(1)} km` : 'Distancia desconocida';
+        prompt += `
+⚡ ${station.name}
+   - Dirección: ${station.address}, ${station.city}
+   - Distancia: ${distanceText}
+   - Estado: ${station.status === 'online' ? 'En línea' : 'Fuera de línea'}
+   - Conectores disponibles: ${station.availableConnectors}/${station.totalConnectors}
+   - Tipos de conector: ${station.connectorTypes.join(', ') || 'No especificado'}
+   - Precio base: $${station.pricePerKwh.toLocaleString('es-CO')}/kWh
+   - Precio dinámico actual: $${station.dynamicPrice.toLocaleString('es-CO')}/kWh
+   - Nivel de demanda: ${station.demandLevel === 'LOW' ? 'Baja (buen momento!)' : station.demandLevel === 'NORMAL' ? 'Normal' : station.demandLevel === 'HIGH' ? 'Alta' : 'Muy alta (surge)'}
+`;
+      }
+    }
+
+    // Agregar contexto de la plataforma
+    if (platformContext?.platform) {
+      const p = platformContext.platform;
+      prompt += `
+=== ESTADO ACTUAL DE LA RED GREEN EV ===
+- Total de estaciones: ${p.totalStations}
+- Total de conectores: ${p.totalConnectors}
+- Conectores disponibles ahora: ${p.availableConnectors}
+- Cargas activas en este momento: ${p.activeCharges}
+- Nivel de demanda general: ${p.currentDemandLevel === 'LOW' ? 'Baja' : p.currentDemandLevel === 'NORMAL' ? 'Normal' : p.currentDemandLevel === 'HIGH' ? 'Alta' : 'Muy alta'}
+- Precio promedio: $${p.averagePricePerKwh.toLocaleString('es-CO')}/kWh
+- Hora actual: ${platformContext.currentTime}
+- Día: ${platformContext.currentDay}
+- Es fin de semana: ${platformContext.isWeekend ? 'Sí' : 'No'}
+- Es hora pico: ${platformContext.isPeakHour ? 'Sí (precios más altos)' : 'No'}
 `;
     }
 
     prompt += `
-Capacidades:
-1. Recomendar estaciones de carga cercanas
-2. Planificar viajes con paradas de carga
-3. Estimar costos de carga
-4. Responder preguntas sobre vehículos eléctricos
-5. Ayudar con reservas y pagos
-6. Explicar tarifas y precios dinámicos
+=== INSTRUCCIONES ===
+1. USA SIEMPRE los datos reales de arriba para responder preguntas sobre estaciones, precios y disponibilidad
+2. Cuando el usuario pregunte por estaciones cercanas, usa la lista de "ESTACIONES CERCANAS" con los datos actuales
+3. Cuando pregunte por precios, usa los precios dinámicos actuales que incluyen el nivel de demanda
+4. Si el usuario tiene historial, personalízale las respuestas basado en sus patrones de uso
+5. Recomienda cargar en horarios de baja demanda para ahorrar dinero
+6. Los precios están en COP (pesos colombianos)
+7. Responde siempre en español colombiano de manera amigable y profesional
+8. Sé específico con nombres de estaciones, direcciones y precios reales
+9. Si no tienes datos de algo, indícalo claramente en lugar de inventar
 
-Responde siempre en español colombiano de manera amigable y profesional.
-Los precios están en COP (pesos colombianos).
-Sé conciso pero informativo.`;
+Capacidades:
+- Recomendar estaciones de carga cercanas con precios actuales
+- Planificar viajes con paradas de carga optimizadas
+- Estimar costos de carga basados en precios dinámicos
+- Responder preguntas sobre vehículos eléctricos
+- Ayudar con reservas y pagos
+- Explicar cómo funcionan las tarifas dinámicas`;
 
     return prompt;
   }
