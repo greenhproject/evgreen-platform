@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
+import { NotificationPanel } from "@/components/NotificationPanel";
 import { getLoginUrl } from "@/const";
 
 interface UserLayoutProps {
@@ -154,12 +155,7 @@ export default function UserLayout({
               </div>
             )}
 
-            {rightAction || (
-              <Button variant="ghost" size="icon" className="rounded-full relative">
-                <Bell className="w-5 h-5" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full" />
-              </Button>
-            )}
+            {rightAction || <NotificationPanel />}
           </div>
         </header>
       )}

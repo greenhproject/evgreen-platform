@@ -605,24 +605,26 @@ export default function StationDetail() {
                       </Badge>
                     </div>
 
-                    <div className="space-y-2 text-xs sm:text-sm">
-                      <div className="flex justify-between gap-2">
-                        <span className="text-muted-foreground shrink-0">Precio base</span>
-                        <span className="text-right">${dynamicPrice.basePrice.toLocaleString()} COP/kWh</span>
+                    <div className="space-y-2 text-sm">
+                      <div className="grid grid-cols-2 gap-1">
+                        <span className="text-muted-foreground text-xs">Precio base</span>
+                        <span className="text-right text-xs">${dynamicPrice.basePrice.toLocaleString()} COP/kWh</span>
                       </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-muted-foreground shrink-0">Precio dinámico</span>
-                        <span className="font-semibold text-right" style={{ color: dynamicPrice.visualization.color }}>
+                      <div className="grid grid-cols-2 gap-1">
+                        <span className="text-muted-foreground text-xs">Precio dinámico</span>
+                        <span className="text-right text-xs font-semibold" style={{ color: dynamicPrice.visualization.color }}>
                           ${dynamicPrice.finalPrice.toLocaleString()} COP/kWh
                         </span>
                       </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-muted-foreground shrink-0">Tarifa reserva</span>
-                        <span className="text-right">${dynamicPrice.reservationFee.toLocaleString()} COP</span>
+                      <div className="grid grid-cols-2 gap-1">
+                        <span className="text-muted-foreground text-xs">Tarifa reserva</span>
+                        <span className="text-right text-xs">${dynamicPrice.reservationFee.toLocaleString()} COP</span>
                       </div>
-                      <div className="pt-2 border-t border-border/50 flex justify-between gap-2">
-                        <span className="font-medium shrink-0">Total estimado</span>
-                        <span className="font-bold text-base sm:text-lg text-right">${dynamicPrice.estimatedTotal.toLocaleString()} COP</span>
+                      <div className="pt-2 mt-2 border-t border-border/50 grid grid-cols-2 gap-1 items-center">
+                        <span className="font-medium text-sm">Total estimado</span>
+                        <span className="text-right font-bold text-base" style={{ color: dynamicPrice.visualization.color }}>
+                          ${dynamicPrice.estimatedTotal.toLocaleString()} COP
+                        </span>
                       </div>
                     </div>
 

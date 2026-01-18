@@ -385,3 +385,9 @@
 
 - [x] BUG: Responsive del módulo de reservas está mal - textos cortados (corregido con flexbox responsive y textos ajustados)
 - [x] BUG: Banners publicitarios no aparecen en la sesión de carga (creado componente ChargingBanner, el banner estaba en estado DRAFT)
+
+
+## Bugs Reportados - 18 Enero 2026 (Sexta Ronda)
+
+- [x] BUG: Campana de notificaciones no muestra nada - Creado componente NotificationPanel con notificaciones de ejemplo
+- [x] BUG: Responsive del módulo de reservas sigue cortado - Corregido con grid de 2 columnas
