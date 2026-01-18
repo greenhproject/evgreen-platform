@@ -1,0 +1,50 @@
+{
+  "query": "SELECT * FROM users LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT * FROM users LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "openId": "hSwmA4uiHoFXEPZfszF7vG",
+      "name": "Green House Project",
+      "email": "greenhproject@gmail.com",
+      "loginMethod": "google",
+      "role": "admin",
+      "createdAt": "2026-01-18 03:37:47",
+      "updatedAt": "2026-01-18 03:52:32",
+      "lastSignedIn": "2026-01-18 03:52:32",
+      "phone": "NULL",
+      "avatarUrl": "NULL",
+      "isActive": "1",
+      "companyName": "NULL",
+      "taxId": "NULL",
+      "bankAccount": "NULL",
+      "bankName": "NULL",
+      "technicianLicense": "NULL",
+      "assignedRegion": "NULL"
+    },
+    {
+      "id": "45",
+      "openId": "cfvDb37z6nPqHfAkS3tmSY",
+      "name": "info",
+      "email": "info@greenhproject.com",
+      "loginMethod": "email",
+      "role": "user",
+      "createdAt": "2026-01-18 03:55:12",
+      "updatedAt": "2026-01-18 03:56:28",
+      "lastSignedIn": "2026-01-18 03:56:28",
+      "phone": "NULL",
+      "avatarUrl": "NULL",
+      "isActive": "1",
+      "companyName": "NULL",
+      "taxId": "NULL",
+      "bankAccount": "NULL",
+      "bankName": "NULL",
+      "technicianLicense": "NULL",
+      "assignedRegion": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\topenId\tname\temail\tloginMethod\trole\tcreatedAt\tupdatedAt\tlastSignedIn\tphone\tavatarUrl\tisActive\tcompanyName\ttaxId\tbankAccount\tbankName\ttechnicianLicense\tassignedRegion\n1\thSwmA4uiHoFXEPZfszF7vG\tGreen House Project\tgreenhproject@gmail.com\tgoogle\tadmin\t2026-01-18 03:37:47\t2026-01-18 03:52:32\t2026-01-18 03:52:32\tNULL\tNULL\t1\tNULL\tNULL\tNULL\tNULL\tNULL\tNULL\n45\tcfvDb37z6nPqHfAkS3tmSY\tinfo\tinfo@greenhproject.com\temail\tuser\t2026-01-18 03:55:12\t2026-01-18 03:56:28\t2026-01-18 03:56:28\tNULL\tNULL\t1\tNULL\tNULL\tNULL\tNULL\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 372
+}
