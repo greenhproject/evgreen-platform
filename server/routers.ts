@@ -294,16 +294,24 @@ const evseRouter = router({
     .input(z.object({
       id: z.number(),
       data: z.object({
-        connectorType: z.enum(["TYPE_2", "CCS_2", "CHADEMO", "TYPE_1"]).optional(),
+        connectorType: z.enum(["TYPE_1", "TYPE_2", "CCS_1", "CCS_2", "CHADEMO", "TESLA", "GBT_AC", "GBT_DC"]).optional(),
         chargeType: z.enum(["AC", "DC"]).optional(),
         powerKw: z.string().optional(),
         maxVoltage: z.number().optional(),
         maxAmperage: z.number().optional(),
         isActive: z.boolean().optional(),
+        status: z.enum(["AVAILABLE", "UNAVAILABLE", "FAULTED"]).optional(),
       }),
     }))
     .mutation(async ({ input }) => {
       await db.updateEvse(input.id, input.data);
+      return { success: true };
+    }),
+  
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteEvse(input.id);
       return { success: true };
     }),
   

@@ -405,3 +405,10 @@
 - [x] BUG: Formulario de conectores tiene mal responsive - Corregido con layout de 1-2 columnas y etiquetas más grandes
 - [x] BUG: Conectores no se guardan - Corregido: agregados tipos GBT_AC/GBT_DC al schema, router listAll ahora incluye evses
 - [x] MEJORA: Agregados tipos de conectores GBT AC y GBT DC (estándar chino)
+
+
+## Bugs Reportados - 18 Enero 2026 (Novena Ronda)
+
+- [x] MEJORA: Agregar botón de eliminar conectores existentes - Implementado con diálogo de confirmación
+- [x] MEJORA: Agregar botón de editar conectores existentes - Implementado selector de estado (Disponible/No disponible/Con falla)
+- [x] BUG: Hay conectores duplicados que necesitan ser eliminados - Ahora se pueden eliminar desde el formulario de edición
