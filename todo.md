@@ -371,3 +371,11 @@
 - [x] Manejo de errores de cámara y permisos
 - [ ] Integrar escaneo con búsqueda de estación por código
 - [ ] Manejar permisos de cámara
+
+
+## Bugs Reportados - 18 Enero 2026 (Cuarta Ronda)
+
+- [x] BUG: Elementos redundantes en el mapa (billetera $0 y vehículo duplicados) - Eliminados botones redundantes
+- [x] BUG: Botón de rayo y QR hacen lo mismo - Unificado en botón central del menú inferior
+- [x] BUG: Tarjetas de sugerencia de IA - botón cerrar no funciona - Corregido con event handlers
+- [x] BUG: Tarjetas de sugerencia de IA - botón de acción no funciona - Corregido con openAIChatWithQuestion()
