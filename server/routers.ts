@@ -232,6 +232,14 @@ const stationsRouter = router({
     .query(async ({ input }) => {
       return db.getEvsesByStationId(input.stationId);
     }),
+  
+  // Eliminar estación (solo admin)
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteChargingStation(input.id);
+      return { success: true };
+    }),
 });
 
 // ============================================================================

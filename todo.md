@@ -354,3 +354,20 @@
 - [x] BUG: Widget de chat de IA tapa el menú de perfil en la barra inferior (corregido: bottom-24 en móvil)
 - [x] BUG: Botón del rayo (iniciar carga) muestra error 404 (creada página /scan)
 - [x] BUG: Ícono de escaneo QR muestra error 404 (redirige a /scan)
+
+
+## Nuevas Tareas - 18 Enero 2026 (Madrugada)
+
+### Edición de Conectores en Estaciones
+- [x] Diagnosticar por qué no se pueden agregar conectores a estaciones creadas en BD
+- [x] Corregir formulario de edición para permitir agregar conectores
+- [x] Verificar que los conectores se guardan correctamente
+- [x] Agregar botón de eliminar estación (con confirmación)
+
+### Escaneo QR Real
+- [x] Instalar librería de escaneo QR (html5-qrcode)
+- [x] Implementar componente de cámara para escaneo
+- [x] Buscar estación por código OCPP o ID
+- [x] Manejo de errores de cámara y permisos
+- [ ] Integrar escaneo con búsqueda de estación por código
+- [ ] Manejar permisos de cámara
