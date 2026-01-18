@@ -1,0 +1,42 @@
+{
+  "query": "SELECT * FROM banners LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT * FROM banners LIMIT 5;",
+  "rows": [
+    {
+      "id": "1",
+      "title": "Prueba publicidad ",
+      "subtitle": "Prueba",
+      "description": "Prueba de bandera de publicidad  ",
+      "imageUrl": "https://static.wixstatic.com/media/e0f009_ef762ee0fba14f7497f56465dbf21ffc~mv2.png/v1/fill/w_560,h_82,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/e0f009_ef762ee0fba14f7497f56465dbf21ffc~mv2.png",
+      "imageUrlMobile": "NULL",
+      "banner_type": "CHARGING",
+      "linkUrl": "https://www.greenhproject.com/",
+      "linkType": "NULL",
+      "linkTarget": "NULL",
+      "ctaText": "NULL",
+      "startDate": "2026-01-17 00:00:00",
+      "endDate": "2026-01-31 00:00:00",
+      "targetRoles": "NULL",
+      "targetCities": "NULL",
+      "targetSubscriptionTiers": "NULL",
+      "priority": "1",
+      "displayDurationMs": "5000",
+      "isClosable": "1",
+      "showOnce": "0",
+      "banner_status": "DRAFT",
+      "impressions": "0",
+      "clicks": "0",
+      "uniqueViews": "0",
+      "advertiserName": "Green House Project ",
+      "advertiserContact": "Info@greenhproject.com",
+      "campaignId": "NULL",
+      "createdById": "1",
+      "createdAt": "2026-01-18 06:14:21",
+      "updatedAt": "2026-01-18 07:27:17"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttitle\tsubtitle\tdescription\timageUrl\timageUrlMobile\tbanner_type\tlinkUrl\tlinkType\tlinkTarget\tctaText\tstartDate\tendDate\ttargetRoles\ttargetCities\ttargetSubscriptionTiers\tpriority\tdisplayDurationMs\tisClosable\tshowOnce\tbanner_status\timpressions\tclicks\tuniqueViews\tadvertiserName\tadvertiserContact\tcampaignId\tcreatedById\tcreatedAt\tupdatedAt\n1\tPrueba publicidad \tPrueba\tPrueba de bandera de publicidad  \thttps://static.wixstatic.com/media/e0f009_ef762ee0fba14f7497f56465dbf21ffc~mv2.png/v1/fill/w_560,h_82,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/e0f009_ef762ee0fba14f7497f56465dbf21ffc~mv2.png\tNULL\tCHARGING\thttps://www.greenhproject.com/\tNULL\tNULL\tNULL\t2026-01-17 00:00:00\t2026-01-31 00:00:00\tNULL\tNULL\tNULL\t1\t5000\t1\t0\tDRAFT\t0\t0\t0\tGreen House Project \tInfo@greenhproject.com\tNULL\t1\t2026-01-18 06:14:21\t2026-01-18 07:27:17\n",
+  "stderr": "",
+  "execution_time_ms": 413
+}
