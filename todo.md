@@ -462,3 +462,23 @@
 - [x] Estadísticas y datos convincentes
 - [x] CTA para contacto/registro como inversionista
 - [x] Conectar botón "Inversionistas" de la landing a esta página
+
+
+## Soporte Dual OCPP 1.6J y 2.0.1 - 18 Enero 2026
+
+### Análisis de Implementación Actual
+- [x] Revisar servidor OCPP actual y verificar versión soportada
+- [x] Identificar diferencias entre OCPP 1.6J y 2.0.1
+- [x] Evaluar arquitectura para soporte dual
+
+### Implementación OCPP 1.6J
+- [x] Crear handlers para mensajes OCPP 1.6J (BootNotification, Authorize, StartTransaction, StopTransaction, MeterValues, Heartbeat, StatusNotification)
+- [x] Implementar detección automática de versión de protocolo
+- [x] Adaptar servidor WebSocket para manejar ambos protocolos
+- [x] Mapear estructuras de datos entre versiones
+
+### Testing y Validación
+- [x] Crear tests unitarios para handlers OCPP 1.6J (27 tests)
+- [ ] Probar compatibilidad con simuladores de cargadores
+- [x] Documentar diferencias y compatibilidad
+
