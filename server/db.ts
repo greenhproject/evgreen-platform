@@ -229,6 +229,15 @@ export async function updateStationOnlineStatus(ocppIdentity: string, isOnline: 
     .where(eq(chargingStations.ocppIdentity, ocppIdentity));
 }
 
+export async function deleteChargingStation(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Primero eliminar los EVSEs asociados
+  await db.delete(evses).where(eq(evses.stationId, id));
+  // Luego eliminar la estación
+  await db.delete(chargingStations).where(eq(chargingStations.id, id));
+}
+
 // ============================================================================
 // EVSE OPERATIONS
 // ============================================================================

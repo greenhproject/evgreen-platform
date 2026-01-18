@@ -1,14 +1,16 @@
 /**
  * Página de Escaneo QR para iniciar carga
+ * Usa html5-qrcode para escaneo real con cámara
  */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import UserLayout from "@/layouts/UserLayout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
 import {
   QrCode,
   Camera,
@@ -17,18 +19,133 @@ import {
   ArrowLeft,
   Search,
   MapPin,
+  X,
+  Loader2,
+  CheckCircle,
 } from "lucide-react";
 
 export default function ScanPage() {
   const [, setLocation] = useLocation();
   const [manualCode, setManualCode] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [scannedCode, setScannedCode] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const scannerRef = useRef<any>(null);
+  const scannerContainerId = "qr-reader";
 
-  const handleScan = () => {
-    toast.info("Función de escaneo QR", {
-      description: "Esta función requiere acceso a la cámara del dispositivo. Por ahora, usa el código manual.",
+  // Buscar estación por código
+  const searchStation = trpc.stations.listPublic.useQuery(undefined, {
+    enabled: false,
+  });
+
+  // Limpiar el escáner al desmontar
+  useEffect(() => {
+    return () => {
+      stopScanner();
+    };
+  }, []);
+
+  const startScanner = async () => {
+    setCameraError(null);
+    setIsScanning(true);
+
+    try {
+      // Importar dinámicamente html5-qrcode
+      const { Html5Qrcode } = await import("html5-qrcode");
+      
+      // Crear instancia del escáner
+      scannerRef.current = new Html5Qrcode(scannerContainerId);
+
+      // Configuración del escáner
+      const config = {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1,
+      };
+
+      // Iniciar escaneo con cámara trasera
+      await scannerRef.current.start(
+        { facingMode: "environment" },
+        config,
+        onScanSuccess,
+        onScanFailure
+      );
+    } catch (err: any) {
+      console.error("Error al iniciar escáner:", err);
+      setIsScanning(false);
+      
+      if (err.message?.includes("Permission denied") || err.name === "NotAllowedError") {
+        setCameraError("Permiso de cámara denegado. Por favor, permite el acceso a la cámara en la configuración de tu navegador.");
+      } else if (err.message?.includes("NotFoundError") || err.name === "NotFoundError") {
+        setCameraError("No se encontró ninguna cámara en tu dispositivo.");
+      } else {
+        setCameraError("No se pudo acceder a la cámara. Intenta con el código manual.");
+      }
+    }
+  };
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+        scannerRef.current.clear();
+      } catch (err) {
+        console.log("Escáner ya detenido");
+      }
+      scannerRef.current = null;
+    }
+    setIsScanning(false);
+  };
+
+  const onScanSuccess = (decodedText: string) => {
+    // Detener el escáner al encontrar un código
+    stopScanner();
+    setScannedCode(decodedText);
+    handleCodeFound(decodedText);
+  };
+
+  const onScanFailure = (error: string) => {
+    // Ignorar errores de escaneo (son normales cuando no hay QR visible)
+  };
+
+  const handleCodeFound = async (code: string) => {
+    setIsSearching(true);
+    toast.info("Código detectado", {
+      description: code,
     });
-    setShowManualInput(true);
+
+    // Buscar la estación por el código OCPP o ID
+    try {
+      const stations = await searchStation.refetch();
+      const result = stations.data?.find(
+        (s: any) => {
+          const st = s.station || s;
+          return st.ocppIdentity === code || st.id.toString() === code;
+        }
+      );
+
+      if (result) {
+        const station = (result as any).station || result;
+        toast.success("Estación encontrada", {
+          description: station.name,
+        });
+        setTimeout(() => {
+          setLocation(`/station/${station.id}`);
+        }, 1000);
+      } else {
+        toast.error("Estación no encontrada", {
+          description: "El código escaneado no corresponde a ninguna estación registrada.",
+        });
+        setScannedCode(null);
+        setIsSearching(false);
+      }
+    } catch (error) {
+      toast.error("Error al buscar estación");
+      setScannedCode(null);
+      setIsSearching(false);
+    }
   };
 
   const handleManualSubmit = () => {
@@ -36,16 +153,13 @@ export default function ScanPage() {
       toast.error("Ingresa un código de estación");
       return;
     }
-    
-    // Buscar estación por código
-    toast.info("Buscando estación...", {
-      description: `Código: ${manualCode}`,
-    });
-    
-    // Por ahora redirigir al mapa
-    setTimeout(() => {
-      setLocation("/map");
-    }, 1500);
+    handleCodeFound(manualCode.trim());
+  };
+
+  const handleOpenCamera = () => {
+    setShowManualInput(false);
+    setCameraError(null);
+    startScanner();
   };
 
   return (
@@ -56,7 +170,10 @@ export default function ScanPage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setLocation("/map")}
+            onClick={() => {
+              stopScanner();
+              setLocation("/map");
+            }}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
@@ -64,10 +181,80 @@ export default function ScanPage() {
         </div>
 
         {/* Contenido principal */}
-        <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8">
-          {!showManualInput ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-6">
+          {/* Estado de búsqueda */}
+          {isSearching && scannedCode && (
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
+                <Loader2 className="h-10 w-10 text-primary animate-spin" />
+              </div>
+              <div className="text-center">
+                <h2 className="text-xl font-semibold">Buscando estación...</h2>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Código: {scannedCode}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Escáner QR activo */}
+          {isScanning && !scannedCode && (
             <>
-              {/* Área de escaneo */}
+              <div className="relative w-full max-w-xs">
+                {/* Contenedor del escáner */}
+                <div 
+                  id={scannerContainerId} 
+                  className="w-full rounded-2xl overflow-hidden"
+                  style={{ minHeight: "300px" }}
+                />
+                
+                {/* Overlay con esquinas */}
+                <div className="absolute inset-0 pointer-events-none">
+                  <div className="absolute top-2 left-2 w-10 h-10 border-t-4 border-l-4 border-primary rounded-tl-xl" />
+                  <div className="absolute top-2 right-2 w-10 h-10 border-t-4 border-r-4 border-primary rounded-tr-xl" />
+                  <div className="absolute bottom-2 left-2 w-10 h-10 border-b-4 border-l-4 border-primary rounded-bl-xl" />
+                  <div className="absolute bottom-2 right-2 w-10 h-10 border-b-4 border-r-4 border-primary rounded-br-xl" />
+                </div>
+              </div>
+
+              <div className="text-center space-y-2">
+                <h2 className="text-xl font-semibold">Escanea el código QR</h2>
+                <p className="text-muted-foreground text-sm max-w-xs">
+                  Apunta la cámara al código QR de la estación de carga
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 w-full max-w-xs">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="w-full gap-2"
+                  onClick={() => {
+                    stopScanner();
+                    setShowManualInput(true);
+                  }}
+                >
+                  <Keyboard className="h-5 w-5" />
+                  Ingresar código manual
+                </Button>
+                
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  className="w-full gap-2 text-red-500"
+                  onClick={stopScanner}
+                >
+                  <X className="h-5 w-5" />
+                  Cancelar escaneo
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* Vista inicial o error de cámara */}
+          {!isScanning && !showManualInput && !scannedCode && (
+            <>
+              {/* Área de escaneo (placeholder) */}
               <div className="relative w-64 h-64 rounded-3xl border-4 border-primary/50 flex items-center justify-center bg-card/50 backdrop-blur-sm">
                 <div className="absolute inset-4 border-2 border-dashed border-primary/30 rounded-2xl" />
                 <QrCode className="h-24 w-24 text-primary/50" />
@@ -79,19 +266,28 @@ export default function ScanPage() {
                 <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-xl" />
               </div>
 
-              <div className="text-center space-y-2">
-                <h2 className="text-xl font-semibold">Escanea el código QR</h2>
-                <p className="text-muted-foreground text-sm max-w-xs">
-                  Apunta la cámara al código QR de la estación de carga para iniciar
-                </p>
-              </div>
+              {cameraError ? (
+                <div className="text-center space-y-2 max-w-xs">
+                  <h2 className="text-xl font-semibold text-red-500">Error de cámara</h2>
+                  <p className="text-muted-foreground text-sm">
+                    {cameraError}
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center space-y-2">
+                  <h2 className="text-xl font-semibold">Escanea el código QR</h2>
+                  <p className="text-muted-foreground text-sm max-w-xs">
+                    Apunta la cámara al código QR de la estación de carga para iniciar
+                  </p>
+                </div>
+              )}
 
               {/* Botones de acción */}
               <div className="flex flex-col gap-3 w-full max-w-xs">
                 <Button
                   size="lg"
                   className="w-full gap-2"
-                  onClick={handleScan}
+                  onClick={handleOpenCamera}
                 >
                   <Camera className="h-5 w-5" />
                   Abrir cámara
@@ -108,9 +304,11 @@ export default function ScanPage() {
                 </Button>
               </div>
             </>
-          ) : (
+          )}
+
+          {/* Entrada manual */}
+          {showManualInput && !scannedCode && (
             <>
-              {/* Entrada manual */}
               <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center">
                 <Zap className="h-10 w-10 text-primary" />
               </div>
@@ -130,6 +328,7 @@ export default function ScanPage() {
                     value={manualCode}
                     onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                     className="pl-10 h-12 text-center font-mono text-lg"
+                    onKeyDown={(e) => e.key === "Enter" && handleManualSubmit()}
                   />
                 </div>
 
@@ -137,15 +336,20 @@ export default function ScanPage() {
                   size="lg"
                   className="w-full gap-2"
                   onClick={handleManualSubmit}
+                  disabled={isSearching}
                 >
-                  <Zap className="h-5 w-5" />
+                  {isSearching ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Zap className="h-5 w-5" />
+                  )}
                   Buscar estación
                 </Button>
 
                 <Button
                   variant="ghost"
                   className="w-full"
-                  onClick={() => setShowManualInput(false)}
+                  onClick={handleOpenCamera}
                 >
                   Volver a escanear QR
                 </Button>
@@ -155,26 +359,31 @@ export default function ScanPage() {
         </div>
 
         {/* Acceso rápido al mapa */}
-        <div className="p-6">
-          <Card className="bg-card/80 backdrop-blur-sm">
-            <CardContent className="p-4">
-              <button
-                onClick={() => setLocation("/map")}
-                className="flex items-center gap-4 w-full text-left"
-              >
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <MapPin className="h-6 w-6 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium">¿No tienes el código?</p>
-                  <p className="text-sm text-muted-foreground">
-                    Busca estaciones cercanas en el mapa
-                  </p>
-                </div>
-              </button>
-            </CardContent>
-          </Card>
-        </div>
+        {!isScanning && (
+          <div className="p-6">
+            <Card className="bg-card/80 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <button
+                  onClick={() => {
+                    stopScanner();
+                    setLocation("/map");
+                  }}
+                  className="flex items-center gap-4 w-full text-left"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <MapPin className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">¿No tienes el código?</p>
+                    <p className="text-sm text-muted-foreground">
+                      Busca estaciones cercanas en el mapa
+                    </p>
+                  </div>
+                </button>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </UserLayout>
   );

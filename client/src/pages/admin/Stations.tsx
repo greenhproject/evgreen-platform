@@ -20,6 +20,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -82,6 +92,8 @@ export default function AdminStations() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingStation, setEditingStation] = useState<any>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [stationToDelete, setStationToDelete] = useState<any>(null);
   
   // Estado del formulario
   const [formData, setFormData] = useState<StationFormData>(initialFormData);
@@ -119,6 +131,23 @@ export default function AdminStations() {
       toast.error(`Error al crear conector: ${error.message}`);
     },
   });
+
+  const deleteStationMutation = trpc.stations.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Estación eliminada exitosamente");
+      setShowDeleteConfirm(false);
+      setStationToDelete(null);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(`Error al eliminar estación: ${error.message}`);
+    },
+  });
+
+  const handleDeleteStation = async () => {
+    if (!stationToDelete) return;
+    await deleteStationMutation.mutateAsync({ id: stationToDelete.id });
+  };
 
   const resetForm = () => {
     setFormData(initialFormData);
@@ -254,6 +283,7 @@ export default function AdminStations() {
     }
 
     try {
+      // Actualizar datos de la estación
       await updateStationMutation.mutateAsync({
         id: editingStation.id,
         data: {
@@ -268,6 +298,29 @@ export default function AdminStations() {
           isPublic: formData.isPublic,
         },
       });
+
+      // Crear nuevos conectores si hay alguno agregado
+      const newConnectors = connectors.filter(c => c.id.startsWith('conn-'));
+      if (newConnectors.length > 0) {
+        // Obtener el último evseIdLocal existente
+        const existingEvses = editingStation.evses || [];
+        let evseIdLocal = existingEvses.length > 0 
+          ? Math.max(...existingEvses.map((e: any) => e.evseIdLocal || 0)) + 1 
+          : 1;
+        
+        for (const connector of newConnectors) {
+          for (let i = 0; i < connector.quantity; i++) {
+            await createEvseMutation.mutateAsync({
+              stationId: editingStation.id,
+              evseIdLocal: evseIdLocal++,
+              connectorType: connector.type as "TYPE_2" | "CCS_2" | "CHADEMO" | "TYPE_1",
+              chargeType: connector.type.includes("CCS") || connector.type === "CHADEMO" ? "DC" : "AC",
+              powerKw: connector.powerKw.toString(),
+            });
+          }
+        }
+        toast.success(`${newConnectors.reduce((acc, c) => acc + c.quantity, 0)} conector(es) agregado(s)`);
+      }
     } catch (error) {
       // Error manejado en onError
     }
@@ -538,39 +591,131 @@ export default function AdminStations() {
         </div>
       )}
 
-      {/* Conectores existentes (solo en edición, solo lectura) */}
-      {isEdit && editingStation?.evses && editingStation.evses.length > 0 && (
+      {/* Conectores en edición */}
+      {isEdit && (
         <div className="space-y-4">
           <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-            Conectores Existentes
+            Conectores / Puntos de Carga
           </h3>
-          <div className="space-y-2">
-            {editingStation.evses.map((evse: any, index: number) => (
-              <div 
-                key={evse.id || index} 
-                className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Zap className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <div className="font-medium">
-                      Conector {evse.evseIdLocal || index + 1} - {getConnectorLabel(evse.connectorType)}
+          
+          {/* Conectores existentes */}
+          {editingStation?.evses && editingStation.evses.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Conectores existentes:</p>
+              {editingStation.evses.map((evse: any, index: number) => (
+                <div 
+                  key={evse.id || index} 
+                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Zap className="w-5 h-5 text-primary" />
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      {evse.powerKw} kW • {evse.chargeType} • Estado: {evse.status}
+                    <div>
+                      <div className="font-medium">
+                        Conector {evse.evseIdLocal || index + 1} - {getConnectorLabel(evse.connectorType)}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {evse.powerKw} kW • {evse.chargeType} • Estado: {evse.status}
+                      </div>
                     </div>
                   </div>
+                  <Badge variant={evse.status === "AVAILABLE" ? "default" : "secondary"}>
+                    {evse.status}
+                  </Badge>
                 </div>
-                <Badge variant={evse.status === "AVAILABLE" ? "default" : "secondary"}>
-                  {evse.status}
-                </Badge>
-              </div>
-            ))}
+              ))}
+            </div>
+          )}
+
+          {/* Nuevos conectores a agregar */}
+          {connectors.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-green-500">Nuevos conectores a agregar:</p>
+              {connectors.filter(c => c.id.startsWith('conn-')).map((connector) => (
+                <div 
+                  key={connector.id} 
+                  className="flex items-center justify-between p-3 bg-green-500/10 border border-green-500/30 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                      <Zap className="w-5 h-5 text-green-500" />
+                    </div>
+                    <div>
+                      <div className="font-medium text-green-400">{getConnectorLabel(connector.type)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {connector.powerKw} kW × {connector.quantity} unidad(es)
+                      </div>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => removeConnector(connector.id)}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Formulario para agregar nuevos conectores */}
+          <div className="grid grid-cols-4 gap-3 p-4 border border-dashed border-green-500/50 rounded-lg">
+            <div className="space-y-2">
+              <Label className="text-xs">Tipo de Conector</Label>
+              <Select 
+                value={newConnector.type} 
+                onValueChange={(value) => {
+                  const defaultPower = value.includes("CCS") ? 150 : 
+                                      value === "CHADEMO" ? 50 : 
+                                      value === "TESLA" ? 250 : 22;
+                  setNewConnector({...newConnector, type: value, powerKw: defaultPower});
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONNECTOR_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Potencia (kW)</Label>
+              <Input 
+                type="number" 
+                value={newConnector.powerKw}
+                onChange={(e) => setNewConnector({...newConnector, powerKw: parseInt(e.target.value) || 0})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Cantidad</Label>
+              <Input 
+                type="number" 
+                min="1"
+                value={newConnector.quantity}
+                onChange={(e) => setNewConnector({...newConnector, quantity: parseInt(e.target.value) || 1})}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button 
+                variant="outline" 
+                className="w-full border-green-500/50 text-green-500 hover:bg-green-500/10"
+                onClick={addConnector}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Agregar
+              </Button>
+            </div>
           </div>
+          
           <p className="text-xs text-muted-foreground">
-            Para modificar conectores, utiliza la sección de gestión de EVSEs
+            Los nuevos conectores se agregarán al guardar los cambios
           </p>
         </div>
       )}
@@ -799,6 +944,18 @@ export default function AdminStations() {
                       <Button variant="ghost" size="icon" title="Ver detalles">
                         <Eye className="w-4 h-4" />
                       </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                        onClick={() => {
+                          setStationToDelete(station);
+                          setShowDeleteConfirm(true);
+                        }}
+                        title="Eliminar estación"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -807,6 +964,31 @@ export default function AdminStations() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Diálogo de confirmación de eliminación */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar estación</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que deseas eliminar la estación <strong>{stationToDelete?.name}</strong>?
+              Esta acción no se puede deshacer y eliminará también todos los conectores asociados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setStationToDelete(null)}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-500 hover:bg-red-600"
+              onClick={handleDeleteStation}
+              disabled={deleteStationMutation.isPending}
+            >
+              {deleteStationMutation.isPending ? "Eliminando..." : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
