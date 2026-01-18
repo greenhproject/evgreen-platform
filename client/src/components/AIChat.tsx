@@ -235,10 +235,10 @@ export function AIChatWidget() {
       <Sheet open={isOpen} onOpenChange={setIsOpen}>
         <SheetContent
           side="right"
-          className="w-full sm:w-[420px] p-0 flex flex-col"
+          className="!w-full sm:!w-[420px] !max-w-full sm:!max-w-[420px] p-0 flex flex-col !h-[100dvh] !gap-0"
         >
           {/* Header */}
-          <SheetHeader className="p-4 border-b bg-primary/5">
+          <SheetHeader className="shrink-0 p-4 border-b bg-primary/5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
@@ -272,7 +272,7 @@ export function AIChatWidget() {
           </SheetHeader>
 
           {/* Mensajes */}
-          <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+          <div className="flex-1 min-h-0 overflow-y-auto p-4" ref={scrollRef}>
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-8">
                 <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
@@ -323,10 +323,10 @@ export function AIChatWidget() {
                 )}
               </div>
             )}
-          </ScrollArea>
+          </div>
 
-          {/* Input */}
-          <div className="p-4 border-t bg-background">
+          {/* Input - fijo en la parte inferior */}
+          <div className="shrink-0 p-4 border-t bg-background pb-[max(1rem,env(safe-area-inset-bottom))]">
             <div className="flex gap-2">
               <Input
                 ref={inputRef}

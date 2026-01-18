@@ -262,3 +262,8 @@
 - [x] Asistente para inversionistas (análisis predictivo)
 - [x] Tests unitarios para proveedores de IA (29 tests)
 - [ ] Asistente para administradores (insights de la red) - Pendiente
+
+
+## Bugs Reportados - 18 Enero 2026
+
+- [x] BUG: Widget de chat de IA no permite scroll en móvil, campo de entrada queda bloqueado
