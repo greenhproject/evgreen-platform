@@ -452,17 +452,68 @@ const transactionsRouter = router({
 // RESERVATIONS ROUTER
 // ============================================================================
 
+// Importar módulo de tarifa dinámica
+import * as dynamicPricing from "./pricing/dynamic-pricing";
+
 const reservationsRouter = router({
   myReservations: protectedProcedure.query(async ({ ctx }) => {
     return db.getReservationsByUserId(ctx.user.id);
   }),
   
+  // Obtener tarifa dinámica para una reserva
+  getDynamicPrice: publicProcedure
+    .input(z.object({
+      stationId: z.number(),
+      evseId: z.number(),
+      requestedDate: z.date().optional(),
+      estimatedDurationMinutes: z.number().min(15).max(480).default(60),
+    }))
+    .query(async ({ input }) => {
+      const price = await dynamicPricing.calculateDynamicPrice(
+        input.stationId,
+        input.evseId,
+        input.requestedDate || new Date(),
+        input.estimatedDurationMinutes
+      );
+      
+      const visualization = dynamicPricing.getDemandVisualization(price.factors);
+      
+      return {
+        ...price,
+        visualization,
+      };
+    }),
+  
+  // Obtener predicción de mejores horarios
+  getBestTimes: publicProcedure
+    .input(z.object({
+      stationId: z.number(),
+      date: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      return dynamicPricing.predictBestTimes(
+        input.stationId,
+        input.date || new Date()
+      );
+    }),
+  
+  // Obtener ocupación de la zona
+  getZoneOccupancy: publicProcedure
+    .input(z.object({
+      stationId: z.number(),
+    }))
+    .query(async ({ input }) => {
+      return dynamicPricing.getZoneOccupancy(input.stationId);
+    }),
+  
+  // Crear reserva con tarifa dinámica
   create: protectedProcedure
     .input(z.object({
       evseId: z.number(),
       stationId: z.number(),
       startTime: z.date(),
       endTime: z.date(),
+      estimatedDurationMinutes: z.number().min(15).max(480).default(60),
     }))
     .mutation(async ({ ctx, input }) => {
       // Verificar que el EVSE esté disponible
@@ -471,20 +522,39 @@ const reservationsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "El conector no está disponible para reserva" });
       }
       
-      // Verificar que no haya reserva activa
-      const activeReservation = await db.getActiveReservation(input.evseId);
-      if (activeReservation) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Ya existe una reserva activa para este conector" });
+      // Verificar conflictos de horario
+      const hasConflict = await db.checkReservationConflict(
+        input.evseId,
+        input.startTime,
+        input.endTime
+      );
+      if (hasConflict) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Ya existe una reserva en ese horario" });
       }
       
-      // Obtener tarifa para el cargo de reserva
-      const tariff = await db.getActiveTariffByStationId(input.stationId);
-      const reservationFee = tariff?.reservationFee || "0";
-      const noShowPenalty = tariff?.noShowPenalty || "0";
+      // Calcular tarifa dinámica
+      const dynamicPrice = await dynamicPricing.calculateDynamicPrice(
+        input.stationId,
+        input.evseId,
+        input.startTime,
+        input.estimatedDurationMinutes
+      );
+      
+      // Verificar saldo del usuario
+      const wallet = await db.getWalletByUserId(ctx.user.id);
+      const balance = parseFloat(wallet?.balance?.toString() || "0");
+      
+      if (balance < dynamicPrice.reservationFee) {
+        throw new TRPCError({ 
+          code: "BAD_REQUEST", 
+          message: `Saldo insuficiente. Necesitas $${dynamicPrice.reservationFee.toLocaleString()} COP para reservar.` 
+        });
+      }
       
       // Calcular tiempo de expiración (15 minutos después del inicio)
       const expiryTime = new Date(input.startTime.getTime() + 15 * 60 * 1000);
       
+      // Crear la reserva
       const id = await db.createReservation({
         evseId: input.evseId,
         userId: ctx.user.id,
@@ -492,17 +562,41 @@ const reservationsRouter = router({
         startTime: input.startTime,
         endTime: input.endTime,
         expiryTime,
-        reservationFee,
-        noShowPenalty,
+        reservationFee: dynamicPrice.reservationFee.toString(),
+        noShowPenalty: dynamicPrice.noShowPenalty.toString(),
         status: "ACTIVE",
       });
+      
+      // Descontar tarifa de reserva de la billetera
+      if (wallet) {
+        const newBalance = balance - dynamicPrice.reservationFee;
+        await db.updateWalletBalance(wallet.id, newBalance.toString());
+        
+        await db.createWalletTransaction({
+          walletId: wallet.id,
+          userId: ctx.user.id,
+          amount: (-dynamicPrice.reservationFee).toString(),
+          balanceBefore: balance.toString(),
+          balanceAfter: newBalance.toString(),
+          type: "DEBIT",
+          description: `Reserva de cargador #${id}`,
+          referenceType: "RESERVATION",
+          referenceId: id,
+        });
+      }
       
       // Actualizar estado del EVSE
       await db.updateEvseStatus(input.evseId, "RESERVED");
       
-      return { id };
+      return { 
+        id,
+        reservationFee: dynamicPrice.reservationFee,
+        noShowPenalty: dynamicPrice.noShowPenalty,
+        demandLevel: dynamicPrice.factors.demandLevel,
+      };
     }),
   
+  // Cancelar reserva con reembolso dinámico
   cancel: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -517,11 +611,46 @@ const reservationsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "La reserva no puede ser cancelada" });
       }
       
-      await db.updateReservation(input.id, { status: "CANCELLED" });
-      await db.updateEvseStatus(reservation.evseId, "AVAILABLE");
+      // Calcular porcentaje de reembolso según tiempo de anticipación
+      const now = new Date();
+      const startTime = new Date(reservation.startTime);
+      const hoursUntilStart = (startTime.getTime() - now.getTime()) / (1000 * 60 * 60);
       
-      return { success: true };
+      let refundPercent = 0;
+      if (hoursUntilStart >= 24) {
+        refundPercent = 100; // Reembolso total si cancela con 24h+ de anticipación
+      } else if (hoursUntilStart >= 12) {
+        refundPercent = 75; // 75% si cancela con 12-24h de anticipación
+      } else if (hoursUntilStart >= 2) {
+        refundPercent = 50; // 50% si cancela con 2-12h de anticipación
+      } else {
+        refundPercent = 0; // Sin reembolso si cancela con menos de 2h
+      }
+      
+      const result = await db.cancelReservationWithRefund(input.id, refundPercent);
+      
+      return { 
+        success: result.success, 
+        refundAmount: result.refundAmount,
+        refundPercent,
+      };
     }),
+  
+  // Verificar y aplicar penalizaciones por no show
+  checkNoShows: adminProcedure.mutation(async () => {
+    const expiredReservations = await db.getExpiredReservations();
+    const results = [];
+    
+    for (const reservation of expiredReservations) {
+      const result = await db.applyNoShowPenalty(reservation.id);
+      results.push({
+        reservationId: reservation.id,
+        penaltyApplied: result?.penaltyApplied || 0,
+      });
+    }
+    
+    return { processed: results.length, results };
+  }),
 });
 
 // ============================================================================

@@ -78,11 +78,35 @@
 - [x] Billetera digital
 - [x] Perfil de usuario
 
-## Sistema de Reservas
-- [ ] Reservar cargador con ventana de tiempo
-- [ ] Penalización por no uso
-- [ ] Notificaciones de reserva
-- [ ] Cancelación de reservas
+## Sistema de Reservas con Tarifa Dinámica Inteligente
+
+### Algoritmo de Tarifa Dinámica (estilo Uber)
+- [x] Calcular multiplicador por ocupación de zona (disponibilidad de conectores)
+- [x] Factor de horario pico (7-9am, 5-8pm = +30-50%)
+- [x] Factor de día de semana vs fin de semana
+- [x] Descuento por baja demanda (horarios valle)
+- [x] Análisis de historial para predicción de demanda
+- [x] Configuración de límites máx/mín de multiplicador desde admin
+
+### Backend de Reservas
+- [x] Crear reserva con validación de disponibilidad
+- [x] Verificar conflictos de horario
+- [x] Aplicar penalización por no show (no llegar a tiempo)
+- [x] Política de cancelación con reembolso parcial
+- [x] Endpoint para calcular tarifa dinámica en tiempo real
+
+### Frontend de Reservas
+- [x] Modal de reserva en detalle de estación
+- [x] Selector de fecha y hora
+- [x] Selector de duración estimada
+- [x] Visualización de tarifa dinámica con indicador de demanda
+- [x] Vista de mis reservas activas
+- [x] Cancelar reserva desde la app
+
+### Notificaciones
+- [x] Recordatorio 30 min antes
+- [x] Confirmación de reserva
+- [x] Aviso de penalización
 
 ## Sistema de Pagos (Stripe)
 - [ ] Integración Stripe

@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, sql, inArray, isNull, or } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, or, count, sum, ne, inArray, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -414,6 +414,165 @@ export async function getExpiredReservations() {
   const now = new Date();
   return db.select().from(reservations)
     .where(and(eq(reservations.status, "ACTIVE"), lte(reservations.expiryTime, now)));
+}
+
+export async function checkReservationConflict(evseId: number, startTime: Date, endTime: Date, excludeId?: number) {
+  const db = await getDb();
+  if (!db) return false;
+  
+  // Buscar reservas activas que se superpongan con el rango de tiempo solicitado
+  const conflicts = await db.select().from(reservations)
+    .where(
+      and(
+        eq(reservations.evseId, evseId),
+        eq(reservations.status, "ACTIVE"),
+        // Verificar superposición de tiempos
+        lte(reservations.startTime, endTime),
+        gte(reservations.endTime, startTime),
+        excludeId ? ne(reservations.id, excludeId) : undefined
+      )
+    );
+  
+  return conflicts.length > 0;
+}
+
+export async function applyNoShowPenalty(reservationId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  const reservation = await getReservationById(reservationId);
+  if (!reservation || reservation.isPenaltyApplied) return;
+  
+  // Marcar la reserva como NO_SHOW y aplicar penalización
+  await db.update(reservations)
+    .set({ 
+      status: "NO_SHOW", 
+      isPenaltyApplied: true 
+    })
+    .where(eq(reservations.id, reservationId));
+  
+  // Descontar de la billetera del usuario
+  const penalty = parseFloat(reservation.noShowPenalty?.toString() || "0");
+  if (penalty > 0) {
+    const wallet = await getWalletByUserId(reservation.userId);
+    if (wallet) {
+      const newBalance = parseFloat(wallet.balance?.toString() || "0") - penalty;
+      await updateWalletBalance(wallet.id, Math.max(0, newBalance).toString());
+      
+      // Registrar la transacción de penalización
+      const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+      await createWalletTransaction({
+        walletId: wallet.id,
+        userId: reservation.userId,
+        amount: (-penalty).toString(),
+        balanceBefore: currentBalance.toString(),
+        balanceAfter: Math.max(0, newBalance).toString(),
+        type: "DEBIT",
+        description: `Penalización por no presentarse a reserva #${reservationId}`,
+        referenceType: "RESERVATION",
+        referenceId: reservationId,
+      });
+    }
+  }
+  
+  // Liberar el EVSE
+  await updateEvseStatus(reservation.evseId, "AVAILABLE");
+  
+  return { penaltyApplied: penalty };
+}
+
+export async function getUpcomingReservations(userId: number, minutesAhead: number = 30) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const now = new Date();
+  const futureTime = new Date(now.getTime() + minutesAhead * 60 * 1000);
+  
+  return db.select().from(reservations)
+    .where(
+      and(
+        eq(reservations.userId, userId),
+        eq(reservations.status, "ACTIVE"),
+        gte(reservations.startTime, now),
+        lte(reservations.startTime, futureTime)
+      )
+    );
+}
+
+export async function fulfillReservation(reservationId: number, transactionId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(reservations)
+    .set({ 
+      status: "FULFILLED",
+      transactionId 
+    })
+    .where(eq(reservations.id, reservationId));
+}
+
+export async function getReservationsForStation(stationId: number, date?: Date) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const startOfDay = date ? new Date(date.setHours(0, 0, 0, 0)) : new Date(new Date().setHours(0, 0, 0, 0));
+  const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
+  
+  return db.select().from(reservations)
+    .where(
+      and(
+        eq(reservations.stationId, stationId),
+        gte(reservations.startTime, startOfDay),
+        lte(reservations.startTime, endOfDay)
+      )
+    )
+    .orderBy(reservations.startTime);
+}
+
+export async function cancelReservationWithRefund(reservationId: number, refundPercent: number = 100) {
+  const db = await getDb();
+  if (!db) return { success: false };
+  
+  const reservation = await getReservationById(reservationId);
+  if (!reservation || reservation.status !== "ACTIVE") {
+    return { success: false, error: "Reserva no válida para cancelación" };
+  }
+  
+  // Actualizar estado de la reserva
+  await db.update(reservations)
+    .set({ status: "CANCELLED" })
+    .where(eq(reservations.id, reservationId));
+  
+  // Calcular y aplicar reembolso
+  const reservationFee = parseFloat(reservation.reservationFee?.toString() || "0");
+  const refundAmount = (reservationFee * refundPercent) / 100;
+  
+  if (refundAmount > 0) {
+    const wallet = await getWalletByUserId(reservation.userId);
+    if (wallet) {
+      const newBalance = parseFloat(wallet.balance?.toString() || "0") + refundAmount;
+      await updateWalletBalance(wallet.id, newBalance.toString());
+      
+      // Registrar la transacción de reembolso
+      const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+      await createWalletTransaction({
+        walletId: wallet.id,
+        userId: reservation.userId,
+        amount: refundAmount.toString(),
+        balanceBefore: currentBalance.toString(),
+        balanceAfter: newBalance.toString(),
+        type: "CREDIT",
+        description: `Reembolso por cancelación de reserva #${reservationId} (${refundPercent}%)`,
+        referenceType: "RESERVATION",
+        referenceId: reservationId,
+      });
+    }
+  }
+  
+  // Liberar el EVSE
+  await updateEvseStatus(reservation.evseId, "AVAILABLE");
+  
+  return { success: true, refundAmount };
 }
 
 // ============================================================================
