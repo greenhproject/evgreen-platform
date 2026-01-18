@@ -26,12 +26,32 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreVertical, UserPlus, Users, Shield, Wrench, Briefcase } from "lucide-react";
+import { Search, MoreVertical, UserPlus, Users, Shield, Wrench, Briefcase, Eye, Copy, Hash } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 export default function AdminUsers() {
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [showUserModal, setShowUserModal] = useState(false);
+
+  const handleViewUser = (user: any) => {
+    setSelectedUser(user);
+    setShowUserModal(true);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("ID copiado al portapapeles");
+  };
 
   const { data: users, isLoading, refetch } = trpc.users.list.useQuery(
     roleFilter !== "all" ? { role: roleFilter as any } : undefined
@@ -151,6 +171,7 @@ export default function AdminUsers() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-20">ID</TableHead>
               <TableHead>Usuario</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Rol</TableHead>
@@ -176,6 +197,22 @@ export default function AdminUsers() {
             ) : (
               filteredUsers?.map((user) => (
                 <TableRow key={user.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+                        {user.id}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => copyToClipboard(user.id.toString())}
+                        title="Copiar ID"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar>
@@ -206,11 +243,13 @@ export default function AdminUsers() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => toast.info("Ver perfil próximamente")}>
-                          Ver perfil
+                        <DropdownMenuItem onClick={() => handleViewUser(user)}>
+                          <Eye className="w-4 h-4 mr-2" />
+                          Ver detalles
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => toast.info("Editar próximamente")}>
-                          Editar
+                        <DropdownMenuItem onClick={() => copyToClipboard(user.id.toString())}>
+                          <Copy className="w-4 h-4 mr-2" />
+                          Copiar ID
                         </DropdownMenuItem>
                         {user.email !== "greenhproject@gmail.com" && (
                           <>
@@ -235,6 +274,132 @@ export default function AdminUsers() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Modal de Detalles de Usuario */}
+      <Dialog open={showUserModal} onOpenChange={setShowUserModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Detalles del Usuario
+            </DialogTitle>
+            <DialogDescription>
+              Información completa del usuario
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedUser && (
+            <div className="space-y-4">
+              {/* ID del Usuario - Destacado */}
+              <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
+                <Label className="text-xs text-muted-foreground">ID del Usuario (para asignar estaciones)</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <Hash className="w-4 h-4 text-primary" />
+                  <code className="text-2xl font-bold font-mono text-primary">
+                    {selectedUser.id}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => copyToClipboard(selectedUser.id.toString())}
+                  >
+                    <Copy className="w-3 h-3 mr-1" />
+                    Copiar
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Use este ID en el campo "ID Propietario" al crear o editar estaciones
+                </p>
+              </div>
+
+              {/* Información del usuario */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">Nombre</Label>
+                  <p className="font-medium">{selectedUser.name || "Sin nombre"}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Rol</Label>
+                  <div className="mt-1">{getRoleBadge(selectedUser.role)}</div>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-muted-foreground">Email</Label>
+                <p className="font-medium">{selectedUser.email}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">Registro</Label>
+                  <p className="text-sm">
+                    {new Date(selectedUser.createdAt).toLocaleDateString("es-CO", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Último acceso</Label>
+                  <p className="text-sm">
+                    {new Date(selectedUser.lastSignedIn).toLocaleDateString("es-CO", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </p>
+                </div>
+              </div>
+
+              {/* Información adicional para inversionistas */}
+              {selectedUser.role === "investor" && (
+                <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                  <Label className="text-green-700 dark:text-green-400">Información de Inversionista</Label>
+                  <div className="mt-2 space-y-1 text-sm">
+                    <p><strong>Empresa:</strong> {(selectedUser as any).companyName || "No especificada"}</p>
+                    <p><strong>NIT/RUT:</strong> {(selectedUser as any).taxId || "No especificado"}</p>
+                    <p><strong>Banco:</strong> {(selectedUser as any).bankName || "No especificado"}</p>
+                    <p><strong>Cuenta:</strong> {(selectedUser as any).bankAccount || "No especificada"}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Acciones */}
+              <div className="flex gap-2 pt-4 border-t">
+                {selectedUser.email !== "greenhproject@gmail.com" && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        updateRoleMutation.mutate({ userId: selectedUser.id, role: "investor" });
+                        setShowUserModal(false);
+                      }}
+                      disabled={selectedUser.role === "investor"}
+                    >
+                      <Briefcase className="w-3 h-3 mr-1" />
+                      Hacer Inversionista
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        updateRoleMutation.mutate({ userId: selectedUser.id, role: "technician" });
+                        setShowUserModal(false);
+                      }}
+                      disabled={selectedUser.role === "technician"}
+                    >
+                      <Wrench className="w-3 h-3 mr-1" />
+                      Hacer Técnico
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

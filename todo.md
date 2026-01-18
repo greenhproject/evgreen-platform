@@ -442,3 +442,10 @@
 - [x] Documentar configuración y variables de entorno
 - [x] Crear repositorio en GitHub - https://github.com/greenhproject/evgreen-platform
 - [x] Subir código fuente al repositorio - Push completado exitosamente
+
+
+## Bugs Reportados - 18 Enero 2026 (Panel Inversionista)
+
+- [x] BUG: Botones de ver y configurar estación en panel de inversionista no funcionan - Implementados modales de detalles y configuración de tarifas
+- [x] MEJORA: Mostrar ID del inversionista en gestión de usuarios - Agregada columna ID con botón copiar y modal de detalles
+- [x] MEJORA: Mejorar selector de propietario al crear estación - Modal de detalles muestra ID con instrucciones claras
