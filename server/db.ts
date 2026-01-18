@@ -17,6 +17,8 @@ import {
   supportTickets,
   investorPayouts,
   ocppLogs,
+  banners,
+  bannerViews,
   InsertChargingStation,
   InsertEvse,
   InsertTransaction,
@@ -30,12 +32,15 @@ import {
   InsertSupportTicket,
   InsertInvestorPayout,
   InsertOcppLog,
+  InsertBanner,
+  InsertBannerView,
   User,
   ChargingStation,
   Evse,
   Transaction,
   Reservation,
   Tariff,
+  Banner,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -750,4 +755,113 @@ export async function getStationsNearLocation(lat: number, lng: number, radiusKm
   .orderBy(sql`distance`);
   
   return stations;
+}
+
+
+// ============================================================================
+// BANNER OPERATIONS
+// ============================================================================
+
+export async function createBanner(banner: InsertBanner) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(banners).values(banner);
+  return result[0].insertId;
+}
+
+export async function getBannerById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(banners).where(eq(banners.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function getAllBanners(status?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  if (status) {
+    return db.select().from(banners).where(eq(banners.status, status as any)).orderBy(desc(banners.priority), desc(banners.createdAt));
+  }
+  return db.select().from(banners).orderBy(desc(banners.priority), desc(banners.createdAt));
+}
+
+export async function getActiveBanners(type?: string, location?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [
+    eq(banners.status, "ACTIVE"),
+    or(isNull(banners.startDate), lte(banners.startDate, new Date())),
+    or(isNull(banners.endDate), gte(banners.endDate, new Date())),
+  ];
+  
+  if (type) {
+    conditions.push(eq(banners.type, type as any));
+  }
+  
+  return db.select().from(banners).where(and(...conditions)).orderBy(desc(banners.priority));
+}
+
+export async function updateBanner(id: number, data: Partial<InsertBanner>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(banners).set(data).where(eq(banners.id, id));
+}
+
+export async function deleteBanner(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(banners).where(eq(banners.id, id));
+}
+
+export async function recordBannerImpression(bannerId: number, userId?: number, context?: string) {
+  const db = await getDb();
+  if (!db) return;
+  
+  // Incrementar contador de impresiones
+  await db.update(banners).set({
+    impressions: sql`${banners.impressions} + 1`,
+  }).where(eq(banners.id, bannerId));
+  
+  // Registrar vista si hay usuario
+  if (userId) {
+    await db.insert(bannerViews).values({
+      bannerId,
+      userId,
+      viewContext: context,
+    });
+    
+    // Actualizar vistas únicas
+    const existingViews = await db.select().from(bannerViews)
+      .where(and(eq(bannerViews.bannerId, bannerId), eq(bannerViews.userId, userId)))
+      .limit(2);
+    
+    if (existingViews.length === 1) {
+      await db.update(banners).set({
+        uniqueViews: sql`${banners.uniqueViews} + 1`,
+      }).where(eq(banners.id, bannerId));
+    }
+  }
+}
+
+export async function recordBannerClick(bannerId: number, userId?: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  // Incrementar contador de clics
+  await db.update(banners).set({
+    clicks: sql`${banners.clicks} + 1`,
+  }).where(eq(banners.id, bannerId));
+  
+  // Actualizar registro de vista si hay usuario
+  if (userId) {
+    await db.update(bannerViews).set({
+      clicked: true,
+      clickedAt: new Date(),
+    }).where(and(
+      eq(bannerViews.bannerId, bannerId),
+      eq(bannerViews.userId, userId),
+      eq(bannerViews.clicked, false),
+    ));
+  }
 }
