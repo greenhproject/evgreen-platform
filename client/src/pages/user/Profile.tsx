@@ -65,17 +65,17 @@ export default function UserProfile() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <Card className="p-6">
-            <div className="flex items-center gap-4">
-              <Avatar className="w-20 h-20 border-4 border-primary/20">
+          <Card className="p-4 sm:p-6">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <Avatar className="w-16 h-16 sm:w-20 sm:h-20 border-4 border-primary/20 flex-shrink-0">
                 <AvatarImage src={user?.avatarUrl || undefined} />
-                <AvatarFallback className="bg-primary/10 text-primary text-2xl">
+                <AvatarFallback className="bg-primary/10 text-primary text-xl sm:text-2xl">
                   {user?.name?.charAt(0) || "U"}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex-1">
-                <h2 className="text-xl font-bold">{user?.name || "Usuario"}</h2>
-                <p className="text-muted-foreground text-sm">{user?.email}</p>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg sm:text-xl font-bold truncate">{user?.name || "Usuario"}</h2>
+                <p className="text-muted-foreground text-xs sm:text-sm truncate">{user?.email}</p>
                 <Badge className="mt-2 bg-primary/10 text-primary">
                   <Crown className="w-3 h-3 mr-1" />
                   Plan Gratuito

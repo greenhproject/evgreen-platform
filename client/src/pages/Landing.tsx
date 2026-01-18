@@ -31,8 +31,8 @@ export default function Landing() {
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-secondary/5" />
         
         {/* Animated circles */}
-        <div className="absolute top-20 left-10 w-72 h-72 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-secondary/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+        <div className="absolute top-20 left-10 w-48 sm:w-72 h-48 sm:h-72 bg-primary/10 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-20 right-10 w-64 sm:w-96 h-64 sm:h-96 bg-secondary/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
         
         <div className="container relative z-10">
           <div className="max-w-4xl mx-auto text-center">
@@ -103,7 +103,7 @@ export default function Landing() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="mt-16 grid grid-cols-4 gap-4 sm:gap-8 max-w-2xl mx-auto"
+              className="mt-12 sm:mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-8 max-w-2xl mx-auto"
             >
               <div className="text-center">
                 <div className="text-2xl sm:text-3xl font-bold text-primary">30%</div>
@@ -127,14 +127,14 @@ export default function Landing() {
       </section>
 
       {/* AI Section - HERO DIFERENCIADOR */}
-      <section className="py-20 px-4 relative overflow-hidden">
+      <section className="py-12 sm:py-20 px-4 relative overflow-hidden">
         {/* Background effects */}
         <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-primary/10 to-primary/5" />
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-secondary/20 rounded-full blur-3xl" />
+        <div className="absolute top-0 left-1/4 w-64 sm:w-96 h-64 sm:h-96 bg-primary/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-1/4 w-64 sm:w-96 h-64 sm:h-96 bg-secondary/20 rounded-full blur-3xl" />
         
         <div className="container relative z-10">
-          <div className="text-center mb-16">
+          <div className="text-center mb-10 sm:mb-16">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -169,18 +169,18 @@ export default function Landing() {
           </div>
 
           {/* AI Features Grid */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-10 sm:mb-16">
             {/* AI Feature 1 - Chat Inteligente */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="p-6 rounded-2xl bg-card/80 backdrop-blur border border-primary/20 card-interactive group"
+              className="p-4 sm:p-6 rounded-2xl bg-card/80 backdrop-blur border border-primary/20 card-interactive group"
             >
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <MessageSquare className="w-7 h-7 text-white" />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-110 transition-transform">
+                <MessageSquare className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
               </div>
-              <h3 className="text-xl font-semibold mb-2">Chat con IA 24/7</h3>
+              <h3 className="text-lg sm:text-xl font-semibold mb-2">Chat con IA 24/7</h3>
               <p className="text-muted-foreground mb-4">
                 Pregunta lo que quieras: "¿Dónde puedo cargar cerca?", "¿Cuánto me costará?", 
                 "¿Cuál es el mejor horario?". La IA responde con datos reales de la plataforma.
@@ -379,9 +379,9 @@ export default function Landing() {
       </section>
 
       {/* Features Section */}
-      <section className="py-20 px-4 bg-muted/30">
+      <section className="py-12 sm:py-20 px-4 bg-muted/30">
         <div className="container">
-          <div className="text-center mb-16">
+          <div className="text-center mb-10 sm:mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold mb-4">
               Todo lo que necesitas para cargar
             </h2>
@@ -390,13 +390,13 @@ export default function Landing() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {/* Feature 1 */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="p-6 rounded-2xl bg-card border border-border card-interactive"
+              className="p-4 sm:p-6 rounded-2xl bg-card border border-border card-interactive"
             >
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
                 <MapPin className="w-6 h-6 text-primary" />
@@ -413,7 +413,7 @@ export default function Landing() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.1 }}
-              className="p-6 rounded-2xl bg-card border border-border card-interactive"
+              className="p-4 sm:p-6 rounded-2xl bg-card border border-border card-interactive"
             >
               <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center mb-4">
                 <QrCode className="w-6 h-6 text-secondary" />
@@ -430,7 +430,7 @@ export default function Landing() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.2 }}
-              className="p-6 rounded-2xl bg-card border border-border card-interactive"
+              className="p-4 sm:p-6 rounded-2xl bg-card border border-border card-interactive"
             >
               <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center mb-4">
                 <Wallet className="w-6 h-6 text-accent-foreground" />
@@ -447,7 +447,7 @@ export default function Landing() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.3 }}
-              className="p-6 rounded-2xl bg-card border border-border card-interactive"
+              className="p-4 sm:p-6 rounded-2xl bg-card border border-border card-interactive"
             >
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
                 <Clock className="w-6 h-6 text-primary" />
@@ -464,7 +464,7 @@ export default function Landing() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.4 }}
-              className="p-6 rounded-2xl bg-card border border-border card-interactive"
+              className="p-4 sm:p-6 rounded-2xl bg-card border border-border card-interactive"
             >
               <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center mb-4">
                 <Shield className="w-6 h-6 text-secondary" />
@@ -481,7 +481,7 @@ export default function Landing() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.5 }}
-              className="p-6 rounded-2xl bg-card border border-border card-interactive"
+              className="p-4 sm:p-6 rounded-2xl bg-card border border-border card-interactive"
             >
               <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center mb-4">
                 <Smartphone className="w-6 h-6 text-accent-foreground" />
@@ -496,9 +496,9 @@ export default function Landing() {
       </section>
 
       {/* Investor Section */}
-      <section className="py-20 px-4">
+      <section className="py-12 sm:py-20 px-4">
         <div className="container">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/10 text-secondary text-sm font-medium mb-6">
                 <TrendingUp className="w-4 h-4" />
@@ -507,11 +507,11 @@ export default function Landing() {
               <h2 className="text-3xl sm:text-4xl font-bold mb-6">
                 Invierte en el futuro de la movilidad eléctrica
               </h2>
-              <p className="text-muted-foreground mb-8">
+              <p className="text-muted-foreground text-sm sm:text-base mb-6 sm:mb-8">
                 Adquiere estaciones de carga y genera ingresos pasivos. Nosotros nos encargamos 
                 de la operación, mantenimiento y soporte. Tú recibes el 80% de los ingresos.
               </p>
-              <ul className="space-y-4 mb-8">
+              <ul className="space-y-3 sm:space-y-4 mb-6 sm:mb-8 text-sm sm:text-base">
                 <li className="flex items-center gap-3">
                   <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
                     <Zap className="w-4 h-4 text-primary" />

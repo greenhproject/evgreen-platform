@@ -67,15 +67,15 @@ export default function UserHistory() {
     <UserLayout title="Historial de cargas" showBack>
       <div className="p-4 space-y-6 pb-24">
         {/* Estadísticas */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <Card className="p-4 text-center">
-              <Zap className="w-6 h-6 text-primary mx-auto mb-2" />
-              <div className="text-2xl font-bold">{stats.totalCharges}</div>
-              <div className="text-xs text-muted-foreground">Cargas</div>
+            <Card className="p-3 sm:p-4 text-center">
+              <Zap className="w-5 h-5 sm:w-6 sm:h-6 text-primary mx-auto mb-1 sm:mb-2" />
+              <div className="text-lg sm:text-2xl font-bold">{stats.totalCharges}</div>
+              <div className="text-[10px] sm:text-xs text-muted-foreground">Cargas</div>
             </Card>
           </motion.div>
           <motion.div
@@ -83,10 +83,10 @@ export default function UserHistory() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
-            <Card className="p-4 text-center">
-              <Battery className="w-6 h-6 text-secondary mx-auto mb-2" />
-              <div className="text-2xl font-bold">{stats.totalKwh.toFixed(1)}</div>
-              <div className="text-xs text-muted-foreground">kWh</div>
+            <Card className="p-3 sm:p-4 text-center">
+              <Battery className="w-5 h-5 sm:w-6 sm:h-6 text-secondary mx-auto mb-1 sm:mb-2" />
+              <div className="text-lg sm:text-2xl font-bold">{stats.totalKwh.toFixed(1)}</div>
+              <div className="text-[10px] sm:text-xs text-muted-foreground">kWh</div>
             </Card>
           </motion.div>
           <motion.div
@@ -94,10 +94,10 @@ export default function UserHistory() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
-            <Card className="p-4 text-center">
-              <TrendingUp className="w-6 h-6 text-accent-foreground mx-auto mb-2" />
-              <div className="text-lg font-bold">{formatCurrency(stats.totalSpent)}</div>
-              <div className="text-xs text-muted-foreground">Total</div>
+            <Card className="p-3 sm:p-4 text-center">
+              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-accent-foreground mx-auto mb-1 sm:mb-2" />
+              <div className="text-sm sm:text-lg font-bold truncate">{formatCurrency(stats.totalSpent)}</div>
+              <div className="text-[10px] sm:text-xs text-muted-foreground">Total</div>
             </Card>
           </motion.div>
         </div>

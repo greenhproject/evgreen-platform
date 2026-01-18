@@ -318,3 +318,31 @@
 - [ ] IA en billetera con proyecciones de gasto (pendiente)
 - [x] Dashboard de inversionista con predicciones de IA (InvestorInsights)
 - [ ] Dashboard de admin con insights de IA sobre la red (pendiente)
+
+
+## Corrección de Responsive - 18 Enero 2026
+
+### Dashboard Inversionista
+- [x] Corregir tarjetas de estadísticas cortadas en móvil
+- [x] Ajustar texto que no se ajusta bien en pantallas pequeñas
+- [x] Mejorar grid de 4 columnas a responsive (2 en móvil)
+
+### Dashboard Admin
+- [x] Revisar y corregir responsive de tarjetas
+- [x] Ajustar gráficos para móvil
+- [x] Verificar menú lateral en móvil
+
+### Dashboard Técnico
+- [x] Revisar y corregir responsive de tarjetas
+- [x] Ajustar tablas para móvil
+
+### Páginas de Usuario
+- [x] Revisar mapa en móvil
+- [x] Revisar historial en móvil
+- [x] Revisar perfil en móvil
+- [x] Revisar billetera en móvil
+
+### Landing Page
+- [x] Revisar sección hero en móvil
+- [x] Revisar sección de IA en móvil
+- [x] Revisar footer en móvil
