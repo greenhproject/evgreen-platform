@@ -16,6 +16,7 @@ import {
   TrendingUp
 } from "lucide-react";
 import { toast } from "sonner";
+import { ChargingBanner } from "@/components/ChargingBanner";
 
 export default function ChargingSession() {
   const { id } = useParams<{ id: string }>();
@@ -218,9 +219,21 @@ export default function ChargingSession() {
           </motion.div>
         )}
 
+        {/* Banner publicitario durante la carga */}
+        {isCharging && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="mt-4"
+          >
+            <ChargingBanner />
+          </motion.div>
+        )}
+
         {/* Animación de carga */}
         {isCharging && (
-          <div className="mt-8 flex justify-center">
+          <div className="mt-6 flex justify-center">
             <div className="flex gap-1">
               {[0, 1, 2, 3, 4].map((i) => (
                 <motion.div

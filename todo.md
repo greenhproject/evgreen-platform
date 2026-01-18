@@ -379,3 +379,9 @@
 - [x] BUG: Botón de rayo y QR hacen lo mismo - Unificado en botón central del menú inferior
 - [x] BUG: Tarjetas de sugerencia de IA - botón cerrar no funciona - Corregido con event handlers
 - [x] BUG: Tarjetas de sugerencia de IA - botón de acción no funciona - Corregido con openAIChatWithQuestion()
+
+
+## Bugs Reportados - 18 Enero 2026 (Quinta Ronda)
+
+- [x] BUG: Responsive del módulo de reservas está mal - textos cortados (corregido con flexbox responsive y textos ajustados)
+- [x] BUG: Banners publicitarios no aparecen en la sesión de carga (creado componente ChargingBanner, el banner estaba en estado DRAFT)

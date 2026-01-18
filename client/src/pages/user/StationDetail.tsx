@@ -508,7 +508,7 @@ export default function StationDetail() {
 
       {/* Modal de Reserva con Tarifa Dinámica */}
       <Dialog open={showReservationModal} onOpenChange={setShowReservationModal}>
-        <DialogContent className="max-w-md bg-background/95 backdrop-blur border-border/50">
+        <DialogContent className="w-[95vw] max-w-md mx-auto bg-background/95 backdrop-blur border-border/50">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Calendar className="w-5 h-5 text-primary" />
@@ -586,15 +586,16 @@ export default function StationDetail() {
                     dynamicPrice.visualization.level === "HIGH" ? "border-orange-500/50 bg-orange-500/10" :
                     "border-red-500/50 bg-red-500/10"
                   }`}>
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                       <div className="flex items-center gap-2">
                         <div style={{ color: dynamicPrice.visualization.color }}>
                           {getDemandIcon(dynamicPrice.visualization.level)}
                         </div>
-                        <span className="font-medium">{dynamicPrice.visualization.message}</span>
+                        <span className="font-medium text-sm sm:text-base">{dynamicPrice.visualization.message}</span>
                       </div>
                       <Badge 
                         variant="outline"
+                        className="self-start sm:self-auto whitespace-nowrap"
                         style={{ 
                           borderColor: dynamicPrice.visualization.color,
                           color: dynamicPrice.visualization.color 
@@ -604,31 +605,31 @@ export default function StationDetail() {
                       </Badge>
                     </div>
 
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Precio base</span>
-                        <span>${dynamicPrice.basePrice.toLocaleString()} COP/kWh</span>
+                    <div className="space-y-2 text-xs sm:text-sm">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted-foreground shrink-0">Precio base</span>
+                        <span className="text-right">${dynamicPrice.basePrice.toLocaleString()} COP/kWh</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Precio dinámico</span>
-                        <span className="font-semibold" style={{ color: dynamicPrice.visualization.color }}>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted-foreground shrink-0">Precio dinámico</span>
+                        <span className="font-semibold text-right" style={{ color: dynamicPrice.visualization.color }}>
                           ${dynamicPrice.finalPrice.toLocaleString()} COP/kWh
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Tarifa de reserva</span>
-                        <span>${dynamicPrice.reservationFee.toLocaleString()} COP</span>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted-foreground shrink-0">Tarifa reserva</span>
+                        <span className="text-right">${dynamicPrice.reservationFee.toLocaleString()} COP</span>
                       </div>
-                      <div className="pt-2 border-t border-border/50 flex justify-between">
-                        <span className="font-medium">Total estimado</span>
-                        <span className="font-bold text-lg">${dynamicPrice.estimatedTotal.toLocaleString()} COP</span>
+                      <div className="pt-2 border-t border-border/50 flex justify-between gap-2">
+                        <span className="font-medium shrink-0">Total estimado</span>
+                        <span className="font-bold text-base sm:text-lg text-right">${dynamicPrice.estimatedTotal.toLocaleString()} COP</span>
                       </div>
                     </div>
 
                     <div className="mt-3 pt-3 border-t border-border/50">
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <AlertTriangle className="w-3 h-3" />
-                        <span>Penalización por no presentarse: ${dynamicPrice.noShowPenalty.toLocaleString()} COP</span>
+                      <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                        <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                        <span className="break-words">Penalización por no presentarse: ${dynamicPrice.noShowPenalty.toLocaleString()} COP</span>
                       </div>
                     </div>
                   </Card>
@@ -664,16 +665,16 @@ export default function StationDetail() {
             )}
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <Button
               variant="outline"
-              className="flex-1"
+              className="flex-1 order-2 sm:order-1"
               onClick={() => setShowReservationModal(false)}
             >
               Cancelar
             </Button>
             <Button
-              className="flex-1 gradient-primary text-white"
+              className="flex-1 gradient-primary text-white order-1 sm:order-2"
               onClick={handleConfirmReservation}
               disabled={createReservation.isPending || !dynamicPrice}
             >
@@ -682,7 +683,7 @@ export default function StationDetail() {
               ) : (
                 <CheckCircle2 className="w-4 h-4 mr-2" />
               )}
-              Confirmar Reserva
+              Confirmar
             </Button>
           </div>
         </DialogContent>
