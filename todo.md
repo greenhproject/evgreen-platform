@@ -133,3 +133,10 @@
 - [ ] Métricas de impresiones y clics
 - [ ] Panel de administración para gestionar publicidad
 - [ ] Configuración de prioridad y segmentación
+
+
+## Bugs Reportados
+
+- [x] BUG: Usuario administrador greenhproject@gmail.com entra como cliente final en lugar de admin
+- [x] Verificar asignación de rol admin en base de datos (ya estaba correcto)
+- [x] Verificar redirección según rol en App.tsx (corregido con RoleBasedRedirect)
