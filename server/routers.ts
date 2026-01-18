@@ -144,10 +144,29 @@ const stationsRouter = router({
       radiusKm: z.number().optional(),
     }).optional())
     .query(async ({ input }) => {
+      let stations;
       if (input?.lat && input?.lng) {
-        return db.getStationsNearLocation(input.lat, input.lng, input.radiusKm || 10);
+        stations = await db.getStationsNearLocation(input.lat, input.lng, input.radiusKm || 10);
+      } else {
+        stations = await db.getAllChargingStations({ isActive: true, isPublic: true });
       }
-      return db.getAllChargingStations({ isActive: true, isPublic: true });
+      
+      // Agregar tarifa activa a cada estación
+      const stationsWithTariffs = await Promise.all(
+        stations.map(async (station: any) => {
+          const tariff = await db.getActiveTariffByStationId(station.id);
+          return {
+            ...station,
+            pricePerKwh: tariff?.pricePerKwh || "1200",
+            reservationFee: tariff?.reservationFee || "5000",
+            overstayPenaltyPerMin: tariff?.overstayPenaltyPerMinute || "500",
+            connectionFee: tariff?.pricePerSession || "2000",
+            tariffId: tariff?.id,
+          };
+        })
+      );
+      
+      return stationsWithTariffs;
     }),
   
   // Admin: listar todas las estaciones
