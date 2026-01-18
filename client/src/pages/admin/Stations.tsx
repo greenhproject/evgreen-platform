@@ -50,6 +50,8 @@ const CONNECTOR_TYPES = [
   { value: "CCS_2", label: "CCS Combo 2", power: "50-350kW DC" },
   { value: "CHADEMO", label: "CHAdeMO", power: "50kW DC" },
   { value: "TESLA", label: "Tesla Supercharger", power: "250kW DC" },
+  { value: "GBT_AC", label: "GB/T AC", power: "7-22kW AC" },
+  { value: "GBT_DC", label: "GB/T DC", power: "50-250kW DC" },
 ];
 
 interface ConnectorConfig {
@@ -259,8 +261,8 @@ export default function AdminStations() {
             await createEvseMutation.mutateAsync({
               stationId: stationResult.id,
               evseIdLocal: evseIdLocal++,
-              connectorType: connector.type as "TYPE_2" | "CCS_2" | "CHADEMO" | "TYPE_1",
-              chargeType: connector.type.includes("CCS") || connector.type === "CHADEMO" ? "DC" : "AC",
+              connectorType: connector.type as "TYPE_1" | "TYPE_2" | "CCS_1" | "CCS_2" | "CHADEMO" | "TESLA" | "GBT_AC" | "GBT_DC",
+              chargeType: connector.type.includes("CCS") || connector.type === "CHADEMO" || connector.type === "TESLA" || connector.type === "GBT_DC" ? "DC" : "AC",
               powerKw: connector.powerKw.toString(),
             });
           }
@@ -313,8 +315,8 @@ export default function AdminStations() {
             await createEvseMutation.mutateAsync({
               stationId: editingStation.id,
               evseIdLocal: evseIdLocal++,
-              connectorType: connector.type as "TYPE_2" | "CCS_2" | "CHADEMO" | "TYPE_1",
-              chargeType: connector.type.includes("CCS") || connector.type === "CHADEMO" ? "DC" : "AC",
+              connectorType: connector.type as "TYPE_1" | "TYPE_2" | "CCS_1" | "CCS_2" | "CHADEMO" | "TESLA" | "GBT_AC" | "GBT_DC",
+              chargeType: connector.type.includes("CCS") || connector.type === "CHADEMO" || connector.type === "TESLA" || connector.type === "GBT_DC" ? "DC" : "AC",
               powerKw: connector.powerKw.toString(),
             });
           }
@@ -661,57 +663,60 @@ export default function AdminStations() {
           )}
 
           {/* Formulario para agregar nuevos conectores */}
-          <div className="grid grid-cols-4 gap-3 p-4 border border-dashed border-green-500/50 rounded-lg">
-            <div className="space-y-2">
-              <Label className="text-xs">Tipo de Conector</Label>
-              <Select 
-                value={newConnector.type} 
-                onValueChange={(value) => {
-                  const defaultPower = value.includes("CCS") ? 150 : 
-                                      value === "CHADEMO" ? 50 : 
-                                      value === "TESLA" ? 250 : 22;
-                  setNewConnector({...newConnector, type: value, powerKw: defaultPower});
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CONNECTOR_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="p-4 border border-dashed border-green-500/50 rounded-lg space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Tipo de Conector</Label>
+                <Select 
+                  value={newConnector.type} 
+                  onValueChange={(value) => {
+                    const defaultPower = value.includes("CCS") ? 150 : 
+                                        value === "CHADEMO" ? 50 : 
+                                        value === "TESLA" ? 250 :
+                                        value === "GBT_DC" ? 150 : 22;
+                    setNewConnector({...newConnector, type: value, powerKw: defaultPower});
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Seleccionar tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONNECTOR_TYPES.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label} ({type.power})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Potencia (kW)</Label>
+                  <Input 
+                    type="number" 
+                    value={newConnector.powerKw}
+                    onChange={(e) => setNewConnector({...newConnector, powerKw: parseInt(e.target.value) || 0})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Cantidad</Label>
+                  <Input 
+                    type="number" 
+                    min="1"
+                    value={newConnector.quantity}
+                    onChange={(e) => setNewConnector({...newConnector, quantity: parseInt(e.target.value) || 1})}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label className="text-xs">Potencia (kW)</Label>
-              <Input 
-                type="number" 
-                value={newConnector.powerKw}
-                onChange={(e) => setNewConnector({...newConnector, powerKw: parseInt(e.target.value) || 0})}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs">Cantidad</Label>
-              <Input 
-                type="number" 
-                min="1"
-                value={newConnector.quantity}
-                onChange={(e) => setNewConnector({...newConnector, quantity: parseInt(e.target.value) || 1})}
-              />
-            </div>
-            <div className="flex items-end">
-              <Button 
-                variant="outline" 
-                className="w-full border-green-500/50 text-green-500 hover:bg-green-500/10"
-                onClick={addConnector}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Agregar
-              </Button>
-            </div>
+            <Button 
+              variant="outline" 
+              className="w-full border-green-500/50 text-green-500 hover:bg-green-500/10"
+              onClick={addConnector}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Agregar Conector
+            </Button>
           </div>
           
           <p className="text-xs text-muted-foreground">

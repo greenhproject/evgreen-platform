@@ -171,7 +171,15 @@ const stationsRouter = router({
   
   // Admin: listar todas las estaciones
   listAll: adminProcedure.query(async () => {
-    return db.getAllChargingStations();
+    const stations = await db.getAllChargingStations();
+    // Agregar evses a cada estación
+    const stationsWithEvses = await Promise.all(
+      stations.map(async (station: any) => {
+        const evses = await db.getEvsesByStationId(station.id);
+        return { ...station, evses };
+      })
+    );
+    return stationsWithEvses;
   }),
   
   // Inversionista: listar sus estaciones
@@ -271,7 +279,7 @@ const evseRouter = router({
       stationId: z.number(),
       evseIdLocal: z.number(),
       connectorId: z.number().optional(),
-      connectorType: z.enum(["TYPE_2", "CCS_2", "CHADEMO", "TYPE_1"]),
+      connectorType: z.enum(["TYPE_1", "TYPE_2", "CCS_1", "CCS_2", "CHADEMO", "TESLA", "GBT_AC", "GBT_DC"]),
       chargeType: z.enum(["AC", "DC"]),
       powerKw: z.string(),
       maxVoltage: z.number().optional(),

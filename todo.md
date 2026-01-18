@@ -398,3 +398,10 @@
 - [x] BUG: No deja editar los valores de las estaciones desde admin (Tarifas) - Implementado modal de edición completo
 - [x] BUG: No deja modificar los valores de reserva en admin (Tarifas) - Incluido en modal de edición
 - [x] BUG: No deja modificar los valores de ocupación y tarifa de conexión en admin (Tarifas) - Incluido en modal de edición
+
+
+## Bugs Reportados - 18 Enero 2026 (Octava Ronda)
+
+- [x] BUG: Formulario de conectores tiene mal responsive - Corregido con layout de 1-2 columnas y etiquetas más grandes
+- [x] BUG: Conectores no se guardan - Corregido: agregados tipos GBT_AC/GBT_DC al schema, router listAll ahora incluye evses
+- [x] MEJORA: Agregados tipos de conectores GBT AC y GBT DC (estándar chino)

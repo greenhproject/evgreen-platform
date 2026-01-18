@@ -28,7 +28,7 @@ export const connectorStatusEnum = mysqlEnum("connector_status", [
   "UNAVAILABLE",
   "FAULTED",
 ]);
-export const connectorTypeEnum = mysqlEnum("connector_type", ["TYPE_2", "CCS_2", "CHADEMO", "TYPE_1"]);
+export const connectorTypeEnum = mysqlEnum("connector_type", ["TYPE_1", "TYPE_2", "CCS_1", "CCS_2", "CHADEMO", "TESLA", "GBT_AC", "GBT_DC"]);
 export const chargeTypeEnum = mysqlEnum("charge_type", ["AC", "DC"]);
 export const transactionStatusEnum = mysqlEnum("transaction_status", [
   "PENDING",
