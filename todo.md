@@ -150,3 +150,14 @@
 - [x] Implementar panel de navegación lateral en dashboard de admin
 - [x] Implementar panel de navegación lateral en dashboard de inversionista
 - [x] Implementar panel de navegación lateral en dashboard de técnico
+
+
+## Bugs y Mejoras Reportadas - 17 Enero 2026
+
+- [x] BUG: Formulario de nueva estación no incluye campo para tipos de conectores/cargadores
+- [x] BUG: Tabla de estaciones muestra "-" en columna Conectores en lugar del número real
+- [x] Implementar página de gestión de Banners (/admin/banners)
+- [x] Implementar página de Notificaciones (/admin/notifications)
+- [ ] Completar páginas faltantes que muestran 404
+- [ ] Agregar rutas faltantes para módulos de inversionista (earnings, settlements)
+- [ ] Agregar rutas faltantes para módulos de técnico (alerts, diagnostics, maintenance, settings)

@@ -750,6 +750,121 @@ const investorStatsRouter = router({
 });
 
 // ============================================================================
+// BANNERS ROUTER (Admin)
+// ============================================================================
+
+const bannersRouter = router({
+  list: adminProcedure
+    .input(z.object({ status: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return db.getAllBanners(input?.status);
+    }),
+  
+  getById: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getBannerById(input.id);
+    }),
+  
+  getActive: publicProcedure
+    .input(z.object({ type: z.string().optional(), location: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return db.getActiveBanners(input?.type, input?.location);
+    }),
+  
+  create: adminProcedure
+    .input(z.object({
+      title: z.string(),
+      subtitle: z.string().optional(),
+      description: z.string().optional(),
+      imageUrl: z.string(),
+      imageUrlMobile: z.string().optional(),
+      type: z.enum(["SPLASH", "CHARGING", "MAP", "PROMOTIONAL", "INFORMATIONAL"]),
+      linkUrl: z.string().optional(),
+      linkType: z.string().optional(),
+      ctaText: z.string().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      targetRoles: z.array(z.string()).optional(),
+      targetCities: z.array(z.string()).optional(),
+      priority: z.number().optional(),
+      displayDurationMs: z.number().optional(),
+      advertiserName: z.string().optional(),
+      advertiserContact: z.string().optional(),
+      campaignId: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const id = await db.createBanner({
+        ...input,
+        status: "DRAFT",
+        createdById: ctx.user.id,
+      });
+      return { id };
+    }),
+  
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      data: z.object({
+        title: z.string().optional(),
+        subtitle: z.string().optional(),
+        description: z.string().optional(),
+        imageUrl: z.string().optional(),
+        imageUrlMobile: z.string().optional(),
+        type: z.enum(["SPLASH", "CHARGING", "MAP", "PROMOTIONAL", "INFORMATIONAL"]).optional(),
+        linkUrl: z.string().optional(),
+        linkType: z.string().optional(),
+        ctaText: z.string().optional(),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        targetRoles: z.array(z.string()).optional(),
+        targetCities: z.array(z.string()).optional(),
+        priority: z.number().optional(),
+        status: z.enum(["DRAFT", "ACTIVE", "PAUSED", "EXPIRED", "ARCHIVED"]).optional(),
+        advertiserName: z.string().optional(),
+        advertiserContact: z.string().optional(),
+      }),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateBanner(input.id, input.data);
+      return { success: true };
+    }),
+  
+  toggleActive: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const banner = await db.getBannerById(input.id);
+      if (!banner) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Banner no encontrado" });
+      }
+      const newStatus = banner.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
+      await db.updateBanner(input.id, { status: newStatus });
+      return { success: true, status: newStatus };
+    }),
+  
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteBanner(input.id);
+      return { success: true };
+    }),
+  
+  recordImpression: publicProcedure
+    .input(z.object({ bannerId: z.number(), context: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.recordBannerImpression(input.bannerId, ctx.user?.id, input.context);
+      return { success: true };
+    }),
+  
+  recordClick: publicProcedure
+    .input(z.object({ bannerId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.recordBannerClick(input.bannerId, ctx.user?.id);
+      return { success: true };
+    }),
+});
+
+// ============================================================================
 // PLATFORM STATS ROUTER (Admin)
 // ============================================================================
 
@@ -783,6 +898,7 @@ export const appRouter = router({
   support: supportRouter,
   investorStats: investorStatsRouter,
   platformStats: platformStatsRouter,
+  banners: bannersRouter,
 });
 
 export type AppRouter = typeof appRouter;

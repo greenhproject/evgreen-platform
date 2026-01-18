@@ -41,6 +41,8 @@ import AdminTransactions from "./pages/admin/Transactions";
 import AdminTariffs from "./pages/admin/Tariffs";
 import AdminReports from "./pages/admin/Reports";
 import AdminSettings from "./pages/admin/Settings";
+import AdminBanners from "./pages/admin/Banners";
+import AdminNotifications from "./pages/admin/Notifications";
 
 // Layouts
 import AdminLayout from "./layouts/AdminLayout";
@@ -280,6 +282,20 @@ function Router() {
         <ProtectedRoute allowedRoles={["admin"]}>
           <AdminLayout>
             <AdminSettings />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/banners">
+        <ProtectedRoute allowedRoles={["admin"]}>
+          <AdminLayout>
+            <AdminBanners />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/notifications">
+        <ProtectedRoute allowedRoles={["admin"]}>
+          <AdminLayout>
+            <AdminNotifications />
           </AdminLayout>
         </ProtectedRoute>
       </Route>
