@@ -391,3 +391,10 @@
 
 - [x] BUG: Campana de notificaciones no muestra nada - Creado componente NotificationPanel con notificaciones de ejemplo
 - [x] BUG: Responsive del módulo de reservas sigue cortado - Corregido con grid de 2 columnas
+
+
+## Bugs Reportados - 18 Enero 2026 (Séptima Ronda)
+
+- [x] BUG: No deja editar los valores de las estaciones desde admin (Tarifas) - Implementado modal de edición completo
+- [x] BUG: No deja modificar los valores de reserva en admin (Tarifas) - Incluido en modal de edición
+- [x] BUG: No deja modificar los valores de ocupación y tarifa de conexión en admin (Tarifas) - Incluido en modal de edición

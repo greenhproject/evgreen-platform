@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -43,7 +44,9 @@ import {
   Activity,
   Calendar,
   Users,
-  MapPin
+  MapPin,
+  Save,
+  Loader2
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -59,8 +62,36 @@ interface DynamicPricingConfig {
   demandWeight: number;
 }
 
+interface StationTariff {
+  stationId: number;
+  stationName: string;
+  city: string;
+  pricePerKwh: number;
+  reservationFee: number;
+  overstayPenaltyPerMin: number;
+  connectionFee: number;
+  tariffId?: number;
+}
+
+interface EditTariffForm {
+  pricePerKwh: string;
+  reservationFee: string;
+  overstayPenaltyPerMinute: string;
+  pricePerSession: string; // Tarifa de conexión
+}
+
 export default function AdminTariffs() {
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [selectedStation, setSelectedStation] = useState<StationTariff | null>(null);
+  const [editForm, setEditForm] = useState<EditTariffForm>({
+    pricePerKwh: "1200",
+    reservationFee: "5000",
+    overstayPenaltyPerMinute: "500",
+    pricePerSession: "2000",
+  });
+  const [searchQuery, setSearchQuery] = useState("");
+  
   const [dynamicConfig, setDynamicConfig] = useState<DynamicPricingConfig>({
     enabled: true,
     basePrice: 1200,
@@ -73,7 +104,30 @@ export default function AdminTariffs() {
   });
 
   // Obtener estaciones para mostrar tarifas
-  const { data: stations } = trpc.stations.listPublic.useQuery({});
+  const { data: stations, refetch: refetchStations } = trpc.stations.listPublic.useQuery({});
+  
+  // Mutación para crear/actualizar tarifa
+  const createTariff = trpc.tariffs.create.useMutation({
+    onSuccess: () => {
+      toast.success("Tarifa actualizada correctamente");
+      setIsEditDialogOpen(false);
+      refetchStations();
+    },
+    onError: (error) => {
+      toast.error(`Error al guardar tarifa: ${error.message}`);
+    },
+  });
+  
+  const updateTariff = trpc.tariffs.update.useMutation({
+    onSuccess: () => {
+      toast.success("Tarifa actualizada correctamente");
+      setIsEditDialogOpen(false);
+      refetchStations();
+    },
+    onError: (error) => {
+      toast.error(`Error al actualizar tarifa: ${error.message}`);
+    },
+  });
 
   const formatCurrency = (amount: string | number) => {
     const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -98,8 +152,72 @@ export default function AdminTariffs() {
 
   const handleSaveConfig = () => {
     toast.success("Configuración de tarifa dinámica guardada");
-    setIsDialogOpen(false);
+    setIsConfigDialogOpen(false);
   };
+
+  const handleEditStation = (station: any) => {
+    setSelectedStation({
+      stationId: station.id,
+      stationName: station.name,
+      city: station.city,
+      pricePerKwh: parseFloat(station.pricePerKwh || "1200"),
+      reservationFee: parseFloat(station.reservationFee || "5000"),
+      overstayPenaltyPerMin: parseFloat(station.overstayPenaltyPerMin || "500"),
+      connectionFee: parseFloat(station.connectionFee || "2000"),
+      tariffId: station.tariffId,
+    });
+    setEditForm({
+      pricePerKwh: station.pricePerKwh?.toString() || "1200",
+      reservationFee: station.reservationFee?.toString() || "5000",
+      overstayPenaltyPerMinute: station.overstayPenaltyPerMin?.toString() || "500",
+      pricePerSession: station.connectionFee?.toString() || "2000",
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSaveTariff = () => {
+    if (!selectedStation) return;
+    
+    // Validar valores
+    const pricePerKwh = parseFloat(editForm.pricePerKwh);
+    const reservationFee = parseFloat(editForm.reservationFee);
+    const overstayPenalty = parseFloat(editForm.overstayPenaltyPerMinute);
+    const connectionFee = parseFloat(editForm.pricePerSession);
+    
+    if (isNaN(pricePerKwh) || pricePerKwh < 0) {
+      toast.error("El precio por kWh debe ser un número válido");
+      return;
+    }
+    if (isNaN(reservationFee) || reservationFee < 0) {
+      toast.error("La tarifa de reserva debe ser un número válido");
+      return;
+    }
+    if (isNaN(overstayPenalty) || overstayPenalty < 0) {
+      toast.error("La penalización por ocupación debe ser un número válido");
+      return;
+    }
+    if (isNaN(connectionFee) || connectionFee < 0) {
+      toast.error("La tarifa de conexión debe ser un número válido");
+      return;
+    }
+
+    // Crear nueva tarifa (esto desactivará las anteriores automáticamente)
+    createTariff.mutate({
+      stationId: selectedStation.stationId,
+      name: `Tarifa ${selectedStation.stationName}`,
+      description: `Tarifa actualizada el ${new Date().toLocaleDateString("es-CO")}`,
+      pricePerKwh: editForm.pricePerKwh,
+      reservationFee: editForm.reservationFee,
+      overstayPenaltyPerMinute: editForm.overstayPenaltyPerMinute,
+      pricePerSession: editForm.pricePerSession,
+    });
+  };
+
+  // Filtrar estaciones por búsqueda
+  const filteredStations = stations?.filter((station: any) =>
+    station.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    station.city?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="p-6 space-y-6">
@@ -110,7 +228,7 @@ export default function AdminTariffs() {
             Configura tarifas base y parámetros de pricing dinámico
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
           <DialogTrigger asChild>
             <Button>
               <Settings className="w-4 h-4 mr-2" />
@@ -282,18 +400,15 @@ export default function AdminTariffs() {
                     />
                   </div>
                 </div>
-                <p className={`text-sm ${
-                  dynamicConfig.occupancyWeight + dynamicConfig.timeWeight + 
-                  dynamicConfig.dayWeight + dynamicConfig.demandWeight === 100
-                    ? "text-green-500"
-                    : "text-red-500"
-                }`}>
-                  Total: {dynamicConfig.occupancyWeight + dynamicConfig.timeWeight + 
-                  dynamicConfig.dayWeight + dynamicConfig.demandWeight}%
-                </p>
+                {dynamicConfig.occupancyWeight + dynamicConfig.timeWeight + dynamicConfig.dayWeight + dynamicConfig.demandWeight !== 100 && (
+                  <p className="text-sm text-destructive">
+                    Los pesos deben sumar 100% (actual: {dynamicConfig.occupancyWeight + dynamicConfig.timeWeight + dynamicConfig.dayWeight + dynamicConfig.demandWeight}%)
+                  </p>
+                )}
               </div>
 
               <Button onClick={handleSaveConfig} className="w-full">
+                <Save className="w-4 h-4 mr-2" />
                 Guardar configuración
               </Button>
             </div>
@@ -301,116 +416,103 @@ export default function AdminTariffs() {
         </Dialog>
       </div>
 
-      {/* Tarifa dinámica actual */}
-      <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-primary" />
-            Tarifa Dinámica en Tiempo Real
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Precio base</p>
-              <p className="text-2xl font-bold">{formatCurrency(dynamicConfig.basePrice)}</p>
-              <p className="text-xs text-muted-foreground">Por kWh</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Multiplicador actual</p>
-              <div className="flex items-center gap-2">
-                <p className={`text-2xl font-bold ${
-                  currentMultiplier > 1 ? "text-orange-500" : 
-                  currentMultiplier < 1 ? "text-green-500" : ""
-                }`}>
-                  {currentMultiplier.toFixed(2)}x
-                </p>
-                <Badge className={
-                  currentMultiplier > 1.2 ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
-                  currentMultiplier > 1 ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" :
-                  currentMultiplier < 0.9 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
-                  "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                }>
-                  {currentMultiplier > 1.2 ? "Surge" :
-                   currentMultiplier > 1 ? "Alta demanda" :
-                   currentMultiplier < 0.9 ? "Baja demanda" : "Normal"}
+      {/* Precio actual */}
+      <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Precio dinámico actual</p>
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl font-bold">{formatCurrency(currentPrice)}</span>
+                <span className="text-muted-foreground">/kWh</span>
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <Badge variant={currentMultiplier > 1 ? "destructive" : currentMultiplier < 1 ? "default" : "secondary"}>
+                  {currentMultiplier > 1 ? "↑" : currentMultiplier < 1 ? "↓" : "="} {(currentMultiplier * 100 - 100).toFixed(0)}%
                 </Badge>
+                <span className="text-sm text-muted-foreground">
+                  {isRushHour ? "Hora pico" : currentHour >= 22 || currentHour < 6 ? "Horario nocturno" : isWeekend ? "Fin de semana" : "Horario normal"}
+                </span>
               </div>
             </div>
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Precio efectivo</p>
-              <p className="text-2xl font-bold text-primary">{formatCurrency(currentPrice)}</p>
-              <p className="text-xs text-muted-foreground">Por kWh ahora</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Condición actual</p>
-              <div className="space-y-1">
-                <p className="text-sm">
-                  <Clock className="w-3 h-3 inline mr-1" />
-                  {isRushHour ? "Hora pico" : "Hora normal"}
-                </p>
-                <p className="text-sm">
-                  <Calendar className="w-3 h-3 inline mr-1" />
-                  {isWeekend ? "Fin de semana" : "Día laboral"}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Gráfico de precios por hora */}
-          <div className="mt-6 p-4 bg-background/50 rounded-lg">
-            <p className="text-sm font-medium mb-3">Variación de precios durante el día</p>
-            <div className="flex items-end gap-1 h-20">
-              {Array.from({ length: 24 }, (_, hour) => {
-                const isHourRush = (hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 20);
-                const isNight = hour >= 22 || hour < 6;
-                const mult = isHourRush ? 1.25 : isNight ? 0.85 : 1.0;
-                const height = (mult / 1.5) * 100;
-                const isCurrent = hour === currentHour;
-                return (
-                  <div
-                    key={hour}
-                    className={`flex-1 rounded-t transition-all ${
-                      isCurrent ? "bg-primary" :
-                      mult > 1 ? "bg-orange-500/50" :
-                      mult < 1 ? "bg-green-500/50" : "bg-blue-500/50"
-                    }`}
-                    style={{ height: `${height}%` }}
-                    title={`${hour}:00 - ${formatCurrency(dynamicConfig.basePrice * mult)}`}
-                  />
-                );
-              })}
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground mt-1">
-              <span>0:00</span>
-              <span>6:00</span>
-              <span>12:00</span>
-              <span>18:00</span>
-              <span>23:00</span>
-            </div>
-            <div className="flex items-center gap-4 mt-3 text-xs">
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded bg-green-500/50" />
-                <span>Valle (0.85x)</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded bg-blue-500/50" />
-                <span>Normal (1.0x)</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded bg-orange-500/50" />
-                <span>Pico (1.25x)</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded bg-primary" />
-                <span>Hora actual</span>
-              </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground">Precio base</p>
+              <p className="text-2xl font-semibold">{formatCurrency(dynamicConfig.basePrice)}</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Multiplicador: {currentMultiplier.toFixed(2)}x
+              </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Estadísticas */}
+      {/* Gráfico de precios por hora */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5" />
+            Variación de precios por hora
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-32 flex items-end gap-1">
+            {Array.from({ length: 24 }, (_, hour) => {
+              let mult = 1.0;
+              const isPeak = (hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 20);
+              const isNight = hour >= 22 || hour < 6;
+              if (isPeak) mult = 1.25;
+              else if (isNight) mult = 0.85;
+              else if (isWeekend) mult = 0.9;
+              
+              const height = (mult / dynamicConfig.maxMultiplier) * 100;
+              const isCurrentHour = hour === currentHour;
+              
+              return (
+                <div
+                  key={hour}
+                  className="flex-1 flex flex-col items-center gap-1"
+                >
+                  <div
+                    className={`w-full rounded-t transition-all ${
+                      isCurrentHour
+                        ? "bg-primary"
+                        : mult > 1
+                        ? "bg-orange-500/50"
+                        : mult < 1
+                        ? "bg-green-500/50"
+                        : "bg-muted"
+                    }`}
+                    style={{ height: `${height}%` }}
+                  />
+                  <span className={`text-[10px] ${isCurrentHour ? "font-bold text-primary" : "text-muted-foreground"}`}>
+                    {hour}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-center gap-4 mt-4 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded bg-green-500/50" />
+              <span>Valle (0.85x)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded bg-muted" />
+              <span>Normal (1.0x)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded bg-orange-500/50" />
+              <span>Pico (1.25x)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded bg-primary" />
+              <span>Hora actual</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Estadísticas - Ahora editables */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="p-4">
           <div className="flex items-center gap-3">
@@ -470,12 +572,13 @@ export default function AdminTariffs() {
           <div className="flex items-center gap-4 mb-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Buscar por estación..." className="pl-10" />
+              <Input 
+                placeholder="Buscar por estación..." 
+                className="pl-10"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
-            <Button variant="outline" onClick={() => toast.info("Crear tarifa personalizada próximamente")}>
-              <Plus className="w-4 h-4 mr-2" />
-              Nueva tarifa
-            </Button>
           </div>
           <Table>
             <TableHeader>
@@ -485,13 +588,13 @@ export default function AdminTariffs() {
                 <TableHead>Tarifa dinámica</TableHead>
                 <TableHead>Fee reserva</TableHead>
                 <TableHead>Penalización</TableHead>
-                <TableHead>Estado</TableHead>
+                <TableHead>Tarifa conexión</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stations && stations.length > 0 ? (
-                stations.map((station: any) => (
+              {filteredStations && filteredStations.length > 0 ? (
+                filteredStations.map((station: any) => (
                   <TableRow key={station.id}>
                     <TableCell>
                       <div>
@@ -507,13 +610,13 @@ export default function AdminTariffs() {
                     </TableCell>
                     <TableCell>{formatCurrency(station.reservationFee || 5000)}</TableCell>
                     <TableCell>{formatCurrency(station.overstayPenaltyPerMin || 500)}/min</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-green-500 border-green-500">
-                        Activa
-                      </Badge>
-                    </TableCell>
+                    <TableCell>{formatCurrency(station.connectionFee || 2000)}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => toast.info("Editar tarifa próximamente")}>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => handleEditStation(station)}
+                      >
                         <Edit className="w-4 h-4" />
                       </Button>
                     </TableCell>
@@ -530,6 +633,110 @@ export default function AdminTariffs() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Modal de edición de tarifa */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="w-5 h-5" />
+              Editar Tarifa
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedStation && (
+            <div className="space-y-6 py-4">
+              {/* Info de la estación */}
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <p className="font-medium">{selectedStation.stationName}</p>
+                <p className="text-sm text-muted-foreground">{selectedStation.city}</p>
+              </div>
+
+              {/* Precio por kWh */}
+              <div className="space-y-2">
+                <Label htmlFor="pricePerKwh">Precio por kWh (COP)</Label>
+                <Input
+                  id="pricePerKwh"
+                  type="number"
+                  value={editForm.pricePerKwh}
+                  onChange={(e) => setEditForm({ ...editForm, pricePerKwh: e.target.value })}
+                  placeholder="1200"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Precio base que se cobra por cada kilovatio-hora consumido
+                </p>
+              </div>
+
+              {/* Tarifa de reserva */}
+              <div className="space-y-2">
+                <Label htmlFor="reservationFee">Tarifa de reserva (COP)</Label>
+                <Input
+                  id="reservationFee"
+                  type="number"
+                  value={editForm.reservationFee}
+                  onChange={(e) => setEditForm({ ...editForm, reservationFee: e.target.value })}
+                  placeholder="5000"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Cargo fijo por realizar una reserva anticipada
+                </p>
+              </div>
+
+              {/* Penalización por ocupación */}
+              <div className="space-y-2">
+                <Label htmlFor="overstayPenalty">Penalización por ocupación (COP/min)</Label>
+                <Input
+                  id="overstayPenalty"
+                  type="number"
+                  value={editForm.overstayPenaltyPerMinute}
+                  onChange={(e) => setEditForm({ ...editForm, overstayPenaltyPerMinute: e.target.value })}
+                  placeholder="500"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Cargo por minuto cuando el vehículo permanece conectado después de cargar
+                </p>
+              </div>
+
+              {/* Tarifa de conexión */}
+              <div className="space-y-2">
+                <Label htmlFor="connectionFee">Tarifa de conexión (COP)</Label>
+                <Input
+                  id="connectionFee"
+                  type="number"
+                  value={editForm.pricePerSession}
+                  onChange={(e) => setEditForm({ ...editForm, pricePerSession: e.target.value })}
+                  placeholder="2000"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Cargo fijo por cada sesión de carga iniciada
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleSaveTariff}
+              disabled={createTariff.isPending}
+            >
+              {createTariff.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Guardando...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Guardar cambios
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Información sobre tarifas */}
       <Card>
