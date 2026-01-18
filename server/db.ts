@@ -1024,3 +1024,285 @@ export async function recordBannerClick(bannerId: number, userId?: number) {
     ));
   }
 }
+
+
+// ============================================================================
+// AI CONFIGURATION OPERATIONS
+// ============================================================================
+
+import {
+  aiConfig,
+  aiConversations,
+  aiMessages,
+  aiUsage,
+  InsertAIConfig,
+  InsertAIConversation,
+  InsertAIMessage,
+  InsertAIUsage,
+} from "../drizzle/schema";
+
+export async function getAIConfig() {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(aiConfig).limit(1);
+  return result[0] || null;
+}
+
+export async function upsertAIConfig(config: Partial<InsertAIConfig>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const existing = await getAIConfig();
+  if (existing) {
+    await db.update(aiConfig).set(config).where(eq(aiConfig.id, existing.id));
+    return existing.id;
+  } else {
+    const result = await db.insert(aiConfig).values(config as InsertAIConfig);
+    return result[0].insertId;
+  }
+}
+
+// ============================================================================
+// AI CONVERSATION OPERATIONS
+// ============================================================================
+
+export async function createAIConversation(conversation: InsertAIConversation) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(aiConversations).values(conversation);
+  return result[0].insertId;
+}
+
+export async function getAIConversationById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(aiConversations).where(eq(aiConversations.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function getAIConversationsByUserId(userId: number, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiConversations)
+    .where(and(eq(aiConversations.userId, userId), eq(aiConversations.isActive, true)))
+    .orderBy(desc(aiConversations.lastMessageAt))
+    .limit(limit);
+}
+
+export async function updateAIConversation(id: number, data: Partial<InsertAIConversation>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(aiConversations).set(data).where(eq(aiConversations.id, id));
+}
+
+export async function deleteAIConversation(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(aiConversations).set({ isActive: false }).where(eq(aiConversations.id, id));
+}
+
+// ============================================================================
+// AI MESSAGE OPERATIONS
+// ============================================================================
+
+export async function createAIMessage(message: InsertAIMessage) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(aiMessages).values(message);
+  
+  // Actualizar contador de mensajes en la conversación
+  await db.update(aiConversations).set({
+    messageCount: sql`${aiConversations.messageCount} + 1`,
+    lastMessageAt: new Date(),
+  }).where(eq(aiConversations.id, message.conversationId));
+  
+  return result[0].insertId;
+}
+
+export async function getAIMessagesByConversationId(conversationId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiMessages)
+    .where(eq(aiMessages.conversationId, conversationId))
+    .orderBy(aiMessages.createdAt)
+    .limit(limit);
+}
+
+// ============================================================================
+// AI USAGE OPERATIONS
+// ============================================================================
+
+export async function createAIUsage(usage: InsertAIUsage) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(aiUsage).values(usage);
+}
+
+export async function getAIUsageStats(userId: number) {
+  const db = await getDb();
+  if (!db) return { userUsageToday: 0, totalUsageToday: 0 };
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // Uso del usuario hoy
+  const userUsage = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(aiUsage)
+    .where(and(
+      eq(aiUsage.userId, userId),
+      gte(aiUsage.createdAt, today)
+    ));
+  
+  // Uso total hoy
+  const totalUsage = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(aiUsage)
+    .where(gte(aiUsage.createdAt, today));
+  
+  return {
+    userUsageToday: userUsage[0]?.count || 0,
+    totalUsageToday: totalUsage[0]?.count || 0,
+  };
+}
+
+// ============================================================================
+// AI HELPER FUNCTIONS
+// ============================================================================
+
+export async function getNearbyStations(lat: number, lng: number, radiusKm: number = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const stations = await db.select({
+    id: chargingStations.id,
+    name: chargingStations.name,
+    address: chargingStations.address,
+    city: chargingStations.city,
+    latitude: chargingStations.latitude,
+    longitude: chargingStations.longitude,
+    isOnline: chargingStations.isOnline,
+    distance: sql<number>`(
+      6371 * acos(
+        cos(radians(${lat})) * cos(radians(${chargingStations.latitude})) *
+        cos(radians(${chargingStations.longitude}) - radians(${lng})) +
+        sin(radians(${lat})) * sin(radians(${chargingStations.latitude}))
+      )
+    )`.as("distance"),
+  })
+  .from(chargingStations)
+  .where(and(eq(chargingStations.isActive, true), eq(chargingStations.isPublic, true)))
+  .having(sql`distance <= ${radiusKm}`)
+  .orderBy(sql`distance`)
+  .limit(20);
+  
+  return stations;
+}
+
+export async function getStationsAlongRoute(
+  origin: { latitude: number; longitude: number },
+  destination: { latitude: number; longitude: number },
+  bufferKm: number = 50
+) {
+  // Simplificación: obtener estaciones en un rectángulo que contiene la ruta
+  const db = await getDb();
+  if (!db) return [];
+  
+  const minLat = Math.min(origin.latitude, destination.latitude) - (bufferKm / 111);
+  const maxLat = Math.max(origin.latitude, destination.latitude) + (bufferKm / 111);
+  const minLng = Math.min(origin.longitude, destination.longitude) - (bufferKm / 111);
+  const maxLng = Math.max(origin.longitude, destination.longitude) + (bufferKm / 111);
+  
+  return db.select().from(chargingStations)
+    .where(and(
+      eq(chargingStations.isActive, true),
+      eq(chargingStations.isPublic, true),
+      gte(chargingStations.latitude, minLat.toString()),
+      lte(chargingStations.latitude, maxLat.toString()),
+      gte(chargingStations.longitude, minLng.toString()),
+      lte(chargingStations.longitude, maxLng.toString()),
+    ))
+    .limit(50);
+}
+
+export async function getInvestorAnalytics(
+  investorId: number,
+  stationIds?: number[],
+  period: "day" | "week" | "month" | "quarter" | "year" = "month"
+) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  // Calcular fecha de inicio según el período
+  const startDate = new Date();
+  switch (period) {
+    case "day": startDate.setDate(startDate.getDate() - 1); break;
+    case "week": startDate.setDate(startDate.getDate() - 7); break;
+    case "month": startDate.setMonth(startDate.getMonth() - 1); break;
+    case "quarter": startDate.setMonth(startDate.getMonth() - 3); break;
+    case "year": startDate.setFullYear(startDate.getFullYear() - 1); break;
+  }
+  
+  // Obtener estaciones del inversionista
+  let investorStations;
+  if (stationIds && stationIds.length > 0) {
+    investorStations = await db.select().from(chargingStations)
+      .where(and(eq(chargingStations.ownerId, investorId), inArray(chargingStations.id, stationIds)));
+  } else {
+    investorStations = await db.select().from(chargingStations)
+      .where(eq(chargingStations.ownerId, investorId));
+  }
+  
+  const ids = investorStations.map(s => s.id);
+  if (ids.length === 0) {
+    return {
+      stations: [],
+      totalRevenue: 0,
+      totalKwh: 0,
+      totalTransactions: 0,
+      averageSessionDuration: 0,
+    };
+  }
+  
+  // Obtener transacciones
+  const txs = await db.select().from(transactions)
+    .where(and(
+      inArray(transactions.stationId, ids),
+      eq(transactions.status, "COMPLETED"),
+      gte(transactions.startTime, startDate)
+    ));
+  
+  const totalRevenue = txs.reduce((sum, tx) => sum + parseFloat(tx.investorShare || "0"), 0);
+  const totalKwh = txs.reduce((sum, tx) => sum + parseFloat(tx.kwhConsumed || "0"), 0);
+  
+  return {
+    stations: investorStations,
+    totalRevenue,
+    totalKwh,
+    totalTransactions: txs.length,
+    averageSessionDuration: txs.length > 0 
+      ? txs.reduce((sum, tx) => {
+          if (tx.startTime && tx.endTime) {
+            return sum + (new Date(tx.endTime).getTime() - new Date(tx.startTime).getTime()) / 60000;
+          }
+          return sum;
+        }, 0) / txs.length
+      : 0,
+  };
+}
+
+// Objeto db para compatibilidad
+export const db = {
+  getAIConfig,
+  upsertAIConfig,
+  createAIConversation,
+  getAIConversationById,
+  getAIConversationsByUserId,
+  updateAIConversation,
+  deleteAIConversation,
+  createAIMessage,
+  getAIMessagesByConversationId,
+  createAIUsage,
+  getAIUsageStats,
+  getNearbyStations,
+  getStationsAlongRoute,
+  getInvestorAnalytics,
+};

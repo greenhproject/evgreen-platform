@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,8 +27,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Search, Plus, MapPin, Zap, Settings, Eye, Trash2, X } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 // Tipos de conectores disponibles según OCPI
@@ -48,21 +49,42 @@ interface ConnectorConfig {
   quantity: number;
 }
 
+interface StationFormData {
+  name: string;
+  description: string;
+  ownerId: string;
+  address: string;
+  city: string;
+  department: string;
+  latitude: string;
+  longitude: string;
+  ocppIdentity: string;
+  isActive: boolean;
+  isPublic: boolean;
+}
+
+const initialFormData: StationFormData = {
+  name: "",
+  description: "",
+  ownerId: "",
+  address: "",
+  city: "",
+  department: "",
+  latitude: "4.7110",
+  longitude: "-74.0721",
+  ocppIdentity: "",
+  isActive: true,
+  isPublic: true,
+};
+
 export default function AdminStations() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingStation, setEditingStation] = useState<any>(null);
   
   // Estado del formulario
-  const [formData, setFormData] = useState({
-    name: "",
-    ownerId: "",
-    address: "",
-    city: "",
-    state: "",
-    latitude: "4.7110",
-    longitude: "-74.0721",
-    ocppIdentity: "",
-  });
+  const [formData, setFormData] = useState<StationFormData>(initialFormData);
   
   // Estado de conectores
   const [connectors, setConnectors] = useState<ConnectorConfig[]>([]);
@@ -73,9 +95,22 @@ export default function AdminStations() {
   });
 
   const { data: stations, isLoading, refetch } = trpc.stations.listAll.useQuery();
+  
   const createStationMutation = trpc.stations.create.useMutation({
     onError: (error) => {
       toast.error(`Error al crear estación: ${error.message}`);
+    },
+  });
+
+  const updateStationMutation = trpc.stations.update.useMutation({
+    onSuccess: () => {
+      toast.success("Estación actualizada exitosamente");
+      setShowEditDialog(false);
+      setEditingStation(null);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(`Error al actualizar estación: ${error.message}`);
     },
   });
 
@@ -86,17 +121,60 @@ export default function AdminStations() {
   });
 
   const resetForm = () => {
-    setFormData({
-      name: "",
-      ownerId: "",
-      address: "",
-      city: "",
-      state: "",
-      latitude: "4.7110",
-      longitude: "-74.0721",
-      ocppIdentity: "",
-    });
+    setFormData(initialFormData);
     setConnectors([]);
+  };
+
+  // Cargar datos de estación para editar
+  const loadStationForEdit = (station: any) => {
+    setEditingStation(station);
+    setFormData({
+      name: station.name || "",
+      description: station.description || "",
+      ownerId: station.ownerId?.toString() || "",
+      address: station.address || "",
+      city: station.city || "",
+      department: station.department || "",
+      latitude: station.latitude?.toString() || "4.7110",
+      longitude: station.longitude?.toString() || "-74.0721",
+      ocppIdentity: station.ocppIdentity || "",
+      isActive: station.isActive ?? true,
+      isPublic: station.isPublic ?? true,
+    });
+    
+    // Cargar conectores existentes
+    if (station.evses && Array.isArray(station.evses)) {
+      const existingConnectors: ConnectorConfig[] = [];
+      const typeCounts: Record<string, { powerKw: number; count: number }> = {};
+      
+      station.evses.forEach((evse: any) => {
+        const type = evse.connectorType || "TYPE_2";
+        const power = parseFloat(evse.powerKw) || 22;
+        const key = `${type}-${power}`;
+        
+        if (typeCounts[key]) {
+          typeCounts[key].count++;
+        } else {
+          typeCounts[key] = { powerKw: power, count: 1 };
+        }
+      });
+      
+      Object.entries(typeCounts).forEach(([key, value]) => {
+        const [type] = key.split("-");
+        existingConnectors.push({
+          id: `existing-${key}`,
+          type,
+          powerKw: value.powerKw,
+          quantity: value.count,
+        });
+      });
+      
+      setConnectors(existingConnectors);
+    } else {
+      setConnectors([]);
+    }
+    
+    setShowEditDialog(true);
   };
 
   const addConnector = () => {
@@ -105,7 +183,6 @@ export default function AdminStations() {
       return;
     }
     
-    const connectorType = CONNECTOR_TYPES.find(c => c.value === newConnector.type);
     setConnectors([
       ...connectors,
       {
@@ -134,19 +211,18 @@ export default function AdminStations() {
     }
 
     try {
-      // Primero crear la estación
       const stationResult = await createStationMutation.mutateAsync({
         name: formData.name,
-        ownerId: formData.ownerId ? parseInt(formData.ownerId) : 1, // Default owner
+        description: formData.description || undefined,
+        ownerId: formData.ownerId ? parseInt(formData.ownerId) : 1,
         address: formData.address,
         city: formData.city,
-        department: formData.state,
+        department: formData.department || undefined,
         latitude: formData.latitude,
         longitude: formData.longitude,
         ocppIdentity: formData.ocppIdentity || `GEV-${Date.now()}`,
       });
       
-      // Luego crear los EVSEs/conectores
       if (stationResult.id) {
         let evseIdLocal = 1;
         for (const connector of connectors) {
@@ -166,6 +242,32 @@ export default function AdminStations() {
       setShowCreateDialog(false);
       resetForm();
       refetch();
+    } catch (error) {
+      // Error manejado en onError
+    }
+  };
+
+  const handleUpdateStation = async () => {
+    if (!editingStation || !formData.name || !formData.address || !formData.city) {
+      toast.error("Completa los campos obligatorios");
+      return;
+    }
+
+    try {
+      await updateStationMutation.mutateAsync({
+        id: editingStation.id,
+        data: {
+          name: formData.name,
+          description: formData.description || undefined,
+          address: formData.address,
+          city: formData.city,
+          department: formData.department || undefined,
+          latitude: formData.latitude,
+          longitude: formData.longitude,
+          isActive: formData.isActive,
+          isPublic: formData.isPublic,
+        },
+      });
     } catch (error) {
       // Error manejado en onError
     }
@@ -196,7 +298,6 @@ export default function AdminStations() {
     return true;
   });
 
-  // Calcular total de conectores por estación
   const getConnectorCount = (station: any) => {
     if (station.evses && Array.isArray(station.evses)) {
       return station.evses.length;
@@ -204,7 +305,6 @@ export default function AdminStations() {
     return 0;
   };
 
-  // Obtener resumen de tipos de conectores
   const getConnectorSummary = (station: any) => {
     if (!station.evses || !Array.isArray(station.evses) || station.evses.length === 0) {
       return "Sin conectores";
@@ -221,6 +321,262 @@ export default function AdminStations() {
       .join(", ");
   };
 
+  // Componente de formulario reutilizable
+  const StationForm = ({ isEdit = false }: { isEdit?: boolean }) => (
+    <div className="space-y-6">
+      {/* Información básica */}
+      <div className="space-y-4">
+        <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+          Información Básica
+        </h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Nombre *</Label>
+            <Input 
+              placeholder="Nombre de la estación" 
+              value={formData.name}
+              onChange={(e) => setFormData({...formData, name: e.target.value})}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Propietario (ID)</Label>
+            <Input 
+              placeholder="ID del inversionista" 
+              type="number"
+              value={formData.ownerId}
+              onChange={(e) => setFormData({...formData, ownerId: e.target.value})}
+              disabled={isEdit}
+            />
+          </div>
+          <div className="col-span-2 space-y-2">
+            <Label>Descripción</Label>
+            <Textarea 
+              placeholder="Descripción de la estación (opcional)" 
+              value={formData.description}
+              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              rows={2}
+            />
+          </div>
+          <div className="col-span-2 space-y-2">
+            <Label>Dirección *</Label>
+            <Input 
+              placeholder="Dirección completa" 
+              value={formData.address}
+              onChange={(e) => setFormData({...formData, address: e.target.value})}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Ciudad *</Label>
+            <Input 
+              placeholder="Ciudad" 
+              value={formData.city}
+              onChange={(e) => setFormData({...formData, city: e.target.value})}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Departamento</Label>
+            <Input 
+              placeholder="Departamento" 
+              value={formData.department}
+              onChange={(e) => setFormData({...formData, department: e.target.value})}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Latitud</Label>
+            <Input 
+              placeholder="4.7110" 
+              value={formData.latitude}
+              onChange={(e) => setFormData({...formData, latitude: e.target.value})}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Longitud</Label>
+            <Input 
+              placeholder="-74.0721" 
+              value={formData.longitude}
+              onChange={(e) => setFormData({...formData, longitude: e.target.value})}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Identidad OCPP</Label>
+            <Input 
+              placeholder="Identificador único del cargador" 
+              value={formData.ocppIdentity}
+              onChange={(e) => setFormData({...formData, ocppIdentity: e.target.value})}
+              disabled={isEdit}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Estado (solo en edición) */}
+      {isEdit && (
+        <div className="space-y-4">
+          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+            Estado
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div>
+                <Label>Estación Activa</Label>
+                <p className="text-xs text-muted-foreground">Habilitar o deshabilitar la estación</p>
+              </div>
+              <Switch 
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData({...formData, isActive: checked})}
+              />
+            </div>
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div>
+                <Label>Estación Pública</Label>
+                <p className="text-xs text-muted-foreground">Visible para todos los usuarios</p>
+              </div>
+              <Switch 
+                checked={formData.isPublic}
+                onCheckedChange={(checked) => setFormData({...formData, isPublic: checked})}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Conectores (solo en creación) */}
+      {!isEdit && (
+        <div className="space-y-4">
+          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+            Conectores / Puntos de Carga
+          </h3>
+          
+          {connectors.length > 0 && (
+            <div className="space-y-2">
+              {connectors.map((connector) => (
+                <div 
+                  key={connector.id} 
+                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Zap className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <div className="font-medium">{getConnectorLabel(connector.type)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {connector.powerKw} kW × {connector.quantity} unidad(es)
+                      </div>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => removeConnector(connector.id)}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-4 gap-3 p-4 border border-dashed rounded-lg">
+            <div className="space-y-2">
+              <Label className="text-xs">Tipo de Conector</Label>
+              <Select 
+                value={newConnector.type} 
+                onValueChange={(value) => {
+                  const defaultPower = value.includes("CCS") ? 150 : 
+                                      value === "CHADEMO" ? 50 : 
+                                      value === "TESLA" ? 250 : 22;
+                  setNewConnector({...newConnector, type: value, powerKw: defaultPower});
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONNECTOR_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Potencia (kW)</Label>
+              <Input 
+                type="number" 
+                value={newConnector.powerKw}
+                onChange={(e) => setNewConnector({...newConnector, powerKw: parseInt(e.target.value) || 0})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Cantidad</Label>
+              <Input 
+                type="number" 
+                min="1"
+                value={newConnector.quantity}
+                onChange={(e) => setNewConnector({...newConnector, quantity: parseInt(e.target.value) || 1})}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={addConnector}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Agregar
+              </Button>
+            </div>
+          </div>
+
+          {connectors.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-2">
+              Agrega al menos un conector para la estación
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Conectores existentes (solo en edición, solo lectura) */}
+      {isEdit && editingStation?.evses && editingStation.evses.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+            Conectores Existentes
+          </h3>
+          <div className="space-y-2">
+            {editingStation.evses.map((evse: any, index: number) => (
+              <div 
+                key={evse.id || index} 
+                className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Zap className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <div className="font-medium">
+                      Conector {evse.evseIdLocal || index + 1} - {getConnectorLabel(evse.connectorType)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {evse.powerKw} kW • {evse.chargeType} • Estado: {evse.status}
+                    </div>
+                  </div>
+                </div>
+                <Badge variant={evse.status === "AVAILABLE" ? "default" : "secondary"}>
+                  {evse.status}
+                </Badge>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Para modificar conectores, utiliza la sección de gestión de EVSEs
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -230,7 +586,12 @@ export default function AdminStations() {
             Gestiona todas las estaciones de la red Green EV
           </p>
         </div>
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        
+        {/* Diálogo de Crear */}
+        <Dialog open={showCreateDialog} onOpenChange={(open) => {
+          setShowCreateDialog(open);
+          if (!open) resetForm();
+        }}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="w-4 h-4 mr-2" />
@@ -242,178 +603,7 @@ export default function AdminStations() {
               <DialogTitle>Crear nueva estación</DialogTitle>
             </DialogHeader>
             
-            {/* Información básica */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                Información Básica
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Nombre *</Label>
-                  <Input 
-                    placeholder="Nombre de la estación" 
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Propietario (ID)</Label>
-                  <Input 
-                    placeholder="ID del inversionista" 
-                    type="number"
-                    value={formData.ownerId}
-                    onChange={(e) => setFormData({...formData, ownerId: e.target.value})}
-                  />
-                </div>
-                <div className="col-span-2 space-y-2">
-                  <Label>Dirección *</Label>
-                  <Input 
-                    placeholder="Dirección completa" 
-                    value={formData.address}
-                    onChange={(e) => setFormData({...formData, address: e.target.value})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Ciudad *</Label>
-                  <Input 
-                    placeholder="Ciudad" 
-                    value={formData.city}
-                    onChange={(e) => setFormData({...formData, city: e.target.value})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Departamento</Label>
-                  <Input 
-                    placeholder="Departamento" 
-                    value={formData.state}
-                    onChange={(e) => setFormData({...formData, state: e.target.value})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Latitud</Label>
-                  <Input 
-                    placeholder="4.7110" 
-                    value={formData.latitude}
-                    onChange={(e) => setFormData({...formData, latitude: e.target.value})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Longitud</Label>
-                  <Input 
-                    placeholder="-74.0721" 
-                    value={formData.longitude}
-                    onChange={(e) => setFormData({...formData, longitude: e.target.value})}
-                  />
-                </div>
-                <div className="col-span-2 space-y-2">
-                  <Label>Identidad OCPP</Label>
-                  <Input 
-                    placeholder="Identificador único del cargador (se genera automáticamente si se deja vacío)" 
-                    value={formData.ocppIdentity}
-                    onChange={(e) => setFormData({...formData, ocppIdentity: e.target.value})}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Conectores */}
-            <div className="space-y-4 mt-6">
-              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                Conectores / Puntos de Carga
-              </h3>
-              
-              {/* Lista de conectores agregados */}
-              {connectors.length > 0 && (
-                <div className="space-y-2">
-                  {connectors.map((connector) => (
-                    <div 
-                      key={connector.id} 
-                      className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <Zap className="w-5 h-5 text-primary" />
-                        </div>
-                        <div>
-                          <div className="font-medium">{getConnectorLabel(connector.type)}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {connector.powerKw} kW × {connector.quantity} unidad(es)
-                          </div>
-                        </div>
-                      </div>
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => removeConnector(connector.id)}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Agregar nuevo conector */}
-              <div className="grid grid-cols-4 gap-3 p-4 border border-dashed rounded-lg">
-                <div className="space-y-2">
-                  <Label className="text-xs">Tipo de Conector</Label>
-                  <Select 
-                    value={newConnector.type} 
-                    onValueChange={(value) => {
-                      const connType = CONNECTOR_TYPES.find(c => c.value === value);
-                      const defaultPower = value.includes("CCS") ? 150 : 
-                                          value === "CHADEMO" ? 50 : 
-                                          value === "TESLA" ? 250 : 22;
-                      setNewConnector({...newConnector, type: value, powerKw: defaultPower});
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CONNECTOR_TYPES.map((type) => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Potencia (kW)</Label>
-                  <Input 
-                    type="number" 
-                    value={newConnector.powerKw}
-                    onChange={(e) => setNewConnector({...newConnector, powerKw: parseInt(e.target.value) || 0})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Cantidad</Label>
-                  <Input 
-                    type="number" 
-                    min="1"
-                    value={newConnector.quantity}
-                    onChange={(e) => setNewConnector({...newConnector, quantity: parseInt(e.target.value) || 1})}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button 
-                    variant="outline" 
-                    className="w-full"
-                    onClick={addConnector}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Agregar
-                  </Button>
-                </div>
-              </div>
-
-              {connectors.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-2">
-                  Agrega al menos un conector para la estación
-                </p>
-              )}
-            </div>
+            <StationForm isEdit={false} />
 
             <div className="flex justify-end gap-2 mt-6">
               <Button variant="outline" onClick={() => {
@@ -427,6 +617,39 @@ export default function AdminStations() {
                 disabled={createStationMutation.isPending}
               >
                 {createStationMutation.isPending ? "Creando..." : "Crear estación"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Diálogo de Editar */}
+        <Dialog open={showEditDialog} onOpenChange={(open) => {
+          setShowEditDialog(open);
+          if (!open) {
+            setEditingStation(null);
+            resetForm();
+          }
+        }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Editar estación: {editingStation?.name}</DialogTitle>
+            </DialogHeader>
+            
+            <StationForm isEdit={true} />
+
+            <div className="flex justify-end gap-2 mt-6">
+              <Button variant="outline" onClick={() => {
+                setShowEditDialog(false);
+                setEditingStation(null);
+                resetForm();
+              }}>
+                Cancelar
+              </Button>
+              <Button 
+                onClick={handleUpdateStation}
+                disabled={updateStationMutation.isPending}
+              >
+                {updateStationMutation.isPending ? "Guardando..." : "Guardar cambios"}
               </Button>
             </div>
           </DialogContent>
@@ -513,7 +736,7 @@ export default function AdminStations() {
               <TableHead>Conectores</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Última conexión</TableHead>
-              <TableHead></TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -543,6 +766,9 @@ export default function AdminStations() {
                       <MapPin className="w-3 h-3 text-muted-foreground" />
                       {station.city}
                     </div>
+                    <div className="text-xs text-muted-foreground truncate max-w-[150px]">
+                      {station.address}
+                    </div>
                   </TableCell>
                   <TableCell>ID: {station.ownerId || "-"}</TableCell>
                   <TableCell>
@@ -561,9 +787,19 @@ export default function AdminStations() {
                       : "Nunca"}
                   </TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon">
-                      <Eye className="w-4 h-4" />
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => loadStationForEdit(station)}
+                        title="Editar estación"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" title="Ver detalles">
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

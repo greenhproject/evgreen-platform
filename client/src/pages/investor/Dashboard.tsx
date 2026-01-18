@@ -11,6 +11,7 @@ import {
   CheckCircle,
   Clock,
 } from "lucide-react";
+import { InvestorInsights } from "@/components/InvestorInsights";
 import {
   LineChart,
   Line,
@@ -213,6 +214,9 @@ export default function InvestorDashboard() {
           </div>
         </Card>
       </div>
+
+      {/* Insights de IA */}
+      <InvestorInsights stationIds={stations?.map(s => s.id)} />
     </div>
   );
 }
