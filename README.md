@@ -22,7 +22,7 @@
 - **Aplicación de Usuario**: Mapa interactivo, reservas, billetera digital y asistente de IA
 - **Dashboard de Inversionistas**: Métricas de rendimiento, ingresos y análisis predictivo
 - **Panel de Técnicos**: Monitoreo de cargadores, diagnósticos y mantenimiento
-- **Servidor CSMS**: Compatible con protocolo OCPP 2.0.1 para comunicación con cargadores
+- **Servidor CSMS**: Compatible con protocolos **OCPP 1.6J y 2.0.1** para máxima compatibilidad con cargadores
 - **Reporte UPME**: Integración con OCPI 2.2.1 para reportes regulatorios en Colombia
 
 ---
@@ -485,15 +485,25 @@ pnpm test:watch
 
 ## 🌐 Integraciones
 
-### OCPP 2.0.1
-Protocolo de comunicación con cargadores físicos:
-- BootNotification
-- TransactionEvent
-- MeterValues
-- RequestStartTransaction
-- RequestStopTransaction
-- SetChargingProfile
-- ReserveNow
+### OCPP 1.6J y 2.0.1 (Soporte Dual)
+
+EVGreen implementa un servidor CSMS con soporte dual para maximizar la compatibilidad con cargadores de diferentes fabricantes y generaciones.
+
+**OCPP 1.6J** (para cargadores legacy):
+- BootNotification, Heartbeat, StatusNotification
+- Authorize, StartTransaction, StopTransaction
+- MeterValues, DataTransfer
+- RemoteStartTransaction, RemoteStopTransaction
+- ReserveNow, CancelReservation, Reset, UnlockConnector
+
+**OCPP 2.0.1** (para cargadores modernos):
+- BootNotification, Heartbeat, StatusNotification
+- TransactionEvent (Started, Updated, Ended)
+- MeterValues, Authorize
+- RequestStartTransaction, RequestStopTransaction
+- ReserveNow, CancelReservation, Reset, UnlockConnector
+
+**Detección automática de protocolo**: El servidor detecta la versión del protocolo mediante el subprotocolo WebSocket negociado durante la conexión.
 
 ### OCPI 2.2.1
 Protocolo para reporte a UPME (Colombia):
