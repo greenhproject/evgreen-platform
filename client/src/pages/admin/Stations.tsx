@@ -28,6 +28,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Select,
@@ -131,6 +132,26 @@ export default function AdminStations() {
   const createEvseMutation = trpc.evses.create.useMutation({
     onError: (error: any) => {
       toast.error(`Error al crear conector: ${error.message}`);
+    },
+  });
+
+  const updateEvseMutation = trpc.evses.update.useMutation({
+    onSuccess: () => {
+      toast.success("Conector actualizado");
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Error al actualizar conector: ${error.message}`);
+    },
+  });
+
+  const deleteEvseMutation = trpc.evses.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Conector eliminado");
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Error al eliminar conector: ${error.message}`);
     },
   });
 
@@ -603,28 +624,87 @@ export default function AdminStations() {
           {/* Conectores existentes */}
           {editingStation?.evses && editingStation.evses.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Conectores existentes:</p>
+              <p className="text-xs text-muted-foreground">Conectores existentes ({editingStation.evses.length}):</p>
               {editingStation.evses.map((evse: any, index: number) => (
                 <div 
                   key={evse.id || index} 
-                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg gap-2"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                       <Zap className="w-5 h-5 text-primary" />
                     </div>
-                    <div>
-                      <div className="font-medium">
-                        Conector {evse.evseIdLocal || index + 1} - {getConnectorLabel(evse.connectorType)}
+                    <div className="min-w-0">
+                      <div className="font-medium text-sm truncate">
+                        #{evse.evseIdLocal || index + 1} - {getConnectorLabel(evse.connectorType)}
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        {evse.powerKw} kW • {evse.chargeType} • Estado: {evse.status}
+                      <div className="text-xs text-muted-foreground">
+                        {evse.powerKw} kW • {evse.chargeType}
                       </div>
                     </div>
                   </div>
-                  <Badge variant={evse.status === "AVAILABLE" ? "default" : "secondary"}>
-                    {evse.status}
-                  </Badge>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Select
+                      value={evse.status}
+                      onValueChange={async (newStatus) => {
+                        await updateEvseMutation.mutateAsync({
+                          id: evse.id,
+                          data: { status: newStatus as "AVAILABLE" | "UNAVAILABLE" | "FAULTED" }
+                        });
+                        // Actualizar estado local
+                        setEditingStation((prev: any) => ({
+                          ...prev,
+                          evses: prev.evses.map((e: any) => 
+                            e.id === evse.id ? { ...e, status: newStatus } : e
+                          )
+                        }));
+                      }}
+                    >
+                      <SelectTrigger className="w-[110px] h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="AVAILABLE">Disponible</SelectItem>
+                        <SelectItem value="UNAVAILABLE">No disponible</SelectItem>
+                        <SelectItem value="FAULTED">Con falla</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Eliminar conector</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            ¿Estás seguro de eliminar el conector #{evse.evseIdLocal || index + 1} ({getConnectorLabel(evse.connectorType)})? Esta acción no se puede deshacer.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={async () => {
+                              await deleteEvseMutation.mutateAsync({ id: evse.id });
+                              // Actualizar estado local
+                              setEditingStation((prev: any) => ({
+                                ...prev,
+                                evses: prev.evses.filter((e: any) => e.id !== evse.id)
+                              }));
+                            }}
+                          >
+                            Eliminar
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 </div>
               ))}
             </div>

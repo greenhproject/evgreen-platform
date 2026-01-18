@@ -274,6 +274,12 @@ export async function updateEvse(id: number, data: Partial<InsertEvse>) {
   await db.update(evses).set(data).where(eq(evses.id, id));
 }
 
+export async function deleteEvse(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(evses).where(eq(evses.id, id));
+}
+
 export async function getAvailableEvses(filters?: { connectorType?: Evse["connectorType"]; chargeType?: Evse["chargeType"]; minPowerKw?: number }) {
   const db = await getDb();
   if (!db) return [];
