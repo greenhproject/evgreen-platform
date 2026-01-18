@@ -17,7 +17,7 @@ import {
   Zap,
   X
 } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { openAIChatWithQuestion } from "@/components/AIChat";
 
 interface AIInsightCardProps {
   type: "station" | "map" | "history" | "wallet" | "general";
@@ -48,14 +48,29 @@ export function AIInsightCard({ type, stationId, className, onAskAI }: AIInsight
 
   const currentInsight = insights[currentInsightIndex];
 
-  const handleNext = () => {
+  const handleNext = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     setCurrentInsightIndex((prev) => (prev + 1) % insights.length);
   };
 
-  const handleAskAI = () => {
-    if (onAskAI && currentInsight.actionQuestion) {
-      onAskAI(currentInsight.actionQuestion);
+  const handleAskAI = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (currentInsight.actionQuestion) {
+      // Usar la función global para abrir el chat con la pregunta
+      openAIChatWithQuestion(currentInsight.actionQuestion);
+      // También llamar al callback si existe
+      if (onAskAI) {
+        onAskAI(currentInsight.actionQuestion);
+      }
     }
+  };
+
+  const handleDismiss = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDismissed(true);
   };
 
   const getTypeColor = (insightType: string) => {
@@ -92,13 +107,10 @@ export function AIInsightCard({ type, stationId, className, onAskAI }: AIInsight
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 hover:bg-destructive/20 rounded-full"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setDismissed(true);
-              }}
+              className="h-8 w-8 hover:bg-destructive/20 hover:text-destructive rounded-full transition-colors"
+              onClick={handleDismiss}
               aria-label="Cerrar sugerencia"
+              type="button"
             >
               <X className="h-4 w-4" />
             </Button>
@@ -116,12 +128,13 @@ export function AIInsightCard({ type, stationId, className, onAskAI }: AIInsight
         </div>
 
         <div className="flex items-center gap-2">
-          {currentInsight.action && onAskAI && (
+          {currentInsight.action && (
             <Button
               variant="outline"
               size="sm"
               className="flex-1 text-xs"
               onClick={handleAskAI}
+              type="button"
             >
               <Sparkles className="h-3 w-3 mr-1" />
               {currentInsight.action}
@@ -132,6 +145,7 @@ export function AIInsightCard({ type, stationId, className, onAskAI }: AIInsight
               variant="ghost"
               size="sm"
               onClick={handleNext}
+              type="button"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>

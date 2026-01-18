@@ -293,41 +293,6 @@ export default function UserMap() {
           </Button>
         </div>
 
-        {/* Barra inferior de acciones rápidas */}
-        <div className="absolute bottom-20 left-4 right-4">
-          <div className="flex items-center justify-between gap-2">
-            {/* Saldo */}
-            <Button
-              variant="outline"
-              className="h-12 px-4 rounded-xl bg-card/95 backdrop-blur-sm shadow-lg flex items-center gap-2"
-              onClick={() => setLocation("/wallet")}
-            >
-              <Wallet className="w-4 h-4 text-primary" />
-              <span className="font-semibold">
-                ${wallet?.balance ? parseInt(wallet.balance).toLocaleString() : "0"}
-              </span>
-            </Button>
-
-            {/* Botón central QR */}
-            <Button
-              className="h-14 w-14 rounded-full gradient-primary shadow-glow"
-              onClick={() => setLocation("/scan")}
-            >
-              <Zap className="w-6 h-6 text-white" />
-            </Button>
-
-            {/* Vehículo */}
-            <Button
-              variant="outline"
-              className="h-12 px-4 rounded-xl bg-card/95 backdrop-blur-sm shadow-lg flex items-center gap-2"
-              onClick={() => setLocation("/vehicles")}
-            >
-              <Car className="w-4 h-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Vehículo</span>
-            </Button>
-          </div>
-        </div>
-
         {/* Lista de estaciones (bottom sheet) */}
         <Sheet>
           <SheetTrigger asChild>

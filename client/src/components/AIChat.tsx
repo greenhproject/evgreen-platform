@@ -130,6 +130,13 @@ const quickSuggestions = [
 // WIDGET DE CHAT FLOTANTE
 // ============================================================================
 
+// Evento global para abrir el chat con una pregunta predefinida
+const AI_CHAT_OPEN_EVENT = 'ai-chat-open';
+
+export function openAIChatWithQuestion(question: string) {
+  window.dispatchEvent(new CustomEvent(AI_CHAT_OPEN_EVENT, { detail: { question } }));
+}
+
 export function AIChatWidget() {
   const { user, isAuthenticated } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
@@ -137,6 +144,7 @@ export function AIChatWidget() {
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -157,6 +165,31 @@ export function AIChatWidget() {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
+
+  // Escuchar evento global para abrir chat con pregunta
+  useEffect(() => {
+    const handleOpenChat = (e: CustomEvent<{ question: string }>) => {
+      setIsOpen(true);
+      setPendingQuestion(e.detail.question);
+    };
+    
+    window.addEventListener(AI_CHAT_OPEN_EVENT, handleOpenChat as EventListener);
+    return () => {
+      window.removeEventListener(AI_CHAT_OPEN_EVENT, handleOpenChat as EventListener);
+    };
+  }, []);
+
+  // Enviar pregunta pendiente cuando se abre el chat
+  useEffect(() => {
+    if (isOpen && pendingQuestion && !isLoading) {
+      const question = pendingQuestion;
+      setPendingQuestion(null);
+      // Pequeño delay para asegurar que el chat esté listo
+      setTimeout(() => {
+        handleSendMessage(question);
+      }, 300);
+    }
+  }, [isOpen, pendingQuestion, isLoading]);
 
   const handleSendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -223,6 +256,7 @@ export function AIChatWidget() {
     <>
       {/* Botón flotante - posicionado más arriba en móvil para no tapar el menú inferior */}
       <button
+        data-ai-chat-trigger
         onClick={() => setIsOpen(true)}
         className="fixed bottom-24 sm:bottom-6 right-4 sm:right-6 z-40 h-12 w-12 sm:h-14 sm:w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all hover:scale-105 flex items-center justify-center"
         aria-label="Abrir asistente de IA"
