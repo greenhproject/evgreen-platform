@@ -275,6 +275,9 @@ export const reservations = mysqlTable("reservations", {
   transactionId: int("transactionId"),
   // OCPP reservation ID
   ocppReservationId: int("ocppReservationId"),
+  // Recordatorios enviados
+  reminder30MinSent: timestamp("reminder30MinSent"),
+  reminder5MinSent: timestamp("reminder5MinSent"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
