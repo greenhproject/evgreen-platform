@@ -270,18 +270,33 @@ class SDKServer {
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
 
-    // If user not in DB, sync from OAuth server automatically
+    // If user not in DB by openId, try to find by email and link the account
     if (!user) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-        await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: signedInAt,
-        });
-        user = await db.getUserByOpenId(userInfo.openId);
+        
+        // First, check if user exists by email (pre-created accounts)
+        if (userInfo.email) {
+          const existingUserByEmail = await db.getUserByEmail(userInfo.email);
+          if (existingUserByEmail) {
+            // Link the existing user with the new openId from Manus OAuth
+            console.log(`[Auth] Linking existing user ${userInfo.email} with openId ${userInfo.openId}`);
+            await db.linkUserOpenId(existingUserByEmail.id, userInfo.openId);
+            user = await db.getUserByOpenId(userInfo.openId);
+          }
+        }
+        
+        // If still no user, create a new one
+        if (!user) {
+          await db.upsertUser({
+            openId: userInfo.openId,
+            name: userInfo.name || null,
+            email: userInfo.email ?? null,
+            loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+            lastSignedIn: signedInAt,
+          });
+          user = await db.getUserByOpenId(userInfo.openId);
+        }
       } catch (error) {
         console.error("[Auth] Failed to sync user from OAuth:", error);
         throw ForbiddenError("Failed to sync user info");

@@ -168,6 +168,13 @@ export async function updateUser(userId: number, data: Partial<InsertUser>) {
   await db.update(users).set(data).where(eq(users.id, userId));
 }
 
+// Vincular un usuario existente con un nuevo openId de Manus OAuth
+export async function linkUserOpenId(userId: number, newOpenId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ openId: newOpenId }).where(eq(users.id, userId));
+}
+
 // ============================================================================
 // CHARGING STATION OPERATIONS
 // ============================================================================
