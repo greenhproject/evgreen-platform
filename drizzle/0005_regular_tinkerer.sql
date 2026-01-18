@@ -1,0 +1,1 @@
+ALTER TABLE `evses` MODIFY COLUMN `connector_type` enum('TYPE_1','TYPE_2','CCS_1','CCS_2','CHADEMO','TESLA','GBT_AC','GBT_DC') NOT NULL;
