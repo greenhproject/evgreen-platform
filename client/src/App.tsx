@@ -9,6 +9,7 @@ import { useEffect } from "react";
 
 // Páginas públicas
 import Landing from "./pages/Landing";
+import Investors from "./pages/Investors";
 
 // Páginas de usuario
 import UserMap from "./pages/user/Map";
@@ -164,6 +165,7 @@ function Router() {
 
       {/* Rutas públicas */}
       <Route path="/landing" component={Landing} />
+      <Route path="/investors" component={Investors} />
 
       {/* ============================================
           RUTAS DE USUARIO (App móvil principal)

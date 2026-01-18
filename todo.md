@@ -449,3 +449,16 @@
 - [x] BUG: Botones de ver y configurar estación en panel de inversionista no funcionan - Implementados modales de detalles y configuración de tarifas
 - [x] MEJORA: Mostrar ID del inversionista en gestión de usuarios - Agregada columna ID con botón copiar y modal de detalles
 - [x] MEJORA: Mejorar selector de propietario al crear estación - Modal de detalles muestra ID con instrucciones claras
+
+
+## Página de Inversionistas - 18 Enero 2026
+
+- [x] Crear página de inversionistas sofisticada y estética
+- [x] Hero section con propuesta de valor clara
+- [x] Calculadora de ROI interactiva (7kW media vs 100kW DC rápida)
+- [x] Casos de uso: restaurantes, conjuntos residenciales, estaciones de servicio, hoteles
+- [x] Gráficos de potencial de ingresos (compra $800/kWh, venta $1,800/kWh, 12h carga)
+- [x] Sección de beneficios de IA para optimización de precios dinámicos
+- [x] Estadísticas y datos convincentes
+- [x] CTA para contacto/registro como inversionista
+- [x] Conectar botón "Inversionistas" de la landing a esta página
