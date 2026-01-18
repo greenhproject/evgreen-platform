@@ -46,7 +46,7 @@ const technicianMenuItems = [
   { icon: MapPin, label: "Estaciones", path: "/technician/stations" },
   { icon: AlertTriangle, label: "Alertas", path: "/technician/alerts" },
   { icon: Activity, label: "Diagnóstico", path: "/technician/diagnostics" },
-  { icon: FileText, label: "Logs OCPP", path: "/technician/logs" },
+  { icon: FileText, label: "Logs OCPP", path: "/technician/ocpp-logs" },
   { icon: Wrench, label: "Mantenimiento", path: "/technician/maintenance" },
   { icon: Settings, label: "Configuración", path: "/technician/settings" },
 ];

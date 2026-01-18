@@ -20,6 +20,11 @@ import UserSupport from "./pages/user/Support";
 import StationDetail from "./pages/user/StationDetail";
 import ChargingSession from "./pages/user/ChargingSession";
 import AIAssistant from "./pages/user/AIAssistant";
+import UserSettingsNotifications from "./pages/user/settings/Notifications";
+import UserSettingsPersonalInfo from "./pages/user/settings/PersonalInfo";
+import UserSettingsVehicles from "./pages/user/settings/Vehicles";
+import UserSettingsPaymentMethods from "./pages/user/settings/PaymentMethods";
+import UserSettingsConfig from "./pages/user/settings/Config";
 
 // Páginas de inversionista
 import InvestorDashboard from "./pages/investor/Dashboard";
@@ -27,12 +32,19 @@ import InvestorStations from "./pages/investor/Stations";
 import InvestorTransactions from "./pages/investor/Transactions";
 import InvestorReports from "./pages/investor/Reports";
 import InvestorSettings from "./pages/investor/Settings";
+import InvestorEarnings from "./pages/investor/Earnings";
+import InvestorSettlements from "./pages/investor/Settlements";
 
 // Páginas de técnico
 import TechnicianDashboard from "./pages/technician/Dashboard";
 import TechnicianTickets from "./pages/technician/Tickets";
 import TechnicianStations from "./pages/technician/Stations";
 import TechnicianLogs from "./pages/technician/Logs";
+import TechnicianAlerts from "./pages/technician/Alerts";
+import TechnicianDiagnostics from "./pages/technician/Diagnostics";
+import TechnicianOCPPLogs from "./pages/technician/OCPPLogs";
+import TechnicianMaintenance from "./pages/technician/Maintenance";
+import TechnicianSettings from "./pages/technician/Settings";
 
 // Páginas de administración
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -165,6 +177,11 @@ function Router() {
       <Route path="/profile" component={UserProfile} />
       <Route path="/support" component={UserSupport} />
       <Route path="/assistant" component={AIAssistant} />
+      <Route path="/settings/notifications" component={UserSettingsNotifications} />
+      <Route path="/settings/personal" component={UserSettingsPersonalInfo} />
+      <Route path="/settings/vehicles" component={UserSettingsVehicles} />
+      <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
+      <Route path="/settings/config" component={UserSettingsConfig} />
 
       {/* ============================================
           RUTAS DE INVERSIONISTA (con layout)
@@ -204,6 +221,20 @@ function Router() {
           </InvestorLayout>
         </ProtectedRoute>
       </Route>
+      <Route path="/investor/earnings">
+        <ProtectedRoute allowedRoles={["investor", "admin"]}>
+          <InvestorLayout>
+            <InvestorEarnings />
+          </InvestorLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/investor/settlements">
+        <ProtectedRoute allowedRoles={["investor", "admin"]}>
+          <InvestorLayout>
+            <InvestorSettlements />
+          </InvestorLayout>
+        </ProtectedRoute>
+      </Route>
 
       {/* ============================================
           RUTAS DE TÉCNICO (con layout)
@@ -233,6 +264,41 @@ function Router() {
         <ProtectedRoute allowedRoles={["technician", "admin"]}>
           <TechnicianLayout>
             <TechnicianLogs />
+          </TechnicianLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/technician/alerts">
+        <ProtectedRoute allowedRoles={["technician", "admin"]}>
+          <TechnicianLayout>
+            <TechnicianAlerts />
+          </TechnicianLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/technician/diagnostics">
+        <ProtectedRoute allowedRoles={["technician", "admin"]}>
+          <TechnicianLayout>
+            <TechnicianDiagnostics />
+          </TechnicianLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/technician/ocpp-logs">
+        <ProtectedRoute allowedRoles={["technician", "admin"]}>
+          <TechnicianLayout>
+            <TechnicianOCPPLogs />
+          </TechnicianLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/technician/maintenance">
+        <ProtectedRoute allowedRoles={["technician", "admin"]}>
+          <TechnicianLayout>
+            <TechnicianMaintenance />
+          </TechnicianLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/technician/settings">
+        <ProtectedRoute allowedRoles={["technician", "admin"]}>
+          <TechnicianLayout>
+            <TechnicianSettings />
           </TechnicianLayout>
         </ProtectedRoute>
       </Route>

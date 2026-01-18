@@ -91,12 +91,8 @@ export default function UserMap() {
     available: true,
   });
 
-  // Obtener estaciones
-  const { data: stations, isLoading, refetch } = trpc.stations.listPublic.useQuery({
-    lat: userLocation?.lat,
-    lng: userLocation?.lng,
-    radiusKm: 20,
-  });
+  // Obtener estaciones - sin filtro de ubicación para mostrar todas las estaciones públicas
+  const { data: stations, isLoading, refetch } = trpc.stations.listPublic.useQuery({});
 
   // Obtener billetera del usuario
   const { data: wallet } = trpc.wallet.getMyWallet.useQuery();
@@ -127,6 +123,59 @@ export default function UserMap() {
       mapInstance.setZoom(15);
     }
   };
+
+  // Agregar marcadores de estaciones al mapa
+  useEffect(() => {
+    if (!mapInstance || !stations || stations.length === 0) return;
+
+    // Limpiar marcadores anteriores (si los hubiera)
+    const markers: google.maps.marker.AdvancedMarkerElement[] = [];
+
+    // Crear marcadores para cada estación
+    stations.forEach((stationData: any) => {
+      const station = 'station' in stationData ? stationData.station : stationData;
+      const lat = parseFloat(station.latitude);
+      const lng = parseFloat(station.longitude);
+      
+      if (isNaN(lat) || isNaN(lng)) return;
+
+      // Crear elemento personalizado para el marcador
+      const markerContent = document.createElement('div');
+      markerContent.className = 'flex items-center justify-center w-10 h-10 rounded-full bg-primary text-white shadow-lg cursor-pointer';
+      markerContent.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 18H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.19M15 6h2.81A2 2 0 0 1 20 8v8a2 2 0 0 1-2 2h-2"/><path d="M15 2v4"/><path d="M9 2v4"/><path d="M7 10v4"/><path d="M17 10v4"/></svg>`;
+
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        map: mapInstance,
+        position: { lat, lng },
+        title: station.name,
+        content: markerContent,
+      });
+
+      // Agregar evento de clic
+      marker.addListener('click', () => {
+        const normalizedStation = normalizeStation(stationData);
+        handleStationSelect(normalizedStation);
+      });
+
+      markers.push(marker);
+    });
+
+    // Si hay estaciones y no hay ubicación del usuario, centrar en la primera estación
+    if (stations.length > 0 && !userLocation) {
+      const firstStation = 'station' in stations[0] ? stations[0].station : stations[0];
+      const lat = parseFloat(firstStation.latitude);
+      const lng = parseFloat(firstStation.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        mapInstance.setCenter({ lat, lng });
+        mapInstance.setZoom(12);
+      }
+    }
+
+    // Cleanup
+    return () => {
+      markers.forEach(marker => marker.map = null);
+    };
+  }, [mapInstance, stations, userLocation]);
 
   // Manejar selección de estación
   const handleStationSelect = (station: Station) => {
