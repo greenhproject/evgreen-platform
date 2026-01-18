@@ -98,6 +98,7 @@ export default function Landing() {
                 size="lg"
                 variant="outline"
                 className="px-8 py-6 text-lg rounded-xl border-2"
+                onClick={() => window.location.href = '/map'}
               >
                 Ver estaciones
                 <MapPin className="w-5 h-5 ml-2" />
