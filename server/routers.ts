@@ -5,6 +5,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
+import { aiRouter } from "./ai/ai-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -1189,6 +1190,7 @@ export const appRouter = router({
   investorStats: investorStatsRouter,
   platformStats: platformStatsRouter,
   banners: bannersRouter,
+  ai: aiRouter,
 });
 
 export type AppRouter = typeof appRouter;

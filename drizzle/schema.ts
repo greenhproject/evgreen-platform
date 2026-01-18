@@ -769,3 +769,151 @@ export const bannerViewsRelations = relations(bannerViews, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// AI CONFIGURATION TABLE
+// ============================================================================
+
+export const aiProviderEnum = mysqlEnum("ai_provider", [
+  "manus",      // Manus LLM integrado (default)
+  "openai",     // OpenAI GPT-4, GPT-3.5
+  "anthropic",  // Anthropic Claude
+  "google",     // Google Gemini
+  "azure",      // Azure OpenAI
+  "custom",     // Proveedor personalizado
+]);
+
+export const aiConfig = mysqlTable("ai_config", {
+  id: int("id").autoincrement().primaryKey(),
+  // Proveedor activo
+  provider: aiProviderEnum.default("manus").notNull(),
+  // API Keys (encriptadas en producción)
+  openaiApiKey: text("openaiApiKey"),
+  anthropicApiKey: text("anthropicApiKey"),
+  googleApiKey: text("googleApiKey"),
+  azureApiKey: text("azureApiKey"),
+  azureEndpoint: text("azureEndpoint"),
+  customApiKey: text("customApiKey"),
+  customEndpoint: text("customEndpoint"),
+  // Configuración de modelo
+  modelName: varchar("modelName", { length: 100 }),
+  temperature: decimal("temperature", { precision: 3, scale: 2 }).default("0.7"),
+  maxTokens: int("maxTokens").default(2000),
+  // Funcionalidades habilitadas
+  enableChat: boolean("enableChat").default(true).notNull(),
+  enableRecommendations: boolean("enableRecommendations").default(true).notNull(),
+  enableTripPlanner: boolean("enableTripPlanner").default(true).notNull(),
+  enableInvestorInsights: boolean("enableInvestorInsights").default(true).notNull(),
+  enableAdminAnalytics: boolean("enableAdminAnalytics").default(true).notNull(),
+  // Límites de uso
+  dailyUserLimit: int("dailyUserLimit").default(50),
+  dailyTotalLimit: int("dailyTotalLimit").default(10000),
+  // Metadata
+  updatedBy: int("updatedBy"), // FK a users
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AIConfig = typeof aiConfig.$inferSelect;
+export type InsertAIConfig = typeof aiConfig.$inferInsert;
+
+// ============================================================================
+// AI CONVERSATIONS TABLE
+// ============================================================================
+
+export const aiConversations = mysqlTable("ai_conversations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK a users
+  // Tipo de conversación
+  conversationType: varchar("conversationType", { length: 50 }).default("chat").notNull(),
+  // Título generado automáticamente
+  title: varchar("title", { length: 255 }),
+  // Contexto de la conversación (JSON)
+  context: json("context"),
+  // Estado
+  isActive: boolean("isActive").default(true).notNull(),
+  messageCount: int("messageCount").default(0).notNull(),
+  // Timestamps
+  lastMessageAt: timestamp("lastMessageAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AIConversation = typeof aiConversations.$inferSelect;
+export type InsertAIConversation = typeof aiConversations.$inferInsert;
+
+// ============================================================================
+// AI MESSAGES TABLE
+// ============================================================================
+
+export const aiMessages = mysqlTable("ai_messages", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(), // FK a ai_conversations
+  // Rol del mensaje
+  role: varchar("role", { length: 20 }).notNull(), // user, assistant, system
+  // Contenido
+  content: text("content").notNull(),
+  // Metadata
+  tokenCount: int("tokenCount"),
+  provider: varchar("provider", { length: 50 }),
+  model: varchar("model", { length: 100 }),
+  // Para mensajes de asistente - datos estructurados
+  structuredData: json("structuredData"), // Recomendaciones, rutas, etc.
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AIMessage = typeof aiMessages.$inferSelect;
+export type InsertAIMessage = typeof aiMessages.$inferInsert;
+
+// ============================================================================
+// AI USAGE TRACKING TABLE
+// ============================================================================
+
+export const aiUsage = mysqlTable("ai_usage", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK a users
+  // Tipo de uso
+  usageType: varchar("usageType", { length: 50 }).notNull(), // chat, recommendation, trip_plan, insight
+  // Proveedor y modelo usado
+  provider: varchar("provider", { length: 50 }).notNull(),
+  model: varchar("model", { length: 100 }),
+  // Tokens consumidos
+  inputTokens: int("inputTokens").default(0),
+  outputTokens: int("outputTokens").default(0),
+  totalTokens: int("totalTokens").default(0),
+  // Costo estimado (USD)
+  estimatedCost: decimal("estimatedCost", { precision: 10, scale: 6 }),
+  // Timestamp
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AIUsage = typeof aiUsage.$inferSelect;
+export type InsertAIUsage = typeof aiUsage.$inferInsert;
+
+// ============================================================================
+// AI RELATIONS
+// ============================================================================
+
+export const aiConversationsRelations = relations(aiConversations, ({ one, many }) => ({
+  user: one(users, {
+    fields: [aiConversations.userId],
+    references: [users.id],
+  }),
+  messages: many(aiMessages),
+}));
+
+export const aiMessagesRelations = relations(aiMessages, ({ one }) => ({
+  conversation: one(aiConversations, {
+    fields: [aiMessages.conversationId],
+    references: [aiConversations.id],
+  }),
+}));
+
+export const aiUsageRelations = relations(aiUsage, ({ one }) => ({
+  user: one(users, {
+    fields: [aiUsage.userId],
+    references: [users.id],
+  }),
+}));

@@ -236,3 +236,29 @@
 - [ ] Detección de patrones sospechosos
 - [ ] Sugerencias de optimización de la red
 - [ ] Análisis de tendencias del mercado
+
+
+## Nuevas Solicitudes - 18 Enero 2026
+
+### Edición de Estaciones de Carga
+- [x] Agregar botón de editar en la tabla de estaciones
+- [x] Crear modal/formulario de edición de estación
+- [x] Endpoint para actualizar estación existente
+- [x] Permitir editar conectores de estación existente
+- [x] Validaciones de datos al editar
+
+### Sistema de IA Genérico (Intercambiable entre proveedores)
+- [x] Crear capa de abstracción para proveedores de IA
+- [x] Implementar adaptador para Manus LLM (default)
+- [x] Implementar adaptador para OpenAI
+- [x] Implementar adaptador para Anthropic
+- [x] Implementar adaptador para Google AI
+- [x] Crear tabla de configuración de IA en base de datos
+- [x] Panel de configuración de IA en admin (API key, proveedor)
+- [x] Chat conversacional con IA para usuarios (widget + página completa)
+- [x] Recomendaciones de dónde y cuándo cargar
+- [x] Planificador de viajes con paradas de carga
+- [x] Estimación de costos y tiempos de viaje
+- [x] Asistente para inversionistas (análisis predictivo)
+- [x] Tests unitarios para proveedores de IA (29 tests)
+- [ ] Asistente para administradores (insights de la red) - Pendiente

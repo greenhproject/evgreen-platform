@@ -19,6 +19,7 @@ import UserReservations from "./pages/user/Reservations";
 import UserSupport from "./pages/user/Support";
 import StationDetail from "./pages/user/StationDetail";
 import ChargingSession from "./pages/user/ChargingSession";
+import AIAssistant from "./pages/user/AIAssistant";
 
 // Páginas de inversionista
 import InvestorDashboard from "./pages/investor/Dashboard";
@@ -43,6 +44,8 @@ import AdminReports from "./pages/admin/Reports";
 import AdminSettings from "./pages/admin/Settings";
 import AdminBanners from "./pages/admin/Banners";
 import AdminNotifications from "./pages/admin/Notifications";
+import AdminAISettings from "./pages/admin/AISettings";
+import { AIChatWidget } from "./components/AIChat";
 
 // Layouts
 import AdminLayout from "./layouts/AdminLayout";
@@ -161,6 +164,7 @@ function Router() {
       <Route path="/reservations" component={UserReservations} />
       <Route path="/profile" component={UserProfile} />
       <Route path="/support" component={UserSupport} />
+      <Route path="/assistant" component={AIAssistant} />
 
       {/* ============================================
           RUTAS DE INVERSIONISTA (con layout)
@@ -285,6 +289,13 @@ function Router() {
           </AdminLayout>
         </ProtectedRoute>
       </Route>
+      <Route path="/admin/ai-settings">
+        <ProtectedRoute allowedRoles={["admin"]}>
+          <AdminLayout>
+            <AdminAISettings />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
       <Route path="/admin/banners">
         <ProtectedRoute allowedRoles={["admin"]}>
           <AdminLayout>
@@ -314,6 +325,7 @@ function App() {
         <TooltipProvider>
           <Toaster position="top-center" richColors />
           <Router />
+          <AIChatWidget />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
