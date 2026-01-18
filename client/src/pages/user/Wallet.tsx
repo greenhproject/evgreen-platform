@@ -89,7 +89,7 @@ export default function UserWallet() {
             </div>
             <div className="flex items-center gap-2 text-white/60 text-sm">
               <Wallet className="w-4 h-4" />
-              Green EV Wallet
+              EVGreen Wallet
             </div>
           </Card>
         </motion.div>

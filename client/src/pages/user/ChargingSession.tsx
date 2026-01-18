@@ -80,7 +80,7 @@ export default function ChargingSession() {
           <h1 className="text-2xl font-bold mb-2">
             {isCharging ? "Cargando..." : "Carga completada"}
           </h1>
-          <p className="text-muted-foreground">Estación Green EV - Conector 1</p>
+          <p className="text-muted-foreground">Estación EVGreen - Conector 1</p>
         </div>
 
         {/* Indicador de batería */}

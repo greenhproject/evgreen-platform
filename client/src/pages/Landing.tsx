@@ -44,8 +44,14 @@ export default function Landing() {
               className="mb-8"
             >
               <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-primary/10 border border-primary/20">
-                <Zap className="w-5 h-5 text-primary" />
-                <span className="text-sm font-medium text-primary">Green EV by Green House Project</span>
+                <div className="h-6 w-6 rounded-md bg-gradient-to-br from-primary to-emerald-400 flex items-center justify-center">
+                  <Zap className="w-3.5 h-3.5 text-white" />
+                </div>
+                <span className="text-sm font-medium">
+                  <span className="text-primary">EV</span>
+                  <span className="text-foreground">Green</span>
+                  <span className="text-muted-foreground"> by Green House Project</span>
+                </span>
               </div>
             </motion.div>
 
@@ -324,7 +330,7 @@ export default function Landing() {
                   <div className="bg-muted/50 rounded-2xl rounded-tl-none p-4">
                     <p className="text-foreground">
                       ¡Hola! Basándome en tu ubicación actual y el nivel de batería de tu vehículo, 
-                      te recomiendo cargar en la <strong>Estación Green EV Mosquera</strong> que está 
+                      te recomiendo cargar en la <strong>Estación EVGreen Mosquera</strong> que está 
                       a solo 2.3 km. El precio actual es <strong>$1,020/kWh</strong> (15% menos que el promedio) 
                       porque estamos en horario valle. ¿Te gustaría que reserve un puesto?
                     </p>
@@ -606,8 +612,13 @@ export default function Landing() {
         <div className="container">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-2">
-              <Zap className="w-6 h-6 text-primary" />
-              <span className="font-semibold">Green EV</span>
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-emerald-400 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-white" />
+              </div>
+              <span className="font-bold text-lg">
+                <span className="text-primary">EV</span>
+                <span className="text-foreground">Green</span>
+              </span>
               <span className="text-muted-foreground">by Green House Project</span>
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">

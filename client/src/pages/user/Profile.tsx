@@ -140,7 +140,7 @@ export default function UserProfile() {
 
         {/* Versión de la app */}
         <div className="text-center text-xs text-muted-foreground">
-          Green EV v1.0.0
+          EVGreen v1.0.0
         </div>
       </div>
     </UserLayout>

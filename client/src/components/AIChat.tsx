@@ -1,5 +1,5 @@
 /**
- * Componente de Chat de IA para Green EV
+ * Componente de Chat de IA para EVGreen
  * Widget flotante y página de pantalla completa
  */
 
@@ -281,7 +281,7 @@ export function AIChatWidget() {
                 <div>
                   <SheetTitle className="text-base">EV Assistant</SheetTitle>
                   <p className="text-xs text-muted-foreground">
-                    Asistente de Green EV
+                    Asistente EVGreen
                   </p>
                 </div>
               </div>
@@ -314,7 +314,7 @@ export function AIChatWidget() {
                 </div>
                 <h3 className="font-semibold mb-2">¡Hola, {user?.name?.split(" ")[0] || "Usuario"}!</h3>
                 <p className="text-sm text-muted-foreground mb-6 max-w-[280px]">
-                  Soy tu asistente de Green EV. Puedo ayudarte a encontrar estaciones de carga, planificar viajes y más.
+                  Soy tu asistente de EVGreen. Puedo ayudarte a encontrar estaciones de carga, planificar viajes y más.
                 </p>
                 <div className="grid grid-cols-2 gap-2 w-full">
                   {quickSuggestions.map((suggestion, index) => (
@@ -626,7 +626,7 @@ export function AIChatPage() {
                   ¡Hola, {user?.name?.split(" ")[0] || "Usuario"}!
                 </h2>
                 <p className="text-muted-foreground mb-8 max-w-md">
-                  Soy tu asistente inteligente de Green EV. Puedo ayudarte con:
+                  Soy tu asistente inteligente de EVGreen. Puedo ayudarte con:
                 </p>
                 <div className="grid grid-cols-2 gap-4 w-full max-w-lg">
                   {quickSuggestions.map((suggestion, index) => (

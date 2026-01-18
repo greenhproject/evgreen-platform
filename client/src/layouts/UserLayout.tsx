@@ -150,8 +150,13 @@ export default function UserLayout({
               <h1 className="font-semibold text-lg">{title}</h1>
             ) : (
               <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5 text-primary" />
-                <span className="font-semibold">Green EV</span>
+                <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-primary to-emerald-400 flex items-center justify-center">
+                  <Zap className="w-4 h-4 text-white" />
+                </div>
+                <span className="font-bold text-lg">
+                  <span className="text-primary">EV</span>
+                  <span className="text-foreground">Green</span>
+                </span>
               </div>
             )}
 

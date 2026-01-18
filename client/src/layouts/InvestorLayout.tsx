@@ -190,13 +190,18 @@ function InvestorLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <Zap className="h-5 w-5 text-emerald-500 shrink-0" />
-                  <span className="font-bold tracking-tight truncate text-emerald-500">
-                    Green EV
-                  </span>
-                  <span className="text-xs bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full font-medium">
-                    Inversor
-                  </span>
+                  <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-400 flex items-center justify-center shrink-0">
+                    <Zap className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-bold tracking-tight text-lg leading-none">
+                      <span className="text-emerald-500">EV</span>
+                      <span className="text-foreground">Green</span>
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">
+                      Inversor
+                    </span>
+                  </div>
                 </div>
               ) : null}
             </div>

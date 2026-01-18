@@ -84,14 +84,16 @@ export default function AdminLayout({
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
           <div className="flex flex-col items-center gap-4">
-            <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <Zap className="h-8 w-8 text-primary" />
+            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-primary to-emerald-400 flex items-center justify-center">
+              <Zap className="h-8 w-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-center">
-              Green EV Admin
+              <span className="text-primary">EV</span>
+              <span className="text-foreground">Green</span>
+              <span className="text-muted-foreground ml-2 text-lg">Admin</span>
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Panel de administración de la plataforma Green EV. Inicia sesión para continuar.
+              Panel de administración de la plataforma EVGreen. Inicia sesión para continuar.
             </p>
           </div>
           <Button
@@ -196,13 +198,18 @@ function AdminLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <Zap className="h-5 w-5 text-primary shrink-0" />
-                  <span className="font-bold tracking-tight truncate text-primary">
-                    Green EV
-                  </span>
-                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
-                    Admin
-                  </span>
+                  <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-emerald-400 flex items-center justify-center shrink-0">
+                    <Zap className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-bold tracking-tight text-lg leading-none">
+                      <span className="text-primary">EV</span>
+                      <span className="text-foreground">Green</span>
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">
+                      Admin Panel
+                    </span>
+                  </div>
                 </div>
               ) : null}
             </div>
