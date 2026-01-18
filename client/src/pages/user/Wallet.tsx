@@ -72,19 +72,19 @@ export default function UserWallet() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <Card className="p-6 gradient-primary text-white rounded-2xl shadow-glow">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-white/80">Saldo actual</span>
+          <Card className="p-4 sm:p-6 gradient-primary text-white rounded-2xl shadow-glow">
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
+              <span className="text-white/80 text-sm sm:text-base">Saldo actual</span>
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-white/80 hover:text-white hover:bg-white/10"
+                className="text-white/80 hover:text-white hover:bg-white/10 text-xs sm:text-sm"
               >
-                <Clock className="w-4 h-4 mr-2" />
+                <Clock className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                 Historial
               </Button>
             </div>
-            <div className="text-4xl font-bold mb-2">
+            <div className="text-2xl sm:text-4xl font-bold mb-2">
               {isLoading ? "..." : formatCurrency(wallet?.balance || 0)}
             </div>
             <div className="flex items-center gap-2 text-white/60 text-sm">
