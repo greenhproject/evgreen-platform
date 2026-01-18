@@ -185,3 +185,54 @@
 - [ ] Completar páginas faltantes que muestran 404
 - [ ] Agregar rutas faltantes para módulos de inversionista (earnings, settlements)
 - [ ] Agregar rutas faltantes para módulos de técnico (alerts, diagnostics, maintenance, settings)
+
+
+## Tarifa Dinámica para Precio de kWh
+
+### Backend
+- [x] Extender algoritmo de tarifa dinámica para calcular precio de kWh
+- [x] Crear endpoint para obtener precio dinámico actual de una estación
+- [x] Actualizar lógica de transacciones para usar precio dinámico al iniciar carga
+- [x] Guardar el multiplicador aplicado en cada transacción para auditoría
+- [x] Endpoint para estimar costo de carga basado en kWh objetivo
+- [x] Tests unitarios para sistema de precio dinámico (25 tests)
+
+### Frontend
+- [x] Mostrar precio dinámico actual en detalle de estación
+- [x] Indicador visual de demanda (baja/media/alta) con colores
+- [x] Mostrar estimación de costo antes de iniciar carga
+- [ ] Notificar al usuario si el precio cambia durante la carga
+
+### Configuración Admin
+- [ ] Permitir configurar límites de multiplicador para kWh desde admin
+- [ ] Habilitar/deshabilitar tarifa dinámica por estación
+- [ ] Configurar precio base por tipo de conector (AC/DC)
+
+
+## Asistente de IA Inteligente (Diferenciador)
+
+### Módulo de IA Core
+- [ ] Servicio de análisis con LLM integrado
+- [ ] Sistema de contexto y memoria de conversaciones
+- [ ] Análisis de patrones de uso por usuario
+- [ ] Motor de recomendaciones personalizadas
+
+### Asistente para Usuarios
+- [ ] Chat conversacional con IA
+- [ ] Recomendaciones de dónde y cuándo cargar
+- [ ] Planificador de viajes con paradas de carga
+- [ ] Estimación de costos y tiempos de viaje
+- [ ] Alertas inteligentes de mejores horarios
+- [ ] Historial de conversaciones
+
+### Asistente para Inversionistas
+- [ ] Análisis predictivo de ingresos
+- [ ] Recomendaciones de precios óptimos
+- [ ] Detección de anomalías y alertas
+- [ ] Insights automáticos de rendimiento
+
+### Asistente para Administradores
+- [ ] Dashboard analítico con insights de IA
+- [ ] Detección de patrones sospechosos
+- [ ] Sugerencias de optimización de la red
+- [ ] Análisis de tendencias del mercado

@@ -29,6 +29,126 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+// Componente de tarifa dinámica del kWh
+function DynamicPricingCard({ stationId }: { stationId: number }) {
+  const { data: kwhPrice, isLoading } = trpc.transactions.getDynamicKwhPrice.useQuery(
+    { stationId },
+    { refetchInterval: 60000 } // Actualizar cada minuto
+  );
+
+  const getDemandColor = (level: string) => {
+    switch (level) {
+      case "LOW": return "text-green-400";
+      case "NORMAL": return "text-blue-400";
+      case "HIGH": return "text-orange-400";
+      case "SURGE": return "text-red-400";
+      default: return "text-muted-foreground";
+    }
+  };
+
+  const getDemandBg = (level: string) => {
+    switch (level) {
+      case "LOW": return "bg-green-500/10 border-green-500/30";
+      case "NORMAL": return "bg-blue-500/10 border-blue-500/30";
+      case "HIGH": return "bg-orange-500/10 border-orange-500/30";
+      case "SURGE": return "bg-red-500/10 border-red-500/30";
+      default: return "bg-muted";
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+      >
+        <h3 className="font-semibold mb-3">Tarifas</h3>
+        <Card className="p-4 bg-card/50 backdrop-blur border-border/50 animate-pulse">
+          <div className="h-32" />
+        </Card>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2 }}
+    >
+      <h3 className="font-semibold mb-3 flex items-center gap-2">
+        Tarifas en tiempo real
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+        </span>
+      </h3>
+      <Card className={`p-4 backdrop-blur border-2 ${kwhPrice ? getDemandBg(kwhPrice.factors.demandLevel) : 'bg-card/50 border-border/50'}`}>
+        <div className="space-y-4">
+          {/* Precio dinámico principal */}
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-muted-foreground">Precio actual por kWh</div>
+              <div className="flex items-baseline gap-2">
+                <span className={`text-3xl font-bold ${kwhPrice ? getDemandColor(kwhPrice.factors.demandLevel) : ''}`}>
+                  ${kwhPrice?.dynamicPricePerKwh?.toLocaleString() || '---'}
+                </span>
+                <span className="text-muted-foreground">COP</span>
+              </div>
+            </div>
+            {kwhPrice && (
+              <div className="text-right">
+                <div className={`text-sm font-medium ${getDemandColor(kwhPrice.factors.demandLevel)}`}>
+                  {kwhPrice.demandVisualization?.message}
+                </div>
+                <div className={`text-lg font-bold ${getDemandColor(kwhPrice.factors.demandLevel)}`}>
+                  {kwhPrice.demandVisualization?.savingsOrSurge}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Comparación con precio base */}
+          {kwhPrice && kwhPrice.multiplier !== 1 && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Precio base:</span>
+              <span className="line-through text-muted-foreground">
+                ${kwhPrice.basePricePerKwh?.toLocaleString()} COP
+              </span>
+              <span className={getDemandColor(kwhPrice.factors.demandLevel)}>
+                ({kwhPrice.multiplier > 1 ? '+' : ''}{Math.round((kwhPrice.multiplier - 1) * 100)}%)
+              </span>
+            </div>
+          )}
+
+          {/* Detalles de factores */}
+          {kwhPrice && (
+            <div className="pt-3 border-t border-border/50 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Tarifa de conexión</span>
+                <span className="font-medium">$2,000 COP</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Penalización por ocupación</span>
+                <span className="font-medium">$500 COP/min</span>
+              </div>
+            </div>
+          )}
+
+          {/* Indicador de validez */}
+          {kwhPrice && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2">
+              <Info className="w-3 h-3" />
+              <span>Precio válido por 15 min. Actualiza automáticamente.</span>
+            </div>
+          )}
+        </div>
+      </Card>
+    </motion.div>
+  );
+}
+
 export default function StationDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
@@ -209,7 +329,11 @@ export default function StationDetail() {
               <div className="flex items-center gap-4 text-sm">
                 <div className="flex items-center gap-1">
                   <Clock className="w-4 h-4 text-muted-foreground" />
-                  <span>{(station as any).operatingHours || "24/7"}</span>
+                  <span>
+                    {typeof (station as any).operatingHours === 'object' 
+                      ? '24/7' 
+                      : ((station as any).operatingHours || '24/7')}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Star className="w-4 h-4 text-yellow-500" />
@@ -326,36 +450,8 @@ export default function StationDetail() {
             </div>
           </motion.div>
 
-          {/* Tarifas */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            <h3 className="font-semibold mb-3">Tarifas</h3>
-            <Card className="p-4 bg-card/50 backdrop-blur border-border/50">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Precio por kWh</span>
-                  <span className="font-semibold">$800 COP</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Tarifa de conexión</span>
-                  <span className="font-semibold">$2,000 COP</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Penalización por ocupación</span>
-                  <span className="font-semibold">$500 COP/min</span>
-                </div>
-                <div className="pt-2 border-t border-border/50">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Info className="w-4 h-4" />
-                    <span>Los precios varían según la demanda</span>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </motion.div>
+          {/* Tarifas con Precio Dinámico */}
+          <DynamicPricingCard stationId={stationId} />
 
           {/* Información adicional */}
           <motion.div

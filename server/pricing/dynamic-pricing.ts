@@ -320,6 +320,111 @@ export async function calculateDynamicPrice(
 }
 
 // ============================================================================
+// CÁLCULO DE PRECIO DINÁMICO PARA kWh EN SESIONES DE CARGA
+// ============================================================================
+
+export interface DynamicKwhPrice {
+  basePricePerKwh: number;
+  dynamicPricePerKwh: number;
+  multiplier: number;
+  factors: PricingFactors;
+  demandVisualization: DemandVisualization;
+  validUntil: Date;
+  currency: string;
+}
+
+/**
+ * Calcula el precio dinámico del kWh para una sesión de carga
+ * Este precio se aplica al iniciar la carga y puede actualizarse durante la sesión
+ */
+export async function calculateDynamicKwhPrice(
+  stationId: number,
+  evseId?: number,
+  config: DynamicPricingConfig = DEFAULT_PRICING_CONFIG
+): Promise<DynamicKwhPrice> {
+  // Obtener tarifa base de la estación
+  const tariff = await db.getActiveTariffByStationId(stationId);
+  const basePricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "800");
+  
+  // Obtener ocupación de la estación
+  const occupancy = await getZoneOccupancy(stationId);
+  
+  // Calcular multiplicadores
+  const now = new Date();
+  const occupancyMultiplier = calculateOccupancyMultiplier(occupancy.occupancyRate, config);
+  const timeMultiplier = calculateTimeMultiplier(now, config);
+  const dayMultiplier = calculateDayMultiplier(now, config);
+  const demandMultiplier = await calculateDemandMultiplier(stationId, now);
+  
+  // Calcular multiplicador final con pesos
+  let finalMultiplier = (
+    occupancyMultiplier * 0.4 +  // 40% peso a ocupación
+    timeMultiplier * 0.3 +       // 30% peso a horario
+    dayMultiplier * 0.15 +       // 15% peso a día
+    demandMultiplier * 0.15      // 15% peso a demanda histórica
+  );
+  
+  // Aplicar límites
+  finalMultiplier = Math.max(config.minMultiplier, Math.min(config.maxMultiplier, finalMultiplier));
+  
+  // Calcular precio dinámico
+  const dynamicPricePerKwh = Math.round(basePricePerKwh * finalMultiplier);
+  
+  const factors: PricingFactors = {
+    occupancyMultiplier,
+    timeMultiplier,
+    dayMultiplier,
+    demandMultiplier,
+    finalMultiplier,
+    demandLevel: getDemandLevel(finalMultiplier),
+  };
+  
+  // El precio es válido por 15 minutos para sesiones de carga
+  const validUntil = new Date(Date.now() + 15 * 60 * 1000);
+  
+  return {
+    basePricePerKwh,
+    dynamicPricePerKwh,
+    multiplier: finalMultiplier,
+    factors,
+    demandVisualization: getDemandVisualization(factors),
+    validUntil,
+    currency: "COP",
+  };
+}
+
+/**
+ * Estima el costo total de una sesión de carga basado en el precio dinámico actual
+ */
+export async function estimateChargingCost(
+  stationId: number,
+  evseId: number,
+  targetKwh: number,
+  config: DynamicPricingConfig = DEFAULT_PRICING_CONFIG
+): Promise<{
+  estimatedCost: number;
+  pricePerKwh: number;
+  multiplier: number;
+  demandLevel: string;
+  savings: number; // Ahorro vs precio máximo posible
+}> {
+  const pricing = await calculateDynamicKwhPrice(stationId, evseId, config);
+  const estimatedCost = Math.round(pricing.dynamicPricePerKwh * targetKwh);
+  
+  // Calcular ahorro vs precio máximo
+  const maxPossiblePrice = pricing.basePricePerKwh * config.maxMultiplier;
+  const savings = Math.round((maxPossiblePrice - pricing.dynamicPricePerKwh) * targetKwh);
+  
+  return {
+    estimatedCost,
+    pricePerKwh: pricing.dynamicPricePerKwh,
+    multiplier: pricing.multiplier,
+    demandLevel: pricing.factors.demandLevel,
+    savings: savings > 0 ? savings : 0,
+  };
+}
+
+// ============================================================================
 // VISUALIZACIÓN DE DEMANDA
 // ============================================================================
 
