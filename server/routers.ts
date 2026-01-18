@@ -446,6 +446,167 @@ const transactionsRouter = router({
     .query(async ({ input }) => {
       return db.getMeterValuesByTransactionId(input.transactionId);
     }),
+  
+  // Obtener precio dinámico actual del kWh para una estación
+  getDynamicKwhPrice: publicProcedure
+    .input(z.object({
+      stationId: z.number(),
+      evseId: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      const pricing = await dynamicPricing.calculateDynamicKwhPrice(
+        input.stationId,
+        input.evseId
+      );
+      return pricing;
+    }),
+  
+  // Estimar costo de carga basado en kWh objetivo
+  estimateChargingCost: publicProcedure
+    .input(z.object({
+      stationId: z.number(),
+      evseId: z.number(),
+      targetKwh: z.number().min(1).max(200),
+    }))
+    .query(async ({ input }) => {
+      return dynamicPricing.estimateChargingCost(
+        input.stationId,
+        input.evseId,
+        input.targetKwh
+      );
+    }),
+  
+  // Iniciar sesión de carga con precio dinámico
+  startChargingSession: protectedProcedure
+    .input(z.object({
+      stationId: z.number(),
+      evseId: z.number(),
+      targetKwh: z.number().optional(), // Si no se especifica, carga hasta que el usuario detenga
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Obtener precio dinámico actual
+      const pricing = await dynamicPricing.calculateDynamicKwhPrice(
+        input.stationId,
+        input.evseId
+      );
+      
+      // Verificar saldo del usuario
+      const wallet = await db.getWalletByUserId(ctx.user.id);
+      if (!wallet) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No tienes una billetera activa" });
+      }
+      
+      const balance = parseFloat(wallet.balance?.toString() || "0");
+      const minBalance = pricing.dynamicPricePerKwh * 5; // Mínimo para 5 kWh
+      
+      if (balance < minBalance) {
+        throw new TRPCError({ 
+          code: "BAD_REQUEST", 
+          message: `Saldo insuficiente. Necesitas al menos $${minBalance.toLocaleString()} COP para iniciar la carga.` 
+        });
+      }
+      
+      // Verificar que el EVSE esté disponible
+      const evse = await db.getEvseById(input.evseId);
+      if (!evse || evse.status !== "AVAILABLE") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El conector no está disponible" });
+      }
+      
+      // Crear transacción con precio dinámico
+      const transactionId = await db.createTransaction({
+        stationId: input.stationId,
+        evseId: input.evseId,
+        userId: ctx.user.id,
+        status: "IN_PROGRESS",
+        startTime: new Date(),
+      });
+      
+      // Actualizar estado del EVSE
+      await db.updateEvseStatus(input.evseId, "CHARGING");
+      
+      return {
+        transactionId,
+        pricePerKwh: pricing.dynamicPricePerKwh,
+        multiplier: pricing.multiplier,
+        demandLevel: pricing.factors.demandLevel,
+        message: `Carga iniciada a $${pricing.dynamicPricePerKwh}/kWh (${pricing.factors.demandLevel === "LOW" ? "precio bajo" : pricing.factors.demandLevel === "SURGE" ? "demanda alta" : "precio normal"})`,
+      };
+    }),
+  
+  // Detener sesión de carga y calcular costo final
+  stopChargingSession: protectedProcedure
+    .input(z.object({
+      transactionId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const transaction = await db.getTransactionById(input.transactionId);
+      
+      if (!transaction) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+      }
+      
+      if (transaction.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "No tienes acceso a esta transacción" });
+      }
+      
+      if (transaction.status !== "IN_PROGRESS") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Esta transacción ya fue completada" });
+      }
+      
+      // Calcular energía consumida y costo
+      const kwhConsumed = parseFloat(transaction.kwhConsumed?.toString() || "0");
+      // Obtener tarifa de la estación
+      const tariff = await db.getActiveTariffByStationId(transaction.stationId);
+      const pricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "800");
+      const totalCost = Math.round(kwhConsumed * pricePerKwh);
+      
+      // Calcular distribución 80/20
+      const investorShare = Math.round(totalCost * 0.80);
+      const platformFee = Math.round(totalCost * 0.20);
+      
+      // Actualizar transacción
+      await db.updateTransaction(input.transactionId, {
+        endTime: new Date(),
+        status: "COMPLETED",
+        totalCost: totalCost.toString(),
+        investorShare: investorShare.toString(),
+        platformFee: platformFee.toString(),
+      });
+      
+      // Descontar de la billetera del usuario
+      const wallet = await db.getWalletByUserId(ctx.user.id);
+      if (wallet) {
+        const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+        const newBalance = currentBalance - totalCost;
+        await db.updateWalletBalance(ctx.user.id, newBalance.toString());
+        // Registrar transacción de billetera
+        await db.createWalletTransaction({
+          walletId: wallet.id,
+          userId: ctx.user.id,
+          type: "DEBIT",
+          amount: (-totalCost).toString(),
+          balanceBefore: currentBalance.toString(),
+          balanceAfter: newBalance.toString(),
+          description: `Carga de ${kwhConsumed.toFixed(2)} kWh`,
+          referenceId: input.transactionId,
+        });
+      }
+      
+      // Actualizar estado del EVSE
+      if (transaction.evseId) {
+        await db.updateEvseStatus(transaction.evseId, "AVAILABLE");
+      }
+      
+      return {
+        transactionId: input.transactionId,
+        kwhConsumed,
+        pricePerKwh,
+        totalCost,
+        investorShare,
+        platformFee,
+        message: `Carga completada. Total: $${totalCost.toLocaleString()} COP por ${kwhConsumed.toFixed(2)} kWh`,
+      };
+    }),
 });
 
 // ============================================================================
