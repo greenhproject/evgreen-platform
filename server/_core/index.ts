@@ -44,6 +44,17 @@ async function startServer() {
       createContext,
     })
   );
+  // Endpoint de verificación OCPP (HTTP) - debe ir antes de los archivos estáticos
+  app.get("/ocpp/status", (req, res) => {
+    res.json({
+      status: "online",
+      message: "OCPP WebSocket server is running",
+      endpoint: "wss://" + req.headers.host + "/ocpp/{chargePointId}",
+      supportedProtocols: ["ocpp1.6", "ocpp2.0.1"],
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);

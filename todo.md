@@ -487,3 +487,5 @@
 ## Bugs Reportados - 28 Enero 2026
 
 - [x] BUG: Formulario de creación de cargadores pierde el foco del campo de texto después de cada letra ingresada (corregido: cambiado StationForm de componente anidado a función renderStationForm)
+
+- [x] BUG: Simulador OCPP no se conecta a producción - agregado endpoint /ocpp/status y verificado handler WebSocket (pendiente publicar)
