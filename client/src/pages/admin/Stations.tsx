@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -400,8 +400,8 @@ export default function AdminStations() {
       .join(", ");
   };
 
-  // Componente de formulario reutilizable
-  const StationForm = ({ isEdit = false }: { isEdit?: boolean }) => (
+  // Renderizar formulario inline para evitar pérdida de foco
+  const renderStationForm = (isEdit: boolean) => (
     <div className="space-y-6">
       {/* Información básica */}
       <div className="space-y-4">
@@ -836,7 +836,7 @@ export default function AdminStations() {
               <DialogTitle>Crear nueva estación</DialogTitle>
             </DialogHeader>
             
-            <StationForm isEdit={false} />
+            {renderStationForm(false)}
 
             <div className="flex justify-end gap-2 mt-6">
               <Button variant="outline" onClick={() => {
@@ -868,7 +868,7 @@ export default function AdminStations() {
               <DialogTitle>Editar estación: {editingStation?.name}</DialogTitle>
             </DialogHeader>
             
-            <StationForm isEdit={true} />
+            {renderStationForm(true)}
 
             <div className="flex justify-end gap-2 mt-6">
               <Button variant="outline" onClick={() => {
