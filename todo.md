@@ -505,3 +505,11 @@
 ## Bugs Reportados - 28 Enero 2026 (Segunda Ronda)
 
 - [x] BUG: Las claves de Stripe no persisten después de guardar en el módulo de configuración (corregido: creada tabla platform_settings y Settings.tsx funcional)
+
+
+## Revisión Endpoint OCPP - 28 Enero 2026
+
+- [ ] Revisar configuración del servidor y endpoint OCPP
+- [ ] Verificar que el endpoint /ocpp/status responde correctamente
+- [ ] Verificar que el WebSocket OCPP acepta conexiones
+- [ ] Probar conexión con simulador
