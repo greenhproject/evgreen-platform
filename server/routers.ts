@@ -6,6 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { aiRouter } from "./ai/ai-router";
+import { stripeRouter } from "./stripe/router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -1279,6 +1280,7 @@ export const appRouter = router({
   platformStats: platformStatsRouter,
   banners: bannersRouter,
   ai: aiRouter,
+  stripe: stripeRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -1328,3 +1328,168 @@ export const db = {
   getStationsAlongRoute,
   getInvestorAnalytics,
 };
+
+
+// ============================================================================
+// STRIPE / PAYMENT OPERATIONS
+// ============================================================================
+
+export async function addUserWalletBalance(userId: number, amount: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Obtener o crear wallet del usuario
+  let wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+  
+  if (wallet.length === 0) {
+    await db.insert(wallets).values({
+      userId,
+      balance: amount.toString(),
+      currency: "COP",
+    });
+  } else {
+    await db.update(wallets).set({
+      balance: sql`${wallets.balance} + ${amount}`,
+    }).where(eq(wallets.userId, userId));
+  }
+  
+  // Registrar transacción de wallet
+  const currentWallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+  if (currentWallet[0]) {
+    const balanceBefore = parseFloat(currentWallet[0].balance) - amount;
+    await db.insert(walletTransactions).values({
+      walletId: currentWallet[0].id,
+      userId,
+      type: "RECHARGE",
+      amount: amount.toString(),
+      balanceBefore: balanceBefore.toString(),
+      balanceAfter: currentWallet[0].balance,
+      description: "Recarga de saldo vía Stripe",
+    });
+  }
+}
+
+export async function createPaymentRecord(data: {
+  userId: number;
+  stripeSessionId: string;
+  stripePaymentIntentId: string;
+  type: string;
+  amount: number;
+  currency: string;
+  status: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Por ahora registramos en wallet_transactions
+  const wallet = await db.select().from(wallets).where(eq(wallets.userId, data.userId)).limit(1);
+  if (wallet[0]) {
+    await db.insert(walletTransactions).values({
+      walletId: wallet[0].id,
+      userId: data.userId,
+      type: "STRIPE_PAYMENT",
+      amount: data.amount.toString(),
+      balanceBefore: wallet[0].balance,
+      balanceAfter: wallet[0].balance,
+      referenceType: data.type,
+      description: `Pago Stripe: ${data.stripeSessionId}`,
+      stripePaymentIntentId: data.stripePaymentIntentId,
+    });
+  }
+}
+
+export async function updateUserSubscription(userId: number, data: {
+  stripeSubscriptionId?: string | null;
+  planId?: string;
+  status?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Buscar suscripción existente
+  const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
+  
+  const tier = data.planId === "premium" ? "PREMIUM" : data.planId === "basic" ? "BASIC" : "FREE";
+  const discountPercentage = tier === "PREMIUM" ? "20" : tier === "BASIC" ? "10" : "0";
+  
+  if (existing.length === 0) {
+    // Crear nueva suscripción
+    await db.insert(subscriptions).values({
+      userId,
+      tier: tier as any,
+      stripeSubscriptionId: data.stripeSubscriptionId,
+      discountPercentage,
+      startDate: new Date(),
+      isActive: data.status === "active",
+    });
+  } else {
+    // Actualizar suscripción existente
+    const updateData: any = {};
+    if (data.stripeSubscriptionId !== undefined) updateData.stripeSubscriptionId = data.stripeSubscriptionId;
+    if (data.planId) {
+      updateData.tier = tier;
+      updateData.discountPercentage = discountPercentage;
+    }
+    if (data.status) {
+      updateData.isActive = data.status === "active";
+      if (data.status === "canceled") {
+        updateData.cancelledAt = new Date();
+      }
+    }
+    
+    await db.update(subscriptions).set(updateData).where(eq(subscriptions.userId, userId));
+  }
+}
+
+export async function getUserByStripeSubscriptionId(subscriptionId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const sub = await db.select().from(subscriptions).where(eq(subscriptions.stripeSubscriptionId, subscriptionId)).limit(1);
+  if (sub.length === 0) return null;
+  
+  const user = await db.select().from(users).where(eq(users.id, sub[0].userId)).limit(1);
+  return user[0] || null;
+}
+
+export async function updateTransactionPaymentStatus(transactionId: string, data: {
+  stripeSessionId: string;
+  stripePaymentIntentId: string;
+  paymentStatus: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Actualizar el estado de pago de la transacción de carga
+  // Por ahora solo registramos en logs ya que la tabla transactions no tiene campos de Stripe
+  console.log(`[DB] Transaction ${transactionId} payment updated:`, data);
+}
+
+export async function getUserWallet(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+  return wallet[0] || null;
+}
+
+export async function getUserSubscription(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const sub = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
+  return sub[0] || null;
+}
+
+export async function getWalletTransactions(userId: number, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+  if (wallet.length === 0) return [];
+  
+  return db.select().from(walletTransactions)
+    .where(eq(walletTransactions.walletId, wallet[0].id))
+    .orderBy(desc(walletTransactions.createdAt))
+    .limit(limit);
+}
