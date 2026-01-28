@@ -482,3 +482,8 @@
 - [x] Probar compatibilidad con simuladores de cargadores (shiv3.github.io/ocpp-cp-simulator - EXITOSO)
 - [x] Documentar diferencias y compatibilidad
 
+
+
+## Bugs Reportados - 28 Enero 2026
+
+- [x] BUG: Formulario de creación de cargadores pierde el foco del campo de texto después de cada letra ingresada (corregido: cambiado StationForm de componente anidado a función renderStationForm)
