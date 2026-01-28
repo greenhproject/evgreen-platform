@@ -1493,3 +1493,47 @@ export async function getWalletTransactions(userId: number, limit = 20) {
     .orderBy(desc(walletTransactions.createdAt))
     .limit(limit);
 }
+
+
+// ============================================================================
+// PLATFORM SETTINGS OPERATIONS
+// ============================================================================
+
+import {
+  platformSettings,
+  InsertPlatformSettings,
+  PlatformSettings,
+} from "../drizzle/schema";
+
+export async function getPlatformSettings(): Promise<PlatformSettings | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(platformSettings).limit(1);
+  return result[0] || null;
+}
+
+export async function upsertPlatformSettings(settings: Partial<InsertPlatformSettings>): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const existing = await getPlatformSettings();
+  if (existing) {
+    await db.update(platformSettings).set(settings).where(eq(platformSettings.id, existing.id));
+    return existing.id;
+  } else {
+    const result = await db.insert(platformSettings).values(settings as InsertPlatformSettings);
+    return result[0].insertId;
+  }
+}
+
+export async function getStripeConfig() {
+  const settings = await getPlatformSettings();
+  if (!settings) return null;
+  
+  return {
+    publicKey: settings.stripePublicKey,
+    secretKey: settings.stripeSecretKey,
+    webhookSecret: settings.stripeWebhookSecret,
+    testMode: settings.stripeTestMode,
+  };
+}

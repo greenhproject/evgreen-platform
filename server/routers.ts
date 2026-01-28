@@ -1260,6 +1260,87 @@ const platformStatsRouter = router({
 });
 
 // ============================================================================
+// PLATFORM SETTINGS ROUTER (Admin)
+// ============================================================================
+
+const settingsRouter = router({
+  get: adminProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    if (!settings) {
+      // Retornar valores por defecto si no hay configuración
+      return {
+        id: 0,
+        companyName: "Green House Project",
+        businessLine: "Green EV",
+        nit: "",
+        contactEmail: "",
+        investorPercentage: 80,
+        platformFeePercentage: 20,
+        stripePublicKey: "",
+        stripeSecretKey: "",
+        stripeWebhookSecret: "",
+        stripeTestMode: true,
+        enableEnergyBilling: true,
+        enableReservationBilling: true,
+        enableOccupancyPenalty: true,
+        notifyChargeComplete: true,
+        notifyReservationReminder: true,
+        notifyPromotions: false,
+        upmeEndpoint: "",
+        upmeToken: "",
+        upmeAutoReport: true,
+        ocppPort: 9000,
+        ocppServerActive: true,
+      };
+    }
+    // Ocultar claves secretas parcialmente
+    return {
+      ...settings,
+      stripeSecretKey: settings.stripeSecretKey ? "sk_****" + settings.stripeSecretKey.slice(-4) : "",
+      stripeWebhookSecret: settings.stripeWebhookSecret ? "whsec_****" : "",
+      upmeToken: settings.upmeToken ? "****" + settings.upmeToken.slice(-4) : "",
+    };
+  }),
+  
+  update: adminProcedure
+    .input(z.object({
+      companyName: z.string().optional(),
+      businessLine: z.string().optional(),
+      nit: z.string().optional(),
+      contactEmail: z.string().email().optional().or(z.literal("")),
+      investorPercentage: z.number().min(0).max(100).optional(),
+      platformFeePercentage: z.number().min(0).max(100).optional(),
+      stripePublicKey: z.string().optional(),
+      stripeSecretKey: z.string().optional(),
+      stripeWebhookSecret: z.string().optional(),
+      stripeTestMode: z.boolean().optional(),
+      enableEnergyBilling: z.boolean().optional(),
+      enableReservationBilling: z.boolean().optional(),
+      enableOccupancyPenalty: z.boolean().optional(),
+      notifyChargeComplete: z.boolean().optional(),
+      notifyReservationReminder: z.boolean().optional(),
+      notifyPromotions: z.boolean().optional(),
+      upmeEndpoint: z.string().optional(),
+      upmeToken: z.string().optional(),
+      upmeAutoReport: z.boolean().optional(),
+      ocppPort: z.number().optional(),
+      ocppServerActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Filtrar campos vacíos o con valores de máscara
+      const data: any = { ...input, updatedBy: ctx.user.id };
+      
+      // No actualizar claves si vienen con máscara
+      if (data.stripeSecretKey?.startsWith("sk_****")) delete data.stripeSecretKey;
+      if (data.stripeWebhookSecret?.startsWith("whsec_****")) delete data.stripeWebhookSecret;
+      if (data.upmeToken?.startsWith("****")) delete data.upmeToken;
+      
+      await db.upsertPlatformSettings(data);
+      return { success: true };
+    }),
+});
+
+// ============================================================================
 // MAIN APP ROUTER
 // ============================================================================
 
@@ -1281,6 +1362,7 @@ export const appRouter = router({
   banners: bannersRouter,
   ai: aiRouter,
   stripe: stripeRouter,
+  settings: settingsRouter,
 });
 
 export type AppRouter = typeof appRouter;

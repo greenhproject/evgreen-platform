@@ -917,3 +917,55 @@ export const aiUsageRelations = relations(aiUsage, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// PLATFORM SETTINGS TABLE
+// ============================================================================
+
+export const platformSettings = mysqlTable("platform_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Información de la empresa
+  companyName: varchar("companyName", { length: 255 }).default("Green House Project"),
+  businessLine: varchar("businessLine", { length: 255 }).default("Green EV"),
+  nit: varchar("nit", { length: 50 }),
+  contactEmail: varchar("contactEmail", { length: 255 }),
+  
+  // Modelo de negocio (porcentajes)
+  investorPercentage: int("investorPercentage").default(80).notNull(),
+  platformFeePercentage: int("platformFeePercentage").default(20).notNull(),
+  
+  // Configuración de Stripe
+  stripePublicKey: text("stripePublicKey"),
+  stripeSecretKey: text("stripeSecretKey"),
+  stripeWebhookSecret: text("stripeWebhookSecret"),
+  stripeTestMode: boolean("stripeTestMode").default(true).notNull(),
+  
+  // Métodos de ingreso habilitados
+  enableEnergyBilling: boolean("enableEnergyBilling").default(true).notNull(),
+  enableReservationBilling: boolean("enableReservationBilling").default(true).notNull(),
+  enableOccupancyPenalty: boolean("enableOccupancyPenalty").default(true).notNull(),
+  
+  // Configuración de notificaciones
+  notifyChargeComplete: boolean("notifyChargeComplete").default(true).notNull(),
+  notifyReservationReminder: boolean("notifyReservationReminder").default(true).notNull(),
+  notifyPromotions: boolean("notifyPromotions").default(false).notNull(),
+  
+  // Integración UPME
+  upmeEndpoint: text("upmeEndpoint"),
+  upmeToken: text("upmeToken"),
+  upmeAutoReport: boolean("upmeAutoReport").default(true).notNull(),
+  
+  // Configuración OCPP
+  ocppPort: int("ocppPort").default(9000),
+  ocppServerActive: boolean("ocppServerActive").default(true).notNull(),
+  
+  // Metadata
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlatformSettings = typeof platformSettings.$inferSelect;
+export type InsertPlatformSettings = typeof platformSettings.$inferInsert;

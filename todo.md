@@ -500,3 +500,8 @@
 - [x] Implementar portal de suscripciones (planes básico y premium)
 - [x] Agregar historial de pagos en el dashboard del usuario (tab Historial)
 - [ ] Probar flujo completo de pagos (pendiente publicar)
+
+
+## Bugs Reportados - 28 Enero 2026 (Segunda Ronda)
+
+- [x] BUG: Las claves de Stripe no persisten después de guardar en el módulo de configuración (corregido: creada tabla platform_settings y Settings.tsx funcional)
