@@ -489,3 +489,14 @@
 - [x] BUG: Formulario de creación de cargadores pierde el foco del campo de texto después de cada letra ingresada (corregido: cambiado StationForm de componente anidado a función renderStationForm)
 
 - [x] BUG: Simulador OCPP no se conecta a producción - agregado endpoint /ocpp/status y verificado handler WebSocket (pendiente publicar)
+
+
+## Integración Stripe (COMPLETADO) - 28 Enero 2026
+
+- [x] Agregar feature de Stripe al proyecto (paquete stripe instalado)
+- [x] Solicitar API keys de Stripe al usuario (configuradas en Settings)
+- [x] Configurar productos y precios (recarga wallet, suscripciones básica/premium)
+- [x] Implementar checkout para pagos de sesiones (recarga de billetera)
+- [x] Implementar portal de suscripciones (planes básico y premium)
+- [x] Agregar historial de pagos en el dashboard del usuario (tab Historial)
+- [ ] Probar flujo completo de pagos (pendiente publicar)
