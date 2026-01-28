@@ -479,6 +479,6 @@
 
 ### Testing y Validación
 - [x] Crear tests unitarios para handlers OCPP 1.6J (27 tests)
-- [ ] Probar compatibilidad con simuladores de cargadores
+- [x] Probar compatibilidad con simuladores de cargadores (shiv3.github.io/ocpp-cp-simulator - EXITOSO)
 - [x] Documentar diferencias y compatibilidad
 
