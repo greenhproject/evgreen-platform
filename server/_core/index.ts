@@ -48,8 +48,8 @@ async function startServer() {
       createContext,
     })
   );
-  // Endpoint de verificación OCPP (HTTP) - debe ir antes de los archivos estáticos
-  app.get("/ocpp/status", (req, res) => {
+  // Endpoint de verificación OCPP (HTTP) - bajo /api/ para que funcione en producción
+  app.get("/api/ocpp/status", (req, res) => {
     res.json({
       status: "online",
       message: "OCPP WebSocket server is running",

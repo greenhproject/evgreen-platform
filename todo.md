@@ -509,7 +509,8 @@
 
 ## Revisión Endpoint OCPP - 28 Enero 2026
 
-- [ ] Revisar configuración del servidor y endpoint OCPP
-- [ ] Verificar que el endpoint /ocpp/status responde correctamente
-- [ ] Verificar que el WebSocket OCPP acepta conexiones
-- [ ] Probar conexión con simulador
+- [x] Revisar configuración del servidor y endpoint OCPP
+- [x] Mover endpoint a /api/ocpp/status para que funcione en producción
+- [x] Verificar que el endpoint responde correctamente en desarrollo
+- [ ] Verificar que el WebSocket OCPP acepta conexiones en producción
+- [ ] Probar conexión con simulador en producción
