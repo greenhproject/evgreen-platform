@@ -43,6 +43,13 @@
       "when": 1768754325474,
       "tag": "0005_regular_tinkerer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1769623984758,
+      "tag": "0006_spicy_kat_farrell",
+      "breakpoints": true
     }
   ]
 }
