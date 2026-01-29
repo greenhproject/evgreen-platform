@@ -77,34 +77,79 @@ async function startServer() {
   // No usar path fijo para permitir subrutas como /ocpp/CP001
   const wss = new WebSocketServer({ 
     noServer: true,
+    // Aumentar timeout para conexiones OCPP
+    clientTracking: true,
+    perMessageDeflate: false, // Desactivar compresión para mejor compatibilidad
     handleProtocols: (protocols: Set<string>) => {
+      console.log(`[OCPP] Client requested protocols:`, Array.from(protocols));
       // Priorizar OCPP 2.0.1, pero aceptar 1.6J si es lo único disponible
       if (protocols.has("ocpp2.0.1")) return "ocpp2.0.1";
       if (protocols.has("ocpp2.0")) return "ocpp2.0";
       if (protocols.has("ocpp1.6")) return "ocpp1.6";
-      return "ocpp1.6"; // Default para compatibilidad máxima
+      // Si no se especifica protocolo, aceptar conexión de todos modos
+      return protocols.size > 0 ? Array.from(protocols)[0] : "ocpp1.6";
     }
+  });
+
+  // Ping/Pong para mantener conexiones vivas (cada 30 segundos)
+  const pingInterval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if ((ws as any).isAlive === false) {
+        console.log(`[OCPP] Terminating inactive connection`);
+        return ws.terminate();
+      }
+      (ws as any).isAlive = false;
+      ws.ping();
+    });
+  }, 30000);
+
+  wss.on("close", () => {
+    clearInterval(pingInterval);
   });
 
   // Manejar upgrade de HTTP a WebSocket para rutas OCPP
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url || "", `http://${request.headers.host}`);
     
+    console.log(`[OCPP] Upgrade request received:`, {
+      path: url.pathname,
+      headers: {
+        upgrade: request.headers.upgrade,
+        connection: request.headers.connection,
+        secWebSocketProtocol: request.headers["sec-websocket-protocol"],
+        secWebSocketVersion: request.headers["sec-websocket-version"],
+        origin: request.headers.origin,
+      }
+    });
+    
     // Solo manejar rutas que empiecen con /ocpp/
     if (url.pathname.startsWith("/ocpp/")) {
-      console.log(`[OCPP] Upgrade request for: ${url.pathname}`);
+      console.log(`[OCPP] Handling upgrade for: ${url.pathname}`);
+      
+      // Manejar errores de socket
+      socket.on("error", (err) => {
+        console.error(`[OCPP] Socket error during upgrade:`, err);
+      });
       
       wss.handleUpgrade(request, socket, head, (ws) => {
+        console.log(`[OCPP] Upgrade successful, emitting connection`);
         wss.emit("connection", ws, request);
       });
     } else {
       // No es una ruta OCPP, cerrar la conexión
+      console.log(`[OCPP] Ignoring non-OCPP upgrade request: ${url.pathname}`);
       socket.destroy();
     }
   });
 
   // Manejar conexiones OCPP WebSocket
   wss.on("connection", async (ws, req) => {
+    // Marcar conexión como viva para ping/pong
+    (ws as any).isAlive = true;
+    ws.on("pong", () => {
+      (ws as any).isAlive = true;
+    });
+
     const url = new URL(req.url || "", `http://${req.headers.host}`);
     // El chargePointId viene después de /ocpp/
     const pathParts = url.pathname.split("/").filter(Boolean);
@@ -112,8 +157,12 @@ async function startServer() {
     const protocol = ws.protocol || "ocpp1.6";
     const ocppVersion = protocol.includes("2.0") ? "2.0.1" : "1.6";
 
-    console.log(`[OCPP] New ${ocppVersion} connection from: ${ocppIdentity}`);
-    console.log(`[OCPP] URL: ${req.url}, Protocol: ${protocol}`);
+    console.log(`[OCPP] New ${ocppVersion} connection established:`, {
+      identity: ocppIdentity,
+      url: req.url,
+      protocol: protocol,
+      remoteAddress: req.socket?.remoteAddress,
+    });
 
     // Delegar al manejador del CSMS
     handleOCPPConnection(ws, ocppIdentity, ocppVersion);
