@@ -512,5 +512,8 @@
 - [x] Revisar configuración del servidor y endpoint OCPP
 - [x] Mover endpoint a /api/ocpp/status para que funcione en producción
 - [x] Verificar que el endpoint responde correctamente en desarrollo
+- [x] Agregar ping/pong para mantener conexiones vivas (30s)
+- [x] Desactivar compresión perMessageDeflate para mejor compatibilidad
+- [x] Agregar logs detallados de upgrade y conexión
 - [ ] Verificar que el WebSocket OCPP acepta conexiones en producción
 - [ ] Probar conexión con simulador en producción
