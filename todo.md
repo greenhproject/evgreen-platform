@@ -870,3 +870,13 @@
 - [x] Ambos conectores muestran "Conector 1" - CORREGIDO: ahora usa evseIdLocal
 - [x] Estado de conectores - CORREGIDO: usa estado OCPP en tiempo real
 - [x] Los conectores no se pueden seleccionar - Ya funcionaba, era problema de datos
+
+
+## Correcciones SEO - 30 Enero 2026 [COMPLETADO]
+
+- [x] Agregar palabras clave relevantes (carga vehículos eléctricos, estaciones de carga, EV)
+- [x] Optimizar título: debe tener entre 30-60 caracteres (ahora: 48 chars)
+- [x] Agregar meta descripción: debe tener entre 50-160 caracteres (ahora: 155 chars)
+- [x] Agregar meta tags Open Graph y Twitter Card para redes sociales
+- [x] Actualizar Home.tsx con contenido SEO-friendly y palabras clave
+- [x] Cambiar idioma de HTML a español (lang="es")
