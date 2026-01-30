@@ -136,6 +136,53 @@ export default function StartCharge() {
     return scannedText.toUpperCase().trim();
   };
   
+  // Feedback de escaneo exitoso: sonido elegante y vibración sutil
+  const playScanFeedback = useCallback(() => {
+    // Vibración corta y sutil (50ms)
+    if ('vibrate' in navigator) {
+      navigator.vibrate(50);
+    }
+    
+    // Sonido elegante usando Web Audio API
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      // Crear un sonido de "ding" elegante con dos tonos armónicos
+      const playTone = (frequency: number, startTime: number, duration: number, volume: number) => {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = frequency;
+        oscillator.type = 'sine';
+        
+        // Envelope suave para un sonido elegante
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(volume, startTime + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+        
+        oscillator.start(startTime);
+        oscillator.stop(startTime + duration);
+      };
+      
+      const now = audioContext.currentTime;
+      // Acorde de éxito: Do mayor (C5 + E5 + G5) con fade elegante
+      playTone(523.25, now, 0.15, 0.12);       // C5
+      playTone(659.25, now + 0.02, 0.13, 0.08); // E5
+      playTone(783.99, now + 0.04, 0.11, 0.06); // G5
+      
+      // Cerrar el contexto después de que termine el sonido
+      setTimeout(() => {
+        audioContext.close();
+      }, 200);
+    } catch (error) {
+      // Si falla el audio, al menos la vibración ya se ejecutó
+      console.log('Audio feedback not available');
+    }
+  }, []);
+  
   // Iniciar escáner QR
   const startScanner = useCallback(async () => {
     setScannerError(null);
@@ -163,6 +210,10 @@ export default function StartCharge() {
         (decodedText) => {
           // QR escaneado exitosamente
           const code = extractStationCode(decodedText);
+          
+          // Feedback: sonido elegante + vibración sutil
+          playScanFeedback();
+          
           setStationCode(code);
           stopScanner();
           toast.success("Código escaneado", {
