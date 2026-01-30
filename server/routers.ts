@@ -145,6 +145,65 @@ const usersRouter = router({
       }
       return { idTag: newIdTag };
     }),
+
+  // Admin: eliminar usuario
+  delete: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .mutation(async ({ input }) => {
+      // Proteger la cuenta maestra
+      const user = await db.getUserById(input.userId);
+      if (!user) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Usuario no encontrado.",
+        });
+      }
+      if (user.email === "greenhproject@gmail.com") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "No se puede eliminar la cuenta maestra.",
+        });
+      }
+      await db.deleteUser(input.userId);
+      return { success: true };
+    }),
+
+  // Admin: actualizar usuario completo (incluyendo email y rol)
+  updateFull: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      data: z.object({
+        name: z.string().optional(),
+        email: z.string().email().optional(),
+        phone: z.string().optional(),
+        role: z.enum(["staff", "technician", "investor", "user", "admin"]).optional(),
+        isActive: z.boolean().optional(),
+        companyName: z.string().optional(),
+        taxId: z.string().optional(),
+        bankAccount: z.string().optional(),
+        bankName: z.string().optional(),
+        technicianLicense: z.string().optional(),
+        assignedRegion: z.string().optional(),
+      }),
+    }))
+    .mutation(async ({ input }) => {
+      // Proteger la cuenta maestra de cambios de rol
+      const user = await db.getUserById(input.userId);
+      if (!user) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Usuario no encontrado.",
+        });
+      }
+      if (user.email === "greenhproject@gmail.com" && input.data.role && input.data.role !== "admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "No se puede modificar el rol de la cuenta maestra.",
+        });
+      }
+      await db.updateUser(input.userId, input.data);
+      return { success: true };
+    }),
 });
 
 // ============================================================================
