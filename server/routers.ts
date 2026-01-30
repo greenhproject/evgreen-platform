@@ -7,6 +7,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { aiRouter } from "./ai/ai-router";
 import { stripeRouter } from "./stripe/router";
+import { ocppRouter } from "./ocpp/ocpp-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -1363,6 +1364,7 @@ export const appRouter = router({
   ai: aiRouter,
   stripe: stripeRouter,
   settings: settingsRouter,
+  ocpp: ocppRouter,
 });
 
 export type AppRouter = typeof appRouter;

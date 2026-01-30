@@ -820,6 +820,63 @@ export async function getOcppLogsByStation(stationId: number, limit = 100) {
   return db.select().from(ocppLogs).where(eq(ocppLogs.stationId, stationId)).orderBy(desc(ocppLogs.createdAt)).limit(limit);
 }
 
+export async function getOcppLogs(filters: {
+  stationId?: number;
+  ocppIdentity?: string;
+  messageType?: string;
+  direction?: "IN" | "OUT";
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return { logs: [], total: 0 };
+  
+  const conditions = [];
+  
+  if (filters.stationId) {
+    conditions.push(eq(ocppLogs.stationId, filters.stationId));
+  }
+  if (filters.ocppIdentity) {
+    conditions.push(eq(ocppLogs.ocppIdentity, filters.ocppIdentity));
+  }
+  if (filters.messageType) {
+    conditions.push(eq(ocppLogs.messageType, filters.messageType));
+  }
+  if (filters.direction) {
+    conditions.push(eq(ocppLogs.direction, filters.direction));
+  }
+  
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const logs = await db.select()
+    .from(ocppLogs)
+    .where(whereClause)
+    .orderBy(desc(ocppLogs.createdAt))
+    .limit(filters.limit || 100)
+    .offset(filters.offset || 0);
+  
+  // Obtener total para paginación
+  const countResult = await db.select({ count: sql<number>`count(*)` })
+    .from(ocppLogs)
+    .where(whereClause);
+  
+  return {
+    logs,
+    total: countResult[0]?.count || 0,
+  };
+}
+
+export async function getOcppMessageTypes() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.selectDistinct({ messageType: ocppLogs.messageType })
+    .from(ocppLogs)
+    .orderBy(ocppLogs.messageType);
+  
+  return result.map(r => r.messageType).filter(Boolean);
+}
+
 // ============================================================================
 // STATISTICS AND AGGREGATIONS
 // ============================================================================

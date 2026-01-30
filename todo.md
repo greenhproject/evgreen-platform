@@ -534,4 +534,25 @@
 - [x] Diagnosticado: problema era que event listeners se registraban después de que el mensaje llegaba
 - [x] Corregido: import dinámico convertido a async/await, listeners registrados primero
 - [x] Probado localmente: BootNotification y Heartbeat funcionan correctamente
-- [ ] Publicar y probar con simulador externo en producción
+- [x] Publicar y probar con simulador externo en producción - ¡FUNCIONA!
+
+
+## Panel de Monitoreo OCPP - 30 Enero 2026
+
+### Backend
+- [x] Endpoint para obtener cargadores conectados en tiempo real
+- [x] Endpoint para obtener logs OCPP con filtros (por estación, tipo de mensaje, fecha)
+- [x] Endpoint para obtener estado actual de conectores
+- [x] Endpoint para enviar comandos remotos (Reset, UnlockConnector, etc.)
+- [x] Almacenar conexiones activas en memoria para monitoreo
+
+### Frontend Admin
+- [x] Página de monitoreo OCPP (/admin/ocpp-monitor)
+- [x] Tarjetas de cargadores conectados con estado en tiempo real
+- [x] Indicadores de última comunicación (heartbeat)
+- [x] Tabla de logs OCPP con filtros y paginación
+- [x] Panel de comandos remotos
+
+### Frontend Técnico
+- [x] Acceso al monitoreo OCPP desde dashboard de técnico
+- [x] Vista de logs de sus cargadores asignados
