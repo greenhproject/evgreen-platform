@@ -487,6 +487,55 @@ const tariffsRouter = router({
 // ============================================================================
 
 const transactionsRouter = router({
+  // Obtener transacción por ID (solo si pertenece al usuario o es admin)
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const transaction = await db.getTransactionById(input.id);
+      
+      if (!transaction) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Transacción no encontrada",
+        });
+      }
+      
+      // Verificar que el usuario tiene acceso
+      if (transaction.userId !== ctx.user.id && ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "No tienes acceso a esta transacción",
+        });
+      }
+      
+      // Obtener información adicional
+      const station = await db.getChargingStationById(transaction.stationId);
+      const evse = await db.getEvseById(transaction.evseId);
+      const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
+      
+      // Calcular duración
+      const startTime = new Date(transaction.startTime);
+      const endTime = transaction.endTime ? new Date(transaction.endTime) : new Date();
+      const durationMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
+      
+      return {
+        id: transaction.id,
+        stationId: transaction.stationId,
+        stationName: station?.name || "Estación",
+        stationAddress: station?.address || "",
+        connectorId: evse?.connectorId || 1,
+        connectorType: evse?.connectorType || "TYPE_2",
+        startTime: transaction.startTime.toISOString(),
+        endTime: transaction.endTime?.toISOString() || null,
+        durationMinutes,
+        kwhConsumed: transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed).toFixed(2) : "0.00",
+        pricePerKwh: tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : 800,
+        totalCost: transaction.totalCost ? parseFloat(transaction.totalCost) : 0,
+        status: transaction.status,
+        paymentMethod: "wallet", // Por defecto wallet
+      };
+    }),
+  
   // Usuario: sus transacciones
   myTransactions: protectedProcedure
     .input(z.object({ limit: z.number().optional() }).optional())
@@ -530,20 +579,6 @@ const transactionsRouter = router({
         startDate: input?.startDate,
         endDate: input?.endDate,
       });
-    }),
-  
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input, ctx }) => {
-      const transaction = await db.getTransactionById(input.id);
-      if (!transaction) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
-      }
-      // Verificar acceso
-      if (ctx.user.role === "user" && transaction.userId !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "No tienes acceso a esta transacción" });
-      }
-      return transaction;
     }),
   
   getMeterValues: protectedProcedure
