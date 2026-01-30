@@ -519,3 +519,19 @@
 - [x] Crear página de diagnóstico /api/ocpp/test para probar WebSocket
 - [ ] Verificar que el WebSocket OCPP acepta conexiones en producción
 - [ ] Probar conexión con simulador en producción
+
+
+## Solución Definitiva OCPP - 29 Enero 2026
+
+- [ ] Analizar por qué la prueba HTML funciona pero el simulador falla
+- [ ] Verificar headers y subprotocolos enviados por el simulador
+- [ ] Implementar solución compatible con simulador OCPP
+- [ ] Probar conexión exitosa con navegador del usuario
+
+
+## Solución OCPP WebSocket - 30 Enero 2026
+
+- [x] Diagnosticado: problema era que event listeners se registraban después de que el mensaje llegaba
+- [x] Corregido: import dinámico convertido a async/await, listeners registrados primero
+- [x] Probado localmente: BootNotification y Heartbeat funcionan correctamente
+- [ ] Publicar y probar con simulador externo en producción
