@@ -225,24 +225,19 @@ async function startServer() {
 }
 
 // Función para manejar conexiones OCPP
-function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVersion: string) {
-  // Importar dinámicamente para evitar dependencias circulares
-  import("../db").then(async (db) => {
-    // Mapeo de transacciones OCPP 1.6 a IDs internos
-    const ocpp16Transactions = new Map<number, string>();
-    let transactionIdCounter = 1;
+async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVersion: string) {
+  // Importar db al inicio
+  const db = await import("../db");
+  
+  // Mapeo de transacciones OCPP 1.6 a IDs internos
+  const ocpp16Transactions = new Map<number, string>();
+  let transactionIdCounter = 1;
 
-    // Registrar conexión
-    let stationId: number | null = null;
+  // Registrar conexión
+  let stationId: number | null = null;
 
-    await db.createOcppLog({
-      ocppIdentity,
-      direction: "IN",
-      messageType: "CONNECTION",
-      payload: { ocppVersion },
-    });
-
-    ws.on("message", async (data) => {
+  // Registrar el event listener PRIMERO, antes de cualquier operación async
+  ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
         const messageType = message[0];
@@ -310,7 +305,18 @@ function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVersion: 
     ws.on("error", (error) => {
       console.error(`[OCPP] WebSocket error from ${ocppIdentity}:`, error);
     });
-  });
+
+  // Registrar conexión después de configurar los listeners
+  try {
+    await db.createOcppLog({
+      ocppIdentity,
+      direction: "IN",
+      messageType: "CONNECTION",
+      payload: { ocppVersion },
+    });
+  } catch (err) {
+    console.error(`[OCPP] Error logging connection:`, err);
+  }
 }
 
 // Handler para mensajes OCPP 1.6
