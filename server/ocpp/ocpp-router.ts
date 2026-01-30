@@ -23,16 +23,72 @@ const ocppProcedure = protectedProcedure.use(({ ctx, next }) => {
 export const ocppRouter = router({
   /**
    * Obtener todas las conexiones OCPP activas
+   * Combina conexiones en memoria con conexiones inferidas de logs de BD
    */
   getActiveConnections: ocppProcedure.query(async () => {
-    return ocppManager.getAllConnections();
+    // Obtener conexiones en memoria (tiempo real)
+    const memoryConnections = ocppManager.getAllConnections();
+    
+    // Obtener conexiones desde logs de BD (persistente)
+    const dbConnections = await db.getActiveConnectionsFromLogs();
+    
+    // Combinar: usar memoria como fuente principal, BD como respaldo
+    const connectionMap = new Map<string, any>();
+    
+    // Primero agregar conexiones de BD
+    for (const conn of dbConnections) {
+      connectionMap.set(conn.ocppIdentity, conn);
+    }
+    
+    // Luego sobrescribir con conexiones en memoria (más actualizadas)
+    for (const conn of memoryConnections) {
+      connectionMap.set(conn.ocppIdentity, conn);
+    }
+    
+    return Array.from(connectionMap.values());
   }),
 
   /**
    * Obtener estadísticas de conexiones
+   * Combina datos de memoria y BD
    */
   getConnectionStats: ocppProcedure.query(async () => {
-    return ocppManager.getConnectionStats();
+    // Obtener conexiones combinadas
+    const memoryConnections = ocppManager.getAllConnections();
+    const dbConnections = await db.getActiveConnectionsFromLogs();
+    
+    // Combinar
+    const connectionMap = new Map<string, any>();
+    for (const conn of dbConnections) {
+      connectionMap.set(conn.ocppIdentity, conn);
+    }
+    for (const conn of memoryConnections) {
+      connectionMap.set(conn.ocppIdentity, conn);
+    }
+    
+    const allConnections = Array.from(connectionMap.values());
+    
+    let connectedCount = 0;
+    let disconnectedCount = 0;
+    const byVersion: Record<string, number> = {};
+    
+    for (const conn of allConnections) {
+      if (conn.isConnected) {
+        connectedCount++;
+      } else {
+        disconnectedCount++;
+      }
+      
+      const version = conn.ocppVersion || '1.6';
+      byVersion[version] = (byVersion[version] || 0) + 1;
+    }
+    
+    return {
+      totalConnections: allConnections.length,
+      connectedCount,
+      disconnectedCount,
+      byVersion,
+    };
   }),
 
   /**
@@ -330,5 +386,86 @@ export const ocppRouter = router({
       }
 
       return { success: true, messageId };
+    }),
+
+  // ============================================================================
+  // ALERTAS OCPP
+  // ============================================================================
+
+  /**
+   * Obtener alertas OCPP
+   */
+  getAlerts: ocppProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(200).default(50),
+      offset: z.number().min(0).default(0),
+      includeAcknowledged: z.boolean().default(false),
+      ocppIdentity: z.string().optional(),
+      severity: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getOcppAlerts(input);
+    }),
+
+  /**
+   * Obtener estadísticas de alertas
+   */
+  getAlertStats: ocppProcedure.query(async () => {
+    return db.getOcppAlertStats();
+  }),
+
+  /**
+   * Reconocer una alerta
+   */
+  acknowledgeAlert: ocppProcedure
+    .input(z.object({
+      alertId: z.number(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await db.acknowledgeOcppAlert(input.alertId, ctx.user.id);
+      return { success: true };
+    }),
+
+  // ============================================================================
+  // MÉTRICAS OCPP
+  // ============================================================================
+
+  /**
+   * Obtener métricas de conexiones
+   */
+  getConnectionMetrics: ocppProcedure
+    .input(z.object({
+      startDate: z.string().transform(s => new Date(s)),
+      endDate: z.string().transform(s => new Date(s)),
+      granularity: z.enum(["hour", "day"]).default("hour"),
+    }))
+    .query(async ({ input }) => {
+      return db.getOcppConnectionMetrics(input.startDate, input.endDate, input.granularity);
+    }),
+
+  /**
+   * Obtener métricas de mensajes OCPP
+   */
+  getMessageMetrics: ocppProcedure
+    .input(z.object({
+      startDate: z.string().transform(s => new Date(s)),
+      endDate: z.string().transform(s => new Date(s)),
+      granularity: z.enum(["hour", "day"]).default("hour"),
+    }))
+    .query(async ({ input }) => {
+      return db.getOcppMessageMetrics(input.startDate, input.endDate, input.granularity);
+    }),
+
+  /**
+   * Obtener métricas de transacciones
+   */
+  getTransactionMetrics: ocppProcedure
+    .input(z.object({
+      startDate: z.string().transform(s => new Date(s)),
+      endDate: z.string().transform(s => new Date(s)),
+      granularity: z.enum(["hour", "day"]).default("day"),
+    }))
+    .query(async ({ input }) => {
+      return db.getTransactionMetrics(input.startDate, input.endDate, input.granularity);
     }),
 });

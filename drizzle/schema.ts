@@ -418,6 +418,43 @@ export type OcppLog = typeof ocppLogs.$inferSelect;
 export type InsertOcppLog = typeof ocppLogs.$inferInsert;
 
 // ============================================================================
+// OCPP ALERTS TABLE
+// ============================================================================
+
+export const ocppAlertTypeEnum = mysqlEnum("ocpp_alert_type", [
+  "DISCONNECTION",
+  "ERROR",
+  "FAULT",
+  "OFFLINE_TIMEOUT",
+  "BOOT_REJECTED",
+  "TRANSACTION_ERROR",
+]);
+
+export const ocppAlertSeverityEnum = mysqlEnum("ocpp_alert_severity", [
+  "info",
+  "warning",
+  "critical",
+]);
+
+export const ocppAlerts = mysqlTable("ocpp_alerts", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId"), // FK a charging_stations
+  ocppIdentity: varchar("ocppIdentity", { length: 100 }).notNull(),
+  alertType: ocppAlertTypeEnum.notNull(),
+  severity: ocppAlertSeverityEnum.notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  payload: json("payload"),
+  acknowledged: boolean("acknowledged").default(false).notNull(),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  acknowledgedBy: int("acknowledgedBy"), // FK a users
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OcppAlert = typeof ocppAlerts.$inferSelect;
+export type InsertOcppAlert = typeof ocppAlerts.$inferInsert;
+
+// ============================================================================
 // INVESTOR PAYOUTS TABLE
 // ============================================================================
 

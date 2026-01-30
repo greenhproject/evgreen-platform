@@ -26,7 +26,10 @@ import {
   Send,
   ChevronLeft,
   ChevronRight,
-  Filter
+  Filter,
+  Copy,
+  Link,
+  CheckCircle2
 } from "lucide-react";
 
 export default function AdminOCPPMonitor() {
@@ -147,6 +150,53 @@ export default function AdminOCPPMonitor() {
         </Button>
       </div>
 
+      {/* WebSocket URL Card - Para soporte y configuración */}
+      <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Link className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm">URL de Conexión OCPP WebSocket</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Use esta URL para configurar cargadores. Reemplace <code className="bg-muted px-1 rounded">{'{ID}'}</code> con el identificador del cargador.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="flex items-center gap-2 bg-background border rounded-lg px-3 py-2">
+                <code className="text-sm font-mono text-primary select-all">
+                  wss://www.evgreen.lat/api/ocpp/ws/{'{CHARGE_POINT_ID}'}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText('wss://www.evgreen.lat/api/ocpp/ws/');
+                    toast.success('URL copiada al portapapeles');
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+              <div className="text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Protocolos soportados:</p>
+                <p className="mt-1">OCPP 1.6J (ocpp1.6) y OCPP 2.0.1 (ocpp2.0.1)</p>
+                <p className="mt-2"><strong>Ejemplo:</strong> Para un cargador con ID "CP001", la URL sería: <code className="bg-background px-1 rounded">wss://www.evgreen.lat/api/ocpp/ws/CP001</code></p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
@@ -263,15 +313,18 @@ export default function AdminOCPPMonitor() {
                       <div className="space-y-1">
                         <p className="text-xs text-muted-foreground">Conectores:</p>
                         <div className="flex flex-wrap gap-1">
-                          {Object.entries(conn.connectorStatuses).map(([id, status]) => (
-                            <Badge 
-                              key={id} 
-                              variant="outline"
-                              className={`text-xs ${getConnectorStatusColor(status)} text-white border-0`}
-                            >
-                              #{id}: {status}
-                            </Badge>
-                          ))}
+                          {Object.entries(conn.connectorStatuses || {}).map(([id, statusVal]) => {
+                            const status = String(statusVal);
+                            return (
+                              <Badge 
+                                key={id} 
+                                variant="outline"
+                                className={`text-xs ${getConnectorStatusColor(status)} text-white border-0`}
+                              >
+                                #{id}: {status}
+                              </Badge>
+                            );
+                          })}
                         </div>
                       </div>
                     )}

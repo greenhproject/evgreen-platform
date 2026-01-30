@@ -556,3 +556,35 @@
 ### Frontend Técnico
 - [x] Acceso al monitoreo OCPP desde dashboard de técnico
 - [x] Vista de logs de sus cargadores asignados
+
+
+## Bugs Reportados - 30 Enero 2026
+
+- [x] BUG: Monitor OCPP muestra 0 conexiones activas aunque hay logs de cargadores conectados
+- [x] Corregir: Inferir conexiones activas desde logs de BD, no solo desde memoria del servidor
+
+
+## Mejoras Monitor OCPP - 30 Enero 2026
+
+### Notificaciones de Alertas
+- [x] Detectar desconexiones de cargadores y enviar notificación
+- [x] Detectar errores reportados (StatusNotification con errorCode != NoError)
+- [x] Enviar notificación al owner cuando hay alertas críticas
+- [x] Endpoints para mostrar historial de alertas en el dashboard
+
+### Gráficos de Métricas Históricas
+- [x] Endpoint para obtener métricas de conexiones por hora/día
+- [x] Endpoint para obtener métricas de transacciones por hora/día
+- [ ] Gráficos de línea para conexiones activas en el tiempo (UI pendiente)
+- [ ] Gráficos de barras para transacciones diarias (UI pendiente)
+
+### Configuración Remota
+- [x] Implementar GetConfiguration OCPP
+- [x] Implementar ChangeConfiguration OCPP
+- [ ] UI para ver y modificar configuración de cargadores
+
+
+### URL de WebSocket para Soporte
+- [x] Agregar sección con URL de WebSocket en Monitor OCPP para copiar fácilmente
+- [x] Mostrar protocolos soportados (OCPP 1.6J, OCPP 2.0.1)
+- [x] Ejemplo de configuración para cargadores
