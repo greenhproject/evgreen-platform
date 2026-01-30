@@ -854,3 +854,11 @@
 
 - [x] Agregar sonido elegante al escanear QR exitosamente (acorde Do mayor con Web Audio API)
 - [x] Agregar vibración corta y sutil al escanear QR (50ms con Navigator.vibrate)
+
+
+## Bug: Sincronización de estado de conectores - 30 Enero 2026
+
+- [x] Mapa muestra "0 de 0 disponibles" - CORREGIDO: listPublic ahora incluye EVSEs
+- [x] Detalles muestra "1 de 2 conectores libres" (correcto)
+- [x] StartCharge dice "Estación desconectada" - Esto es correcto si el simulador OCPP no está conectado
+- [x] El estado de conexión OCPP es independiente del estado de conectores en BD
