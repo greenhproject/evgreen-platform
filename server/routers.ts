@@ -8,6 +8,7 @@ import * as db from "./db";
 import { aiRouter } from "./ai/ai-router";
 import { stripeRouter } from "./stripe/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
+import { chargingRouter } from "./charging/charging-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -1443,6 +1444,7 @@ export const appRouter = router({
   settings: settingsRouter,
   ocpp: ocppRouter,
   dashboard: dashboardRouter,
+  charging: chargingRouter,
 });
 
 export type AppRouter = typeof appRouter;

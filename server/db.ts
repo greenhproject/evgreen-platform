@@ -2499,3 +2499,131 @@ export async function getUsersNearStation(
   
   return result;
 }
+
+
+// ============================================================================
+// CHARGING FLOW OPERATIONS
+// ============================================================================
+
+/**
+ * Obtener estación por ocppIdentity
+ */
+export async function getStationByOcppIdentity(ocppIdentity: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(chargingStations)
+    .where(eq(chargingStations.ocppIdentity, ocppIdentity))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+/**
+ * Obtener transacción activa de un usuario
+ */
+export async function getActiveTransactionByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.status, "IN_PROGRESS")
+      )
+    )
+    .orderBy(desc(transactions.startTime))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+/**
+ * Obtener último valor de medición de una transacción
+ */
+export async function getLastMeterValue(transactionId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(meterValues)
+    .where(eq(meterValues.transactionId, transactionId))
+    .orderBy(desc(meterValues.timestamp))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+/**
+ * Obtener transacciones de un usuario con paginación
+ */
+export async function getUserTransactions(userId: number, limit = 20, offset = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.select({
+    id: transactions.id,
+    stationId: transactions.stationId,
+    stationName: chargingStations.name,
+    evseId: transactions.evseId,
+    startTime: transactions.startTime,
+    endTime: transactions.endTime,
+    energyDelivered: transactions.kwhConsumed,
+    totalCost: transactions.totalCost,
+    status: transactions.status,
+    energyCost: transactions.energyCost,
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(eq(transactions.userId, userId))
+    .orderBy(desc(transactions.startTime))
+    .limit(limit)
+    .offset(offset);
+  
+  return result;
+}
+
+/**
+ * Descontar saldo de la billetera del usuario
+ */
+export async function deductWalletBalance(userId: number, amount: number, transactionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Obtener wallet actual
+  const wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+  
+  if (wallet.length === 0) {
+    throw new Error("Usuario no tiene billetera");
+  }
+  
+  const currentBalance = parseFloat(wallet[0].balance);
+  if (currentBalance < amount) {
+    throw new Error("Saldo insuficiente");
+  }
+  
+  const newBalance = currentBalance - amount;
+  
+  // Actualizar balance
+  await db.update(wallets).set({
+    balance: newBalance.toString(),
+  }).where(eq(wallets.userId, userId));
+  
+  // Registrar transacción de wallet
+  await db.insert(walletTransactions).values({
+    walletId: wallet[0].id,
+    userId,
+    type: "CHARGE",
+    amount: (-amount).toString(),
+    balanceBefore: currentBalance.toString(),
+    balanceAfter: newBalance.toString(),
+    referenceType: "TRANSACTION",
+    referenceId: transactionId,
+    description: `Pago por carga de vehículo #${transactionId}`,
+  });
+  
+  return newBalance;
+}
