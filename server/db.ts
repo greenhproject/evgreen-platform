@@ -119,6 +119,14 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     if (Object.keys(updateSet).length === 0) {
       updateSet.lastSignedIn = new Date();
     }
+    
+    // Generar idTag único para nuevos usuarios (formato: EV-XXXXXX)
+    // Solo se genera si no existe, no se actualiza en upsert
+    const existingUser = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1);
+    if (existingUser.length === 0) {
+      // Nuevo usuario - generar idTag
+      values.idTag = await generateUniqueIdTag();
+    }
 
     await db.insert(users).values(values).onDuplicateKeyUpdate({
       set: updateSet,
@@ -157,6 +165,53 @@ export async function getAllUsers(role?: User["role"]) {
     return db.select().from(users).where(eq(users.role, role)).orderBy(desc(users.createdAt));
   }
   return db.select().from(users).orderBy(desc(users.createdAt));
+}
+
+// Generar idTag único para usuarios (formato: EV-XXXXXX)
+export async function generateUniqueIdTag(): Promise<string> {
+  const db = await getDb();
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Sin I, O, 0, 1 para evitar confusión
+  let attempts = 0;
+  const maxAttempts = 10;
+  
+  while (attempts < maxAttempts) {
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const idTag = `EV-${code}`;
+    
+    // Verificar que no existe
+    if (db) {
+      const existing = await db.select().from(users).where(eq(users.idTag, idTag)).limit(1);
+      if (existing.length === 0) {
+        return idTag;
+      }
+    } else {
+      return idTag;
+    }
+    attempts++;
+  }
+  
+  // Fallback con timestamp si no se puede generar uno único
+  return `EV-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+}
+
+// Obtener usuario por idTag (para autorización OCPP)
+export async function getUserByIdTag(idTag: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.idTag, idTag)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+// Regenerar idTag de un usuario
+export async function regenerateUserIdTag(userId: number): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const newIdTag = await generateUniqueIdTag();
+  await db.update(users).set({ idTag: newIdTag }).where(eq(users.id, userId));
+  return newIdTag;
 }
 
 export async function updateUserRole(userId: number, role: User["role"]) {
@@ -2361,6 +2416,86 @@ export async function getRecentTransactions(limit: number = 20) {
     .innerJoin(users, eq(transactions.userId, users.id))
     .orderBy(desc(transactions.startTime))
     .limit(limit);
+  
+  return result;
+}
+
+
+// ============================================================================
+// PRICE ALERT OPERATIONS
+// ============================================================================
+
+/**
+ * Obtener usuarios que han cargado en una estación en los últimos N días
+ * Para enviar notificaciones de cambio de precio
+ */
+export async function getUsersWithRecentTransactions(
+  stationId: number,
+  daysBack: number = 30
+): Promise<Array<{ id: number; name: string | null; email: string | null }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysBack);
+  
+  // Obtener usuarios únicos que han cargado en esta estación
+  const result = await db.selectDistinct({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+  })
+    .from(transactions)
+    .innerJoin(users, eq(transactions.userId, users.id))
+    .where(
+      and(
+        eq(transactions.stationId, stationId),
+        gte(transactions.startTime, startDate),
+        eq(users.isActive, true)
+      )
+    );
+  
+  return result;
+}
+
+/**
+ * Obtener usuarios suscritos a alertas de precio en estaciones cercanas
+ */
+export async function getUsersNearStation(
+  latitude: number,
+  longitude: number,
+  radiusKm: number = 10
+): Promise<Array<{ id: number; name: string | null; email: string | null }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Calcular bounding box aproximado
+  const latDelta = radiusKm / 111;
+  const lngDelta = radiusKm / (111 * Math.cos(latitude * Math.PI / 180));
+  
+  const minLat = latitude - latDelta;
+  const maxLat = latitude + latDelta;
+  const minLng = longitude - lngDelta;
+  const maxLng = longitude + lngDelta;
+  
+  // Obtener usuarios que han cargado en estaciones dentro del radio
+  const result = await db.selectDistinct({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+  })
+    .from(transactions)
+    .innerJoin(users, eq(transactions.userId, users.id))
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(
+      and(
+        eq(users.isActive, true),
+        gte(chargingStations.latitude, minLat.toString()),
+        lte(chargingStations.latitude, maxLat.toString()),
+        gte(chargingStations.longitude, minLng.toString()),
+        lte(chargingStations.longitude, maxLng.toString())
+      )
+    );
   
   return result;
 }

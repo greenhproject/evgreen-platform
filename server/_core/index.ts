@@ -430,10 +430,39 @@ async function handleOCPP16Message(
       return {};
     }
     case "Authorize": {
+      // Validar idTag contra la base de datos de usuarios
+      const idTag = payload.idTag;
+      if (idTag) {
+        const user = await db.getUserByIdTag(idTag);
+        if (user && user.isActive) {
+          console.log(`[OCPP] Authorize - User ${user.name || user.email} (ID: ${user.id}) authorized with idTag: ${idTag}`);
+          return {
+            idTagInfo: {
+              status: "Accepted",
+              expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+              parentIdTag: user.id.toString(),
+            },
+          };
+        } else if (user && !user.isActive) {
+          console.log(`[OCPP] Authorize - User with idTag ${idTag} is blocked`);
+          return {
+            idTagInfo: {
+              status: "Blocked",
+            },
+          };
+        } else {
+          console.log(`[OCPP] Authorize - Unknown idTag: ${idTag}`);
+          return {
+            idTagInfo: {
+              status: "Invalid",
+            },
+          };
+        }
+      }
+      // Si no hay idTag, rechazar
       return {
         idTagInfo: {
-          status: "Accepted",
-          expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          status: "Invalid",
         },
       };
     }
@@ -446,13 +475,33 @@ async function handleOCPP16Message(
       if (!evse) {
         return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
       }
+      
+      // Buscar usuario por idTag
+      const idTag = payload.idTag;
+      let userId: number | null = null;
+      let userName = "Usuario";
+      
+      if (idTag) {
+        const user = await db.getUserByIdTag(idTag);
+        if (user && user.isActive) {
+          userId = user.id;
+          userName = user.name || user.email || "Usuario";
+          console.log(`[OCPP] StartTransaction - User ${userName} (ID: ${userId}) starting charge with idTag: ${idTag}`);
+        } else if (user && !user.isActive) {
+          console.log(`[OCPP] StartTransaction - User with idTag ${idTag} is blocked`);
+          return { idTagInfo: { status: "Blocked" }, transactionId: 0 };
+        } else {
+          console.log(`[OCPP] StartTransaction - Unknown idTag: ${idTag}, transaction will be anonymous`);
+        }
+      }
+      
       const tariff = await db.getActiveTariffByStationId(stationId);
       const { nanoid } = await import("nanoid");
       const internalTransactionId = nanoid();
       
       await db.createTransaction({
         evseId: evse.id,
-        userId: 1,
+        userId: userId || 1, // Usar usuario encontrado o fallback a 1 (admin)
         stationId,
         tariffId: tariff?.id,
         ocppTransactionId: internalTransactionId,
@@ -465,25 +514,26 @@ async function handleOCPP16Message(
       await db.updateEvseStatus(evse.id, "CHARGING");
       
       // Enviar notificación al usuario cuando inicia la carga
-      // Por ahora userId está hardcodeado a 1, en producción se vincularía con el idTag
-      try {
-        const station = await db.getChargingStationById(stationId);
-        const stationName = station?.name || "Estación";
-        const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
-        await db.createNotification({
-          userId: 1, // TODO: Vincular con usuario real basado en idTag
-          title: "🔌 Carga iniciada",
-          message: `Tu carga ha comenzado en ${stationName}. Tarifa actual: $${pricePerKwh.toLocaleString()} COP/kWh. Te notificaremos cuando finalice.`,
-          type: "CHARGE_START",
-          referenceId: null,
-          referenceType: "transaction",
-        });
-      } catch (notifErr) {
-        console.error(`[OCPP] Error sending charge start notification:`, notifErr);
+      if (userId) {
+        try {
+          const station = await db.getChargingStationById(stationId);
+          const stationName = station?.name || "Estación";
+          const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+          await db.createNotification({
+            userId: userId,
+            title: "🔌 Carga iniciada",
+            message: `Hola ${userName}, tu carga ha comenzado en ${stationName}. Tarifa actual: $${pricePerKwh.toLocaleString()} COP/kWh. Te notificaremos cuando finalice.`,
+            type: "CHARGE_START",
+            referenceId: null,
+            referenceType: "transaction",
+          });
+        } catch (notifErr) {
+          console.error(`[OCPP] Error sending charge start notification:`, notifErr);
+        }
       }
       
       return {
-        idTagInfo: { status: "Accepted" },
+        idTagInfo: { status: userId ? "Accepted" : "Accepted" }, // Aceptar incluso sin usuario para permitir cargas anónimas
         transactionId: transactionIdCounter,
       };
     }

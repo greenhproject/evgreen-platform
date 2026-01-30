@@ -62,6 +62,8 @@ export const users = mysqlTable("users", {
   role: userRoleEnum.default("user").notNull(),
   avatarUrl: text("avatarUrl"),
   isActive: boolean("isActive").default(true).notNull(),
+  // idTag único para identificación OCPP (formato: EV-XXXXXX)
+  idTag: varchar("idTag", { length: 20 }).unique(),
   // Para inversionistas - información adicional
   companyName: varchar("companyName", { length: 255 }),
   taxId: varchar("taxId", { length: 50 }), // NIT en Colombia

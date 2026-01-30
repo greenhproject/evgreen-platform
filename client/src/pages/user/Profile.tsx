@@ -19,12 +19,42 @@ import {
   LogOut,
   ChevronRight,
   Crown,
-  Settings
+  Settings,
+  Copy,
+  RefreshCw,
+  Zap
 } from "lucide-react";
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 export default function UserProfile() {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const [, setLocation] = useLocation();
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  
+  const regenerateIdTagMutation = trpc.users.regenerateMyIdTag.useMutation({
+    onSuccess: (data: { idTag: string }) => {
+      toast.success(`idTag regenerado: ${data.idTag}`);
+      refresh();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al regenerar idTag");
+    },
+    onSettled: () => setIsRegenerating(false),
+  });
+  
+  const copyIdTag = () => {
+    if (user?.idTag) {
+      navigator.clipboard.writeText(user.idTag);
+      toast.success("idTag copiado al portapapeles");
+    }
+  };
+  
+  const handleRegenerateIdTag = () => {
+    setIsRegenerating(true);
+    regenerateIdTagMutation.mutate();
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -90,6 +120,53 @@ export default function UserProfile() {
               <Crown className="w-4 h-4 mr-2 text-yellow-500" />
               Actualizar a Premium
             </Button>
+          </Card>
+        </motion.div>
+        
+        {/* Sección de idTag OCPP */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+        >
+          <Card className="p-4 sm:p-6 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <Zap className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold">Tu idTag de Carga</h3>
+                <p className="text-xs text-muted-foreground">Usa este código para identificarte en los cargadores</p>
+              </div>
+            </div>
+            
+            <div className="bg-background/80 rounded-lg p-3 flex items-center justify-between">
+              <code className="text-lg font-mono font-bold text-primary">
+                {user?.idTag || "Generando..."}
+              </code>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={copyIdTag}
+                  disabled={!user?.idTag}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleRegenerateIdTag}
+                  disabled={isRegenerating}
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRegenerating ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
+            </div>
+            
+            <p className="text-xs text-muted-foreground mt-3">
+              💡 Presenta este código en el cargador o ingrésalo manualmente para iniciar tu sesión de carga.
+            </p>
           </Card>
         </motion.div>
 
