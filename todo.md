@@ -677,3 +677,33 @@
 - [x] Enviar notificación a usuarios que cargaron recientemente en esa estación
 - [x] Funciones de BD para obtener usuarios cercanos y con transacciones recientes
 - [ ] Configurar umbral de notificación desde admin (pendiente)
+
+
+## Flujo Completo de Carga EV - 30 Enero 2026 [EN PROGRESO]
+
+### Backend - Endpoints de Carga
+- [x] Endpoint para obtener estación por código QR/ID (getStationByCode)
+- [x] Endpoint para obtener conectores disponibles de una estación (getAvailableConnectors)
+- [x] Endpoint para validar saldo del usuario vs costo estimado (validateAndEstimate)
+- [x] Endpoint para iniciar carga remota (RemoteStartTransaction OCPP)
+- [x] Endpoint para detener carga remota (RemoteStopTransaction OCPP)
+- [x] Endpoint para obtener estado de carga en tiempo real (getActiveSession)
+- [x] Lógica de descuento de saldo al finalizar carga
+
+### Frontend - Flujo de Usuario
+- [x] Pantalla de escaneo QR mejorada (/start-charge)
+- [x] Pantalla de selección de conector disponible
+- [x] Pantalla de opciones de carga (valor fijo $, porcentaje %, o carga completa 100%)
+- [x] Slider deslizable estético para seleccionar valor/porcentaje
+- [ ] Indicador visual circular tipo gauge (pendiente)
+- [x] Animaciones suaves y colores dinámicos
+- [x] Validación visual de saldo suficiente
+- [ ] Pantalla de espera de conexión del vehículo (siguiente fase)
+- [ ] Pantalla de monitoreo de carga en tiempo real (kWh, $, tiempo, %) (siguiente fase)
+- [ ] Botón para detener carga manualmente (siguiente fase)
+- [ ] Pantalla de resumen de transacción al finalizar (siguiente fase)
+
+### Notificaciones
+- [x] Notificación de carga iniciada con tarifa actual
+- [x] Notificación de carga completada con resumen
+- [ ] Notificación si el saldo se agota durante la carga (pendiente)
