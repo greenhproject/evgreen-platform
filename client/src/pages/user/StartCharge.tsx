@@ -489,6 +489,16 @@ export default function StartCharge() {
                   {stationQuery.error.message}
                 </div>
               )}
+              
+              {/* Botón para volver al mapa */}
+              <Button 
+                variant="outline" 
+                className="w-full mt-4"
+                onClick={() => setLocation("/map")}
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Volver al mapa
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -565,7 +575,7 @@ export default function StartCharge() {
                               }`} />
                             </div>
                             <div>
-                              <p className="font-medium">Conector {connector.connectorId}</p>
+                              <p className="font-medium">Conector {connector.connectorNumber || connector.connectorId}</p>
                               <p className="text-sm text-muted-foreground">
                                 {connector.type?.replace('_', ' ')} • {Number(connector.powerKw).toFixed(0)} kW
                               </p>
