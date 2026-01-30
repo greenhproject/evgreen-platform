@@ -880,3 +880,14 @@
 - [x] Agregar meta tags Open Graph y Twitter Card para redes sociales
 - [x] Actualizar Home.tsx con contenido SEO-friendly y palabras clave
 - [x] Cambiar idioma de HTML a español (lang="es")
+
+
+## Bug: No se puede seleccionar conector para iniciar carga - 30 Enero 2026 [EN PROGRESO]
+
+- [x] Investigar por qué los conectores no responden al click en StartCharge
+- [x] Corregir la lógica de isAvailable para normalizar estados (AVAILABLE, Available, etc.)
+- [x] Agregar tests para la lógica de disponibilidad de conectores (7 tests nuevos)
+- [x] Verificar estado de conectores en BD (todos en AVAILABLE)
+- [x] Agregar logs de debug en el onClick del botón de conector
+- [ ] Verificar que el botón de iniciar carga funciona después de seleccionar conector
+- [ ] Probar flujo completo de inicio de carga

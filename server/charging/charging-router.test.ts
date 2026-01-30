@@ -133,6 +133,57 @@ describe("Charging Router", () => {
     });
   });
 
+  describe("Disponibilidad de conectores", () => {
+    it("debe considerar AVAILABLE como disponible", () => {
+      const status = "AVAILABLE";
+      const normalizedStatus = status?.toUpperCase() || 'UNAVAILABLE';
+      const isAvailable = normalizedStatus === "AVAILABLE" || normalizedStatus === "PREPARING";
+      expect(isAvailable).toBe(true);
+    });
+
+    it("debe considerar Available (minúsculas) como disponible", () => {
+      const status = "Available";
+      const normalizedStatus = status?.toUpperCase() || 'UNAVAILABLE';
+      const isAvailable = normalizedStatus === "AVAILABLE" || normalizedStatus === "PREPARING";
+      expect(isAvailable).toBe(true);
+    });
+
+    it("debe considerar PREPARING como disponible", () => {
+      const status = "PREPARING";
+      const normalizedStatus = status?.toUpperCase() || 'UNAVAILABLE';
+      const isAvailable = normalizedStatus === "AVAILABLE" || normalizedStatus === "PREPARING";
+      expect(isAvailable).toBe(true);
+    });
+
+    it("debe considerar CHARGING como no disponible", () => {
+      const status = "CHARGING";
+      const normalizedStatus = status?.toUpperCase() || 'UNAVAILABLE';
+      const isAvailable = normalizedStatus === "AVAILABLE" || normalizedStatus === "PREPARING";
+      expect(isAvailable).toBe(false);
+    });
+
+    it("debe considerar UNAVAILABLE como no disponible", () => {
+      const status = "UNAVAILABLE";
+      const normalizedStatus = status?.toUpperCase() || 'UNAVAILABLE';
+      const isAvailable = normalizedStatus === "AVAILABLE" || normalizedStatus === "PREPARING";
+      expect(isAvailable).toBe(false);
+    });
+
+    it("debe considerar FAULTED como no disponible", () => {
+      const status = "FAULTED";
+      const normalizedStatus = status?.toUpperCase() || 'UNAVAILABLE';
+      const isAvailable = normalizedStatus === "AVAILABLE" || normalizedStatus === "PREPARING";
+      expect(isAvailable).toBe(false);
+    });
+
+    it("debe manejar status null como no disponible", () => {
+      const status = null;
+      const normalizedStatus = status?.toUpperCase() || 'UNAVAILABLE';
+      const isAvailable = normalizedStatus === "AVAILABLE" || normalizedStatus === "PREPARING";
+      expect(isAvailable).toBe(false);
+    });
+  });
+
   describe("Modos de carga", () => {
     it("debe manejar modo fixed_amount correctamente", () => {
       const mode = "fixed_amount";

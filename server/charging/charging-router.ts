@@ -118,6 +118,11 @@ export const chargingRouter = router({
           }
         }
         
+        // Normalizar estado para comparación
+        const normalizedStatus = realTimeStatus?.toUpperCase() || 'UNAVAILABLE';
+        // Un conector está disponible si está en estado AVAILABLE o Available
+        const isAvailable = normalizedStatus === "AVAILABLE" || normalizedStatus === "PREPARING";
+        
         return {
           id: c.id,
           evseId: c.id, // ID de la BD
@@ -125,8 +130,8 @@ export const chargingRouter = router({
           connectorId: c.evseIdLocal, // Para compatibilidad con el frontend
           type: c.connectorType,
           powerKw: c.powerKw,
-          status: realTimeStatus,
-          isAvailable: realTimeStatus === "AVAILABLE",
+          status: normalizedStatus,
+          isAvailable,
         };
       });
     }),
