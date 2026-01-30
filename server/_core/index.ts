@@ -464,6 +464,24 @@ async function handleOCPP16Message(
       ocpp16Transactions.set(transactionIdCounter, internalTransactionId);
       await db.updateEvseStatus(evse.id, "CHARGING");
       
+      // Enviar notificación al usuario cuando inicia la carga
+      // Por ahora userId está hardcodeado a 1, en producción se vincularía con el idTag
+      try {
+        const station = await db.getChargingStationById(stationId);
+        const stationName = station?.name || "Estación";
+        const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+        await db.createNotification({
+          userId: 1, // TODO: Vincular con usuario real basado en idTag
+          title: "🔌 Carga iniciada",
+          message: `Tu carga ha comenzado en ${stationName}. Tarifa actual: $${pricePerKwh.toLocaleString()} COP/kWh. Te notificaremos cuando finalice.`,
+          type: "CHARGE_START",
+          referenceId: null,
+          referenceType: "transaction",
+        });
+      } catch (notifErr) {
+        console.error(`[OCPP] Error sending charge start notification:`, notifErr);
+      }
+      
       return {
         idTagInfo: { status: "Accepted" },
         transactionId: transactionIdCounter,
@@ -521,14 +539,35 @@ async function handleOCPP16Message(
       await db.updateEvseStatus(transaction.evseId, "AVAILABLE");
       
       // Actualizar wallet del inversor (si existe)
+      let stationName = "Estación";
       try {
         const station = await db.getChargingStationById(transaction.stationId);
-        if (station && station.ownerId) {
-          await db.addInvestorEarnings(station.ownerId, investorShare, transaction.id);
-          console.log(`[OCPP] StopTransaction - Added $${investorShare.toFixed(0)} COP to investor ${station.ownerId} wallet`);
+        if (station) {
+          stationName = station.name || "Estación";
+          if (station.ownerId) {
+            await db.addInvestorEarnings(station.ownerId, investorShare, transaction.id);
+            console.log(`[OCPP] StopTransaction - Added $${investorShare.toFixed(0)} COP to investor ${station.ownerId} wallet`);
+          }
         }
       } catch (err) {
         console.error(`[OCPP] Error updating investor wallet:`, err);
+      }
+      
+      // Enviar notificación al usuario cuando termina la carga
+      if (transaction.userId) {
+        try {
+          await db.createNotification({
+            userId: transaction.userId,
+            title: "⚡ Carga completada",
+            message: `Tu carga en ${stationName} ha finalizado. Consumiste ${energyDelivered.toFixed(2)} kWh por un total de $${totalCost.toLocaleString()} COP. Duración: ${Math.round(durationMinutes)} minutos.`,
+            type: "CHARGE_COMPLETE",
+            referenceId: transaction.id,
+            referenceType: "transaction",
+          });
+          console.log(`[OCPP] Notification sent to user ${transaction.userId} for completed charge`);
+        } catch (notifErr) {
+          console.error(`[OCPP] Error sending charge complete notification:`, notifErr);
+        }
       }
       
       ocpp16Transactions.delete(payload.transactionId);
