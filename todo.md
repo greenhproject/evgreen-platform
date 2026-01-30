@@ -597,3 +597,39 @@
 - [x] Crear formulario para modificar parámetros de configuración
 - [x] Integrar en el Monitor OCPP como nueva pestaña
 - [x] Probar con simulador OCPP (tests pasan)
+
+
+## Transacciones de Venta kWh - 30 Enero 2026 [COMPLETADO]
+
+### Backend OCPP
+- [x] Handler StartTransaction: Crear transacción en BD, vincular usuario/estación
+- [x] Handler MeterValues: Actualizar consumo en tiempo real
+- [x] Handler StopTransaction: Finalizar transacción, calcular total
+
+### Facturación
+- [x] Calcular kWh consumidos (meterStop - meterStart)
+- [x] Aplicar tarifa según estación/horario
+- [x] Generar registro de venta
+- [x] Distribuir ingresos 80% inversor / 20% plataforma
+
+### Dashboard Usuario
+- [x] Mostrar sesión de carga activa con consumo en tiempo real
+- [x] Historial de cargas con detalles (kWh, costo, duración)
+- [x] Resumen de gastos del mes
+
+### Dashboard Admin
+- [x] Métricas globales: Total kWh vendidos, ingresos, transacciones
+- [x] Gráfico de ventas por día/semana/mes
+- [x] Top estaciones por ingresos
+- [x] Transacciones recientes
+
+### Dashboard Técnico
+- [x] Estado de transacciones en estaciones asignadas
+- [x] Conexiones OCPP activas
+- [x] Alertas de estaciones offline
+
+### Dashboard Inversor
+- [x] Ingresos generados por sus estaciones (80%)
+- [x] kWh vendidos por estación
+- [x] Balance de billetera disponible para retiro
+- [x] Resumen de ingresos brutos vs netos

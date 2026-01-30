@@ -482,23 +482,97 @@ async function handleOCPP16Message(
       const energyDelivered = (payload.meterStop - meterStart) / 1000;
       const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
       const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
-      const totalCost = energyDelivered * pricePerKwh;
+      const energyCost = energyDelivered * pricePerKwh;
+      
+      // Calcular duración y costos adicionales
+      const startTime = new Date(transaction.startTime);
+      const endTime = payload.timestamp ? new Date(payload.timestamp) : new Date();
+      const durationMinutes = (endTime.getTime() - startTime.getTime()) / (1000 * 60);
+      
+      // Costo por tiempo (si aplica)
+      const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
+      const timeCost = durationMinutes * pricePerMinute;
+      
+      // Costo de sesión fijo (si aplica)
+      const sessionFee = tariff ? parseFloat(tariff.sessionFee || "0") : 0;
+      
+      // Total
+      const totalCost = energyCost + timeCost + sessionFee;
+      
+      // Distribución de ingresos: 80% inversor, 20% plataforma
+      const investorShare = totalCost * 0.80;
+      const platformFee = totalCost * 0.20;
       
       await db.updateTransaction(transaction.id, {
-        endTime: new Date(payload.timestamp),
+        endTime,
         meterEnd: String(payload.meterStop),
-        kwhConsumed: energyDelivered.toString(),
-        totalCost: totalCost.toString(),
+        kwhConsumed: energyDelivered.toFixed(4),
+        energyCost: energyCost.toFixed(2),
+        timeCost: timeCost.toFixed(2),
+        sessionCost: sessionFee.toFixed(2),
+        totalCost: totalCost.toFixed(2),
+        investorShare: investorShare.toFixed(2),
+        platformFee: platformFee.toFixed(2),
         status: "COMPLETED",
-        stopReason: payload.reason,
+        stopReason: payload.reason || "Remote",
       });
+      
+      // Actualizar estado del EVSE
       await db.updateEvseStatus(transaction.evseId, "AVAILABLE");
+      
+      // Actualizar wallet del inversor (si existe)
+      try {
+        const station = await db.getChargingStationById(transaction.stationId);
+        if (station && station.ownerId) {
+          await db.addInvestorEarnings(station.ownerId, investorShare, transaction.id);
+          console.log(`[OCPP] StopTransaction - Added $${investorShare.toFixed(0)} COP to investor ${station.ownerId} wallet`);
+        }
+      } catch (err) {
+        console.error(`[OCPP] Error updating investor wallet:`, err);
+      }
+      
       ocpp16Transactions.delete(payload.transactionId);
+      
+      console.log(`[OCPP] StopTransaction - ${energyDelivered.toFixed(4)} kWh, Total: $${totalCost.toFixed(0)} COP (Investor: $${investorShare.toFixed(0)}, Platform: $${platformFee.toFixed(0)})`);
       
       return { idTagInfo: { status: "Accepted" } };
     }
     case "MeterValues": {
-      // Procesar valores de medición
+      // Procesar valores de medición en tiempo real
+      const transactionId = payload.transactionId;
+      if (transactionId) {
+        const internalTransactionId = ocpp16Transactions.get(transactionId);
+        if (internalTransactionId) {
+          const transaction = await db.getTransactionByOcppId(internalTransactionId);
+          if (transaction && payload.meterValue && payload.meterValue.length > 0) {
+            // Buscar el valor de energía activa importada
+            for (const mv of payload.meterValue) {
+              for (const sv of mv.sampledValue || []) {
+                if (sv.measurand === "Energy.Active.Import.Register" || !sv.measurand) {
+                  const currentMeter = parseFloat(sv.value);
+                  const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
+                  const kwhConsumed = (currentMeter - meterStart) / 1000;
+                  
+                  // Calcular costo parcial
+                  const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
+                  const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+                  const currentCost = kwhConsumed * pricePerKwh;
+                  
+                  // Actualizar transacción con valores parciales
+                  await db.updateTransaction(transaction.id, {
+                    kwhConsumed: kwhConsumed.toFixed(4),
+                    energyCost: currentCost.toFixed(2),
+                    totalCost: currentCost.toFixed(2),
+                  });
+                  
+                  console.log(`[OCPP] MeterValues - Transaction ${transactionId}: ${kwhConsumed.toFixed(4)} kWh, $${currentCost.toFixed(0)} COP`);
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
       return {};
     }
     case "DataTransfer": {

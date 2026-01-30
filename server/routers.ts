@@ -1342,6 +1342,70 @@ const settingsRouter = router({
 });
 
 // ============================================================================
+// DASHBOARD ROUTER (Métricas para todos los roles)
+// ============================================================================
+
+const dashboardRouter = router({
+  // Métricas para Admin
+  adminMetrics: adminProcedure.query(async () => {
+    return db.getAdminDashboardMetrics();
+  }),
+  
+  // Métricas para Inversor
+  investorMetrics: investorProcedure.query(async ({ ctx }) => {
+    return db.getInvestorDashboardMetrics(ctx.user.id);
+  }),
+  
+  // Transacción activa del usuario
+  userActiveTransaction: protectedProcedure.query(async ({ ctx }) => {
+    return db.getUserActiveTransaction(ctx.user.id);
+  }),
+  
+  // Historial de transacciones del usuario
+  userTransactionHistory: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).default(20) }).optional())
+    .query(async ({ ctx, input }) => {
+      return db.getUserTransactionHistory(ctx.user.id, input?.limit || 20);
+    }),
+  
+  // Estadísticas mensuales del usuario
+  userMonthlyStats: protectedProcedure.query(async ({ ctx }) => {
+    return db.getUserMonthlyStats(ctx.user.id);
+  }),
+  
+  // Métricas de transacciones por período (Admin)
+  transactionMetrics: adminProcedure
+    .input(z.object({
+      startDate: z.date(),
+      endDate: z.date(),
+      granularity: z.enum(["hour", "day"]).default("day"),
+    }))
+    .query(async ({ input }) => {
+      return db.getTransactionMetrics(input.startDate, input.endDate, input.granularity);
+    }),
+  
+  // Top estaciones por ingresos (Admin)
+  topStationsByRevenue: adminProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      limit: z.number().min(1).max(50).default(10),
+    }).optional())
+    .query(async ({ input }) => {
+      const startDate = input?.startDate || new Date(new Date().setMonth(new Date().getMonth() - 1));
+      const endDate = input?.endDate || new Date();
+      return db.getTopStationsByRevenue(startDate, endDate, input?.limit || 10);
+    }),
+  
+  // Transacciones recientes (Admin)
+  recentTransactions: adminProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).default(20) }).optional())
+    .query(async ({ input }) => {
+      return db.getRecentTransactions(input?.limit || 20);
+    }),
+});
+
+// ============================================================================
 // MAIN APP ROUTER
 // ============================================================================
 
@@ -1365,6 +1429,7 @@ export const appRouter = router({
   stripe: stripeRouter,
   settings: settingsRouter,
   ocpp: ocppRouter,
+  dashboard: dashboardRouter,
 });
 
 export type AppRouter = typeof appRouter;
