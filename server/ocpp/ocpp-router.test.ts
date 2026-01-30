@@ -93,5 +93,25 @@ describe("OCPP Connection Manager", () => {
       );
       expect(result).toBe(false);
     });
+
+    it("should return false for GetConfiguration when connection does not exist", () => {
+      const result = ocppManager.sendOcppCommand(
+        "non-existent",
+        "msg2",
+        "GetConfiguration",
+        { key: ["HeartbeatInterval"] }
+      );
+      expect(result).toBe(false);
+    });
+
+    it("should return false for ChangeConfiguration when connection does not exist", () => {
+      const result = ocppManager.sendOcppCommand(
+        "non-existent",
+        "msg3",
+        "ChangeConfiguration",
+        { key: "HeartbeatInterval", value: "60" }
+      );
+      expect(result).toBe(false);
+    });
   });
 });

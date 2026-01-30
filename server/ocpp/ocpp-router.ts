@@ -341,6 +341,43 @@ export const ocppRouter = router({
     }),
 
   /**
+   * Enviar comando ChangeConfiguration
+   */
+  sendChangeConfiguration: ocppProcedure
+    .input(z.object({
+      ocppIdentity: z.string(),
+      key: z.string(),
+      value: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const messageId = nanoid(8);
+      const payload = { key: input.key, value: input.value };
+      const success = ocppManager.sendOcppCommand(
+        input.ocppIdentity,
+        messageId,
+        "ChangeConfiguration",
+        payload
+      );
+
+      await db.createOcppLog({
+        ocppIdentity: input.ocppIdentity,
+        direction: "OUT",
+        messageType: "ChangeConfiguration",
+        messageId,
+        payload: { ...payload, sentBy: ctx.user.email },
+      });
+
+      if (!success) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "El cargador no está conectado",
+        });
+      }
+
+      return { success: true, messageId };
+    }),
+
+  /**
    * Enviar comando TriggerMessage (solicitar mensaje específico)
    */
   sendTriggerMessage: ocppProcedure

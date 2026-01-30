@@ -95,6 +95,27 @@ export default function AdminOCPPMonitor() {
     onError: (err) => toast.error(err.message),
   });
 
+  const getConfigMutation = trpc.ocpp.sendGetConfiguration.useMutation({
+    onSuccess: () => {
+      toast.success("Comando GetConfiguration enviado. Revise los logs para ver la respuesta.");
+      refetchLogs();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const changeConfigMutation = trpc.ocpp.sendChangeConfiguration.useMutation({
+    onSuccess: () => {
+      toast.success("Comando ChangeConfiguration enviado");
+      refetchLogs();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Estado para configuración remota
+  const [configCharger, setConfigCharger] = useState<string>("");
+  const [configKey, setConfigKey] = useState<string>("");
+  const [configValue, setConfigValue] = useState<string>("");
+
   // Formatear tiempo relativo
   const formatRelativeTime = (isoString: string) => {
     const date = new Date(isoString);
@@ -266,6 +287,10 @@ export default function AdminOCPPMonitor() {
           <TabsTrigger value="logs">
             <Terminal className="h-4 w-4 mr-2" />
             Logs OCPP
+          </TabsTrigger>
+          <TabsTrigger value="config">
+            <Settings className="h-4 w-4 mr-2" />
+            Configuración
           </TabsTrigger>
         </TabsList>
 
@@ -556,6 +581,241 @@ export default function AdminOCPPMonitor() {
               </div>
             </div>
           )}
+        </TabsContent>
+
+        {/* Configuración Remota */}
+        <TabsContent value="config" className="space-y-4">
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* GetConfiguration */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  Obtener Configuración
+                </CardTitle>
+                <CardDescription>
+                  Solicita la configuración actual del cargador. La respuesta aparecerá en los logs.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Cargador</label>
+                  <Select
+                    value={configCharger}
+                    onValueChange={setConfigCharger}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar cargador conectado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {connections?.filter(c => c.isConnected).map((conn) => (
+                        <SelectItem key={conn.ocppIdentity} value={conn.ocppIdentity}>
+                          {conn.ocppIdentity} - {conn.bootInfo?.vendor || 'Desconocido'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Claves específicas (opcional)</label>
+                  <Input
+                    placeholder="HeartbeatInterval, MeterValueSampleInterval, ..."
+                    value={configKey}
+                    onChange={(e) => setConfigKey(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Deje vacío para obtener toda la configuración, o ingrese claves separadas por coma.
+                  </p>
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    if (!configCharger) {
+                      toast.error("Seleccione un cargador");
+                      return;
+                    }
+                    const keys = configKey.trim() ? configKey.split(',').map(k => k.trim()) : undefined;
+                    getConfigMutation.mutate({
+                      ocppIdentity: configCharger,
+                      keys,
+                    });
+                  }}
+                  disabled={getConfigMutation.isPending || !configCharger}
+                >
+                  {getConfigMutation.isPending ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4 mr-2" />
+                  )}
+                  Obtener Configuración
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* ChangeConfiguration */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  Cambiar Configuración
+                </CardTitle>
+                <CardDescription>
+                  Modifica un parámetro de configuración del cargador.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Cargador</label>
+                  <Select
+                    value={configCharger}
+                    onValueChange={setConfigCharger}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar cargador conectado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {connections?.filter(c => c.isConnected).map((conn) => (
+                        <SelectItem key={conn.ocppIdentity} value={conn.ocppIdentity}>
+                          {conn.ocppIdentity} - {conn.bootInfo?.vendor || 'Desconocido'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Clave de configuración</label>
+                  <Select
+                    value={configKey}
+                    onValueChange={setConfigKey}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar parámetro" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="HeartbeatInterval">HeartbeatInterval</SelectItem>
+                      <SelectItem value="MeterValueSampleInterval">MeterValueSampleInterval</SelectItem>
+                      <SelectItem value="MeterValuesSampledData">MeterValuesSampledData</SelectItem>
+                      <SelectItem value="ClockAlignedDataInterval">ClockAlignedDataInterval</SelectItem>
+                      <SelectItem value="ConnectionTimeOut">ConnectionTimeOut</SelectItem>
+                      <SelectItem value="LocalPreAuthorize">LocalPreAuthorize</SelectItem>
+                      <SelectItem value="LocalAuthorizeOffline">LocalAuthorizeOffline</SelectItem>
+                      <SelectItem value="AuthorizeRemoteTxRequests">AuthorizeRemoteTxRequests</SelectItem>
+                      <SelectItem value="StopTransactionOnEVSideDisconnect">StopTransactionOnEVSideDisconnect</SelectItem>
+                      <SelectItem value="StopTransactionOnInvalidId">StopTransactionOnInvalidId</SelectItem>
+                      <SelectItem value="UnlockConnectorOnEVSideDisconnect">UnlockConnectorOnEVSideDisconnect</SelectItem>
+                      <SelectItem value="WebSocketPingInterval">WebSocketPingInterval</SelectItem>
+                      <SelectItem value="TransactionMessageAttempts">TransactionMessageAttempts</SelectItem>
+                      <SelectItem value="TransactionMessageRetryInterval">TransactionMessageRetryInterval</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Nuevo valor</label>
+                  <Input
+                    placeholder="Ingrese el nuevo valor"
+                    value={configValue}
+                    onChange={(e) => setConfigValue(e.target.value)}
+                  />
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    if (!configCharger || !configKey || !configValue) {
+                      toast.error("Complete todos los campos");
+                      return;
+                    }
+                    changeConfigMutation.mutate({
+                      ocppIdentity: configCharger,
+                      key: configKey,
+                      value: configValue,
+                    });
+                  }}
+                  disabled={changeConfigMutation.isPending || !configCharger || !configKey || !configValue}
+                >
+                  {changeConfigMutation.isPending ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4 mr-2" />
+                  )}
+                  Cambiar Configuración
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Referencia de parámetros comunes */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Referencia de Parámetros OCPP</CardTitle>
+              <CardDescription>
+                Parámetros de configuración comunes soportados por la mayoría de cargadores OCPP 1.6
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Parámetro</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead>Valor típico</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="font-mono">HeartbeatInterval</TableCell>
+                      <TableCell>Integer</TableCell>
+                      <TableCell>Intervalo entre heartbeats (segundos)</TableCell>
+                      <TableCell>60</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-mono">MeterValueSampleInterval</TableCell>
+                      <TableCell>Integer</TableCell>
+                      <TableCell>Intervalo de muestreo de valores de medición (segundos)</TableCell>
+                      <TableCell>60</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-mono">MeterValuesSampledData</TableCell>
+                      <TableCell>CSL</TableCell>
+                      <TableCell>Valores a muestrear (Energy.Active.Import.Register, Power.Active.Import, etc.)</TableCell>
+                      <TableCell>Energy.Active.Import.Register</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-mono">ConnectionTimeOut</TableCell>
+                      <TableCell>Integer</TableCell>
+                      <TableCell>Tiempo máximo de espera para conexión de vehículo (segundos)</TableCell>
+                      <TableCell>30</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-mono">LocalPreAuthorize</TableCell>
+                      <TableCell>Boolean</TableCell>
+                      <TableCell>Permitir autorización local antes de enviar al servidor</TableCell>
+                      <TableCell>true</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-mono">StopTransactionOnEVSideDisconnect</TableCell>
+                      <TableCell>Boolean</TableCell>
+                      <TableCell>Detener transacción cuando el vehículo se desconecta</TableCell>
+                      <TableCell>true</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-mono">UnlockConnectorOnEVSideDisconnect</TableCell>
+                      <TableCell>Boolean</TableCell>
+                      <TableCell>Desbloquear conector cuando el vehículo se desconecta</TableCell>
+                      <TableCell>true</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-mono">WebSocketPingInterval</TableCell>
+                      <TableCell>Integer</TableCell>
+                      <TableCell>Intervalo de ping WebSocket (segundos)</TableCell>
+                      <TableCell>30</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
