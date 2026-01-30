@@ -830,3 +830,12 @@
 - [x] Creada ruta /c/:code con componente QRRedirect
 - [x] Mejorada lógica de Scan.tsx para detectar URLs /charging/:id antiguas
 - [x] Verificar que el flujo completo funcione: Escanear QR → StartCharge → Seleccionar opciones → Iniciar carga
+
+
+## Bug: Conectores no se pueden seleccionar en StartCharge - 30 Enero 2026
+
+- [x] Los conectores aparecen con estado "Available" pero no responden al click
+- [x] Corregido el código de renderizado de conectores en StartCharge.tsx
+- [x] Agregado type="button" y mejor manejo del onClick
+- [x] Traducido estados a español (Available -> Disponible, etc.)
+- [x] Agregado feedback visual con active:scale-[0.98]
