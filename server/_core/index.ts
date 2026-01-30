@@ -9,6 +9,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { handleStripeWebhook } from "../stripe/webhook";
+import * as ocppManager from "../ocpp/connection-manager";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -229,6 +230,9 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
   // Importar db al inicio
   const db = await import("../db");
   
+  // Registrar en el connection manager
+  const connection = ocppManager.registerConnection(ocppIdentity, ws, ocppVersion);
+  
   // Mapeo de transacciones OCPP 1.6 a IDs internos
   const ocpp16Transactions = new Map<number, string>();
   let transactionIdCounter = 1;
@@ -238,6 +242,8 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
 
   // Registrar el event listener PRIMERO, antes de cualquier operación async
   ws.on("message", async (data) => {
+      // Actualizar timestamp de último mensaje
+      ocppManager.updateLastMessage(ocppIdentity);
       try {
         const message = JSON.parse(data.toString());
         const messageType = message[0];
@@ -267,6 +273,32 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
           if (action === "BootNotification" && response._stationId) {
             stationId = response._stationId;
             delete response._stationId;
+            
+            // Actualizar info en connection manager
+            const bootInfo = ocppVersion === "1.6" ? {
+              vendor: payload.chargePointVendor,
+              model: payload.chargePointModel,
+              serialNumber: payload.chargePointSerialNumber || payload.chargeBoxSerialNumber,
+              firmwareVersion: payload.firmwareVersion,
+            } : {
+              vendor: payload.chargingStation?.vendorName,
+              model: payload.chargingStation?.model,
+              serialNumber: payload.chargingStation?.serialNumber,
+              firmwareVersion: payload.chargingStation?.firmwareVersion,
+            };
+            ocppManager.updateBootInfo(ocppIdentity, bootInfo, stationId);
+          }
+          
+          // Actualizar heartbeat
+          if (action === "Heartbeat") {
+            ocppManager.updateHeartbeat(ocppIdentity);
+          }
+          
+          // Actualizar estado de conector
+          if (action === "StatusNotification") {
+            const connectorId = payload.connectorId || payload.evseId || 0;
+            const status = payload.status || payload.connectorStatus || "Unknown";
+            ocppManager.updateConnectorStatus(ocppIdentity, connectorId, status);
           }
 
           // Enviar respuesta
@@ -290,6 +322,10 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
 
     ws.on("close", async () => {
       console.log(`[OCPP] Connection closed: ${ocppIdentity}`);
+      
+      // Remover del connection manager
+      ocppManager.removeConnection(ocppIdentity);
+      
       if (stationId) {
         await db.updateStationOnlineStatus(ocppIdentity, false);
       }

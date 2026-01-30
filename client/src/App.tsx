@@ -45,6 +45,7 @@ import TechnicianLogs from "./pages/technician/Logs";
 import TechnicianAlerts from "./pages/technician/Alerts";
 import TechnicianDiagnostics from "./pages/technician/Diagnostics";
 import TechnicianOCPPLogs from "./pages/technician/OCPPLogs";
+import TechnicianOCPPMonitor from "./pages/technician/OCPPMonitor";
 import TechnicianMaintenance from "./pages/technician/Maintenance";
 import TechnicianSettings from "./pages/technician/Settings";
 
@@ -59,6 +60,7 @@ import AdminSettings from "./pages/admin/Settings";
 import AdminBanners from "./pages/admin/Banners";
 import AdminNotifications from "./pages/admin/Notifications";
 import AdminAISettings from "./pages/admin/AISettings";
+import AdminOCPPMonitor from "./pages/AdminOCPPMonitor";
 import { AIChatWidget } from "./components/AIChat";
 
 // Layouts
@@ -293,6 +295,13 @@ function Router() {
           </TechnicianLayout>
         </ProtectedRoute>
       </Route>
+      <Route path="/technician/ocpp-monitor">
+        <ProtectedRoute allowedRoles={["technician", "admin"]}>
+          <TechnicianLayout>
+            <TechnicianOCPPMonitor />
+          </TechnicianLayout>
+        </ProtectedRoute>
+      </Route>
       <Route path="/technician/maintenance">
         <ProtectedRoute allowedRoles={["technician", "admin"]}>
           <TechnicianLayout>
@@ -378,6 +387,13 @@ function Router() {
         <ProtectedRoute allowedRoles={["admin"]}>
           <AdminLayout>
             <AdminNotifications />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/ocpp-monitor">
+        <ProtectedRoute allowedRoles={["admin"]}>
+          <AdminLayout>
+            <AdminOCPPMonitor />
           </AdminLayout>
         </ProtectedRoute>
       </Route>
