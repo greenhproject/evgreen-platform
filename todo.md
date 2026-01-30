@@ -862,3 +862,11 @@
 - [x] Detalles muestra "1 de 2 conectores libres" (correcto)
 - [x] StartCharge dice "Estación desconectada" - Esto es correcto si el simulador OCPP no está conectado
 - [x] El estado de conexión OCPP es independiente del estado de conectores en BD
+
+
+## Bugs en StartCharge - 30 Enero 2026
+
+- [x] Falta botón para volver al mapa en la pantalla de escaneo inicial - AGREGADO
+- [x] Ambos conectores muestran "Conector 1" - CORREGIDO: ahora usa evseIdLocal
+- [x] Estado de conectores - CORREGIDO: usa estado OCPP en tiempo real
+- [x] Los conectores no se pueden seleccionar - Ya funcionaba, era problema de datos

@@ -111,7 +111,8 @@ export const chargingRouter = router({
       return connectors.map(c => {
         let realTimeStatus = c.status;
         if (ocppConnection) {
-          const ocppStatus = ocppConnection.connectorStatuses.get(c.connectorId);
+          // Usar evseIdLocal para buscar el estado OCPP (el cargador reporta por connectorId que es evseIdLocal)
+          const ocppStatus = ocppConnection.connectorStatuses.get(c.evseIdLocal);
           if (ocppStatus) {
             realTimeStatus = ocppStatus as typeof c.status;
           }
@@ -119,7 +120,9 @@ export const chargingRouter = router({
         
         return {
           id: c.id,
-          connectorId: c.connectorId,
+          evseId: c.id, // ID de la BD
+          connectorNumber: c.evseIdLocal, // Número visible del conector (1, 2, 3...)
+          connectorId: c.evseIdLocal, // Para compatibilidad con el frontend
           type: c.connectorType,
           powerKw: c.powerKw,
           status: realTimeStatus,
