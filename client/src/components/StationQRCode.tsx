@@ -19,9 +19,10 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [copied, setCopied] = useState(false);
   
-  // El QR contiene solo el código de estación para facilitar el escaneo
-  // La app detectará si es un código simple o una URL
-  const qrContent = stationCode;
+  // El QR contiene una URL corta que funciona con cualquier escáner
+  // Formato: https://evgreen.lat/c/CP001 - redirige automáticamente a StartCharge
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://evgreen.lat';
+  const qrContent = `${baseUrl}/c/${stationCode}`;
   
   useEffect(() => {
     generateQR();

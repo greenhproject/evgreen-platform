@@ -821,3 +821,12 @@
 7. Usuario conecta vehículo físicamente
 8. Cargador envía StatusNotification (Charging)
 9. App muestra pantalla de monitoreo de carga
+
+
+## Bug: QR lleva a ChargingSession en lugar de StartCharge - 30 Enero 2026
+
+- [x] Investigar por qué el QR abre /charging/:id en lugar de /start-charge
+- [x] El QR ahora genera URL /c/:code que redirige a StartCharge
+- [x] Creada ruta /c/:code con componente QRRedirect
+- [x] Mejorada lógica de Scan.tsx para detectar URLs /charging/:id antiguas
+- [x] Verificar que el flujo completo funcione: Escanear QR → StartCharge → Seleccionar opciones → Iniciar carga
