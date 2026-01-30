@@ -763,3 +763,29 @@
 - [x] Permitir compartir recibo por WhatsApp/Email
 - [x] Filtros por estado (Todas, Completadas, Pendientes)
 - [x] Tests unitarios para sistema de saldo bajo (9 tests)
+
+
+## Mejoras Interfaz de Estaciones Admin/Soporte - 30 Enero 2026
+
+### Estado Real OCPP
+- [x] Mostrar estado de conexión OCPP real (conectado/desconectado) basado en WebSocket activo
+- [x] Sincronizar badge de estado con conexiones activas del servidor OCPP
+- [x] Actualizar estado en tiempo real cuando el cargador se conecta/desconecta (cada 5 segundos)
+
+### Botón de Logs Específicos
+- [x] Agregar botón "Ver logs" en modal de detalle de estación
+- [x] Redirigir al monitor OCPP filtrado por el chargePointId específico
+- [x] Mostrar información de conexión OCPP (versión, heartbeat, conectado desde)
+
+### Generador de Código QR
+- [x] Crear componente StationQRCode con generación de QR
+- [x] Mostrar código de estación debajo del QR para referencia
+- [x] Botón para descargar QR como imagen PNG para imprimir
+- [x] Diseño profesional para instalación en cargadores físicos
+- [x] Botón de impresión directa con formato optimizado
+
+### Vista Previa y Pruebas
+- [x] Agregar sección de vista previa del QR en modal (Tab QR)
+- [x] URL de escaneo generada automáticamente
+- [x] Instrucciones de uso incluidas en el componente
+- [x] Actualizado panel de técnico con mismas funcionalidades
