@@ -131,6 +131,19 @@ const usersRouter = router({
       await db.updateUser(input.userId, input.data);
       return { success: true };
     }),
+    
+  // Usuario: regenerar su propio idTag
+  regenerateMyIdTag: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const newIdTag = await db.regenerateUserIdTag(ctx.user.id);
+      if (!newIdTag) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "No se pudo regenerar el idTag",
+        });
+      }
+      return { idTag: newIdTag };
+    }),
 });
 
 // ============================================================================

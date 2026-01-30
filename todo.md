@@ -658,3 +658,22 @@
 - [ ] Notificar cambios significativos de precio (pendiente)
 - [ ] Notificar al inversor cuando hay nuevas transacciones (pendiente)
 - [x] Notificar al técnico cuando hay alertas de cargadores (via alertsService)
+
+
+## Sistema de idTag y Notificaciones de Precio - 30 Enero 2026 [COMPLETADO]
+
+### Sistema de idTag por Usuario
+- [x] Agregar campo idTag único a tabla de usuarios
+- [x] Generar idTag automáticamente al crear usuario (formato: EV-XXXXXX)
+- [x] Modificar handler Authorize OCPP para validar idTag contra BD
+- [x] Modificar handler StartTransaction para vincular usuario por idTag
+- [x] Mostrar idTag en perfil del usuario
+- [x] Permitir regenerar idTag desde perfil
+- [ ] Generar código QR del idTag para escaneo rápido (pendiente)
+
+### Notificaciones de Cambio de Precio
+- [x] Crear servicio de monitoreo de precios dinámicos
+- [x] Detectar cuando el precio baja más del 10% (configurable)
+- [x] Enviar notificación a usuarios que cargaron recientemente en esa estación
+- [x] Funciones de BD para obtener usuarios cercanos y con transacciones recientes
+- [ ] Configurar umbral de notificación desde admin (pendiente)
