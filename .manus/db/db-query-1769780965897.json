@@ -1,0 +1,34 @@
+{
+  "query": "SELECT cs.id, cs.name, cs.ocppIdentity, e.id as evse_id, e.evseIdLocal, e.connectorId FROM charging_stations cs LEFT JOIN evses e ON e.stationId = cs.id ORDER BY cs.id, e.evseIdLocal;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT cs.id, cs.name, cs.ocppIdentity, e.id as evse_id, e.evseIdLocal, e.connectorId FROM charging_stations cs LEFT JOIN evses e ON e.stationId = cs.id ORDER BY cs.id, e.evseIdLocal;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Green EV Mosquera - Sede Principal",
+      "ocppIdentity": "GEV-MOSQUERA-001",
+      "evse_id": "30006",
+      "evseIdLocal": "1",
+      "connectorId": "1"
+    },
+    {
+      "id": "60001",
+      "name": "Test charging",
+      "ocppIdentity": "CP001",
+      "evse_id": "60001",
+      "evseIdLocal": "1",
+      "connectorId": "1"
+    },
+    {
+      "id": "60001",
+      "name": "Test charging",
+      "ocppIdentity": "CP001",
+      "evse_id": "60002",
+      "evseIdLocal": "2",
+      "connectorId": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tocppIdentity\tevse_id\tevseIdLocal\tconnectorId\n1\tGreen EV Mosquera - Sede Principal\tGEV-MOSQUERA-001\t30006\t1\t1\n60001\tTest charging\tCP001\t60001\t1\t1\n60001\tTest charging\tCP001\t60002\t2\t1\n",
+  "stderr": "",
+  "execution_time_ms": 114
+}

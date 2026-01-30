@@ -300,6 +300,7 @@ export default function StartCharge() {
   
   // Seleccionar conector
   const handleSelectConnector = (connectorId: number) => {
+    console.log("[StartCharge] Selecting connector:", connectorId);
     setSelectedConnector(connectorId);
     setStep("charge_options");
   };
@@ -553,9 +554,14 @@ export default function StartCharge() {
                       <button
                         key={connector.id}
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          console.log("[StartCharge] Button clicked, connector:", connector);
                           if (connector.isAvailable) {
                             handleSelectConnector(connector.connectorId);
+                          } else {
+                            console.log("[StartCharge] Connector not available, status:", connector.status);
                           }
                         }}
                         disabled={!connector.isAvailable}
