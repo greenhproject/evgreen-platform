@@ -698,7 +698,7 @@
 - [ ] Indicador visual circular tipo gauge (pendiente)
 - [x] Animaciones suaves y colores dinámicos
 - [x] Validación visual de saldo suficiente
-- [ ] Pantalla de espera de conexión del vehículo (siguiente fase)
+- [x] Pantalla de espera de conexión del vehículo con animaciones
 - [x] Pantalla de monitoreo de carga en tiempo real (kWh, $, tiempo, %)
 - [x] Botón para detener carga manualmente con confirmación
 - [x] Pantalla de resumen de transacción al finalizar con compartir
@@ -706,7 +706,7 @@
 ### Notificaciones
 - [x] Notificación de carga iniciada con tarifa actual
 - [x] Notificación de carga completada con resumen
-- [ ] Notificación si el saldo se agota durante la carga (pendiente)
+- [x] Notificación si el saldo se agota durante la carga
 
 
 ## Monitoreo y Resumen de Carga - 30 Enero 2026 [COMPLETADO]
@@ -734,3 +734,32 @@
 - [x] Botón para compartir recibo (WhatsApp, Email)
 - [x] Opción de descargar recibo como imagen PNG
 - [x] Botón para volver al mapa
+
+
+## Mejoras de Experiencia de Carga - 30 Enero 2026
+
+### Pantalla de Espera de Conexión
+- [x] Crear componente de animación de conexión
+- [x] Mostrar estado "Esperando conexión del vehículo"
+- [x] Animación de cable/enchufe conectándose con partículas de energía
+- [x] Detectar cuando el vehículo se conecta (StatusNotification)
+- [x] Transición suave a pantalla de monitoreo
+- [x] Indicador de progreso de conexión (3 pasos: Iniciando, Conectando, Cargando)
+- [x] Canvas de partículas animadas
+
+### Notificación de Saldo Bajo
+- [x] Detectar cuando el saldo restante es menor al 20% del estimado
+- [x] Enviar notificación al usuario (tipo low_balance)
+- [x] Evitar spam de notificaciones (verificación por key único)
+- [ ] Mostrar alerta en pantalla de monitoreo
+- [ ] Opción de recargar saldo desde la pantalla de carga
+- [x] Detectar cuando saldo llega a 0 (tipo balance_depleted)
+- [ ] Enviar RemoteStopTransaction al cargador cuando saldo se agota
+
+### Historial de Recibos
+- [x] Agregar botón de ver recibo en cada transacción del historial
+- [x] Modal de recibo con diseño profesional (similar a ChargingSummary)
+- [x] Permitir descargar recibo como imagen PNG (html2canvas)
+- [x] Permitir compartir recibo por WhatsApp/Email
+- [x] Filtros por estado (Todas, Completadas, Pendientes)
+- [x] Tests unitarios para sistema de saldo bajo (9 tests)
