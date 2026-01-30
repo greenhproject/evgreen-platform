@@ -10,6 +10,7 @@ import { serveStatic, setupVite } from "./vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { handleStripeWebhook } from "../stripe/webhook";
 import * as ocppManager from "../ocpp/connection-manager";
+import * as alertsService from "../ocpp/alerts-service";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -298,7 +299,21 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
           if (action === "StatusNotification") {
             const connectorId = payload.connectorId || payload.evseId || 0;
             const status = payload.status || payload.connectorStatus || "Unknown";
+            const errorCode = payload.errorCode || "NoError";
             ocppManager.updateConnectorStatus(ocppIdentity, connectorId, status);
+            
+            // Generar alerta si hay error
+            if (errorCode !== "NoError") {
+              alertsService.handleStatusError(
+                ocppIdentity,
+                stationId ?? undefined,
+                connectorId,
+                errorCode,
+                status,
+                payload.vendorErrorCode,
+                payload.info
+              ).catch(err => console.error("[OCPP Alert] Error:", err));
+            }
           }
 
           // Enviar respuesta
@@ -329,6 +344,11 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       if (stationId) {
         await db.updateStationOnlineStatus(ocppIdentity, false);
       }
+      
+      // Generar alerta de desconexión
+      alertsService.handleDisconnection(ocppIdentity, stationId ?? undefined)
+        .catch(err => console.error("[OCPP Alert] Error:", err));
+      
       await db.createOcppLog({
         ocppIdentity,
         stationId,

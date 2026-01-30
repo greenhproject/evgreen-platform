@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, sql, or, count, sum, ne, inArray, isNull } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, or, count, sum, ne, inArray, isNull, not } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -41,6 +41,9 @@ import {
   Reservation,
   Tariff,
   Banner,
+  ocppAlerts,
+  InsertOcppAlert,
+  OcppAlert,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -877,6 +880,143 @@ export async function getOcppMessageTypes() {
   return result.map(r => r.messageType).filter(Boolean);
 }
 
+/**
+ * Obtener conexiones activas basadas en logs de BD
+ * Un cargador se considera activo si:
+ * - Tiene un Heartbeat o StatusNotification en los últimos 5 minutos
+ * - O tiene CONNECTION sin DISCONNECTION posterior
+ */
+export async function getActiveConnectionsFromLogs() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Obtener cargadores con actividad en los últimos 5 minutos
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  
+  // Subconsulta: obtener el último log de cada ocppIdentity
+  const recentActivity = await db.select({
+    ocppIdentity: ocppLogs.ocppIdentity,
+    stationId: ocppLogs.stationId,
+    messageType: ocppLogs.messageType,
+    payload: ocppLogs.payload,
+    lastActivity: sql<Date>`MAX(${ocppLogs.createdAt})`.as('lastActivity'),
+  })
+    .from(ocppLogs)
+    .where(
+      and(
+        not(isNull(ocppLogs.ocppIdentity)),
+        gte(ocppLogs.createdAt, fiveMinutesAgo),
+        inArray(ocppLogs.messageType, ['Heartbeat', 'StatusNotification', 'BootNotification', 'CONNECTION'])
+      )
+    )
+    .groupBy(ocppLogs.ocppIdentity);
+  
+  // Obtener info adicional de cada cargador activo
+  const activeConnections = [];
+  
+  for (const activity of recentActivity) {
+    if (!activity.ocppIdentity) continue;
+    
+    // Verificar si hay una desconexión posterior
+    const disconnection = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          eq(ocppLogs.messageType, 'DISCONNECTION'),
+          gte(ocppLogs.createdAt, activity.lastActivity)
+        )
+      )
+      .limit(1);
+    
+    if (disconnection.length > 0) continue; // Está desconectado
+    
+    // Obtener el último BootNotification para info del cargador
+    const bootInfo = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          eq(ocppLogs.messageType, 'BootNotification'),
+          eq(ocppLogs.direction, 'IN')
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(1);
+    
+    // Obtener el último Heartbeat
+    const lastHeartbeat = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          eq(ocppLogs.messageType, 'Heartbeat')
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(1);
+    
+    // Obtener estados de conectores
+    const connectorStatuses = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          eq(ocppLogs.messageType, 'StatusNotification'),
+          eq(ocppLogs.direction, 'IN')
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(10);
+    
+    // Construir objeto de conexión
+    const bootPayload = bootInfo[0]?.payload as any;
+    const connectorStatusMap: Record<number, string> = {};
+    
+    for (const cs of connectorStatuses) {
+      const payload = cs.payload as any;
+      const connectorId = payload?.connectorId || payload?.evseId || 0;
+      if (!connectorStatusMap[connectorId]) {
+        connectorStatusMap[connectorId] = payload?.status || 'Unknown';
+      }
+    }
+    
+    // Determinar versión OCPP
+    const connectionLog = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          eq(ocppLogs.messageType, 'CONNECTION')
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(1);
+    
+    const connectionPayload = connectionLog[0]?.payload as any;
+    const ocppVersion = connectionPayload?.ocppVersion || '1.6';
+    
+    activeConnections.push({
+      ocppIdentity: activity.ocppIdentity,
+      ocppVersion,
+      stationId: activity.stationId,
+      connectedAt: connectionLog[0]?.createdAt?.toISOString() || activity.lastActivity.toISOString(),
+      lastHeartbeat: lastHeartbeat[0]?.createdAt?.toISOString() || activity.lastActivity.toISOString(),
+      lastMessage: activity.lastActivity.toISOString(),
+      connectorStatuses: connectorStatusMap,
+      bootInfo: bootPayload ? {
+        vendor: bootPayload.chargePointVendor || bootPayload.chargingStation?.vendorName || 'Unknown',
+        model: bootPayload.chargePointModel || bootPayload.chargingStation?.model || 'Unknown',
+        serialNumber: bootPayload.chargePointSerialNumber || bootPayload.chargeBoxSerialNumber || bootPayload.chargingStation?.serialNumber,
+        firmwareVersion: bootPayload.firmwareVersion || bootPayload.chargingStation?.firmwareVersion,
+      } : undefined,
+      isConnected: true, // Si llegó aquí, está activo
+    });
+  }
+  
+  return activeConnections;
+}
+
 // ============================================================================
 // STATISTICS AND AGGREGATIONS
 // ============================================================================
@@ -1593,4 +1733,272 @@ export async function getStripeConfig() {
     webhookSecret: settings.stripeWebhookSecret,
     testMode: settings.stripeTestMode,
   };
+}
+
+// ============================================================================
+// OCPP ALERTS OPERATIONS
+// ============================================================================
+
+export interface OcppAlertInput {
+  ocppIdentity: string;
+  stationId?: number | null;
+  alertType: "DISCONNECTION" | "ERROR" | "FAULT" | "OFFLINE_TIMEOUT" | "BOOT_REJECTED" | "TRANSACTION_ERROR";
+  severity: "info" | "warning" | "critical";
+  title: string;
+  message: string;
+  payload?: Record<string, unknown>;
+  acknowledged?: boolean;
+  createdAt?: Date;
+}
+
+export async function createOcppAlert(alert: OcppAlertInput): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(ocppAlerts).values({
+    ocppIdentity: alert.ocppIdentity,
+    stationId: alert.stationId,
+    alertType: alert.alertType,
+    severity: alert.severity,
+    title: alert.title,
+    message: alert.message,
+    payload: alert.payload,
+    acknowledged: alert.acknowledged || false,
+  });
+  
+  return result[0].insertId;
+}
+
+export async function getOcppAlerts(options: {
+  limit?: number;
+  offset?: number;
+  includeAcknowledged?: boolean;
+  ocppIdentity?: string;
+  severity?: string;
+  alertType?: string;
+}): Promise<OcppAlert[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [];
+  
+  if (!options.includeAcknowledged) {
+    conditions.push(eq(ocppAlerts.acknowledged, false));
+  }
+  
+  if (options.ocppIdentity) {
+    conditions.push(eq(ocppAlerts.ocppIdentity, options.ocppIdentity));
+  }
+  
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const alerts = await db.select()
+    .from(ocppAlerts)
+    .where(whereClause)
+    .orderBy(desc(ocppAlerts.createdAt))
+    .limit(options.limit || 50)
+    .offset(options.offset || 0);
+  
+  return alerts;
+}
+
+export async function acknowledgeOcppAlert(alertId: number, userId?: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(ocppAlerts)
+    .set({
+      acknowledged: true,
+      acknowledgedAt: new Date(),
+      acknowledgedBy: userId,
+    })
+    .where(eq(ocppAlerts.id, alertId));
+}
+
+export async function getOcppAlertStats(): Promise<{
+  total: number;
+  unacknowledged: number;
+  bySeverity: Record<string, number>;
+  byType: Record<string, number>;
+}> {
+  const db = await getDb();
+  if (!db) {
+    return {
+      total: 0,
+      unacknowledged: 0,
+      bySeverity: {},
+      byType: {},
+    };
+  }
+  
+  // Total de alertas
+  const totalResult = await db.select({ count: count() }).from(ocppAlerts);
+  const total = totalResult[0]?.count || 0;
+  
+  // Alertas no reconocidas
+  const unackResult = await db.select({ count: count() })
+    .from(ocppAlerts)
+    .where(eq(ocppAlerts.acknowledged, false));
+  const unacknowledged = unackResult[0]?.count || 0;
+  
+  // Por severidad
+  const bySeverityResult = await db.select({
+    severity: ocppAlerts.severity,
+    count: count(),
+  })
+    .from(ocppAlerts)
+    .groupBy(ocppAlerts.severity);
+  
+  const bySeverity: Record<string, number> = {};
+  for (const row of bySeverityResult) {
+    if (row.severity) {
+      bySeverity[row.severity] = row.count;
+    }
+  }
+  
+  // Por tipo
+  const byTypeResult = await db.select({
+    alertType: ocppAlerts.alertType,
+    count: count(),
+  })
+    .from(ocppAlerts)
+    .groupBy(ocppAlerts.alertType);
+  
+  const byType: Record<string, number> = {};
+  for (const row of byTypeResult) {
+    if (row.alertType) {
+      byType[row.alertType] = row.count;
+    }
+  }
+  
+  return {
+    total,
+    unacknowledged,
+    bySeverity,
+    byType,
+  };
+}
+
+// ============================================================================
+// OCPP METRICS OPERATIONS
+// ============================================================================
+
+export async function getOcppConnectionMetrics(
+  startDate: Date,
+  endDate: Date,
+  granularity: "hour" | "day" = "hour"
+): Promise<Array<{ timestamp: string; connections: number; disconnections: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const dateFormat = granularity === "hour" 
+    ? sql`DATE_FORMAT(${ocppLogs.createdAt}, '%Y-%m-%d %H:00:00')`
+    : sql`DATE_FORMAT(${ocppLogs.createdAt}, '%Y-%m-%d')`;
+  
+  const result = await db.select({
+    timestamp: dateFormat.as('timestamp'),
+    messageType: ocppLogs.messageType,
+    count: count(),
+  })
+    .from(ocppLogs)
+    .where(
+      and(
+        gte(ocppLogs.createdAt, startDate),
+        lte(ocppLogs.createdAt, endDate),
+        inArray(ocppLogs.messageType, ['CONNECTION', 'DISCONNECTION'])
+      )
+    )
+    .groupBy(dateFormat, ocppLogs.messageType)
+    .orderBy(dateFormat);
+  
+  // Agrupar por timestamp
+  const metricsMap = new Map<string, { connections: number; disconnections: number }>();
+  
+  for (const row of result) {
+    const ts = String(row.timestamp);
+    if (!metricsMap.has(ts)) {
+      metricsMap.set(ts, { connections: 0, disconnections: 0 });
+    }
+    const entry = metricsMap.get(ts)!;
+    if (row.messageType === 'CONNECTION') {
+      entry.connections = row.count;
+    } else {
+      entry.disconnections = row.count;
+    }
+  }
+  
+  return Array.from(metricsMap.entries()).map(([timestamp, data]) => ({
+    timestamp,
+    ...data,
+  }));
+}
+
+export async function getOcppMessageMetrics(
+  startDate: Date,
+  endDate: Date,
+  granularity: "hour" | "day" = "hour"
+): Promise<Array<{ timestamp: string; messageType: string; count: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const dateFormat = granularity === "hour" 
+    ? sql`DATE_FORMAT(${ocppLogs.createdAt}, '%Y-%m-%d %H:00:00')`
+    : sql`DATE_FORMAT(${ocppLogs.createdAt}, '%Y-%m-%d')`;
+  
+  const result = await db.select({
+    timestamp: dateFormat.as('timestamp'),
+    messageType: ocppLogs.messageType,
+    count: count(),
+  })
+    .from(ocppLogs)
+    .where(
+      and(
+        gte(ocppLogs.createdAt, startDate),
+        lte(ocppLogs.createdAt, endDate)
+      )
+    )
+    .groupBy(dateFormat, ocppLogs.messageType)
+    .orderBy(dateFormat);
+  
+  return result.map(row => ({
+    timestamp: String(row.timestamp),
+    messageType: row.messageType || 'Unknown',
+    count: row.count,
+  }));
+}
+
+export async function getTransactionMetrics(
+  startDate: Date,
+  endDate: Date,
+  granularity: "hour" | "day" = "day"
+): Promise<Array<{ timestamp: string; count: number; totalEnergy: number; totalRevenue: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const dateFormat = granularity === "hour" 
+    ? sql`DATE_FORMAT(${transactions.startTime}, '%Y-%m-%d %H:00:00')`
+    : sql`DATE_FORMAT(${transactions.startTime}, '%Y-%m-%d')`;
+  
+  const result = await db.select({
+    timestamp: dateFormat.as('timestamp'),
+    count: count(),
+    totalEnergy: sum(transactions.kwhConsumed),
+    totalRevenue: sum(transactions.totalCost),
+  })
+    .from(transactions)
+    .where(
+      and(
+        gte(transactions.startTime, startDate),
+        lte(transactions.startTime, endDate)
+      )
+    )
+    .groupBy(dateFormat)
+    .orderBy(dateFormat);
+  
+  return result.map(row => ({
+    timestamp: String(row.timestamp),
+    count: row.count,
+    totalEnergy: Number(row.totalEnergy) || 0,
+    totalRevenue: Number(row.totalRevenue) || 0,
+  }));
 }
