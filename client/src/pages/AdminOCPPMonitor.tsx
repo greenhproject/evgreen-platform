@@ -29,8 +29,37 @@ import {
   Filter,
   Copy,
   Link,
-  CheckCircle2
+  CheckCircle2,
+  BarChart3,
+  TrendingUp,
+  Calendar
 } from "lucide-react";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from "chart.js";
+import { Line, Bar } from "react-chartjs-2";
+
+// Registrar componentes de Chart.js
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 export default function AdminOCPPMonitor() {
   const [selectedCharger, setSelectedCharger] = useState<string | null>(null);
@@ -115,6 +144,48 @@ export default function AdminOCPPMonitor() {
   const [configCharger, setConfigCharger] = useState<string>("");
   const [configKey, setConfigKey] = useState<string>("");
   const [configValue, setConfigValue] = useState<string>("");
+
+  // Estado para métricas históricas
+  const [metricsRange, setMetricsRange] = useState<"24h" | "7d" | "30d">("24h");
+  const [metricsGranularity, setMetricsGranularity] = useState<"hour" | "day">("hour");
+
+  // Calcular fechas para métricas
+  const getMetricsDates = () => {
+    const endDate = new Date();
+    const startDate = new Date();
+    switch (metricsRange) {
+      case "24h":
+        startDate.setHours(startDate.getHours() - 24);
+        break;
+      case "7d":
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case "30d":
+        startDate.setDate(startDate.getDate() - 30);
+        break;
+    }
+    return { startDate: startDate.toISOString(), endDate: endDate.toISOString() };
+  };
+
+  const metricsDates = getMetricsDates();
+
+  // Query para métricas de conexiones
+  const { data: connectionMetrics } = trpc.ocpp.getConnectionMetrics.useQuery({
+    startDate: metricsDates.startDate,
+    endDate: metricsDates.endDate,
+    granularity: metricsRange === "24h" ? "hour" : "day",
+  }, {
+    refetchInterval: 60000, // Actualizar cada minuto
+  });
+
+  // Query para métricas de transacciones
+  const { data: transactionMetrics } = trpc.ocpp.getTransactionMetrics.useQuery({
+    startDate: metricsDates.startDate,
+    endDate: metricsDates.endDate,
+    granularity: metricsRange === "24h" ? "hour" : "day",
+  }, {
+    refetchInterval: 60000,
+  });
 
   // Formatear tiempo relativo
   const formatRelativeTime = (isoString: string) => {
@@ -279,14 +350,18 @@ export default function AdminOCPPMonitor() {
 
       {/* Tabs */}
       <Tabs defaultValue="connections" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="connections">
             <Wifi className="h-4 w-4 mr-2" />
-            Conexiones Activas
+            Conexiones
+          </TabsTrigger>
+          <TabsTrigger value="metrics">
+            <BarChart3 className="h-4 w-4 mr-2" />
+            Métricas
           </TabsTrigger>
           <TabsTrigger value="logs">
             <Terminal className="h-4 w-4 mr-2" />
-            Logs OCPP
+            Logs
           </TabsTrigger>
           <TabsTrigger value="config">
             <Settings className="h-4 w-4 mr-2" />
@@ -816,6 +891,316 @@ export default function AdminOCPPMonitor() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Métricas Históricas */}
+        <TabsContent value="metrics" className="space-y-6">
+          {/* Selector de rango */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                Métricas Históricas
+              </h3>
+              <p className="text-sm text-muted-foreground">Tendencias de conexiones y transacciones</p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant={metricsRange === "24h" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setMetricsRange("24h")}
+              >
+                24 horas
+              </Button>
+              <Button
+                variant={metricsRange === "7d" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setMetricsRange("7d")}
+              >
+                7 días
+              </Button>
+              <Button
+                variant={metricsRange === "30d" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setMetricsRange("30d")}
+              >
+                30 días
+              </Button>
+            </div>
+          </div>
+
+          {/* Gráficos */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Gráfico de Conexiones */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Wifi className="h-4 w-4" />
+                  Conexiones OCPP
+                </CardTitle>
+                <CardDescription>
+                  Número de conexiones activas por {metricsRange === "24h" ? "hora" : "día"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {connectionMetrics && connectionMetrics.length > 0 ? (
+                  <div className="h-[300px]">
+                    <Line
+                      data={{
+                        labels: connectionMetrics.map((m: any) => {
+                          const date = new Date(m.period);
+                          return metricsRange === "24h"
+                            ? date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })
+                            : date.toLocaleDateString("es", { day: "2-digit", month: "short" });
+                        }),
+                        datasets: [
+                          {
+                            label: "Conexiones",
+                            data: connectionMetrics.map((m: any) => m.count),
+                            borderColor: "rgb(34, 197, 94)",
+                            backgroundColor: "rgba(34, 197, 94, 0.1)",
+                            fill: true,
+                            tension: 0.4,
+                          },
+                        ],
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: false },
+                        },
+                        scales: {
+                          y: {
+                            beginAtZero: true,
+                            ticks: { stepSize: 1 },
+                          },
+                        },
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      <p>No hay datos de conexiones en este período</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Gráfico de Transacciones */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Zap className="h-4 w-4" />
+                  Transacciones de Carga
+                </CardTitle>
+                <CardDescription>
+                  Transacciones completadas por {metricsRange === "24h" ? "hora" : "día"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {transactionMetrics && transactionMetrics.length > 0 ? (
+                  <div className="h-[300px]">
+                    <Bar
+                      data={{
+                        labels: transactionMetrics.map((m: any) => {
+                          const date = new Date(m.period);
+                          return metricsRange === "24h"
+                            ? date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })
+                            : date.toLocaleDateString("es", { day: "2-digit", month: "short" });
+                        }),
+                        datasets: [
+                          {
+                            label: "Transacciones",
+                            data: transactionMetrics.map((m: any) => m.count),
+                            backgroundColor: "rgba(59, 130, 246, 0.8)",
+                            borderRadius: 4,
+                          },
+                        ],
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: false },
+                        },
+                        scales: {
+                          y: {
+                            beginAtZero: true,
+                            ticks: { stepSize: 1 },
+                          },
+                        },
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      <p>No hay transacciones en este período</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Gráfico de Energía */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Energía Entregada (kWh)
+                </CardTitle>
+                <CardDescription>
+                  Total de kWh entregados por {metricsRange === "24h" ? "hora" : "día"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {transactionMetrics && transactionMetrics.length > 0 ? (
+                  <div className="h-[300px]">
+                    <Line
+                      data={{
+                        labels: transactionMetrics.map((m: any) => {
+                          const date = new Date(m.period);
+                          return metricsRange === "24h"
+                            ? date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })
+                            : date.toLocaleDateString("es", { day: "2-digit", month: "short" });
+                        }),
+                        datasets: [
+                          {
+                            label: "kWh",
+                            data: transactionMetrics.map((m: any) => Number(m.totalKwh || 0).toFixed(2)),
+                            borderColor: "rgb(168, 85, 247)",
+                            backgroundColor: "rgba(168, 85, 247, 0.1)",
+                            fill: true,
+                            tension: 0.4,
+                          },
+                        ],
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: false },
+                        },
+                        scales: {
+                          y: {
+                            beginAtZero: true,
+                          },
+                        },
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      <p>No hay datos de energía en este período</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Gráfico de Ingresos */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" />
+                  Ingresos (COP)
+                </CardTitle>
+                <CardDescription>
+                  Ingresos totales por {metricsRange === "24h" ? "hora" : "día"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {transactionMetrics && transactionMetrics.length > 0 ? (
+                  <div className="h-[300px]">
+                    <Bar
+                      data={{
+                        labels: transactionMetrics.map((m: any) => {
+                          const date = new Date(m.period);
+                          return metricsRange === "24h"
+                            ? date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })
+                            : date.toLocaleDateString("es", { day: "2-digit", month: "short" });
+                        }),
+                        datasets: [
+                          {
+                            label: "Ingresos",
+                            data: transactionMetrics.map((m: any) => Number(m.totalRevenue || 0)),
+                            backgroundColor: "rgba(34, 197, 94, 0.8)",
+                            borderRadius: 4,
+                          },
+                        ],
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: false },
+                        },
+                        scales: {
+                          y: {
+                            beginAtZero: true,
+                            ticks: {
+                              callback: (value) => `$${Number(value).toLocaleString()}`,
+                            },
+                          },
+                        },
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      <p>No hay datos de ingresos en este período</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Resumen de métricas */}
+          {transactionMetrics && transactionMetrics.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Resumen del Período</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
+                    <p className="text-2xl font-bold text-blue-600">
+                      {transactionMetrics.reduce((sum: number, m: any) => sum + (m.count || 0), 0)}
+                    </p>
+                    <p className="text-sm text-muted-foreground">Transacciones</p>
+                  </div>
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
+                    <p className="text-2xl font-bold text-purple-600">
+                      {transactionMetrics.reduce((sum: number, m: any) => sum + Number(m.totalKwh || 0), 0).toFixed(1)} kWh
+                    </p>
+                    <p className="text-sm text-muted-foreground">Energía Entregada</p>
+                  </div>
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
+                    <p className="text-2xl font-bold text-green-600">
+                      ${transactionMetrics.reduce((sum: number, m: any) => sum + Number(m.totalRevenue || 0), 0).toLocaleString()}
+                    </p>
+                    <p className="text-sm text-muted-foreground">Ingresos Totales</p>
+                  </div>
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
+                    <p className="text-2xl font-bold text-orange-600">
+                      {connectionMetrics ? connectionMetrics.reduce((sum: number, m: any) => sum + (m.count || 0), 0) : 0}
+                    </p>
+                    <p className="text-sm text-muted-foreground">Conexiones Totales</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

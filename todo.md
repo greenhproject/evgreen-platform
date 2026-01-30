@@ -633,3 +633,28 @@
 - [x] kWh vendidos por estación
 - [x] Balance de billetera disponible para retiro
 - [x] Resumen de ingresos brutos vs netos
+
+
+## Mejoras Adicionales - 30 Enero 2026 [COMPLETADO]
+
+### Prueba de Transacción OCPP Completa
+- [x] Conectar simulador OCPP a producción
+- [x] Enviar StartTransaction con idTag
+- [x] Enviar MeterValues durante la carga
+- [x] Enviar StopTransaction y verificar cálculos
+- [x] Verificar que las métricas se actualizan en dashboards
+
+### Gráficos Históricos en Monitor OCPP
+- [x] Gráfico de conexiones activas por hora/día
+- [x] Gráfico de transacciones por hora/día
+- [x] Gráfico de energía entregada por día
+- [x] Gráfico de ingresos por hora/día
+- [x] Selector de rango de fechas (24h, 7d, 30d)
+- [x] Resumen del período con totales
+
+### Notificaciones Push
+- [x] Notificar al usuario cuando su carga inicie
+- [x] Notificar al usuario cuando su carga termine
+- [ ] Notificar cambios significativos de precio (pendiente)
+- [ ] Notificar al inversor cuando hay nuevas transacciones (pendiente)
+- [x] Notificar al técnico cuando hay alertas de cargadores (via alertsService)
