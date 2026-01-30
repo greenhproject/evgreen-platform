@@ -506,6 +506,8 @@ export const notifications = mysqlTable("notifications", {
   // Push notification
   pushSent: boolean("pushSent").default(false),
   pushSentAt: timestamp("pushSentAt"),
+  // Datos adicionales (JSON)
+  data: text("data"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

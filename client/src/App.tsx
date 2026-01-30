@@ -25,6 +25,7 @@ import ScanPage from "./pages/user/Scan";
 import StartCharge from "./pages/user/StartCharge";
 import ChargingMonitor from "./pages/user/ChargingMonitor";
 import ChargingSummary from "./pages/user/ChargingSummary";
+import ChargingWaiting from "./pages/user/ChargingWaiting";
 import UserSettingsNotifications from "./pages/user/settings/Notifications";
 import UserSettingsPersonalInfo from "./pages/user/settings/PersonalInfo";
 import UserSettingsVehicles from "./pages/user/settings/Vehicles";
@@ -190,6 +191,7 @@ function Router() {
       <Route path="/settings/vehicles" component={UserSettingsVehicles} />
       <Route path="/scan" component={ScanPage} />
       <Route path="/start-charge" component={StartCharge} />
+      <Route path="/charging-waiting" component={ChargingWaiting} />
       <Route path="/charging-monitor" component={ChargingMonitor} />
       <Route path="/charging-summary/:transactionId" component={ChargingSummary} />
       <Route path="/vehicles" component={UserSettingsVehicles} />
