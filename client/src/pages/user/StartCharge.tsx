@@ -8,7 +8,8 @@
  * 4. Confirmar y comenzar carga
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -59,6 +60,10 @@ export default function StartCharge() {
   const [chargeMode, setChargeMode] = useState<ChargeMode>("full_charge");
   const [targetValue, setTargetValue] = useState(80); // % o $ según el modo
   const [isStarting, setIsStarting] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scannerError, setScannerError] = useState<string | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scannerContainerId = "qr-scanner-container";
   
   // Query para obtener estación por código
   const stationQuery = trpc.charging.getStationByCode.useQuery(
@@ -111,6 +116,115 @@ export default function StartCharge() {
     }
     stationQuery.refetch();
   };
+  
+  // Extraer código de estación del texto escaneado
+  const extractStationCode = (scannedText: string): string => {
+    // Si es una URL, extraer el código
+    if (scannedText.includes('/c/')) {
+      const match = scannedText.match(/\/c\/([^/?]+)/);
+      if (match) return match[1].toUpperCase();
+    }
+    if (scannedText.includes('/scan/')) {
+      const match = scannedText.match(/\/scan\/([^/?]+)/);
+      if (match) return match[1].toUpperCase();
+    }
+    if (scannedText.includes('/charging/')) {
+      const match = scannedText.match(/\/charging\/([^/?]+)/);
+      if (match) return match[1].toUpperCase();
+    }
+    // Si no es URL, devolver el texto como está
+    return scannedText.toUpperCase().trim();
+  };
+  
+  // Iniciar escáner QR
+  const startScanner = useCallback(async () => {
+    setScannerError(null);
+    
+    try {
+      // Crear instancia del escáner si no existe
+      if (!scannerRef.current) {
+        scannerRef.current = new Html5Qrcode(scannerContainerId);
+      }
+      
+      // Verificar si ya está escaneando
+      if (scannerRef.current.getState() === Html5QrcodeScannerState.SCANNING) {
+        return;
+      }
+      
+      setIsScanning(true);
+      
+      await scannerRef.current.start(
+        { facingMode: "environment" }, // Cámara trasera
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+        },
+        (decodedText) => {
+          // QR escaneado exitosamente
+          const code = extractStationCode(decodedText);
+          setStationCode(code);
+          stopScanner();
+          toast.success("Código escaneado", {
+            description: `Estación: ${code}`,
+          });
+          // Buscar la estación automáticamente
+          setTimeout(() => {
+            stationQuery.refetch();
+          }, 100);
+        },
+        (errorMessage) => {
+          // Error de escaneo (ignorar, es normal mientras busca)
+        }
+      );
+    } catch (error: any) {
+      setIsScanning(false);
+      if (error.message?.includes('Permission denied') || error.name === 'NotAllowedError') {
+        setScannerError("Permiso de cámara denegado. Por favor, permite el acceso a la cámara.");
+      } else if (error.message?.includes('not found') || error.name === 'NotFoundError') {
+        setScannerError("No se encontró una cámara disponible.");
+      } else {
+        setScannerError("Error al iniciar la cámara. Intenta de nuevo.");
+      }
+      console.error("Error starting scanner:", error);
+    }
+  }, [stationQuery]);
+  
+  // Detener escáner QR
+  const stopScanner = useCallback(async () => {
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.getState() === Html5QrcodeScannerState.SCANNING) {
+          await scannerRef.current.stop();
+        }
+      } catch (error) {
+        console.error("Error stopping scanner:", error);
+      }
+    }
+    setIsScanning(false);
+  }, []);
+  
+  // Limpiar escáner al desmontar o cambiar de paso
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        try {
+          if (scannerRef.current.getState() === Html5QrcodeScannerState.SCANNING) {
+            scannerRef.current.stop();
+          }
+        } catch (error) {
+          // Ignorar errores al limpiar
+        }
+      }
+    };
+  }, []);
+  
+  // Detener escáner cuando se cambia de paso
+  useEffect(() => {
+    if (step !== "scan" && isScanning) {
+      stopScanner();
+    }
+  }, [step, isScanning, stopScanner]);
   
   // Auto-buscar si viene con código desde URL (escaneo QR)
   useEffect(() => {
@@ -218,14 +332,70 @@ export default function StartCharge() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* QR Scanner placeholder */}
-              <div className="aspect-square bg-muted rounded-lg flex items-center justify-center border-2 border-dashed border-muted-foreground/30">
-                <div className="text-center p-4">
-                  <QrCode className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
-                  <p className="text-sm text-muted-foreground">
-                    Próximamente: Escaneo de QR
-                  </p>
-                </div>
+              {/* QR Scanner */}
+              <div className="relative">
+                {/* Contenedor del escáner */}
+                <div 
+                  id={scannerContainerId}
+                  className={`aspect-square bg-black rounded-lg overflow-hidden ${
+                    !isScanning ? 'hidden' : ''
+                  }`}
+                />
+                
+                {/* Estado inicial - botón para iniciar */}
+                {!isScanning && !scannerError && (
+                  <div 
+                    className="aspect-square bg-muted rounded-lg flex flex-col items-center justify-center border-2 border-dashed border-primary/30 cursor-pointer hover:border-primary hover:bg-primary/5 transition-all"
+                    onClick={startScanner}
+                  >
+                    <div className="text-center p-4">
+                      <div className="relative mb-4">
+                        <QrCode className="h-16 w-16 mx-auto text-primary/70" />
+                        <div className="absolute -bottom-1 -right-1 bg-primary rounded-full p-1">
+                          <Zap className="h-4 w-4 text-primary-foreground" />
+                        </div>
+                      </div>
+                      <p className="text-sm font-medium text-foreground mb-1">
+                        Toca para escanear
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Apunta al código QR de la estación
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Error de escáner */}
+                {scannerError && (
+                  <div className="aspect-square bg-destructive/10 rounded-lg flex flex-col items-center justify-center border-2 border-destructive/30 p-4">
+                    <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+                    <p className="text-sm text-destructive text-center mb-4">
+                      {scannerError}
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setScannerError(null);
+                        startScanner();
+                      }}
+                    >
+                      Intentar de nuevo
+                    </Button>
+                  </div>
+                )}
+                
+                {/* Botón para detener escaneo */}
+                {isScanning && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-lg"
+                    onClick={stopScanner}
+                  >
+                    Cancelar escaneo
+                  </Button>
+                )}
               </div>
               
               <div className="relative">
