@@ -110,19 +110,42 @@ export default function ScanPage() {
     // Ignorar errores de escaneo (son normales cuando no hay QR visible)
   };
 
-  const handleCodeFound = async (code: string) => {
+  const handleCodeFound = async (rawCode: string) => {
     setIsSearching(true);
+    
+    // Extraer código de estación si es una URL
+    let code = rawCode.trim();
+    
+    // Si es una URL, extraer el código del path
+    if (code.startsWith('http://') || code.startsWith('https://')) {
+      try {
+        const url = new URL(code);
+        const pathParts = url.pathname.split('/').filter(Boolean);
+        // Buscar el código en el path (puede ser /scan/CP001 o /station/CP001)
+        if (pathParts.length > 0) {
+          code = pathParts[pathParts.length - 1]; // Tomar el último segmento
+        }
+      } catch (e) {
+        // Si no es una URL válida, usar el código tal cual
+      }
+    }
+    
     toast.info("Código detectado", {
       description: code,
     });
 
-    // Buscar la estación por el código OCPP o ID
+    // Buscar la estación por el código OCPP, nombre o ID
     try {
       const stations = await searchStation.refetch();
       const result = stations.data?.find(
         (s: any) => {
           const st = s.station || s;
-          return st.ocppIdentity === code || st.id.toString() === code;
+          const searchCode = code.toUpperCase();
+          return (
+            st.ocppIdentity?.toUpperCase() === searchCode || 
+            st.id.toString() === code ||
+            st.name?.toUpperCase().includes(searchCode)
+          );
         }
       );
 
@@ -131,8 +154,9 @@ export default function ScanPage() {
         toast.success("Estación encontrada", {
           description: station.name,
         });
+        // Redirigir a StartCharge con el código de la estación para iniciar el flujo de carga
         setTimeout(() => {
-          setLocation(`/station/${station.id}`);
+          setLocation(`/start-charge?code=${station.ocppIdentity || station.id}`);
         }, 1000);
       } else {
         toast.error("Estación no encontrada", {

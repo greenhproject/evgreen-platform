@@ -1,0 +1,22 @@
+{
+  "query": "SELECT w.*, u.name, u.email FROM wallets w JOIN users u ON w.userId = u.id WHERE u.email = 'user@evgreen.lat';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT w.*, u.name, u.email FROM wallets w JOIN users u ON w.userId = u.id WHERE u.email = 'user@evgreen.lat';",
+  "rows": [
+    {
+      "id": "120001",
+      "userId": "1143170",
+      "balance": "500000.00",
+      "currency": "COP",
+      "stripeCustomerId": "NULL",
+      "creditLimit": "0.00",
+      "createdAt": "2026-01-30 05:34:31",
+      "updatedAt": "2026-01-30 05:34:31",
+      "name": "Usuario de Prueba EVGreen",
+      "email": "user@evgreen.lat"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tbalance\tcurrency\tstripeCustomerId\tcreditLimit\tcreatedAt\tupdatedAt\tname\temail\n120001\t1143170\t500000.00\tCOP\tNULL\t0.00\t2026-01-30 05:34:31\t2026-01-30 05:34:31\tUsuario de Prueba EVGreen\tuser@evgreen.lat\n",
+  "stderr": "",
+  "execution_time_ms": 55
+}

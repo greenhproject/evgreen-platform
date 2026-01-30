@@ -1,0 +1,17 @@
+{
+  "query": "SELECT id, name, email, role, idTag FROM users WHERE email = 'user@evgreen.lat';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, name, email, role, idTag FROM users WHERE email = 'user@evgreen.lat';",
+  "rows": [
+    {
+      "id": "1143170",
+      "name": "Usuario de Prueba EVGreen",
+      "email": "user@evgreen.lat",
+      "role": "user",
+      "idTag": "EV-TEST01"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\trole\tidTag\n1143170\tUsuario de Prueba EVGreen\tuser@evgreen.lat\tuser\tEV-TEST01\n",
+  "stderr": "",
+  "execution_time_ms": 49
+}

@@ -1,0 +1,8 @@
+{
+  "query": "UPDATE users SET email = 'info@greenhproject.com', name = 'Usuario de Prueba GreenH' WHERE email = 'user@evgreen.lat';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute UPDATE users SET email = 'info@greenhproject.com', name = 'Usuario de Prueba GreenH' WHERE email = 'user@evgreen.lat';",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1062 (23000) at line 1: Duplicate entry '?' for key 'users.users_email_unique'"
+  ]
+}
