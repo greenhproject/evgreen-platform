@@ -515,5 +515,7 @@
 - [x] Agregar ping/pong para mantener conexiones vivas (30s)
 - [x] Desactivar compresión perMessageDeflate para mejor compatibilidad
 - [x] Agregar logs detallados de upgrade y conexión
+- [x] Agregar endpoint alternativo /api/ocpp/ws/ para compatibilidad con proxies
+- [x] Crear página de diagnóstico /api/ocpp/test para probar WebSocket
 - [ ] Verificar que el WebSocket OCPP acepta conexiones en producción
 - [ ] Probar conexión con simulador en producción

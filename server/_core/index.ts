@@ -50,13 +50,58 @@ async function startServer() {
   );
   // Endpoint de verificación OCPP (HTTP) - bajo /api/ para que funcione en producción
   app.get("/api/ocpp/status", (req, res) => {
+    const host = req.headers.host || "localhost:3000";
     res.json({
       status: "online",
       message: "OCPP WebSocket server is running",
-      endpoint: "wss://" + req.headers.host + "/ocpp/{chargePointId}",
+      endpoints: {
+        primary: `wss://${host}/ocpp/{chargePointId}`,
+        alternative: `wss://${host}/api/ocpp/ws/{chargePointId}`,
+      },
       supportedProtocols: ["ocpp1.6", "ocpp2.0.1"],
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      note: "If primary endpoint fails with error 1006, try the alternative endpoint under /api/"
     });
+  });
+
+  // Endpoint de prueba WebSocket simple (para diagnóstico)
+  app.get("/api/ocpp/test", (req, res) => {
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>OCPP WebSocket Test</title></head>
+      <body>
+        <h1>OCPP WebSocket Test</h1>
+        <div id="status">Connecting...</div>
+        <div id="log" style="white-space: pre-wrap; font-family: monospace;"></div>
+        <script>
+          const log = document.getElementById('log');
+          const status = document.getElementById('status');
+          const host = window.location.host;
+          
+          function addLog(msg) {
+            log.textContent += new Date().toISOString() + ': ' + msg + '\\n';
+          }
+          
+          // Probar endpoint primario
+          addLog('Testing primary endpoint: wss://' + host + '/ocpp/TEST001');
+          const ws1 = new WebSocket('wss://' + host + '/ocpp/TEST001', ['ocpp1.6']);
+          ws1.onopen = () => { addLog('PRIMARY: Connected!'); status.textContent = 'Primary endpoint works!'; };
+          ws1.onerror = (e) => { addLog('PRIMARY: Error - ' + e.type); };
+          ws1.onclose = (e) => { 
+            addLog('PRIMARY: Closed - code=' + e.code + ', reason=' + e.reason);
+            if (e.code === 1006) {
+              addLog('Trying alternative endpoint...');
+              const ws2 = new WebSocket('wss://' + host + '/api/ocpp/ws/TEST001', ['ocpp1.6']);
+              ws2.onopen = () => { addLog('ALTERNATIVE: Connected!'); status.textContent = 'Alternative endpoint works!'; };
+              ws2.onerror = (e) => { addLog('ALTERNATIVE: Error - ' + e.type); };
+              ws2.onclose = (e) => { addLog('ALTERNATIVE: Closed - code=' + e.code + ', reason=' + e.reason); };
+            }
+          };
+        </script>
+      </body>
+      </html>
+    `);
   });
 
   // development mode uses Vite, production mode uses static files
@@ -108,6 +153,7 @@ async function startServer() {
   });
 
   // Manejar upgrade de HTTP a WebSocket para rutas OCPP
+  // Soportar tanto /ocpp/ como /api/ocpp/ para compatibilidad con diferentes proxies
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url || "", `http://${request.headers.host}`);
     
@@ -119,11 +165,14 @@ async function startServer() {
         secWebSocketProtocol: request.headers["sec-websocket-protocol"],
         secWebSocketVersion: request.headers["sec-websocket-version"],
         origin: request.headers.origin,
+        host: request.headers.host,
       }
     });
     
-    // Solo manejar rutas que empiecen con /ocpp/
-    if (url.pathname.startsWith("/ocpp/")) {
+    // Soportar tanto /ocpp/ como /api/ocpp/ para compatibilidad
+    const isOcppRoute = url.pathname.startsWith("/ocpp/") || url.pathname.startsWith("/api/ocpp/ws/");
+    
+    if (isOcppRoute) {
       console.log(`[OCPP] Handling upgrade for: ${url.pathname}`);
       
       // Manejar errores de socket
@@ -131,6 +180,7 @@ async function startServer() {
         console.error(`[OCPP] Socket error during upgrade:`, err);
       });
       
+      // Enviar headers de respuesta manualmente para mejor compatibilidad con proxies
       wss.handleUpgrade(request, socket, head, (ws) => {
         console.log(`[OCPP] Upgrade successful, emitting connection`);
         wss.emit("connection", ws, request);
