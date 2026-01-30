@@ -226,6 +226,17 @@ export async function updateUser(userId: number, data: Partial<InsertUser>) {
   await db.update(users).set(data).where(eq(users.id, userId));
 }
 
+// Eliminar un usuario
+export async function deleteUser(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Primero eliminar datos relacionados (billetera, notificaciones, etc.)
+  await db.delete(wallets).where(eq(wallets.userId, userId));
+  await db.delete(notifications).where(eq(notifications.userId, userId));
+  // Finalmente eliminar el usuario
+  await db.delete(users).where(eq(users.id, userId));
+}
+
 // Vincular un usuario existente con un nuevo openId de Manus OAuth
 export async function linkUserOpenId(userId: number, newOpenId: string) {
   const db = await getDb();

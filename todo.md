@@ -891,3 +891,14 @@
 - [x] Agregar logs de debug en el onClick del botón de conector
 - [ ] Verificar que el botón de iniciar carga funciona después de seleccionar conector
 - [ ] Probar flujo completo de inicio de carga
+
+
+## Mejoras Gestión de Usuarios Admin - 30 Enero 2026 [COMPLETADO]
+
+- [x] Agregar columna TAGID en la tabla de usuarios
+- [x] Agregar botón de editar usuario con modal de edición
+- [x] Agregar botón de eliminar usuario con confirmación
+- [x] Crear endpoint para actualizar datos de usuario (nombre, email, rol, estado)
+- [x] Crear endpoint para eliminar usuario
+- [x] Proteger cuenta maestra (greenhproject@gmail.com) de eliminación
+- [x] Agregar tests unitarios para los nuevos endpoints (21 tests)
