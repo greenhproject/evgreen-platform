@@ -839,3 +839,12 @@
 - [x] Agregado type="button" y mejor manejo del onClick
 - [x] Traducido estados a español (Available -> Disponible, etc.)
 - [x] Agregado feedback visual con active:scale-[0.98]
+
+
+## Bug: Escáner QR muestra "Próximamente" en StartCharge - 30 Enero 2026
+
+- [x] El escáner QR en StartCharge muestra "Próximamente: Escaneo de QR" en lugar de abrir la cámara
+- [x] Implementar escáner QR funcional usando html5-qrcode
+- [x] Conectar el resultado del escaneo con la búsqueda de estación
+- [x] Manejo de permisos de cámara y errores
+- [x] Extracción de código desde URLs (/c/, /scan/, /charging/)
