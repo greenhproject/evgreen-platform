@@ -893,13 +893,10 @@ export async function getActiveConnectionsFromLogs() {
   // Obtener cargadores con actividad en los últimos 5 minutos
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
   
-  // Subconsulta: obtener el último log de cada ocppIdentity
-  const recentActivity = await db.select({
+  // Obtener cargadores únicos con actividad reciente
+  const recentActivity = await db.selectDistinct({
     ocppIdentity: ocppLogs.ocppIdentity,
     stationId: ocppLogs.stationId,
-    messageType: ocppLogs.messageType,
-    payload: ocppLogs.payload,
-    lastActivity: sql<Date>`MAX(${ocppLogs.createdAt})`.as('lastActivity'),
   })
     .from(ocppLogs)
     .where(
@@ -908,8 +905,7 @@ export async function getActiveConnectionsFromLogs() {
         gte(ocppLogs.createdAt, fiveMinutesAgo),
         inArray(ocppLogs.messageType, ['Heartbeat', 'StatusNotification', 'BootNotification', 'CONNECTION'])
       )
-    )
-    .groupBy(ocppLogs.ocppIdentity);
+    );
   
   // Obtener info adicional de cada cargador activo
   const activeConnections = [];
@@ -917,17 +913,37 @@ export async function getActiveConnectionsFromLogs() {
   for (const activity of recentActivity) {
     if (!activity.ocppIdentity) continue;
     
-    // Verificar si hay una desconexión posterior
+    // Verificar si hay una desconexión reciente (en los últimos 5 minutos)
     const disconnection = await db.select()
       .from(ocppLogs)
       .where(
         and(
           eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
           eq(ocppLogs.messageType, 'DISCONNECTION'),
-          gte(ocppLogs.createdAt, activity.lastActivity)
+          gte(ocppLogs.createdAt, fiveMinutesAgo)
         )
       )
+      .orderBy(desc(ocppLogs.createdAt))
       .limit(1);
+    
+    // Obtener la última actividad (conexión o mensaje)
+    const lastActivityLog = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          inArray(ocppLogs.messageType, ['Heartbeat', 'StatusNotification', 'BootNotification', 'CONNECTION'])
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(1);
+    
+    // Si hay desconexión más reciente que la última actividad, está desconectado
+    if (disconnection.length > 0 && lastActivityLog.length > 0) {
+      if (disconnection[0].createdAt > lastActivityLog[0].createdAt) {
+        continue; // Está desconectado
+      }
+    }
     
     if (disconnection.length > 0) continue; // Está desconectado
     
@@ -996,13 +1012,15 @@ export async function getActiveConnectionsFromLogs() {
     const connectionPayload = connectionLog[0]?.payload as any;
     const ocppVersion = connectionPayload?.ocppVersion || '1.6';
     
+    const lastActivityTime = lastActivityLog[0]?.createdAt || new Date();
+    
     activeConnections.push({
       ocppIdentity: activity.ocppIdentity,
       ocppVersion,
       stationId: activity.stationId,
-      connectedAt: connectionLog[0]?.createdAt?.toISOString() || activity.lastActivity.toISOString(),
-      lastHeartbeat: lastHeartbeat[0]?.createdAt?.toISOString() || activity.lastActivity.toISOString(),
-      lastMessage: activity.lastActivity.toISOString(),
+      connectedAt: connectionLog[0]?.createdAt?.toISOString() || lastActivityTime.toISOString(),
+      lastHeartbeat: lastHeartbeat[0]?.createdAt?.toISOString() || lastActivityTime.toISOString(),
+      lastMessage: lastActivityTime.toISOString(),
       connectorStatuses: connectorStatusMap,
       bootInfo: bootPayload ? {
         vendor: bootPayload.chargePointVendor || bootPayload.chargingStation?.vendorName || 'Unknown',
