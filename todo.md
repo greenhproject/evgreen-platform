@@ -848,3 +848,9 @@
 - [x] Conectar el resultado del escaneo con la búsqueda de estación
 - [x] Manejo de permisos de cámara y errores
 - [x] Extracción de código desde URLs (/c/, /scan/, /charging/)
+
+
+## Feedback de escaneo QR - 30 Enero 2026
+
+- [x] Agregar sonido elegante al escanear QR exitosamente (acorde Do mayor con Web Audio API)
+- [x] Agregar vibración corta y sutil al escanear QR (50ms con Navigator.vibrate)
