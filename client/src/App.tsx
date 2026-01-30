@@ -23,6 +23,7 @@ import ChargingSession from "./pages/user/ChargingSession";
 import AIAssistant from "./pages/user/AIAssistant";
 import ScanPage from "./pages/user/Scan";
 import StartCharge from "./pages/user/StartCharge";
+import QRRedirect from "./pages/QRRedirect";
 import ChargingMonitor from "./pages/user/ChargingMonitor";
 import ChargingSummary from "./pages/user/ChargingSummary";
 import ChargingWaiting from "./pages/user/ChargingWaiting";
@@ -172,6 +173,9 @@ function Router() {
       {/* Rutas públicas */}
       <Route path="/landing" component={Landing} />
       <Route path="/investors" component={Investors} />
+      
+      {/* Ruta para códigos QR - Redirige a StartCharge */}
+      <Route path="/c/:code" component={QRRedirect} />
 
       {/* ============================================
           RUTAS DE USUARIO (App móvil principal)
