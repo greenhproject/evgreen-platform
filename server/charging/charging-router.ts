@@ -377,17 +377,41 @@ export const chargingRouter = router({
       // Obtener el evse para el connectorId
       const evse = await db.getEvseById(activeTransaction.evseId);
       
+      // Obtener información del conector para la potencia
+      const connectorType = evse?.connectorType || "TYPE_2";
+      const powerKw = evse?.powerKw ? parseFloat(evse.powerKw) : 22;
+      
+      // Calcular potencia actual basada en el tiempo y energía
+      const currentPower = elapsedMinutes > 0 ? (currentKwh / (elapsedMinutes / 60)) : powerKw;
+      
+      // Estimar tiempo restante basado en la potencia actual
+      // Usar kwhConsumed si está disponible, sino estimar
+      const estimatedTotalKwh = activeTransaction.kwhConsumed 
+        ? parseFloat(activeTransaction.kwhConsumed)
+        : Math.max(currentKwh * 2, 30); // Estimación simple de al menos 30 kWh
+      const remainingKwh = Math.max(0, estimatedTotalKwh - currentKwh);
+      const estimatedMinutes = currentPower > 0 ? Math.ceil((remainingKwh / currentPower) * 60) : 30;
+      
       return {
         transactionId: activeTransaction.id,
         stationId: activeTransaction.stationId,
         stationName: station?.name || "Estación",
         connectorId: evse?.connectorId || 1,
+        connectorType,
         startTime: startTime.toISOString(),
         elapsedMinutes,
+        estimatedMinutes: elapsedMinutes + estimatedMinutes,
         currentKwh: Math.round(currentKwh * 100) / 100,
+        estimatedKwh: Math.round(estimatedTotalKwh * 100) / 100,
         currentCost: Math.round(currentCost),
         pricePerKwh,
+        powerKw,
+        currentPower: Math.round(currentPower * 10) / 10,
         status: activeTransaction.status,
+        chargeMode: "full_charge" as const, // TODO: Obtener del registro de sesión
+        targetPercentage: 100,
+        targetAmount: currentCost * 2,
+        startPercentage: 20,
       };
     }),
 
@@ -396,10 +420,27 @@ export const chargingRouter = router({
    */
   stopCharge: protectedProcedure
     .input(z.object({
-      transactionId: z.number(),
+      sessionId: z.string().optional(),
+      transactionId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { transactionId } = input;
+      // Obtener transactionId desde sessionId o directamente
+      let transactionId = input.transactionId;
+      
+      if (!transactionId && input.sessionId) {
+        // Buscar transacción activa del usuario
+        const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
+        if (activeTransaction) {
+          transactionId = activeTransaction.id;
+        }
+      }
+      
+      if (!transactionId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Se requiere sessionId o transactionId",
+        });
+      }
       
       // Verificar que la transacción pertenece al usuario
       const transaction = await db.getTransactionById(transactionId);
