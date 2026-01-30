@@ -2020,3 +2020,347 @@ export async function getTransactionMetrics(
     totalRevenue: Number(row.totalRevenue) || 0,
   }));
 }
+
+
+// ============================================================================
+// INVESTOR EARNINGS OPERATIONS
+// ============================================================================
+
+export async function addInvestorEarnings(
+  investorId: number,
+  amount: number,
+  transactionId: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Obtener o crear wallet del inversor
+  let wallet = await db.select().from(wallets).where(eq(wallets.userId, investorId)).limit(1);
+  
+  if (wallet.length === 0) {
+    await db.insert(wallets).values({
+      userId: investorId,
+      balance: amount.toString(),
+      currency: "COP",
+    });
+    wallet = await db.select().from(wallets).where(eq(wallets.userId, investorId)).limit(1);
+  } else {
+    await db.update(wallets).set({
+      balance: sql`${wallets.balance} + ${amount}`,
+    }).where(eq(wallets.userId, investorId));
+  }
+  
+  // Registrar transacción de wallet
+  if (wallet[0]) {
+    const balanceBefore = parseFloat(wallet[0].balance) || 0;
+    const balanceAfter = balanceBefore + amount;
+    
+    await db.insert(walletTransactions).values({
+      walletId: wallet[0].id,
+      userId: investorId,
+      type: "EARNING",
+      amount: amount.toString(),
+      balanceBefore: balanceBefore.toString(),
+      balanceAfter: balanceAfter.toString(),
+      referenceType: "TRANSACTION",
+      referenceId: transactionId,
+      description: `Ganancia por transacción de carga #${transactionId}`,
+    });
+  }
+}
+
+// ============================================================================
+// DASHBOARD METRICS OPERATIONS
+// ============================================================================
+
+export async function getAdminDashboardMetrics() {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  // Total de transacciones completadas
+  const totalTransactions = await db.select({ count: count() })
+    .from(transactions)
+    .where(eq(transactions.status, "COMPLETED"));
+  
+  // Transacciones del mes
+  const monthlyTransactions = await db.select({ 
+    count: count(),
+    totalKwh: sum(transactions.kwhConsumed),
+    totalRevenue: sum(transactions.totalCost),
+    platformFees: sum(transactions.platformFee),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, startOfMonth)
+      )
+    );
+  
+  // Transacciones de hoy
+  const todayTransactions = await db.select({ 
+    count: count(),
+    totalKwh: sum(transactions.kwhConsumed),
+    totalRevenue: sum(transactions.totalCost),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, startOfDay)
+      )
+    );
+  
+  // Transacciones en progreso
+  const activeTransactions = await db.select({ count: count() })
+    .from(transactions)
+    .where(eq(transactions.status, "IN_PROGRESS"));
+  
+  // Total de estaciones
+  const totalStations = await db.select({ count: count() }).from(chargingStations);
+  
+  // Estaciones online
+  const onlineStations = await db.select({ count: count() })
+    .from(chargingStations)
+    .where(eq(chargingStations.isOnline, true));
+  
+  // Total de usuarios
+  const totalUsers = await db.select({ count: count() }).from(users);
+  
+  return {
+    totalTransactions: totalTransactions[0]?.count || 0,
+    activeTransactions: activeTransactions[0]?.count || 0,
+    monthly: {
+      transactions: monthlyTransactions[0]?.count || 0,
+      kwhSold: Number(monthlyTransactions[0]?.totalKwh) || 0,
+      revenue: Number(monthlyTransactions[0]?.totalRevenue) || 0,
+      platformFees: Number(monthlyTransactions[0]?.platformFees) || 0,
+    },
+    today: {
+      transactions: todayTransactions[0]?.count || 0,
+      kwhSold: Number(todayTransactions[0]?.totalKwh) || 0,
+      revenue: Number(todayTransactions[0]?.totalRevenue) || 0,
+    },
+    stations: {
+      total: totalStations[0]?.count || 0,
+      online: onlineStations[0]?.count || 0,
+    },
+    users: {
+      total: totalUsers[0]?.count || 0,
+    },
+  };
+}
+
+export async function getInvestorDashboardMetrics(investorId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  
+  // Obtener estaciones del inversor
+  const investorStations = await db.select({ id: chargingStations.id })
+    .from(chargingStations)
+    .where(eq(chargingStations.ownerId, investorId));
+  
+  const stationIds = investorStations.map(s => s.id);
+  
+  if (stationIds.length === 0) {
+    return {
+      totalStations: 0,
+      onlineStations: 0,
+      totalTransactions: 0,
+      monthlyTransactions: 0,
+      monthlyKwh: 0,
+      monthlyRevenue: 0,
+      monthlyEarnings: 0,
+      walletBalance: 0,
+    };
+  }
+  
+  // Estaciones online
+  const onlineStations = await db.select({ count: count() })
+    .from(chargingStations)
+    .where(
+      and(
+        eq(chargingStations.ownerId, investorId),
+        eq(chargingStations.isOnline, true)
+      )
+    );
+  
+  // Transacciones totales
+  const totalTransactions = await db.select({ count: count() })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        inArray(transactions.stationId, stationIds)
+      )
+    );
+  
+  // Transacciones del mes
+  const monthlyData = await db.select({ 
+    count: count(),
+    totalKwh: sum(transactions.kwhConsumed),
+    totalRevenue: sum(transactions.totalCost),
+    investorShare: sum(transactions.investorShare),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        inArray(transactions.stationId, stationIds),
+        gte(transactions.startTime, startOfMonth)
+      )
+    );
+  
+  // Balance de wallet
+  const wallet = await db.select().from(wallets).where(eq(wallets.userId, investorId)).limit(1);
+  
+  return {
+    totalStations: stationIds.length,
+    onlineStations: onlineStations[0]?.count || 0,
+    totalTransactions: totalTransactions[0]?.count || 0,
+    monthlyTransactions: monthlyData[0]?.count || 0,
+    monthlyKwh: Number(monthlyData[0]?.totalKwh) || 0,
+    monthlyRevenue: Number(monthlyData[0]?.totalRevenue) || 0,
+    monthlyEarnings: Number(monthlyData[0]?.investorShare) || 0,
+    walletBalance: Number(wallet[0]?.balance) || 0,
+  };
+}
+
+export async function getUserActiveTransaction(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select({
+    transaction: transactions,
+    station: chargingStations,
+    evse: evses,
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .innerJoin(evses, eq(transactions.evseId, evses.id))
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.status, "IN_PROGRESS")
+      )
+    )
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+export async function getUserTransactionHistory(userId: number, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select({
+    transaction: transactions,
+    station: chargingStations,
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(eq(transactions.userId, userId))
+    .orderBy(desc(transactions.startTime))
+    .limit(limit);
+}
+
+export async function getUserMonthlyStats(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  
+  const result = await db.select({
+    count: count(),
+    totalKwh: sum(transactions.kwhConsumed),
+    totalCost: sum(transactions.totalCost),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, startOfMonth)
+      )
+    );
+  
+  return {
+    sessions: result[0]?.count || 0,
+    kwhConsumed: Number(result[0]?.totalKwh) || 0,
+    totalSpent: Number(result[0]?.totalCost) || 0,
+  };
+}
+
+
+// ============================================================================
+// TOP STATIONS AND RECENT TRANSACTIONS
+// ============================================================================
+
+export async function getTopStationsByRevenue(
+  startDate: Date,
+  endDate: Date,
+  limit: number = 10
+) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.select({
+    stationId: transactions.stationId,
+    stationName: chargingStations.name,
+    city: chargingStations.city,
+    transactionCount: count(),
+    totalKwh: sum(transactions.kwhConsumed),
+    totalRevenue: sum(transactions.totalCost),
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, startDate),
+        lte(transactions.startTime, endDate)
+      )
+    )
+    .groupBy(transactions.stationId, chargingStations.name, chargingStations.city)
+    .orderBy(desc(sum(transactions.totalCost)))
+    .limit(limit);
+  
+  return result.map(row => ({
+    stationId: row.stationId,
+    stationName: row.stationName,
+    city: row.city,
+    transactionCount: row.transactionCount,
+    totalKwh: Number(row.totalKwh) || 0,
+    totalRevenue: Number(row.totalRevenue) || 0,
+  }));
+}
+
+export async function getRecentTransactions(limit: number = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.select({
+    transaction: transactions,
+    station: chargingStations,
+    user: {
+      id: users.id,
+      name: users.name,
+      email: users.email,
+    },
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .innerJoin(users, eq(transactions.userId, users.id))
+    .orderBy(desc(transactions.startTime))
+    .limit(limit);
+  
+  return result;
+}

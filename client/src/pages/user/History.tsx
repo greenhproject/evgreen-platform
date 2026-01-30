@@ -17,9 +17,15 @@ import {
 import { AIInsightCard } from "@/components/AIInsightCard";
 
 export default function UserHistory() {
-  const { data: transactions, isLoading } = trpc.transactions.getMyHistory.useQuery({
-    limit: 50,
-  });
+  // Obtener historial de transacciones y estadísticas mensuales
+  const { data: historyData, isLoading } = trpc.dashboard.userTransactionHistory.useQuery({ limit: 50 });
+  const { data: monthlyStats } = trpc.dashboard.userMonthlyStats.useQuery();
+  
+  // Extraer transacciones del formato de respuesta
+  const transactions = historyData?.map(item => ({
+    ...item.transaction,
+    station: item.station,
+  }));
 
   const formatCurrency = (amount: string | number) => {
     const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -50,18 +56,12 @@ export default function UserHistory() {
     );
   };
 
-  // Calcular estadísticas
-  const stats = transactions?.reduce(
-    (acc, tx: any) => {
-      if (tx.status === "COMPLETED") {
-        acc.totalCharges++;
-        acc.totalKwh += parseFloat(tx.kwhConsumed || tx.energyDeliveredKwh || "0");
-        acc.totalSpent += parseFloat(tx.totalCost || tx.totalAmount || "0");
-      }
-      return acc;
-    },
-    { totalCharges: 0, totalKwh: 0, totalSpent: 0 }
-  ) || { totalCharges: 0, totalKwh: 0, totalSpent: 0 };
+  // Usar estadísticas mensuales del servidor
+  const stats = {
+    totalCharges: monthlyStats?.sessions || 0,
+    totalKwh: monthlyStats?.kwhConsumed || 0,
+    totalSpent: monthlyStats?.totalSpent || 0,
+  };
 
   return (
     <UserLayout title="Historial de cargas" showBack>
@@ -190,7 +190,7 @@ export default function UserHistory() {
                       <div className="text-right">
                         <div className="text-muted-foreground">Total</div>
                         <div className="font-semibold text-primary">
-                          {formatCurrency((tx as any).totalAmount || tx.kwhConsumed || 0)}
+                          {formatCurrency(tx.totalCost || 0)}
                         </div>
                       </div>
                     </div>
