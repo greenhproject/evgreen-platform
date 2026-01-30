@@ -298,41 +298,70 @@ export default function StartCharge() {
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
-              ) : (
+              ) : connectorsQuery.data && connectorsQuery.data.length > 0 ? (
                 <div className="grid gap-3">
-                  {connectorsQuery.data?.map((connector) => (
-                    <button
-                      key={connector.id}
-                      onClick={() => connector.isAvailable && handleSelectConnector(connector.connectorId)}
-                      disabled={!connector.isAvailable}
-                      className={`p-4 rounded-lg border-2 transition-all text-left ${
-                        connector.isAvailable
-                          ? "border-primary/30 hover:border-primary hover:bg-primary/5 cursor-pointer"
-                          : "border-muted bg-muted/50 cursor-not-allowed opacity-60"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-full ${
-                            connector.isAvailable ? "bg-green-500/10" : "bg-muted"
-                          }`}>
-                            <Plug className={`h-5 w-5 ${
-                              connector.isAvailable ? "text-green-500" : "text-muted-foreground"
-                            }`} />
+                  {connectorsQuery.data.map((connector, index) => {
+                    // Traducir estado a español
+                    const getStatusText = (status: string) => {
+                      const statusMap: Record<string, string> = {
+                        'AVAILABLE': 'Disponible',
+                        'OCCUPIED': 'Ocupado',
+                        'CHARGING': 'Cargando',
+                        'FAULTED': 'En falla',
+                        'UNAVAILABLE': 'No disponible',
+                        'RESERVED': 'Reservado',
+                        'PREPARING': 'Preparando',
+                        'FINISHING': 'Finalizando',
+                        'SUSPENDED_EV': 'Suspendido (EV)',
+                        'SUSPENDED_EVSE': 'Suspendido (EVSE)',
+                      };
+                      return statusMap[status?.toUpperCase()] || status;
+                    };
+                    
+                    return (
+                      <button
+                        key={connector.id}
+                        type="button"
+                        onClick={() => {
+                          if (connector.isAvailable) {
+                            handleSelectConnector(connector.connectorId);
+                          }
+                        }}
+                        disabled={!connector.isAvailable}
+                        className={`p-4 rounded-lg border-2 transition-all text-left w-full ${
+                          connector.isAvailable
+                            ? "border-primary/30 hover:border-primary hover:bg-primary/5 cursor-pointer active:scale-[0.98]"
+                            : "border-muted bg-muted/50 cursor-not-allowed opacity-60"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-full ${
+                              connector.isAvailable ? "bg-green-500/10" : "bg-muted"
+                            }`}>
+                              <Plug className={`h-5 w-5 ${
+                                connector.isAvailable ? "text-green-500" : "text-muted-foreground"
+                              }`} />
+                            </div>
+                            <div>
+                              <p className="font-medium">Conector {connector.connectorId}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {connector.type?.replace('_', ' ')} • {Number(connector.powerKw).toFixed(0)} kW
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium">Conector {connector.connectorId}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {connector.type} • {connector.powerKw} kW
-                            </p>
-                          </div>
+                          <Badge variant={connector.isAvailable ? "default" : "secondary"}>
+                            {getStatusText(connector.status)}
+                          </Badge>
                         </div>
-                        <Badge variant={connector.isAvailable ? "default" : "secondary"}>
-                          {connector.status}
-                        </Badge>
-                      </div>
-                    </button>
-                  ))}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Plug className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No hay conectores disponibles</p>
                 </div>
               )}
               
