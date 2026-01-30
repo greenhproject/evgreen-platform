@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -45,9 +45,16 @@ type ChargeMode = "fixed_amount" | "percentage" | "full_charge";
 
 export default function StartCharge() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const { user } = useAuth();
-  const [step, setStep] = useState<Step>("scan");
-  const [stationCode, setStationCode] = useState("");
+  
+  // Obtener código de la URL si viene de escaneo QR
+  const urlParams = new URLSearchParams(searchString);
+  const codeFromUrl = urlParams.get("code");
+  
+  const [step, setStep] = useState<Step>(codeFromUrl ? "scan" : "scan");
+  const [stationCode, setStationCode] = useState(codeFromUrl || "");
+  const [autoSearchDone, setAutoSearchDone] = useState(false);
   const [selectedConnector, setSelectedConnector] = useState<number | null>(null);
   const [chargeMode, setChargeMode] = useState<ChargeMode>("full_charge");
   const [targetValue, setTargetValue] = useState(80); // % o $ según el modo
@@ -85,8 +92,8 @@ export default function StartCharge() {
       toast.success("¡Carga iniciada!", {
         description: "Conecta tu vehículo al cargador",
       });
-      // Redirigir a la pantalla de sesión activa
-      setLocation("/user/charging");
+      // Redirigir a la pantalla de espera de conexión
+      setLocation(`/charging-waiting?stationId=${stationQuery.data?.station.id}&connectorId=${selectedConnector}`);
     },
     onError: (error) => {
       toast.error("Error al iniciar carga", {
@@ -104,6 +111,14 @@ export default function StartCharge() {
     }
     stationQuery.refetch();
   };
+  
+  // Auto-buscar si viene con código desde URL (escaneo QR)
+  useEffect(() => {
+    if (codeFromUrl && !autoSearchDone) {
+      setAutoSearchDone(true);
+      // La query se ejecutará automáticamente porque stationCode ya tiene valor
+    }
+  }, [codeFromUrl, autoSearchDone]);
   
   // Avanzar al siguiente paso cuando se encuentra la estación
   useEffect(() => {

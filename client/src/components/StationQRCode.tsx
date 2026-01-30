@@ -19,8 +19,9 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [copied, setCopied] = useState(false);
   
-  // URL base para escaneo (ajustar según dominio de producción)
-  const scanUrl = `https://evgreen.lat/scan/${stationCode}`;
+  // El QR contiene solo el código de estación para facilitar el escaneo
+  // La app detectará si es un código simple o una URL
+  const qrContent = stationCode;
   
   useEffect(() => {
     generateQR();
@@ -30,8 +31,8 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
     if (!canvasRef.current) return;
     
     try {
-      // Generar QR con alta calidad
-      await QRCode.toCanvas(canvasRef.current, scanUrl, {
+      // Generar QR con alta calidad - solo el código de estación
+      await QRCode.toCanvas(canvasRef.current, qrContent, {
         width: 280,
         margin: 2,
         color: {
@@ -292,10 +293,10 @@ export function StationQRCode({ stationCode, stationName, stationAddress, onClos
         </CardContent>
       </Card>
       
-      {/* URL de prueba */}
+      {/* Info del QR */}
       <div className="text-center">
-        <p className="text-xs text-muted-foreground mb-1">URL de escaneo:</p>
-        <code className="text-xs bg-muted px-2 py-1 rounded">{scanUrl}</code>
+        <p className="text-xs text-muted-foreground mb-1">El QR contiene el código:</p>
+        <code className="text-xs bg-muted px-2 py-1 rounded font-mono">{qrContent}</code>
       </div>
     </div>
   );

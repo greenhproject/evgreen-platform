@@ -789,3 +789,35 @@
 - [x] URL de escaneo generada automáticamente
 - [x] Instrucciones de uso incluidas en el componente
 - [x] Actualizado panel de técnico con mismas funcionalidades
+
+
+## Usuario de Prueba para Simulador - 30 Enero 2026
+
+- [x] Crear usuario user@evgreen.lat con rol "user" (ID: 1143170, idTag: EV-TEST01)
+- [x] Crear billetera con saldo inicial de 500,000 COP
+- [ ] Verificar que el usuario puede iniciar sesión y usar el flujo de carga
+
+
+## Corrección Flujo de Carga QR - 30 Enero 2026
+
+### Problema 1: QR genera URL completa en lugar de solo código
+- [x] Modificar StationQRCode para generar solo el código de estación (ej: CP001)
+- [x] Actualizar lógica de escaneo para detectar tanto URLs como códigos simples
+
+### Problema 2: Flujo de inicio de carga incorrecto
+- [x] Al escanear/ingresar código, redirigir a StartCharge con el código
+- [x] Permitir seleccionar conector disponible (ya existía en StartCharge)
+- [x] Validar saldo del usuario antes de iniciar (ya existía en StartCharge)
+- [x] Enviar RemoteStartTransaction al cargador con idTag del usuario
+- [x] Mostrar pantalla de espera de conexión (ChargingWaiting)
+
+### Flujo correcto esperado:
+1. Usuario escanea QR o ingresa código manualmente
+2. App muestra estación con conectores disponibles
+3. Usuario selecciona conector y confirma
+4. App valida saldo suficiente
+5. App envía RemoteStartTransaction al cargador OCPP
+6. Cargador responde Accepted y espera conexión del vehículo
+7. Usuario conecta vehículo físicamente
+8. Cargador envía StatusNotification (Charging)
+9. App muestra pantalla de monitoreo de carga
