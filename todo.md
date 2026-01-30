@@ -588,3 +588,12 @@
 - [x] Agregar sección con URL de WebSocket en Monitor OCPP para copiar fácilmente
 - [x] Mostrar protocolos soportados (OCPP 1.6J, OCPP 2.0.1)
 - [x] Ejemplo de configuración para cargadores
+
+
+## Configuración Remota OCPP - 30 Enero 2026
+
+- [x] Verificar endpoints GetConfiguration y ChangeConfiguration existentes
+- [x] Crear componente UI para ver configuración del cargador
+- [x] Crear formulario para modificar parámetros de configuración
+- [x] Integrar en el Monitor OCPP como nueva pestaña
+- [x] Probar con simulador OCPP (tests pasan)
