@@ -167,12 +167,14 @@ const stationsRouter = router({
         stations = await db.getAllChargingStations({ isActive: true, isPublic: true });
       }
       
-      // Agregar tarifa activa a cada estación
-      const stationsWithTariffs = await Promise.all(
+      // Agregar tarifa activa y EVSEs a cada estación
+      const stationsWithData = await Promise.all(
         stations.map(async (station: any) => {
           const tariff = await db.getActiveTariffByStationId(station.id);
+          const evses = await db.getEvsesByStationId(station.id);
           return {
             ...station,
+            evses,
             pricePerKwh: tariff?.pricePerKwh || "1200",
             reservationFee: tariff?.reservationFee || "5000",
             overstayPenaltyPerMin: tariff?.overstayPenaltyPerMinute || "500",
@@ -182,7 +184,7 @@ const stationsRouter = router({
         })
       );
       
-      return stationsWithTariffs;
+      return stationsWithData;
     }),
   
   // Admin: listar todas las estaciones
