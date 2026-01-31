@@ -73,7 +73,11 @@ const getNotificationIcon = (type: Notification["type"]) => {
   }
 };
 
-export function NotificationPanel() {
+interface NotificationPanelProps {
+  buttonClassName?: string;
+}
+
+export function NotificationPanel({ buttonClassName }: NotificationPanelProps = {}) {
   const [, setLocation] = useLocation();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>(sampleNotifications);
@@ -107,10 +111,14 @@ export function NotificationPanel() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full relative">
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          className={`rounded-full relative ${buttonClassName || ''}`}
+        >
           <Bell className="w-5 h-5" />
           {unreadCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-destructive rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1">
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1 animate-pulse">
               {unreadCount > 9 ? "9+" : unreadCount}
             </span>
           )}
