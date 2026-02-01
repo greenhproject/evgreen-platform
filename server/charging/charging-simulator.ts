@@ -34,6 +34,7 @@ interface SimulationSession {
   currentMeter: number;
   targetKwh: number;
   pricePerKwh: number;
+  powerKw: number; // Potencia real del cargador en kW
   chargeMode: "fixed_amount" | "percentage" | "full_charge";
   targetValue: number;
   status: "connecting" | "preparing" | "charging" | "finishing" | "completed";
@@ -103,6 +104,11 @@ export async function startSimulation(params: {
   if (activeSimulations.has(userId)) {
     throw new Error("Ya hay una simulación activa para este usuario");
   }
+  
+  // Obtener la potencia real del EVSE desde la base de datos
+  const evseData = await db.getEvseById(evseId);
+  const realPowerKw = evseData?.powerKw ? parseFloat(evseData.powerKw) : 7; // Default 7 kW si no hay datos
+  console.log(`[Simulator] EVSE ${evseId} potencia real: ${realPowerKw} kW`);
 
   // Calcular kWh objetivo según modo de carga
   let targetKwh = 0;
@@ -176,6 +182,7 @@ export async function startSimulation(params: {
     currentMeter: meterStart,
     targetKwh,
     pricePerKwh,
+    powerKw: realPowerKw, // Potencia real del cargador
     chargeMode,
     targetValue,
     status: "connecting",
@@ -217,8 +224,15 @@ function startSimulationCycle(session: SimulationSession): void {
       session.status = "charging";
       notifyStatusChange(session, "charging", { message: "Carga en progreso" });
 
-      // Enviar MeterValues cada 5 segundos
-      const kwhPerInterval = session.targetKwh / 12; // Completar en ~1 minuto
+      // Usar la potencia real del cargador para calcular la velocidad de carga
+      // kWh por intervalo de 5 segundos = potencia * (5/3600) horas
+      // Para simulación acelerada, multiplicamos por un factor de aceleración
+      const accelerationFactor = 60; // 1 minuto real = 1 hora simulada
+      const intervalSeconds = 5;
+      const realKwhPerInterval = session.powerKw * (intervalSeconds / 3600) * accelerationFactor;
+      
+      console.log(`[Simulator] Potencia: ${session.powerKw} kW, kWh por intervalo: ${realKwhPerInterval.toFixed(3)} kWh`);
+      
       let intervalCount = 0;
 
       session.intervalId = setInterval(async () => {
@@ -229,12 +243,15 @@ function startSimulationCycle(session: SimulationSession): void {
 
         intervalCount++;
         
-        // Incrementar medidor
-        const kwhIncrement = kwhPerInterval * (0.8 + Math.random() * 0.4); // Variación aleatoria
+        // Incrementar medidor usando la potencia real con variación aleatoria (±10%)
+        const kwhIncrement = realKwhPerInterval * (0.9 + Math.random() * 0.2);
         session.currentMeter += kwhIncrement * 1000; // Convertir a Wh
 
         const currentKwh = (session.currentMeter - session.meterStart) / 1000;
         const currentCost = currentKwh * session.pricePerKwh;
+        
+        // Calcular potencia actual con variación realista (±5% de la potencia nominal)
+        const currentPower = session.powerKw * (0.95 + Math.random() * 0.1);
 
         // Guardar MeterValue en BD
         await db.createMeterValue({
@@ -242,7 +259,7 @@ function startSimulationCycle(session: SimulationSession): void {
           evseId: session.evseId,
           timestamp: new Date(),
           energyKwh: String(currentKwh),
-          powerKw: String(7 + Math.random() * 3), // Potencia variable 7-10 kW
+          powerKw: String(currentPower.toFixed(2)),
         });
 
         // Notificar progreso
@@ -250,7 +267,7 @@ function startSimulationCycle(session: SimulationSession): void {
           session.callbacks.onMeterValue(currentKwh, currentCost);
         }
 
-        console.log(`[Simulator] User ${session.userId}: ${currentKwh.toFixed(2)} kWh, $${Math.round(currentCost)}`);
+        console.log(`[Simulator] User ${session.userId}: ${currentKwh.toFixed(2)} kWh, $${Math.round(currentCost)}, Power: ${currentPower.toFixed(1)} kW`);
 
         // Verificar si se completó
         if (currentKwh >= session.targetKwh) {
@@ -409,6 +426,7 @@ export function getActiveSimulationInfo(userId: number): {
   progress: number;
   elapsedSeconds: number;
   pricePerKwh: number;
+  powerKw: number;
   chargeMode: "fixed_amount" | "percentage" | "full_charge";
   targetValue: number;
 } | null {
@@ -430,6 +448,7 @@ export function getActiveSimulationInfo(userId: number): {
     progress: Math.round(progress),
     elapsedSeconds,
     pricePerKwh: session.pricePerKwh,
+    powerKw: session.powerKw,
     chargeMode: session.chargeMode,
     targetValue: session.targetValue,
   };
