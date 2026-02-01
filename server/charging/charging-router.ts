@@ -424,6 +424,9 @@ export const chargingRouter = router({
           ? await db.getEvseById(activeTransaction.evseId)
           : null;
         
+        // Si la simulación está completada o terminando, marcar como completada
+        const isCompleted = simulationInfo.status === "completed" || simulationInfo.status === "finishing";
+        
         return {
           transactionId: activeTransaction?.id || 0,
           stationId: activeTransaction?.stationId || 0,
@@ -439,7 +442,7 @@ export const chargingRouter = router({
           pricePerKwh: simulationInfo.pricePerKwh,
           powerKw: 7,
           currentPower: 7 + Math.random() * 3, // Variación para realismo
-          status: simulationInfo.status === "charging" ? "IN_PROGRESS" : simulationInfo.status.toUpperCase(),
+          status: isCompleted ? "COMPLETED" : (simulationInfo.status === "charging" ? "IN_PROGRESS" : simulationInfo.status.toUpperCase()),
           chargeMode: "full_charge" as const,
           targetPercentage: 100,
           targetAmount: simulationInfo.targetKwh * simulationInfo.pricePerKwh,
@@ -454,6 +457,43 @@ export const chargingRouter = router({
       const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
       
       if (!activeTransaction) {
+        // Verificar si hay una transacción recién completada (para redirigir al resumen)
+        const lastCompleted = await db.getLastCompletedTransactionByUserId(ctx.user.id);
+        if (lastCompleted) {
+          // Verificar si se completó en los últimos 30 segundos
+          const completedAt = lastCompleted.endTime ? new Date(lastCompleted.endTime).getTime() : 0;
+          const now = Date.now();
+          if (now - completedAt < 30000) {
+            // Transacción recién completada, devolver con estado COMPLETED
+            const station = await db.getChargingStationById(lastCompleted.stationId);
+            const evse = await db.getEvseById(lastCompleted.evseId);
+            
+            return {
+              transactionId: lastCompleted.id,
+              stationId: lastCompleted.stationId,
+              stationName: station?.name || "Estación",
+              connectorId: evse?.connectorId || 1,
+              connectorType: evse?.connectorType || "TYPE_2",
+              startTime: lastCompleted.startTime.toISOString(),
+              elapsedMinutes: 0,
+              estimatedMinutes: 0,
+              currentKwh: lastCompleted.kwhConsumed ? parseFloat(lastCompleted.kwhConsumed) : 0,
+              estimatedKwh: lastCompleted.kwhConsumed ? parseFloat(lastCompleted.kwhConsumed) : 0,
+              currentCost: lastCompleted.totalCost ? parseFloat(lastCompleted.totalCost) : 0,
+              pricePerKwh: 800,
+              powerKw: 7,
+              currentPower: 0,
+              status: "COMPLETED",
+              chargeMode: "full_charge" as const,
+              targetPercentage: 100,
+              targetAmount: 0,
+              startPercentage: 20,
+              progress: 100,
+              isSimulation: true,
+              simulationStatus: "completed",
+            };
+          }
+        }
         return null;
       }
       

@@ -2614,6 +2614,27 @@ export async function getActiveTransactionByUserId(userId: number) {
 }
 
 /**
+ * Obtener la última transacción completada de un usuario (para mostrar resumen)
+ */
+export async function getLastCompletedTransactionByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.status, "COMPLETED")
+      )
+    )
+    .orderBy(desc(transactions.endTime))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+/**
  * Obtener último valor de medición de una transacción
  */
 export async function getLastMeterValue(transactionId: number) {
