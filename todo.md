@@ -1209,3 +1209,25 @@
 - [x] Redirigir automáticamente a ChargingSummary cuando termine
 - [x] Agregar detección de transacción recién completada en getActiveSession
 - [x] Agregar función getLastCompletedTransactionByUserId en db.ts
+
+
+## Bug Crítico: Simulación de carga - 1 Febrero 2026 (Segunda revisión)
+
+- [ ] BUG: Simulación se queda pegada al 100% y no redirige al resumen
+- [ ] BUG: Siempre muestra "Carga completa" sin importar el tipo de pago seleccionado
+- [ ] BUG: Valores de energía y costo muestran 0.00 kWh y $0
+- [ ] Mostrar tipo de pago correcto (por monto, por kWh, por tiempo, carga completa)
+- [ ] Asegurar que la transacción se cierre correctamente al completar
+- [ ] Probar flujo completo antes de notificar al usuario
+
+
+## Bug Crítico: Simulación de carga se queda pegada - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Simulación llega al 100% y se reinicia a 0% - Corregido con mejor detección de finalización
+- [x] BUG: Siempre muestra "Carga completa" - Ahora muestra el tipo de pago real ($monto, %porcentaje, o Carga completa)
+- [x] BUG: Valores de energía y costo muestran 0 - Corregido, ahora se actualizan correctamente
+- [x] Corregir detección de finalización en ChargingMonitor - Agregado flag redirecting para evitar loops
+- [x] Mostrar tipo de pago correcto en el header - Muestra $monto, Hasta X%, o Carga completa
+- [x] Redirigir automáticamente a ChargingSummary al completar - Con delay de 500ms para asegurar guardado
+- [x] Agregado chargeMode y targetValue a SimulationSession y getActiveSimulationInfo
+- [x] 280 tests pasando (21 nuevos tests para chargeMode)

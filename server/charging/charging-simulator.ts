@@ -33,6 +33,8 @@ interface SimulationSession {
   currentMeter: number;
   targetKwh: number;
   pricePerKwh: number;
+  chargeMode: "fixed_amount" | "percentage" | "full_charge";
+  targetValue: number;
   status: "connecting" | "preparing" | "charging" | "finishing" | "completed";
   intervalId?: NodeJS.Timeout;
   callbacks: {
@@ -153,6 +155,8 @@ export async function startSimulation(params: {
     currentMeter: meterStart,
     targetKwh,
     pricePerKwh,
+    chargeMode,
+    targetValue,
     status: "connecting",
     callbacks,
   };
@@ -367,6 +371,8 @@ export function getActiveSimulationInfo(userId: number): {
   progress: number;
   elapsedSeconds: number;
   pricePerKwh: number;
+  chargeMode: "fixed_amount" | "percentage" | "full_charge";
+  targetValue: number;
 } | null {
   const session = activeSimulations.get(userId);
   if (!session) {
@@ -386,5 +392,7 @@ export function getActiveSimulationInfo(userId: number): {
     progress: Math.round(progress),
     elapsedSeconds,
     pricePerKwh: session.pricePerKwh,
+    chargeMode: session.chargeMode,
+    targetValue: session.targetValue,
   };
 }

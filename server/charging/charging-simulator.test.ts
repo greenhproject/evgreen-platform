@@ -267,8 +267,50 @@ describe("Charging Simulator", () => {
       expect(info!.currentCost).toBe(0);
       expect(info!.progress).toBe(0);
       expect(info!.pricePerKwh).toBe(800);
+      expect(info!.chargeMode).toBe("fixed_amount");
+      expect(info!.targetValue).toBe(8000);
 
       await simulator.stopSimulation(107);
+    });
+
+    it("should include chargeMode and targetValue for percentage mode", async () => {
+      await simulator.startSimulation({
+        userId: 111,
+        userEmail: "info@greenhproject.com",
+        stationId: 1,
+        evseId: 1,
+        connectorId: 1,
+        chargeMode: "percentage",
+        targetValue: 80,
+        pricePerKwh: 800,
+      });
+
+      const info = simulator.getActiveSimulationInfo(111);
+      expect(info).not.toBeNull();
+      expect(info!.chargeMode).toBe("percentage");
+      expect(info!.targetValue).toBe(80);
+
+      await simulator.stopSimulation(111);
+    });
+
+    it("should include chargeMode and targetValue for full_charge mode", async () => {
+      await simulator.startSimulation({
+        userId: 112,
+        userEmail: "demo@evgreen.lat",
+        stationId: 1,
+        evseId: 1,
+        connectorId: 1,
+        chargeMode: "full_charge",
+        targetValue: 100,
+        pricePerKwh: 800,
+      });
+
+      const info = simulator.getActiveSimulationInfo(112);
+      expect(info).not.toBeNull();
+      expect(info!.chargeMode).toBe("full_charge");
+      expect(info!.targetValue).toBe(100);
+
+      await simulator.stopSimulation(112);
     });
   });
 
