@@ -13,6 +13,7 @@
 
 import * as db from "../db";
 import { nanoid } from "nanoid";
+import { sendChargingCompleteNotification } from "../firebase/fcm";
 
 // Emails de usuarios de prueba que activan la simulación
 const TEST_USER_EMAILS = [
@@ -288,7 +289,7 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
     });
   }
 
-  // Crear notificación
+  // Crear notificación en BD
   await db.createNotification({
     userId: session.userId,
     title: "Carga completada",
@@ -296,6 +297,23 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
     type: "CHARGING",
     referenceId: session.transactionId,
   });
+  
+  // Enviar notificación push si el usuario tiene token FCM
+  try {
+    const user = await db.getUserById(session.userId);
+    if (user?.fcmToken) {
+      const station = await db.getChargingStationById(session.stationId);
+      await sendChargingCompleteNotification(user.fcmToken, {
+        stationName: station?.name || "Estación EVGreen",
+        energyDelivered: kwhConsumed,
+        totalCost: Math.round(totalCost),
+        duration,
+      });
+      console.log(`[Simulator] Push notification sent to user ${session.userId}`);
+    }
+  } catch (error) {
+    console.error(`[Simulator] Error sending push notification:`, error);
+  }
 
   // Notificar completado
   const summary = {
