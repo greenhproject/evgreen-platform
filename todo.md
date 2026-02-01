@@ -1263,3 +1263,11 @@
 - [x] Agregado campo powerKw a SimulationSession y getActiveSimulationInfo
 - [x] Actualizado charging-router para usar potencia real del simulador
 - [x] 280 tests pasando
+
+## Bug: Inconsistencia de datos en Dashboard de Estaciones - 1 Febrero 2026 [CORREGIDO]
+
+- [x] Tarjetas muestran "2 En línea" pero tabla muestra "Desconectado" - Corregido usando isStationConnectedOCPP()
+- [x] Detalle de estación muestra conectores como "Disponible" sin reflejar estado real - Corregido usando connectorStatuses de OCPP
+- [x] Corregir cálculo de estadísticas usando estado OCPP real - Implementado
+- [x] Mostrar estado de conectores en tiempo real desde conexión OCPP - Implementado con indicador OCPPzar estado de conectores con estado real del OCPP/simulación
+- [ ] Mostrar estado en tiempo real en el detalle de la estación
