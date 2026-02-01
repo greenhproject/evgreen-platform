@@ -936,3 +936,66 @@
 - [x] Verificar documentación existente de BD (docs/DATABASE.md)
 - [x] Verificar documentación existente de API (docs/API.md)
 - [x] Subir todo al repositorio de GitHub (greenhproject/evgreen-platform) - Completado
+
+
+## Aplicación Móvil Android (APK) - 1 Febrero 2026 [EN PROGRESO]
+
+### Configuración del Proyecto
+- [x] Crear proyecto React Native con Expo
+- [x] Configurar estructura de carpetas y navegación
+- [x] Instalar dependencias (react-navigation, reanimated, gesture-handler)
+- [ ] Configurar conexión con API del backend
+
+### Sistema de Diseño Premium
+- [x] Definir paleta de colores EVGreen (gradientes, acentos)
+- [x] Configurar tipografía premium
+- [x] Crear componentes base con animaciones (Button, Card)
+- [x] Implementar tema oscuro optimizado para OLED
+- [x] Diseñar iconografía personalizada
+
+### Pantallas Principales
+- [x] Splash screen con animación del logo
+- [ ] Onboarding con slides animados
+- [ ] Login/Registro con OAuth
+- [x] Mapa interactivo de estaciones (MapScreen)
+- [ ] Detalle de estación con animaciones
+- [x] Inicio de carga por QR (ScanScreen)
+- [ ] Monitor de carga en tiempo real
+- [x] Historial de transacciones (HistoryScreen)
+- [x] Billetera digital (WalletScreen)
+- [x] Perfil de usuario (ProfileScreen)
+- [ ] Sistema de reservas
+- [ ] Chat con asistente IA
+
+### Animaciones y UX
+- [x] Transiciones fluidas entre pantallas (react-native-reanimated)
+- [x] Micro-interacciones en botones y tarjetas
+- [ ] Animación de carga del vehículo
+- [ ] Gestos de navegación (swipe, pull-to-refresh)
+- [x] Haptic feedback en acciones importantes (expo-haptics)
+
+### Funcionalidades Especiales
+- [ ] Banner publicitario durante carga
+- [ ] Notificaciones push
+- [x] Escaneo de código QR (expo-camera)
+- [ ] Integración con NFC
+- [ ] Modo offline básico
+
+### Compilación y Distribución
+- [x] Configurar EAS Build para Android
+- [x] Servidor de desarrollo Expo funcionando
+- [ ] Generar APK firmado (requiere cuenta Expo)
+- [ ] Crear página de descarga en sitio web
+- [ ] Configurar actualizaciones OTA
+
+
+## PWA (Progressive Web App) - 1 Febrero 2026 [COMPLETADO]
+
+- [x] Crear manifest.json con configuración de PWA
+- [x] Configurar Service Worker para funcionamiento offline
+- [x] Crear iconos en múltiples tamaños (72, 96, 128, 144, 152, 192, 384, 512)
+- [x] Agregar meta tags para PWA en index.html
+- [x] Configurar splash screen para instalación
+- [x] Crear página offline.html para cuando no hay conexión
+- [x] Crear iconos de shortcuts (scan, wallet, map)
+- [x] Todos los 193 tests pasan

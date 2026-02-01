@@ -1,0 +1,98 @@
+{
+  "name": "EVGreen - Carga tu Vehículo Eléctrico",
+  "short_name": "EVGreen",
+  "description": "Plataforma de carga para vehículos eléctricos en Colombia. Encuentra estaciones, inicia cargas y gestiona tu billetera.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#059669",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "es",
+  "dir": "ltr",
+  "categories": ["utilities", "lifestyle", "transportation"],
+  "icons": [
+    {
+      "src": "/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/home.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Pantalla principal de EVGreen"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Escanear QR",
+      "short_name": "Escanear",
+      "description": "Escanea el código QR de una estación para iniciar carga",
+      "url": "/scan",
+      "icons": [{ "src": "/icons/scan-shortcut.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Mi Billetera",
+      "short_name": "Billetera",
+      "description": "Ver saldo y recargar",
+      "url": "/wallet",
+      "icons": [{ "src": "/icons/wallet-shortcut.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Mapa de Estaciones",
+      "short_name": "Mapa",
+      "description": "Encuentra estaciones de carga cercanas",
+      "url": "/map",
+      "icons": [{ "src": "/icons/map-shortcut.png", "sizes": "96x96" }]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
