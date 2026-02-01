@@ -1310,3 +1310,17 @@
 - [x] Reducir factor de aceleración para experiencia más realista (de 60x a 20x)
 - [x] Ajustar duración mínima de simulación (~45-90 segundos ahora)
 
+
+## Mejoras solicitadas - 1 Febrero 2026 (Logo PDF y Sonido) [COMPLETADO]
+
+- [x] Agregar logo real de EVGreen al recibo PDF en formato base64
+  - Logo generado con IA (rayo + hoja verde)
+  - Optimizado a 300x167px para PDF
+  - Integrado en el header del recibo
+- [x] Implementar sonido de notificación al completar la carga
+  - Hook useNotificationSound con Web Audio API
+  - Sonido de éxito: secuencia de notas C5 -> E5 -> G5 -> C6 (acorde de Do mayor ascendente)
+  - No requiere archivos de audio externos
+- [x] Probar que el sonido funcione en móvil y desktop
+  - 280 tests pasando
+
