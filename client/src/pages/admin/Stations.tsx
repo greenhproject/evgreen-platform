@@ -936,7 +936,7 @@ export default function AdminStations() {
         </Dialog>
       </div>
 
-      {/* Estadísticas */}
+      {/* Estadísticas - Usando estado real de conexión OCPP */}
       <div className="grid grid-cols-4 gap-4">
         <Card className="p-4">
           <div className="flex items-center gap-3">
@@ -956,7 +956,7 @@ export default function AdminStations() {
             </div>
             <div>
               <div className="text-2xl font-bold">
-                {stations?.filter((s) => s.isOnline).length || 0}
+                {stations?.filter((s) => s.isActive && isStationConnectedOCPP(s)).length || 0}
               </div>
               <div className="text-sm text-muted-foreground">En línea</div>
             </div>
@@ -969,7 +969,7 @@ export default function AdminStations() {
             </div>
             <div>
               <div className="text-2xl font-bold">
-                {stations?.filter((s) => !s.isOnline && s.isActive).length || 0}
+                {stations?.filter((s) => s.isActive && !isStationConnectedOCPP(s)).length || 0}
               </div>
               <div className="text-sm text-muted-foreground">Fuera de línea</div>
             </div>
@@ -1228,26 +1228,39 @@ export default function AdminStations() {
                 </div>
               )}
 
-              {/* Conectores */}
+              {/* Conectores - Con estado OCPP en tiempo real */}
               <div className="space-y-3">
                 <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
                   Conectores ({viewingStation.evses?.length || 0})
                 </h4>
                 {viewingStation.evses && viewingStation.evses.length > 0 ? (
                   <div className="space-y-2">
-                    {viewingStation.evses.map((evse: any, index: number) => (
+                    {viewingStation.evses.map((evse: any, index: number) => {
+                      // Obtener estado OCPP en tiempo real si está conectado
+                      const connInfo = getOCPPConnectionInfo(viewingStation);
+                      const ocppStatus = connInfo?.connectorStatuses?.[evse.evseIdLocal] || null;
+                      // Usar estado OCPP si está disponible, sino usar estado de BD
+                      const realStatus = ocppStatus || evse.status;
+                      const isAvailable = realStatus === 'Available' || realStatus === 'AVAILABLE';
+                      const isCharging = realStatus === 'Charging' || realStatus === 'CHARGING' || realStatus === 'Occupied';
+                      const isPreparing = realStatus === 'Preparing' || realStatus === 'PREPARING';
+                      const isUnavailable = realStatus === 'Unavailable' || realStatus === 'UNAVAILABLE' || realStatus === 'Faulted';
+                      
+                      return (
                       <div 
                         key={evse.id || index} 
                         className="flex items-center justify-between p-3 bg-muted/30 rounded-lg"
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                            evse.status === 'AVAILABLE' ? 'bg-green-500/20' : 
-                            evse.status === 'CHARGING' ? 'bg-blue-500/20' : 'bg-muted'
+                            isAvailable ? 'bg-green-500/20' : 
+                            isCharging ? 'bg-blue-500/20' : 
+                            isPreparing ? 'bg-yellow-500/20' : 'bg-muted'
                           }`}>
                             <Zap className={`w-5 h-5 ${
-                              evse.status === 'AVAILABLE' ? 'text-green-500' : 
-                              evse.status === 'CHARGING' ? 'text-blue-500' : 'text-muted-foreground'
+                              isAvailable ? 'text-green-500' : 
+                              isCharging ? 'text-blue-500' : 
+                              isPreparing ? 'text-yellow-500' : 'text-muted-foreground'
                             }`} />
                           </div>
                           <div>
@@ -1256,19 +1269,23 @@ export default function AdminStations() {
                             </div>
                             <div className="text-xs text-muted-foreground">
                               {evse.powerKw} kW • {evse.chargeType}
+                              {ocppStatus && <span className="ml-2 text-primary">• OCPP: {ocppStatus}</span>}
                             </div>
                           </div>
                         </div>
-                        <Badge variant={
-                          evse.status === 'AVAILABLE' ? 'default' : 
-                          evse.status === 'CHARGING' ? 'secondary' : 'outline'
+                        <Badge className={
+                          isAvailable ? 'bg-green-500/20 text-green-400 border-green-500/30' : 
+                          isCharging ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 
+                          isPreparing ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+                          isUnavailable ? 'bg-red-500/20 text-red-400 border-red-500/30' : ''
                         }>
-                          {evse.status === 'AVAILABLE' ? 'Disponible' : 
-                           evse.status === 'CHARGING' ? 'Cargando' : 
-                           evse.status === 'UNAVAILABLE' ? 'No disponible' : evse.status}
+                          {isAvailable ? 'Disponible' : 
+                           isCharging ? 'Cargando' : 
+                           isPreparing ? 'Preparando' :
+                           isUnavailable ? 'No disponible' : realStatus}
                         </Badge>
                       </div>
-                    ))}
+                    );})}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground p-4 bg-muted/30 rounded-lg text-center">
@@ -1277,35 +1294,53 @@ export default function AdminStations() {
                 )}
               </div>
 
-              {/* Estadísticas rápidas */}
+              {/* Estadísticas rápidas - Con estado OCPP en tiempo real */}
               <div className="space-y-3">
                 <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Estadísticas</h4>
+                {(() => {
+                  const connInfo = getOCPPConnectionInfo(viewingStation);
+                  const evses = viewingStation.evses || [];
+                  
+                  // Calcular estadísticas usando estado OCPP si está disponible
+                  let availableCount = 0;
+                  let chargingCount = 0;
+                  
+                  evses.forEach((evse: any) => {
+                    const ocppStatus = connInfo?.connectorStatuses?.[evse.evseIdLocal];
+                    const realStatus = ocppStatus || evse.status;
+                    if (realStatus === 'Available' || realStatus === 'AVAILABLE') availableCount++;
+                    if (realStatus === 'Charging' || realStatus === 'CHARGING' || realStatus === 'Occupied') chargingCount++;
+                  });
+                  
+                  return (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="p-3 bg-muted/30 rounded-lg text-center">
                     <p className="text-2xl font-bold text-primary">
-                      {viewingStation.evses?.filter((e: any) => e.status === 'AVAILABLE').length || 0}
+                      {availableCount}
                     </p>
                     <p className="text-xs text-muted-foreground">Disponibles</p>
                   </div>
                   <div className="p-3 bg-muted/30 rounded-lg text-center">
                     <p className="text-2xl font-bold text-blue-500">
-                      {viewingStation.evses?.filter((e: any) => e.status === 'CHARGING').length || 0}
+                      {chargingCount}
                     </p>
                     <p className="text-xs text-muted-foreground">Cargando</p>
                   </div>
                   <div className="p-3 bg-muted/30 rounded-lg text-center">
                     <p className="text-2xl font-bold">
-                      {viewingStation.evses?.length || 0}
+                      {evses.length}
                     </p>
                     <p className="text-xs text-muted-foreground">Total</p>
                   </div>
                   <div className="p-3 bg-muted/30 rounded-lg text-center">
                     <p className="text-2xl font-bold text-yellow-500">
-                      {viewingStation.evses?.filter((e: any) => e.chargeType === 'DC').length || 0}
+                      {evses.filter((e: any) => e.chargeType === 'DC').length}
                     </p>
                     <p className="text-xs text-muted-foreground">DC Rápidos</p>
                   </div>
                 </div>
+                  );
+                })()}
               </div>
 
               {/* Acciones */}
