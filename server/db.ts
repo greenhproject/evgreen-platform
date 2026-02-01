@@ -830,6 +830,18 @@ export async function getNotificationByKey(userId: number, key: string) {
   return results[0] || null;
 }
 
+export async function deleteNotification(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Solo eliminar si pertenece al usuario
+  await db.delete(notifications).where(
+    and(
+      eq(notifications.id, id),
+      eq(notifications.userId, userId)
+    )
+  );
+}
+
 // ============================================================================
 // SUPPORT TICKET OPERATIONS
 // ============================================================================
