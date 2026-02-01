@@ -72,6 +72,13 @@ export const users = mysqlTable("users", {
   // Para técnicos - información adicional
   technicianLicense: varchar("technicianLicense", { length: 100 }),
   assignedRegion: varchar("assignedRegion", { length: 100 }),
+  // Token FCM para notificaciones push
+  fcmToken: text("fcmToken"),
+  fcmTokenUpdatedAt: timestamp("fcmTokenUpdatedAt"),
+  // Preferencias de notificaciones
+  notifyChargingComplete: boolean("notifyChargingComplete").default(true),
+  notifyLowBalance: boolean("notifyLowBalance").default(true),
+  notifyPromotions: boolean("notifyPromotions").default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
