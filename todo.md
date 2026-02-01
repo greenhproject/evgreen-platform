@@ -1025,3 +1025,64 @@
 - [x] Partículas decorativas animadas
 - [x] Indicadores de progreso interactivos
 - [x] Botón "Saltar" para usuarios que no quieren ver el onboarding
+
+
+## Nuevas Funcionalidades - 1 Febrero 2026
+
+### Firebase Cloud Messaging
+- [ ] Configurar proyecto Firebase y obtener credenciales
+- [ ] Instalar firebase-admin en el servidor
+- [ ] Crear servicio de push notifications con FCM
+- [ ] Implementar registro de tokens de dispositivo
+- [ ] Enviar notificaciones cuando termine la carga
+- [ ] Enviar notificaciones de promociones y alertas
+- [ ] Agregar configuración de notificaciones en perfil de usuario
+
+### Pantalla de Login/Registro Animada
+- [ ] Crear componente AuthScreen con animaciones framer-motion
+- [ ] Diseñar formulario de login con transiciones suaves
+- [ ] Diseñar formulario de registro con validación animada
+- [ ] Agregar animación de fondo con gradientes
+- [ ] Integrar con sistema de autenticación OAuth existente
+- [ ] Mantener consistencia visual con onboarding
+
+### Tutorial Interactivo Primera Carga
+- [ ] Crear componente TutorialOverlay con tooltips
+- [ ] Implementar highlights en elementos clave
+- [ ] Paso 1: Explicar cómo encontrar estaciones en el mapa
+- [ ] Paso 2: Mostrar cómo escanear código QR
+- [ ] Paso 3: Guiar selección de conector
+- [ ] Paso 4: Explicar monitoreo de carga
+- [ ] Paso 5: Mostrar historial y facturación
+- [ ] Guardar progreso del tutorial en localStorage
+- [ ] Opción de saltar o repetir tutorial
+
+
+## Nuevas Funcionalidades Implementadas - 1 Febrero 2026
+
+### Firebase Cloud Messaging [COMPLETADO]
+- [x] Configurar credenciales de Firebase (project_id, client_email, private_key)
+- [x] Crear servicio FCM para enviar notificaciones (server/firebase/fcm.ts)
+- [x] Agregar campo fcmToken a tabla users
+- [x] Crear router de push notifications (server/push/push-router.ts)
+- [x] Implementar notificaciones de carga completa
+- [x] Implementar notificaciones de saldo bajo
+- [x] Implementar notificaciones de promociones
+- [x] Agregar tests unitarios (6 tests)
+
+### Pantalla de Login/Registro Animada [COMPLETADO]
+- [x] Crear componente AuthScreen con animaciones (framer-motion)
+- [x] Diseñar formulario de login con gradientes emerald
+- [x] Diseñar formulario de registro con beneficios visuales
+- [x] Agregar partículas flotantes y efectos visuales
+- [x] Integrar con OAuth de Manus
+- [x] Logo animado de EVGreen
+- [x] Transiciones fluidas entre login/registro
+
+### Tutorial Interactivo [COMPLETADO]
+- [x] Crear componente Tutorial con 6 pasos
+- [x] Implementar tooltips con posicionamiento dinámico
+- [x] Agregar highlights animados a elementos objetivo
+- [x] Crear hook useTutorial para manejar estado
+- [x] Persistir estado de tutorial completado en localStorage
+- [x] Botón para reiniciar tutorial desde perfil

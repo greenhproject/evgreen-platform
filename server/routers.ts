@@ -9,6 +9,7 @@ import { aiRouter } from "./ai/ai-router";
 import { stripeRouter } from "./stripe/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
 import { chargingRouter } from "./charging/charging-router";
+import { pushRouter } from "./push/push-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -1541,6 +1542,7 @@ export const appRouter = router({
   ocpp: ocppRouter,
   dashboard: dashboardRouter,
   charging: chargingRouter,
+  push: pushRouter,
 });
 
 export type AppRouter = typeof appRouter;
