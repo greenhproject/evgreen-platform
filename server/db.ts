@@ -391,6 +391,43 @@ export async function getTransactionsByUserId(userId: number, limit = 50) {
   return db.select().from(transactions).where(eq(transactions.userId, userId)).orderBy(desc(transactions.startTime)).limit(limit);
 }
 
+export async function getAllTransactions(filters?: { startDate?: Date; endDate?: Date; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [];
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  
+  const query = db
+    .select({
+      id: transactions.id,
+      userId: transactions.userId,
+      stationId: transactions.stationId,
+      evseId: transactions.evseId,
+      status: transactions.status,
+      startTime: transactions.startTime,
+      endTime: transactions.endTime,
+      kwhConsumed: transactions.kwhConsumed,
+      totalCost: transactions.totalCost,
+      platformFee: transactions.platformFee,
+      userName: users.name,
+      userEmail: users.email,
+      stationName: chargingStations.name,
+    })
+    .from(transactions)
+    .leftJoin(users, eq(transactions.userId, users.id))
+    .leftJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .orderBy(desc(transactions.startTime))
+    .limit(filters?.limit || 100);
+  
+  if (conditions.length > 0) {
+    return query.where(and(...conditions));
+  }
+  
+  return query;
+}
+
 export async function getTransactionsByStationId(stationId: number, filters?: { startDate?: Date; endDate?: Date }) {
   const db = await getDb();
   if (!db) return [];
@@ -828,6 +865,18 @@ export async function getNotificationByKey(userId: number, key: string) {
     ))
     .limit(1);
   return results[0] || null;
+}
+
+export async function deleteNotification(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Solo eliminar si pertenece al usuario
+  await db.delete(notifications).where(
+    and(
+      eq(notifications.id, id),
+      eq(notifications.userId, userId)
+    )
+  );
 }
 
 // ============================================================================

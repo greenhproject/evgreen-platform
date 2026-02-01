@@ -9,6 +9,7 @@ import { aiRouter } from "./ai/ai-router";
 import { stripeRouter } from "./stripe/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
 import { chargingRouter } from "./charging/charging-router";
+import { pushRouter } from "./push/push-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -617,6 +618,7 @@ const transactionsRouter = router({
       stationId: z.number().optional(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      limit: z.number().min(1).max(500).default(100),
     }).optional())
     .query(async ({ input }) => {
       if (input?.stationId) {
@@ -625,8 +627,12 @@ const transactionsRouter = router({
           endDate: input.endDate,
         });
       }
-      // TODO: Implementar listado general con paginación
-      return [];
+      // Obtener todas las transacciones con información de usuario y estación
+      return db.getAllTransactions({
+        startDate: input?.startDate,
+        endDate: input?.endDate,
+        limit: input?.limit || 100,
+      });
     }),
   
   // Inversionista: transacciones de sus estaciones
@@ -1167,6 +1173,13 @@ const notificationsRouter = router({
     await db.markAllNotificationsAsRead(ctx.user.id);
     return { success: true };
   }),
+  
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.deleteNotification(input.id, ctx.user.id);
+      return { success: true };
+    }),
 });
 
 // ============================================================================
@@ -1541,6 +1554,7 @@ export const appRouter = router({
   ocpp: ocppRouter,
   dashboard: dashboardRouter,
   charging: chargingRouter,
+  push: pushRouter,
 });
 
 export type AppRouter = typeof appRouter;

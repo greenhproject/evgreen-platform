@@ -1178,3 +1178,23 @@
 - [x] Implementar transición automática a pantalla de resumen cuando termina la carga
 - [x] Banner publicitario agregado también en ChargingSummary
 
+
+
+## Bug: Inconsistencia de datos Dashboard vs Módulos - 1 Febrero 2026
+
+- [ ] BUG: Dashboard muestra 2 transacciones y $11,979.76 pero Transacciones muestra 0
+- [ ] BUG: Reportes muestra $0 ingresos y 0 transacciones
+- [ ] Verificar consultas SQL del módulo de Transacciones
+- [ ] Verificar consultas SQL del módulo de Reportes
+- [ ] Asegurar que todas las vistas usen la misma fuente de datos
+
+
+
+## Bug: Inconsistencia de datos Dashboard vs Módulos - 1 Febrero 2026 [CORREGIDO]
+
+- [x] Dashboard muestra $11,979.76, 16 kWh, 2 transacciones correctamente
+- [x] Módulo Transacciones - Corregido: ahora usa endpoint listAll con getAllTransactions
+- [x] Módulo Reportes - Corregido: ahora usa métricas reales del dashboard
+- [x] Agregada función getAllTransactions en db.ts con JOIN a users y stations
+- [x] Actualizado endpoint listAll para devolver transacciones con nombres
+- [x] Reportes ahora calcula datos mensuales basados en transacciones reales
