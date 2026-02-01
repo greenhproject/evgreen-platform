@@ -1198,3 +1198,14 @@
 - [x] Agregada función getAllTransactions en db.ts con JOIN a users y stations
 - [x] Actualizado endpoint listAll para devolver transacciones con nombres
 - [x] Reportes ahora calcula datos mensuales basados en transacciones reales
+
+
+## Bug: Simulación de carga se reinicia al 100% - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Cuando la simulación llega al 100%, se reinicia a 0% en lugar de finalizar
+- [x] BUG: No aparece la pantalla de finalización ni el resumen de carga
+- [x] BUG: La transacción no se cierra correctamente al completar carga total
+- [x] Implementar detección correcta de simulación completada (status + progress >= 100)
+- [x] Redirigir automáticamente a ChargingSummary cuando termine
+- [x] Agregar detección de transacción recién completada en getActiveSession
+- [x] Agregar función getLastCompletedTransactionByUserId en db.ts
