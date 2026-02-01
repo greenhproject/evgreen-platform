@@ -38,6 +38,7 @@ import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import { jsPDF } from "jspdf";
+import { EVGREEN_LOGO_BASE64 } from "@/assets/evgreen-logo-base64";
 
 // Componente de banner publicitario para el resumen
 function ChargingSummaryBanner() {
@@ -256,25 +257,33 @@ export default function ChargingSummary() {
       
       // Header con gradiente simulado (rectángulo verde)
       doc.setFillColor(...primaryColor);
-      doc.rect(0, 0, pageWidth, 50, "F");
+      doc.rect(0, 0, pageWidth, 55, "F");
       
-      // Logo y nombre de la empresa
+      // Logo de EVGreen (imagen real)
+      try {
+        // Agregar logo en el header (45mm de ancho, proporcional)
+        doc.addImage(EVGREEN_LOGO_BASE64, "PNG", margin, 8, 45, 25);
+      } catch (logoError) {
+        // Fallback a texto si falla la imagen
+        console.warn("No se pudo cargar el logo, usando texto", logoError);
+        doc.setTextColor(...white);
+        doc.setFontSize(28);
+        doc.setFont("helvetica", "bold");
+        doc.text("EVGreen", margin, 25);
+      }
+      
+      // Subtítulo (a la derecha del logo)
       doc.setTextColor(...white);
-      doc.setFontSize(28);
-      doc.setFont("helvetica", "bold");
-      doc.text("⚡ EVGreen", margin, 25);
-      
-      // Subtítulo
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setFont("helvetica", "normal");
-      doc.text("Recibo de Carga Eléctrica", margin, 35);
+      doc.text("Recibo de Carga Eléctrica", margin, 42);
       
-      // Número de recibo
+      // Número de recibo (esquina superior derecha)
       doc.setFontSize(10);
-      doc.text(`Recibo #${transaction.id}`, pageWidth - margin, 25, { align: "right" });
-      doc.text(formatDateShort(transaction.startTime), pageWidth - margin, 35, { align: "right" });
+      doc.text(`Recibo #${transaction.id}`, pageWidth - margin, 20, { align: "right" });
+      doc.text(formatDateShort(transaction.startTime), pageWidth - margin, 30, { align: "right" });
       
-      y = 65;
+      y = 70;
       
       // Sección: Información del cliente
       doc.setTextColor(...darkColor);

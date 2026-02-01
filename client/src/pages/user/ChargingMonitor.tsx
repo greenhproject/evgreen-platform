@@ -30,6 +30,7 @@ import {
   Loader2
 } from "lucide-react";
 import { toast } from "sonner";
+import { useNotificationSound } from "@/hooks/useNotificationSound";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -171,6 +172,9 @@ export default function ChargingMonitor() {
   const [redirecting, setRedirecting] = useState(false);
   const [completedTransactionId, setCompletedTransactionId] = useState<number | null>(null);
   
+  // Hook para sonidos de notificación
+  const { playChargingCompleteSound } = useNotificationSound();
+  
   // Detectar cuando la simulación se completa
   useEffect(() => {
     if (redirecting) return;
@@ -192,6 +196,10 @@ export default function ChargingMonitor() {
         console.log(`[ChargingMonitor] Charge completed! Status: ${status}, SimStatus: ${simStatus}, Progress: ${progress}%, TransactionId: ${session.transactionId}`);
         setRedirecting(true);
         setCompletedTransactionId(session.transactionId);
+        
+        // Reproducir sonido de carga completa
+        playChargingCompleteSound();
+        
         toast.success("¡Carga completada!");
         // Pequeño delay para asegurar que la transacción se guardó y mostrar el toast
         setTimeout(() => {
@@ -199,7 +207,7 @@ export default function ChargingMonitor() {
         }, 800);
       }
     }
-  }, [session, redirecting, setLocation]);
+  }, [session, redirecting, setLocation, playChargingCompleteSound]);
   
   // Si no hay sesión activa y no estamos redirigiendo, ir al mapa
   useEffect(() => {
