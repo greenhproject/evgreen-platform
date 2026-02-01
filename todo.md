@@ -1167,3 +1167,14 @@
 - [x] Tests de inicio/parada de simulación
 - [x] Total: 278 tests pasando
 
+
+
+## Bugs Interfaz de Carga - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Porcentaje muestra "NaN%" en lugar de valor válido - Corregido cálculo con validación de NaN
+- [x] BUG: Energía y costo muestran 0 durante la simulación - Los valores ahora se actualizan correctamente
+- [x] BUG: No aparece pantalla de carga completada estética al finalizar - Agregada detección de simulación completada
+- [x] BUG: Falta banner publicitario durante la sesión de carga - Banner por defecto agregado
+- [x] Implementar transición automática a pantalla de resumen cuando termina la carga
+- [x] Banner publicitario agregado también en ChargingSummary
+
