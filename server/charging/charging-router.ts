@@ -14,6 +14,7 @@ import {
   getAllConnections 
 } from "../ocpp/connection-manager";
 import { v4 as uuidv4 } from "uuid";
+import * as simulator from "./charging-simulator";
 
 // Tipos de carga disponibles
 export type ChargeMode = "fixed_amount" | "percentage" | "full_charge";
@@ -224,7 +225,7 @@ export const chargingRouter = router({
     }),
 
   /**
-   * Iniciar sesión de carga (envía RemoteStartTransaction al cargador)
+   * Iniciar sesión de carga (envía RemoteStartTransaction al cargador o usa simulador)
    */
   startCharge: protectedProcedure
     .input(z.object({
@@ -241,7 +242,6 @@ export const chargingRouter = router({
       const balance = wallet?.balance ? parseFloat(wallet.balance) : 0;
       
       // Calcular costo estimado
-      // Obtener primer EVSE para calcular precio dinámico
       const evsesForPrice = await db.getEvsesByStationId(stationId);
       const firstEvse = evsesForPrice[0];
       const dynamicPrice = firstEvse 
@@ -252,7 +252,7 @@ export const chargingRouter = router({
       // Obtener potencia del conector para cálculos
       const connectors = await db.getEvsesByStationId(stationId);
       const connector = connectors.find(c => c.connectorId === connectorId);
-      const powerKw = connector?.powerKw ? parseFloat(connector.powerKw) : 22;
+      const evseId = connector?.id || firstEvse?.id;
       
       let estimatedCost = 0;
       switch (chargeMode) {
@@ -276,79 +276,135 @@ export const chargingRouter = router({
         });
       }
       
-      // Verificar que la estación está conectada
+      // Verificar si es usuario de prueba para usar simulador
+      const userEmail = ctx.user.email || "";
+      const isTestUser = simulator.isTestUser(userEmail);
+      
+      // Verificar que la estación está conectada (solo si no es usuario de prueba)
       const ocppConnection = getConnectionByStationId(stationId);
-      if (!ocppConnection || ocppConnection.ws.readyState !== 1) {
+      
+      if (!isTestUser) {
+        // Flujo normal: requiere cargador conectado
+        if (!ocppConnection || ocppConnection.ws.readyState !== 1) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "La estación no está disponible en este momento. Intenta de nuevo.",
+          });
+        }
+        
+        // Verificar que el conector está disponible
+        const connectorStatus = ocppConnection.connectorStatuses.get(connectorId);
+        if (connectorStatus && connectorStatus !== "Available" && connectorStatus !== "AVAILABLE" && connectorStatus !== "Preparing" && connectorStatus !== "PREPARING") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `El conector no está disponible. Estado actual: ${connectorStatus}`,
+          });
+        }
+        
+        // Generar ID único para la sesión
+        const sessionId = uuidv4();
+        
+        // Guardar sesión pendiente
+        pendingChargeSessions.set(sessionId, {
+          userId: ctx.user.id,
+          stationId,
+          connectorId,
+          chargeMode,
+          targetValue,
+          estimatedCost,
+          createdAt: new Date(),
+          ocppIdentity: ocppConnection.ocppIdentity,
+        });
+        
+        // Enviar RemoteStartTransaction al cargador
+        const messageId = uuidv4();
+        const idTag = ctx.user.idTag || `USER-${ctx.user.id}`;
+        
+        const payload = {
+          connectorId,
+          idTag,
+        };
+        
+        const sent = sendOcppCommand(
+          ocppConnection.ocppIdentity,
+          messageId,
+          "RemoteStartTransaction",
+          payload
+        );
+        
+        if (!sent) {
+          pendingChargeSessions.delete(sessionId);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "No se pudo enviar el comando al cargador. Intenta de nuevo.",
+          });
+        }
+        
+        // Crear notificación de inicio
+        await db.createNotification({
+          userId: ctx.user.id,
+          title: "Carga iniciada",
+          message: `Conecta tu vehículo al conector ${connectorId}. Tarifa actual: $${pricePerKwh}/kWh`,
+          type: "charging",
+        });
+        
+        return {
+          sessionId,
+          status: "pending_connection",
+          message: "Conecta tu vehículo al cargador",
+          estimatedCost,
+          pricePerKwh,
+          connectorId,
+          isSimulation: false,
+        };
+      }
+      
+      // Flujo de simulación para usuarios de prueba
+      console.log(`[Charging] Usuario de prueba ${userEmail} - iniciando simulación`);
+      
+      if (!evseId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "La estación no está disponible en este momento. Intenta de nuevo.",
+          message: "No se encontró el conector especificado.",
         });
       }
       
-      // Verificar que el conector está disponible
-      const connectorStatus = ocppConnection.connectorStatuses.get(connectorId);
-      if (connectorStatus && connectorStatus !== "Available" && connectorStatus !== "AVAILABLE" && connectorStatus !== "Preparing" && connectorStatus !== "PREPARING") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `El conector no está disponible. Estado actual: ${connectorStatus}`,
+      try {
+        const result = await simulator.startSimulation({
+          userId: ctx.user.id,
+          userEmail,
+          stationId,
+          evseId,
+          connectorId,
+          chargeMode,
+          targetValue,
+          pricePerKwh,
         });
-      }
-      
-      // Generar ID único para la sesión
-      const sessionId = uuidv4();
-      
-      // Guardar sesión pendiente
-      pendingChargeSessions.set(sessionId, {
-        userId: ctx.user.id,
-        stationId,
-        connectorId,
-        chargeMode,
-        targetValue,
-        estimatedCost,
-        createdAt: new Date(),
-        ocppIdentity: ocppConnection.ocppIdentity,
-      });
-      
-      // Enviar RemoteStartTransaction al cargador
-      const messageId = uuidv4();
-      const idTag = ctx.user.idTag || `USER-${ctx.user.id}`;
-      
-      const payload = {
-        connectorId,
-        idTag,
-      };
-      
-      const sent = sendOcppCommand(
-        ocppConnection.ocppIdentity,
-        messageId,
-        "RemoteStartTransaction",
-        payload
-      );
-      
-      if (!sent) {
-        pendingChargeSessions.delete(sessionId);
+        
+        // Crear notificación de inicio (simulación)
+        await db.createNotification({
+          userId: ctx.user.id,
+          title: "Carga simulada iniciada",
+          message: `Simulación de carga en conector ${connectorId}. Tarifa: $${pricePerKwh}/kWh`,
+          type: "charging",
+        });
+        
+        return {
+          sessionId: result.sessionId,
+          transactionId: result.transactionId,
+          status: "simulation_started",
+          message: "Simulación de carga iniciada (usuario de prueba)",
+          estimatedCost,
+          pricePerKwh,
+          connectorId,
+          isSimulation: true,
+        };
+      } catch (error: any) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "No se pudo enviar el comando al cargador. Intenta de nuevo.",
+          message: error.message || "Error al iniciar la simulación",
         });
       }
-      
-      // Crear notificación de inicio
-      await db.createNotification({
-        userId: ctx.user.id,
-        title: "Carga iniciada",
-        message: `Conecta tu vehículo al conector ${connectorId}. Tarifa actual: $${pricePerKwh}/kWh`,
-        type: "charging",
-      });
-      
-      return {
-        sessionId,
-        status: "pending_connection",
-        message: "Conecta tu vehículo al cargador",
-        estimatedCost,
-        pricePerKwh,
-        connectorId,
-      };
     }),
 
   /**
@@ -356,6 +412,44 @@ export const chargingRouter = router({
    */
   getActiveSession: protectedProcedure
     .query(async ({ ctx }) => {
+      // Verificar primero si hay una simulación activa
+      const simulationInfo = simulator.getActiveSimulationInfo(ctx.user.id);
+      if (simulationInfo) {
+        // Obtener transacción de la simulación
+        const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
+        const station = activeTransaction 
+          ? await db.getChargingStationById(activeTransaction.stationId)
+          : null;
+        const evse = activeTransaction
+          ? await db.getEvseById(activeTransaction.evseId)
+          : null;
+        
+        return {
+          transactionId: activeTransaction?.id || 0,
+          stationId: activeTransaction?.stationId || 0,
+          stationName: station?.name || "Estación de Prueba",
+          connectorId: evse?.connectorId || 1,
+          connectorType: evse?.connectorType || "TYPE_2",
+          startTime: new Date(Date.now() - simulationInfo.elapsedSeconds * 1000).toISOString(),
+          elapsedMinutes: Math.floor(simulationInfo.elapsedSeconds / 60),
+          estimatedMinutes: Math.ceil((simulationInfo.targetKwh / 7) * 60), // ~7kW promedio
+          currentKwh: simulationInfo.currentKwh,
+          estimatedKwh: simulationInfo.targetKwh,
+          currentCost: simulationInfo.currentCost,
+          pricePerKwh: simulationInfo.pricePerKwh,
+          powerKw: 7,
+          currentPower: 7 + Math.random() * 3, // Variación para realismo
+          status: simulationInfo.status === "charging" ? "IN_PROGRESS" : simulationInfo.status.toUpperCase(),
+          chargeMode: "full_charge" as const,
+          targetPercentage: 100,
+          targetAmount: simulationInfo.targetKwh * simulationInfo.pricePerKwh,
+          startPercentage: 20,
+          progress: simulationInfo.progress,
+          isSimulation: true,
+          simulationStatus: simulationInfo.status,
+        };
+      }
+      
       // Buscar transacción activa del usuario
       const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
       
@@ -432,6 +526,20 @@ export const chargingRouter = router({
       transactionId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // Verificar primero si hay una simulación activa
+      if (simulator.hasActiveSimulation(ctx.user.id)) {
+        const result = await simulator.stopSimulation(ctx.user.id);
+        if (result) {
+          return {
+            status: "completed",
+            message: "Simulación de carga detenida",
+            kwhConsumed: result.kwhConsumed,
+            totalCost: result.totalCost,
+            isSimulation: true,
+          };
+        }
+      }
+      
       // Obtener transactionId desde sessionId o directamente
       let transactionId = input.transactionId;
       
@@ -501,6 +609,7 @@ export const chargingRouter = router({
       return {
         status: "stopping",
         message: "Deteniendo la carga...",
+        isSimulation: false,
       };
     }),
 

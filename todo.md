@@ -935,4 +935,235 @@
 - [x] Crear guía de despliegue (docs/DEPLOYMENT.md)
 - [x] Verificar documentación existente de BD (docs/DATABASE.md)
 - [x] Verificar documentación existente de API (docs/API.md)
-- [ ] Subir todo al repositorio de GitHub (greenhproject/evgreen-platform)
+- [x] Subir todo al repositorio de GitHub (greenhproject/evgreen-platform) - Completado
+
+
+## Aplicación Móvil Android (APK) - 1 Febrero 2026 [EN PROGRESO]
+
+### Configuración del Proyecto
+- [x] Crear proyecto React Native con Expo
+- [x] Configurar estructura de carpetas y navegación
+- [x] Instalar dependencias (react-navigation, reanimated, gesture-handler)
+- [ ] Configurar conexión con API del backend
+
+### Sistema de Diseño Premium
+- [x] Definir paleta de colores EVGreen (gradientes, acentos)
+- [x] Configurar tipografía premium
+- [x] Crear componentes base con animaciones (Button, Card)
+- [x] Implementar tema oscuro optimizado para OLED
+- [x] Diseñar iconografía personalizada
+
+### Pantallas Principales
+- [x] Splash screen con animación del logo
+- [ ] Onboarding con slides animados
+- [ ] Login/Registro con OAuth
+- [x] Mapa interactivo de estaciones (MapScreen)
+- [ ] Detalle de estación con animaciones
+- [x] Inicio de carga por QR (ScanScreen)
+- [ ] Monitor de carga en tiempo real
+- [x] Historial de transacciones (HistoryScreen)
+- [x] Billetera digital (WalletScreen)
+- [x] Perfil de usuario (ProfileScreen)
+- [ ] Sistema de reservas
+- [ ] Chat con asistente IA
+
+### Animaciones y UX
+- [x] Transiciones fluidas entre pantallas (react-native-reanimated)
+- [x] Micro-interacciones en botones y tarjetas
+- [ ] Animación de carga del vehículo
+- [ ] Gestos de navegación (swipe, pull-to-refresh)
+- [x] Haptic feedback en acciones importantes (expo-haptics)
+
+### Funcionalidades Especiales
+- [ ] Banner publicitario durante carga
+- [ ] Notificaciones push
+- [x] Escaneo de código QR (expo-camera)
+- [ ] Integración con NFC
+- [ ] Modo offline básico
+
+### Compilación y Distribución
+- [x] Configurar EAS Build para Android
+- [x] Servidor de desarrollo Expo funcionando
+- [ ] Generar APK firmado (requiere cuenta Expo)
+- [ ] Crear página de descarga en sitio web
+- [ ] Configurar actualizaciones OTA
+
+
+## PWA (Progressive Web App) - 1 Febrero 2026 [COMPLETADO]
+
+- [x] Crear manifest.json con configuración de PWA
+- [x] Configurar Service Worker para funcionamiento offline
+- [x] Crear iconos en múltiples tamaños (72, 96, 128, 144, 152, 192, 384, 512)
+- [x] Agregar meta tags para PWA en index.html
+- [x] Configurar splash screen para instalación
+- [x] Crear página offline.html para cuando no hay conexión
+- [x] Crear iconos de shortcuts (scan, wallet, map)
+- [x] Todos los 193 tests pasan
+
+
+## Onboarding y Notificaciones Push - 1 Febrero 2026
+
+### Verificación de Notificaciones Push [COMPLETADO]
+- [x] Sistema de notificaciones en BD (tabla notifications)
+- [x] Service Worker con soporte para push notifications
+- [x] Endpoint de notificaciones en backend (notificationsRouter)
+- [x] NotificationPanel en frontend con campana
+- [x] Notificaciones automáticas: carga completa, saldo bajo, alertas OCPP
+- [x] Configuración de notificaciones en panel admin
+- [ ] Pendiente: Integración con Firebase Cloud Messaging para push real
+
+### Pantalla de Onboarding [COMPLETADO]
+- [x] Crear componente Onboarding con slides animados (framer-motion)
+- [x] Slide 1: Bienvenida a EVGreen (gradiente verde)
+- [x] Slide 2: Encuentra estaciones cercanas (gradiente azul)
+- [x] Slide 3: Escanea QR para cargar (gradiente naranja)
+- [x] Slide 4: Gestiona tu billetera (gradiente rosa)
+- [x] Slide 5: Historial y estadísticas (gradiente cyan)
+- [x] Guardar estado de onboarding completado en localStorage
+- [x] Integrar con flujo de navegación en App.tsx
+- [x] Animaciones de entrada/salida de slides
+- [x] Partículas decorativas animadas
+- [x] Indicadores de progreso interactivos
+- [x] Botón "Saltar" para usuarios que no quieren ver el onboarding
+
+
+## Nuevas Funcionalidades - 1 Febrero 2026
+
+### Firebase Cloud Messaging
+- [ ] Configurar proyecto Firebase y obtener credenciales
+- [ ] Instalar firebase-admin en el servidor
+- [ ] Crear servicio de push notifications con FCM
+- [ ] Implementar registro de tokens de dispositivo
+- [ ] Enviar notificaciones cuando termine la carga
+- [ ] Enviar notificaciones de promociones y alertas
+- [ ] Agregar configuración de notificaciones en perfil de usuario
+
+### Pantalla de Login/Registro Animada
+- [ ] Crear componente AuthScreen con animaciones framer-motion
+- [ ] Diseñar formulario de login con transiciones suaves
+- [ ] Diseñar formulario de registro con validación animada
+- [ ] Agregar animación de fondo con gradientes
+- [ ] Integrar con sistema de autenticación OAuth existente
+- [ ] Mantener consistencia visual con onboarding
+
+### Tutorial Interactivo Primera Carga
+- [ ] Crear componente TutorialOverlay con tooltips
+- [ ] Implementar highlights en elementos clave
+- [ ] Paso 1: Explicar cómo encontrar estaciones en el mapa
+- [ ] Paso 2: Mostrar cómo escanear código QR
+- [ ] Paso 3: Guiar selección de conector
+- [ ] Paso 4: Explicar monitoreo de carga
+- [ ] Paso 5: Mostrar historial y facturación
+- [ ] Guardar progreso del tutorial en localStorage
+- [ ] Opción de saltar o repetir tutorial
+
+
+## Nuevas Funcionalidades Implementadas - 1 Febrero 2026
+
+### Firebase Cloud Messaging [COMPLETADO]
+- [x] Configurar credenciales de Firebase (project_id, client_email, private_key)
+- [x] Crear servicio FCM para enviar notificaciones (server/firebase/fcm.ts)
+- [x] Agregar campo fcmToken a tabla users
+- [x] Crear router de push notifications (server/push/push-router.ts)
+- [x] Implementar notificaciones de carga completa
+- [x] Implementar notificaciones de saldo bajo
+- [x] Implementar notificaciones de promociones
+- [x] Agregar tests unitarios (6 tests)
+
+### Pantalla de Login/Registro Animada [COMPLETADO]
+- [x] Crear componente AuthScreen con animaciones (framer-motion)
+- [x] Diseñar formulario de login con gradientes emerald
+- [x] Diseñar formulario de registro con beneficios visuales
+- [x] Agregar partículas flotantes y efectos visuales
+- [x] Integrar con OAuth de Manus
+- [x] Logo animado de EVGreen
+- [x] Transiciones fluidas entre login/registro
+
+### Tutorial Interactivo [COMPLETADO]
+- [x] Crear componente Tutorial con 6 pasos
+- [x] Implementar tooltips con posicionamiento dinámico
+- [x] Agregar highlights animados a elementos objetivo
+- [x] Crear hook useTutorial para manejar estado
+- [x] Persistir estado de tutorial completado en localStorage
+- [x] Botón para reiniciar tutorial desde perfil
+
+
+## Mejoras Sistema de Notificaciones Push - 1 Febrero 2026 [COMPLETADO]
+
+### Integración Firebase Frontend
+- [x] Instalar Firebase SDK para el cliente (firebase@12.8.0)
+- [x] Actualizar lib/firebase.ts con soporte para Firebase Messaging
+- [x] Crear hook useNotifications con gestión completa de permisos y tokens
+- [x] Agregar propiedad isSupported para detectar navegadores compatibles
+
+### Mejoras NotificationPanel
+- [x] Cargar notificaciones reales desde la base de datos
+- [x] Agregar endpoint delete para eliminar notificaciones
+- [x] Agregar función deleteNotification en db.ts
+- [x] Banner de activación de notificaciones push cuando no están habilitadas
+- [x] Escuchar notificaciones en tiempo real con onForegroundMessage
+
+### Mejoras Página de Configuración
+- [x] Mostrar estado de soporte del navegador
+- [x] Mejorar mensajes de estado (activas, denegadas, no soportadas)
+- [x] Botón de enviar notificación de prueba
+
+### Tests Unitarios
+- [x] 23 tests para el sistema de notificaciones
+- [x] Tests de funciones de base de datos (crear, leer, marcar, eliminar)
+- [x] Tests de Firebase Cloud Messaging
+- [x] Tests de tipos y estilos de notificación
+- [x] Tests de preferencias de usuario
+- [x] Tests de validación de tokens FCM
+- [x] Tests de formateo de mensajes
+
+### Total Tests del Proyecto
+- [x] 259 tests pasando correctamente
+
+
+## Simulación Automática de Ciclo de Carga - 1 Febrero 2026
+
+### Problema Identificado
+- [ ] La app se queda en "Conectando..." cuando se inicia carga desde la interfaz
+- [ ] El simulador OCPP externo no responde automáticamente a RemoteStartTransaction
+- [ ] Necesitamos simular el ciclo completo para usuarios de prueba
+
+### Solución a Implementar
+- [ ] Detectar cuando el usuario de prueba inicia una carga
+- [ ] Simular respuesta del cargador (StartTransaction) automáticamente
+- [ ] Simular MeterValues durante la carga
+- [ ] Simular StopTransaction al finalizar
+- [ ] Actualizar estados en tiempo real en la UI
+
+
+
+## Simulación Automática de Carga para Pruebas - 1 Febrero 2026 [COMPLETADO]
+
+### Análisis y Diseño
+- [x] Analizar simulador OCPP externo (shiv3.github.io/ocpp-cp-simulator)
+- [x] Revisar flujo actual de carga en charging-router.ts
+- [x] Identificar punto de integración para simulación
+
+### Implementación del Simulador
+- [x] Crear módulo charging-simulator.ts con ciclo completo de carga
+- [x] Implementar detección de usuarios de prueba (info@greenhproject.com, test@evgreen.lat, demo@evgreen.lat)
+- [x] Ciclo de simulación: connecting (5s) → preparing (3s) → charging (variable) → completed
+- [x] Generar MeterValues cada 5 segundos durante la carga
+- [x] Calcular kWh objetivo según modo de carga (fixed_amount, percentage, full_charge)
+- [x] Limitar simulación a 15 kWh máximo para demos rápidos (~1 minuto)
+
+### Integración con Charging Router
+- [x] Modificar startCharge para usar simulador cuando es usuario de prueba
+- [x] Modificar getActiveSession para mostrar progreso de simulación
+- [x] Modificar stopCharge para detener simulación manualmente
+- [x] Crear transacción real en BD durante simulación
+- [x] Descontar saldo del usuario al completar
+- [x] Enviar notificaciones de inicio y fin de carga
+
+### Testing
+- [x] 19 tests unitarios para el simulador
+- [x] Tests de detección de usuarios de prueba
+- [x] Tests de cálculo de kWh objetivo
+- [x] Tests de inicio/parada de simulación
+- [x] Total: 278 tests pasando
+
