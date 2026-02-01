@@ -999,3 +999,29 @@
 - [x] Crear página offline.html para cuando no hay conexión
 - [x] Crear iconos de shortcuts (scan, wallet, map)
 - [x] Todos los 193 tests pasan
+
+
+## Onboarding y Notificaciones Push - 1 Febrero 2026
+
+### Verificación de Notificaciones Push [COMPLETADO]
+- [x] Sistema de notificaciones en BD (tabla notifications)
+- [x] Service Worker con soporte para push notifications
+- [x] Endpoint de notificaciones en backend (notificationsRouter)
+- [x] NotificationPanel en frontend con campana
+- [x] Notificaciones automáticas: carga completa, saldo bajo, alertas OCPP
+- [x] Configuración de notificaciones en panel admin
+- [ ] Pendiente: Integración con Firebase Cloud Messaging para push real
+
+### Pantalla de Onboarding [COMPLETADO]
+- [x] Crear componente Onboarding con slides animados (framer-motion)
+- [x] Slide 1: Bienvenida a EVGreen (gradiente verde)
+- [x] Slide 2: Encuentra estaciones cercanas (gradiente azul)
+- [x] Slide 3: Escanea QR para cargar (gradiente naranja)
+- [x] Slide 4: Gestiona tu billetera (gradiente rosa)
+- [x] Slide 5: Historial y estadísticas (gradiente cyan)
+- [x] Guardar estado de onboarding completado en localStorage
+- [x] Integrar con flujo de navegación en App.tsx
+- [x] Animaciones de entrada/salida de slides
+- [x] Partículas decorativas animadas
+- [x] Indicadores de progreso interactivos
+- [x] Botón "Saltar" para usuarios que no quieren ver el onboarding
