@@ -1119,3 +1119,51 @@
 
 ### Total Tests del Proyecto
 - [x] 259 tests pasando correctamente
+
+
+## Simulación Automática de Ciclo de Carga - 1 Febrero 2026
+
+### Problema Identificado
+- [ ] La app se queda en "Conectando..." cuando se inicia carga desde la interfaz
+- [ ] El simulador OCPP externo no responde automáticamente a RemoteStartTransaction
+- [ ] Necesitamos simular el ciclo completo para usuarios de prueba
+
+### Solución a Implementar
+- [ ] Detectar cuando el usuario de prueba inicia una carga
+- [ ] Simular respuesta del cargador (StartTransaction) automáticamente
+- [ ] Simular MeterValues durante la carga
+- [ ] Simular StopTransaction al finalizar
+- [ ] Actualizar estados en tiempo real en la UI
+
+
+
+## Simulación Automática de Carga para Pruebas - 1 Febrero 2026 [COMPLETADO]
+
+### Análisis y Diseño
+- [x] Analizar simulador OCPP externo (shiv3.github.io/ocpp-cp-simulator)
+- [x] Revisar flujo actual de carga en charging-router.ts
+- [x] Identificar punto de integración para simulación
+
+### Implementación del Simulador
+- [x] Crear módulo charging-simulator.ts con ciclo completo de carga
+- [x] Implementar detección de usuarios de prueba (info@greenhproject.com, test@evgreen.lat, demo@evgreen.lat)
+- [x] Ciclo de simulación: connecting (5s) → preparing (3s) → charging (variable) → completed
+- [x] Generar MeterValues cada 5 segundos durante la carga
+- [x] Calcular kWh objetivo según modo de carga (fixed_amount, percentage, full_charge)
+- [x] Limitar simulación a 15 kWh máximo para demos rápidos (~1 minuto)
+
+### Integración con Charging Router
+- [x] Modificar startCharge para usar simulador cuando es usuario de prueba
+- [x] Modificar getActiveSession para mostrar progreso de simulación
+- [x] Modificar stopCharge para detener simulación manualmente
+- [x] Crear transacción real en BD durante simulación
+- [x] Descontar saldo del usuario al completar
+- [x] Enviar notificaciones de inicio y fin de carga
+
+### Testing
+- [x] 19 tests unitarios para el simulador
+- [x] Tests de detección de usuarios de prueba
+- [x] Tests de cálculo de kWh objetivo
+- [x] Tests de inicio/parada de simulación
+- [x] Total: 278 tests pasando
+
