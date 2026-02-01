@@ -912,3 +912,27 @@
 - [x] Mantener consistencia con el tema oscuro de la app
 - [x] Actualizar drawer lateral con mismo gradiente verde
 - [x] Actualizar barra de navegación inferior con colores emerald
+
+
+## Documentación y Subida a GitHub - 31 Enero 2026
+
+- [ ] Crear README.md completo en español con descripción del proyecto
+- [ ] Documentar estructura de archivos y carpetas
+- [ ] Documentar esquema de base de datos (tablas y relaciones)
+- [ ] Documentar APIs y endpoints tRPC
+- [ ] Documentar componentes del frontend
+- [ ] Documentar flujo OCPP y carga de vehículos
+- [ ] Documentar configuración y variables de entorno
+- [ ] Crear guía de instalación y despliegue
+- [ ] Subir código al repositorio greenhproject/evgreen-platform
+
+
+## Documentación Completa y Subida a GitHub - 1 Febrero 2026
+
+- [x] Crear documentación general del proyecto (docs/README.md)
+- [x] Documentar componentes del frontend (docs/COMPONENTS.md)
+- [x] Documentar sistema OCPP completo (docs/OCPP.md)
+- [x] Crear guía de despliegue (docs/DEPLOYMENT.md)
+- [x] Verificar documentación existente de BD (docs/DATABASE.md)
+- [x] Verificar documentación existente de API (docs/API.md)
+- [x] Subir todo al repositorio de GitHub (greenhproject/evgreen-platform) - Completado
