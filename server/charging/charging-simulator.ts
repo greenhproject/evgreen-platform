@@ -38,7 +38,9 @@ interface SimulationSession {
   chargeMode: "fixed_amount" | "percentage" | "full_charge";
   targetValue: number;
   status: "connecting" | "preparing" | "charging" | "finishing" | "completed";
+  completedAt?: Date; // Timestamp de cuando se completó
   intervalId?: NodeJS.Timeout;
+  cleanupTimeoutId?: NodeJS.Timeout; // Timeout para limpiar la sesión después de completar
   callbacks: {
     onStatusChange?: (status: string, data: any) => void;
     onMeterValue?: (kwh: number, cost: number) => void;
@@ -59,7 +61,14 @@ export function isTestUser(email: string): boolean {
  * Verifica si hay una simulación activa para un usuario
  */
 export function hasActiveSimulation(userId: number): boolean {
-  return activeSimulations.has(userId);
+  const session = activeSimulations.get(userId);
+  // Considerar activa si existe y no está completada hace más de 60 segundos
+  if (!session) return false;
+  if (session.status === "completed" && session.completedAt) {
+    const elapsed = Date.now() - session.completedAt.getTime();
+    return elapsed < 60000; // Mantener "activa" por 60 segundos después de completar
+  }
+  return true;
 }
 
 /**
@@ -100,9 +109,18 @@ export async function startSimulation(params: {
     throw new Error("Solo usuarios de prueba pueden usar el simulador");
   }
 
-  // Verificar que no hay simulación activa
-  if (activeSimulations.has(userId)) {
+  // Verificar que no hay simulación activa (que no esté completada)
+  const existingSession = activeSimulations.get(userId);
+  if (existingSession && existingSession.status !== "completed") {
     throw new Error("Ya hay una simulación activa para este usuario");
+  }
+  
+  // Si hay una sesión completada, limpiarla
+  if (existingSession && existingSession.status === "completed") {
+    if (existingSession.cleanupTimeoutId) {
+      clearTimeout(existingSession.cleanupTimeoutId);
+    }
+    activeSimulations.delete(userId);
   }
   
   // Obtener la potencia real del EVSE desde la base de datos
@@ -236,8 +254,12 @@ function startSimulationCycle(session: SimulationSession): void {
       let intervalCount = 0;
 
       session.intervalId = setInterval(async () => {
-        if (!activeSimulations.has(session.userId)) {
-          clearInterval(session.intervalId);
+        // Verificar si la sesión aún existe y no está completada
+        const currentSession = activeSimulations.get(session.userId);
+        if (!currentSession || currentSession.status === "completed" || currentSession.status === "finishing") {
+          if (session.intervalId) {
+            clearInterval(session.intervalId);
+          }
           return;
         }
 
@@ -267,11 +289,15 @@ function startSimulationCycle(session: SimulationSession): void {
           session.callbacks.onMeterValue(currentKwh, currentCost);
         }
 
-        console.log(`[Simulator] User ${session.userId}: ${currentKwh.toFixed(2)} kWh, $${Math.round(currentCost)}, Power: ${currentPower.toFixed(1)} kW`);
+        console.log(`[Simulator] User ${session.userId}: ${currentKwh.toFixed(2)}/${session.targetKwh.toFixed(2)} kWh, $${Math.round(currentCost)}, Power: ${currentPower.toFixed(1)} kW`);
 
         // Verificar si se completó
         if (currentKwh >= session.targetKwh) {
-          clearInterval(session.intervalId);
+          console.log(`[Simulator] User ${session.userId}: Target reached! Completing simulation...`);
+          if (session.intervalId) {
+            clearInterval(session.intervalId);
+            session.intervalId = undefined;
+          }
           await completeSimulation(session);
         }
       }, 5000);
@@ -283,6 +309,12 @@ function startSimulationCycle(session: SimulationSession): void {
  * Completa la simulación y finaliza la transacción
  */
 async function completeSimulation(session: SimulationSession): Promise<void> {
+  // Evitar completar múltiples veces
+  if (session.status === "finishing" || session.status === "completed") {
+    console.log(`[Simulator] Session already ${session.status}, skipping completion`);
+    return;
+  }
+  
   session.status = "finishing";
   notifyStatusChange(session, "finishing", { message: "Finalizando carga..." });
 
@@ -362,15 +394,24 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
     stationId: session.stationId,
   };
 
+  // Marcar como completado PERO mantener la sesión en el Map
   session.status = "completed";
+  session.completedAt = new Date();
   notifyStatusChange(session, "completed", summary);
 
   if (session.callbacks.onComplete) {
     session.callbacks.onComplete(summary);
   }
 
-  // Limpiar sesión
-  activeSimulations.delete(session.userId);
+  // Programar limpieza de la sesión después de 60 segundos
+  // Esto da tiempo al frontend para detectar la finalización y redirigir
+  session.cleanupTimeoutId = setTimeout(() => {
+    const currentSession = activeSimulations.get(session.userId);
+    if (currentSession && currentSession.transactionId === session.transactionId) {
+      activeSimulations.delete(session.userId);
+      console.log(`[Simulator] Cleaned up completed session for user ${session.userId}`);
+    }
+  }, 60000);
 
   console.log(`[Simulator] Completed simulation for user ${session.userId}:`, summary);
 }
@@ -391,6 +432,7 @@ export async function stopSimulation(userId: number): Promise<{
   // Limpiar intervalo
   if (session.intervalId) {
     clearInterval(session.intervalId);
+    session.intervalId = undefined;
   }
 
   // Completar la transacción con los valores actuales
@@ -429,6 +471,8 @@ export function getActiveSimulationInfo(userId: number): {
   powerKw: number;
   chargeMode: "fixed_amount" | "percentage" | "full_charge";
   targetValue: number;
+  transactionId: number;
+  completedAt?: string;
 } | null {
   const session = activeSimulations.get(userId);
   if (!session) {
@@ -451,5 +495,7 @@ export function getActiveSimulationInfo(userId: number): {
     powerKw: session.powerKw,
     chargeMode: session.chargeMode,
     targetValue: session.targetValue,
+    transactionId: session.transactionId,
+    completedAt: session.completedAt?.toISOString(),
   };
 }

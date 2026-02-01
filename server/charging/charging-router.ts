@@ -412,16 +412,16 @@ export const chargingRouter = router({
    */
   getActiveSession: protectedProcedure
     .query(async ({ ctx }) => {
-      // Verificar primero si hay una simulación activa
+      // Verificar primero si hay una simulación activa (incluyendo completadas recientes)
       const simulationInfo = simulator.getActiveSimulationInfo(ctx.user.id);
       if (simulationInfo) {
-        // Obtener transacción de la simulación
-        const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
-        const station = activeTransaction 
-          ? await db.getChargingStationById(activeTransaction.stationId)
+        // Obtener transacción de la simulación usando el transactionId del simulador
+        const transaction = await db.getTransactionById(simulationInfo.transactionId);
+        const station = transaction 
+          ? await db.getChargingStationById(transaction.stationId)
           : null;
-        const evse = activeTransaction
-          ? await db.getEvseById(activeTransaction.evseId)
+        const evse = transaction
+          ? await db.getEvseById(transaction.evseId)
           : null;
         
         // Si la simulación está completada o terminando, marcar como completada
@@ -437,9 +437,14 @@ export const chargingRouter = router({
           targetAmount = simulationInfo.targetValue;
         }
         
+        // Usar el transactionId del simulador que es el correcto
+        const transactionId = simulationInfo.transactionId;
+        
+        console.log(`[getActiveSession] Simulation info: status=${simulationInfo.status}, transactionId=${transactionId}, progress=${simulationInfo.progress}%`);
+        
         return {
-          transactionId: activeTransaction?.id || 0,
-          stationId: activeTransaction?.stationId || 0,
+          transactionId,
+          stationId: transaction?.stationId || 0,
           stationName: station?.name || "Estación de Prueba",
           connectorId: evse?.connectorId || 1,
           connectorType: evse?.connectorType || "TYPE_2",
@@ -457,9 +462,10 @@ export const chargingRouter = router({
           targetPercentage,
           targetAmount,
           startPercentage: 20,
-          progress: simulationInfo.progress,
+          progress: isCompleted ? 100 : simulationInfo.progress, // Asegurar 100% cuando está completado
           isSimulation: true,
           simulationStatus: simulationInfo.status,
+          completedAt: simulationInfo.completedAt, // Agregar timestamp de completado
         };
       }
       

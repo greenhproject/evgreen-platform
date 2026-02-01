@@ -262,7 +262,14 @@ describe("Charging Simulator", () => {
       expect(result!.kwhConsumed).toBeGreaterThanOrEqual(0);
       expect(result!.totalCost).toBeGreaterThanOrEqual(0);
 
-      expect(simulator.hasActiveSimulation(106)).toBe(false);
+      // La sesión se mantiene como "completada" por 60 segundos para permitir
+      // que el frontend detecte la finalización y redirija al resumen
+      // Por lo tanto, hasActiveSimulation devuelve true durante ese período
+      expect(simulator.hasActiveSimulation(106)).toBe(true);
+      
+      // Verificar que el estado es "completed"
+      const info = simulator.getActiveSimulationInfo(106);
+      expect(info?.status).toBe("completed");
     });
   });
 

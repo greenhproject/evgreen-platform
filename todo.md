@@ -1271,3 +1271,26 @@
 - [x] Corregir cálculo de estadísticas usando estado OCPP real - Implementado
 - [x] Mostrar estado de conectores en tiempo real desde conexión OCPP - Implementado con indicador OCPPzar estado de conectores con estado real del OCPP/simulación
 - [ ] Mostrar estado en tiempo real en el detalle de la estación
+
+
+## Bug Crítico: Simulación se reinicia a 0% al alcanzar objetivo - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Simulación llega al porcentaje objetivo pero luego baja a 0% y se queda pegada
+  - Causa: La sesión se eliminaba del Map inmediatamente al completar, causando que getActiveSession devolviera null
+  - Solución: La sesión ahora se mantiene en el Map con status "completed" por 60 segundos
+- [x] BUG: No ejecuta la finalización de la transacción
+  - Causa: El intervalo de simulación no se detenía correctamente al alcanzar el objetivo
+  - Solución: Agregada verificación de estado "completed"/"finishing" antes de continuar el loop
+- [x] BUG: No redirige al resumen con animación de confetti
+  - Causa: El frontend detectaba "no hay sesión" y redirigía al mapa antes de detectar la finalización
+  - Solución: Mejorada lógica de detección con estados separados (redirecting, completedTransactionId)
+- [x] Corregir lógica de detección de objetivo alcanzado en el simulador
+  - Agregado transactionId a getActiveSimulationInfo para usar el ID correcto
+  - Agregado completedAt timestamp para tracking de finalización
+- [x] Asegurar que completeSimulation() se ejecute correctamente
+  - Agregada verificación para evitar completar múltiples veces
+  - Agregado cleanupTimeoutId para limpiar la sesión después de 60 segundos
+- [x] Corregir detección de finalización en ChargingMonitor
+  - Mejorada lógica con console.log para depuración
+  - Delay aumentado a 800ms para asegurar que el toast se muestre
+- [x] 280 tests pasando
