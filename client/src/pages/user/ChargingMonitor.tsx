@@ -179,13 +179,26 @@ export default function ChargingMonitor() {
   useEffect(() => {
     if (session) {
       const simStatus = (session as any).simulationStatus;
-      if (simStatus === "completed" || simStatus === "finishing") {
+      const progress = (session as any).progress;
+      const isSimulation = (session as any).isSimulation;
+      
+      // Verificar si la simulación terminó por estado o por progreso al 100%
+      if (simStatus === "completed" || simStatus === "finishing" || (isSimulation && progress >= 100)) {
         // La simulación terminó, redirigir al resumen
         toast.success("¡Carga completada!");
         setLocation(`/charging-summary/${session.transactionId}`);
+        return;
       }
     }
   }, [session, setLocation]);
+  
+  // Verificar si la transacción ya está completada en la BD
+  useEffect(() => {
+    if (session && session.status === "COMPLETED") {
+      toast.success("¡Carga completada!");
+      setLocation(`/charging-summary/${session.transactionId}`);
+    }
+  }, [session?.status, session?.transactionId, setLocation]);
   
   const handleStopCharge = () => {
     if (!session) return;
