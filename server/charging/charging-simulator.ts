@@ -245,7 +245,8 @@ function startSimulationCycle(session: SimulationSession): void {
       // Usar la potencia real del cargador para calcular la velocidad de carga
       // kWh por intervalo de 5 segundos = potencia * (5/3600) horas
       // Para simulación acelerada, multiplicamos por un factor de aceleración
-      const accelerationFactor = 60; // 1 minuto real = 1 hora simulada
+      // Factor reducido para que la simulación sea más perceptible (dure ~45-90 segundos)
+      const accelerationFactor = 20; // 1 minuto real = 20 minutos simulados (antes era 60)
       const intervalSeconds = 5;
       const realKwhPerInterval = session.powerKw * (intervalSeconds / 3600) * accelerationFactor;
       
