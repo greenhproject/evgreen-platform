@@ -666,3 +666,130 @@ const createReservation = trpc.reservations.create.useMutation({
 ---
 
 *Documentación generada para EVGreen - Green House Project*
+
+
+---
+
+## Protocolo OCPP (Open Charge Point Protocol)
+
+EVGreen implementa un servidor CSMS (Charging Station Management System) con soporte dual para **OCPP 1.6J** y **OCPP 2.0.1**, maximizando la compatibilidad con la mayoría de cargadores de vehículos eléctricos disponibles en el mercado.
+
+### Conexión WebSocket
+
+Las estaciones de carga se conectan al servidor CSMS mediante WebSocket en el puerto configurado (por defecto 9000).
+
+**URL de conexión:**
+```
+ws://{servidor}:{puerto}/ocpp/{ocppIdentity}
+```
+
+**Subprotocolos soportados:**
+- `ocpp2.0.1` - OCPP versión 2.0.1 (preferido)
+- `ocpp2.0` - OCPP versión 2.0
+- `ocpp1.6` - OCPP versión 1.6J (fallback)
+
+El servidor detecta automáticamente la versión del protocolo basándose en el subprotocolo WebSocket negociado durante la conexión.
+
+### Mensajes OCPP 1.6J Soportados
+
+| Mensaje | Dirección | Descripción |
+|---------|-----------|-------------|
+| BootNotification | CP → CS | Notificación de arranque del cargador |
+| Heartbeat | CP → CS | Mantener conexión activa |
+| StatusNotification | CP → CS | Cambio de estado del conector |
+| Authorize | CP → CS | Autorización de usuario |
+| StartTransaction | CP → CS | Inicio de transacción de carga |
+| StopTransaction | CP → CS | Fin de transacción de carga |
+| MeterValues | CP → CS | Valores de medición periódicos |
+| DataTransfer | Bidireccional | Mensajes personalizados |
+| RemoteStartTransaction | CS → CP | Iniciar carga remotamente |
+| RemoteStopTransaction | CS → CP | Detener carga remotamente |
+| ReserveNow | CS → CP | Reservar conector |
+| CancelReservation | CS → CP | Cancelar reserva |
+| Reset | CS → CP | Reiniciar cargador |
+| UnlockConnector | CS → CP | Desbloquear conector |
+
+### Mensajes OCPP 2.0.1 Soportados
+
+| Mensaje | Dirección | Descripción |
+|---------|-----------|-------------|
+| BootNotification | CP → CS | Notificación de arranque del cargador |
+| Heartbeat | CP → CS | Mantener conexión activa |
+| StatusNotification | CP → CS | Cambio de estado del conector |
+| TransactionEvent | CP → CS | Eventos de transacción (Started, Updated, Ended) |
+| MeterValues | CP → CS | Valores de medición periódicos |
+| Authorize | CP → CS | Autorización de usuario |
+| RequestStartTransaction | CS → CP | Iniciar carga remotamente |
+| RequestStopTransaction | CS → CP | Detener carga remotamente |
+| ReserveNow | CS → CP | Reservar conector |
+| CancelReservation | CS → CP | Cancelar reserva |
+| Reset | CS → CP | Reiniciar cargador |
+| UnlockConnector | CS → CP | Desbloquear conector |
+
+### Diferencias Clave entre Versiones
+
+| Aspecto | OCPP 1.6J | OCPP 2.0.1 |
+|---------|-----------|------------|
+| Transacciones | StartTransaction/StopTransaction separados | TransactionEvent unificado |
+| Identificador de transacción | Entero numérico | String UUID |
+| Identificador de conector | connectorId | evseId + connectorId |
+| Seguridad | Básica | Mejorada con certificados |
+| Smart Charging | Básico | Avanzado con ISO 15118 |
+
+### Formato de Mensajes
+
+Todos los mensajes OCPP siguen el formato JSON-RPC sobre WebSocket:
+
+**CALL (solicitud):**
+```json
+[2, "messageId", "Action", { payload }]
+```
+
+**CALLRESULT (respuesta exitosa):**
+```json
+[3, "messageId", { payload }]
+```
+
+**CALLERROR (respuesta de error):**
+```json
+[4, "messageId", "errorCode", "errorDescription", { details }]
+```
+
+### Ejemplo de BootNotification
+
+**OCPP 1.6J:**
+```json
+[2, "msg-001", "BootNotification", {
+  "chargePointVendor": "EVGreen",
+  "chargePointModel": "AC-7000",
+  "chargePointSerialNumber": "SN123456",
+  "firmwareVersion": "1.0.0"
+}]
+```
+
+**OCPP 2.0.1:**
+```json
+[2, "msg-001", "BootNotification", {
+  "chargingStation": {
+    "vendorName": "EVGreen",
+    "model": "DC-100000",
+    "serialNumber": "SN789012",
+    "firmwareVersion": "2.0.0"
+  },
+  "reason": "PowerUp"
+}]
+```
+
+**Respuesta (ambas versiones):**
+```json
+[3, "msg-001", {
+  "currentTime": "2026-01-18T12:00:00Z",
+  "interval": 60,
+  "status": "Accepted"
+}]
+```
+
+### Configuración del Servidor OCPP
+
+El servidor CSMS se configura automáticamente al iniciar la aplicación. Las estaciones de carga deben registrarse en el panel de administración con su `ocppIdentity` correspondiente para ser aceptadas.
+

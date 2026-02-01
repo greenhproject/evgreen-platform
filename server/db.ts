@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, sql, or, count, sum, ne, inArray, isNull } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -41,6 +41,9 @@ import {
   Reservation,
   Tariff,
   Banner,
+  ocppAlerts,
+  InsertOcppAlert,
+  OcppAlert,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -116,6 +119,14 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     if (Object.keys(updateSet).length === 0) {
       updateSet.lastSignedIn = new Date();
     }
+    
+    // Generar idTag único para nuevos usuarios (formato: EV-XXXXXX)
+    // Solo se genera si no existe, no se actualiza en upsert
+    const existingUser = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1);
+    if (existingUser.length === 0) {
+      // Nuevo usuario - generar idTag
+      values.idTag = await generateUniqueIdTag();
+    }
 
     await db.insert(users).values(values).onDuplicateKeyUpdate({
       set: updateSet,
@@ -156,6 +167,53 @@ export async function getAllUsers(role?: User["role"]) {
   return db.select().from(users).orderBy(desc(users.createdAt));
 }
 
+// Generar idTag único para usuarios (formato: EV-XXXXXX)
+export async function generateUniqueIdTag(): Promise<string> {
+  const db = await getDb();
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Sin I, O, 0, 1 para evitar confusión
+  let attempts = 0;
+  const maxAttempts = 10;
+  
+  while (attempts < maxAttempts) {
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const idTag = `EV-${code}`;
+    
+    // Verificar que no existe
+    if (db) {
+      const existing = await db.select().from(users).where(eq(users.idTag, idTag)).limit(1);
+      if (existing.length === 0) {
+        return idTag;
+      }
+    } else {
+      return idTag;
+    }
+    attempts++;
+  }
+  
+  // Fallback con timestamp si no se puede generar uno único
+  return `EV-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+}
+
+// Obtener usuario por idTag (para autorización OCPP)
+export async function getUserByIdTag(idTag: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.idTag, idTag)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+// Regenerar idTag de un usuario
+export async function regenerateUserIdTag(userId: number): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const newIdTag = await generateUniqueIdTag();
+  await db.update(users).set({ idTag: newIdTag }).where(eq(users.id, userId));
+  return newIdTag;
+}
+
 export async function updateUserRole(userId: number, role: User["role"]) {
   const db = await getDb();
   if (!db) return;
@@ -166,6 +224,17 @@ export async function updateUser(userId: number, data: Partial<InsertUser>) {
   const db = await getDb();
   if (!db) return;
   await db.update(users).set(data).where(eq(users.id, userId));
+}
+
+// Eliminar un usuario
+export async function deleteUser(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Primero eliminar datos relacionados (billetera, notificaciones, etc.)
+  await db.delete(wallets).where(eq(wallets.userId, userId));
+  await db.delete(notifications).where(eq(notifications.userId, userId));
+  // Finalmente eliminar el usuario
+  await db.delete(users).where(eq(users.id, userId));
 }
 
 // Vincular un usuario existente con un nuevo openId de Manus OAuth
@@ -749,6 +818,18 @@ export async function markAllNotificationsAsRead(userId: number) {
   await db.update(notifications).set({ isRead: true, readAt: new Date() }).where(eq(notifications.userId, userId));
 }
 
+export async function getNotificationByKey(userId: number, key: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const results = await db.select().from(notifications)
+    .where(and(
+      eq(notifications.userId, userId),
+      like(notifications.data, `%"key":"${key}"%`)
+    ))
+    .limit(1);
+  return results[0] || null;
+}
+
 // ============================================================================
 // SUPPORT TICKET OPERATIONS
 // ============================================================================
@@ -818,6 +899,218 @@ export async function getOcppLogsByStation(stationId: number, limit = 100) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(ocppLogs).where(eq(ocppLogs.stationId, stationId)).orderBy(desc(ocppLogs.createdAt)).limit(limit);
+}
+
+export async function getOcppLogs(filters: {
+  stationId?: number;
+  ocppIdentity?: string;
+  messageType?: string;
+  direction?: "IN" | "OUT";
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return { logs: [], total: 0 };
+  
+  const conditions = [];
+  
+  if (filters.stationId) {
+    conditions.push(eq(ocppLogs.stationId, filters.stationId));
+  }
+  if (filters.ocppIdentity) {
+    conditions.push(eq(ocppLogs.ocppIdentity, filters.ocppIdentity));
+  }
+  if (filters.messageType) {
+    conditions.push(eq(ocppLogs.messageType, filters.messageType));
+  }
+  if (filters.direction) {
+    conditions.push(eq(ocppLogs.direction, filters.direction));
+  }
+  
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const logs = await db.select()
+    .from(ocppLogs)
+    .where(whereClause)
+    .orderBy(desc(ocppLogs.createdAt))
+    .limit(filters.limit || 100)
+    .offset(filters.offset || 0);
+  
+  // Obtener total para paginación
+  const countResult = await db.select({ count: sql<number>`count(*)` })
+    .from(ocppLogs)
+    .where(whereClause);
+  
+  return {
+    logs,
+    total: countResult[0]?.count || 0,
+  };
+}
+
+export async function getOcppMessageTypes() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.selectDistinct({ messageType: ocppLogs.messageType })
+    .from(ocppLogs)
+    .orderBy(ocppLogs.messageType);
+  
+  return result.map(r => r.messageType).filter(Boolean);
+}
+
+/**
+ * Obtener conexiones activas basadas en logs de BD
+ * Un cargador se considera activo si:
+ * - Tiene un Heartbeat o StatusNotification en los últimos 5 minutos
+ * - O tiene CONNECTION sin DISCONNECTION posterior
+ */
+export async function getActiveConnectionsFromLogs() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Obtener cargadores con actividad en los últimos 5 minutos
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  
+  // Obtener cargadores únicos con actividad reciente
+  const recentActivity = await db.selectDistinct({
+    ocppIdentity: ocppLogs.ocppIdentity,
+    stationId: ocppLogs.stationId,
+  })
+    .from(ocppLogs)
+    .where(
+      and(
+        not(isNull(ocppLogs.ocppIdentity)),
+        gte(ocppLogs.createdAt, fiveMinutesAgo),
+        inArray(ocppLogs.messageType, ['Heartbeat', 'StatusNotification', 'BootNotification', 'CONNECTION'])
+      )
+    );
+  
+  // Obtener info adicional de cada cargador activo
+  const activeConnections = [];
+  
+  for (const activity of recentActivity) {
+    if (!activity.ocppIdentity) continue;
+    
+    // Verificar si hay una desconexión reciente (en los últimos 5 minutos)
+    const disconnection = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          eq(ocppLogs.messageType, 'DISCONNECTION'),
+          gte(ocppLogs.createdAt, fiveMinutesAgo)
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(1);
+    
+    // Obtener la última actividad (conexión o mensaje)
+    const lastActivityLog = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          inArray(ocppLogs.messageType, ['Heartbeat', 'StatusNotification', 'BootNotification', 'CONNECTION'])
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(1);
+    
+    // Si hay desconexión más reciente que la última actividad, está desconectado
+    if (disconnection.length > 0 && lastActivityLog.length > 0) {
+      if (disconnection[0].createdAt > lastActivityLog[0].createdAt) {
+        continue; // Está desconectado
+      }
+    }
+    
+    if (disconnection.length > 0) continue; // Está desconectado
+    
+    // Obtener el último BootNotification para info del cargador
+    const bootInfo = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          eq(ocppLogs.messageType, 'BootNotification'),
+          eq(ocppLogs.direction, 'IN')
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(1);
+    
+    // Obtener el último Heartbeat
+    const lastHeartbeat = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          eq(ocppLogs.messageType, 'Heartbeat')
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(1);
+    
+    // Obtener estados de conectores
+    const connectorStatuses = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          eq(ocppLogs.messageType, 'StatusNotification'),
+          eq(ocppLogs.direction, 'IN')
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(10);
+    
+    // Construir objeto de conexión
+    const bootPayload = bootInfo[0]?.payload as any;
+    const connectorStatusMap: Record<number, string> = {};
+    
+    for (const cs of connectorStatuses) {
+      const payload = cs.payload as any;
+      const connectorId = payload?.connectorId || payload?.evseId || 0;
+      if (!connectorStatusMap[connectorId]) {
+        connectorStatusMap[connectorId] = payload?.status || 'Unknown';
+      }
+    }
+    
+    // Determinar versión OCPP
+    const connectionLog = await db.select()
+      .from(ocppLogs)
+      .where(
+        and(
+          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
+          eq(ocppLogs.messageType, 'CONNECTION')
+        )
+      )
+      .orderBy(desc(ocppLogs.createdAt))
+      .limit(1);
+    
+    const connectionPayload = connectionLog[0]?.payload as any;
+    const ocppVersion = connectionPayload?.ocppVersion || '1.6';
+    
+    const lastActivityTime = lastActivityLog[0]?.createdAt || new Date();
+    
+    activeConnections.push({
+      ocppIdentity: activity.ocppIdentity,
+      ocppVersion,
+      stationId: activity.stationId,
+      connectedAt: connectionLog[0]?.createdAt?.toISOString() || lastActivityTime.toISOString(),
+      lastHeartbeat: lastHeartbeat[0]?.createdAt?.toISOString() || lastActivityTime.toISOString(),
+      lastMessage: lastActivityTime.toISOString(),
+      connectorStatuses: connectorStatusMap,
+      bootInfo: bootPayload ? {
+        vendor: bootPayload.chargePointVendor || bootPayload.chargingStation?.vendorName || 'Unknown',
+        model: bootPayload.chargePointModel || bootPayload.chargingStation?.model || 'Unknown',
+        serialNumber: bootPayload.chargePointSerialNumber || bootPayload.chargeBoxSerialNumber || bootPayload.chargingStation?.serialNumber,
+        firmwareVersion: bootPayload.firmwareVersion || bootPayload.chargingStation?.firmwareVersion,
+      } : undefined,
+      isConnected: true, // Si llegó aquí, está activo
+    });
+  }
+  
+  return activeConnections;
 }
 
 // ============================================================================
@@ -1328,3 +1621,1032 @@ export const db = {
   getStationsAlongRoute,
   getInvestorAnalytics,
 };
+
+
+// ============================================================================
+// STRIPE / PAYMENT OPERATIONS
+// ============================================================================
+
+export async function addUserWalletBalance(userId: number, amount: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Obtener o crear wallet del usuario
+  let wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+  
+  if (wallet.length === 0) {
+    await db.insert(wallets).values({
+      userId,
+      balance: amount.toString(),
+      currency: "COP",
+    });
+  } else {
+    await db.update(wallets).set({
+      balance: sql`${wallets.balance} + ${amount}`,
+    }).where(eq(wallets.userId, userId));
+  }
+  
+  // Registrar transacción de wallet
+  const currentWallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+  if (currentWallet[0]) {
+    const balanceBefore = parseFloat(currentWallet[0].balance) - amount;
+    await db.insert(walletTransactions).values({
+      walletId: currentWallet[0].id,
+      userId,
+      type: "RECHARGE",
+      amount: amount.toString(),
+      balanceBefore: balanceBefore.toString(),
+      balanceAfter: currentWallet[0].balance,
+      description: "Recarga de saldo vía Stripe",
+    });
+  }
+}
+
+export async function createPaymentRecord(data: {
+  userId: number;
+  stripeSessionId: string;
+  stripePaymentIntentId: string;
+  type: string;
+  amount: number;
+  currency: string;
+  status: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Por ahora registramos en wallet_transactions
+  const wallet = await db.select().from(wallets).where(eq(wallets.userId, data.userId)).limit(1);
+  if (wallet[0]) {
+    await db.insert(walletTransactions).values({
+      walletId: wallet[0].id,
+      userId: data.userId,
+      type: "STRIPE_PAYMENT",
+      amount: data.amount.toString(),
+      balanceBefore: wallet[0].balance,
+      balanceAfter: wallet[0].balance,
+      referenceType: data.type,
+      description: `Pago Stripe: ${data.stripeSessionId}`,
+      stripePaymentIntentId: data.stripePaymentIntentId,
+    });
+  }
+}
+
+export async function updateUserSubscription(userId: number, data: {
+  stripeSubscriptionId?: string | null;
+  planId?: string;
+  status?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Buscar suscripción existente
+  const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
+  
+  const tier = data.planId === "premium" ? "PREMIUM" : data.planId === "basic" ? "BASIC" : "FREE";
+  const discountPercentage = tier === "PREMIUM" ? "20" : tier === "BASIC" ? "10" : "0";
+  
+  if (existing.length === 0) {
+    // Crear nueva suscripción
+    await db.insert(subscriptions).values({
+      userId,
+      tier: tier as any,
+      stripeSubscriptionId: data.stripeSubscriptionId,
+      discountPercentage,
+      startDate: new Date(),
+      isActive: data.status === "active",
+    });
+  } else {
+    // Actualizar suscripción existente
+    const updateData: any = {};
+    if (data.stripeSubscriptionId !== undefined) updateData.stripeSubscriptionId = data.stripeSubscriptionId;
+    if (data.planId) {
+      updateData.tier = tier;
+      updateData.discountPercentage = discountPercentage;
+    }
+    if (data.status) {
+      updateData.isActive = data.status === "active";
+      if (data.status === "canceled") {
+        updateData.cancelledAt = new Date();
+      }
+    }
+    
+    await db.update(subscriptions).set(updateData).where(eq(subscriptions.userId, userId));
+  }
+}
+
+export async function getUserByStripeSubscriptionId(subscriptionId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const sub = await db.select().from(subscriptions).where(eq(subscriptions.stripeSubscriptionId, subscriptionId)).limit(1);
+  if (sub.length === 0) return null;
+  
+  const user = await db.select().from(users).where(eq(users.id, sub[0].userId)).limit(1);
+  return user[0] || null;
+}
+
+export async function updateTransactionPaymentStatus(transactionId: string, data: {
+  stripeSessionId: string;
+  stripePaymentIntentId: string;
+  paymentStatus: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Actualizar el estado de pago de la transacción de carga
+  // Por ahora solo registramos en logs ya que la tabla transactions no tiene campos de Stripe
+  console.log(`[DB] Transaction ${transactionId} payment updated:`, data);
+}
+
+export async function getUserWallet(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+  return wallet[0] || null;
+}
+
+export async function getUserSubscription(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const sub = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
+  return sub[0] || null;
+}
+
+export async function getWalletTransactions(userId: number, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+  if (wallet.length === 0) return [];
+  
+  return db.select().from(walletTransactions)
+    .where(eq(walletTransactions.walletId, wallet[0].id))
+    .orderBy(desc(walletTransactions.createdAt))
+    .limit(limit);
+}
+
+
+// ============================================================================
+// PLATFORM SETTINGS OPERATIONS
+// ============================================================================
+
+import {
+  platformSettings,
+  InsertPlatformSettings,
+  PlatformSettings,
+} from "../drizzle/schema";
+
+export async function getPlatformSettings(): Promise<PlatformSettings | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(platformSettings).limit(1);
+  return result[0] || null;
+}
+
+export async function upsertPlatformSettings(settings: Partial<InsertPlatformSettings>): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const existing = await getPlatformSettings();
+  if (existing) {
+    await db.update(platformSettings).set(settings).where(eq(platformSettings.id, existing.id));
+    return existing.id;
+  } else {
+    const result = await db.insert(platformSettings).values(settings as InsertPlatformSettings);
+    return result[0].insertId;
+  }
+}
+
+export async function getStripeConfig() {
+  const settings = await getPlatformSettings();
+  if (!settings) return null;
+  
+  return {
+    publicKey: settings.stripePublicKey,
+    secretKey: settings.stripeSecretKey,
+    webhookSecret: settings.stripeWebhookSecret,
+    testMode: settings.stripeTestMode,
+  };
+}
+
+// ============================================================================
+// OCPP ALERTS OPERATIONS
+// ============================================================================
+
+export interface OcppAlertInput {
+  ocppIdentity: string;
+  stationId?: number | null;
+  alertType: "DISCONNECTION" | "ERROR" | "FAULT" | "OFFLINE_TIMEOUT" | "BOOT_REJECTED" | "TRANSACTION_ERROR";
+  severity: "info" | "warning" | "critical";
+  title: string;
+  message: string;
+  payload?: Record<string, unknown>;
+  acknowledged?: boolean;
+  createdAt?: Date;
+}
+
+export async function createOcppAlert(alert: OcppAlertInput): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(ocppAlerts).values({
+    ocppIdentity: alert.ocppIdentity,
+    stationId: alert.stationId,
+    alertType: alert.alertType,
+    severity: alert.severity,
+    title: alert.title,
+    message: alert.message,
+    payload: alert.payload,
+    acknowledged: alert.acknowledged || false,
+  });
+  
+  return result[0].insertId;
+}
+
+export async function getOcppAlerts(options: {
+  limit?: number;
+  offset?: number;
+  includeAcknowledged?: boolean;
+  ocppIdentity?: string;
+  severity?: string;
+  alertType?: string;
+}): Promise<OcppAlert[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [];
+  
+  if (!options.includeAcknowledged) {
+    conditions.push(eq(ocppAlerts.acknowledged, false));
+  }
+  
+  if (options.ocppIdentity) {
+    conditions.push(eq(ocppAlerts.ocppIdentity, options.ocppIdentity));
+  }
+  
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const alerts = await db.select()
+    .from(ocppAlerts)
+    .where(whereClause)
+    .orderBy(desc(ocppAlerts.createdAt))
+    .limit(options.limit || 50)
+    .offset(options.offset || 0);
+  
+  return alerts;
+}
+
+export async function acknowledgeOcppAlert(alertId: number, userId?: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(ocppAlerts)
+    .set({
+      acknowledged: true,
+      acknowledgedAt: new Date(),
+      acknowledgedBy: userId,
+    })
+    .where(eq(ocppAlerts.id, alertId));
+}
+
+export async function getOcppAlertStats(): Promise<{
+  total: number;
+  unacknowledged: number;
+  bySeverity: Record<string, number>;
+  byType: Record<string, number>;
+}> {
+  const db = await getDb();
+  if (!db) {
+    return {
+      total: 0,
+      unacknowledged: 0,
+      bySeverity: {},
+      byType: {},
+    };
+  }
+  
+  // Total de alertas
+  const totalResult = await db.select({ count: count() }).from(ocppAlerts);
+  const total = totalResult[0]?.count || 0;
+  
+  // Alertas no reconocidas
+  const unackResult = await db.select({ count: count() })
+    .from(ocppAlerts)
+    .where(eq(ocppAlerts.acknowledged, false));
+  const unacknowledged = unackResult[0]?.count || 0;
+  
+  // Por severidad
+  const bySeverityResult = await db.select({
+    severity: ocppAlerts.severity,
+    count: count(),
+  })
+    .from(ocppAlerts)
+    .groupBy(ocppAlerts.severity);
+  
+  const bySeverity: Record<string, number> = {};
+  for (const row of bySeverityResult) {
+    if (row.severity) {
+      bySeverity[row.severity] = row.count;
+    }
+  }
+  
+  // Por tipo
+  const byTypeResult = await db.select({
+    alertType: ocppAlerts.alertType,
+    count: count(),
+  })
+    .from(ocppAlerts)
+    .groupBy(ocppAlerts.alertType);
+  
+  const byType: Record<string, number> = {};
+  for (const row of byTypeResult) {
+    if (row.alertType) {
+      byType[row.alertType] = row.count;
+    }
+  }
+  
+  return {
+    total,
+    unacknowledged,
+    bySeverity,
+    byType,
+  };
+}
+
+// ============================================================================
+// OCPP METRICS OPERATIONS
+// ============================================================================
+
+export async function getOcppConnectionMetrics(
+  startDate: Date,
+  endDate: Date,
+  granularity: "hour" | "day" = "hour"
+): Promise<Array<{ timestamp: string; connections: number; disconnections: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const dateFormat = granularity === "hour" 
+    ? sql`DATE_FORMAT(${ocppLogs.createdAt}, '%Y-%m-%d %H:00:00')`
+    : sql`DATE_FORMAT(${ocppLogs.createdAt}, '%Y-%m-%d')`;
+  
+  const result = await db.select({
+    timestamp: dateFormat.as('timestamp'),
+    messageType: ocppLogs.messageType,
+    count: count(),
+  })
+    .from(ocppLogs)
+    .where(
+      and(
+        gte(ocppLogs.createdAt, startDate),
+        lte(ocppLogs.createdAt, endDate),
+        inArray(ocppLogs.messageType, ['CONNECTION', 'DISCONNECTION'])
+      )
+    )
+    .groupBy(dateFormat, ocppLogs.messageType)
+    .orderBy(dateFormat);
+  
+  // Agrupar por timestamp
+  const metricsMap = new Map<string, { connections: number; disconnections: number }>();
+  
+  for (const row of result) {
+    const ts = String(row.timestamp);
+    if (!metricsMap.has(ts)) {
+      metricsMap.set(ts, { connections: 0, disconnections: 0 });
+    }
+    const entry = metricsMap.get(ts)!;
+    if (row.messageType === 'CONNECTION') {
+      entry.connections = row.count;
+    } else {
+      entry.disconnections = row.count;
+    }
+  }
+  
+  return Array.from(metricsMap.entries()).map(([timestamp, data]) => ({
+    timestamp,
+    ...data,
+  }));
+}
+
+export async function getOcppMessageMetrics(
+  startDate: Date,
+  endDate: Date,
+  granularity: "hour" | "day" = "hour"
+): Promise<Array<{ timestamp: string; messageType: string; count: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const dateFormat = granularity === "hour" 
+    ? sql`DATE_FORMAT(${ocppLogs.createdAt}, '%Y-%m-%d %H:00:00')`
+    : sql`DATE_FORMAT(${ocppLogs.createdAt}, '%Y-%m-%d')`;
+  
+  const result = await db.select({
+    timestamp: dateFormat.as('timestamp'),
+    messageType: ocppLogs.messageType,
+    count: count(),
+  })
+    .from(ocppLogs)
+    .where(
+      and(
+        gte(ocppLogs.createdAt, startDate),
+        lte(ocppLogs.createdAt, endDate)
+      )
+    )
+    .groupBy(dateFormat, ocppLogs.messageType)
+    .orderBy(dateFormat);
+  
+  return result.map(row => ({
+    timestamp: String(row.timestamp),
+    messageType: row.messageType || 'Unknown',
+    count: row.count,
+  }));
+}
+
+export async function getTransactionMetrics(
+  startDate: Date,
+  endDate: Date,
+  granularity: "hour" | "day" = "day"
+): Promise<Array<{ timestamp: string; count: number; totalEnergy: number; totalRevenue: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const dateFormat = granularity === "hour" 
+    ? sql`DATE_FORMAT(${transactions.startTime}, '%Y-%m-%d %H:00:00')`
+    : sql`DATE_FORMAT(${transactions.startTime}, '%Y-%m-%d')`;
+  
+  const result = await db.select({
+    timestamp: dateFormat.as('timestamp'),
+    count: count(),
+    totalEnergy: sum(transactions.kwhConsumed),
+    totalRevenue: sum(transactions.totalCost),
+  })
+    .from(transactions)
+    .where(
+      and(
+        gte(transactions.startTime, startDate),
+        lte(transactions.startTime, endDate)
+      )
+    )
+    .groupBy(dateFormat)
+    .orderBy(dateFormat);
+  
+  return result.map(row => ({
+    timestamp: String(row.timestamp),
+    count: row.count,
+    totalEnergy: Number(row.totalEnergy) || 0,
+    totalRevenue: Number(row.totalRevenue) || 0,
+  }));
+}
+
+
+// ============================================================================
+// INVESTOR EARNINGS OPERATIONS
+// ============================================================================
+
+export async function addInvestorEarnings(
+  investorId: number,
+  amount: number,
+  transactionId: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Obtener o crear wallet del inversor
+  let wallet = await db.select().from(wallets).where(eq(wallets.userId, investorId)).limit(1);
+  
+  if (wallet.length === 0) {
+    await db.insert(wallets).values({
+      userId: investorId,
+      balance: amount.toString(),
+      currency: "COP",
+    });
+    wallet = await db.select().from(wallets).where(eq(wallets.userId, investorId)).limit(1);
+  } else {
+    await db.update(wallets).set({
+      balance: sql`${wallets.balance} + ${amount}`,
+    }).where(eq(wallets.userId, investorId));
+  }
+  
+  // Registrar transacción de wallet
+  if (wallet[0]) {
+    const balanceBefore = parseFloat(wallet[0].balance) || 0;
+    const balanceAfter = balanceBefore + amount;
+    
+    await db.insert(walletTransactions).values({
+      walletId: wallet[0].id,
+      userId: investorId,
+      type: "EARNING",
+      amount: amount.toString(),
+      balanceBefore: balanceBefore.toString(),
+      balanceAfter: balanceAfter.toString(),
+      referenceType: "TRANSACTION",
+      referenceId: transactionId,
+      description: `Ganancia por transacción de carga #${transactionId}`,
+    });
+  }
+}
+
+// ============================================================================
+// DASHBOARD METRICS OPERATIONS
+// ============================================================================
+
+export async function getAdminDashboardMetrics() {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  // Total de transacciones completadas
+  const totalTransactions = await db.select({ count: count() })
+    .from(transactions)
+    .where(eq(transactions.status, "COMPLETED"));
+  
+  // Transacciones del mes
+  const monthlyTransactions = await db.select({ 
+    count: count(),
+    totalKwh: sum(transactions.kwhConsumed),
+    totalRevenue: sum(transactions.totalCost),
+    platformFees: sum(transactions.platformFee),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, startOfMonth)
+      )
+    );
+  
+  // Transacciones de hoy
+  const todayTransactions = await db.select({ 
+    count: count(),
+    totalKwh: sum(transactions.kwhConsumed),
+    totalRevenue: sum(transactions.totalCost),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, startOfDay)
+      )
+    );
+  
+  // Transacciones en progreso
+  const activeTransactions = await db.select({ count: count() })
+    .from(transactions)
+    .where(eq(transactions.status, "IN_PROGRESS"));
+  
+  // Total de estaciones
+  const totalStations = await db.select({ count: count() }).from(chargingStations);
+  
+  // Estaciones online
+  const onlineStations = await db.select({ count: count() })
+    .from(chargingStations)
+    .where(eq(chargingStations.isOnline, true));
+  
+  // Total de usuarios
+  const totalUsers = await db.select({ count: count() }).from(users);
+  
+  return {
+    totalTransactions: totalTransactions[0]?.count || 0,
+    activeTransactions: activeTransactions[0]?.count || 0,
+    monthly: {
+      transactions: monthlyTransactions[0]?.count || 0,
+      kwhSold: Number(monthlyTransactions[0]?.totalKwh) || 0,
+      revenue: Number(monthlyTransactions[0]?.totalRevenue) || 0,
+      platformFees: Number(monthlyTransactions[0]?.platformFees) || 0,
+    },
+    today: {
+      transactions: todayTransactions[0]?.count || 0,
+      kwhSold: Number(todayTransactions[0]?.totalKwh) || 0,
+      revenue: Number(todayTransactions[0]?.totalRevenue) || 0,
+    },
+    stations: {
+      total: totalStations[0]?.count || 0,
+      online: onlineStations[0]?.count || 0,
+    },
+    users: {
+      total: totalUsers[0]?.count || 0,
+    },
+  };
+}
+
+export async function getInvestorDashboardMetrics(investorId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  
+  // Obtener estaciones del inversor
+  const investorStations = await db.select({ id: chargingStations.id })
+    .from(chargingStations)
+    .where(eq(chargingStations.ownerId, investorId));
+  
+  const stationIds = investorStations.map(s => s.id);
+  
+  if (stationIds.length === 0) {
+    return {
+      totalStations: 0,
+      onlineStations: 0,
+      totalTransactions: 0,
+      monthlyTransactions: 0,
+      monthlyKwh: 0,
+      monthlyRevenue: 0,
+      monthlyEarnings: 0,
+      walletBalance: 0,
+    };
+  }
+  
+  // Estaciones online
+  const onlineStations = await db.select({ count: count() })
+    .from(chargingStations)
+    .where(
+      and(
+        eq(chargingStations.ownerId, investorId),
+        eq(chargingStations.isOnline, true)
+      )
+    );
+  
+  // Transacciones totales
+  const totalTransactions = await db.select({ count: count() })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        inArray(transactions.stationId, stationIds)
+      )
+    );
+  
+  // Transacciones del mes
+  const monthlyData = await db.select({ 
+    count: count(),
+    totalKwh: sum(transactions.kwhConsumed),
+    totalRevenue: sum(transactions.totalCost),
+    investorShare: sum(transactions.investorShare),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        inArray(transactions.stationId, stationIds),
+        gte(transactions.startTime, startOfMonth)
+      )
+    );
+  
+  // Balance de wallet
+  const wallet = await db.select().from(wallets).where(eq(wallets.userId, investorId)).limit(1);
+  
+  return {
+    totalStations: stationIds.length,
+    onlineStations: onlineStations[0]?.count || 0,
+    totalTransactions: totalTransactions[0]?.count || 0,
+    monthlyTransactions: monthlyData[0]?.count || 0,
+    monthlyKwh: Number(monthlyData[0]?.totalKwh) || 0,
+    monthlyRevenue: Number(monthlyData[0]?.totalRevenue) || 0,
+    monthlyEarnings: Number(monthlyData[0]?.investorShare) || 0,
+    walletBalance: Number(wallet[0]?.balance) || 0,
+  };
+}
+
+export async function getUserActiveTransaction(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select({
+    transaction: transactions,
+    station: chargingStations,
+    evse: evses,
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .innerJoin(evses, eq(transactions.evseId, evses.id))
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.status, "IN_PROGRESS")
+      )
+    )
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+export async function getUserTransactionHistory(userId: number, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select({
+    transaction: transactions,
+    station: chargingStations,
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(eq(transactions.userId, userId))
+    .orderBy(desc(transactions.startTime))
+    .limit(limit);
+}
+
+export async function getUserMonthlyStats(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  
+  const result = await db.select({
+    count: count(),
+    totalKwh: sum(transactions.kwhConsumed),
+    totalCost: sum(transactions.totalCost),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, startOfMonth)
+      )
+    );
+  
+  return {
+    sessions: result[0]?.count || 0,
+    kwhConsumed: Number(result[0]?.totalKwh) || 0,
+    totalSpent: Number(result[0]?.totalCost) || 0,
+  };
+}
+
+
+// ============================================================================
+// TOP STATIONS AND RECENT TRANSACTIONS
+// ============================================================================
+
+export async function getTopStationsByRevenue(
+  startDate: Date,
+  endDate: Date,
+  limit: number = 10
+) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.select({
+    stationId: transactions.stationId,
+    stationName: chargingStations.name,
+    city: chargingStations.city,
+    transactionCount: count(),
+    totalKwh: sum(transactions.kwhConsumed),
+    totalRevenue: sum(transactions.totalCost),
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, startDate),
+        lte(transactions.startTime, endDate)
+      )
+    )
+    .groupBy(transactions.stationId, chargingStations.name, chargingStations.city)
+    .orderBy(desc(sum(transactions.totalCost)))
+    .limit(limit);
+  
+  return result.map(row => ({
+    stationId: row.stationId,
+    stationName: row.stationName,
+    city: row.city,
+    transactionCount: row.transactionCount,
+    totalKwh: Number(row.totalKwh) || 0,
+    totalRevenue: Number(row.totalRevenue) || 0,
+  }));
+}
+
+export async function getRecentTransactions(limit: number = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.select({
+    transaction: transactions,
+    station: chargingStations,
+    user: {
+      id: users.id,
+      name: users.name,
+      email: users.email,
+    },
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .innerJoin(users, eq(transactions.userId, users.id))
+    .orderBy(desc(transactions.startTime))
+    .limit(limit);
+  
+  return result;
+}
+
+
+// ============================================================================
+// PRICE ALERT OPERATIONS
+// ============================================================================
+
+/**
+ * Obtener usuarios que han cargado en una estación en los últimos N días
+ * Para enviar notificaciones de cambio de precio
+ */
+export async function getUsersWithRecentTransactions(
+  stationId: number,
+  daysBack: number = 30
+): Promise<Array<{ id: number; name: string | null; email: string | null }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysBack);
+  
+  // Obtener usuarios únicos que han cargado en esta estación
+  const result = await db.selectDistinct({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+  })
+    .from(transactions)
+    .innerJoin(users, eq(transactions.userId, users.id))
+    .where(
+      and(
+        eq(transactions.stationId, stationId),
+        gte(transactions.startTime, startDate),
+        eq(users.isActive, true)
+      )
+    );
+  
+  return result;
+}
+
+/**
+ * Obtener usuarios suscritos a alertas de precio en estaciones cercanas
+ */
+export async function getUsersNearStation(
+  latitude: number,
+  longitude: number,
+  radiusKm: number = 10
+): Promise<Array<{ id: number; name: string | null; email: string | null }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Calcular bounding box aproximado
+  const latDelta = radiusKm / 111;
+  const lngDelta = radiusKm / (111 * Math.cos(latitude * Math.PI / 180));
+  
+  const minLat = latitude - latDelta;
+  const maxLat = latitude + latDelta;
+  const minLng = longitude - lngDelta;
+  const maxLng = longitude + lngDelta;
+  
+  // Obtener usuarios que han cargado en estaciones dentro del radio
+  const result = await db.selectDistinct({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+  })
+    .from(transactions)
+    .innerJoin(users, eq(transactions.userId, users.id))
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(
+      and(
+        eq(users.isActive, true),
+        gte(chargingStations.latitude, minLat.toString()),
+        lte(chargingStations.latitude, maxLat.toString()),
+        gte(chargingStations.longitude, minLng.toString()),
+        lte(chargingStations.longitude, maxLng.toString())
+      )
+    );
+  
+  return result;
+}
+
+
+// ============================================================================
+// CHARGING FLOW OPERATIONS
+// ============================================================================
+
+/**
+ * Obtener estación por ocppIdentity
+ */
+export async function getStationByOcppIdentity(ocppIdentity: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(chargingStations)
+    .where(eq(chargingStations.ocppIdentity, ocppIdentity))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+/**
+ * Obtener transacción activa de un usuario
+ */
+export async function getActiveTransactionByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.status, "IN_PROGRESS")
+      )
+    )
+    .orderBy(desc(transactions.startTime))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+/**
+ * Obtener último valor de medición de una transacción
+ */
+export async function getLastMeterValue(transactionId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(meterValues)
+    .where(eq(meterValues.transactionId, transactionId))
+    .orderBy(desc(meterValues.timestamp))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+/**
+ * Obtener transacciones de un usuario con paginación
+ */
+export async function getUserTransactions(userId: number, limit = 20, offset = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.select({
+    id: transactions.id,
+    stationId: transactions.stationId,
+    stationName: chargingStations.name,
+    evseId: transactions.evseId,
+    startTime: transactions.startTime,
+    endTime: transactions.endTime,
+    energyDelivered: transactions.kwhConsumed,
+    totalCost: transactions.totalCost,
+    status: transactions.status,
+    energyCost: transactions.energyCost,
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(eq(transactions.userId, userId))
+    .orderBy(desc(transactions.startTime))
+    .limit(limit)
+    .offset(offset);
+  
+  return result;
+}
+
+/**
+ * Descontar saldo de la billetera del usuario
+ */
+export async function deductWalletBalance(userId: number, amount: number, transactionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Obtener wallet actual
+  const wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+  
+  if (wallet.length === 0) {
+    throw new Error("Usuario no tiene billetera");
+  }
+  
+  const currentBalance = parseFloat(wallet[0].balance);
+  if (currentBalance < amount) {
+    throw new Error("Saldo insuficiente");
+  }
+  
+  const newBalance = currentBalance - amount;
+  
+  // Actualizar balance
+  await db.update(wallets).set({
+    balance: newBalance.toString(),
+  }).where(eq(wallets.userId, userId));
+  
+  // Registrar transacción de wallet
+  await db.insert(walletTransactions).values({
+    walletId: wallet[0].id,
+    userId,
+    type: "CHARGE",
+    amount: (-amount).toString(),
+    balanceBefore: currentBalance.toString(),
+    balanceAfter: newBalance.toString(),
+    referenceType: "TRANSACTION",
+    referenceId: transactionId,
+    description: `Pago por carga de vehículo #${transactionId}`,
+  });
+  
+  return newBalance;
+}

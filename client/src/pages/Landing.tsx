@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
+import { Link } from "wouter";
 import { motion } from "framer-motion";
 import { 
   Zap, 
@@ -544,14 +545,16 @@ export default function Landing() {
                   <span><strong>IA predictiva</strong> para optimizar tus ingresos</span>
                 </li>
               </ul>
-              <Button
-                size="lg"
-                variant="outline"
-                className="border-secondary text-secondary hover:bg-secondary hover:text-secondary-foreground"
-              >
-                Conocer más
-                <ChevronRight className="w-5 h-5 ml-2" />
-              </Button>
+              <Link href="/investors">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-secondary text-secondary hover:bg-secondary hover:text-secondary-foreground"
+                >
+                  Conocer más
+                  <ChevronRight className="w-5 h-5 ml-2" />
+                </Button>
+              </Link>
             </div>
             <div className="relative">
               <div className="aspect-square rounded-3xl bg-gradient-to-br from-secondary/20 to-primary/20 p-8 flex items-center justify-center">

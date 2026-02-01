@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo, useCallback } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,8 +42,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X } from "lucide-react";
+import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity } from "lucide-react";
 import { toast } from "sonner";
+import { StationQRCode } from "@/components/StationQRCode";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Tipos de conectores disponibles según OCPI
 const CONNECTOR_TYPES = [
@@ -92,6 +95,7 @@ const initialFormData: StationFormData = {
 };
 
 export default function AdminStations() {
+  const [, navigate] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -100,6 +104,9 @@ export default function AdminStations() {
   const [stationToDelete, setStationToDelete] = useState<any>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [viewingStation, setViewingStation] = useState<any>(null);
+  const [showQRDialog, setShowQRDialog] = useState(false);
+  const [qrStation, setQrStation] = useState<any>(null);
+  const [detailsTab, setDetailsTab] = useState("info");
   
   // Estado del formulario
   const [formData, setFormData] = useState<StationFormData>(initialFormData);
@@ -113,6 +120,31 @@ export default function AdminStations() {
   });
 
   const { data: stations, isLoading, refetch } = trpc.stations.listAll.useQuery();
+  
+  // Obtener conexiones OCPP activas para mostrar estado real
+  const { data: ocppConnections } = trpc.ocpp.getActiveConnections.useQuery(undefined, {
+    refetchInterval: 5000, // Actualizar cada 5 segundos
+  });
+  
+  // Función para verificar si una estación está conectada por OCPP
+  const isStationConnectedOCPP = (station: any) => {
+    if (!ocppConnections) return false;
+    const ocppId = station.ocppIdentity || station.id?.toString();
+    return ocppConnections.some((conn: any) => 
+      conn.ocppIdentity === ocppId || 
+      conn.stationId === station.id
+    );
+  };
+  
+  // Obtener información de conexión OCPP de una estación
+  const getOCPPConnectionInfo = (station: any) => {
+    if (!ocppConnections) return null;
+    const ocppId = station.ocppIdentity || station.id?.toString();
+    return ocppConnections.find((conn: any) => 
+      conn.ocppIdentity === ocppId || 
+      conn.stationId === station.id
+    );
+  };
   
   const createStationMutation = trpc.stations.create.useMutation({
     onError: (error) => {
@@ -352,12 +384,27 @@ export default function AdminStations() {
     }
   };
 
-  const getStatusBadge = (isOnline: boolean, isActive: boolean) => {
-    if (!isActive) return <Badge variant="secondary">Inactiva</Badge>;
-    return isOnline ? (
-      <Badge className="bg-green-500/20 text-green-400 border-green-500/30">En línea</Badge>
-    ) : (
-      <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Fuera de línea</Badge>
+  // Badge de estado mejorado con conexión OCPP real
+  const getStatusBadge = (station: any) => {
+    if (!station.isActive) return <Badge variant="secondary">Inactiva</Badge>;
+    
+    const isConnectedOCPP = isStationConnectedOCPP(station);
+    const connInfo = getOCPPConnectionInfo(station);
+    
+    if (isConnectedOCPP) {
+      return (
+        <Badge className="bg-green-500/20 text-green-400 border-green-500/30 flex items-center gap-1">
+          <Wifi className="w-3 h-3" />
+          Conectado
+        </Badge>
+      );
+    }
+    
+    return (
+      <Badge className="bg-red-500/20 text-red-400 border-red-500/30 flex items-center gap-1">
+        <WifiOff className="w-3 h-3" />
+        Desconectado
+      </Badge>
     );
   };
 
@@ -400,8 +447,8 @@ export default function AdminStations() {
       .join(", ");
   };
 
-  // Componente de formulario reutilizable
-  const StationForm = ({ isEdit = false }: { isEdit?: boolean }) => (
+  // Renderizar formulario inline para evitar pérdida de foco
+  const renderStationForm = (isEdit: boolean) => (
     <div className="space-y-6">
       {/* Información básica */}
       <div className="space-y-4">
@@ -836,7 +883,7 @@ export default function AdminStations() {
               <DialogTitle>Crear nueva estación</DialogTitle>
             </DialogHeader>
             
-            <StationForm isEdit={false} />
+            {renderStationForm(false)}
 
             <div className="flex justify-end gap-2 mt-6">
               <Button variant="outline" onClick={() => {
@@ -868,7 +915,7 @@ export default function AdminStations() {
               <DialogTitle>Editar estación: {editingStation?.name}</DialogTitle>
             </DialogHeader>
             
-            <StationForm isEdit={true} />
+            {renderStationForm(true)}
 
             <div className="flex justify-end gap-2 mt-6">
               <Button variant="outline" onClick={() => {
@@ -1013,7 +1060,7 @@ export default function AdminStations() {
                       {getConnectorSummary(station)}
                     </div>
                   </TableCell>
-                  <TableCell>{getStatusBadge(station.isOnline, station.isActive)}</TableCell>
+                  <TableCell>{getStatusBadge(station)}</TableCell>
                   <TableCell>
                     {(station as any).lastHeartbeat
                       ? new Date((station as any).lastHeartbeat).toLocaleString("es-CO")
@@ -1086,10 +1133,13 @@ export default function AdminStations() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Modal de ver detalles de estación */}
+      {/* Modal de ver detalles de estación con Tabs */}
       <Dialog open={showDetailsDialog} onOpenChange={(open) => {
         setShowDetailsDialog(open);
-        if (!open) setViewingStation(null);
+        if (!open) {
+          setViewingStation(null);
+          setDetailsTab("info");
+        }
       }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1097,25 +1147,51 @@ export default function AdminStations() {
               <MapPin className="w-5 h-5 text-primary" />
               {viewingStation?.name}
             </DialogTitle>
-            <DialogDescription>
-              ID: {viewingStation?.ocppIdentity || 'Sin ID OCPP'}
+            <DialogDescription className="flex items-center gap-2">
+              <span>ID: {viewingStation?.ocppIdentity || 'Sin ID OCPP'}</span>
+              {viewingStation && getStatusBadge(viewingStation)}
             </DialogDescription>
           </DialogHeader>
 
           {viewingStation && (
-            <div className="space-y-6">
-              {/* Estado general */}
-              <div className="flex items-center gap-4">
-                <Badge variant={viewingStation.isActive ? "default" : "secondary"}>
-                  {viewingStation.isActive ? "Activa" : "Inactiva"}
-                </Badge>
-                <Badge variant={viewingStation.isPublic ? "outline" : "secondary"}>
-                  {viewingStation.isPublic ? "Pública" : "Privada"}
-                </Badge>
-                <Badge variant={viewingStation.status === "ONLINE" ? "default" : "destructive"}>
-                  {viewingStation.status === "ONLINE" ? "En línea" : "Fuera de línea"}
-                </Badge>
-              </div>
+            <Tabs value={detailsTab} onValueChange={setDetailsTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="info" className="flex items-center gap-1">
+                  <Eye className="w-4 h-4" />
+                  Información
+                </TabsTrigger>
+                <TabsTrigger value="qr" className="flex items-center gap-1">
+                  <QrCode className="w-4 h-4" />
+                  Código QR
+                </TabsTrigger>
+                <TabsTrigger value="logs" className="flex items-center gap-1">
+                  <Activity className="w-4 h-4" />
+                  Logs OCPP
+                </TabsTrigger>
+              </TabsList>
+              
+              {/* Tab de Información */}
+              <TabsContent value="info" className="space-y-6 mt-4">
+                {/* Estado general */}
+                <div className="flex items-center gap-4 flex-wrap">
+                  <Badge variant={viewingStation.isActive ? "default" : "secondary"}>
+                    {viewingStation.isActive ? "Activa" : "Inactiva"}
+                  </Badge>
+                  <Badge variant={viewingStation.isPublic ? "outline" : "secondary"}>
+                    {viewingStation.isPublic ? "Pública" : "Privada"}
+                  </Badge>
+                  {(() => {
+                    const connInfo = getOCPPConnectionInfo(viewingStation);
+                    if (connInfo) {
+                      return (
+                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                          OCPP {connInfo.ocppVersion || '1.6'}
+                        </Badge>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
 
               {/* Información de ubicación */}
               <div className="space-y-3">
@@ -1255,7 +1331,89 @@ export default function AdminStations() {
                   Ver en mapa
                 </Button>
               </div>
-            </div>
+              </TabsContent>
+              
+              {/* Tab de Código QR */}
+              <TabsContent value="qr" className="mt-4">
+                <StationQRCode 
+                  stationCode={viewingStation.ocppIdentity || `ST-${viewingStation.id}`}
+                  stationName={viewingStation.name}
+                  stationAddress={viewingStation.address}
+                />
+              </TabsContent>
+              
+              {/* Tab de Logs OCPP */}
+              <TabsContent value="logs" className="space-y-4 mt-4">
+                {/* Info de conexión OCPP */}
+                {(() => {
+                  const connInfo = getOCPPConnectionInfo(viewingStation);
+                  if (connInfo) {
+                    return (
+                      <Card className="bg-green-500/10 border-green-500/30">
+                        <div className="p-4 space-y-3">
+                          <div className="flex items-center gap-2">
+                            <Wifi className="w-5 h-5 text-green-500" />
+                            <span className="font-semibold text-green-400">Cargador Conectado</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <p className="text-muted-foreground">Versión OCPP</p>
+                              <p className="font-medium">{connInfo.ocppVersion || '1.6'}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Conectado desde</p>
+                              <p className="font-medium">
+                                {connInfo.connectedAt ? new Date(connInfo.connectedAt).toLocaleString('es-CO') : 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Último heartbeat</p>
+                              <p className="font-medium">
+                                {connInfo.lastHeartbeat ? new Date(connInfo.lastHeartbeat).toLocaleString('es-CO') : 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Identidad OCPP</p>
+                              <p className="font-medium font-mono text-xs">{connInfo.ocppIdentity}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  }
+                  return (
+                    <Card className="bg-red-500/10 border-red-500/30">
+                      <div className="p-4 flex items-center gap-3">
+                        <WifiOff className="w-5 h-5 text-red-500" />
+                        <div>
+                          <p className="font-semibold text-red-400">Cargador Desconectado</p>
+                          <p className="text-sm text-muted-foreground">No hay conexión OCPP activa para este cargador</p>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })()}
+                
+                {/* Botón para ver logs completos */}
+                <div className="flex flex-col gap-3">
+                  <Button 
+                    className="w-full"
+                    onClick={() => {
+                      const ocppId = viewingStation.ocppIdentity || viewingStation.id;
+                      navigate(`/admin/ocpp-monitor?filter=${encodeURIComponent(ocppId)}`);
+                      setShowDetailsDialog(false);
+                    }}
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Ver logs completos en Monitor OCPP
+                  </Button>
+                  
+                  <p className="text-xs text-muted-foreground text-center">
+                    El monitor OCPP muestra todos los mensajes de comunicación con el cargador
+                  </p>
+                </div>
+              </TabsContent>
+            </Tabs>
           )}
         </DialogContent>
       </Dialog>

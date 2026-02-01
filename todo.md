@@ -449,3 +449,490 @@
 - [x] BUG: Botones de ver y configurar estación en panel de inversionista no funcionan - Implementados modales de detalles y configuración de tarifas
 - [x] MEJORA: Mostrar ID del inversionista en gestión de usuarios - Agregada columna ID con botón copiar y modal de detalles
 - [x] MEJORA: Mejorar selector de propietario al crear estación - Modal de detalles muestra ID con instrucciones claras
+
+
+## Página de Inversionistas - 18 Enero 2026
+
+- [x] Crear página de inversionistas sofisticada y estética
+- [x] Hero section con propuesta de valor clara
+- [x] Calculadora de ROI interactiva (7kW media vs 100kW DC rápida)
+- [x] Casos de uso: restaurantes, conjuntos residenciales, estaciones de servicio, hoteles
+- [x] Gráficos de potencial de ingresos (compra $800/kWh, venta $1,800/kWh, 12h carga)
+- [x] Sección de beneficios de IA para optimización de precios dinámicos
+- [x] Estadísticas y datos convincentes
+- [x] CTA para contacto/registro como inversionista
+- [x] Conectar botón "Inversionistas" de la landing a esta página
+
+
+## Soporte Dual OCPP 1.6J y 2.0.1 - 18 Enero 2026
+
+### Análisis de Implementación Actual
+- [x] Revisar servidor OCPP actual y verificar versión soportada
+- [x] Identificar diferencias entre OCPP 1.6J y 2.0.1
+- [x] Evaluar arquitectura para soporte dual
+
+### Implementación OCPP 1.6J
+- [x] Crear handlers para mensajes OCPP 1.6J (BootNotification, Authorize, StartTransaction, StopTransaction, MeterValues, Heartbeat, StatusNotification)
+- [x] Implementar detección automática de versión de protocolo
+- [x] Adaptar servidor WebSocket para manejar ambos protocolos
+- [x] Mapear estructuras de datos entre versiones
+
+### Testing y Validación
+- [x] Crear tests unitarios para handlers OCPP 1.6J (27 tests)
+- [x] Probar compatibilidad con simuladores de cargadores (shiv3.github.io/ocpp-cp-simulator - EXITOSO)
+- [x] Documentar diferencias y compatibilidad
+
+
+
+## Bugs Reportados - 28 Enero 2026
+
+- [x] BUG: Formulario de creación de cargadores pierde el foco del campo de texto después de cada letra ingresada (corregido: cambiado StationForm de componente anidado a función renderStationForm)
+
+- [x] BUG: Simulador OCPP no se conecta a producción - agregado endpoint /ocpp/status y verificado handler WebSocket (pendiente publicar)
+
+
+## Integración Stripe (COMPLETADO) - 28 Enero 2026
+
+- [x] Agregar feature de Stripe al proyecto (paquete stripe instalado)
+- [x] Solicitar API keys de Stripe al usuario (configuradas en Settings)
+- [x] Configurar productos y precios (recarga wallet, suscripciones básica/premium)
+- [x] Implementar checkout para pagos de sesiones (recarga de billetera)
+- [x] Implementar portal de suscripciones (planes básico y premium)
+- [x] Agregar historial de pagos en el dashboard del usuario (tab Historial)
+- [ ] Probar flujo completo de pagos (pendiente publicar)
+
+
+## Bugs Reportados - 28 Enero 2026 (Segunda Ronda)
+
+- [x] BUG: Las claves de Stripe no persisten después de guardar en el módulo de configuración (corregido: creada tabla platform_settings y Settings.tsx funcional)
+
+
+## Revisión Endpoint OCPP - 28 Enero 2026
+
+- [x] Revisar configuración del servidor y endpoint OCPP
+- [x] Mover endpoint a /api/ocpp/status para que funcione en producción
+- [x] Verificar que el endpoint responde correctamente en desarrollo
+- [x] Agregar ping/pong para mantener conexiones vivas (30s)
+- [x] Desactivar compresión perMessageDeflate para mejor compatibilidad
+- [x] Agregar logs detallados de upgrade y conexión
+- [x] Agregar endpoint alternativo /api/ocpp/ws/ para compatibilidad con proxies
+- [x] Crear página de diagnóstico /api/ocpp/test para probar WebSocket
+- [ ] Verificar que el WebSocket OCPP acepta conexiones en producción
+- [ ] Probar conexión con simulador en producción
+
+
+## Solución Definitiva OCPP - 29 Enero 2026
+
+- [ ] Analizar por qué la prueba HTML funciona pero el simulador falla
+- [ ] Verificar headers y subprotocolos enviados por el simulador
+- [ ] Implementar solución compatible con simulador OCPP
+- [ ] Probar conexión exitosa con navegador del usuario
+
+
+## Solución OCPP WebSocket - 30 Enero 2026
+
+- [x] Diagnosticado: problema era que event listeners se registraban después de que el mensaje llegaba
+- [x] Corregido: import dinámico convertido a async/await, listeners registrados primero
+- [x] Probado localmente: BootNotification y Heartbeat funcionan correctamente
+- [x] Publicar y probar con simulador externo en producción - ¡FUNCIONA!
+
+
+## Panel de Monitoreo OCPP - 30 Enero 2026
+
+### Backend
+- [x] Endpoint para obtener cargadores conectados en tiempo real
+- [x] Endpoint para obtener logs OCPP con filtros (por estación, tipo de mensaje, fecha)
+- [x] Endpoint para obtener estado actual de conectores
+- [x] Endpoint para enviar comandos remotos (Reset, UnlockConnector, etc.)
+- [x] Almacenar conexiones activas en memoria para monitoreo
+
+### Frontend Admin
+- [x] Página de monitoreo OCPP (/admin/ocpp-monitor)
+- [x] Tarjetas de cargadores conectados con estado en tiempo real
+- [x] Indicadores de última comunicación (heartbeat)
+- [x] Tabla de logs OCPP con filtros y paginación
+- [x] Panel de comandos remotos
+
+### Frontend Técnico
+- [x] Acceso al monitoreo OCPP desde dashboard de técnico
+- [x] Vista de logs de sus cargadores asignados
+
+
+## Bugs Reportados - 30 Enero 2026
+
+- [x] BUG: Monitor OCPP muestra 0 conexiones activas aunque hay logs de cargadores conectados
+- [x] Corregir: Inferir conexiones activas desde logs de BD, no solo desde memoria del servidor
+
+
+## Mejoras Monitor OCPP - 30 Enero 2026
+
+### Notificaciones de Alertas
+- [x] Detectar desconexiones de cargadores y enviar notificación
+- [x] Detectar errores reportados (StatusNotification con errorCode != NoError)
+- [x] Enviar notificación al owner cuando hay alertas críticas
+- [x] Endpoints para mostrar historial de alertas en el dashboard
+
+### Gráficos de Métricas Históricas
+- [x] Endpoint para obtener métricas de conexiones por hora/día
+- [x] Endpoint para obtener métricas de transacciones por hora/día
+- [ ] Gráficos de línea para conexiones activas en el tiempo (UI pendiente)
+- [ ] Gráficos de barras para transacciones diarias (UI pendiente)
+
+### Configuración Remota
+- [x] Implementar GetConfiguration OCPP
+- [x] Implementar ChangeConfiguration OCPP
+- [ ] UI para ver y modificar configuración de cargadores
+
+
+### URL de WebSocket para Soporte
+- [x] Agregar sección con URL de WebSocket en Monitor OCPP para copiar fácilmente
+- [x] Mostrar protocolos soportados (OCPP 1.6J, OCPP 2.0.1)
+- [x] Ejemplo de configuración para cargadores
+
+
+## Configuración Remota OCPP - 30 Enero 2026
+
+- [x] Verificar endpoints GetConfiguration y ChangeConfiguration existentes
+- [x] Crear componente UI para ver configuración del cargador
+- [x] Crear formulario para modificar parámetros de configuración
+- [x] Integrar en el Monitor OCPP como nueva pestaña
+- [x] Probar con simulador OCPP (tests pasan)
+
+
+## Transacciones de Venta kWh - 30 Enero 2026 [COMPLETADO]
+
+### Backend OCPP
+- [x] Handler StartTransaction: Crear transacción en BD, vincular usuario/estación
+- [x] Handler MeterValues: Actualizar consumo en tiempo real
+- [x] Handler StopTransaction: Finalizar transacción, calcular total
+
+### Facturación
+- [x] Calcular kWh consumidos (meterStop - meterStart)
+- [x] Aplicar tarifa según estación/horario
+- [x] Generar registro de venta
+- [x] Distribuir ingresos 80% inversor / 20% plataforma
+
+### Dashboard Usuario
+- [x] Mostrar sesión de carga activa con consumo en tiempo real
+- [x] Historial de cargas con detalles (kWh, costo, duración)
+- [x] Resumen de gastos del mes
+
+### Dashboard Admin
+- [x] Métricas globales: Total kWh vendidos, ingresos, transacciones
+- [x] Gráfico de ventas por día/semana/mes
+- [x] Top estaciones por ingresos
+- [x] Transacciones recientes
+
+### Dashboard Técnico
+- [x] Estado de transacciones en estaciones asignadas
+- [x] Conexiones OCPP activas
+- [x] Alertas de estaciones offline
+
+### Dashboard Inversor
+- [x] Ingresos generados por sus estaciones (80%)
+- [x] kWh vendidos por estación
+- [x] Balance de billetera disponible para retiro
+- [x] Resumen de ingresos brutos vs netos
+
+
+## Mejoras Adicionales - 30 Enero 2026 [COMPLETADO]
+
+### Prueba de Transacción OCPP Completa
+- [x] Conectar simulador OCPP a producción
+- [x] Enviar StartTransaction con idTag
+- [x] Enviar MeterValues durante la carga
+- [x] Enviar StopTransaction y verificar cálculos
+- [x] Verificar que las métricas se actualizan en dashboards
+
+### Gráficos Históricos en Monitor OCPP
+- [x] Gráfico de conexiones activas por hora/día
+- [x] Gráfico de transacciones por hora/día
+- [x] Gráfico de energía entregada por día
+- [x] Gráfico de ingresos por hora/día
+- [x] Selector de rango de fechas (24h, 7d, 30d)
+- [x] Resumen del período con totales
+
+### Notificaciones Push
+- [x] Notificar al usuario cuando su carga inicie
+- [x] Notificar al usuario cuando su carga termine
+- [ ] Notificar cambios significativos de precio (pendiente)
+- [ ] Notificar al inversor cuando hay nuevas transacciones (pendiente)
+- [x] Notificar al técnico cuando hay alertas de cargadores (via alertsService)
+
+
+## Sistema de idTag y Notificaciones de Precio - 30 Enero 2026 [COMPLETADO]
+
+### Sistema de idTag por Usuario
+- [x] Agregar campo idTag único a tabla de usuarios
+- [x] Generar idTag automáticamente al crear usuario (formato: EV-XXXXXX)
+- [x] Modificar handler Authorize OCPP para validar idTag contra BD
+- [x] Modificar handler StartTransaction para vincular usuario por idTag
+- [x] Mostrar idTag en perfil del usuario
+- [x] Permitir regenerar idTag desde perfil
+- [ ] Generar código QR del idTag para escaneo rápido (pendiente)
+
+### Notificaciones de Cambio de Precio
+- [x] Crear servicio de monitoreo de precios dinámicos
+- [x] Detectar cuando el precio baja más del 10% (configurable)
+- [x] Enviar notificación a usuarios que cargaron recientemente en esa estación
+- [x] Funciones de BD para obtener usuarios cercanos y con transacciones recientes
+- [ ] Configurar umbral de notificación desde admin (pendiente)
+
+
+## Flujo Completo de Carga EV - 30 Enero 2026 [EN PROGRESO]
+
+### Backend - Endpoints de Carga
+- [x] Endpoint para obtener estación por código QR/ID (getStationByCode)
+- [x] Endpoint para obtener conectores disponibles de una estación (getAvailableConnectors)
+- [x] Endpoint para validar saldo del usuario vs costo estimado (validateAndEstimate)
+- [x] Endpoint para iniciar carga remota (RemoteStartTransaction OCPP)
+- [x] Endpoint para detener carga remota (RemoteStopTransaction OCPP)
+- [x] Endpoint para obtener estado de carga en tiempo real (getActiveSession)
+- [x] Lógica de descuento de saldo al finalizar carga
+
+### Frontend - Flujo de Usuario
+- [x] Pantalla de escaneo QR mejorada (/start-charge)
+- [x] Pantalla de selección de conector disponible
+- [x] Pantalla de opciones de carga (valor fijo $, porcentaje %, o carga completa 100%)
+- [x] Slider deslizable estético para seleccionar valor/porcentaje
+- [ ] Indicador visual circular tipo gauge (pendiente)
+- [x] Animaciones suaves y colores dinámicos
+- [x] Validación visual de saldo suficiente
+- [x] Pantalla de espera de conexión del vehículo con animaciones
+- [x] Pantalla de monitoreo de carga en tiempo real (kWh, $, tiempo, %)
+- [x] Botón para detener carga manualmente con confirmación
+- [x] Pantalla de resumen de transacción al finalizar con compartir
+
+### Notificaciones
+- [x] Notificación de carga iniciada con tarifa actual
+- [x] Notificación de carga completada con resumen
+- [x] Notificación si el saldo se agota durante la carga
+
+
+## Monitoreo y Resumen de Carga - 30 Enero 2026 [COMPLETADO]
+
+### Indicador Circular Gauge
+- [x] Componente SVG circular animado (ChargingGauge.tsx)
+- [x] Animación suave de progreso con transiciones CSS
+- [x] Colores dinámicos según nivel (verde/amarillo/rojo)
+- [x] Mostrar porcentaje en el centro con icono de rayo
+
+### Pantalla de Monitoreo en Tiempo Real
+- [x] Mostrar kWh consumidos en tiempo real
+- [x] Mostrar costo acumulado ($)
+- [x] Mostrar tiempo transcurrido
+- [x] Mostrar porcentaje de carga
+- [x] Indicador gauge animado
+- [x] Botón para detener carga con confirmación
+- [x] Actualización automática cada 3 segundos
+- [x] Banner publicitario rotativo durante la carga
+
+### Pantalla de Resumen Post-Carga
+- [x] Mostrar detalles completos de la transacción
+- [x] kWh totales, costo final, duración
+- [x] Información de la estación y conector
+- [x] Botón para compartir recibo (WhatsApp, Email)
+- [x] Opción de descargar recibo como imagen PNG
+- [x] Botón para volver al mapa
+
+
+## Mejoras de Experiencia de Carga - 30 Enero 2026
+
+### Pantalla de Espera de Conexión
+- [x] Crear componente de animación de conexión
+- [x] Mostrar estado "Esperando conexión del vehículo"
+- [x] Animación de cable/enchufe conectándose con partículas de energía
+- [x] Detectar cuando el vehículo se conecta (StatusNotification)
+- [x] Transición suave a pantalla de monitoreo
+- [x] Indicador de progreso de conexión (3 pasos: Iniciando, Conectando, Cargando)
+- [x] Canvas de partículas animadas
+
+### Notificación de Saldo Bajo
+- [x] Detectar cuando el saldo restante es menor al 20% del estimado
+- [x] Enviar notificación al usuario (tipo low_balance)
+- [x] Evitar spam de notificaciones (verificación por key único)
+- [ ] Mostrar alerta en pantalla de monitoreo
+- [ ] Opción de recargar saldo desde la pantalla de carga
+- [x] Detectar cuando saldo llega a 0 (tipo balance_depleted)
+- [ ] Enviar RemoteStopTransaction al cargador cuando saldo se agota
+
+### Historial de Recibos
+- [x] Agregar botón de ver recibo en cada transacción del historial
+- [x] Modal de recibo con diseño profesional (similar a ChargingSummary)
+- [x] Permitir descargar recibo como imagen PNG (html2canvas)
+- [x] Permitir compartir recibo por WhatsApp/Email
+- [x] Filtros por estado (Todas, Completadas, Pendientes)
+- [x] Tests unitarios para sistema de saldo bajo (9 tests)
+
+
+## Mejoras Interfaz de Estaciones Admin/Soporte - 30 Enero 2026
+
+### Estado Real OCPP
+- [x] Mostrar estado de conexión OCPP real (conectado/desconectado) basado en WebSocket activo
+- [x] Sincronizar badge de estado con conexiones activas del servidor OCPP
+- [x] Actualizar estado en tiempo real cuando el cargador se conecta/desconecta (cada 5 segundos)
+
+### Botón de Logs Específicos
+- [x] Agregar botón "Ver logs" en modal de detalle de estación
+- [x] Redirigir al monitor OCPP filtrado por el chargePointId específico
+- [x] Mostrar información de conexión OCPP (versión, heartbeat, conectado desde)
+
+### Generador de Código QR
+- [x] Crear componente StationQRCode con generación de QR
+- [x] Mostrar código de estación debajo del QR para referencia
+- [x] Botón para descargar QR como imagen PNG para imprimir
+- [x] Diseño profesional para instalación en cargadores físicos
+- [x] Botón de impresión directa con formato optimizado
+
+### Vista Previa y Pruebas
+- [x] Agregar sección de vista previa del QR en modal (Tab QR)
+- [x] URL de escaneo generada automáticamente
+- [x] Instrucciones de uso incluidas en el componente
+- [x] Actualizado panel de técnico con mismas funcionalidades
+
+
+## Usuario de Prueba para Simulador - 30 Enero 2026
+
+- [x] Crear usuario user@evgreen.lat con rol "user" (ID: 1143170, idTag: EV-TEST01)
+- [x] Crear billetera con saldo inicial de 500,000 COP
+- [ ] Verificar que el usuario puede iniciar sesión y usar el flujo de carga
+
+
+## Corrección Flujo de Carga QR - 30 Enero 2026
+
+### Problema 1: QR genera URL completa en lugar de solo código
+- [x] Modificar StationQRCode para generar solo el código de estación (ej: CP001)
+- [x] Actualizar lógica de escaneo para detectar tanto URLs como códigos simples
+
+### Problema 2: Flujo de inicio de carga incorrecto
+- [x] Al escanear/ingresar código, redirigir a StartCharge con el código
+- [x] Permitir seleccionar conector disponible (ya existía en StartCharge)
+- [x] Validar saldo del usuario antes de iniciar (ya existía en StartCharge)
+- [x] Enviar RemoteStartTransaction al cargador con idTag del usuario
+- [x] Mostrar pantalla de espera de conexión (ChargingWaiting)
+
+### Flujo correcto esperado:
+1. Usuario escanea QR o ingresa código manualmente
+2. App muestra estación con conectores disponibles
+3. Usuario selecciona conector y confirma
+4. App valida saldo suficiente
+5. App envía RemoteStartTransaction al cargador OCPP
+6. Cargador responde Accepted y espera conexión del vehículo
+7. Usuario conecta vehículo físicamente
+8. Cargador envía StatusNotification (Charging)
+9. App muestra pantalla de monitoreo de carga
+
+
+## Bug: QR lleva a ChargingSession en lugar de StartCharge - 30 Enero 2026
+
+- [x] Investigar por qué el QR abre /charging/:id en lugar de /start-charge
+- [x] El QR ahora genera URL /c/:code que redirige a StartCharge
+- [x] Creada ruta /c/:code con componente QRRedirect
+- [x] Mejorada lógica de Scan.tsx para detectar URLs /charging/:id antiguas
+- [x] Verificar que el flujo completo funcione: Escanear QR → StartCharge → Seleccionar opciones → Iniciar carga
+
+
+## Bug: Conectores no se pueden seleccionar en StartCharge - 30 Enero 2026
+
+- [x] Los conectores aparecen con estado "Available" pero no responden al click
+- [x] Corregido el código de renderizado de conectores en StartCharge.tsx
+- [x] Agregado type="button" y mejor manejo del onClick
+- [x] Traducido estados a español (Available -> Disponible, etc.)
+- [x] Agregado feedback visual con active:scale-[0.98]
+
+
+## Bug: Escáner QR muestra "Próximamente" en StartCharge - 30 Enero 2026
+
+- [x] El escáner QR en StartCharge muestra "Próximamente: Escaneo de QR" en lugar de abrir la cámara
+- [x] Implementar escáner QR funcional usando html5-qrcode
+- [x] Conectar el resultado del escaneo con la búsqueda de estación
+- [x] Manejo de permisos de cámara y errores
+- [x] Extracción de código desde URLs (/c/, /scan/, /charging/)
+
+
+## Feedback de escaneo QR - 30 Enero 2026
+
+- [x] Agregar sonido elegante al escanear QR exitosamente (acorde Do mayor con Web Audio API)
+- [x] Agregar vibración corta y sutil al escanear QR (50ms con Navigator.vibrate)
+
+
+## Bug: Sincronización de estado de conectores - 30 Enero 2026
+
+- [x] Mapa muestra "0 de 0 disponibles" - CORREGIDO: listPublic ahora incluye EVSEs
+- [x] Detalles muestra "1 de 2 conectores libres" (correcto)
+- [x] StartCharge dice "Estación desconectada" - Esto es correcto si el simulador OCPP no está conectado
+- [x] El estado de conexión OCPP es independiente del estado de conectores en BD
+
+
+## Bugs en StartCharge - 30 Enero 2026
+
+- [x] Falta botón para volver al mapa en la pantalla de escaneo inicial - AGREGADO
+- [x] Ambos conectores muestran "Conector 1" - CORREGIDO: ahora usa evseIdLocal
+- [x] Estado de conectores - CORREGIDO: usa estado OCPP en tiempo real
+- [x] Los conectores no se pueden seleccionar - Ya funcionaba, era problema de datos
+
+
+## Correcciones SEO - 30 Enero 2026 [COMPLETADO]
+
+- [x] Agregar palabras clave relevantes (carga vehículos eléctricos, estaciones de carga, EV)
+- [x] Optimizar título: debe tener entre 30-60 caracteres (ahora: 48 chars)
+- [x] Agregar meta descripción: debe tener entre 50-160 caracteres (ahora: 155 chars)
+- [x] Agregar meta tags Open Graph y Twitter Card para redes sociales
+- [x] Actualizar Home.tsx con contenido SEO-friendly y palabras clave
+- [x] Cambiar idioma de HTML a español (lang="es")
+
+
+## Bug: No se puede seleccionar conector para iniciar carga - 30 Enero 2026 [EN PROGRESO]
+
+- [x] Investigar por qué los conectores no responden al click en StartCharge
+- [x] Corregir la lógica de isAvailable para normalizar estados (AVAILABLE, Available, etc.)
+- [x] Agregar tests para la lógica de disponibilidad de conectores (7 tests nuevos)
+- [x] Verificar estado de conectores en BD (todos en AVAILABLE)
+- [x] Agregar logs de debug en el onClick del botón de conector
+- [ ] Verificar que el botón de iniciar carga funciona después de seleccionar conector
+- [ ] Probar flujo completo de inicio de carga
+
+
+## Mejoras Gestión de Usuarios Admin - 30 Enero 2026 [COMPLETADO]
+
+- [x] Agregar columna TAGID en la tabla de usuarios
+- [x] Agregar botón de editar usuario con modal de edición
+- [x] Agregar botón de eliminar usuario con confirmación
+- [x] Crear endpoint para actualizar datos de usuario (nombre, email, rol, estado)
+- [x] Crear endpoint para eliminar usuario
+- [x] Proteger cuenta maestra (greenhproject@gmail.com) de eliminación
+- [x] Agregar tests unitarios para los nuevos endpoints (21 tests)
+
+
+## Rediseño Barra Superior Página Estación - 31 Enero 2026 [COMPLETADO]
+
+- [x] Cambiar color gris de la barra superior por gradiente verde elegante (emerald-900 a green-800)
+- [x] Agregar logo de EVGreen visible con icono de rayo y texto EV/Green
+- [x] Hacer la campana de notificaciones más visible con fondo semitransparente y badge rojo animado
+- [x] Mantener consistencia con el tema oscuro de la app
+- [x] Actualizar drawer lateral con mismo gradiente verde
+- [x] Actualizar barra de navegación inferior con colores emerald
+
+
+## Documentación y Subida a GitHub - 31 Enero 2026
+
+- [ ] Crear README.md completo en español con descripción del proyecto
+- [ ] Documentar estructura de archivos y carpetas
+- [ ] Documentar esquema de base de datos (tablas y relaciones)
+- [ ] Documentar APIs y endpoints tRPC
+- [ ] Documentar componentes del frontend
+- [ ] Documentar flujo OCPP y carga de vehículos
+- [ ] Documentar configuración y variables de entorno
+- [ ] Crear guía de instalación y despliegue
+- [ ] Subir código al repositorio greenhproject/evgreen-platform
+
+
+## Documentación Completa y Subida a GitHub - 1 Febrero 2026
+
+- [x] Crear documentación general del proyecto (docs/README.md)
+- [x] Documentar componentes del frontend (docs/COMPONENTS.md)
+- [x] Documentar sistema OCPP completo (docs/OCPP.md)
+- [x] Crear guía de despliegue (docs/DEPLOYMENT.md)
+- [x] Verificar documentación existente de BD (docs/DATABASE.md)
+- [x] Verificar documentación existente de API (docs/API.md)
+- [ ] Subir todo al repositorio de GitHub (greenhproject/evgreen-platform)

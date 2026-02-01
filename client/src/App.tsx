@@ -9,6 +9,7 @@ import { useEffect } from "react";
 
 // Páginas públicas
 import Landing from "./pages/Landing";
+import Investors from "./pages/Investors";
 
 // Páginas de usuario
 import UserMap from "./pages/user/Map";
@@ -21,6 +22,11 @@ import StationDetail from "./pages/user/StationDetail";
 import ChargingSession from "./pages/user/ChargingSession";
 import AIAssistant from "./pages/user/AIAssistant";
 import ScanPage from "./pages/user/Scan";
+import StartCharge from "./pages/user/StartCharge";
+import QRRedirect from "./pages/QRRedirect";
+import ChargingMonitor from "./pages/user/ChargingMonitor";
+import ChargingSummary from "./pages/user/ChargingSummary";
+import ChargingWaiting from "./pages/user/ChargingWaiting";
 import UserSettingsNotifications from "./pages/user/settings/Notifications";
 import UserSettingsPersonalInfo from "./pages/user/settings/PersonalInfo";
 import UserSettingsVehicles from "./pages/user/settings/Vehicles";
@@ -44,6 +50,7 @@ import TechnicianLogs from "./pages/technician/Logs";
 import TechnicianAlerts from "./pages/technician/Alerts";
 import TechnicianDiagnostics from "./pages/technician/Diagnostics";
 import TechnicianOCPPLogs from "./pages/technician/OCPPLogs";
+import TechnicianOCPPMonitor from "./pages/technician/OCPPMonitor";
 import TechnicianMaintenance from "./pages/technician/Maintenance";
 import TechnicianSettings from "./pages/technician/Settings";
 
@@ -58,6 +65,7 @@ import AdminSettings from "./pages/admin/Settings";
 import AdminBanners from "./pages/admin/Banners";
 import AdminNotifications from "./pages/admin/Notifications";
 import AdminAISettings from "./pages/admin/AISettings";
+import AdminOCPPMonitor from "./pages/AdminOCPPMonitor";
 import { AIChatWidget } from "./components/AIChat";
 
 // Layouts
@@ -164,6 +172,10 @@ function Router() {
 
       {/* Rutas públicas */}
       <Route path="/landing" component={Landing} />
+      <Route path="/investors" component={Investors} />
+      
+      {/* Ruta para códigos QR - Redirige a StartCharge */}
+      <Route path="/c/:code" component={QRRedirect} />
 
       {/* ============================================
           RUTAS DE USUARIO (App móvil principal)
@@ -182,6 +194,10 @@ function Router() {
       <Route path="/settings/personal" component={UserSettingsPersonalInfo} />
       <Route path="/settings/vehicles" component={UserSettingsVehicles} />
       <Route path="/scan" component={ScanPage} />
+      <Route path="/start-charge" component={StartCharge} />
+      <Route path="/charging-waiting" component={ChargingWaiting} />
+      <Route path="/charging-monitor" component={ChargingMonitor} />
+      <Route path="/charging-summary/:transactionId" component={ChargingSummary} />
       <Route path="/vehicles" component={UserSettingsVehicles} />
       <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
       <Route path="/settings/config" component={UserSettingsConfig} />
@@ -291,6 +307,13 @@ function Router() {
           </TechnicianLayout>
         </ProtectedRoute>
       </Route>
+      <Route path="/technician/ocpp-monitor">
+        <ProtectedRoute allowedRoles={["technician", "admin"]}>
+          <TechnicianLayout>
+            <TechnicianOCPPMonitor />
+          </TechnicianLayout>
+        </ProtectedRoute>
+      </Route>
       <Route path="/technician/maintenance">
         <ProtectedRoute allowedRoles={["technician", "admin"]}>
           <TechnicianLayout>
@@ -376,6 +399,13 @@ function Router() {
         <ProtectedRoute allowedRoles={["admin"]}>
           <AdminLayout>
             <AdminNotifications />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/ocpp-monitor">
+        <ProtectedRoute allowedRoles={["admin"]}>
+          <AdminLayout>
+            <AdminOCPPMonitor />
           </AdminLayout>
         </ProtectedRoute>
       </Route>

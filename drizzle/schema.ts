@@ -62,6 +62,8 @@ export const users = mysqlTable("users", {
   role: userRoleEnum.default("user").notNull(),
   avatarUrl: text("avatarUrl"),
   isActive: boolean("isActive").default(true).notNull(),
+  // idTag único para identificación OCPP (formato: EV-XXXXXX)
+  idTag: varchar("idTag", { length: 20 }).unique(),
   // Para inversionistas - información adicional
   companyName: varchar("companyName", { length: 255 }),
   taxId: varchar("taxId", { length: 50 }), // NIT en Colombia
@@ -418,6 +420,43 @@ export type OcppLog = typeof ocppLogs.$inferSelect;
 export type InsertOcppLog = typeof ocppLogs.$inferInsert;
 
 // ============================================================================
+// OCPP ALERTS TABLE
+// ============================================================================
+
+export const ocppAlertTypeEnum = mysqlEnum("ocpp_alert_type", [
+  "DISCONNECTION",
+  "ERROR",
+  "FAULT",
+  "OFFLINE_TIMEOUT",
+  "BOOT_REJECTED",
+  "TRANSACTION_ERROR",
+]);
+
+export const ocppAlertSeverityEnum = mysqlEnum("ocpp_alert_severity", [
+  "info",
+  "warning",
+  "critical",
+]);
+
+export const ocppAlerts = mysqlTable("ocpp_alerts", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId"), // FK a charging_stations
+  ocppIdentity: varchar("ocppIdentity", { length: 100 }).notNull(),
+  alertType: ocppAlertTypeEnum.notNull(),
+  severity: ocppAlertSeverityEnum.notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  payload: json("payload"),
+  acknowledged: boolean("acknowledged").default(false).notNull(),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  acknowledgedBy: int("acknowledgedBy"), // FK a users
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OcppAlert = typeof ocppAlerts.$inferSelect;
+export type InsertOcppAlert = typeof ocppAlerts.$inferInsert;
+
+// ============================================================================
 // INVESTOR PAYOUTS TABLE
 // ============================================================================
 
@@ -467,6 +506,8 @@ export const notifications = mysqlTable("notifications", {
   // Push notification
   pushSent: boolean("pushSent").default(false),
   pushSentAt: timestamp("pushSentAt"),
+  // Datos adicionales (JSON)
+  data: text("data"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -917,3 +958,55 @@ export const aiUsageRelations = relations(aiUsage, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// PLATFORM SETTINGS TABLE
+// ============================================================================
+
+export const platformSettings = mysqlTable("platform_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Información de la empresa
+  companyName: varchar("companyName", { length: 255 }).default("Green House Project"),
+  businessLine: varchar("businessLine", { length: 255 }).default("Green EV"),
+  nit: varchar("nit", { length: 50 }),
+  contactEmail: varchar("contactEmail", { length: 255 }),
+  
+  // Modelo de negocio (porcentajes)
+  investorPercentage: int("investorPercentage").default(80).notNull(),
+  platformFeePercentage: int("platformFeePercentage").default(20).notNull(),
+  
+  // Configuración de Stripe
+  stripePublicKey: text("stripePublicKey"),
+  stripeSecretKey: text("stripeSecretKey"),
+  stripeWebhookSecret: text("stripeWebhookSecret"),
+  stripeTestMode: boolean("stripeTestMode").default(true).notNull(),
+  
+  // Métodos de ingreso habilitados
+  enableEnergyBilling: boolean("enableEnergyBilling").default(true).notNull(),
+  enableReservationBilling: boolean("enableReservationBilling").default(true).notNull(),
+  enableOccupancyPenalty: boolean("enableOccupancyPenalty").default(true).notNull(),
+  
+  // Configuración de notificaciones
+  notifyChargeComplete: boolean("notifyChargeComplete").default(true).notNull(),
+  notifyReservationReminder: boolean("notifyReservationReminder").default(true).notNull(),
+  notifyPromotions: boolean("notifyPromotions").default(false).notNull(),
+  
+  // Integración UPME
+  upmeEndpoint: text("upmeEndpoint"),
+  upmeToken: text("upmeToken"),
+  upmeAutoReport: boolean("upmeAutoReport").default(true).notNull(),
+  
+  // Configuración OCPP
+  ocppPort: int("ocppPort").default(9000),
+  ocppServerActive: boolean("ocppServerActive").default(true).notNull(),
+  
+  // Metadata
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlatformSettings = typeof platformSettings.$inferSelect;
+export type InsertPlatformSettings = typeof platformSettings.$inferInsert;

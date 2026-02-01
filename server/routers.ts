@@ -6,6 +6,9 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { aiRouter } from "./ai/ai-router";
+import { stripeRouter } from "./stripe/router";
+import { ocppRouter } from "./ocpp/ocpp-router";
+import { chargingRouter } from "./charging/charging-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -129,6 +132,78 @@ const usersRouter = router({
       await db.updateUser(input.userId, input.data);
       return { success: true };
     }),
+    
+  // Usuario: regenerar su propio idTag
+  regenerateMyIdTag: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const newIdTag = await db.regenerateUserIdTag(ctx.user.id);
+      if (!newIdTag) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "No se pudo regenerar el idTag",
+        });
+      }
+      return { idTag: newIdTag };
+    }),
+
+  // Admin: eliminar usuario
+  delete: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .mutation(async ({ input }) => {
+      // Proteger la cuenta maestra
+      const user = await db.getUserById(input.userId);
+      if (!user) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Usuario no encontrado.",
+        });
+      }
+      if (user.email === "greenhproject@gmail.com") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "No se puede eliminar la cuenta maestra.",
+        });
+      }
+      await db.deleteUser(input.userId);
+      return { success: true };
+    }),
+
+  // Admin: actualizar usuario completo (incluyendo email y rol)
+  updateFull: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      data: z.object({
+        name: z.string().optional(),
+        email: z.string().email().optional(),
+        phone: z.string().optional(),
+        role: z.enum(["staff", "technician", "investor", "user", "admin"]).optional(),
+        isActive: z.boolean().optional(),
+        companyName: z.string().optional(),
+        taxId: z.string().optional(),
+        bankAccount: z.string().optional(),
+        bankName: z.string().optional(),
+        technicianLicense: z.string().optional(),
+        assignedRegion: z.string().optional(),
+      }),
+    }))
+    .mutation(async ({ input }) => {
+      // Proteger la cuenta maestra de cambios de rol
+      const user = await db.getUserById(input.userId);
+      if (!user) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Usuario no encontrado.",
+        });
+      }
+      if (user.email === "greenhproject@gmail.com" && input.data.role && input.data.role !== "admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "No se puede modificar el rol de la cuenta maestra.",
+        });
+      }
+      await db.updateUser(input.userId, input.data);
+      return { success: true };
+    }),
 });
 
 // ============================================================================
@@ -151,12 +226,14 @@ const stationsRouter = router({
         stations = await db.getAllChargingStations({ isActive: true, isPublic: true });
       }
       
-      // Agregar tarifa activa a cada estación
-      const stationsWithTariffs = await Promise.all(
+      // Agregar tarifa activa y EVSEs a cada estación
+      const stationsWithData = await Promise.all(
         stations.map(async (station: any) => {
           const tariff = await db.getActiveTariffByStationId(station.id);
+          const evses = await db.getEvsesByStationId(station.id);
           return {
             ...station,
+            evses,
             pricePerKwh: tariff?.pricePerKwh || "1200",
             reservationFee: tariff?.reservationFee || "5000",
             overstayPenaltyPerMin: tariff?.overstayPenaltyPerMinute || "500",
@@ -166,7 +243,7 @@ const stationsRouter = router({
         })
       );
       
-      return stationsWithTariffs;
+      return stationsWithData;
     }),
   
   // Admin: listar todas las estaciones
@@ -471,6 +548,55 @@ const tariffsRouter = router({
 // ============================================================================
 
 const transactionsRouter = router({
+  // Obtener transacción por ID (solo si pertenece al usuario o es admin)
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const transaction = await db.getTransactionById(input.id);
+      
+      if (!transaction) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Transacción no encontrada",
+        });
+      }
+      
+      // Verificar que el usuario tiene acceso
+      if (transaction.userId !== ctx.user.id && ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "No tienes acceso a esta transacción",
+        });
+      }
+      
+      // Obtener información adicional
+      const station = await db.getChargingStationById(transaction.stationId);
+      const evse = await db.getEvseById(transaction.evseId);
+      const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
+      
+      // Calcular duración
+      const startTime = new Date(transaction.startTime);
+      const endTime = transaction.endTime ? new Date(transaction.endTime) : new Date();
+      const durationMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
+      
+      return {
+        id: transaction.id,
+        stationId: transaction.stationId,
+        stationName: station?.name || "Estación",
+        stationAddress: station?.address || "",
+        connectorId: evse?.connectorId || 1,
+        connectorType: evse?.connectorType || "TYPE_2",
+        startTime: transaction.startTime.toISOString(),
+        endTime: transaction.endTime?.toISOString() || null,
+        durationMinutes,
+        kwhConsumed: transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed).toFixed(2) : "0.00",
+        pricePerKwh: tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : 800,
+        totalCost: transaction.totalCost ? parseFloat(transaction.totalCost) : 0,
+        status: transaction.status,
+        paymentMethod: "wallet", // Por defecto wallet
+      };
+    }),
+  
   // Usuario: sus transacciones
   myTransactions: protectedProcedure
     .input(z.object({ limit: z.number().optional() }).optional())
@@ -514,20 +640,6 @@ const transactionsRouter = router({
         startDate: input?.startDate,
         endDate: input?.endDate,
       });
-    }),
-  
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input, ctx }) => {
-      const transaction = await db.getTransactionById(input.id);
-      if (!transaction) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
-      }
-      // Verificar acceso
-      if (ctx.user.role === "user" && transaction.userId !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "No tienes acceso a esta transacción" });
-      }
-      return transaction;
     }),
   
   getMeterValues: protectedProcedure
@@ -1259,6 +1371,151 @@ const platformStatsRouter = router({
 });
 
 // ============================================================================
+// PLATFORM SETTINGS ROUTER (Admin)
+// ============================================================================
+
+const settingsRouter = router({
+  get: adminProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    if (!settings) {
+      // Retornar valores por defecto si no hay configuración
+      return {
+        id: 0,
+        companyName: "Green House Project",
+        businessLine: "Green EV",
+        nit: "",
+        contactEmail: "",
+        investorPercentage: 80,
+        platformFeePercentage: 20,
+        stripePublicKey: "",
+        stripeSecretKey: "",
+        stripeWebhookSecret: "",
+        stripeTestMode: true,
+        enableEnergyBilling: true,
+        enableReservationBilling: true,
+        enableOccupancyPenalty: true,
+        notifyChargeComplete: true,
+        notifyReservationReminder: true,
+        notifyPromotions: false,
+        upmeEndpoint: "",
+        upmeToken: "",
+        upmeAutoReport: true,
+        ocppPort: 9000,
+        ocppServerActive: true,
+      };
+    }
+    // Ocultar claves secretas parcialmente
+    return {
+      ...settings,
+      stripeSecretKey: settings.stripeSecretKey ? "sk_****" + settings.stripeSecretKey.slice(-4) : "",
+      stripeWebhookSecret: settings.stripeWebhookSecret ? "whsec_****" : "",
+      upmeToken: settings.upmeToken ? "****" + settings.upmeToken.slice(-4) : "",
+    };
+  }),
+  
+  update: adminProcedure
+    .input(z.object({
+      companyName: z.string().optional(),
+      businessLine: z.string().optional(),
+      nit: z.string().optional(),
+      contactEmail: z.string().email().optional().or(z.literal("")),
+      investorPercentage: z.number().min(0).max(100).optional(),
+      platformFeePercentage: z.number().min(0).max(100).optional(),
+      stripePublicKey: z.string().optional(),
+      stripeSecretKey: z.string().optional(),
+      stripeWebhookSecret: z.string().optional(),
+      stripeTestMode: z.boolean().optional(),
+      enableEnergyBilling: z.boolean().optional(),
+      enableReservationBilling: z.boolean().optional(),
+      enableOccupancyPenalty: z.boolean().optional(),
+      notifyChargeComplete: z.boolean().optional(),
+      notifyReservationReminder: z.boolean().optional(),
+      notifyPromotions: z.boolean().optional(),
+      upmeEndpoint: z.string().optional(),
+      upmeToken: z.string().optional(),
+      upmeAutoReport: z.boolean().optional(),
+      ocppPort: z.number().optional(),
+      ocppServerActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Filtrar campos vacíos o con valores de máscara
+      const data: any = { ...input, updatedBy: ctx.user.id };
+      
+      // No actualizar claves si vienen con máscara
+      if (data.stripeSecretKey?.startsWith("sk_****")) delete data.stripeSecretKey;
+      if (data.stripeWebhookSecret?.startsWith("whsec_****")) delete data.stripeWebhookSecret;
+      if (data.upmeToken?.startsWith("****")) delete data.upmeToken;
+      
+      await db.upsertPlatformSettings(data);
+      return { success: true };
+    }),
+});
+
+// ============================================================================
+// DASHBOARD ROUTER (Métricas para todos los roles)
+// ============================================================================
+
+const dashboardRouter = router({
+  // Métricas para Admin
+  adminMetrics: adminProcedure.query(async () => {
+    return db.getAdminDashboardMetrics();
+  }),
+  
+  // Métricas para Inversor
+  investorMetrics: investorProcedure.query(async ({ ctx }) => {
+    return db.getInvestorDashboardMetrics(ctx.user.id);
+  }),
+  
+  // Transacción activa del usuario
+  userActiveTransaction: protectedProcedure.query(async ({ ctx }) => {
+    return db.getUserActiveTransaction(ctx.user.id);
+  }),
+  
+  // Historial de transacciones del usuario
+  userTransactionHistory: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).default(20) }).optional())
+    .query(async ({ ctx, input }) => {
+      return db.getUserTransactionHistory(ctx.user.id, input?.limit || 20);
+    }),
+  
+  // Estadísticas mensuales del usuario
+  userMonthlyStats: protectedProcedure.query(async ({ ctx }) => {
+    return db.getUserMonthlyStats(ctx.user.id);
+  }),
+  
+  // Métricas de transacciones por período (Admin)
+  transactionMetrics: adminProcedure
+    .input(z.object({
+      startDate: z.date(),
+      endDate: z.date(),
+      granularity: z.enum(["hour", "day"]).default("day"),
+    }))
+    .query(async ({ input }) => {
+      return db.getTransactionMetrics(input.startDate, input.endDate, input.granularity);
+    }),
+  
+  // Top estaciones por ingresos (Admin)
+  topStationsByRevenue: adminProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      limit: z.number().min(1).max(50).default(10),
+    }).optional())
+    .query(async ({ input }) => {
+      const startDate = input?.startDate || new Date(new Date().setMonth(new Date().getMonth() - 1));
+      const endDate = input?.endDate || new Date();
+      return db.getTopStationsByRevenue(startDate, endDate, input?.limit || 10);
+    }),
+  
+  // Transacciones recientes (Admin)
+  recentTransactions: adminProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).default(20) }).optional())
+    .query(async ({ input }) => {
+      return db.getRecentTransactions(input?.limit || 20);
+    }),
+});
+
+// ============================================================================
 // MAIN APP ROUTER
 // ============================================================================
 
@@ -1279,6 +1536,11 @@ export const appRouter = router({
   platformStats: platformStatsRouter,
   banners: bannersRouter,
   ai: aiRouter,
+  stripe: stripeRouter,
+  settings: settingsRouter,
+  ocpp: ocppRouter,
+  dashboard: dashboardRouter,
+  charging: chargingRouter,
 });
 
 export type AppRouter = typeof appRouter;

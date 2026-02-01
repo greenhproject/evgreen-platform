@@ -431,7 +431,7 @@ export default function StationDetail() {
                       <div className="mt-4 flex gap-2">
                         <Button
                           className="flex-1 gradient-primary text-white"
-                          onClick={() => setLocation(`/charging/${evse.id}`)}
+                          onClick={() => setLocation(`/start-charge?code=${station.ocppIdentity || station.id}`)}
                         >
                           <Zap className="w-4 h-4 mr-2" />
                           Iniciar carga

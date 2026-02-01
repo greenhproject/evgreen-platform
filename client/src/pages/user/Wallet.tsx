@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import UserLayout from "@/layouts/UserLayout";
@@ -16,30 +16,108 @@ import {
   ArrowDownLeft,
   Zap,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Loader2,
+  ExternalLink,
+  Crown,
+  Star
 } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 
-const PRESET_AMOUNTS = [20000, 40000, 100000];
+const PRESET_AMOUNTS = [20000, 50000, 100000];
 
 export default function UserWallet() {
-  const [selectedAmount, setSelectedAmount] = useState<number | null>(20000);
+  const [selectedAmount, setSelectedAmount] = useState<number | null>(50000);
   const [customAmount, setCustomAmount] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [location] = useLocation();
 
+  // Verificar si Stripe está configurado
+  const { data: stripeConfig } = trpc.stripe.isConfigured.useQuery();
+  
   // Obtener billetera
-  const { data: wallet, isLoading } = trpc.wallet.getMyWallet.useQuery();
+  const { data: wallet, isLoading, refetch: refetchWallet } = trpc.wallet.getMyWallet.useQuery();
   
   // Obtener historial de transacciones
-  const { data: transactions } = trpc.wallet.getTransactions.useQuery({ limit: 20 });
+  const { data: transactions, refetch: refetchTransactions } = trpc.wallet.getTransactions.useQuery({ limit: 20 });
+
+  // Obtener suscripción actual
+  const { data: subscription } = trpc.stripe.getMySubscription.useQuery();
+
+  // Mutation para crear checkout de recarga
+  const createRecharge = trpc.stripe.createWalletRecharge.useMutation({
+    onSuccess: (data) => {
+      if (data.url) {
+        toast.info("Redirigiendo a la página de pago...");
+        window.open(data.url, "_blank");
+      }
+      setIsProcessing(false);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al procesar el pago");
+      setIsProcessing(false);
+    },
+  });
+
+  // Mutation para crear checkout de suscripción
+  const createSubscription = trpc.stripe.createSubscription.useMutation({
+    onSuccess: (data) => {
+      if (data.url) {
+        toast.info("Redirigiendo a la página de suscripción...");
+        window.open(data.url, "_blank");
+      }
+      setIsProcessing(false);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al procesar la suscripción");
+      setIsProcessing(false);
+    },
+  });
+
+  // Verificar parámetros de URL para confirmación de pago
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("success") === "true") {
+      toast.success("¡Pago completado exitosamente!");
+      refetchWallet();
+      refetchTransactions();
+      // Limpiar URL
+      window.history.replaceState({}, "", "/wallet");
+    } else if (params.get("canceled") === "true") {
+      toast.info("Pago cancelado");
+      window.history.replaceState({}, "", "/wallet");
+    }
+  }, [location]);
 
   const handleRecharge = () => {
     const amount = customAmount ? parseInt(customAmount) : selectedAmount;
-    if (!amount || amount < 10000) {
-      toast.error("El monto mínimo de recarga es $10,000 COP");
+    if (!amount || amount < 20000) {
+      toast.error("El monto mínimo de recarga es $20,000 COP");
       return;
     }
-    // TODO: Integrar con Stripe
-    toast.info("Funcionalidad de pago próximamente disponible");
+    if (amount > 1000000) {
+      toast.error("El monto máximo de recarga es $1,000,000 COP");
+      return;
+    }
+
+    if (!stripeConfig?.configured) {
+      toast.error("El sistema de pagos no está disponible en este momento");
+      return;
+    }
+
+    setIsProcessing(true);
+    createRecharge.mutate({ amount });
+  };
+
+  const handleSubscribe = (planId: "basic" | "premium") => {
+    if (!stripeConfig?.configured) {
+      toast.error("El sistema de pagos no está disponible en este momento");
+      return;
+    }
+
+    setIsProcessing(true);
+    createSubscription.mutate({ planId });
   };
 
   const formatCurrency = (amount: string | number) => {
@@ -54,8 +132,10 @@ export default function UserWallet() {
   const getTransactionIcon = (type: string) => {
     switch (type) {
       case "RECHARGE":
+      case "STRIPE_PAYMENT":
         return <ArrowDownLeft className="w-4 h-4 text-primary" />;
       case "CHARGE":
+      case "CHARGE_PAYMENT":
         return <Zap className="w-4 h-4 text-orange-500" />;
       case "REFUND":
         return <ArrowUpRight className="w-4 h-4 text-blue-500" />;
@@ -75,14 +155,12 @@ export default function UserWallet() {
           <Card className="p-4 sm:p-6 gradient-primary text-white rounded-2xl shadow-glow">
             <div className="flex items-center justify-between mb-3 sm:mb-4">
               <span className="text-white/80 text-sm sm:text-base">Saldo actual</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-white/80 hover:text-white hover:bg-white/10 text-xs sm:text-sm"
-              >
-                <Clock className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                Historial
-              </Button>
+              {subscription && subscription.tier !== "FREE" && (
+                <Badge className="bg-white/20 text-white border-0">
+                  <Crown className="w-3 h-3 mr-1" />
+                  {subscription.tier}
+                </Badge>
+              )}
             </div>
             <div className="text-2xl sm:text-4xl font-bold mb-2">
               {isLoading ? "..." : formatCurrency(wallet?.balance || 0)}
@@ -94,14 +172,25 @@ export default function UserWallet() {
           </Card>
         </motion.div>
 
-        {/* Tabs de recarga y tarjetas */}
+        {/* Tabs de recarga, suscripción y tarjetas */}
         <Tabs defaultValue="recharge" className="w-full">
-          <TabsList className="w-full grid grid-cols-2">
+          <TabsList className="w-full grid grid-cols-3">
             <TabsTrigger value="recharge">Recargar</TabsTrigger>
-            <TabsTrigger value="cards">Mis tarjetas</TabsTrigger>
+            <TabsTrigger value="subscription">Planes</TabsTrigger>
+            <TabsTrigger value="history">Historial</TabsTrigger>
           </TabsList>
 
           <TabsContent value="recharge" className="mt-4 space-y-4">
+            {/* Estado de Stripe */}
+            {!stripeConfig?.configured && (
+              <Card className="p-4 bg-yellow-50 border-yellow-200">
+                <div className="flex items-center gap-2 text-yellow-800">
+                  <AlertCircle className="w-5 h-5" />
+                  <span className="text-sm">Sistema de pagos en configuración</span>
+                </div>
+              </Card>
+            )}
+
             {/* Montos predefinidos */}
             <div className="grid grid-cols-3 gap-3">
               {PRESET_AMOUNTS.map((amount) => (
@@ -112,7 +201,7 @@ export default function UserWallet() {
                     setSelectedAmount(amount);
                     setCustomAmount("");
                   }}
-                  className={`p-4 rounded-xl border-2 transition-all ${
+                  className={`relative p-4 rounded-xl border-2 transition-all ${
                     selectedAmount === amount && !customAmount
                       ? "border-primary bg-primary/5"
                       : "border-border hover:border-primary/50"
@@ -120,9 +209,6 @@ export default function UserWallet() {
                 >
                   <div className="text-lg font-semibold text-primary">
                     {formatCurrency(amount)}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    precio {formatCurrency(amount)}
                   </div>
                   {selectedAmount === amount && !customAmount && (
                     <CheckCircle className="w-4 h-4 text-primary absolute top-2 right-2" />
@@ -138,7 +224,7 @@ export default function UserWallet() {
               </span>
               <Input
                 type="number"
-                placeholder="Otro monto"
+                placeholder="Otro monto (mín. 20,000)"
                 value={customAmount}
                 onChange={(e) => {
                   setCustomAmount(e.target.value);
@@ -153,30 +239,108 @@ export default function UserWallet() {
               size="lg"
               className="w-full h-14 text-lg gradient-primary text-white rounded-xl"
               onClick={handleRecharge}
+              disabled={isProcessing || !stripeConfig?.configured}
             >
-              Recargar Ahora
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <CreditCard className="w-5 h-5 mr-2" />
+                  Recargar con Stripe
+                </>
+              )}
             </Button>
+
+            <p className="text-xs text-center text-muted-foreground">
+              Pago seguro procesado por Stripe. Acepta tarjetas de crédito y débito.
+            </p>
           </TabsContent>
 
-          <TabsContent value="cards" className="mt-4 space-y-4">
-            {/* Lista de tarjetas */}
-            <div className="text-center py-8">
-              <CreditCard className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-4">
-                No tienes tarjetas guardadas
-              </p>
-              <Button variant="outline" className="rounded-xl">
-                <Plus className="w-4 h-4 mr-2" />
-                Agregar Nueva Tarjeta
-              </Button>
+          <TabsContent value="subscription" className="mt-4 space-y-4">
+            {/* Plan actual */}
+            {subscription && subscription.tier !== "FREE" && (
+              <Card className="p-4 bg-primary/5 border-primary/20">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Crown className="w-5 h-5 text-primary" />
+                    <span className="font-medium">Plan {subscription.tier}</span>
+                  </div>
+                  <Badge variant="outline" className="text-primary border-primary">
+                    Activo
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Descuento del {subscription.discountPercentage}% en todas tus cargas
+                </p>
+              </Card>
+            )}
+
+            {/* Planes disponibles */}
+            <div className="grid gap-4">
+              {/* Plan Básico */}
+              <Card className="p-4 border-2 hover:border-primary/50 transition-all">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h4 className="font-semibold flex items-center gap-2">
+                      <Star className="w-4 h-4 text-blue-500" />
+                      Plan Básico
+                    </h4>
+                    <p className="text-2xl font-bold mt-1">
+                      {formatCurrency(29900)}<span className="text-sm font-normal text-muted-foreground">/mes</span>
+                    </p>
+                  </div>
+                  <Badge variant="secondary">10% descuento</Badge>
+                </div>
+                <ul className="text-sm text-muted-foreground space-y-1 mb-4">
+                  <li>✓ 10% de descuento en todas las cargas</li>
+                  <li>✓ 2 reservas gratis al mes</li>
+                  <li>✓ Soporte prioritario</li>
+                </ul>
+                <Button 
+                  className="w-full" 
+                  variant="outline"
+                  onClick={() => handleSubscribe("basic")}
+                  disabled={isProcessing || subscription?.tier === "BASIC"}
+                >
+                  {subscription?.tier === "BASIC" ? "Plan actual" : "Suscribirse"}
+                </Button>
+              </Card>
+
+              {/* Plan Premium */}
+              <Card className="p-4 border-2 border-primary bg-primary/5">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h4 className="font-semibold flex items-center gap-2">
+                      <Crown className="w-4 h-4 text-primary" />
+                      Plan Premium
+                    </h4>
+                    <p className="text-2xl font-bold mt-1">
+                      {formatCurrency(59900)}<span className="text-sm font-normal text-muted-foreground">/mes</span>
+                    </p>
+                  </div>
+                  <Badge className="bg-primary text-white">20% descuento</Badge>
+                </div>
+                <ul className="text-sm text-muted-foreground space-y-1 mb-4">
+                  <li>✓ 20% de descuento en todas las cargas</li>
+                  <li>✓ Reservas ilimitadas</li>
+                  <li>✓ Soporte VIP 24/7</li>
+                  <li>✓ Acceso prioritario a cargadores</li>
+                </ul>
+                <Button 
+                  className="w-full gradient-primary text-white"
+                  onClick={() => handleSubscribe("premium")}
+                  disabled={isProcessing || subscription?.tier === "PREMIUM"}
+                >
+                  {subscription?.tier === "PREMIUM" ? "Plan actual" : "Suscribirse"}
+                </Button>
+              </Card>
             </div>
           </TabsContent>
-        </Tabs>
 
-        {/* Historial de transacciones */}
-        <div>
-          <h3 className="font-semibold mb-4">Movimientos recientes</h3>
-          <div className="space-y-3">
+          <TabsContent value="history" className="mt-4 space-y-3">
             {transactions?.length === 0 ? (
               <Card className="p-6 text-center">
                 <Clock className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
@@ -187,7 +351,7 @@ export default function UserWallet() {
                 <Card key={tx.id} className="p-4">
                   <div className="flex items-center gap-4">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      tx.type === "RECHARGE" ? "bg-primary/10" : "bg-orange-100"
+                      tx.type === "RECHARGE" || tx.type === "STRIPE_PAYMENT" ? "bg-primary/10" : "bg-orange-100"
                     }`}>
                       {getTransactionIcon(tx.type)}
                     </div>
@@ -203,17 +367,32 @@ export default function UserWallet() {
                       </div>
                     </div>
                     <div className={`font-semibold ${
-                      tx.type === "RECHARGE" ? "text-primary" : "text-foreground"
+                      tx.type === "RECHARGE" || tx.type === "STRIPE_PAYMENT" ? "text-primary" : "text-foreground"
                     }`}>
-                      {tx.type === "RECHARGE" ? "+" : "-"}
+                      {tx.type === "RECHARGE" || tx.type === "STRIPE_PAYMENT" ? "+" : "-"}
                       {formatCurrency(tx.amount)}
                     </div>
                   </div>
                 </Card>
               ))
             )}
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
+
+        {/* Información de prueba */}
+        {stripeConfig?.configured && (
+          <Card className="p-4 bg-blue-50 border-blue-200">
+            <div className="flex items-start gap-2">
+              <CreditCard className="w-5 h-5 text-blue-600 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-blue-800">Modo de prueba</p>
+                <p className="text-xs text-blue-600">
+                  Usa la tarjeta 4242 4242 4242 4242 para probar pagos
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
     </UserLayout>
   );

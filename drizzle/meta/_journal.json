@@ -43,6 +43,34 @@
       "when": 1768754325474,
       "tag": "0005_regular_tinkerer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1769623984758,
+      "tag": "0006_spicy_kat_farrell",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1769740360914,
+      "tag": "0007_previous_fabian_cortez",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1769745304606,
+      "tag": "0008_sturdy_satana",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1769749371146,
+      "tag": "0009_flowery_ozymandias",
+      "breakpoints": true
     }
   ]
 }

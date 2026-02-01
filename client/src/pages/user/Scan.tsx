@@ -110,29 +110,86 @@ export default function ScanPage() {
     // Ignorar errores de escaneo (son normales cuando no hay QR visible)
   };
 
-  const handleCodeFound = async (code: string) => {
+  const handleCodeFound = async (rawCode: string) => {
     setIsSearching(true);
+    
+    // Extraer código de estación si es una URL
+    let code = rawCode.trim();
+    let isNumericId = false;
+    
+    // Si es una URL, extraer el código del path
+    if (code.startsWith('http://') || code.startsWith('https://')) {
+      try {
+        const url = new URL(code);
+        const pathParts = url.pathname.split('/').filter(Boolean);
+        // Buscar el código en el path (puede ser /scan/CP001, /station/CP001 o /charging/60001)
+        if (pathParts.length > 0) {
+          const lastPart = pathParts[pathParts.length - 1];
+          // Si es /charging/:id, el ID es numérico y corresponde a un evseId
+          if (pathParts[0] === 'charging' && /^\d+$/.test(lastPart)) {
+            isNumericId = true;
+            code = lastPart;
+          } else {
+            code = lastPart;
+          }
+        }
+      } catch (e) {
+        // Si no es una URL válida, usar el código tal cual
+      }
+    }
+    
     toast.info("Código detectado", {
       description: code,
     });
 
-    // Buscar la estación por el código OCPP o ID
+    // Buscar la estación por el código OCPP, nombre, ID de estación o evseId
     try {
       const stations = await searchStation.refetch();
-      const result = stations.data?.find(
-        (s: any) => {
-          const st = s.station || s;
-          return st.ocppIdentity === code || st.id.toString() === code;
+      let result: any = null;
+      let matchedEvseId: number | null = null;
+      
+      // Si es un ID numérico de URL /charging/:id, buscar por evseId
+      if (isNumericId) {
+        const evseId = parseInt(code);
+        for (const s of stations.data || []) {
+          const st = (s as any).station || s;
+          const evses = (s as any).evses || st.evses || [];
+          const matchedEvse = evses.find((e: any) => e.id === evseId);
+          if (matchedEvse) {
+            result = s;
+            matchedEvseId = evseId;
+            break;
+          }
         }
-      );
+      }
+      
+      // Si no se encontró por evseId, buscar por código OCPP, nombre o ID de estación
+      if (!result) {
+        result = stations.data?.find(
+          (s: any) => {
+            const st = s.station || s;
+            const searchCode = code.toUpperCase();
+            return (
+              st.ocppIdentity?.toUpperCase() === searchCode || 
+              st.id.toString() === code ||
+              st.name?.toUpperCase().includes(searchCode)
+            );
+          }
+        );
+      }
 
       if (result) {
         const station = (result as any).station || result;
         toast.success("Estación encontrada", {
           description: station.name,
         });
+        // Redirigir a StartCharge con el código de la estación para iniciar el flujo de carga
+        // Si tenemos evseId, pasarlo también para pre-seleccionar el conector
+        const redirectUrl = matchedEvseId 
+          ? `/start-charge?code=${station.ocppIdentity || station.id}&evseId=${matchedEvseId}`
+          : `/start-charge?code=${station.ocppIdentity || station.id}`;
         setTimeout(() => {
-          setLocation(`/station/${station.id}`);
+          setLocation(redirectUrl);
         }, 1000);
       } else {
         toast.error("Estación no encontrada", {
