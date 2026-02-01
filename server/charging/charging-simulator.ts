@@ -34,6 +34,7 @@ interface SimulationSession {
   currentMeter: number;
   targetKwh: number;
   pricePerKwh: number;
+  powerKw: number; // Potencia real del cargador en kW
   chargeMode: "fixed_amount" | "percentage" | "full_charge";
   targetValue: number;
   status: "connecting" | "preparing" | "charging" | "finishing" | "completed";
@@ -103,29 +104,54 @@ export async function startSimulation(params: {
   if (activeSimulations.has(userId)) {
     throw new Error("Ya hay una simulación activa para este usuario");
   }
+  
+  // Obtener la potencia real del EVSE desde la base de datos
+  const evseData = await db.getEvseById(evseId);
+  const realPowerKw = evseData?.powerKw ? parseFloat(evseData.powerKw) : 7; // Default 7 kW si no hay datos
+  console.log(`[Simulator] EVSE ${evseId} potencia real: ${realPowerKw} kW`);
 
   // Calcular kWh objetivo según modo de carga
   let targetKwh = 0;
-  const batteryCapacity = 60; // kWh promedio
+  const batteryCapacity = 60; // kWh promedio de batería EV
+  const currentBatteryPercent = 20; // Asumimos 20% inicial de batería
 
   switch (chargeMode) {
     case "fixed_amount":
+      // Monto fijo: calcular kWh que se pueden comprar con ese monto
       targetKwh = targetValue / pricePerKwh;
+      console.log(`[Simulator] Modo monto fijo: $${targetValue} / $${pricePerKwh}/kWh = ${targetKwh.toFixed(2)} kWh`);
       break;
     case "percentage":
-      const currentPercent = 20; // Asumimos 20% inicial
-      targetKwh = ((targetValue - currentPercent) / 100) * batteryCapacity;
+      // Porcentaje: calcular kWh necesarios para llegar al porcentaje objetivo
+      // Si el usuario quiere cargar hasta 55%, y está en 20%, necesita 35% de la batería
+      const percentToCharge = Math.max(0, targetValue - currentBatteryPercent);
+      targetKwh = (percentToCharge / 100) * batteryCapacity;
+      console.log(`[Simulator] Modo porcentaje: objetivo ${targetValue}%, actual ${currentBatteryPercent}%, cargar ${percentToCharge}% = ${targetKwh.toFixed(2)} kWh`);
       break;
     case "full_charge":
-      targetKwh = 0.8 * batteryCapacity; // 80% de la batería
+      // Carga completa: cargar hasta el 100% (desde 20% = 80% de la batería)
+      targetKwh = ((100 - currentBatteryPercent) / 100) * batteryCapacity;
+      console.log(`[Simulator] Modo carga completa: desde ${currentBatteryPercent}% hasta 100% = ${targetKwh.toFixed(2)} kWh`);
       break;
   }
 
-  // Limitar a un máximo razonable para demo (15 kWh = ~1 minuto de simulación)
+  // Para demo: escalar el tiempo de simulación
+  // En lugar de limitar kWh, ajustamos la velocidad de carga
+  // Queremos que la simulación dure entre 30 segundos y 2 minutos
+  const simulationDurationSeconds = Math.min(120, Math.max(30, targetKwh * 3)); // 3 segundos por kWh
+  
+  // Guardar el targetKwh real para cálculos de costo
+  const realTargetKwh = targetKwh;
+  
+  // Para simulación rápida, usamos un targetKwh escalado pero mantenemos los cálculos reales
+  // Limitamos a 15 kWh máximo para que la simulación no dure más de 1 minuto
   targetKwh = Math.min(targetKwh, 15);
   
-  // Mínimo 2 kWh para que la simulación tenga sentido
+  // Mínimo 2 kWh para que la simulación tenga sentido visual
   targetKwh = Math.max(targetKwh, 2);
+  
+  console.log(`[Simulator] Target final para simulación: ${targetKwh.toFixed(2)} kWh (real: ${realTargetKwh.toFixed(2)} kWh)`);
+  console.log(`[Simulator] Duración estimada: ${simulationDurationSeconds} segundos`);
 
   const meterStart = Math.floor(Math.random() * 10000); // Valor inicial aleatorio
   const ocppTransactionId = nanoid();
@@ -156,6 +182,7 @@ export async function startSimulation(params: {
     currentMeter: meterStart,
     targetKwh,
     pricePerKwh,
+    powerKw: realPowerKw, // Potencia real del cargador
     chargeMode,
     targetValue,
     status: "connecting",
@@ -197,8 +224,15 @@ function startSimulationCycle(session: SimulationSession): void {
       session.status = "charging";
       notifyStatusChange(session, "charging", { message: "Carga en progreso" });
 
-      // Enviar MeterValues cada 5 segundos
-      const kwhPerInterval = session.targetKwh / 12; // Completar en ~1 minuto
+      // Usar la potencia real del cargador para calcular la velocidad de carga
+      // kWh por intervalo de 5 segundos = potencia * (5/3600) horas
+      // Para simulación acelerada, multiplicamos por un factor de aceleración
+      const accelerationFactor = 60; // 1 minuto real = 1 hora simulada
+      const intervalSeconds = 5;
+      const realKwhPerInterval = session.powerKw * (intervalSeconds / 3600) * accelerationFactor;
+      
+      console.log(`[Simulator] Potencia: ${session.powerKw} kW, kWh por intervalo: ${realKwhPerInterval.toFixed(3)} kWh`);
+      
       let intervalCount = 0;
 
       session.intervalId = setInterval(async () => {
@@ -209,12 +243,15 @@ function startSimulationCycle(session: SimulationSession): void {
 
         intervalCount++;
         
-        // Incrementar medidor
-        const kwhIncrement = kwhPerInterval * (0.8 + Math.random() * 0.4); // Variación aleatoria
+        // Incrementar medidor usando la potencia real con variación aleatoria (±10%)
+        const kwhIncrement = realKwhPerInterval * (0.9 + Math.random() * 0.2);
         session.currentMeter += kwhIncrement * 1000; // Convertir a Wh
 
         const currentKwh = (session.currentMeter - session.meterStart) / 1000;
         const currentCost = currentKwh * session.pricePerKwh;
+        
+        // Calcular potencia actual con variación realista (±5% de la potencia nominal)
+        const currentPower = session.powerKw * (0.95 + Math.random() * 0.1);
 
         // Guardar MeterValue en BD
         await db.createMeterValue({
@@ -222,7 +259,7 @@ function startSimulationCycle(session: SimulationSession): void {
           evseId: session.evseId,
           timestamp: new Date(),
           energyKwh: String(currentKwh),
-          powerKw: String(7 + Math.random() * 3), // Potencia variable 7-10 kW
+          powerKw: String(currentPower.toFixed(2)),
         });
 
         // Notificar progreso
@@ -230,7 +267,7 @@ function startSimulationCycle(session: SimulationSession): void {
           session.callbacks.onMeterValue(currentKwh, currentCost);
         }
 
-        console.log(`[Simulator] User ${session.userId}: ${currentKwh.toFixed(2)} kWh, $${Math.round(currentCost)}`);
+        console.log(`[Simulator] User ${session.userId}: ${currentKwh.toFixed(2)} kWh, $${Math.round(currentCost)}, Power: ${currentPower.toFixed(1)} kW`);
 
         // Verificar si se completó
         if (currentKwh >= session.targetKwh) {
@@ -389,6 +426,7 @@ export function getActiveSimulationInfo(userId: number): {
   progress: number;
   elapsedSeconds: number;
   pricePerKwh: number;
+  powerKw: number;
   chargeMode: "fixed_amount" | "percentage" | "full_charge";
   targetValue: number;
 } | null {
@@ -410,6 +448,7 @@ export function getActiveSimulationInfo(userId: number): {
     progress: Math.round(progress),
     elapsedSeconds,
     pricePerKwh: session.pricePerKwh,
+    powerKw: session.powerKw,
     chargeMode: session.chargeMode,
     targetValue: session.targetValue,
   };

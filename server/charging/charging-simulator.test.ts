@@ -19,6 +19,25 @@ vi.mock("../db", () => ({
   updateWalletBalance: vi.fn().mockResolvedValue(undefined),
   createWalletTransaction: vi.fn().mockResolvedValue(1),
   createNotification: vi.fn().mockResolvedValue(1),
+  getEvseById: vi.fn().mockResolvedValue({
+    id: 1,
+    stationId: 1,
+    connectorId: 1,
+    connectorType: "TYPE_2",
+    powerKw: "50", // 50 kW de potencia
+    status: "AVAILABLE",
+  }),
+  getUserById: vi.fn().mockResolvedValue({
+    id: 1,
+    email: "info@greenhproject.com",
+    name: "Test User",
+    fcmToken: null,
+  }),
+  getChargingStationById: vi.fn().mockResolvedValue({
+    id: 1,
+    name: "Test Station",
+    address: "Test Address",
+  }),
 }));
 
 describe("Charging Simulator", () => {

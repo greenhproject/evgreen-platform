@@ -445,13 +445,13 @@ export const chargingRouter = router({
           connectorType: evse?.connectorType || "TYPE_2",
           startTime: new Date(Date.now() - simulationInfo.elapsedSeconds * 1000).toISOString(),
           elapsedMinutes: Math.floor(simulationInfo.elapsedSeconds / 60),
-          estimatedMinutes: Math.ceil((simulationInfo.targetKwh / 7) * 60), // ~7kW promedio
+          estimatedMinutes: Math.ceil((simulationInfo.targetKwh / simulationInfo.powerKw) * 60), // Usar potencia real
           currentKwh: simulationInfo.currentKwh,
           estimatedKwh: simulationInfo.targetKwh,
           currentCost: simulationInfo.currentCost,
           pricePerKwh: simulationInfo.pricePerKwh,
-          powerKw: 7,
-          currentPower: 7 + Math.random() * 3, // Variación para realismo
+          powerKw: simulationInfo.powerKw, // Potencia real del cargador
+          currentPower: simulationInfo.powerKw * (0.95 + Math.random() * 0.1), // Variación realista ±5%
           status: isCompleted ? "COMPLETED" : (simulationInfo.status === "charging" ? "IN_PROGRESS" : simulationInfo.status.toUpperCase()),
           chargeMode: simulationInfo.chargeMode,
           targetPercentage,

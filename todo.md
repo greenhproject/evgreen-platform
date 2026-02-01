@@ -1240,3 +1240,26 @@
 - [x] Verificar configuración de Firebase para notificaciones push - Ya configurado en server/firebase/fcm.ts
 - [x] Verificar que las notificaciones se envían al completar carga - Agregado en charging-simulator.ts
 - [x] Integrar sendChargingCompleteNotification al completar simulación
+
+
+## Bug: Simulación no respeta objetivo de porcentaje - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Simulación no se detiene al alcanzar el porcentaje objetivo (55%)
+- [x] BUG: La carga sigue más allá del objetivo seleccionado
+- [x] Corregir lógica de detección de objetivo en el simulador
+- [x] Implementar detención correcta para: porcentaje, monto fijo, carga completa
+- [x] Verificar redirección a ChargingSummary al completar
+- [x] Mejorado cálculo de targetKwh para modo porcentaje: (objetivo - actual) / 100 * capacidad
+- [x] Agregados logs detallados para depuración
+- [x] 280 tests pasando
+
+
+## Mejora: Usar potencia real del cargador en simulación - 1 Febrero 2026 [COMPLETADO]
+
+- [x] Obtener potencia máxima del EVSE desde la base de datos (campo powerKw)
+- [x] Modificar simulador para usar potencia real en lugar de valores fijos
+- [x] Calcular tiempo de carga basado en potencia real del equipo
+- [x] Mostrar potencia real en la UI del usuario
+- [x] Agregado campo powerKw a SimulationSession y getActiveSimulationInfo
+- [x] Actualizado charging-router para usar potencia real del simulador
+- [x] 280 tests pasando
