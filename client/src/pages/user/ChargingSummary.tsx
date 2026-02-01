@@ -33,9 +33,63 @@ import {
   Loader2,
   AlertCircle
 } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import html2canvas from "html2canvas";
+
+// Componente de banner publicitario para el resumen
+function ChargingSummaryBanner() {
+  const { data: banners } = trpc.banners.getActive.useQuery({ 
+    type: "charging_session" 
+  });
+  
+  const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+  
+  useEffect(() => {
+    if (!banners || banners.length <= 1) return;
+    
+    const interval = setInterval(() => {
+      setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
+    }, 8000); // Rotar cada 8 segundos
+    
+    return () => clearInterval(interval);
+  }, [banners]);
+  
+  if (!banners || banners.length === 0) {
+    // Banner por defecto si no hay banners configurados
+    return (
+      <div className="w-full rounded-xl overflow-hidden shadow-lg bg-gradient-to-r from-emerald-500 to-teal-600 p-4">
+        <div className="text-center text-white">
+          <p className="font-bold text-lg">¡Gracias por cargar con EVGreen!</p>
+          <p className="text-sm opacity-90">Contribuyes a un futuro más sostenible</p>
+        </div>
+      </div>
+    );
+  }
+  
+  const banner = banners[currentBannerIndex];
+  
+  return (
+    <div className="w-full rounded-xl overflow-hidden shadow-lg">
+      {banner.imageUrl ? (
+        <img 
+          src={banner.imageUrl} 
+          alt={banner.title}
+          className="w-full h-24 object-cover"
+        />
+      ) : (
+        <div className="w-full h-24 bg-gradient-to-r from-emerald-500 to-teal-600 flex items-center justify-center p-4">
+          <div className="text-center text-white">
+            <p className="font-bold text-lg">{banner.title}</p>
+            {banner.description && (
+              <p className="text-sm opacity-90">{banner.description}</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Formatear tiempo
 function formatDuration(minutes: number): string {
@@ -268,6 +322,11 @@ export default function ChargingSummary() {
             </div>
           </div>
         </div>
+      </div>
+      
+      {/* Banner publicitario */}
+      <div className="px-4 mt-6">
+        <ChargingSummaryBanner />
       </div>
       
       {/* Acciones */}

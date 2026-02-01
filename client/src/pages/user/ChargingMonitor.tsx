@@ -59,7 +59,17 @@ function ChargingBanner() {
     return () => clearInterval(interval);
   }, [banners]);
   
-  if (!banners || banners.length === 0) return null;
+  if (!banners || banners.length === 0) {
+    // Banner por defecto si no hay banners configurados
+    return (
+      <div className="w-full rounded-xl overflow-hidden shadow-lg mb-4 bg-gradient-to-r from-emerald-500 to-teal-600 p-4">
+        <div className="text-center text-white">
+          <p className="font-bold text-lg">Cargando tu vehículo con energía limpia</p>
+          <p className="text-sm opacity-90">EVGreen - Movilidad sostenible</p>
+        </div>
+      </div>
+    );
+  }
   
   const banner = banners[currentBannerIndex];
   
@@ -165,6 +175,18 @@ export default function ChargingMonitor() {
     }
   }, [isLoading, session, setLocation]);
   
+  // Detectar cuando la simulación se completa
+  useEffect(() => {
+    if (session) {
+      const simStatus = (session as any).simulationStatus;
+      if (simStatus === "completed" || simStatus === "finishing") {
+        // La simulación terminó, redirigir al resumen
+        toast.success("¡Carga completada!");
+        setLocation(`/charging-summary/${session.transactionId}`);
+      }
+    }
+  }, [session, setLocation]);
+  
   const handleStopCharge = () => {
     if (!session) return;
     
@@ -191,9 +213,28 @@ export default function ChargingMonitor() {
   
   // Calcular porcentaje de progreso
   const chargeMode = session.chargeMode as string;
-  const progressPercentage = chargeMode === "percentage" || chargeMode === "full_charge"
-    ? Math.min(100, (session.currentKwh / session.estimatedKwh) * 100 + (session.startPercentage || 20))
-    : Math.min(100, (session.currentCost / session.targetAmount) * 100);
+  
+  // Usar el progreso de la simulación si está disponible
+  const simulationProgress = (session as any).progress;
+  let progressPercentage = 0;
+  
+  if (typeof simulationProgress === 'number' && !isNaN(simulationProgress)) {
+    // Si es simulación, usar el progreso directo
+    progressPercentage = simulationProgress;
+  } else if (session.estimatedKwh > 0) {
+    // Calcular basado en kWh
+    const kwhProgress = (session.currentKwh / session.estimatedKwh) * 100;
+    progressPercentage = Math.min(100, Math.max(0, kwhProgress));
+  } else if (session.targetAmount > 0) {
+    // Calcular basado en costo
+    const costProgress = (session.currentCost / session.targetAmount) * 100;
+    progressPercentage = Math.min(100, Math.max(0, costProgress));
+  }
+  
+  // Asegurar que nunca sea NaN
+  if (isNaN(progressPercentage)) {
+    progressPercentage = 0;
+  }
   
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 pb-24">
