@@ -1240,3 +1240,15 @@
 - [x] Verificar configuración de Firebase para notificaciones push - Ya configurado en server/firebase/fcm.ts
 - [x] Verificar que las notificaciones se envían al completar carga - Agregado en charging-simulator.ts
 - [x] Integrar sendChargingCompleteNotification al completar simulación
+
+
+## Bug: Simulación no respeta objetivo de porcentaje - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Simulación no se detiene al alcanzar el porcentaje objetivo (55%)
+- [x] BUG: La carga sigue más allá del objetivo seleccionado
+- [x] Corregir lógica de detección de objetivo en el simulador
+- [x] Implementar detención correcta para: porcentaje, monto fijo, carga completa
+- [x] Verificar redirección a ChargingSummary al completar
+- [x] Mejorado cálculo de targetKwh para modo porcentaje: (objetivo - actual) / 100 * capacidad
+- [x] Agregados logs detallados para depuración
+- [x] 280 tests pasando

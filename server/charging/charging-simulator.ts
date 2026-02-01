@@ -106,26 +106,46 @@ export async function startSimulation(params: {
 
   // Calcular kWh objetivo según modo de carga
   let targetKwh = 0;
-  const batteryCapacity = 60; // kWh promedio
+  const batteryCapacity = 60; // kWh promedio de batería EV
+  const currentBatteryPercent = 20; // Asumimos 20% inicial de batería
 
   switch (chargeMode) {
     case "fixed_amount":
+      // Monto fijo: calcular kWh que se pueden comprar con ese monto
       targetKwh = targetValue / pricePerKwh;
+      console.log(`[Simulator] Modo monto fijo: $${targetValue} / $${pricePerKwh}/kWh = ${targetKwh.toFixed(2)} kWh`);
       break;
     case "percentage":
-      const currentPercent = 20; // Asumimos 20% inicial
-      targetKwh = ((targetValue - currentPercent) / 100) * batteryCapacity;
+      // Porcentaje: calcular kWh necesarios para llegar al porcentaje objetivo
+      // Si el usuario quiere cargar hasta 55%, y está en 20%, necesita 35% de la batería
+      const percentToCharge = Math.max(0, targetValue - currentBatteryPercent);
+      targetKwh = (percentToCharge / 100) * batteryCapacity;
+      console.log(`[Simulator] Modo porcentaje: objetivo ${targetValue}%, actual ${currentBatteryPercent}%, cargar ${percentToCharge}% = ${targetKwh.toFixed(2)} kWh`);
       break;
     case "full_charge":
-      targetKwh = 0.8 * batteryCapacity; // 80% de la batería
+      // Carga completa: cargar hasta el 100% (desde 20% = 80% de la batería)
+      targetKwh = ((100 - currentBatteryPercent) / 100) * batteryCapacity;
+      console.log(`[Simulator] Modo carga completa: desde ${currentBatteryPercent}% hasta 100% = ${targetKwh.toFixed(2)} kWh`);
       break;
   }
 
-  // Limitar a un máximo razonable para demo (15 kWh = ~1 minuto de simulación)
+  // Para demo: escalar el tiempo de simulación
+  // En lugar de limitar kWh, ajustamos la velocidad de carga
+  // Queremos que la simulación dure entre 30 segundos y 2 minutos
+  const simulationDurationSeconds = Math.min(120, Math.max(30, targetKwh * 3)); // 3 segundos por kWh
+  
+  // Guardar el targetKwh real para cálculos de costo
+  const realTargetKwh = targetKwh;
+  
+  // Para simulación rápida, usamos un targetKwh escalado pero mantenemos los cálculos reales
+  // Limitamos a 15 kWh máximo para que la simulación no dure más de 1 minuto
   targetKwh = Math.min(targetKwh, 15);
   
-  // Mínimo 2 kWh para que la simulación tenga sentido
+  // Mínimo 2 kWh para que la simulación tenga sentido visual
   targetKwh = Math.max(targetKwh, 2);
+  
+  console.log(`[Simulator] Target final para simulación: ${targetKwh.toFixed(2)} kWh (real: ${realTargetKwh.toFixed(2)} kWh)`);
+  console.log(`[Simulator] Duración estimada: ${simulationDurationSeconds} segundos`);
 
   const meterStart = Math.floor(Math.random() * 10000); // Valor inicial aleatorio
   const ocppTransactionId = nanoid();
