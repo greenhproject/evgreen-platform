@@ -427,6 +427,16 @@ export const chargingRouter = router({
         // Si la simulación está completada o terminando, marcar como completada
         const isCompleted = simulationInfo.status === "completed" || simulationInfo.status === "finishing";
         
+        // Calcular targetPercentage y targetAmount basados en el modo de carga
+        let targetPercentage = 100;
+        let targetAmount = simulationInfo.targetKwh * simulationInfo.pricePerKwh;
+        
+        if (simulationInfo.chargeMode === "percentage") {
+          targetPercentage = simulationInfo.targetValue;
+        } else if (simulationInfo.chargeMode === "fixed_amount") {
+          targetAmount = simulationInfo.targetValue;
+        }
+        
         return {
           transactionId: activeTransaction?.id || 0,
           stationId: activeTransaction?.stationId || 0,
@@ -443,9 +453,9 @@ export const chargingRouter = router({
           powerKw: 7,
           currentPower: 7 + Math.random() * 3, // Variación para realismo
           status: isCompleted ? "COMPLETED" : (simulationInfo.status === "charging" ? "IN_PROGRESS" : simulationInfo.status.toUpperCase()),
-          chargeMode: "full_charge" as const,
-          targetPercentage: 100,
-          targetAmount: simulationInfo.targetKwh * simulationInfo.pricePerKwh,
+          chargeMode: simulationInfo.chargeMode,
+          targetPercentage,
+          targetAmount,
           startPercentage: 20,
           progress: simulationInfo.progress,
           isSimulation: true,
