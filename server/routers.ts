@@ -1168,6 +1168,13 @@ const notificationsRouter = router({
     await db.markAllNotificationsAsRead(ctx.user.id);
     return { success: true };
   }),
+  
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.deleteNotification(input.id, ctx.user.id);
+      return { success: true };
+    }),
 });
 
 // ============================================================================

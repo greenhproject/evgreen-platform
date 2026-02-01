@@ -1,61 +1,25 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
-import { Bell, Zap, Calendar, AlertTriangle, Gift, Info, CheckCircle, X, Loader2 } from "lucide-react";
+import { Bell, Zap, Calendar, AlertTriangle, Gift, Info, CheckCircle, X, Loader2, BellOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { useNotifications } from "@/hooks/useNotifications";
+import { onForegroundMessage } from "@/lib/firebase";
 
 interface Notification {
   id: number;
-  type: "CHARGING" | "RESERVATION" | "PROMO" | "SYSTEM" | "ALERT";
+  type: "CHARGING" | "RESERVATION" | "PROMO" | "SYSTEM" | "ALERT" | "LOW_BALANCE";
   title: string;
   message: string;
   read: boolean;
   createdAt: Date;
   actionUrl?: string;
 }
-
-// Datos de ejemplo mientras no hay notificaciones reales
-const sampleNotifications: Notification[] = [
-  {
-    id: 1,
-    type: "CHARGING",
-    title: "Carga completada",
-    message: "Tu sesión de carga en EVGreen Mosquera ha finalizado. Total: 25.4 kWh",
-    read: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 30), // hace 30 min
-    actionUrl: "/history"
-  },
-  {
-    id: 2,
-    type: "PROMO",
-    title: "¡20% de descuento!",
-    message: "Aprovecha el descuento especial en cargas nocturnas de 10pm a 6am",
-    read: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2), // hace 2 horas
-  },
-  {
-    id: 3,
-    type: "RESERVATION",
-    title: "Recordatorio de reserva",
-    message: "Tu reserva en Estación Centro está programada para mañana a las 9:00 AM",
-    read: true,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5), // hace 5 horas
-    actionUrl: "/reservations"
-  },
-  {
-    id: 4,
-    type: "SYSTEM",
-    title: "Bienvenido a EVGreen",
-    message: "Gracias por unirte. Explora las estaciones de carga cerca de ti.",
-    read: true,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24), // hace 1 día
-    actionUrl: "/map"
-  }
-];
 
 const getNotificationIcon = (type: Notification["type"]) => {
   switch (type) {
@@ -67,6 +31,8 @@ const getNotificationIcon = (type: Notification["type"]) => {
       return <Gift className="w-4 h-4 text-yellow-400" />;
     case "ALERT":
       return <AlertTriangle className="w-4 h-4 text-orange-400" />;
+    case "LOW_BALANCE":
+      return <AlertTriangle className="w-4 h-4 text-amber-500" />;
     case "SYSTEM":
     default:
       return <Info className="w-4 h-4 text-muted-foreground" />;
@@ -80,32 +46,87 @@ interface NotificationPanelProps {
 export function NotificationPanel({ buttonClassName }: NotificationPanelProps = {}) {
   const [, setLocation] = useLocation();
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>(sampleNotifications);
-  const [loading, setLoading] = useState(false);
+  const { isAuthenticated } = useAuth();
+  const { isEnabled, isSupported, enableNotifications } = useNotifications();
+  
+  // Cargar notificaciones de la base de datos
+  const notificationsQuery = trpc.notifications.list.useQuery(
+    { unreadOnly: false },
+    { enabled: isAuthenticated }
+  );
+  
+  const markAsReadMutation = trpc.notifications.markAsRead.useMutation();
+  const markAllAsReadMutation = trpc.notifications.markAllAsRead.useMutation();
+  const deleteMutation = trpc.notifications.delete.useMutation();
+
+  // Convertir notificaciones de la API al formato local
+  const notifications: Notification[] = (notificationsQuery.data || []).map((n: any) => ({
+    id: n.id,
+    type: n.type as Notification["type"],
+    title: n.title,
+    message: n.message,
+    read: n.read,
+    createdAt: new Date(n.createdAt),
+    actionUrl: n.actionUrl,
+  }));
 
   const unreadCount = notifications.filter(n => !n.read).length;
+  const loading = notificationsQuery.isLoading;
 
-  const handleMarkAsRead = (id: number) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === id ? { ...n, read: true } : n)
-    );
+  // Escuchar notificaciones en tiempo real
+  useEffect(() => {
+    if (!isEnabled) return;
+
+    const unsubscribe = onForegroundMessage((payload) => {
+      // Refrescar lista de notificaciones cuando llega una nueva
+      notificationsQuery.refetch();
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isEnabled, notificationsQuery]);
+
+  const handleMarkAsRead = async (id: number) => {
+    try {
+      await markAsReadMutation.mutateAsync({ id });
+      notificationsQuery.refetch();
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+    }
   };
 
-  const handleMarkAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const handleMarkAllAsRead = async () => {
+    try {
+      await markAllAsReadMutation.mutateAsync();
+      notificationsQuery.refetch();
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+    }
   };
 
   const handleNotificationClick = (notification: Notification) => {
-    handleMarkAsRead(notification.id);
+    if (!notification.read) {
+      handleMarkAsRead(notification.id);
+    }
     if (notification.actionUrl) {
       setLocation(notification.actionUrl);
       setOpen(false);
     }
   };
 
-  const handleDismiss = (e: React.MouseEvent, id: number) => {
+  const handleDismiss = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    try {
+      await deleteMutation.mutateAsync({ id });
+      notificationsQuery.refetch();
+    } catch (error) {
+      console.error("Error deleting notification:", error);
+    }
+  };
+
+  const handleEnableNotifications = async () => {
+    await enableNotifications();
   };
 
   return (
@@ -138,12 +159,33 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
               size="sm" 
               className="text-xs text-primary hover:text-primary"
               onClick={handleMarkAllAsRead}
+              disabled={markAllAsReadMutation.isPending}
             >
               <CheckCircle className="w-3 h-3 mr-1" />
               Marcar todas como leídas
             </Button>
           )}
         </div>
+
+        {/* Push Notification Banner */}
+        {isSupported && !isEnabled && isAuthenticated && (
+          <div className="p-3 bg-primary/10 border-b border-border">
+            <div className="flex items-center gap-2">
+              <BellOff className="w-4 h-4 text-primary" />
+              <span className="text-xs text-foreground flex-1">
+                Activa las notificaciones push para no perderte nada
+              </span>
+              <Button 
+                size="sm" 
+                variant="outline"
+                className="text-xs h-7"
+                onClick={handleEnableNotifications}
+              >
+                Activar
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Notifications List */}
         <ScrollArea className="h-[300px]">
@@ -155,6 +197,9 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
             <div className="flex flex-col items-center justify-center h-full text-center p-6">
               <Bell className="w-12 h-12 text-muted-foreground/30 mb-3" />
               <p className="text-muted-foreground text-sm">No tienes notificaciones</p>
+              <p className="text-muted-foreground/70 text-xs mt-1">
+                Las alertas de carga y promociones aparecerán aquí
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-border">
@@ -191,6 +236,7 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
                       size="icon"
                       className="flex-shrink-0 w-6 h-6 opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={(e) => handleDismiss(e, notification.id)}
+                      disabled={deleteMutation.isPending}
                     >
                       <X className="w-3 h-3" />
                     </Button>
