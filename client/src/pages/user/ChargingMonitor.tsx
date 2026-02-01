@@ -175,30 +175,34 @@ export default function ChargingMonitor() {
     }
   }, [isLoading, session, setLocation]);
   
-  // Detectar cuando la simulación se completa
-  useEffect(() => {
-    if (session) {
-      const simStatus = (session as any).simulationStatus;
-      const progress = (session as any).progress;
-      const isSimulation = (session as any).isSimulation;
-      
-      // Verificar si la simulación terminó por estado o por progreso al 100%
-      if (simStatus === "completed" || simStatus === "finishing" || (isSimulation && progress >= 100)) {
-        // La simulación terminó, redirigir al resumen
-        toast.success("¡Carga completada!");
-        setLocation(`/charging-summary/${session.transactionId}`);
-        return;
-      }
-    }
-  }, [session, setLocation]);
+  // Detectar cuando la simulación se completa - usar ref para evitar redirecciones múltiples
+  const hasRedirected = useState(false)[0];
+  const [redirecting, setRedirecting] = useState(false);
   
-  // Verificar si la transacción ya está completada en la BD
   useEffect(() => {
-    if (session && session.status === "COMPLETED") {
+    if (redirecting || !session) return;
+    
+    const simStatus = (session as any).simulationStatus;
+    const progress = (session as any).progress;
+    const isSimulation = (session as any).isSimulation;
+    const status = session.status;
+    
+    // Verificar si la carga terminó por cualquier razón
+    const isCompleted = 
+      status === "COMPLETED" ||
+      simStatus === "completed" || 
+      simStatus === "finishing" || 
+      (isSimulation && progress >= 100);
+    
+    if (isCompleted && session.transactionId > 0) {
+      setRedirecting(true);
       toast.success("¡Carga completada!");
-      setLocation(`/charging-summary/${session.transactionId}`);
+      // Pequeño delay para asegurar que la transacción se guardó
+      setTimeout(() => {
+        setLocation(`/charging-summary/${session.transactionId}`);
+      }, 500);
     }
-  }, [session?.status, session?.transactionId, setLocation]);
+  }, [session, redirecting, setLocation]);
   
   const handleStopCharge = () => {
     if (!session) return;
@@ -259,8 +263,11 @@ export default function ChargingMonitor() {
             Carga en progreso
           </Badge>
           <Badge variant="outline" className="border-white/30 text-white">
-            {chargeMode === "fixed_amount" ? "Valor fijo" : 
-             chargeMode === "percentage" ? "Por porcentaje" : "Carga completa"}
+            {chargeMode === "fixed_amount" 
+              ? `$${session.targetAmount?.toLocaleString() || 0}` 
+              : chargeMode === "percentage" 
+                ? `Hasta ${session.targetPercentage}%` 
+                : "Carga completa"}
           </Badge>
         </div>
         
