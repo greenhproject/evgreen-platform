@@ -1294,3 +1294,19 @@
   - Mejorada lógica con console.log para depuración
   - Delay aumentado a 800ms para asegurar que el toast se muestre
 - [x] 280 tests pasando
+
+
+## Mejoras solicitadas - 1 Febrero 2026 (Recibo y Simulador) [COMPLETADO]
+
+### Recibo PDF
+- [x] BUG: Error al generar el recibo - no se puede descargar (reemplazado html2canvas por jsPDF)
+- [x] Crear recibo PDF estético y profesional
+- [x] Incluir logo de EVGreen (texto estilizado con emoji de rayo)
+- [x] Diseño moderno con colores de la marca (emerald-500, gradientes)
+- [x] Información completa de la transacción (cliente, estación, energía, duración, tarifa, total)
+
+### Velocidad del Simulador
+- [x] BUG: Simulación carga muy rápido, no se percibe el proceso
+- [x] Reducir factor de aceleración para experiencia más realista (de 60x a 20x)
+- [x] Ajustar duración mínima de simulación (~45-90 segundos ahora)
+
