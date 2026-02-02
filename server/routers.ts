@@ -1544,6 +1544,15 @@ const platformStatsRouter = router({
 // ============================================================================
 
 const settingsRouter = router({
+  // Endpoint público para obtener solo el porcentaje del inversionista (para mostrar en UI)
+  getInvestorPercentage: publicProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    return {
+      investorPercentage: settings?.investorPercentage ?? 80,
+      platformFeePercentage: settings?.platformFeePercentage ?? 20,
+    };
+  }),
+  
   get: adminProcedure.query(async () => {
     const settings = await db.getPlatformSettings();
     if (!settings) {

@@ -26,7 +26,11 @@ export default function InvestorTransactions() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const { data: transactions, isLoading } = trpc.transactions.myTransactions.useQuery();
+  const { data: transactions, isLoading } = trpc.transactions.investorTransactions.useQuery();
+  const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();
+  
+  // Obtener el porcentaje del inversionista desde la configuración (default 80%)
+  const investorPercentage = platformSettings?.investorPercentage ?? 80;
 
   const formatCurrency = (amount: string | number) => {
     const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -61,7 +65,7 @@ export default function InvestorTransactions() {
     return sum;
   }, 0) || 0;
 
-  const myShare = totalRevenue * 0.8;
+  const myShare = totalRevenue * (investorPercentage / 100);
   const totalEnergy = transactions?.reduce((sum: number, t: any) => {
     if (t.status === "COMPLETED") {
       return sum + parseFloat(t.kwhConsumed || "0");
@@ -93,7 +97,7 @@ export default function InvestorTransactions() {
             </div>
             <div>
               <div className="text-2xl font-bold">{formatCurrency(myShare)}</div>
-              <div className="text-sm text-muted-foreground">Mis ingresos (80%)</div>
+              <div className="text-sm text-muted-foreground">Mis ingresos ({investorPercentage}%)</div>
             </div>
           </div>
         </Card>
@@ -168,7 +172,7 @@ export default function InvestorTransactions() {
               <TableHead>Fecha</TableHead>
               <TableHead>Energía</TableHead>
               <TableHead>Monto bruto</TableHead>
-              <TableHead>Mi parte (80%)</TableHead>
+              <TableHead>Mi parte ({investorPercentage}%)</TableHead>
               <TableHead>Estado</TableHead>
             </TableRow>
           </TableHeader>
@@ -196,7 +200,7 @@ export default function InvestorTransactions() {
                   <TableCell>{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</TableCell>
                   <TableCell>{formatCurrency(tx.totalAmount || 0)}</TableCell>
                   <TableCell className="text-green-600 font-medium">
-                    {formatCurrency(parseFloat(tx.totalAmount || "0") * 0.8)}
+                    {formatCurrency(parseFloat(tx.totalAmount || "0") * (investorPercentage / 100))}
                   </TableCell>
                   <TableCell>{getStatusBadge(tx.status)}</TableCell>
                 </TableRow>
