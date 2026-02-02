@@ -648,12 +648,15 @@ const tariffsRouter = router({
       return db.getPriceRanges();
     }),
   
-  // Actualizar rangos de precio (solo admin)
+  // Actualizar rangos de precio y tarifas globales (solo admin)
   updatePriceRanges: adminProcedure
     .input(z.object({
       minPrice: z.number().min(100).max(5000),
       maxPrice: z.number().min(100).max(10000),
       enableDynamicPricing: z.boolean(),
+      defaultReservationFee: z.number().min(0).max(100000).optional(),
+      defaultOverstayPenaltyPerMin: z.number().min(0).max(10000).optional(),
+      defaultConnectionFee: z.number().min(0).max(50000).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       if (input.minPrice >= input.maxPrice) {
@@ -662,7 +665,15 @@ const tariffsRouter = router({
           message: "El precio mínimo debe ser menor al máximo" 
         });
       }
-      await db.updatePriceRanges(input.minPrice, input.maxPrice, input.enableDynamicPricing, ctx.user.id);
+      await db.updatePriceRanges(
+        input.minPrice, 
+        input.maxPrice, 
+        input.enableDynamicPricing, 
+        ctx.user.id,
+        input.defaultReservationFee,
+        input.defaultOverstayPenaltyPerMin,
+        input.defaultConnectionFee
+      );
       return { success: true };
     }),
   

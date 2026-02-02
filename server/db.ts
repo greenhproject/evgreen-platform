@@ -2801,12 +2801,22 @@ export async function getPriceHistoryAggregated(
 // PRICE RANGE OPERATIONS (Admin controlled)
 // ============================================================================
 
-export async function getPriceRanges(): Promise<{ minPrice: number; maxPrice: number; enableDynamicPricing: boolean }> {
+export async function getPriceRanges(): Promise<{ 
+  minPrice: number; 
+  maxPrice: number; 
+  enableDynamicPricing: boolean;
+  defaultReservationFee: number;
+  defaultOverstayPenaltyPerMin: number;
+  defaultConnectionFee: number;
+}> {
   const settings = await getPlatformSettings();
   return {
     minPrice: parseFloat(settings?.minPricePerKwh?.toString() || "400"),
     maxPrice: parseFloat(settings?.maxPricePerKwh?.toString() || "2500"),
     enableDynamicPricing: settings?.enableDynamicPricing ?? true,
+    defaultReservationFee: parseFloat(settings?.defaultReservationFee?.toString() || "5000"),
+    defaultOverstayPenaltyPerMin: parseFloat(settings?.defaultOverstayPenaltyPerMin?.toString() || "500"),
+    defaultConnectionFee: parseFloat(settings?.defaultConnectionFee?.toString() || "2000"),
   };
 }
 
@@ -2814,14 +2824,29 @@ export async function updatePriceRanges(
   minPrice: number,
   maxPrice: number,
   enableDynamicPricing: boolean,
-  updatedBy?: number
+  updatedBy?: number,
+  defaultReservationFee?: number,
+  defaultOverstayPenaltyPerMin?: number,
+  defaultConnectionFee?: number
 ): Promise<void> {
-  await upsertPlatformSettings({
+  const updateData: Record<string, any> = {
     minPricePerKwh: minPrice.toString(),
     maxPricePerKwh: maxPrice.toString(),
     enableDynamicPricing,
     updatedBy,
-  });
+  };
+  
+  if (defaultReservationFee !== undefined) {
+    updateData.defaultReservationFee = defaultReservationFee.toString();
+  }
+  if (defaultOverstayPenaltyPerMin !== undefined) {
+    updateData.defaultOverstayPenaltyPerMin = defaultOverstayPenaltyPerMin.toString();
+  }
+  if (defaultConnectionFee !== undefined) {
+    updateData.defaultConnectionFee = defaultConnectionFee.toString();
+  }
+  
+  await upsertPlatformSettings(updateData);
 }
 
 // ============================================================================
