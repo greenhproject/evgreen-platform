@@ -250,6 +250,27 @@ export async function startSimulation(params: {
         }
       }
     }
+    
+    // Notificar al inversionista si hay baja demanda prolongada (oportunidad de promoción)
+    if (demandLevel === "LOW" && occupancyData.occupancyRate < 20) {
+      const station = await db.getChargingStationById(stationId);
+      if (station?.ownerId) {
+        const owner = await db.getUserById(station.ownerId);
+        if (owner?.fcmToken) {
+          // Calcular descuento sugerido basado en la ocupación
+          // Menor ocupación = mayor descuento sugerido
+          const suggestedDiscount = Math.min(30, Math.max(10, Math.round((20 - occupancyData.occupancyRate) * 1.5)));
+          
+          const { sendLowDemandNotification } = await import("../firebase/fcm");
+          await sendLowDemandNotification(owner.fcmToken, {
+            stationName: station.name,
+            occupancyRate: occupancyData.occupancyRate,
+            suggestedDiscount,
+          });
+          console.log(`[Simulator] Low demand notification sent to investor ${station.ownerId}, suggested ${suggestedDiscount}% discount`);
+        }
+      }
+    }
   } catch (error) {
     console.error(`[Simulator] Error recording price history:`, error);
   }

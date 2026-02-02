@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, MapPin, Zap, Settings, Eye, TrendingUp, ExternalLink, Battery, Clock, DollarSign, Sparkles, Brain, Info, ArrowRight, BarChart3, Activity } from "lucide-react";
+import { Search, MapPin, Zap, Settings, Eye, TrendingUp, ExternalLink, Battery, Clock, DollarSign, Sparkles, Brain, Info, ArrowRight, BarChart3, Activity, Download } from "lucide-react";
 import { toast } from "sonner";
 
 // Tipo para estación
@@ -188,6 +188,50 @@ export default function InvestorStations() {
       default:
         return <Badge variant="secondary">{level}</Badge>;
     }
+  };
+
+  // Función para exportar historial de precios a CSV
+  const exportPriceHistoryCSV = () => {
+    if (!priceHistory || priceHistory.length === 0 || !selectedStation) {
+      toast.error("No hay datos para exportar");
+      return;
+    }
+
+    // Crear encabezados del CSV
+    const headers = ["Fecha", "Hora", "Precio (COP/kWh)", "Demanda", "Ocupación (%)"];
+    
+    // Crear filas de datos
+    const rows = priceHistory.map(record => {
+      const date = new Date(record.timestamp);
+      return [
+        date.toLocaleDateString("es-CO"),
+        date.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }),
+        record.avgPrice.toFixed(0),
+        record.demandLevel || "N/A",
+        "N/A", // Ocupación no disponible en este endpoint
+      ].join(",");
+    });
+
+    // Combinar encabezados y filas
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    
+    // Crear blob y descargar
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    
+    // Nombre del archivo con fecha y nombre de estación
+    const stationName = selectedStation.name.replace(/[^a-zA-Z0-9]/g, "_");
+    const dateStr = new Date().toISOString().split("T")[0];
+    link.download = `historial_precios_${stationName}_${dateStr}.csv`;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast.success("Historial exportado correctamente");
   };
 
   const handleViewDetails = (station: Station) => {
@@ -499,6 +543,18 @@ export default function InvestorStations() {
                           {formatCurrency(Math.max(...priceHistory.map(h => h.avgPrice)))}
                         </div>
                       </div>
+                    </div>
+                    {/* Botón de exportar CSV */}
+                    <div className="mt-3 pt-3 border-t border-border/50 flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={exportPriceHistoryCSV}
+                        className="text-xs"
+                      >
+                        <Download className="w-3 h-3 mr-1" />
+                        Exportar CSV
+                      </Button>
                     </div>
                     {/* Demanda predominante */}
                     <div className="mt-3 pt-3 border-t border-border/50">
