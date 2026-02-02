@@ -1021,6 +1021,11 @@ export const platformSettings = mysqlTable("platform_settings", {
   defaultOverstayPenaltyPerMin: decimal("defaultOverstayPenaltyPerMin", { precision: 10, scale: 2 }).default("500").notNull(), // Penalización por minuto
   defaultConnectionFee: decimal("defaultConnectionFee", { precision: 10, scale: 2 }).default("2000").notNull(), // Tarifa de conexión
   
+  // Tarifas diferenciadas por tipo de conector (AC vs DC)
+  defaultPricePerKwhAC: decimal("defaultPricePerKwhAC", { precision: 10, scale: 2 }).default("800").notNull(), // Precio base AC (carga lenta)
+  defaultPricePerKwhDC: decimal("defaultPricePerKwhDC", { precision: 10, scale: 2 }).default("1200").notNull(), // Precio base DC (carga rápida)
+  enableDifferentiatedPricing: boolean("enableDifferentiatedPricing").default(true).notNull(), // Habilitar precios diferenciados AC/DC
+  
   // Metadata
   updatedBy: int("updatedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

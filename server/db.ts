@@ -2808,6 +2808,9 @@ export async function getPriceRanges(): Promise<{
   defaultReservationFee: number;
   defaultOverstayPenaltyPerMin: number;
   defaultConnectionFee: number;
+  defaultPricePerKwhAC: number;
+  defaultPricePerKwhDC: number;
+  enableDifferentiatedPricing: boolean;
 }> {
   const settings = await getPlatformSettings();
   return {
@@ -2817,6 +2820,9 @@ export async function getPriceRanges(): Promise<{
     defaultReservationFee: parseFloat(settings?.defaultReservationFee?.toString() || "5000"),
     defaultOverstayPenaltyPerMin: parseFloat(settings?.defaultOverstayPenaltyPerMin?.toString() || "500"),
     defaultConnectionFee: parseFloat(settings?.defaultConnectionFee?.toString() || "2000"),
+    defaultPricePerKwhAC: parseFloat(settings?.defaultPricePerKwhAC?.toString() || "800"),
+    defaultPricePerKwhDC: parseFloat(settings?.defaultPricePerKwhDC?.toString() || "1200"),
+    enableDifferentiatedPricing: settings?.enableDifferentiatedPricing ?? true,
   };
 }
 
@@ -2827,7 +2833,10 @@ export async function updatePriceRanges(
   updatedBy?: number,
   defaultReservationFee?: number,
   defaultOverstayPenaltyPerMin?: number,
-  defaultConnectionFee?: number
+  defaultConnectionFee?: number,
+  defaultPricePerKwhAC?: number,
+  defaultPricePerKwhDC?: number,
+  enableDifferentiatedPricing?: boolean
 ): Promise<void> {
   const updateData: Record<string, any> = {
     minPricePerKwh: minPrice.toString(),
@@ -2844,6 +2853,15 @@ export async function updatePriceRanges(
   }
   if (defaultConnectionFee !== undefined) {
     updateData.defaultConnectionFee = defaultConnectionFee.toString();
+  }
+  if (defaultPricePerKwhAC !== undefined) {
+    updateData.defaultPricePerKwhAC = defaultPricePerKwhAC.toString();
+  }
+  if (defaultPricePerKwhDC !== undefined) {
+    updateData.defaultPricePerKwhDC = defaultPricePerKwhDC.toString();
+  }
+  if (enableDifferentiatedPricing !== undefined) {
+    updateData.enableDifferentiatedPricing = enableDifferentiatedPricing;
   }
   
   await upsertPlatformSettings(updateData);
@@ -2923,4 +2941,43 @@ export async function getRevenueShareConfig(): Promise<{ investorPercent: number
   const investorPercent = settings?.investorPercentage ?? 80;
   const platformPercent = settings?.platformFeePercentage ?? 20;
   return { investorPercent, platformPercent };
+}
+
+
+// ============================================================================
+// PRICING BY CONNECTOR TYPE (AC/DC)
+// ============================================================================
+
+export async function getPriceByConnectorType(
+  evseId: number,
+  basePrice: number
+): Promise<{ price: number; connectorType: string; chargeType: string }> {
+  // Obtener información del EVSE
+  const evse = await getEvseById(evseId);
+  if (!evse) {
+    return { price: basePrice, connectorType: "UNKNOWN", chargeType: "AC" };
+  }
+  
+  // Obtener configuración de precios diferenciados
+  const priceRanges = await getPriceRanges();
+  
+  // Si los precios diferenciados no están habilitados, usar precio base
+  if (!priceRanges.enableDifferentiatedPricing) {
+    return { 
+      price: basePrice, 
+      connectorType: evse.connectorType, 
+      chargeType: evse.chargeType 
+    };
+  }
+  
+  // Determinar precio según tipo de carga (AC o DC)
+  const price = evse.chargeType === "DC" 
+    ? priceRanges.defaultPricePerKwhDC 
+    : priceRanges.defaultPricePerKwhAC;
+  
+  return {
+    price,
+    connectorType: evse.connectorType,
+    chargeType: evse.chargeType,
+  };
 }

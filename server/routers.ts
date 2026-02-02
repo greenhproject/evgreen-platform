@@ -657,6 +657,9 @@ const tariffsRouter = router({
       defaultReservationFee: z.number().min(0).max(100000).optional(),
       defaultOverstayPenaltyPerMin: z.number().min(0).max(10000).optional(),
       defaultConnectionFee: z.number().min(0).max(50000).optional(),
+      defaultPricePerKwhAC: z.number().min(100).max(5000).optional(),
+      defaultPricePerKwhDC: z.number().min(100).max(10000).optional(),
+      enableDifferentiatedPricing: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       if (input.minPrice >= input.maxPrice) {
@@ -665,6 +668,15 @@ const tariffsRouter = router({
           message: "El precio mínimo debe ser menor al máximo" 
         });
       }
+      // Validar que AC sea menor que DC si precios diferenciados están habilitados
+      if (input.enableDifferentiatedPricing && input.defaultPricePerKwhAC && input.defaultPricePerKwhDC) {
+        if (input.defaultPricePerKwhAC > input.defaultPricePerKwhDC) {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: "El precio AC (carga lenta) debe ser menor o igual al precio DC (carga rápida)" 
+          });
+        }
+      }
       await db.updatePriceRanges(
         input.minPrice, 
         input.maxPrice, 
@@ -672,7 +684,10 @@ const tariffsRouter = router({
         ctx.user.id,
         input.defaultReservationFee,
         input.defaultOverstayPenaltyPerMin,
-        input.defaultConnectionFee
+        input.defaultConnectionFee,
+        input.defaultPricePerKwhAC,
+        input.defaultPricePerKwhDC,
+        input.enableDifferentiatedPricing
       );
       return { success: true };
     }),

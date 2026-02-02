@@ -110,6 +110,9 @@ export default function AdminTariffs() {
     defaultReservationFee: 5000,
     defaultOverstayPenaltyPerMin: 500,
     defaultConnectionFee: 2000,
+    defaultPricePerKwhAC: 800,
+    defaultPricePerKwhDC: 1200,
+    enableDifferentiatedPricing: true,
   });
   const [savingPriceRanges, setSavingPriceRanges] = useState(false);
 
@@ -138,6 +141,9 @@ export default function AdminTariffs() {
         defaultReservationFee: priceRanges.defaultReservationFee,
         defaultOverstayPenaltyPerMin: priceRanges.defaultOverstayPenaltyPerMin,
         defaultConnectionFee: priceRanges.defaultConnectionFee,
+        defaultPricePerKwhAC: priceRanges.defaultPricePerKwhAC,
+        defaultPricePerKwhDC: priceRanges.defaultPricePerKwhDC,
+        enableDifferentiatedPricing: priceRanges.enableDifferentiatedPricing,
       });
     }
   }, [priceRanges]);
@@ -151,6 +157,11 @@ export default function AdminTariffs() {
       toast.error("El precio mínimo debe ser al menos $100 COP");
       return;
     }
+    // Validar que AC sea menor que DC si precios diferenciados están habilitados
+    if (localPriceRanges.enableDifferentiatedPricing && localPriceRanges.defaultPricePerKwhAC > localPriceRanges.defaultPricePerKwhDC) {
+      toast.error("El precio AC (carga lenta) debe ser menor o igual al precio DC (carga rápida)");
+      return;
+    }
     setSavingPriceRanges(true);
     updatePriceRanges.mutate({
       minPrice: localPriceRanges.minPrice,
@@ -159,6 +170,9 @@ export default function AdminTariffs() {
       defaultReservationFee: localPriceRanges.defaultReservationFee,
       defaultOverstayPenaltyPerMin: localPriceRanges.defaultOverstayPenaltyPerMin,
       defaultConnectionFee: localPriceRanges.defaultConnectionFee,
+      defaultPricePerKwhAC: localPriceRanges.defaultPricePerKwhAC,
+      defaultPricePerKwhDC: localPriceRanges.defaultPricePerKwhDC,
+      enableDifferentiatedPricing: localPriceRanges.enableDifferentiatedPricing,
     });
   };
 
@@ -730,6 +744,93 @@ export default function AdminTariffs() {
               </div>
               <p className="text-xs text-muted-foreground">Cargo fijo por iniciar una carga</p>
             </div>
+          </div>
+          
+          {/* Sección de Tarifas Diferenciadas AC/DC */}
+          <div className="mt-8 pt-6 border-t border-border">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-yellow-500" />
+                  Tarifas por Tipo de Conector
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Configura precios diferentes para carga lenta (AC) y carga rápida (DC)
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="enableDifferentiated" className="text-sm">Habilitar precios diferenciados</Label>
+                <Switch
+                  id="enableDifferentiated"
+                  checked={localPriceRanges.enableDifferentiatedPricing}
+                  onCheckedChange={(checked) => setLocalPriceRanges(prev => ({ ...prev, enableDifferentiatedPricing: checked }))}
+                />
+              </div>
+            </div>
+            
+            {localPriceRanges.enableDifferentiatedPricing && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Precio AC (Carga Lenta) */}
+                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                  <Label className="flex items-center gap-2 mb-3">
+                    <div className="p-1.5 rounded bg-blue-500/20">
+                      <Zap className="w-4 h-4 text-blue-500" />
+                    </div>
+                    <div>
+                      <span className="font-medium">Precio AC (Carga Lenta)</span>
+                      <p className="text-xs text-muted-foreground font-normal">Type 1, Type 2, GBT AC</p>
+                    </div>
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">$</span>
+                    <Input
+                      type="number"
+                      value={localPriceRanges.defaultPricePerKwhAC}
+                      onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, defaultPricePerKwhAC: parseInt(e.target.value) || 0 }))}
+                      className="w-32"
+                      min={100}
+                      max={5000}
+                    />
+                    <span className="text-muted-foreground">COP/kWh</span>
+                  </div>
+                  <p className="text-xs text-blue-600 mt-2">Carga más lenta, ideal para estacionamientos largos</p>
+                </div>
+                
+                {/* Precio DC (Carga Rápida) */}
+                <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                  <Label className="flex items-center gap-2 mb-3">
+                    <div className="p-1.5 rounded bg-orange-500/20">
+                      <Zap className="w-4 h-4 text-orange-500" />
+                    </div>
+                    <div>
+                      <span className="font-medium">Precio DC (Carga Rápida)</span>
+                      <p className="text-xs text-muted-foreground font-normal">CCS 1, CCS 2, CHAdeMO, GBT DC</p>
+                    </div>
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">$</span>
+                    <Input
+                      type="number"
+                      value={localPriceRanges.defaultPricePerKwhDC}
+                      onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, defaultPricePerKwhDC: parseInt(e.target.value) || 0 }))}
+                      className="w-32"
+                      min={100}
+                      max={10000}
+                    />
+                    <span className="text-muted-foreground">COP/kWh</span>
+                  </div>
+                  <p className="text-xs text-orange-600 mt-2">Carga rápida, mayor costo por infraestructura</p>
+                </div>
+              </div>
+            )}
+            
+            {!localPriceRanges.enableDifferentiatedPricing && (
+              <div className="p-4 rounded-lg bg-muted/50 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Cuando los precios diferenciados están deshabilitados, se usa el precio base dinámico para todos los tipos de conector.
+                </p>
+              </div>
+            )}
           </div>
           
           <div className="mt-6 flex justify-end">
