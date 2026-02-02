@@ -567,9 +567,10 @@ async function handleOCPP16Message(
       // Total
       const totalCost = energyCost + timeCost + sessionFee;
       
-      // Distribución de ingresos: 80% inversor, 20% plataforma
-      const investorShare = totalCost * 0.80;
-      const platformFee = totalCost * 0.20;
+      // Distribución de ingresos según configuración del admin
+      const revenueConfig = await db.getRevenueShareConfig();
+      const investorShare = totalCost * (revenueConfig.investorPercent / 100);
+      const platformFee = totalCost * (revenueConfig.platformPercent / 100);
       
       await db.updateTransaction(transaction.id, {
         endTime,

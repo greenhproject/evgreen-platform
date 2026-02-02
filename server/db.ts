@@ -2887,3 +2887,15 @@ export async function getInvestorStationsDemand(investorId: number): Promise<Arr
   
   return results;
 }
+
+
+// ============================================================================
+// REVENUE SHARE CONFIGURATION
+// ============================================================================
+
+export async function getRevenueShareConfig(): Promise<{ investorPercent: number; platformPercent: number }> {
+  const settings = await getPlatformSettings();
+  const investorPercent = settings?.investorPercentage ?? 80;
+  const platformPercent = settings?.platformFeePercentage ?? 20;
+  return { investorPercent, platformPercent };
+}

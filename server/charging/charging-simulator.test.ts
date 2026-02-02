@@ -38,6 +38,10 @@ vi.mock("../db", () => ({
     name: "Test Station",
     address: "Test Address",
   }),
+  getRevenueShareConfig: vi.fn().mockResolvedValue({
+    investorPercent: 80,
+    platformPercent: 20,
+  }),
 }));
 
 describe("Charging Simulator", () => {
