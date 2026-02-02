@@ -1,0 +1,55 @@
+{
+  "query": "SELECT id, evseId, kwhConsumed, totalCost, energyCost, investorShare, platformFee FROM transactions ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, evseId, kwhConsumed, totalCost, energyCost, investorShare, platformFee FROM transactions ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "120025",
+      "evseId": "60001",
+      "kwhConsumed": "17.3203",
+      "totalCost": "12124.24",
+      "energyCost": "0.00",
+      "investorShare": "0.00",
+      "platformFee": "0.00"
+    },
+    {
+      "id": "120024",
+      "evseId": "60001",
+      "kwhConsumed": "16.5070",
+      "totalCost": "11554.90",
+      "energyCost": "0.00",
+      "investorShare": "0.00",
+      "platformFee": "0.00"
+    },
+    {
+      "id": "120023",
+      "evseId": "60001",
+      "kwhConsumed": "2.5381",
+      "totalCost": "1776.68",
+      "energyCost": "0.00",
+      "investorShare": "0.00",
+      "platformFee": "0.00"
+    },
+    {
+      "id": "120022",
+      "evseId": "60001",
+      "kwhConsumed": "16.7110",
+      "totalCost": "12499.85",
+      "energyCost": "0.00",
+      "investorShare": "0.00",
+      "platformFee": "0.00"
+    },
+    {
+      "id": "120021",
+      "evseId": "60001",
+      "kwhConsumed": "16.7040",
+      "totalCost": "12494.57",
+      "energyCost": "0.00",
+      "investorShare": "0.00",
+      "platformFee": "0.00"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tevseId\tkwhConsumed\ttotalCost\tenergyCost\tinvestorShare\tplatformFee\n120025\t60001\t17.3203\t12124.24\t0.00\t0.00\t0.00\n120024\t60001\t16.5070\t11554.90\t0.00\t0.00\t0.00\n120023\t60001\t2.5381\t1776.68\t0.00\t0.00\t0.00\n120022\t60001\t16.7110\t12499.85\t0.00\t0.00\t0.00\n120021\t60001\t16.7040\t12494.57\t0.00\t0.00\t0.00\n",
+  "stderr": "",
+  "execution_time_ms": 57
+}

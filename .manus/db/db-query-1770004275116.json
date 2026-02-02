@@ -1,0 +1,14 @@
+{
+  "query": "SELECT investorPercentage, platformFeePercentage FROM platform_settings LIMIT 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT investorPercentage, platformFeePercentage FROM platform_settings LIMIT 1;",
+  "rows": [
+    {
+      "investorPercentage": "80",
+      "platformFeePercentage": "20"
+    }
+  ],
+  "messages": [],
+  "stdout": "investorPercentage\tplatformFeePercentage\n80\t20\n",
+  "stderr": "",
+  "execution_time_ms": 68
+}

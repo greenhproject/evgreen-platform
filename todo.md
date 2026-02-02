@@ -1464,3 +1464,13 @@
   - Solución: Creado nuevo endpoint `settings.getInvestorPercentage` (público) que retorna el porcentaje configurado
   - La UI ahora muestra el porcentaje dinámico desde platform_settings
 - [x] 280 tests pasando
+
+
+## Bug: Transacciones con montos en $0 y porcentaje fijo - 2 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Los montos de transacciones se muestran en $0
+  - Causa: El componente usaba `tx.totalAmount` que no existe, el campo correcto es `tx.totalCost`
+  - Solución: Cambiado a usar `totalCost` en lugar de `totalAmount` en Transactions.tsx
+- [x] Endpoint getInvestorPercentage verificado y funcionando correctamente
+- [x] El porcentaje se obtiene dinámicamente desde platform_settings
+- [x] 280 tests pasando
