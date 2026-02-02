@@ -14,6 +14,7 @@
 import * as db from "../db";
 import { nanoid } from "nanoid";
 import { sendChargingCompleteNotification } from "../firebase/fcm";
+import { incrementActiveSimulations, decrementActiveSimulations } from "../pricing/dynamic-pricing";
 
 // Emails de usuarios de prueba que activan la simulación
 const TEST_USER_EMAILS = [
@@ -208,6 +209,9 @@ export async function startSimulation(params: {
   };
 
   activeSimulations.set(userId, session);
+  
+  // Incrementar contador de simulaciones activas para precios dinámicos
+  incrementActiveSimulations();
 
   // Iniciar ciclo de simulación
   startSimulationCycle(session);
@@ -395,6 +399,9 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
     stationId: session.stationId,
   };
 
+  // Decrementar contador de simulaciones activas para precios dinámicos
+  decrementActiveSimulations();
+  
   // Marcar como completado PERO mantener la sesión en el Map
   session.status = "completed";
   session.completedAt = new Date();
