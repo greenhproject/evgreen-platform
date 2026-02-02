@@ -60,7 +60,7 @@ export default function InvestorTransactions() {
   // Calcular totales
   const totalRevenue = transactions?.reduce((sum: number, t: any) => {
     if (t.status === "COMPLETED") {
-      return sum + parseFloat(t.totalAmount || "0");
+      return sum + parseFloat(t.totalCost || "0");
     }
     return sum;
   }, 0) || 0;
@@ -198,9 +198,9 @@ export default function InvestorTransactions() {
                     {new Date(tx.startTime).toLocaleDateString("es-CO")}
                   </TableCell>
                   <TableCell>{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</TableCell>
-                  <TableCell>{formatCurrency(tx.totalAmount || 0)}</TableCell>
+                  <TableCell>{formatCurrency(tx.totalCost || 0)}</TableCell>
                   <TableCell className="text-green-600 font-medium">
-                    {formatCurrency(parseFloat(tx.totalAmount || "0") * (investorPercentage / 100))}
+                    {formatCurrency(parseFloat(tx.totalCost || "0") * (investorPercentage / 100))}
                   </TableCell>
                   <TableCell>{getStatusBadge(tx.status)}</TableCell>
                 </TableRow>
