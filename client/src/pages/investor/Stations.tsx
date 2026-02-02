@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -27,14 +28,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, MapPin, Zap, Settings, Eye, TrendingUp, ExternalLink, Battery, Clock, DollarSign } from "lucide-react";
+import { Search, MapPin, Zap, Settings, Eye, TrendingUp, ExternalLink, Battery, Clock, DollarSign, Sparkles, Brain, Info, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 // Tipo para estación
 interface Station {
   id: number;
   name: string;
-  ocppIdentity?: string;
+  ocppIdentity?: string | null;
   address: string;
   city: string;
   department?: string | null;
@@ -43,7 +44,7 @@ interface Station {
   isOnline: boolean;
   isActive: boolean;
   isPublic: boolean;
-  description?: string;
+  description?: string | null;
   evses?: Array<{
     id: number;
     connectorId: number;
@@ -56,6 +57,7 @@ interface Station {
     reservationFee: string;
     idleFeePerMin: string;
     connectionFee: string;
+    autoPricing?: boolean;
   };
 }
 
@@ -70,8 +72,16 @@ export default function InvestorStations() {
   const [reservationFee, setReservationFee] = useState("");
   const [idleFee, setIdleFee] = useState("");
   const [connectionFee, setConnectionFee] = useState("");
+  const [autoPricing, setAutoPricing] = useState(false);
 
   const { data: stations, isLoading } = trpc.stations.listOwned.useQuery();
+  
+  // Query para obtener precio sugerido
+  const { data: suggestedPriceData, isLoading: isLoadingSuggested } = trpc.tariffs.getSuggestedPrice.useQuery(
+    { stationId: selectedStation?.id || 0 },
+    { enabled: !!selectedStation && showConfigModal && !autoPricing }
+  );
+  
   const updateTariff = trpc.tariffs.updateByStation.useMutation({
     onSuccess: () => {
       toast.success("Tarifa actualizada correctamente");
@@ -128,6 +138,21 @@ export default function InvestorStations() {
     }
   };
 
+  const getDemandLevelBadge = (level: string) => {
+    switch (level) {
+      case "LOW":
+        return <Badge className="bg-blue-100 text-blue-700">Baja demanda</Badge>;
+      case "NORMAL":
+        return <Badge className="bg-gray-100 text-gray-700">Demanda normal</Badge>;
+      case "HIGH":
+        return <Badge className="bg-orange-100 text-orange-700">Alta demanda</Badge>;
+      case "SURGE":
+        return <Badge className="bg-red-100 text-red-700">Demanda crítica</Badge>;
+      default:
+        return <Badge variant="secondary">{level}</Badge>;
+    }
+  };
+
   const handleViewDetails = (station: Station) => {
     setSelectedStation(station);
     setShowDetailsModal(true);
@@ -141,11 +166,13 @@ export default function InvestorStations() {
       setReservationFee(station.tariff.reservationFee);
       setIdleFee(station.tariff.idleFeePerMin);
       setConnectionFee(station.tariff.connectionFee);
+      setAutoPricing(station.tariff.autoPricing || false);
     } else {
       setPricePerKwh("1200");
       setReservationFee("5000");
       setIdleFee("500");
       setConnectionFee("2000");
+      setAutoPricing(false);
     }
     setShowConfigModal(true);
   };
@@ -158,7 +185,15 @@ export default function InvestorStations() {
       reservationFee: parseFloat(reservationFee) || 5000,
       idleFeePerMin: parseFloat(idleFee) || 500,
       connectionFee: parseFloat(connectionFee) || 2000,
+      autoPricing,
     });
+  };
+
+  const handleUseSuggestedPrice = () => {
+    if (suggestedPriceData) {
+      setPricePerKwh(suggestedPriceData.suggestedPrice.toString());
+      toast.success("Precio sugerido aplicado");
+    }
   };
 
   // Filtrar estaciones por búsqueda
@@ -253,7 +288,7 @@ export default function InvestorStations() {
               <TableHead>Ubicación</TableHead>
               <TableHead>Conectores</TableHead>
               <TableHead>Estado</TableHead>
-              <TableHead>Ingresos del mes</TableHead>
+              <TableHead>Precio</TableHead>
               <TableHead>Acciones</TableHead>
             </TableRow>
           </TableHeader>
@@ -292,21 +327,34 @@ export default function InvestorStations() {
                     </div>
                   </TableCell>
                   <TableCell>{getStatusBadge(station.isOnline, station.isActive)}</TableCell>
-                  <TableCell>{formatCurrency(0)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      {station.tariff?.autoPricing ? (
+                        <Badge className="bg-purple-100 text-purple-700">
+                          <Brain className="w-3 h-3 mr-1" />
+                          IA
+                        </Badge>
+                      ) : (
+                        <span className="text-sm">
+                          {formatCurrency(parseFloat(station.tariff?.pricePerKwh || "1200"))}/kWh
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Button 
-                        variant="ghost" 
+                      <Button
+                        variant="ghost"
                         size="icon"
-                        onClick={() => handleViewDetails(station as Station)}
+                        onClick={() => handleViewDetails(station)}
                         title="Ver detalles"
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
-                      <Button 
-                        variant="ghost" 
+                      <Button
+                        variant="ghost"
                         size="icon"
-                        onClick={() => handleOpenConfig(station as Station)}
+                        onClick={() => handleOpenConfig(station)}
                         title="Configurar tarifas"
                       >
                         <Settings className="w-4 h-4" />
@@ -322,72 +370,30 @@ export default function InvestorStations() {
 
       {/* Modal de Detalles */}
       <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-primary" />
+              <Zap className="w-5 h-5 text-primary" />
               {selectedStation?.name}
             </DialogTitle>
             <DialogDescription>
-              ID: {selectedStation?.ocppIdentity || `GEV-${selectedStation?.id}`}
+              {selectedStation?.address}, {selectedStation?.city}
             </DialogDescription>
           </DialogHeader>
 
           {selectedStation && (
-            <div className="space-y-6">
-              {/* Estado y ubicación */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-muted-foreground">Estado</Label>
-                  <div className="mt-1">
-                    {getStatusBadge(selectedStation.isOnline, selectedStation.isActive)}
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Visibilidad</Label>
-                  <div className="mt-1">
-                    <Badge variant={selectedStation.isPublic ? "default" : "secondary"}>
-                      {selectedStation.isPublic ? "Pública" : "Privada"}
-                    </Badge>
-                  </div>
-                </div>
+            <div className="space-y-4">
+              {/* Estado */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Estado</span>
+                {getStatusBadge(selectedStation.isOnline, selectedStation.isActive)}
               </div>
-
-              {/* Dirección */}
-              <div>
-                <Label className="text-muted-foreground">Dirección</Label>
-                <p className="mt-1">{selectedStation.address}</p>
-                <p className="text-sm text-muted-foreground">
-                  {selectedStation.city}, {selectedStation.department || 'Colombia'}
-                </p>
-                <Button
-                  variant="link"
-                  className="p-0 h-auto text-primary"
-                  onClick={() => window.open(
-                    `https://www.google.com/maps?q=${selectedStation.latitude},${selectedStation.longitude}`,
-                    "_blank"
-                  )}
-                >
-                  <ExternalLink className="w-3 h-3 mr-1" />
-                  Ver en Google Maps
-                </Button>
-              </div>
-
-              {/* Descripción */}
-              {selectedStation.description && (
-                <div>
-                  <Label className="text-muted-foreground">Descripción</Label>
-                  <p className="mt-1 text-sm">{selectedStation.description}</p>
-                </div>
-              )}
 
               {/* Conectores */}
               <div>
-                <Label className="text-muted-foreground">
-                  Conectores ({selectedStation.evses?.length || 0})
-                </Label>
+                <Label className="text-muted-foreground">Conectores</Label>
                 <div className="mt-2 space-y-2">
-                  {selectedStation.evses?.length ? (
+                  {selectedStation.evses && selectedStation.evses.length > 0 ? (
                     selectedStation.evses.map((evse) => (
                       <div
                         key={evse.id}
@@ -420,12 +426,27 @@ export default function InvestorStations() {
               {/* Tarifas */}
               {selectedStation.tariff && (
                 <div>
-                  <Label className="text-muted-foreground">Tarifas Actuales</Label>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label className="text-muted-foreground">Tarifas Actuales</Label>
+                    {selectedStation.tariff.autoPricing && (
+                      <Badge className="bg-purple-100 text-purple-700">
+                        <Brain className="w-3 h-3 mr-1" />
+                        Precio Automático IA
+                      </Badge>
+                    )}
+                  </div>
                   <div className="mt-2 grid grid-cols-2 gap-3">
                     <div className="p-3 bg-muted/50 rounded-lg">
                       <div className="text-sm text-muted-foreground">Precio por kWh</div>
                       <div className="font-bold text-lg">
-                        {formatCurrency(parseFloat(selectedStation.tariff.pricePerKwh))}
+                        {selectedStation.tariff.autoPricing ? (
+                          <span className="flex items-center gap-1">
+                            <Sparkles className="w-4 h-4 text-purple-500" />
+                            Dinámico
+                          </span>
+                        ) : (
+                          formatCurrency(parseFloat(selectedStation.tariff.pricePerKwh))
+                        )}
                       </div>
                     </div>
                     <div className="p-3 bg-muted/50 rounded-lg">
@@ -481,7 +502,7 @@ export default function InvestorStations() {
 
       {/* Modal de Configuración de Tarifas */}
       <Dialog open={showConfigModal} onOpenChange={setShowConfigModal}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Settings className="w-5 h-5" />
@@ -493,76 +514,158 @@ export default function InvestorStations() {
           </DialogHeader>
 
           <div className="space-y-4">
-            <div>
-              <Label htmlFor="pricePerKwh">Precio por kWh (COP)</Label>
-              <div className="relative mt-1">
-                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  id="pricePerKwh"
-                  type="number"
-                  value={pricePerKwh}
-                  onChange={(e) => setPricePerKwh(e.target.value)}
-                  className="pl-10"
-                  placeholder="1200"
+            {/* Toggle Precio Automático IA */}
+            <div className="p-4 rounded-lg border-2 border-purple-200 bg-purple-50/50 dark:bg-purple-950/20 dark:border-purple-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
+                    <Brain className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <Label htmlFor="autoPricing" className="font-semibold cursor-pointer">
+                      Precio Automático IA
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      La IA ajusta el precio según demanda y horario
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  id="autoPricing"
+                  checked={autoPricing}
+                  onCheckedChange={setAutoPricing}
                 />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Precio base por kilovatio-hora
-              </p>
+              
+              {autoPricing && (
+                <div className="mt-3 p-3 bg-purple-100/50 dark:bg-purple-900/30 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-600 mt-0.5" />
+                    <div className="text-sm text-purple-700 dark:text-purple-300">
+                      El precio se ajustará automáticamente entre <strong>$560 - $2,400/kWh</strong> basado en:
+                      <ul className="mt-1 ml-4 list-disc text-xs">
+                        <li>Ocupación de conectores (40%)</li>
+                        <li>Horario pico/valle (30%)</li>
+                        <li>Día de la semana (15%)</li>
+                        <li>Demanda histórica (15%)</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div>
-              <Label htmlFor="reservationFee">Tarifa de Reserva (COP)</Label>
-              <div className="relative mt-1">
-                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  id="reservationFee"
-                  type="number"
-                  value={reservationFee}
-                  onChange={(e) => setReservationFee(e.target.value)}
-                  className="pl-10"
-                  placeholder="5000"
-                />
+            {/* Precio sugerido (solo si modo manual) */}
+            {!autoPricing && suggestedPriceData && (
+              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      Precio sugerido por IA
+                    </span>
+                  </div>
+                  {getDemandLevelBadge(suggestedPriceData.demandLevel)}
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+                      {formatCurrency(suggestedPriceData.suggestedPrice)}/kWh
+                    </div>
+                    <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">
+                      {suggestedPriceData.explanation}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                    onClick={handleUseSuggestedPrice}
+                  >
+                    Usar
+                    <ArrowRight className="w-3 h-3 ml-1" />
+                  </Button>
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Cargo fijo por reservar un conector
-              </p>
-            </div>
+            )}
 
-            <div>
-              <Label htmlFor="idleFee">Penalización por Ocupación (COP/min)</Label>
-              <div className="relative mt-1">
-                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  id="idleFee"
-                  type="number"
-                  value={idleFee}
-                  onChange={(e) => setIdleFee(e.target.value)}
-                  className="pl-10"
-                  placeholder="500"
-                />
+            {/* Campos de precio manual */}
+            <div className={`space-y-4 transition-opacity ${autoPricing ? "opacity-50 pointer-events-none" : ""}`}>
+              <div>
+                <Label htmlFor="pricePerKwh">Precio por kWh (COP)</Label>
+                <div className="relative mt-1">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="pricePerKwh"
+                    type="number"
+                    value={pricePerKwh}
+                    onChange={(e) => setPricePerKwh(e.target.value)}
+                    className="pl-10"
+                    placeholder="1200"
+                    disabled={autoPricing}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Precio base por kilovatio-hora
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Cargo por minuto si el vehículo permanece conectado después de cargar
-              </p>
-            </div>
 
-            <div>
-              <Label htmlFor="connectionFee">Tarifa de Conexión (COP)</Label>
-              <div className="relative mt-1">
-                <Zap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  id="connectionFee"
-                  type="number"
-                  value={connectionFee}
-                  onChange={(e) => setConnectionFee(e.target.value)}
-                  className="pl-10"
-                  placeholder="2000"
-                />
+              <div>
+                <Label htmlFor="reservationFee">Tarifa de Reserva (COP)</Label>
+                <div className="relative mt-1">
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="reservationFee"
+                    type="number"
+                    value={reservationFee}
+                    onChange={(e) => setReservationFee(e.target.value)}
+                    className="pl-10"
+                    placeholder="5000"
+                    disabled={autoPricing}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Cargo fijo por reservar un conector
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Cargo fijo por iniciar una sesión de carga
-              </p>
+
+              <div>
+                <Label htmlFor="idleFee">Penalización por Ocupación (COP/min)</Label>
+                <div className="relative mt-1">
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="idleFee"
+                    type="number"
+                    value={idleFee}
+                    onChange={(e) => setIdleFee(e.target.value)}
+                    className="pl-10"
+                    placeholder="500"
+                    disabled={autoPricing}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Cargo por minuto si el vehículo permanece conectado después de cargar
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="connectionFee">Tarifa de Conexión (COP)</Label>
+                <div className="relative mt-1">
+                  <Zap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="connectionFee"
+                    type="number"
+                    value={connectionFee}
+                    onChange={(e) => setConnectionFee(e.target.value)}
+                    className="pl-10"
+                    placeholder="2000"
+                    disabled={autoPricing}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Cargo fijo por iniciar una sesión de carga
+                </p>
+              </div>
             </div>
 
             <div className="flex gap-2 pt-4">

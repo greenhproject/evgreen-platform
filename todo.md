@@ -1342,3 +1342,15 @@
 
 **Nota importante**: El precio se calcula al INICIO de la carga y se mantiene fijo durante toda la sesión (como funciona Uber). Para ver precios altos, debe haber alta demanda ANTES de iniciar la carga (múltiples usuarios cargando simultáneamente, horario pico, etc.).
 
+
+## Toggle Precio Automático IA - 1 Febrero 2026 [COMPLETADO]
+
+- [x] Agregar campo autoPricing (boolean) a la tabla de tarifas en BD
+- [x] Actualizar modal de configuración de tarifas con toggle de "Precio Automático IA"
+- [x] Mostrar/ocultar campos de precio manual según estado del toggle
+- [x] Modificar lógica de cálculo de precios para respetar la configuración
+- [x] Cuando autoPricing=true, usar algoritmo dinámico; cuando false, usar precio fijo
+- [x] Agregar indicador visual de que el precio es manejado por IA (badge "IA" en tabla)
+- [x] Mostrar precio sugerido por IA cuando el modo manual está activo
+- [x] Endpoint getSuggestedPrice para obtener precio sugerido basado en demanda actual
+- [x] 280 tests pasando

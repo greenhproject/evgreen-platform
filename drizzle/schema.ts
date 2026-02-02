@@ -183,6 +183,8 @@ export const tariffs = mysqlTable("tariffs", {
   overstayGracePeriodMinutes: int("overstayGracePeriodMinutes").default(10), // Minutos de gracia
   // Horarios especiales (JSON para tarifas por hora)
   timeBasedPricing: json("timeBasedPricing"), // { "peak": { hours: [18,19,20], multiplier: 1.5 } }
+  // Precio automático por IA
+  autoPricing: boolean("autoPricing").default(false).notNull(), // Si true, usa algoritmo dinámico de IA
   // Validez
   isActive: boolean("isActive").default(true).notNull(),
   validFrom: timestamp("validFrom"),

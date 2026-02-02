@@ -244,10 +244,22 @@ export const chargingRouter = router({
       // Calcular costo estimado
       const evsesForPrice = await db.getEvsesByStationId(stationId);
       const firstEvse = evsesForPrice[0];
-      const dynamicPrice = firstEvse 
-        ? await dynamicPricing.calculateDynamicPrice(stationId, firstEvse.id)
-        : { finalPrice: 800, factors: { finalMultiplier: 1 } } as dynamicPricing.DynamicPrice;
-      const pricePerKwh = dynamicPrice.finalPrice;
+      
+      // Obtener tarifa de la estación para verificar si usa precio automático
+      const tariff = await db.getActiveTariffByStationId(stationId);
+      const useAutoPricing = tariff?.autoPricing || false;
+      
+      let pricePerKwh: number;
+      if (useAutoPricing && firstEvse) {
+        // Usar precio dinámico calculado por IA
+        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, firstEvse.id);
+        pricePerKwh = dynamicPrice.finalPrice;
+        console.log(`[Charging] Using dynamic pricing: $${pricePerKwh}/kWh (multiplier: ${dynamicPrice.factors.finalMultiplier.toFixed(2)})`);
+      } else {
+        // Usar precio fijo configurado por el inversionista
+        pricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "800");
+        console.log(`[Charging] Using fixed pricing: $${pricePerKwh}/kWh`);
+      }
       
       // Obtener potencia del conector para cálculos
       const connectors = await db.getEvsesByStationId(stationId);
