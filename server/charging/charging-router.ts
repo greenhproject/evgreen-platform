@@ -249,22 +249,34 @@ export const chargingRouter = router({
       const tariff = await db.getActiveTariffByStationId(stationId);
       const useAutoPricing = tariff?.autoPricing || false;
       
+      // Obtener el conector seleccionado para determinar tipo AC/DC
+      const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;
+      const evseId = selectedConnector?.id || firstEvse?.id;
+      
       let pricePerKwh: number;
-      if (useAutoPricing && firstEvse) {
+      if (useAutoPricing && evseId) {
         // Usar precio dinámico calculado por IA
-        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, firstEvse.id);
-        pricePerKwh = dynamicPrice.finalPrice;
-        console.log(`[Charging] Using dynamic pricing: $${pricePerKwh}/kWh (multiplier: ${dynamicPrice.factors.finalMultiplier.toFixed(2)})`);
+        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+        
+        // Aplicar diferenciación AC/DC si está habilitada
+        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice);
+        pricePerKwh = priceByType.price;
+        console.log(`[Charging] Using dynamic pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, multiplier: ${dynamicPrice.factors.finalMultiplier.toFixed(2)})`);
       } else {
         // Usar precio fijo configurado por el inversionista
-        pricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "800");
-        console.log(`[Charging] Using fixed pricing: $${pricePerKwh}/kWh`);
+        // Pero aplicar diferenciación AC/DC si está habilitada
+        const basePrice = parseFloat(tariff?.pricePerKwh?.toString() || "800");
+        if (evseId) {
+          const priceByType = await db.getPriceByConnectorType(evseId, basePrice);
+          pricePerKwh = priceByType.price;
+          console.log(`[Charging] Using fixed pricing with AC/DC differentiation: $${pricePerKwh}/kWh (${priceByType.chargeType})`);
+        } else {
+          pricePerKwh = basePrice;
+          console.log(`[Charging] Using fixed pricing: $${pricePerKwh}/kWh`);
+        }
       }
       
-      // Obtener potencia del conector para cálculos
-      const connectors = await db.getEvsesByStationId(stationId);
-      const connector = connectors.find(c => c.connectorId === connectorId);
-      const evseId = connector?.id || firstEvse?.id;
+      // Usar el conector ya obtenido arriba (selectedConnector) para cálculos de potencia
       
       let estimatedCost = 0;
       switch (chargeMode) {

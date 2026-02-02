@@ -1428,3 +1428,17 @@
 - [x] Actualizar endpoints getPriceRanges y updatePriceRanges para incluir tarifas globales
 - [x] Nueva sección "Tarifas Globales por Defecto" con inputs editables en Admin > Tarifas
 - [x] 280 tests pasando
+
+
+## Tarifas Diferenciadas por Tipo de Conector (AC/DC) - 2 Febrero 2026 [COMPLETADO]
+
+- [x] Agregar campos de tarifas AC/DC en platform_settings (defaultPricePerKwhAC, defaultPricePerKwhDC, enableDifferentiatedPricing)
+- [x] Actualizar endpoints getPriceRanges y updatePriceRanges para incluir tarifas AC/DC
+- [x] Actualizar UI del panel de admin con sección de tarifas por tipo de conector
+  - Toggle para habilitar/deshabilitar precios diferenciados
+  - Inputs separados para precio AC ($800/kWh default) y DC ($1200/kWh default)
+- [x] Modificar lógica de cálculo de precios para usar tarifa según tipo de conector
+  - Nueva función getPriceByConnectorType() en db.ts
+  - Detección automática de tipo de conector (AC: Type1, Type2, GBT_AC; DC: CCS1, CCS2, CHAdeMO, GBT_DC)
+- [x] Actualizar charging-router para usar tarifa correcta según conector
+- [x] 280 tests pasando
