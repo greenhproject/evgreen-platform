@@ -1016,6 +1016,11 @@ export const platformSettings = mysqlTable("platform_settings", {
   maxPricePerKwh: decimal("maxPricePerKwh", { precision: 10, scale: 2 }).default("2500").notNull(), // Máximo $2,500 COP/kWh
   enableDynamicPricing: boolean("enableDynamicPricing").default(true).notNull(), // Habilitar precios dinámicos globalmente
   
+  // Tarifas globales por defecto (configurables por admin)
+  defaultReservationFee: decimal("defaultReservationFee", { precision: 10, scale: 2 }).default("5000").notNull(), // Fee de reserva por defecto
+  defaultOverstayPenaltyPerMin: decimal("defaultOverstayPenaltyPerMin", { precision: 10, scale: 2 }).default("500").notNull(), // Penalización por minuto
+  defaultConnectionFee: decimal("defaultConnectionFee", { precision: 10, scale: 2 }).default("2000").notNull(), // Tarifa de conexión
+  
   // Metadata
   updatedBy: int("updatedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

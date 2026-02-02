@@ -1417,3 +1417,14 @@
   - Corregido en: routers.ts, _core/index.ts, ocpp/csms.ts, charging-simulator.ts
   - Ahora la distribución es configurable desde el panel de admin
 - [x] 280 tests pasando
+
+
+## Tarifas Globales Editables en Admin - 1 Febrero 2026 [COMPLETADO]
+
+- [x] Hacer editable Fee de reserva desde panel de admin
+- [x] Hacer editable Penalización/min desde panel de admin
+- [x] Hacer editable Tarifa conexión desde panel de admin
+- [x] Agregar campos en platform_settings (defaultReservationFee, defaultOverstayPenaltyPerMin, defaultConnectionFee)
+- [x] Actualizar endpoints getPriceRanges y updatePriceRanges para incluir tarifas globales
+- [x] Nueva sección "Tarifas Globales por Defecto" con inputs editables en Admin > Tarifas
+- [x] 280 tests pasando

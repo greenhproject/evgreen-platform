@@ -103,8 +103,14 @@ export default function AdminTariffs() {
     demandWeight: 15,
   });
 
-  // Estado para rangos de precio globales
-  const [localPriceRanges, setLocalPriceRanges] = useState({ minPrice: 400, maxPrice: 3000 });
+  // Estado para rangos de precio globales y tarifas
+  const [localPriceRanges, setLocalPriceRanges] = useState({ 
+    minPrice: 400, 
+    maxPrice: 3000,
+    defaultReservationFee: 5000,
+    defaultOverstayPenaltyPerMin: 500,
+    defaultConnectionFee: 2000,
+  });
   const [savingPriceRanges, setSavingPriceRanges] = useState(false);
 
   // Query para obtener rangos de precio actuales
@@ -129,6 +135,9 @@ export default function AdminTariffs() {
       setLocalPriceRanges({
         minPrice: priceRanges.minPrice,
         maxPrice: priceRanges.maxPrice,
+        defaultReservationFee: priceRanges.defaultReservationFee,
+        defaultOverstayPenaltyPerMin: priceRanges.defaultOverstayPenaltyPerMin,
+        defaultConnectionFee: priceRanges.defaultConnectionFee,
       });
     }
   }, [priceRanges]);
@@ -147,6 +156,9 @@ export default function AdminTariffs() {
       minPrice: localPriceRanges.minPrice,
       maxPrice: localPriceRanges.maxPrice,
       enableDynamicPricing: dynamicConfig.enabled,
+      defaultReservationFee: localPriceRanges.defaultReservationFee,
+      defaultOverstayPenaltyPerMin: localPriceRanges.defaultOverstayPenaltyPerMin,
+      defaultConnectionFee: localPriceRanges.defaultConnectionFee,
     });
   };
 
@@ -631,53 +643,111 @@ export default function AdminTariffs() {
         </CardContent>
       </Card>
 
-      {/* Estadísticas - Ahora editables */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-primary" />
+      {/* Tarifas Globales Editables */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="w-5 h-5" />
+            Tarifas Globales por Defecto
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Estas tarifas se aplicarán a todas las estaciones nuevas y a las que no tengan configuración personalizada
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {/* Precio base/kWh - Solo lectura */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-primary" />
+                Precio base/kWh
+              </Label>
+              <div className="flex items-center gap-2">
+                <div className="text-2xl font-bold text-primary">{formatCurrency(dynamicConfig.basePrice)}</div>
+              </div>
+              <p className="text-xs text-muted-foreground">Controlado por precios dinámicos</p>
             </div>
-            <div>
-              <div className="text-2xl font-bold">{formatCurrency(dynamicConfig.basePrice)}</div>
-              <div className="text-sm text-muted-foreground">Precio base/kWh</div>
+            
+            {/* Fee de reserva - Editable */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-green-600" />
+                Fee de Reserva
+              </Label>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">$</span>
+                <Input
+                  type="number"
+                  value={localPriceRanges.defaultReservationFee}
+                  onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, defaultReservationFee: parseInt(e.target.value) || 0 }))}
+                  className="w-28"
+                  min={0}
+                  max={100000}
+                />
+                <span className="text-muted-foreground">COP</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Cargo fijo por reservar un conector</p>
+            </div>
+            
+            {/* Penalización por ocupación - Editable */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-orange-600" />
+                Penalización/min
+              </Label>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">$</span>
+                <Input
+                  type="number"
+                  value={localPriceRanges.defaultOverstayPenaltyPerMin}
+                  onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, defaultOverstayPenaltyPerMin: parseInt(e.target.value) || 0 }))}
+                  className="w-28"
+                  min={0}
+                  max={10000}
+                />
+                <span className="text-muted-foreground">COP</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Cargo por minuto si permanece conectado</p>
+            </div>
+            
+            {/* Tarifa de conexión - Editable */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-purple-600" />
+                Tarifa Conexión
+              </Label>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">$</span>
+                <Input
+                  type="number"
+                  value={localPriceRanges.defaultConnectionFee}
+                  onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, defaultConnectionFee: parseInt(e.target.value) || 0 }))}
+                  className="w-28"
+                  min={0}
+                  max={50000}
+                />
+                <span className="text-muted-foreground">COP</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Cargo fijo por iniciar una carga</p>
             </div>
           </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold">{formatCurrency(5000)}</div>
-              <div className="text-sm text-muted-foreground">Fee de reserva</div>
-            </div>
+          
+          <div className="mt-6 flex justify-end">
+            <Button 
+              onClick={handleSavePriceRanges}
+              disabled={savingPriceRanges}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {savingPriceRanges ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              Guardar Tarifas Globales
+            </Button>
           </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold">{formatCurrency(500)}</div>
-              <div className="text-sm text-muted-foreground">Penalización/min</div>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-              <Zap className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold">{formatCurrency(2000)}</div>
-              <div className="text-sm text-muted-foreground">Tarifa conexión</div>
-            </div>
-          </div>
-        </Card>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Tabla de tarifas por estación */}
       <Card>
