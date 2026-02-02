@@ -13,7 +13,7 @@
 
 import * as db from "../db";
 import { nanoid } from "nanoid";
-import { sendChargingCompleteNotification } from "../firebase/fcm";
+import { sendChargingCompleteNotification, sendHighDemandNotification } from "../firebase/fcm";
 import { incrementActiveSimulations, decrementActiveSimulations } from "../pricing/dynamic-pricing";
 
 // Emails de usuarios de prueba que activan la simulación
@@ -212,6 +212,47 @@ export async function startSimulation(params: {
   
   // Incrementar contador de simulaciones activas para precios dinámicos
   incrementActiveSimulations();
+  
+  // Registrar precio en historial
+  try {
+    const { getZoneOccupancy, getDemandLevel, calculateOccupancyMultiplier } = await import("../pricing/dynamic-pricing");
+    const occupancyData = await getZoneOccupancy(stationId);
+    const occupancyMultiplier = calculateOccupancyMultiplier(occupancyData.occupancyRate);
+    const demandLevel = getDemandLevel(occupancyMultiplier);
+    
+    await db.createPriceHistoryRecord({
+      stationId,
+      evseId,
+      pricePerKwh: pricePerKwh.toString(),
+      demandLevel,
+      occupancyRate: occupancyData.occupancyRate.toString(),
+      timeMultiplier: "1.00", // Se puede calcular si es necesario
+      dayMultiplier: "1.00",
+      finalMultiplier: "1.00",
+      isAutoPricing: true, // En simulación siempre usamos precio dinámico
+      transactionId,
+    });
+    console.log(`[Simulator] Price history recorded: $${pricePerKwh}/kWh, demand: ${demandLevel}`);
+    
+    // Notificar al inversionista si hay alta demanda
+    if (demandLevel === "HIGH" || demandLevel === "SURGE") {
+      const station = await db.getChargingStationById(stationId);
+      if (station?.ownerId) {
+        const owner = await db.getUserById(station.ownerId);
+        if (owner?.fcmToken) {
+          await sendHighDemandNotification(owner.fcmToken, {
+            stationName: station.name,
+            demandLevel,
+            occupancyRate: occupancyData.occupancyRate,
+            currentPrice: pricePerKwh,
+          });
+          console.log(`[Simulator] High demand notification sent to investor ${station.ownerId}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`[Simulator] Error recording price history:`, error);
+  }
 
   // Iniciar ciclo de simulación
   startSimulationCycle(session);

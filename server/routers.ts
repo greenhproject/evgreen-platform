@@ -630,6 +630,47 @@ const tariffsRouter = router({
         explanation,
       };
     }),
+  
+  // Obtener historial de precios de una estación
+  getPriceHistory: protectedProcedure
+    .input(z.object({ 
+      stationId: z.number(),
+      daysBack: z.number().optional().default(7),
+      granularity: z.enum(["hour", "day"]).optional().default("hour"),
+    }))
+    .query(async ({ input }) => {
+      return db.getPriceHistoryAggregated(input.stationId, input.daysBack, input.granularity);
+    }),
+  
+  // Obtener rangos de precio permitidos (admin)
+  getPriceRanges: protectedProcedure
+    .query(async () => {
+      return db.getPriceRanges();
+    }),
+  
+  // Actualizar rangos de precio (solo admin)
+  updatePriceRanges: adminProcedure
+    .input(z.object({
+      minPrice: z.number().min(100).max(5000),
+      maxPrice: z.number().min(100).max(10000),
+      enableDynamicPricing: z.boolean(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (input.minPrice >= input.maxPrice) {
+        throw new TRPCError({ 
+          code: "BAD_REQUEST", 
+          message: "El precio mínimo debe ser menor al máximo" 
+        });
+      }
+      await db.updatePriceRanges(input.minPrice, input.maxPrice, input.enableDynamicPricing, ctx.user.id);
+      return { success: true };
+    }),
+  
+  // Obtener demanda actual de estaciones del inversionista
+  getInvestorDemand: investorProcedure
+    .query(async ({ ctx }) => {
+      return db.getInvestorStationsDemand(ctx.user.id);
+    }),
 });
 
 // ============================================================================

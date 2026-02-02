@@ -44,6 +44,12 @@ import {
   ocppAlerts,
   InsertOcppAlert,
   OcppAlert,
+  priceHistory,
+  InsertPriceHistory,
+  PriceHistory,
+  platformSettings,
+  PlatformSettings,
+  InsertPlatformSettings,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -1841,12 +1847,6 @@ export async function getWalletTransactions(userId: number, limit = 20) {
 // PLATFORM SETTINGS OPERATIONS
 // ============================================================================
 
-import {
-  platformSettings,
-  InsertPlatformSettings,
-  PlatformSettings,
-} from "../drizzle/schema";
-
 export async function getPlatformSettings(): Promise<PlatformSettings | null> {
   const db = await getDb();
   if (!db) return null;
@@ -2719,4 +2719,171 @@ export async function deductWalletBalance(userId: number, amount: number, transa
   });
   
   return newBalance;
+}
+
+
+// ============================================================================
+// PRICE HISTORY OPERATIONS
+// ============================================================================
+
+export async function createPriceHistoryRecord(record: InsertPriceHistory) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(priceHistory).values(record);
+  return result[0].insertId;
+}
+
+export async function getPriceHistoryByStation(
+  stationId: number,
+  daysBack: number = 7,
+  limit: number = 500
+): Promise<PriceHistory[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysBack);
+  
+  return db.select()
+    .from(priceHistory)
+    .where(
+      and(
+        eq(priceHistory.stationId, stationId),
+        gte(priceHistory.recordedAt, startDate)
+      )
+    )
+    .orderBy(desc(priceHistory.recordedAt))
+    .limit(limit);
+}
+
+export async function getPriceHistoryAggregated(
+  stationId: number,
+  daysBack: number = 7,
+  granularity: "hour" | "day" = "hour"
+): Promise<Array<{ timestamp: string; avgPrice: number; minPrice: number; maxPrice: number; demandLevel: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysBack);
+  
+  const dateFormat = granularity === "hour" 
+    ? sql`DATE_FORMAT(${priceHistory.recordedAt}, '%Y-%m-%d %H:00:00')`
+    : sql`DATE_FORMAT(${priceHistory.recordedAt}, '%Y-%m-%d')`;
+  
+  const result = await db.select({
+    timestamp: dateFormat.as('timestamp'),
+    avgPrice: sql<number>`AVG(${priceHistory.pricePerKwh})`.as('avgPrice'),
+    minPrice: sql<number>`MIN(${priceHistory.pricePerKwh})`.as('minPrice'),
+    maxPrice: sql<number>`MAX(${priceHistory.pricePerKwh})`.as('maxPrice'),
+    demandLevel: sql<string>`MAX(${priceHistory.demandLevel})`.as('demandLevel'),
+  })
+    .from(priceHistory)
+    .where(
+      and(
+        eq(priceHistory.stationId, stationId),
+        gte(priceHistory.recordedAt, startDate)
+      )
+    )
+    .groupBy(dateFormat)
+    .orderBy(dateFormat);
+  
+  return result.map(row => ({
+    timestamp: String(row.timestamp),
+    avgPrice: Number(row.avgPrice) || 0,
+    minPrice: Number(row.minPrice) || 0,
+    maxPrice: Number(row.maxPrice) || 0,
+    demandLevel: row.demandLevel || 'NORMAL',
+  }));
+}
+
+// ============================================================================
+// PRICE RANGE OPERATIONS (Admin controlled)
+// ============================================================================
+
+export async function getPriceRanges(): Promise<{ minPrice: number; maxPrice: number; enableDynamicPricing: boolean }> {
+  const settings = await getPlatformSettings();
+  return {
+    minPrice: parseFloat(settings?.minPricePerKwh?.toString() || "400"),
+    maxPrice: parseFloat(settings?.maxPricePerKwh?.toString() || "2500"),
+    enableDynamicPricing: settings?.enableDynamicPricing ?? true,
+  };
+}
+
+export async function updatePriceRanges(
+  minPrice: number,
+  maxPrice: number,
+  enableDynamicPricing: boolean,
+  updatedBy?: number
+): Promise<void> {
+  await upsertPlatformSettings({
+    minPricePerKwh: minPrice.toString(),
+    maxPricePerKwh: maxPrice.toString(),
+    enableDynamicPricing,
+    updatedBy,
+  });
+}
+
+// ============================================================================
+// DEMAND MONITORING OPERATIONS
+// ============================================================================
+
+export async function getStationDemandStats(stationId: number): Promise<{
+  currentOccupancy: number;
+  totalConnectors: number;
+  activeCharges: number;
+  demandLevel: string;
+}> {
+  const db = await getDb();
+  if (!db) return { currentOccupancy: 0, totalConnectors: 0, activeCharges: 0, demandLevel: 'LOW' };
+  
+  // Obtener EVSEs de la estación
+  const stationEvses = await db.select().from(evses).where(eq(evses.stationId, stationId));
+  const totalConnectors = stationEvses.length;
+  
+  // Contar EVSEs en uso (CHARGING)
+  const chargingEvses = stationEvses.filter(e => e.status === 'CHARGING').length;
+  
+  // Calcular ocupación
+  const currentOccupancy = totalConnectors > 0 ? (chargingEvses / totalConnectors) * 100 : 0;
+  
+  // Determinar nivel de demanda
+  let demandLevel = 'LOW';
+  if (currentOccupancy >= 80) demandLevel = 'SURGE';
+  else if (currentOccupancy >= 60) demandLevel = 'HIGH';
+  else if (currentOccupancy >= 30) demandLevel = 'NORMAL';
+  
+  return {
+    currentOccupancy,
+    totalConnectors,
+    activeCharges: chargingEvses,
+    demandLevel,
+  };
+}
+
+export async function getInvestorStationsDemand(investorId: number): Promise<Array<{
+  stationId: number;
+  stationName: string;
+  currentOccupancy: number;
+  totalConnectors: number;
+  activeCharges: number;
+  demandLevel: string;
+}>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Obtener estaciones del inversor
+  const investorStations = await db.select().from(chargingStations).where(eq(chargingStations.ownerId, investorId));
+  
+  const results = [];
+  for (const station of investorStations) {
+    const demandStats = await getStationDemandStats(station.id);
+    results.push({
+      stationId: station.id,
+      stationName: station.name,
+      ...demandStats,
+    });
+  }
+  
+  return results;
 }

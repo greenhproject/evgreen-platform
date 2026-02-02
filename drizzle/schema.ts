@@ -1011,6 +1011,11 @@ export const platformSettings = mysqlTable("platform_settings", {
   ocppPort: int("ocppPort").default(9000),
   ocppServerActive: boolean("ocppServerActive").default(true).notNull(),
   
+  // Rangos de precio dinámico (controlados por admin para proteger el mercado)
+  minPricePerKwh: decimal("minPricePerKwh", { precision: 10, scale: 2 }).default("400").notNull(), // Mínimo $400 COP/kWh
+  maxPricePerKwh: decimal("maxPricePerKwh", { precision: 10, scale: 2 }).default("2500").notNull(), // Máximo $2,500 COP/kWh
+  enableDynamicPricing: boolean("enableDynamicPricing").default(true).notNull(), // Habilitar precios dinámicos globalmente
+  
   // Metadata
   updatedBy: int("updatedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1019,3 +1024,34 @@ export const platformSettings = mysqlTable("platform_settings", {
 
 export type PlatformSettings = typeof platformSettings.$inferSelect;
 export type InsertPlatformSettings = typeof platformSettings.$inferInsert;
+
+
+// ============================================================================
+// PRICE HISTORY TABLE (para tracking de precios dinámicos)
+// ============================================================================
+
+export const priceHistory = mysqlTable("price_history", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  evseId: int("evseId"), // FK a evses (opcional)
+  
+  // Precio registrado
+  pricePerKwh: decimal("pricePerKwh", { precision: 10, scale: 2 }).notNull(),
+  
+  // Factores que influyeron en el precio
+  demandLevel: varchar("demandLevel", { length: 20 }).notNull(), // LOW, NORMAL, HIGH, SURGE
+  occupancyRate: decimal("occupancyRate", { precision: 5, scale: 2 }), // 0-100%
+  timeMultiplier: decimal("timeMultiplier", { precision: 4, scale: 2 }),
+  dayMultiplier: decimal("dayMultiplier", { precision: 4, scale: 2 }),
+  finalMultiplier: decimal("finalMultiplier", { precision: 4, scale: 2 }),
+  
+  // Contexto
+  isAutoPricing: boolean("isAutoPricing").default(true).notNull(), // Si fue precio automático o manual
+  transactionId: int("transactionId"), // FK a transactions (si se registró durante una carga)
+  
+  // Timestamp
+  recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+});
+
+export type PriceHistory = typeof priceHistory.$inferSelect;
+export type InsertPriceHistory = typeof priceHistory.$inferInsert;

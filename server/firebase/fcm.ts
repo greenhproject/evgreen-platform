@@ -395,3 +395,59 @@ export default {
   unsubscribeFromTopic,
   sendToTopic,
 };
+
+
+/**
+ * Enviar notificación de demanda alta a inversionista
+ */
+export async function sendHighDemandNotification(
+  fcmToken: string,
+  data: {
+    stationName: string;
+    demandLevel: string;
+    occupancyRate: number;
+    currentPrice: number;
+  }
+): Promise<boolean> {
+  const levelText = {
+    HIGH: "Alta demanda",
+    SURGE: "Demanda crítica",
+  }[data.demandLevel] || "Alta demanda";
+  
+  return sendPushNotification(fcmToken, {
+    type: "system_alert",
+    title: `📈 ${levelText} en ${data.stationName}`,
+    body: `Ocupación: ${data.occupancyRate.toFixed(0)}%. Precio actual: $${data.currentPrice.toLocaleString()}/kWh. ¡Tus ingresos están aumentando!`,
+    clickAction: "/investor/stations",
+    data: {
+      stationName: data.stationName,
+      demandLevel: data.demandLevel,
+      occupancyRate: data.occupancyRate.toString(),
+      currentPrice: data.currentPrice.toString(),
+    },
+  });
+}
+
+/**
+ * Enviar notificación de demanda baja a inversionista (oportunidad de promoción)
+ */
+export async function sendLowDemandNotification(
+  fcmToken: string,
+  data: {
+    stationName: string;
+    occupancyRate: number;
+    suggestedDiscount: number;
+  }
+): Promise<boolean> {
+  return sendPushNotification(fcmToken, {
+    type: "promotion",
+    title: `💡 Oportunidad en ${data.stationName}`,
+    body: `Baja demanda (${data.occupancyRate.toFixed(0)}% ocupación). Considera activar una promoción del ${data.suggestedDiscount}% para atraer más usuarios.`,
+    clickAction: "/investor/stations",
+    data: {
+      stationName: data.stationName,
+      occupancyRate: data.occupancyRate.toString(),
+      suggestedDiscount: data.suggestedDiscount.toString(),
+    },
+  });
+}
