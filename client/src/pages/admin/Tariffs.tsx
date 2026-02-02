@@ -103,6 +103,53 @@ export default function AdminTariffs() {
     demandWeight: 15,
   });
 
+  // Estado para rangos de precio globales
+  const [localPriceRanges, setLocalPriceRanges] = useState({ minPrice: 400, maxPrice: 3000 });
+  const [savingPriceRanges, setSavingPriceRanges] = useState(false);
+
+  // Query para obtener rangos de precio actuales
+  const { data: priceRanges, refetch: refetchPriceRanges } = trpc.tariffs.getPriceRanges.useQuery();
+
+  // Mutación para actualizar rangos de precio
+  const updatePriceRanges = trpc.tariffs.updatePriceRanges.useMutation({
+    onSuccess: () => {
+      toast.success("Rangos de precio actualizados correctamente");
+      refetchPriceRanges();
+      setSavingPriceRanges(false);
+    },
+    onError: (error) => {
+      toast.error(`Error al actualizar rangos: ${error.message}`);
+      setSavingPriceRanges(false);
+    },
+  });
+
+  // Sincronizar estado local con datos del servidor
+  useEffect(() => {
+    if (priceRanges) {
+      setLocalPriceRanges({
+        minPrice: priceRanges.minPrice,
+        maxPrice: priceRanges.maxPrice,
+      });
+    }
+  }, [priceRanges]);
+
+  const handleSavePriceRanges = () => {
+    if (localPriceRanges.minPrice >= localPriceRanges.maxPrice) {
+      toast.error("El precio mínimo debe ser menor que el máximo");
+      return;
+    }
+    if (localPriceRanges.minPrice < 100) {
+      toast.error("El precio mínimo debe ser al menos $100 COP");
+      return;
+    }
+    setSavingPriceRanges(true);
+    updatePriceRanges.mutate({
+      minPrice: localPriceRanges.minPrice,
+      maxPrice: localPriceRanges.maxPrice,
+      enableDynamicPricing: dynamicConfig.enabled,
+    });
+  };
+
   // Obtener estaciones para mostrar tarifas
   const { data: stations, refetch: refetchStations } = trpc.stations.listPublic.useQuery({});
   
@@ -415,6 +462,78 @@ export default function AdminTariffs() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Rangos de Precio Globales (Controlados por Admin) */}
+      <Card className="border-2 border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+            <Settings className="w-5 h-5" />
+            Rangos de Precio Globales
+            <Badge variant="outline" className="ml-2 text-amber-600 border-amber-300">
+              Control de Mercado
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Estos límites aplican a todos los inversionistas. Ningún precio puede estar fuera de este rango para proteger el mercado.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-green-600" />
+                Precio Mínimo por kWh
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  value={priceRanges?.minPrice || 400}
+                  onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, minPrice: parseInt(e.target.value) || 400 }))}
+                  className="w-32"
+                />
+                <span className="text-muted-foreground">COP</span>
+                <span className="text-sm text-green-600">
+                  ({formatCurrency(priceRanges?.minPrice || 400)})
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">Evita precios predatorios que dañen la competencia</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-red-600" />
+                Precio Máximo por kWh
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  value={priceRanges?.maxPrice || 3000}
+                  onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, maxPrice: parseInt(e.target.value) || 3000 }))}
+                  className="w-32"
+                />
+                <span className="text-muted-foreground">COP</span>
+                <span className="text-sm text-red-600">
+                  ({formatCurrency(priceRanges?.maxPrice || 3000)})
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">Protege a los usuarios de precios abusivos</p>
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button 
+              onClick={handleSavePriceRanges}
+              disabled={savingPriceRanges}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {savingPriceRanges ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              Guardar Rangos Globales
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Precio actual */}
       <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">

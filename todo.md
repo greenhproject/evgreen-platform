@@ -1380,3 +1380,26 @@
 - [x] Enviar notificación push al inversionista dueño de la estación
 - [x] Incluir datos de ocupación y precio actual en la notificación
 - [x] 280 tests pasando
+
+
+## Mejoras Adicionales de Precios - 1 Febrero 2026 [COMPLETADO]
+
+### Panel Admin para Rangos de Precio
+- [x] Crear sección en panel de admin para configurar rangos de precio globales
+- [x] UI con inputs para precio mínimo y máximo por kWh
+- [x] Botón de guardar con validación
+- [x] Mostrar valores actuales configurados
+- [x] Toggle para habilitar/deshabilitar precios dinámicos globalmente
+
+### Alertas de Baja Demanda
+- [x] Detectar cuando la demanda está baja por tiempo prolongado (ocupación < 20%)
+- [x] Enviar notificación push al inversionista sugiriendo promociones
+- [x] Incluir porcentaje de descuento sugerido (10-30% según ocupación)
+- [x] Calcular impacto potencial de la promoción
+
+### Exportación CSV de Historial de Precios
+- [x] Botón de exportar en el modal de historial de precios
+- [x] Generar CSV con fecha, precio, demanda
+- [x] Descargar automáticamente el archivo
+- [x] Incluir nombre de estación en el archivo
+- [x] 280 tests pasando
