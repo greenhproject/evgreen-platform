@@ -513,13 +513,13 @@ export default function AdminTariffs() {
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
-                  value={priceRanges?.minPrice || 400}
+                  value={localPriceRanges.minPrice}
                   onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, minPrice: parseInt(e.target.value) || 400 }))}
                   className="w-32"
                 />
                 <span className="text-muted-foreground">COP</span>
                 <span className="text-sm text-green-600">
-                  ({formatCurrency(priceRanges?.minPrice || 400)})
+                  ({formatCurrency(localPriceRanges.minPrice)})
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">Evita precios predatorios que dañen la competencia</p>
@@ -532,13 +532,13 @@ export default function AdminTariffs() {
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
-                  value={priceRanges?.maxPrice || 3000}
+                  value={localPriceRanges.maxPrice}
                   onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, maxPrice: parseInt(e.target.value) || 3000 }))}
                   className="w-32"
                 />
                 <span className="text-muted-foreground">COP</span>
                 <span className="text-sm text-red-600">
-                  ({formatCurrency(priceRanges?.maxPrice || 3000)})
+                  ({formatCurrency(localPriceRanges.maxPrice)})
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">Protege a los usuarios de precios abusivos</p>

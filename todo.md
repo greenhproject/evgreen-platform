@@ -1442,3 +1442,14 @@
   - Detección automática de tipo de conector (AC: Type1, Type2, GBT_AC; DC: CCS1, CCS2, CHAdeMO, GBT_DC)
 - [x] Actualizar charging-router para usar tarifa correcta según conector
 - [x] 280 tests pasando
+
+
+## Bug: No se pueden modificar rangos de precios globales - 2 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: El botón "Guardar Rangos Globales" no funciona en Admin > Tarifas
+  - Causa: Los inputs usaban priceRanges (datos del servidor) en lugar de localPriceRanges (estado local editable)
+  - Solución: Cambiar los inputs para usar localPriceRanges.minPrice y localPriceRanges.maxPrice
+- [x] Investigar endpoint updatePriceRanges en tariffs-router.ts - El endpoint estaba correcto
+- [x] Verificar que la mutación se llama correctamente desde el frontend - La mutación estaba correcta
+- [x] Corregir la lógica de guardado - Corregido en Tariffs.tsx
+- [x] 280 tests pasando
