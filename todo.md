@@ -1491,3 +1491,25 @@
 - [x] Mostrar comparación con período anterior basada en datos reales
   - Calcula automáticamente el período anterior y muestra % de cambio
 - [x] 286 tests pasando
+
+
+## Rediseño de Mis Reportes del Inversionista - 2 Febrero 2026 [COMPLETADO]
+
+- [x] Revisar y rediseñar el componente Reports.tsx para diferenciarlo de Ingresos
+  - Nuevo diseño con análisis de ocupación, rendimiento por estación y métricas avanzadas
+- [x] Agregar filtro por estación específica o todas las estaciones
+  - Selector con todas las estaciones del inversionista
+- [x] Agregar selector de rango de fechas (semana, mes, trimestre, año)
+- [x] Mostrar métricas de rendimiento por estación (comparativa)
+  - Tabla con ranking de estaciones por ingresos, cargas y energía
+- [x] Agregar análisis de ocupación (horarios pico, días más activos)
+  - Gráfica de ocupación por hora del día
+  - Gráfica de cargas por día de la semana
+  - Tarjetas de insights (hora pico, día más activo, estaciones activas)
+- [x] Implementar gráficas con datos reales de tendencias
+  - Tendencia de ingresos diarios
+  - Distribución de ingresos (pie chart)
+- [x] Agregar exportación de reporte completo con análisis detallado
+  - Modal con opciones Excel y PDF
+- [x] Usar datos reales de transacciones en lugar de datos ficticios
+- [x] 286 tests pasando
