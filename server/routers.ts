@@ -812,18 +812,15 @@ const transactionsRouter = router({
       endDate: z.date().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      // Obtener transacciones del inversionista
       const transactions = await db.getTransactionsByInvestor(ctx.user.id, {
         startDate: input.startDate,
         endDate: input.endDate,
       });
 
-      // Obtener configuración de la plataforma
       const settings = await db.getPlatformSettings();
       const investorPercentage = settings?.investorPercentage ?? 80;
       const platformFeePercentage = settings?.platformFeePercentage ?? 20;
 
-      // Obtener nombres de estaciones
       const stationIds = Array.from(new Set(transactions.map(t => t.stationId)));
       const stationsMap: Record<number, string> = {};
       for (const stationId of stationIds) {
@@ -833,7 +830,6 @@ const transactionsRouter = router({
         }
       }
 
-      // Preparar datos de transacciones con nombres de estación
       const transactionsWithNames = transactions.map(t => ({
         ...t,
         stationName: stationsMap[t.stationId] || `Estación ${t.stationId}`,
@@ -861,7 +857,6 @@ const transactionsRouter = router({
         mimeType = "application/pdf";
       }
 
-      // Convertir buffer a base64 para enviar al cliente
       const base64 = buffer.toString("base64");
 
       return {
