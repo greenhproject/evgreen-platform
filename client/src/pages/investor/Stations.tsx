@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, MapPin, Zap, Settings, Eye, TrendingUp, ExternalLink, Battery, Clock, DollarSign, Sparkles, Brain, Info, ArrowRight } from "lucide-react";
+import { Search, MapPin, Zap, Settings, Eye, TrendingUp, ExternalLink, Battery, Clock, DollarSign, Sparkles, Brain, Info, ArrowRight, BarChart3, Activity } from "lucide-react";
 import { toast } from "sonner";
 
 // Tipo para estación
@@ -75,6 +75,18 @@ export default function InvestorStations() {
   const [autoPricing, setAutoPricing] = useState(false);
 
   const { data: stations, isLoading } = trpc.stations.listOwned.useQuery();
+  
+  // Query para obtener historial de precios de la estación seleccionada
+  const { data: priceHistory } = trpc.tariffs.getPriceHistory.useQuery(
+    { stationId: selectedStation?.id || 0, daysBack: 7, granularity: "hour" },
+    { enabled: !!selectedStation && showDetailsModal }
+  );
+  
+  // Query para obtener demanda actual de todas las estaciones
+  const { data: demandData } = trpc.tariffs.getInvestorDemand.useQuery();
+  
+  // Query para obtener rangos de precio permitidos
+  const { data: priceRanges } = trpc.tariffs.getPriceRanges.useQuery();
   
   // Query para obtener precio sugerido
   const { data: suggestedPriceData, isLoading: isLoadingSuggested } = trpc.tariffs.getSuggestedPrice.useQuery(
@@ -136,6 +148,31 @@ export default function InvestorStations() {
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
+  };
+
+  // Función para renderizar mini gráfica de precios (sparkline)
+  const renderPriceSparkline = (history: typeof priceHistory) => {
+    if (!history || history.length === 0) return null;
+    
+    const prices = history.slice(-24).map(h => h.avgPrice); // Últimas 24 horas
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    const range = maxPrice - minPrice || 1;
+    
+    return (
+      <div className="flex items-end gap-0.5 h-8">
+        {prices.map((price, i) => {
+          const height = ((price - minPrice) / range) * 100;
+          return (
+            <div
+              key={i}
+              className="w-1 bg-primary/60 rounded-t"
+              style={{ height: `${Math.max(height, 10)}%` }}
+            />
+          );
+        })}
+      </div>
+    );
   };
 
   const getDemandLevelBadge = (level: string) => {
@@ -423,6 +460,68 @@ export default function InvestorStations() {
                 </div>
               </div>
 
+              {/* Historial de Precios (si hay datos) */}
+              {priceHistory && priceHistory.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label className="text-muted-foreground flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4" />
+                      Historial de Precios (7 días)
+                    </Label>
+                    <Badge variant="outline" className="text-xs">
+                      {priceHistory.length} registros
+                    </Badge>
+                  </div>
+                  <div className="p-4 bg-muted/30 rounded-lg">
+                    {/* Mini gráfica sparkline */}
+                    <div className="mb-3">
+                      {renderPriceSparkline(priceHistory)}
+                    </div>
+                    {/* Estadísticas */}
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Mínimo</div>
+                        <div className="font-semibold text-green-600">
+                          {formatCurrency(Math.min(...priceHistory.map(h => h.avgPrice)))}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Promedio</div>
+                        <div className="font-semibold">
+                          {formatCurrency(
+                            priceHistory.reduce((sum, h) => sum + h.avgPrice, 0) / priceHistory.length
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Máximo</div>
+                        <div className="font-semibold text-red-600">
+                          {formatCurrency(Math.max(...priceHistory.map(h => h.avgPrice)))}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Demanda predominante */}
+                    <div className="mt-3 pt-3 border-t border-border/50">
+                      <div className="text-xs text-muted-foreground mb-1">Demanda predominante</div>
+                      <div className="flex gap-1">
+                        {(() => {
+                          const demandCounts = priceHistory.reduce((acc, h) => {
+                            acc[h.demandLevel] = (acc[h.demandLevel] || 0) + 1;
+                            return acc;
+                          }, {} as Record<string, number>);
+                          return Object.entries(demandCounts).map(([level, count]) => (
+                            <div key={level} className="flex items-center gap-1">
+                              {getDemandLevelBadge(level)}
+                              <span className="text-xs text-muted-foreground">({count})</span>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Tarifas */}
               {selectedStation.tariff && (
                 <div>
@@ -542,7 +641,7 @@ export default function InvestorStations() {
                   <div className="flex items-start gap-2">
                     <Sparkles className="w-4 h-4 text-purple-600 mt-0.5" />
                     <div className="text-sm text-purple-700 dark:text-purple-300">
-                      El precio se ajustará automáticamente entre <strong>$560 - $2,400/kWh</strong> basado en:
+                      El precio se ajustará automáticamente entre <strong>{formatCurrency(priceRanges?.minPrice || 560)} - {formatCurrency(priceRanges?.maxPrice || 2400)}/kWh</strong> basado en:
                       <ul className="mt-1 ml-4 list-disc text-xs">
                         <li>Ocupación de conectores (40%)</li>
                         <li>Horario pico/valle (30%)</li>

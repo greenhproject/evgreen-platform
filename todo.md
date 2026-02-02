@@ -1354,3 +1354,29 @@
 - [x] Mostrar precio sugerido por IA cuando el modo manual está activo
 - [x] Endpoint getSuggestedPrice para obtener precio sugerido basado en demanda actual
 - [x] 280 tests pasando
+
+
+## Mejoras de Precios Dinámicos - 1 Febrero 2026 [COMPLETADO]
+
+### Rangos de Precio Controlados por Admin
+- [x] Agregar campos minPricePerKwh y maxPricePerKwh a platform_settings
+- [x] Crear funciones getPriceRanges() y updatePriceRanges() en db.ts
+- [x] Endpoint getPriceRanges y updatePriceRanges en tariffsRouter
+- [x] Mostrar rangos permitidos en modal de configuración de tarifas del inversionista
+- [x] Validación de rangos controlados por administrador
+
+### Historial de Precios
+- [x] Crear tabla price_history para registrar cambios de precios dinámicos
+- [x] Registrar precio cada vez que se inicia una carga (en charging-simulator.ts)
+- [x] Endpoint getPriceHistory para obtener historial de precios de una estación
+- [x] Gráfica sparkline de variación de precios en los últimos 7 días
+- [x] Estadísticas (mínimo, promedio, máximo) en panel de inversionista
+- [x] Demanda predominante con badges visuales
+
+### Notificaciones de Demanda Alta
+- [x] Función sendHighDemandNotification() en fcm.ts
+- [x] Función sendLowDemandNotification() para oportunidades de promoción
+- [x] Detectar picos de demanda (HIGH o SURGE) al iniciar carga
+- [x] Enviar notificación push al inversionista dueño de la estación
+- [x] Incluir datos de ocupación y precio actual en la notificación
+- [x] 280 tests pasando
