@@ -40,7 +40,6 @@ export default function InvestorTransactions() {
   const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();
   const exportMutation = trpc.transactions.exportInvestorTransactions.useMutation();
   
-  // Obtener el porcentaje del inversionista desde la configuración (default 80%)
   const investorPercentage = platformSettings?.investorPercentage ?? 80;
 
   const formatCurrency = (amount: string | number) => {
@@ -68,7 +67,6 @@ export default function InvestorTransactions() {
     return <Badge className={styles[status] || "bg-gray-100"}>{labels[status] || status}</Badge>;
   };
 
-  // Calcular totales
   const totalRevenue = transactions?.reduce((sum: number, t: any) => {
     if (t.status === "COMPLETED") {
       return sum + parseFloat(t.totalCost || "0");
@@ -84,7 +82,6 @@ export default function InvestorTransactions() {
     return sum;
   }, 0) || 0;
 
-  // Función para descargar el archivo
   const downloadFile = (base64: string, filename: string, mimeType: string) => {
     const byteCharacters = atob(base64);
     const byteNumbers = new Array(byteCharacters.length);
@@ -103,7 +100,6 @@ export default function InvestorTransactions() {
     URL.revokeObjectURL(link.href);
   };
 
-  // Función para exportar
   const handleExport = async (format: "excel" | "pdf") => {
     setIsExporting(true);
     try {
@@ -119,7 +115,6 @@ export default function InvestorTransactions() {
     }
   };
 
-  // Filtrar transacciones
   const filteredTransactions = transactions?.filter((tx: any) => {
     const matchesSearch = searchQuery === "" || 
       tx.id.toString().includes(searchQuery) ||
