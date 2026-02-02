@@ -1474,3 +1474,20 @@
 - [x] Endpoint getInvestorPercentage verificado y funcionando correctamente
 - [x] El porcentaje se obtiene dinámicamente desde platform_settings
 - [x] 280 tests pasando
+
+
+## Bug: Página de Ingresos del Inversionista con datos ficticios - 2 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: La página de Ingresos muestra datos hardcodeados en lugar de datos reales
+  - Eliminados los mockEarnings y reemplazados por datos reales de transacciones
+- [x] Corregir Earnings.tsx para usar datos de transacciones reales del inversionista
+  - Usa trpc.transactions.investorTransactions para obtener datos reales
+  - Agrupa transacciones por día para mostrar resumen diario
+- [x] Agregar botón de exportar funcional a la página de Ingresos
+  - Modal con opciones Excel y PDF
+  - Usa el mismo endpoint exportInvestorTransactions
+- [x] Calcular ingresos netos, brutos y comisión de plataforma desde transacciones reales
+  - Usa el porcentaje dinámico desde platform_settings
+- [x] Mostrar comparación con período anterior basada en datos reales
+  - Calcula automáticamente el período anterior y muestra % de cambio
+- [x] 286 tests pasando
