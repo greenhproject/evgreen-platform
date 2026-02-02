@@ -442,9 +442,10 @@ export class CSMS {
           const energyCost = totalKwh * pricePerKwh;
           const totalCost = energyCost; // TODO: Agregar otros costos (tiempo, sesión)
 
-          // Modelo 80/20
-          const investorShare = totalCost * 0.8;
-          const platformFee = totalCost * 0.2;
+          // Distribución de ingresos según configuración del admin
+          const revenueConfig = await db.getRevenueShareConfig();
+          const investorShare = totalCost * (revenueConfig.investorPercent / 100);
+          const platformFee = totalCost * (revenueConfig.platformPercent / 100);
 
           // Actualizar transacción
           await db.updateTransaction(transaction.id, {

@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+      content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
     
     <!-- SEO Meta Tags -->
     <title>EVGreen - Carga tu Vehículo Eléctrico en Colombia</title>
@@ -17,21 +17,52 @@
     <meta property="og:title" content="EVGreen - Carga tu Vehículo Eléctrico en Colombia" />
     <meta property="og:description" content="Encuentra estaciones de carga para vehículos eléctricos cerca de ti. Carga rápida DC y AC, pagos seguros y monitoreo en tiempo real." />
     <meta property="og:site_name" content="EVGreen" />
+    <meta property="og:image" content="/icons/icon-512x512.png" />
     
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="EVGreen - Carga tu Vehículo Eléctrico en Colombia" />
     <meta name="twitter:description" content="Encuentra estaciones de carga para vehículos eléctricos cerca de ti. La red de carga EV más grande de Colombia." />
+    <meta name="twitter:image" content="/icons/icon-512x512.png" />
     
     <!-- Additional SEO -->
     <meta name="robots" content="index, follow" />
     <meta name="author" content="GreenH Project" />
     <link rel="canonical" href="https://evgreen.lat/" />
     
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#059669" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="EVGreen" />
+    <meta name="application-name" content="EVGreen" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="msapplication-TileColor" content="#059669" />
+    <meta name="msapplication-tap-highlight" content="no" />
+    <meta name="format-detection" content="telephone=no" />
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- PWA Icons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/icons/icon-152x152.png" />
+    
+    <!-- Splash Screens para iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="apple-touch-startup-image" href="/icons/icon-512x512.png" />
+    
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    
+    <!-- Preload crítico -->
+    <link rel="preload" href="/icons/icon-192x192.png" as="image" />
   </head>
 
   <body>
@@ -41,6 +72,21 @@
       defer
       src="%VITE_ANALYTICS_ENDPOINT%/umami"
       data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
+    
+    <!-- Registro del Service Worker -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((registration) => {
+              console.log('SW registrado:', registration.scope);
+            })
+            .catch((error) => {
+              console.log('Error al registrar SW:', error);
+            });
+        });
+      }
+    </script>
   </body>
 
 </html>

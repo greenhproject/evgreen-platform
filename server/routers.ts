@@ -10,6 +10,7 @@ import { stripeRouter } from "./stripe/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
 import { chargingRouter } from "./charging/charging-router";
 import { pushRouter } from "./push/push-router";
+import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -260,9 +261,37 @@ const stationsRouter = router({
     return stationsWithEvses;
   }),
   
-  // Inversionista: listar sus estaciones
+  // Inversionista: listar sus estaciones con tarifas y EVSEs
   listOwned: investorProcedure.query(async ({ ctx }) => {
-    return db.getAllChargingStations({ ownerId: ctx.user.id });
+    const stations = await db.getAllChargingStations({ ownerId: ctx.user.id });
+    
+    // Enriquecer con tarifas y EVSEs
+    const enrichedStations = await Promise.all(
+      stations.map(async (station) => {
+        const tariff = await db.getActiveTariffByStationId(station.id);
+        const evses = await db.getEvsesByStationId(station.id);
+        
+        return {
+          ...station,
+          tariff: tariff ? {
+            pricePerKwh: tariff.pricePerKwh?.toString() || "1200",
+            reservationFee: tariff.reservationFee?.toString() || "5000",
+            idleFeePerMin: tariff.overstayPenaltyPerMinute?.toString() || "500",
+            connectionFee: tariff.pricePerSession?.toString() || "2000",
+            autoPricing: tariff.autoPricing || false,
+          } : undefined,
+          evses: evses.map(e => ({
+            id: e.id,
+            connectorId: e.connectorId,
+            connectorType: e.connectorType,
+            powerKw: e.powerKw?.toString() || "22",
+            status: e.status,
+          })),
+        };
+      })
+    );
+    
+    return enrichedStations;
   }),
   
   getById: protectedProcedure
@@ -506,6 +535,7 @@ const tariffsRouter = router({
       reservationFee: z.number(),
       idleFeePerMin: z.number(),
       connectionFee: z.number(),
+      autoPricing: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const station = await db.getChargingStationById(input.stationId);
@@ -526,6 +556,7 @@ const tariffsRouter = router({
           reservationFee: input.reservationFee.toString(),
           overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
           pricePerSession: input.connectionFee.toString(),
+          autoPricing: input.autoPricing ?? false,
         });
       } else {
         // Crear nueva tarifa
@@ -536,11 +567,136 @@ const tariffsRouter = router({
           reservationFee: input.reservationFee.toString(),
           overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
           pricePerSession: input.connectionFee.toString(),
+          autoPricing: input.autoPricing ?? false,
           isActive: true,
         });
       }
       
       return { success: true };
+    }),
+  
+  // Obtener precio sugerido por IA para una estación
+  getSuggestedPrice: protectedProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ input }) => {
+      const { calculateDynamicPrice } = await import("./pricing/dynamic-pricing");
+      
+      // Obtener EVSEs de la estación para calcular precio dinámico
+      const evses = await db.getEvsesByStationId(input.stationId);
+      const firstEvse = evses[0];
+      
+      if (!firstEvse) {
+        return {
+          suggestedPrice: 1200,
+          demandLevel: "NORMAL" as const,
+          factors: {
+            occupancyMultiplier: 1,
+            timeMultiplier: 1,
+            dayMultiplier: 1,
+            demandMultiplier: 1,
+            finalMultiplier: 1,
+          },
+          explanation: "No hay conectores configurados. Usando precio base.",
+        };
+      }
+      
+      const dynamicPrice = await calculateDynamicPrice(input.stationId, firstEvse.id);
+      
+      // Generar explicación del precio sugerido
+      let explanation = "";
+      if (dynamicPrice.factors.demandLevel === "LOW") {
+        explanation = "Baja demanda actual. Precio reducido para atraer más usuarios.";
+      } else if (dynamicPrice.factors.demandLevel === "HIGH") {
+        explanation = "Alta demanda detectada. Precio incrementado por ocupación.";
+      } else if (dynamicPrice.factors.demandLevel === "SURGE") {
+        explanation = "Demanda crítica. Precio máximo por alta ocupación.";
+      } else {
+        explanation = "Demanda normal. Precio estándar basado en horario y día.";
+      }
+      
+      // Añadir información del horario
+      const hour = new Date().getHours();
+      if (hour >= 17 && hour < 20) {
+        explanation += " Horario pico vespertino (+50%).";
+      } else if (hour >= 7 && hour < 9) {
+        explanation += " Horario pico matutino (+30%).";
+      } else if (hour >= 0 && hour < 6) {
+        explanation += " Horario valle nocturno (-15%).";
+      }
+      
+      return {
+        suggestedPrice: dynamicPrice.finalPrice,
+        demandLevel: dynamicPrice.factors.demandLevel,
+        factors: dynamicPrice.factors,
+        explanation,
+      };
+    }),
+  
+  // Obtener historial de precios de una estación
+  getPriceHistory: protectedProcedure
+    .input(z.object({ 
+      stationId: z.number(),
+      daysBack: z.number().optional().default(7),
+      granularity: z.enum(["hour", "day"]).optional().default("hour"),
+    }))
+    .query(async ({ input }) => {
+      return db.getPriceHistoryAggregated(input.stationId, input.daysBack, input.granularity);
+    }),
+  
+  // Obtener rangos de precio permitidos (admin)
+  getPriceRanges: protectedProcedure
+    .query(async () => {
+      return db.getPriceRanges();
+    }),
+  
+  // Actualizar rangos de precio y tarifas globales (solo admin)
+  updatePriceRanges: adminProcedure
+    .input(z.object({
+      minPrice: z.number().min(100).max(5000),
+      maxPrice: z.number().min(100).max(10000),
+      enableDynamicPricing: z.boolean(),
+      defaultReservationFee: z.number().min(0).max(100000).optional(),
+      defaultOverstayPenaltyPerMin: z.number().min(0).max(10000).optional(),
+      defaultConnectionFee: z.number().min(0).max(50000).optional(),
+      defaultPricePerKwhAC: z.number().min(100).max(5000).optional(),
+      defaultPricePerKwhDC: z.number().min(100).max(10000).optional(),
+      enableDifferentiatedPricing: z.boolean().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (input.minPrice >= input.maxPrice) {
+        throw new TRPCError({ 
+          code: "BAD_REQUEST", 
+          message: "El precio mínimo debe ser menor al máximo" 
+        });
+      }
+      // Validar que AC sea menor que DC si precios diferenciados están habilitados
+      if (input.enableDifferentiatedPricing && input.defaultPricePerKwhAC && input.defaultPricePerKwhDC) {
+        if (input.defaultPricePerKwhAC > input.defaultPricePerKwhDC) {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: "El precio AC (carga lenta) debe ser menor o igual al precio DC (carga rápida)" 
+          });
+        }
+      }
+      await db.updatePriceRanges(
+        input.minPrice, 
+        input.maxPrice, 
+        input.enableDynamicPricing, 
+        ctx.user.id,
+        input.defaultReservationFee,
+        input.defaultOverstayPenaltyPerMin,
+        input.defaultConnectionFee,
+        input.defaultPricePerKwhAC,
+        input.defaultPricePerKwhDC,
+        input.enableDifferentiatedPricing
+      );
+      return { success: true };
+    }),
+  
+  // Obtener demanda actual de estaciones del inversionista
+  getInvestorDemand: investorProcedure
+    .query(async ({ ctx }) => {
+      return db.getInvestorStationsDemand(ctx.user.id);
     }),
 });
 
@@ -646,6 +802,73 @@ const transactionsRouter = router({
         startDate: input?.startDate,
         endDate: input?.endDate,
       });
+    }),
+
+  // Exportar transacciones del inversionista en Excel o PDF
+  exportInvestorTransactions: investorProcedure
+    .input(z.object({
+      format: z.enum(["excel", "pdf"]),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Obtener transacciones del inversionista
+      const transactions = await db.getTransactionsByInvestor(ctx.user.id, {
+        startDate: input.startDate,
+        endDate: input.endDate,
+      });
+
+      // Obtener configuración de la plataforma
+      const settings = await db.getPlatformSettings();
+      const investorPercentage = settings?.investorPercentage ?? 80;
+      const platformFeePercentage = settings?.platformFeePercentage ?? 20;
+
+      // Obtener nombres de estaciones
+      const stationIds = Array.from(new Set(transactions.map(t => t.stationId)));
+      const stationsMap: Record<number, string> = {};
+      for (const stationId of stationIds) {
+        const station = await db.getChargingStationById(stationId);
+        if (station) {
+          stationsMap[stationId] = station.name;
+        }
+      }
+
+      // Preparar datos de transacciones con nombres de estación
+      const transactionsWithNames = transactions.map(t => ({
+        ...t,
+        stationName: stationsMap[t.stationId] || `Estación ${t.stationId}`,
+      }));
+
+      const options = {
+        investorName: ctx.user.name || "Inversionista",
+        investorPercentage,
+        platformFeePercentage,
+        startDate: input.startDate,
+        endDate: input.endDate,
+      };
+
+      let buffer: Buffer;
+      let filename: string;
+      let mimeType: string;
+
+      if (input.format === "excel") {
+        buffer = generateExcelReport(transactionsWithNames, options);
+        filename = `transacciones_${new Date().toISOString().split("T")[0]}.xlsx`;
+        mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      } else {
+        buffer = generatePDFReport(transactionsWithNames, options);
+        filename = `transacciones_${new Date().toISOString().split("T")[0]}.pdf`;
+        mimeType = "application/pdf";
+      }
+
+      // Convertir buffer a base64 para enviar al cliente
+      const base64 = buffer.toString("base64");
+
+      return {
+        filename,
+        mimeType,
+        data: base64,
+      };
     }),
   
   getMeterValues: protectedProcedure
@@ -767,9 +990,10 @@ const transactionsRouter = router({
       const pricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "800");
       const totalCost = Math.round(kwhConsumed * pricePerKwh);
       
-      // Calcular distribución 80/20
-      const investorShare = Math.round(totalCost * 0.80);
-      const platformFee = Math.round(totalCost * 0.20);
+      // Calcular distribución según configuración del admin
+      const revenueConfig = await db.getRevenueShareConfig();
+      const investorShare = Math.round(totalCost * (revenueConfig.investorPercent / 100));
+      const platformFee = Math.round(totalCost * (revenueConfig.platformPercent / 100));
       
       // Actualizar transacción
       await db.updateTransaction(input.transactionId, {
@@ -1388,6 +1612,15 @@ const platformStatsRouter = router({
 // ============================================================================
 
 const settingsRouter = router({
+  // Endpoint público para obtener solo el porcentaje del inversionista (para mostrar en UI)
+  getInvestorPercentage: publicProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    return {
+      investorPercentage: settings?.investorPercentage ?? 80,
+      platformFeePercentage: settings?.platformFeePercentage ?? 20,
+    };
+  }),
+  
   get: adminProcedure.query(async () => {
     const settings = await db.getPlatformSettings();
     if (!settings) {

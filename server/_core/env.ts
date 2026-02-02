@@ -8,3 +8,12 @@ export const ENV = {
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
 };
+
+// Alias para compatibilidad
+export const env = {
+  ...ENV,
+  // Firebase Cloud Messaging
+  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID ?? "",
+  FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL ?? "",
+  FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY ?? "",
+};

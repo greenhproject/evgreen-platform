@@ -72,6 +72,13 @@ export const users = mysqlTable("users", {
   // Para técnicos - información adicional
   technicianLicense: varchar("technicianLicense", { length: 100 }),
   assignedRegion: varchar("assignedRegion", { length: 100 }),
+  // Token FCM para notificaciones push
+  fcmToken: text("fcmToken"),
+  fcmTokenUpdatedAt: timestamp("fcmTokenUpdatedAt"),
+  // Preferencias de notificaciones
+  notifyChargingComplete: boolean("notifyChargingComplete").default(true),
+  notifyLowBalance: boolean("notifyLowBalance").default(true),
+  notifyPromotions: boolean("notifyPromotions").default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -176,6 +183,8 @@ export const tariffs = mysqlTable("tariffs", {
   overstayGracePeriodMinutes: int("overstayGracePeriodMinutes").default(10), // Minutos de gracia
   // Horarios especiales (JSON para tarifas por hora)
   timeBasedPricing: json("timeBasedPricing"), // { "peak": { hours: [18,19,20], multiplier: 1.5 } }
+  // Precio automático por IA
+  autoPricing: boolean("autoPricing").default(false).notNull(), // Si true, usa algoritmo dinámico de IA
   // Validez
   isActive: boolean("isActive").default(true).notNull(),
   validFrom: timestamp("validFrom"),
@@ -1002,6 +1011,21 @@ export const platformSettings = mysqlTable("platform_settings", {
   ocppPort: int("ocppPort").default(9000),
   ocppServerActive: boolean("ocppServerActive").default(true).notNull(),
   
+  // Rangos de precio dinámico (controlados por admin para proteger el mercado)
+  minPricePerKwh: decimal("minPricePerKwh", { precision: 10, scale: 2 }).default("400").notNull(), // Mínimo $400 COP/kWh
+  maxPricePerKwh: decimal("maxPricePerKwh", { precision: 10, scale: 2 }).default("2500").notNull(), // Máximo $2,500 COP/kWh
+  enableDynamicPricing: boolean("enableDynamicPricing").default(true).notNull(), // Habilitar precios dinámicos globalmente
+  
+  // Tarifas globales por defecto (configurables por admin)
+  defaultReservationFee: decimal("defaultReservationFee", { precision: 10, scale: 2 }).default("5000").notNull(), // Fee de reserva por defecto
+  defaultOverstayPenaltyPerMin: decimal("defaultOverstayPenaltyPerMin", { precision: 10, scale: 2 }).default("500").notNull(), // Penalización por minuto
+  defaultConnectionFee: decimal("defaultConnectionFee", { precision: 10, scale: 2 }).default("2000").notNull(), // Tarifa de conexión
+  
+  // Tarifas diferenciadas por tipo de conector (AC vs DC)
+  defaultPricePerKwhAC: decimal("defaultPricePerKwhAC", { precision: 10, scale: 2 }).default("800").notNull(), // Precio base AC (carga lenta)
+  defaultPricePerKwhDC: decimal("defaultPricePerKwhDC", { precision: 10, scale: 2 }).default("1200").notNull(), // Precio base DC (carga rápida)
+  enableDifferentiatedPricing: boolean("enableDifferentiatedPricing").default(true).notNull(), // Habilitar precios diferenciados AC/DC
+  
   // Metadata
   updatedBy: int("updatedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1010,3 +1034,34 @@ export const platformSettings = mysqlTable("platform_settings", {
 
 export type PlatformSettings = typeof platformSettings.$inferSelect;
 export type InsertPlatformSettings = typeof platformSettings.$inferInsert;
+
+
+// ============================================================================
+// PRICE HISTORY TABLE (para tracking de precios dinámicos)
+// ============================================================================
+
+export const priceHistory = mysqlTable("price_history", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  evseId: int("evseId"), // FK a evses (opcional)
+  
+  // Precio registrado
+  pricePerKwh: decimal("pricePerKwh", { precision: 10, scale: 2 }).notNull(),
+  
+  // Factores que influyeron en el precio
+  demandLevel: varchar("demandLevel", { length: 20 }).notNull(), // LOW, NORMAL, HIGH, SURGE
+  occupancyRate: decimal("occupancyRate", { precision: 5, scale: 2 }), // 0-100%
+  timeMultiplier: decimal("timeMultiplier", { precision: 4, scale: 2 }),
+  dayMultiplier: decimal("dayMultiplier", { precision: 4, scale: 2 }),
+  finalMultiplier: decimal("finalMultiplier", { precision: 4, scale: 2 }),
+  
+  // Contexto
+  isAutoPricing: boolean("isAutoPricing").default(true).notNull(), // Si fue precio automático o manual
+  transactionId: int("transactionId"), // FK a transactions (si se registró durante una carga)
+  
+  // Timestamp
+  recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+});
+
+export type PriceHistory = typeof priceHistory.$inferSelect;
+export type InsertPriceHistory = typeof priceHistory.$inferInsert;

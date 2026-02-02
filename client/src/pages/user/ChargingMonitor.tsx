@@ -30,6 +30,7 @@ import {
   Loader2
 } from "lucide-react";
 import { toast } from "sonner";
+import { useNotificationSound } from "@/hooks/useNotificationSound";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -167,42 +168,55 @@ export default function ChargingMonitor() {
     return () => clearInterval(interval);
   }, [session?.startTime]);
   
-  // Si no hay sesión activa, redirigir
+  // Estado para controlar la redirección y evitar múltiples redirecciones
+  const [redirecting, setRedirecting] = useState(false);
+  const [completedTransactionId, setCompletedTransactionId] = useState<number | null>(null);
+  
+  // Hook para sonidos de notificación
+  const { playChargingCompleteSound } = useNotificationSound();
+  
+  // Detectar cuando la simulación se completa
   useEffect(() => {
-    if (!isLoading && !session) {
+    if (redirecting) return;
+    
+    if (session) {
+      const simStatus = (session as any).simulationStatus;
+      const progress = (session as any).progress;
+      const isSimulation = (session as any).isSimulation;
+      const status = session.status;
+      
+      // Verificar si la carga terminó por cualquier razón
+      const isCompleted = 
+        status === "COMPLETED" ||
+        simStatus === "completed" || 
+        simStatus === "finishing" || 
+        (isSimulation && progress >= 100);
+      
+      if (isCompleted && session.transactionId > 0) {
+        console.log(`[ChargingMonitor] Charge completed! Status: ${status}, SimStatus: ${simStatus}, Progress: ${progress}%, TransactionId: ${session.transactionId}`);
+        setRedirecting(true);
+        setCompletedTransactionId(session.transactionId);
+        
+        // Reproducir sonido de carga completa
+        playChargingCompleteSound();
+        
+        toast.success("¡Carga completada!");
+        // Pequeño delay para asegurar que la transacción se guardó y mostrar el toast
+        setTimeout(() => {
+          setLocation(`/charging-summary/${session.transactionId}`);
+        }, 800);
+      }
+    }
+  }, [session, redirecting, setLocation, playChargingCompleteSound]);
+  
+  // Si no hay sesión activa y no estamos redirigiendo, ir al mapa
+  useEffect(() => {
+    // Solo redirigir al mapa si no hay sesión, no estamos cargando, y no estamos en proceso de redirección
+    if (!isLoading && !session && !redirecting && !completedTransactionId) {
       toast.info("No hay una carga activa");
       setLocation("/map");
     }
-  }, [isLoading, session, setLocation]);
-  
-  // Detectar cuando la simulación se completa - usar ref para evitar redirecciones múltiples
-  const hasRedirected = useState(false)[0];
-  const [redirecting, setRedirecting] = useState(false);
-  
-  useEffect(() => {
-    if (redirecting || !session) return;
-    
-    const simStatus = (session as any).simulationStatus;
-    const progress = (session as any).progress;
-    const isSimulation = (session as any).isSimulation;
-    const status = session.status;
-    
-    // Verificar si la carga terminó por cualquier razón
-    const isCompleted = 
-      status === "COMPLETED" ||
-      simStatus === "completed" || 
-      simStatus === "finishing" || 
-      (isSimulation && progress >= 100);
-    
-    if (isCompleted && session.transactionId > 0) {
-      setRedirecting(true);
-      toast.success("¡Carga completada!");
-      // Pequeño delay para asegurar que la transacción se guardó
-      setTimeout(() => {
-        setLocation(`/charging-summary/${session.transactionId}`);
-      }, 500);
-    }
-  }, [session, redirecting, setLocation]);
+  }, [isLoading, session, redirecting, completedTransactionId, setLocation]);
   
   const handleStopCharge = () => {
     if (!session) return;

@@ -6,7 +6,7 @@
  * - kWh totales, costo final, duración
  * - Información de la estación y conector
  * - Opciones para compartir (WhatsApp, Email)
- * - Opción de descargar recibo como imagen
+ * - Opción de descargar recibo como PDF profesional
  */
 
 import { useParams, useLocation } from "wouter";
@@ -31,12 +31,14 @@ import {
   Receipt,
   Calendar,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
-import html2canvas from "html2canvas";
 import confetti from "canvas-confetti";
+import { jsPDF } from "jspdf";
+import { EVGREEN_LOGO_BASE64 } from "@/assets/evgreen-logo-base64";
 
 // Componente de banner publicitario para el resumen
 function ChargingSummaryBanner() {
@@ -122,11 +124,24 @@ function formatDate(dateString: string): string {
   }).format(date);
 }
 
+// Formatear fecha corta para el PDF
+function formatDateShort(dateString: string): string {
+  const date = new Date(dateString);
+  return new Intl.DateTimeFormat("es-CO", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export default function ChargingSummary() {
   const { transactionId } = useParams<{ transactionId: string }>();
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const receiptRef = useRef<HTMLDivElement>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   
   // Obtener detalles de la transacción
   const { data: transaction, isLoading, error } = trpc.transactions.getById.useQuery(
@@ -215,27 +230,218 @@ export default function ChargingSummary() {
     window.location.href = url;
   };
   
-  // Descargar recibo como imagen
-  const downloadReceipt = async () => {
-    if (!receiptRef.current) return;
+  // Generar y descargar recibo PDF profesional
+  const downloadReceiptPdf = async () => {
+    if (!transaction) return;
+    
+    setIsGeneratingPdf(true);
+    toast.info("Generando recibo PDF...");
     
     try {
-      toast.info("Generando recibo...");
-      
-      const canvas = await html2canvas(receiptRef.current, {
-        backgroundColor: "#ffffff",
-        scale: 2,
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
       });
       
-      const link = document.createElement("a");
-      link.download = `recibo-evgreen-${transactionId}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 20;
+      let y = margin;
       
-      toast.success("Recibo descargado");
+      // Colores de la marca
+      const primaryColor: [number, number, number] = [16, 185, 129]; // emerald-500
+      const darkColor: [number, number, number] = [31, 41, 55]; // gray-800
+      const lightGray: [number, number, number] = [156, 163, 175]; // gray-400
+      const white: [number, number, number] = [255, 255, 255];
+      
+      // Header con gradiente simulado (rectángulo verde)
+      doc.setFillColor(...primaryColor);
+      doc.rect(0, 0, pageWidth, 55, "F");
+      
+      // Logo de EVGreen (imagen real)
+      try {
+        // Agregar logo en el header (45mm de ancho, proporcional)
+        doc.addImage(EVGREEN_LOGO_BASE64, "PNG", margin, 8, 45, 25);
+      } catch (logoError) {
+        // Fallback a texto si falla la imagen
+        console.warn("No se pudo cargar el logo, usando texto", logoError);
+        doc.setTextColor(...white);
+        doc.setFontSize(28);
+        doc.setFont("helvetica", "bold");
+        doc.text("EVGreen", margin, 25);
+      }
+      
+      // Subtítulo (a la derecha del logo)
+      doc.setTextColor(...white);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.text("Recibo de Carga Eléctrica", margin, 42);
+      
+      // Número de recibo (esquina superior derecha)
+      doc.setFontSize(10);
+      doc.text(`Recibo #${transaction.id}`, pageWidth - margin, 20, { align: "right" });
+      doc.text(formatDateShort(transaction.startTime), pageWidth - margin, 30, { align: "right" });
+      
+      y = 70;
+      
+      // Sección: Información del cliente
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Información del Cliente", margin, y);
+      y += 8;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...lightGray);
+      doc.text("Nombre:", margin, y);
+      doc.setTextColor(...darkColor);
+      doc.text(user?.name || "Cliente EVGreen", margin + 25, y);
+      y += 6;
+      
+      doc.setTextColor(...lightGray);
+      doc.text("Email:", margin, y);
+      doc.setTextColor(...darkColor);
+      doc.text(user?.email || "-", margin + 25, y);
+      y += 12;
+      
+      // Línea separadora
+      doc.setDrawColor(229, 231, 235);
+      doc.setLineWidth(0.5);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 10;
+      
+      // Sección: Información de la estación
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Estación de Carga", margin, y);
+      y += 8;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...lightGray);
+      doc.text("Estación:", margin, y);
+      doc.setTextColor(...darkColor);
+      doc.text(transaction.stationName, margin + 25, y);
+      y += 6;
+      
+      doc.setTextColor(...lightGray);
+      doc.text("Conector:", margin, y);
+      doc.setTextColor(...darkColor);
+      doc.text(`#${transaction.connectorId} - ${transaction.connectorType || "Type 2"}`, margin + 25, y);
+      y += 12;
+      
+      // Línea separadora
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 10;
+      
+      // Sección: Detalles de la carga (en un recuadro)
+      doc.setFillColor(249, 250, 251); // gray-50
+      doc.roundedRect(margin, y, pageWidth - 2 * margin, 50, 3, 3, "F");
+      
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Detalles de la Carga", margin + 5, y + 10);
+      
+      // Columna izquierda
+      const col1X = margin + 5;
+      const col2X = pageWidth / 2 + 5;
+      let detailY = y + 20;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      
+      // Energía
+      doc.setTextColor(...lightGray);
+      doc.text("Energía consumida:", col1X, detailY);
+      doc.setTextColor(...primaryColor);
+      doc.setFont("helvetica", "bold");
+      doc.text(`${transaction.kwhConsumed} kWh`, col1X + 40, detailY);
+      
+      // Duración
+      doc.setTextColor(...lightGray);
+      doc.setFont("helvetica", "normal");
+      doc.text("Duración:", col2X, detailY);
+      doc.setTextColor(...darkColor);
+      doc.setFont("helvetica", "bold");
+      doc.text(formatDuration(transaction.durationMinutes), col2X + 25, detailY);
+      
+      detailY += 8;
+      
+      // Tarifa
+      doc.setTextColor(...lightGray);
+      doc.setFont("helvetica", "normal");
+      doc.text("Tarifa aplicada:", col1X, detailY);
+      doc.setTextColor(...darkColor);
+      doc.setFont("helvetica", "bold");
+      doc.text(`${formatCurrency(transaction.pricePerKwh || 800)}/kWh`, col1X + 40, detailY);
+      
+      // Fecha inicio
+      doc.setTextColor(...lightGray);
+      doc.setFont("helvetica", "normal");
+      doc.text("Fecha:", col2X, detailY);
+      doc.setTextColor(...darkColor);
+      doc.setFont("helvetica", "bold");
+      doc.text(formatDateShort(transaction.startTime), col2X + 25, detailY);
+      
+      y += 60;
+      
+      // Total a pagar (destacado)
+      doc.setFillColor(...primaryColor);
+      doc.roundedRect(margin, y, pageWidth - 2 * margin, 25, 3, 3, "F");
+      
+      doc.setTextColor(...white);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "normal");
+      doc.text("TOTAL PAGADO", margin + 10, y + 10);
+      
+      doc.setFontSize(20);
+      doc.setFont("helvetica", "bold");
+      doc.text(formatCurrency(transaction.totalCost || 0), pageWidth - margin - 10, y + 16, { align: "right" });
+      
+      y += 35;
+      
+      // Información adicional
+      doc.setTextColor(...lightGray);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.text("Este documento es un comprobante de pago por el servicio de carga eléctrica.", margin, y);
+      y += 5;
+      doc.text("Conserve este recibo para cualquier reclamación o consulta.", margin, y);
+      
+      y += 15;
+      
+      // Línea separadora
+      doc.setDrawColor(229, 231, 235);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 10;
+      
+      // Footer
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("EVGreen - Movilidad Eléctrica Sostenible", pageWidth / 2, y, { align: "center" });
+      y += 5;
+      
+      doc.setTextColor(...lightGray);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text("www.evgreen.lat | soporte@evgreen.lat", pageWidth / 2, y, { align: "center" });
+      y += 4;
+      doc.text("Green House Project S.A.S. - NIT: 901.XXX.XXX-X", pageWidth / 2, y, { align: "center" });
+      
+      // Guardar PDF
+      doc.save(`recibo-evgreen-${transaction.id}.pdf`);
+      
+      toast.success("Recibo PDF descargado exitosamente");
     } catch (err) {
-      toast.error("Error al generar el recibo");
-      console.error(err);
+      console.error("Error generando PDF:", err);
+      toast.error("Error al generar el recibo PDF");
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
   
@@ -281,7 +487,7 @@ export default function ChargingSummary() {
         <p className="text-white/80">Tu vehículo ha sido cargado exitosamente</p>
       </div>
       
-      {/* Recibo (para captura) */}
+      {/* Recibo visual */}
       <div className="px-4 -mt-6">
         <div ref={receiptRef} className="bg-background rounded-2xl shadow-xl overflow-hidden">
           {/* Encabezado del recibo */}
@@ -406,10 +612,15 @@ export default function ChargingSummary() {
           <Button
             variant="outline"
             className="flex-col h-auto py-4 gap-2"
-            onClick={downloadReceipt}
+            onClick={downloadReceiptPdf}
+            disabled={isGeneratingPdf}
           >
-            <Download className="w-5 h-5 text-purple-600" />
-            <span className="text-xs">Descargar</span>
+            {isGeneratingPdf ? (
+              <Loader2 className="w-5 h-5 text-purple-600 animate-spin" />
+            ) : (
+              <FileText className="w-5 h-5 text-purple-600" />
+            )}
+            <span className="text-xs">PDF</span>
           </Button>
         </div>
         

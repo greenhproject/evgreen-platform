@@ -13,7 +13,8 @@
 
 import * as db from "../db";
 import { nanoid } from "nanoid";
-import { sendChargingCompleteNotification } from "../firebase/fcm";
+import { sendChargingCompleteNotification, sendHighDemandNotification } from "../firebase/fcm";
+import { incrementActiveSimulations, decrementActiveSimulations } from "../pricing/dynamic-pricing";
 
 // Emails de usuarios de prueba que activan la simulación
 const TEST_USER_EMAILS = [
@@ -38,7 +39,9 @@ interface SimulationSession {
   chargeMode: "fixed_amount" | "percentage" | "full_charge";
   targetValue: number;
   status: "connecting" | "preparing" | "charging" | "finishing" | "completed";
+  completedAt?: Date; // Timestamp de cuando se completó
   intervalId?: NodeJS.Timeout;
+  cleanupTimeoutId?: NodeJS.Timeout; // Timeout para limpiar la sesión después de completar
   callbacks: {
     onStatusChange?: (status: string, data: any) => void;
     onMeterValue?: (kwh: number, cost: number) => void;
@@ -59,7 +62,14 @@ export function isTestUser(email: string): boolean {
  * Verifica si hay una simulación activa para un usuario
  */
 export function hasActiveSimulation(userId: number): boolean {
-  return activeSimulations.has(userId);
+  const session = activeSimulations.get(userId);
+  // Considerar activa si existe y no está completada hace más de 60 segundos
+  if (!session) return false;
+  if (session.status === "completed" && session.completedAt) {
+    const elapsed = Date.now() - session.completedAt.getTime();
+    return elapsed < 60000; // Mantener "activa" por 60 segundos después de completar
+  }
+  return true;
 }
 
 /**
@@ -100,9 +110,18 @@ export async function startSimulation(params: {
     throw new Error("Solo usuarios de prueba pueden usar el simulador");
   }
 
-  // Verificar que no hay simulación activa
-  if (activeSimulations.has(userId)) {
+  // Verificar que no hay simulación activa (que no esté completada)
+  const existingSession = activeSimulations.get(userId);
+  if (existingSession && existingSession.status !== "completed") {
     throw new Error("Ya hay una simulación activa para este usuario");
+  }
+  
+  // Si hay una sesión completada, limpiarla
+  if (existingSession && existingSession.status === "completed") {
+    if (existingSession.cleanupTimeoutId) {
+      clearTimeout(existingSession.cleanupTimeoutId);
+    }
+    activeSimulations.delete(userId);
   }
   
   // Obtener la potencia real del EVSE desde la base de datos
@@ -190,6 +209,71 @@ export async function startSimulation(params: {
   };
 
   activeSimulations.set(userId, session);
+  
+  // Incrementar contador de simulaciones activas para precios dinámicos
+  incrementActiveSimulations();
+  
+  // Registrar precio en historial
+  try {
+    const { getZoneOccupancy, getDemandLevel, calculateOccupancyMultiplier } = await import("../pricing/dynamic-pricing");
+    const occupancyData = await getZoneOccupancy(stationId);
+    const occupancyMultiplier = calculateOccupancyMultiplier(occupancyData.occupancyRate);
+    const demandLevel = getDemandLevel(occupancyMultiplier);
+    
+    await db.createPriceHistoryRecord({
+      stationId,
+      evseId,
+      pricePerKwh: pricePerKwh.toString(),
+      demandLevel,
+      occupancyRate: occupancyData.occupancyRate.toString(),
+      timeMultiplier: "1.00", // Se puede calcular si es necesario
+      dayMultiplier: "1.00",
+      finalMultiplier: "1.00",
+      isAutoPricing: true, // En simulación siempre usamos precio dinámico
+      transactionId,
+    });
+    console.log(`[Simulator] Price history recorded: $${pricePerKwh}/kWh, demand: ${demandLevel}`);
+    
+    // Notificar al inversionista si hay alta demanda
+    if (demandLevel === "HIGH" || demandLevel === "SURGE") {
+      const station = await db.getChargingStationById(stationId);
+      if (station?.ownerId) {
+        const owner = await db.getUserById(station.ownerId);
+        if (owner?.fcmToken) {
+          await sendHighDemandNotification(owner.fcmToken, {
+            stationName: station.name,
+            demandLevel,
+            occupancyRate: occupancyData.occupancyRate,
+            currentPrice: pricePerKwh,
+          });
+          console.log(`[Simulator] High demand notification sent to investor ${station.ownerId}`);
+        }
+      }
+    }
+    
+    // Notificar al inversionista si hay baja demanda prolongada (oportunidad de promoción)
+    if (demandLevel === "LOW" && occupancyData.occupancyRate < 20) {
+      const station = await db.getChargingStationById(stationId);
+      if (station?.ownerId) {
+        const owner = await db.getUserById(station.ownerId);
+        if (owner?.fcmToken) {
+          // Calcular descuento sugerido basado en la ocupación
+          // Menor ocupación = mayor descuento sugerido
+          const suggestedDiscount = Math.min(30, Math.max(10, Math.round((20 - occupancyData.occupancyRate) * 1.5)));
+          
+          const { sendLowDemandNotification } = await import("../firebase/fcm");
+          await sendLowDemandNotification(owner.fcmToken, {
+            stationName: station.name,
+            occupancyRate: occupancyData.occupancyRate,
+            suggestedDiscount,
+          });
+          console.log(`[Simulator] Low demand notification sent to investor ${station.ownerId}, suggested ${suggestedDiscount}% discount`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`[Simulator] Error recording price history:`, error);
+  }
 
   // Iniciar ciclo de simulación
   startSimulationCycle(session);
@@ -227,7 +311,8 @@ function startSimulationCycle(session: SimulationSession): void {
       // Usar la potencia real del cargador para calcular la velocidad de carga
       // kWh por intervalo de 5 segundos = potencia * (5/3600) horas
       // Para simulación acelerada, multiplicamos por un factor de aceleración
-      const accelerationFactor = 60; // 1 minuto real = 1 hora simulada
+      // Factor reducido para que la simulación sea más perceptible (dure ~45-90 segundos)
+      const accelerationFactor = 20; // 1 minuto real = 20 minutos simulados (antes era 60)
       const intervalSeconds = 5;
       const realKwhPerInterval = session.powerKw * (intervalSeconds / 3600) * accelerationFactor;
       
@@ -236,8 +321,12 @@ function startSimulationCycle(session: SimulationSession): void {
       let intervalCount = 0;
 
       session.intervalId = setInterval(async () => {
-        if (!activeSimulations.has(session.userId)) {
-          clearInterval(session.intervalId);
+        // Verificar si la sesión aún existe y no está completada
+        const currentSession = activeSimulations.get(session.userId);
+        if (!currentSession || currentSession.status === "completed" || currentSession.status === "finishing") {
+          if (session.intervalId) {
+            clearInterval(session.intervalId);
+          }
           return;
         }
 
@@ -267,11 +356,15 @@ function startSimulationCycle(session: SimulationSession): void {
           session.callbacks.onMeterValue(currentKwh, currentCost);
         }
 
-        console.log(`[Simulator] User ${session.userId}: ${currentKwh.toFixed(2)} kWh, $${Math.round(currentCost)}, Power: ${currentPower.toFixed(1)} kW`);
+        console.log(`[Simulator] User ${session.userId}: ${currentKwh.toFixed(2)}/${session.targetKwh.toFixed(2)} kWh, $${Math.round(currentCost)}, Power: ${currentPower.toFixed(1)} kW`);
 
         // Verificar si se completó
         if (currentKwh >= session.targetKwh) {
-          clearInterval(session.intervalId);
+          console.log(`[Simulator] User ${session.userId}: Target reached! Completing simulation...`);
+          if (session.intervalId) {
+            clearInterval(session.intervalId);
+            session.intervalId = undefined;
+          }
           await completeSimulation(session);
         }
       }, 5000);
@@ -283,6 +376,12 @@ function startSimulationCycle(session: SimulationSession): void {
  * Completa la simulación y finaliza la transacción
  */
 async function completeSimulation(session: SimulationSession): Promise<void> {
+  // Evitar completar múltiples veces
+  if (session.status === "finishing" || session.status === "completed") {
+    console.log(`[Simulator] Session already ${session.status}, skipping completion`);
+    return;
+  }
+  
   session.status = "finishing";
   notifyStatusChange(session, "finishing", { message: "Finalizando carga..." });
 
@@ -291,12 +390,19 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
   const totalCost = kwhConsumed * session.pricePerKwh;
   const duration = Math.floor((endTime.getTime() - session.startTime.getTime()) / 1000);
 
+  // Calcular distribución de ingresos según configuración del admin
+  const revenueConfig = await db.getRevenueShareConfig();
+  const investorShare = totalCost * (revenueConfig.investorPercent / 100);
+  const platformFee = totalCost * (revenueConfig.platformPercent / 100);
+
   // Actualizar transacción en BD
   await db.updateTransaction(session.transactionId, {
     endTime,
     meterEnd: String(session.currentMeter),
     kwhConsumed: String(kwhConsumed),
     totalCost: String(totalCost),
+    investorShare: String(investorShare),
+    platformFee: String(platformFee),
     status: "COMPLETED",
     stopReason: "Local",
   });
@@ -362,15 +468,27 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
     stationId: session.stationId,
   };
 
+  // Decrementar contador de simulaciones activas para precios dinámicos
+  decrementActiveSimulations();
+  
+  // Marcar como completado PERO mantener la sesión en el Map
   session.status = "completed";
+  session.completedAt = new Date();
   notifyStatusChange(session, "completed", summary);
 
   if (session.callbacks.onComplete) {
     session.callbacks.onComplete(summary);
   }
 
-  // Limpiar sesión
-  activeSimulations.delete(session.userId);
+  // Programar limpieza de la sesión después de 60 segundos
+  // Esto da tiempo al frontend para detectar la finalización y redirigir
+  session.cleanupTimeoutId = setTimeout(() => {
+    const currentSession = activeSimulations.get(session.userId);
+    if (currentSession && currentSession.transactionId === session.transactionId) {
+      activeSimulations.delete(session.userId);
+      console.log(`[Simulator] Cleaned up completed session for user ${session.userId}`);
+    }
+  }, 60000);
 
   console.log(`[Simulator] Completed simulation for user ${session.userId}:`, summary);
 }
@@ -391,6 +509,7 @@ export async function stopSimulation(userId: number): Promise<{
   // Limpiar intervalo
   if (session.intervalId) {
     clearInterval(session.intervalId);
+    session.intervalId = undefined;
   }
 
   // Completar la transacción con los valores actuales
@@ -429,6 +548,8 @@ export function getActiveSimulationInfo(userId: number): {
   powerKw: number;
   chargeMode: "fixed_amount" | "percentage" | "full_charge";
   targetValue: number;
+  transactionId: number;
+  completedAt?: string;
 } | null {
   const session = activeSimulations.get(userId);
   if (!session) {
@@ -451,5 +572,7 @@ export function getActiveSimulationInfo(userId: number): {
     powerKw: session.powerKw,
     chargeMode: session.chargeMode,
     targetValue: session.targetValue,
+    transactionId: session.transactionId,
+    completedAt: session.completedAt?.toISOString(),
   };
 }

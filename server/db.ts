@@ -44,6 +44,12 @@ import {
   ocppAlerts,
   InsertOcppAlert,
   OcppAlert,
+  priceHistory,
+  InsertPriceHistory,
+  PriceHistory,
+  platformSettings,
+  PlatformSettings,
+  InsertPlatformSettings,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -1841,12 +1847,6 @@ export async function getWalletTransactions(userId: number, limit = 20) {
 // PLATFORM SETTINGS OPERATIONS
 // ============================================================================
 
-import {
-  platformSettings,
-  InsertPlatformSettings,
-  PlatformSettings,
-} from "../drizzle/schema";
-
 export async function getPlatformSettings(): Promise<PlatformSettings | null> {
   const db = await getDb();
   if (!db) return null;
@@ -2719,4 +2719,265 @@ export async function deductWalletBalance(userId: number, amount: number, transa
   });
   
   return newBalance;
+}
+
+
+// ============================================================================
+// PRICE HISTORY OPERATIONS
+// ============================================================================
+
+export async function createPriceHistoryRecord(record: InsertPriceHistory) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(priceHistory).values(record);
+  return result[0].insertId;
+}
+
+export async function getPriceHistoryByStation(
+  stationId: number,
+  daysBack: number = 7,
+  limit: number = 500
+): Promise<PriceHistory[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysBack);
+  
+  return db.select()
+    .from(priceHistory)
+    .where(
+      and(
+        eq(priceHistory.stationId, stationId),
+        gte(priceHistory.recordedAt, startDate)
+      )
+    )
+    .orderBy(desc(priceHistory.recordedAt))
+    .limit(limit);
+}
+
+export async function getPriceHistoryAggregated(
+  stationId: number,
+  daysBack: number = 7,
+  granularity: "hour" | "day" = "hour"
+): Promise<Array<{ timestamp: string; avgPrice: number; minPrice: number; maxPrice: number; demandLevel: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysBack);
+  
+  const dateFormat = granularity === "hour" 
+    ? sql`DATE_FORMAT(${priceHistory.recordedAt}, '%Y-%m-%d %H:00:00')`
+    : sql`DATE_FORMAT(${priceHistory.recordedAt}, '%Y-%m-%d')`;
+  
+  const result = await db.select({
+    timestamp: dateFormat.as('timestamp'),
+    avgPrice: sql<number>`AVG(${priceHistory.pricePerKwh})`.as('avgPrice'),
+    minPrice: sql<number>`MIN(${priceHistory.pricePerKwh})`.as('minPrice'),
+    maxPrice: sql<number>`MAX(${priceHistory.pricePerKwh})`.as('maxPrice'),
+    demandLevel: sql<string>`MAX(${priceHistory.demandLevel})`.as('demandLevel'),
+  })
+    .from(priceHistory)
+    .where(
+      and(
+        eq(priceHistory.stationId, stationId),
+        gte(priceHistory.recordedAt, startDate)
+      )
+    )
+    .groupBy(dateFormat)
+    .orderBy(dateFormat);
+  
+  return result.map(row => ({
+    timestamp: String(row.timestamp),
+    avgPrice: Number(row.avgPrice) || 0,
+    minPrice: Number(row.minPrice) || 0,
+    maxPrice: Number(row.maxPrice) || 0,
+    demandLevel: row.demandLevel || 'NORMAL',
+  }));
+}
+
+// ============================================================================
+// PRICE RANGE OPERATIONS (Admin controlled)
+// ============================================================================
+
+export async function getPriceRanges(): Promise<{ 
+  minPrice: number; 
+  maxPrice: number; 
+  enableDynamicPricing: boolean;
+  defaultReservationFee: number;
+  defaultOverstayPenaltyPerMin: number;
+  defaultConnectionFee: number;
+  defaultPricePerKwhAC: number;
+  defaultPricePerKwhDC: number;
+  enableDifferentiatedPricing: boolean;
+}> {
+  const settings = await getPlatformSettings();
+  return {
+    minPrice: parseFloat(settings?.minPricePerKwh?.toString() || "400"),
+    maxPrice: parseFloat(settings?.maxPricePerKwh?.toString() || "2500"),
+    enableDynamicPricing: settings?.enableDynamicPricing ?? true,
+    defaultReservationFee: parseFloat(settings?.defaultReservationFee?.toString() || "5000"),
+    defaultOverstayPenaltyPerMin: parseFloat(settings?.defaultOverstayPenaltyPerMin?.toString() || "500"),
+    defaultConnectionFee: parseFloat(settings?.defaultConnectionFee?.toString() || "2000"),
+    defaultPricePerKwhAC: parseFloat(settings?.defaultPricePerKwhAC?.toString() || "800"),
+    defaultPricePerKwhDC: parseFloat(settings?.defaultPricePerKwhDC?.toString() || "1200"),
+    enableDifferentiatedPricing: settings?.enableDifferentiatedPricing ?? true,
+  };
+}
+
+export async function updatePriceRanges(
+  minPrice: number,
+  maxPrice: number,
+  enableDynamicPricing: boolean,
+  updatedBy?: number,
+  defaultReservationFee?: number,
+  defaultOverstayPenaltyPerMin?: number,
+  defaultConnectionFee?: number,
+  defaultPricePerKwhAC?: number,
+  defaultPricePerKwhDC?: number,
+  enableDifferentiatedPricing?: boolean
+): Promise<void> {
+  const updateData: Record<string, any> = {
+    minPricePerKwh: minPrice.toString(),
+    maxPricePerKwh: maxPrice.toString(),
+    enableDynamicPricing,
+    updatedBy,
+  };
+  
+  if (defaultReservationFee !== undefined) {
+    updateData.defaultReservationFee = defaultReservationFee.toString();
+  }
+  if (defaultOverstayPenaltyPerMin !== undefined) {
+    updateData.defaultOverstayPenaltyPerMin = defaultOverstayPenaltyPerMin.toString();
+  }
+  if (defaultConnectionFee !== undefined) {
+    updateData.defaultConnectionFee = defaultConnectionFee.toString();
+  }
+  if (defaultPricePerKwhAC !== undefined) {
+    updateData.defaultPricePerKwhAC = defaultPricePerKwhAC.toString();
+  }
+  if (defaultPricePerKwhDC !== undefined) {
+    updateData.defaultPricePerKwhDC = defaultPricePerKwhDC.toString();
+  }
+  if (enableDifferentiatedPricing !== undefined) {
+    updateData.enableDifferentiatedPricing = enableDifferentiatedPricing;
+  }
+  
+  await upsertPlatformSettings(updateData);
+}
+
+// ============================================================================
+// DEMAND MONITORING OPERATIONS
+// ============================================================================
+
+export async function getStationDemandStats(stationId: number): Promise<{
+  currentOccupancy: number;
+  totalConnectors: number;
+  activeCharges: number;
+  demandLevel: string;
+}> {
+  const db = await getDb();
+  if (!db) return { currentOccupancy: 0, totalConnectors: 0, activeCharges: 0, demandLevel: 'LOW' };
+  
+  // Obtener EVSEs de la estación
+  const stationEvses = await db.select().from(evses).where(eq(evses.stationId, stationId));
+  const totalConnectors = stationEvses.length;
+  
+  // Contar EVSEs en uso (CHARGING)
+  const chargingEvses = stationEvses.filter(e => e.status === 'CHARGING').length;
+  
+  // Calcular ocupación
+  const currentOccupancy = totalConnectors > 0 ? (chargingEvses / totalConnectors) * 100 : 0;
+  
+  // Determinar nivel de demanda
+  let demandLevel = 'LOW';
+  if (currentOccupancy >= 80) demandLevel = 'SURGE';
+  else if (currentOccupancy >= 60) demandLevel = 'HIGH';
+  else if (currentOccupancy >= 30) demandLevel = 'NORMAL';
+  
+  return {
+    currentOccupancy,
+    totalConnectors,
+    activeCharges: chargingEvses,
+    demandLevel,
+  };
+}
+
+export async function getInvestorStationsDemand(investorId: number): Promise<Array<{
+  stationId: number;
+  stationName: string;
+  currentOccupancy: number;
+  totalConnectors: number;
+  activeCharges: number;
+  demandLevel: string;
+}>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Obtener estaciones del inversor
+  const investorStations = await db.select().from(chargingStations).where(eq(chargingStations.ownerId, investorId));
+  
+  const results = [];
+  for (const station of investorStations) {
+    const demandStats = await getStationDemandStats(station.id);
+    results.push({
+      stationId: station.id,
+      stationName: station.name,
+      ...demandStats,
+    });
+  }
+  
+  return results;
+}
+
+
+// ============================================================================
+// REVENUE SHARE CONFIGURATION
+// ============================================================================
+
+export async function getRevenueShareConfig(): Promise<{ investorPercent: number; platformPercent: number }> {
+  const settings = await getPlatformSettings();
+  const investorPercent = settings?.investorPercentage ?? 80;
+  const platformPercent = settings?.platformFeePercentage ?? 20;
+  return { investorPercent, platformPercent };
+}
+
+
+// ============================================================================
+// PRICING BY CONNECTOR TYPE (AC/DC)
+// ============================================================================
+
+export async function getPriceByConnectorType(
+  evseId: number,
+  basePrice: number
+): Promise<{ price: number; connectorType: string; chargeType: string }> {
+  // Obtener información del EVSE
+  const evse = await getEvseById(evseId);
+  if (!evse) {
+    return { price: basePrice, connectorType: "UNKNOWN", chargeType: "AC" };
+  }
+  
+  // Obtener configuración de precios diferenciados
+  const priceRanges = await getPriceRanges();
+  
+  // Si los precios diferenciados no están habilitados, usar precio base
+  if (!priceRanges.enableDifferentiatedPricing) {
+    return { 
+      price: basePrice, 
+      connectorType: evse.connectorType, 
+      chargeType: evse.chargeType 
+    };
+  }
+  
+  // Determinar precio según tipo de carga (AC o DC)
+  const price = evse.chargeType === "DC" 
+    ? priceRanges.defaultPricePerKwhDC 
+    : priceRanges.defaultPricePerKwhAC;
+  
+  return {
+    price,
+    connectorType: evse.connectorType,
+    chargeType: evse.chargeType,
+  };
 }

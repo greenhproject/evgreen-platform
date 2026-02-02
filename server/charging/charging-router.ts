@@ -244,15 +244,39 @@ export const chargingRouter = router({
       // Calcular costo estimado
       const evsesForPrice = await db.getEvsesByStationId(stationId);
       const firstEvse = evsesForPrice[0];
-      const dynamicPrice = firstEvse 
-        ? await dynamicPricing.calculateDynamicPrice(stationId, firstEvse.id)
-        : { finalPrice: 800, factors: { finalMultiplier: 1 } } as dynamicPricing.DynamicPrice;
-      const pricePerKwh = dynamicPrice.finalPrice;
       
-      // Obtener potencia del conector para cálculos
-      const connectors = await db.getEvsesByStationId(stationId);
-      const connector = connectors.find(c => c.connectorId === connectorId);
-      const evseId = connector?.id || firstEvse?.id;
+      // Obtener tarifa de la estación para verificar si usa precio automático
+      const tariff = await db.getActiveTariffByStationId(stationId);
+      const useAutoPricing = tariff?.autoPricing || false;
+      
+      // Obtener el conector seleccionado para determinar tipo AC/DC
+      const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;
+      const evseId = selectedConnector?.id || firstEvse?.id;
+      
+      let pricePerKwh: number;
+      if (useAutoPricing && evseId) {
+        // Usar precio dinámico calculado por IA
+        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+        
+        // Aplicar diferenciación AC/DC si está habilitada
+        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice);
+        pricePerKwh = priceByType.price;
+        console.log(`[Charging] Using dynamic pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, multiplier: ${dynamicPrice.factors.finalMultiplier.toFixed(2)})`);
+      } else {
+        // Usar precio fijo configurado por el inversionista
+        // Pero aplicar diferenciación AC/DC si está habilitada
+        const basePrice = parseFloat(tariff?.pricePerKwh?.toString() || "800");
+        if (evseId) {
+          const priceByType = await db.getPriceByConnectorType(evseId, basePrice);
+          pricePerKwh = priceByType.price;
+          console.log(`[Charging] Using fixed pricing with AC/DC differentiation: $${pricePerKwh}/kWh (${priceByType.chargeType})`);
+        } else {
+          pricePerKwh = basePrice;
+          console.log(`[Charging] Using fixed pricing: $${pricePerKwh}/kWh`);
+        }
+      }
+      
+      // Usar el conector ya obtenido arriba (selectedConnector) para cálculos de potencia
       
       let estimatedCost = 0;
       switch (chargeMode) {
@@ -412,16 +436,16 @@ export const chargingRouter = router({
    */
   getActiveSession: protectedProcedure
     .query(async ({ ctx }) => {
-      // Verificar primero si hay una simulación activa
+      // Verificar primero si hay una simulación activa (incluyendo completadas recientes)
       const simulationInfo = simulator.getActiveSimulationInfo(ctx.user.id);
       if (simulationInfo) {
-        // Obtener transacción de la simulación
-        const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
-        const station = activeTransaction 
-          ? await db.getChargingStationById(activeTransaction.stationId)
+        // Obtener transacción de la simulación usando el transactionId del simulador
+        const transaction = await db.getTransactionById(simulationInfo.transactionId);
+        const station = transaction 
+          ? await db.getChargingStationById(transaction.stationId)
           : null;
-        const evse = activeTransaction
-          ? await db.getEvseById(activeTransaction.evseId)
+        const evse = transaction
+          ? await db.getEvseById(transaction.evseId)
           : null;
         
         // Si la simulación está completada o terminando, marcar como completada
@@ -437,9 +461,14 @@ export const chargingRouter = router({
           targetAmount = simulationInfo.targetValue;
         }
         
+        // Usar el transactionId del simulador que es el correcto
+        const transactionId = simulationInfo.transactionId;
+        
+        console.log(`[getActiveSession] Simulation info: status=${simulationInfo.status}, transactionId=${transactionId}, progress=${simulationInfo.progress}%`);
+        
         return {
-          transactionId: activeTransaction?.id || 0,
-          stationId: activeTransaction?.stationId || 0,
+          transactionId,
+          stationId: transaction?.stationId || 0,
           stationName: station?.name || "Estación de Prueba",
           connectorId: evse?.connectorId || 1,
           connectorType: evse?.connectorType || "TYPE_2",
@@ -457,9 +486,10 @@ export const chargingRouter = router({
           targetPercentage,
           targetAmount,
           startPercentage: 20,
-          progress: simulationInfo.progress,
+          progress: isCompleted ? 100 : simulationInfo.progress, // Asegurar 100% cuando está completado
           isSimulation: true,
           simulationStatus: simulationInfo.status,
+          completedAt: simulationInfo.completedAt, // Agregar timestamp de completado
         };
       }
       

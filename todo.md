@@ -1271,3 +1271,228 @@
 - [x] Corregir cálculo de estadísticas usando estado OCPP real - Implementado
 - [x] Mostrar estado de conectores en tiempo real desde conexión OCPP - Implementado con indicador OCPPzar estado de conectores con estado real del OCPP/simulación
 - [ ] Mostrar estado en tiempo real en el detalle de la estación
+
+
+## Bug Crítico: Simulación se reinicia a 0% al alcanzar objetivo - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Simulación llega al porcentaje objetivo pero luego baja a 0% y se queda pegada
+  - Causa: La sesión se eliminaba del Map inmediatamente al completar, causando que getActiveSession devolviera null
+  - Solución: La sesión ahora se mantiene en el Map con status "completed" por 60 segundos
+- [x] BUG: No ejecuta la finalización de la transacción
+  - Causa: El intervalo de simulación no se detenía correctamente al alcanzar el objetivo
+  - Solución: Agregada verificación de estado "completed"/"finishing" antes de continuar el loop
+- [x] BUG: No redirige al resumen con animación de confetti
+  - Causa: El frontend detectaba "no hay sesión" y redirigía al mapa antes de detectar la finalización
+  - Solución: Mejorada lógica de detección con estados separados (redirecting, completedTransactionId)
+- [x] Corregir lógica de detección de objetivo alcanzado en el simulador
+  - Agregado transactionId a getActiveSimulationInfo para usar el ID correcto
+  - Agregado completedAt timestamp para tracking de finalización
+- [x] Asegurar que completeSimulation() se ejecute correctamente
+  - Agregada verificación para evitar completar múltiples veces
+  - Agregado cleanupTimeoutId para limpiar la sesión después de 60 segundos
+- [x] Corregir detección de finalización en ChargingMonitor
+  - Mejorada lógica con console.log para depuración
+  - Delay aumentado a 800ms para asegurar que el toast se muestre
+- [x] 280 tests pasando
+
+
+## Mejoras solicitadas - 1 Febrero 2026 (Recibo y Simulador) [COMPLETADO]
+
+### Recibo PDF
+- [x] BUG: Error al generar el recibo - no se puede descargar (reemplazado html2canvas por jsPDF)
+- [x] Crear recibo PDF estético y profesional
+- [x] Incluir logo de EVGreen (texto estilizado con emoji de rayo)
+- [x] Diseño moderno con colores de la marca (emerald-500, gradientes)
+- [x] Información completa de la transacción (cliente, estación, energía, duración, tarifa, total)
+
+### Velocidad del Simulador
+- [x] BUG: Simulación carga muy rápido, no se percibe el proceso
+- [x] Reducir factor de aceleración para experiencia más realista (de 60x a 20x)
+- [x] Ajustar duración mínima de simulación (~45-90 segundos ahora)
+
+
+## Mejoras solicitadas - 1 Febrero 2026 (Logo PDF y Sonido) [COMPLETADO]
+
+- [x] Agregar logo real de EVGreen al recibo PDF en formato base64
+  - Logo generado con IA (rayo + hoja verde)
+  - Optimizado a 300x167px para PDF
+  - Integrado en el header del recibo
+- [x] Implementar sonido de notificación al completar la carga
+  - Hook useNotificationSound con Web Audio API
+  - Sonido de éxito: secuencia de notas C5 -> E5 -> G5 -> C6 (acorde de Do mayor ascendente)
+  - No requiere archivos de audio externos
+- [x] Probar que el sonido funcione en móvil y desktop
+  - 280 tests pasando
+
+
+## Bug: Precios dinámicos no cambian según demanda - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: El precio por kWh siempre está bajo durante la simulación
+  - Causa: Las simulaciones activas no se contaban en el cálculo de ocupación
+  - El sistema solo veía los status de EVSEs en BD, no las simulaciones en memoria
+- [x] Investigar algoritmo de precios dinámicos
+  - El algoritmo funciona correctamente: 40% ocupación + 30% horario + 15% día + 15% demanda histórica
+- [x] Verificar detección de alta demanda
+  - Agregado contador global de simulaciones activas
+  - Funciones incrementActiveSimulations() y decrementActiveSimulations()
+- [x] Corregir lógica de ajuste de precios según demanda
+  - getZoneOccupancy() ahora incluye simulaciones activas en el cálculo
+  - El simulador llama a increment/decrement al iniciar/completar
+- [x] 280 tests pasando
+
+**Nota importante**: El precio se calcula al INICIO de la carga y se mantiene fijo durante toda la sesión (como funciona Uber). Para ver precios altos, debe haber alta demanda ANTES de iniciar la carga (múltiples usuarios cargando simultáneamente, horario pico, etc.).
+
+
+## Toggle Precio Automático IA - 1 Febrero 2026 [COMPLETADO]
+
+- [x] Agregar campo autoPricing (boolean) a la tabla de tarifas en BD
+- [x] Actualizar modal de configuración de tarifas con toggle de "Precio Automático IA"
+- [x] Mostrar/ocultar campos de precio manual según estado del toggle
+- [x] Modificar lógica de cálculo de precios para respetar la configuración
+- [x] Cuando autoPricing=true, usar algoritmo dinámico; cuando false, usar precio fijo
+- [x] Agregar indicador visual de que el precio es manejado por IA (badge "IA" en tabla)
+- [x] Mostrar precio sugerido por IA cuando el modo manual está activo
+- [x] Endpoint getSuggestedPrice para obtener precio sugerido basado en demanda actual
+- [x] 280 tests pasando
+
+
+## Mejoras de Precios Dinámicos - 1 Febrero 2026 [COMPLETADO]
+
+### Rangos de Precio Controlados por Admin
+- [x] Agregar campos minPricePerKwh y maxPricePerKwh a platform_settings
+- [x] Crear funciones getPriceRanges() y updatePriceRanges() en db.ts
+- [x] Endpoint getPriceRanges y updatePriceRanges en tariffsRouter
+- [x] Mostrar rangos permitidos en modal de configuración de tarifas del inversionista
+- [x] Validación de rangos controlados por administrador
+
+### Historial de Precios
+- [x] Crear tabla price_history para registrar cambios de precios dinámicos
+- [x] Registrar precio cada vez que se inicia una carga (en charging-simulator.ts)
+- [x] Endpoint getPriceHistory para obtener historial de precios de una estación
+- [x] Gráfica sparkline de variación de precios en los últimos 7 días
+- [x] Estadísticas (mínimo, promedio, máximo) en panel de inversionista
+- [x] Demanda predominante con badges visuales
+
+### Notificaciones de Demanda Alta
+- [x] Función sendHighDemandNotification() en fcm.ts
+- [x] Función sendLowDemandNotification() para oportunidades de promoción
+- [x] Detectar picos de demanda (HIGH o SURGE) al iniciar carga
+- [x] Enviar notificación push al inversionista dueño de la estación
+- [x] Incluir datos de ocupación y precio actual en la notificación
+- [x] 280 tests pasando
+
+
+## Mejoras Adicionales de Precios - 1 Febrero 2026 [COMPLETADO]
+
+### Panel Admin para Rangos de Precio
+- [x] Crear sección en panel de admin para configurar rangos de precio globales
+- [x] UI con inputs para precio mínimo y máximo por kWh
+- [x] Botón de guardar con validación
+- [x] Mostrar valores actuales configurados
+- [x] Toggle para habilitar/deshabilitar precios dinámicos globalmente
+
+### Alertas de Baja Demanda
+- [x] Detectar cuando la demanda está baja por tiempo prolongado (ocupación < 20%)
+- [x] Enviar notificación push al inversionista sugiriendo promociones
+- [x] Incluir porcentaje de descuento sugerido (10-30% según ocupación)
+- [x] Calcular impacto potencial de la promoción
+
+### Exportación CSV de Historial de Precios
+- [x] Botón de exportar en el modal de historial de precios
+- [x] Generar CSV con fecha, precio, demanda
+- [x] Descargar automáticamente el archivo
+- [x] Incluir nombre de estación en el archivo
+- [x] 280 tests pasando
+
+
+## Bug: Liquidación de Ingresos Incorrecta - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Tu parte (80%) muestra $0 en lugar del 80% de los ingresos brutos
+- [x] BUG: Fee plataforma (20%) muestra el 100% de los ingresos en lugar del 20%
+- [x] Investigar cálculo de distribución 80/20 en dashboard del inversionista
+  - Causa: El cálculo estaba hardcodeado en 0.80/0.20 en 4 lugares del código
+  - El simulador no guardaba investorShare ni platformFee en las transacciones
+- [x] Corregir lógica de cálculo de investorShare y platformFee
+  - Creada función getRevenueShareConfig() que lee de platform_settings
+  - Corregido en: routers.ts, _core/index.ts, ocpp/csms.ts, charging-simulator.ts
+  - Ahora la distribución es configurable desde el panel de admin
+- [x] 280 tests pasando
+
+
+## Tarifas Globales Editables en Admin - 1 Febrero 2026 [COMPLETADO]
+
+- [x] Hacer editable Fee de reserva desde panel de admin
+- [x] Hacer editable Penalización/min desde panel de admin
+- [x] Hacer editable Tarifa conexión desde panel de admin
+- [x] Agregar campos en platform_settings (defaultReservationFee, defaultOverstayPenaltyPerMin, defaultConnectionFee)
+- [x] Actualizar endpoints getPriceRanges y updatePriceRanges para incluir tarifas globales
+- [x] Nueva sección "Tarifas Globales por Defecto" con inputs editables en Admin > Tarifas
+- [x] 280 tests pasando
+
+
+## Tarifas Diferenciadas por Tipo de Conector (AC/DC) - 2 Febrero 2026 [COMPLETADO]
+
+- [x] Agregar campos de tarifas AC/DC en platform_settings (defaultPricePerKwhAC, defaultPricePerKwhDC, enableDifferentiatedPricing)
+- [x] Actualizar endpoints getPriceRanges y updatePriceRanges para incluir tarifas AC/DC
+- [x] Actualizar UI del panel de admin con sección de tarifas por tipo de conector
+  - Toggle para habilitar/deshabilitar precios diferenciados
+  - Inputs separados para precio AC ($800/kWh default) y DC ($1200/kWh default)
+- [x] Modificar lógica de cálculo de precios para usar tarifa según tipo de conector
+  - Nueva función getPriceByConnectorType() en db.ts
+  - Detección automática de tipo de conector (AC: Type1, Type2, GBT_AC; DC: CCS1, CCS2, CHAdeMO, GBT_DC)
+- [x] Actualizar charging-router para usar tarifa correcta según conector
+- [x] 280 tests pasando
+
+
+## Bug: No se pueden modificar rangos de precios globales - 2 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: El botón "Guardar Rangos Globales" no funciona en Admin > Tarifas
+  - Causa: Los inputs usaban priceRanges (datos del servidor) en lugar de localPriceRanges (estado local editable)
+  - Solución: Cambiar los inputs para usar localPriceRanges.minPrice y localPriceRanges.maxPrice
+- [x] Investigar endpoint updatePriceRanges en tariffs-router.ts - El endpoint estaba correcto
+- [x] Verificar que la mutación se llama correctamente desde el frontend - La mutación estaba correcta
+- [x] Corregir la lógica de guardado - Corregido en Tariffs.tsx
+- [x] 280 tests pasando
+
+
+## Bug: Panel de Transacciones del Inversionista - 2 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Las transacciones no se muestran en el panel de inversionistas
+  - Causa: El componente usaba `trpc.transactions.myTransactions` que obtiene transacciones del usuario, no del inversionista
+  - Solución: Cambiado a `trpc.transactions.investorTransactions` que filtra por estaciones del inversionista
+- [x] BUG: El porcentaje de ingresos (80%) estaba hardcodeado
+  - Solución: Creado nuevo endpoint `settings.getInvestorPercentage` (público) que retorna el porcentaje configurado
+  - La UI ahora muestra el porcentaje dinámico desde platform_settings
+- [x] 280 tests pasando
+
+
+## Bug: Transacciones con montos en $0 y porcentaje fijo - 2 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Los montos de transacciones se muestran en $0
+  - Causa: El componente usaba `tx.totalAmount` que no existe, el campo correcto es `tx.totalCost`
+  - Solución: Cambiado a usar `totalCost` en lugar de `totalAmount` en Transactions.tsx
+- [x] Endpoint getInvestorPercentage verificado y funcionando correctamente
+- [x] El porcentaje se obtiene dinámicamente desde platform_settings
+- [x] 280 tests pasando
+
+
+## Exportación de Transacciones del Inversionista - 2 Febrero 2026 [COMPLETADO]
+
+- [x] Crear endpoint backend para generar reportes Excel y PDF
+  - Nuevo archivo: server/reports/export-transactions.ts
+  - Endpoint: transactions.exportInvestorTransactions
+- [x] Implementar generación de PDF con diseño profesional, bandeado y logos de la marca
+  - Header verde con título EVGreen
+  - Cajas de resumen financiero con colores de marca
+  - Tabla con filas alternadas (striped)
+  - Footer con número de página
+- [x] Implementar generación de Excel con formato profesional
+  - Hoja de resumen con información del inversionista
+  - Hoja de transacciones con todos los detalles
+  - Columnas con anchos ajustados
+- [x] Crear modal de exportación en el frontend con opciones de formato (Excel/PDF)
+  - Botones para Excel y PDF con iconos
+  - Estado de carga durante la generación
+  - Descarga automática del archivo
+- [x] Incluir información del inversionista y resumen de totales en el reporte
+- [x] 288 tests pasando (8 nuevos tests de exportación)

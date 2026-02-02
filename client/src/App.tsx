@@ -5,7 +5,8 @@ import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Onboarding, useOnboarding } from "@/components/Onboarding";
 
 // Páginas públicas
 import Landing from "./pages/Landing";
@@ -418,13 +419,25 @@ function Router() {
 }
 
 function App() {
+  const { showOnboarding, isLoading: onboardingLoading, completeOnboarding } = useOnboarding();
+  const { isAuthenticated, loading: authLoading } = useAuth();
+
+  // Mostrar onboarding solo para usuarios autenticados que no lo han completado
+  const shouldShowOnboarding = !onboardingLoading && !authLoading && isAuthenticated && showOnboarding;
+
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster position="top-center" richColors />
-          <Router />
-          <AIChatWidget />
+          {shouldShowOnboarding ? (
+            <Onboarding onComplete={completeOnboarding} />
+          ) : (
+            <>
+              <Router />
+              <AIChatWidget />
+            </>
+          )}
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

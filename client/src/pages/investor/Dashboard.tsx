@@ -28,6 +28,11 @@ export default function InvestorDashboard() {
   const { data: metrics, isLoading } = trpc.dashboard.investorMetrics.useQuery(undefined, {
     refetchInterval: 30000,
   });
+  
+  // Obtener el porcentaje del inversionista desde la configuración
+  const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();
+  const investorPercentage = platformSettings?.investorPercentage ?? 80;
+  const platformFeePercentage = platformSettings?.platformFeePercentage ?? 20;
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-CO", {
@@ -90,7 +95,7 @@ export default function InvestorDashboard() {
         <Card className="p-4 sm:p-6">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-xs sm:text-sm text-muted-foreground truncate">Mis ingresos (80%)</p>
+              <p className="text-xs sm:text-sm text-muted-foreground truncate">Mis ingresos ({investorPercentage}%)</p>
               <h3 className="text-lg sm:text-2xl font-bold mt-1 truncate">
                 {formatCurrency(metrics?.monthlyEarnings || 0)}
               </h3>
@@ -257,13 +262,13 @@ export default function InvestorDashboard() {
               </span>
             </div>
             <div className="flex justify-between items-center p-3 bg-primary/5 rounded-lg">
-              <span className="text-sm">Tu parte (80%)</span>
+              <span className="text-sm">Tu parte ({investorPercentage}%)</span>
               <span className="font-bold text-primary">
                 {formatCurrency(metrics?.monthlyEarnings || 0)}
               </span>
             </div>
             <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
-              <span className="text-sm text-muted-foreground">Fee plataforma (20%)</span>
+              <span className="text-sm text-muted-foreground">Fee plataforma ({platformFeePercentage}%)</span>
               <span className="font-medium text-muted-foreground">
                 {formatCurrency((metrics?.monthlyRevenue || 0) - (metrics?.monthlyEarnings || 0))}
               </span>
