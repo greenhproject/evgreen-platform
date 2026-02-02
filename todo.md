@@ -1324,3 +1324,21 @@
 - [x] Probar que el sonido funcione en móvil y desktop
   - 280 tests pasando
 
+
+## Bug: Precios dinámicos no cambian según demanda - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: El precio por kWh siempre está bajo durante la simulación
+  - Causa: Las simulaciones activas no se contaban en el cálculo de ocupación
+  - El sistema solo veía los status de EVSEs en BD, no las simulaciones en memoria
+- [x] Investigar algoritmo de precios dinámicos
+  - El algoritmo funciona correctamente: 40% ocupación + 30% horario + 15% día + 15% demanda histórica
+- [x] Verificar detección de alta demanda
+  - Agregado contador global de simulaciones activas
+  - Funciones incrementActiveSimulations() y decrementActiveSimulations()
+- [x] Corregir lógica de ajuste de precios según demanda
+  - getZoneOccupancy() ahora incluye simulaciones activas en el cálculo
+  - El simulador llama a increment/decrement al iniciar/completar
+- [x] 280 tests pasando
+
+**Nota importante**: El precio se calcula al INICIO de la carga y se mantiene fijo durante toda la sesión (como funciona Uber). Para ver precios altos, debe haber alta demanda ANTES de iniciar la carga (múltiples usuarios cargando simultáneamente, horario pico, etc.).
+

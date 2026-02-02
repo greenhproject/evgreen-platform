@@ -80,19 +80,49 @@ export interface OccupancyData {
   occupancyRate: number;
 }
 
+// Contador global de simulaciones activas para calcular demanda
+let activeSimulationCount = 0;
+
+export function incrementActiveSimulations(): void {
+  activeSimulationCount++;
+  console.log(`[DynamicPricing] Active simulations: ${activeSimulationCount}`);
+}
+
+export function decrementActiveSimulations(): void {
+  activeSimulationCount = Math.max(0, activeSimulationCount - 1);
+  console.log(`[DynamicPricing] Active simulations: ${activeSimulationCount}`);
+}
+
+export function getActiveSimulationCount(): number {
+  return activeSimulationCount;
+}
+
 export async function getZoneOccupancy(stationId: number): Promise<OccupancyData> {
   // Obtener todos los EVSEs de la estación
   const evses = await db.getEvsesByStationId(stationId);
   
   const totalConnectors = evses.length;
-  const availableConnectors = evses.filter(e => e.status === "AVAILABLE").length;
-  const chargingConnectors = evses.filter(e => e.status === "CHARGING").length;
+  let availableConnectors = evses.filter(e => e.status === "AVAILABLE").length;
+  let chargingConnectors = evses.filter(e => e.status === "CHARGING").length;
   const reservedConnectors = evses.filter(e => e.status === "RESERVED").length;
   const faultedConnectors = evses.filter(e => e.status === "FAULTED" || e.status === "UNAVAILABLE").length;
+  
+  // Incluir simulaciones activas en el cálculo de ocupación
+  // Cada simulación activa cuenta como un conector ocupado adicional
+  const simulationOccupancy = activeSimulationCount;
+  if (simulationOccupancy > 0) {
+    // Añadir simulaciones al conteo de cargando
+    chargingConnectors += simulationOccupancy;
+    // Reducir disponibles (pero no menos de 0)
+    availableConnectors = Math.max(0, availableConnectors - simulationOccupancy);
+    console.log(`[DynamicPricing] Including ${simulationOccupancy} active simulations in occupancy calculation`);
+  }
   
   const occupancyRate = totalConnectors > 0 
     ? ((totalConnectors - availableConnectors) / totalConnectors) * 100 
     : 0;
+  
+  console.log(`[DynamicPricing] Zone occupancy for station ${stationId}: ${occupancyRate.toFixed(1)}% (${chargingConnectors} charging, ${availableConnectors} available, ${totalConnectors} total)`);
   
   return {
     totalConnectors,
