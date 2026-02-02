@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,11 @@ const mockEarnings: EarningRecord[] = [
 export default function InvestorEarnings() {
   const [period, setPeriod] = useState("week");
   const [earnings] = useState<EarningRecord[]>(mockEarnings);
+  
+  // Obtener el porcentaje del inversionista desde la configuración
+  const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();
+  const investorPercentage = platformSettings?.investorPercentage ?? 80;
+  const platformFeePercentage = platformSettings?.platformFeePercentage ?? 20;
 
   const totalGross = earnings.reduce((sum, e) => sum + e.grossAmount, 0);
   const totalNet = earnings.reduce((sum, e) => sum + e.netAmount, 0);
@@ -166,7 +172,7 @@ export default function InvestorEarnings() {
                 <p className="text-2xl font-bold">{formatCurrency(totalCommission)}</p>
                 <p className="text-xs text-muted-foreground mt-1 flex items-center">
                   <Percent className="w-3 h-3 mr-1" />
-                  20% del bruto
+                  {platformFeePercentage}% del bruto
                 </p>
               </div>
               <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center">
@@ -221,7 +227,7 @@ export default function InvestorEarnings() {
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">Precio efectivo</p>
               <p className="text-2xl font-bold">$1,140 COP/kWh</p>
-              <p className="text-xs text-muted-foreground">Tu ganancia: $912 COP/kWh (80%)</p>
+              <p className="text-xs text-muted-foreground">Tu ganancia: $912 COP/kWh ({investorPercentage}%)</p>
             </div>
           </div>
           <div className="mt-4 p-3 bg-background/50 rounded-lg">

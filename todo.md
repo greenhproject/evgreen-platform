@@ -1453,3 +1453,14 @@
 - [x] Verificar que la mutación se llama correctamente desde el frontend - La mutación estaba correcta
 - [x] Corregir la lógica de guardado - Corregido en Tariffs.tsx
 - [x] 280 tests pasando
+
+
+## Bug: Panel de Transacciones del Inversionista - 2 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Las transacciones no se muestran en el panel de inversionistas
+  - Causa: El componente usaba `trpc.transactions.myTransactions` que obtiene transacciones del usuario, no del inversionista
+  - Solución: Cambiado a `trpc.transactions.investorTransactions` que filtra por estaciones del inversionista
+- [x] BUG: El porcentaje de ingresos (80%) estaba hardcodeado
+  - Solución: Creado nuevo endpoint `settings.getInvestorPercentage` (público) que retorna el porcentaje configurado
+  - La UI ahora muestra el porcentaje dinámico desde platform_settings
+- [x] 280 tests pasando
