@@ -1403,3 +1403,17 @@
 - [x] Descargar automáticamente el archivo
 - [x] Incluir nombre de estación en el archivo
 - [x] 280 tests pasando
+
+
+## Bug: Liquidación de Ingresos Incorrecta - 1 Febrero 2026 [CORREGIDO]
+
+- [x] BUG: Tu parte (80%) muestra $0 en lugar del 80% de los ingresos brutos
+- [x] BUG: Fee plataforma (20%) muestra el 100% de los ingresos en lugar del 20%
+- [x] Investigar cálculo de distribución 80/20 en dashboard del inversionista
+  - Causa: El cálculo estaba hardcodeado en 0.80/0.20 en 4 lugares del código
+  - El simulador no guardaba investorShare ni platformFee en las transacciones
+- [x] Corregir lógica de cálculo de investorShare y platformFee
+  - Creada función getRevenueShareConfig() que lee de platform_settings
+  - Corregido en: routers.ts, _core/index.ts, ocpp/csms.ts, charging-simulator.ts
+  - Ahora la distribución es configurable desde el panel de admin
+- [x] 280 tests pasando

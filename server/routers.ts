@@ -896,9 +896,10 @@ const transactionsRouter = router({
       const pricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "800");
       const totalCost = Math.round(kwhConsumed * pricePerKwh);
       
-      // Calcular distribución 80/20
-      const investorShare = Math.round(totalCost * 0.80);
-      const platformFee = Math.round(totalCost * 0.20);
+      // Calcular distribución según configuración del admin
+      const revenueConfig = await db.getRevenueShareConfig();
+      const investorShare = Math.round(totalCost * (revenueConfig.investorPercent / 100));
+      const platformFee = Math.round(totalCost * (revenueConfig.platformPercent / 100));
       
       // Actualizar transacción
       await db.updateTransaction(input.transactionId, {

@@ -390,12 +390,19 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
   const totalCost = kwhConsumed * session.pricePerKwh;
   const duration = Math.floor((endTime.getTime() - session.startTime.getTime()) / 1000);
 
+  // Calcular distribución de ingresos según configuración del admin
+  const revenueConfig = await db.getRevenueShareConfig();
+  const investorShare = totalCost * (revenueConfig.investorPercent / 100);
+  const platformFee = totalCost * (revenueConfig.platformPercent / 100);
+
   // Actualizar transacción en BD
   await db.updateTransaction(session.transactionId, {
     endTime,
     meterEnd: String(session.currentMeter),
     kwhConsumed: String(kwhConsumed),
     totalCost: String(totalCost),
+    investorShare: String(investorShare),
+    platformFee: String(platformFee),
     status: "COMPLETED",
     stopReason: "Local",
   });
