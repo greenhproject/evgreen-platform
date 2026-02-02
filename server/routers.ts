@@ -260,9 +260,37 @@ const stationsRouter = router({
     return stationsWithEvses;
   }),
   
-  // Inversionista: listar sus estaciones
+  // Inversionista: listar sus estaciones con tarifas y EVSEs
   listOwned: investorProcedure.query(async ({ ctx }) => {
-    return db.getAllChargingStations({ ownerId: ctx.user.id });
+    const stations = await db.getAllChargingStations({ ownerId: ctx.user.id });
+    
+    // Enriquecer con tarifas y EVSEs
+    const enrichedStations = await Promise.all(
+      stations.map(async (station) => {
+        const tariff = await db.getActiveTariffByStationId(station.id);
+        const evses = await db.getEvsesByStationId(station.id);
+        
+        return {
+          ...station,
+          tariff: tariff ? {
+            pricePerKwh: tariff.pricePerKwh?.toString() || "1200",
+            reservationFee: tariff.reservationFee?.toString() || "5000",
+            idleFeePerMin: tariff.overstayPenaltyPerMinute?.toString() || "500",
+            connectionFee: tariff.pricePerSession?.toString() || "2000",
+            autoPricing: tariff.autoPricing || false,
+          } : undefined,
+          evses: evses.map(e => ({
+            id: e.id,
+            connectorId: e.connectorId,
+            connectorType: e.connectorType,
+            powerKw: e.powerKw?.toString() || "22",
+            status: e.status,
+          })),
+        };
+      })
+    );
+    
+    return enrichedStations;
   }),
   
   getById: protectedProcedure
@@ -506,6 +534,7 @@ const tariffsRouter = router({
       reservationFee: z.number(),
       idleFeePerMin: z.number(),
       connectionFee: z.number(),
+      autoPricing: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const station = await db.getChargingStationById(input.stationId);
@@ -526,6 +555,7 @@ const tariffsRouter = router({
           reservationFee: input.reservationFee.toString(),
           overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
           pricePerSession: input.connectionFee.toString(),
+          autoPricing: input.autoPricing ?? false,
         });
       } else {
         // Crear nueva tarifa
@@ -536,11 +566,69 @@ const tariffsRouter = router({
           reservationFee: input.reservationFee.toString(),
           overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
           pricePerSession: input.connectionFee.toString(),
+          autoPricing: input.autoPricing ?? false,
           isActive: true,
         });
       }
       
       return { success: true };
+    }),
+  
+  // Obtener precio sugerido por IA para una estación
+  getSuggestedPrice: protectedProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ input }) => {
+      const { calculateDynamicPrice } = await import("./pricing/dynamic-pricing");
+      
+      // Obtener EVSEs de la estación para calcular precio dinámico
+      const evses = await db.getEvsesByStationId(input.stationId);
+      const firstEvse = evses[0];
+      
+      if (!firstEvse) {
+        return {
+          suggestedPrice: 1200,
+          demandLevel: "NORMAL" as const,
+          factors: {
+            occupancyMultiplier: 1,
+            timeMultiplier: 1,
+            dayMultiplier: 1,
+            demandMultiplier: 1,
+            finalMultiplier: 1,
+          },
+          explanation: "No hay conectores configurados. Usando precio base.",
+        };
+      }
+      
+      const dynamicPrice = await calculateDynamicPrice(input.stationId, firstEvse.id);
+      
+      // Generar explicación del precio sugerido
+      let explanation = "";
+      if (dynamicPrice.factors.demandLevel === "LOW") {
+        explanation = "Baja demanda actual. Precio reducido para atraer más usuarios.";
+      } else if (dynamicPrice.factors.demandLevel === "HIGH") {
+        explanation = "Alta demanda detectada. Precio incrementado por ocupación.";
+      } else if (dynamicPrice.factors.demandLevel === "SURGE") {
+        explanation = "Demanda crítica. Precio máximo por alta ocupación.";
+      } else {
+        explanation = "Demanda normal. Precio estándar basado en horario y día.";
+      }
+      
+      // Añadir información del horario
+      const hour = new Date().getHours();
+      if (hour >= 17 && hour < 20) {
+        explanation += " Horario pico vespertino (+50%).";
+      } else if (hour >= 7 && hour < 9) {
+        explanation += " Horario pico matutino (+30%).";
+      } else if (hour >= 0 && hour < 6) {
+        explanation += " Horario valle nocturno (-15%).";
+      }
+      
+      return {
+        suggestedPrice: dynamicPrice.finalPrice,
+        demandLevel: dynamicPrice.factors.demandLevel,
+        factors: dynamicPrice.factors,
+        explanation,
+      };
     }),
 });
 
