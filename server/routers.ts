@@ -10,6 +10,7 @@ import { stripeRouter } from "./stripe/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
 import { chargingRouter } from "./charging/charging-router";
 import { pushRouter } from "./push/push-router";
+import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -801,6 +802,73 @@ const transactionsRouter = router({
         startDate: input?.startDate,
         endDate: input?.endDate,
       });
+    }),
+
+  // Exportar transacciones del inversionista en Excel o PDF
+  exportInvestorTransactions: investorProcedure
+    .input(z.object({
+      format: z.enum(["excel", "pdf"]),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Obtener transacciones del inversionista
+      const transactions = await db.getTransactionsByInvestor(ctx.user.id, {
+        startDate: input.startDate,
+        endDate: input.endDate,
+      });
+
+      // Obtener configuración de la plataforma
+      const settings = await db.getPlatformSettings();
+      const investorPercentage = settings?.investorPercentage ?? 80;
+      const platformFeePercentage = settings?.platformFeePercentage ?? 20;
+
+      // Obtener nombres de estaciones
+      const stationIds = Array.from(new Set(transactions.map(t => t.stationId)));
+      const stationsMap: Record<number, string> = {};
+      for (const stationId of stationIds) {
+        const station = await db.getChargingStationById(stationId);
+        if (station) {
+          stationsMap[stationId] = station.name;
+        }
+      }
+
+      // Preparar datos de transacciones con nombres de estación
+      const transactionsWithNames = transactions.map(t => ({
+        ...t,
+        stationName: stationsMap[t.stationId] || `Estación ${t.stationId}`,
+      }));
+
+      const options = {
+        investorName: ctx.user.name || "Inversionista",
+        investorPercentage,
+        platformFeePercentage,
+        startDate: input.startDate,
+        endDate: input.endDate,
+      };
+
+      let buffer: Buffer;
+      let filename: string;
+      let mimeType: string;
+
+      if (input.format === "excel") {
+        buffer = generateExcelReport(transactionsWithNames, options);
+        filename = `transacciones_${new Date().toISOString().split("T")[0]}.xlsx`;
+        mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      } else {
+        buffer = generatePDFReport(transactionsWithNames, options);
+        filename = `transacciones_${new Date().toISOString().split("T")[0]}.pdf`;
+        mimeType = "application/pdf";
+      }
+
+      // Convertir buffer a base64 para enviar al cliente
+      const base64 = buffer.toString("base64");
+
+      return {
+        filename,
+        mimeType,
+        data: base64,
+      };
     }),
   
   getMeterValues: protectedProcedure
