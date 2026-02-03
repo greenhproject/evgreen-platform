@@ -34,7 +34,8 @@ import {
   XCircle,
   ArrowUpRight,
   TrendingUp,
-  Info
+  Edit,
+  ChevronRight
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -49,6 +50,7 @@ export default function InvestorSettlements() {
   const [accountHolder, setAccountHolder] = useState("");
   const [accountType, setAccountType] = useState<"AHORROS" | "CORRIENTE">("AHORROS");
   const [notes, setNotes] = useState("");
+  const [showEditBankForm, setShowEditBankForm] = useState(false);
 
   // Obtener balance y datos reales
   // @ts-ignore - payouts router exists
@@ -56,25 +58,38 @@ export default function InvestorSettlements() {
   // @ts-ignore - payouts router exists
   const { data: payouts, isLoading: loadingPayouts, refetch: refetchPayouts } = trpc.payouts.getMyPayouts.useQuery();
 
+  // Verificar si hay datos bancarios guardados en el perfil
+  const hasSavedBankData = user?.bankName && user?.bankAccount;
+
   // Pre-cargar datos bancarios del perfil del usuario cuando se abre el diálogo
   useEffect(() => {
     if (isDialogOpen && user) {
       // Pre-cargar datos bancarios si existen en el perfil del usuario
-      if (user.bankName && !bankName) {
+      if (user.bankName) {
         setBankName(user.bankName);
       }
-      if (user.bankAccount && !bankAccount) {
+      if (user.bankAccount) {
         setBankAccount(user.bankAccount);
       }
-      if (user.name && !accountHolder) {
+      if (user.name) {
         setAccountHolder(user.name);
       }
       // Pre-cargar el monto máximo disponible
-      if (balanceData?.pendingBalance && !requestAmount) {
+      if (balanceData?.pendingBalance) {
         setRequestAmount(Math.floor(balanceData.pendingBalance).toString());
       }
+      // Si tiene datos bancarios guardados, no mostrar el formulario de edición
+      setShowEditBankForm(!hasSavedBankData);
     }
-  }, [isDialogOpen, user, balanceData, bankName, bankAccount, accountHolder, requestAmount]);
+  }, [isDialogOpen, user, balanceData, hasSavedBankData]);
+
+  // Resetear estados cuando se cierra el diálogo
+  useEffect(() => {
+    if (!isDialogOpen) {
+      setShowEditBankForm(false);
+      setNotes("");
+    }
+  }, [isDialogOpen]);
 
   // Mutación para solicitar pago
   // @ts-ignore - payouts router exists
@@ -163,9 +178,6 @@ export default function InvestorSettlements() {
 
   const nextSettlementDate = getNextMonday();
 
-  // Verificar si hay datos bancarios guardados en el perfil
-  const hasSavedBankData = user?.bankName && user?.bankAccount;
-
   if (loadingBalance || loadingPayouts) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
@@ -173,6 +185,248 @@ export default function InvestorSettlements() {
       </div>
     );
   }
+
+  // Renderizar el contenido del modal según si tiene datos bancarios o no
+  const renderModalContent = () => {
+    // Si tiene datos bancarios guardados y no está editando
+    if (hasSavedBankData && !showEditBankForm) {
+      return (
+        <div className="space-y-4 mt-4">
+          {/* Balance disponible */}
+          <div className="p-4 bg-green-500/10 rounded-lg border border-green-500/20">
+            <p className="text-sm text-muted-foreground">Balance disponible</p>
+            <p className="text-2xl font-bold text-green-500">{formatCurrency(pendingBalance)}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Tu porcentaje: {investorPercentage}%
+            </p>
+          </div>
+
+          {/* Monto a solicitar */}
+          <div className="space-y-2">
+            <Label>Monto a solicitar *</Label>
+            <Input
+              type="number"
+              placeholder="Ej: 500000"
+              value={requestAmount}
+              onChange={(e) => setRequestAmount(e.target.value)}
+              max={pendingBalance}
+            />
+            <p className="text-xs text-muted-foreground">
+              Máximo: {formatCurrency(pendingBalance)}
+            </p>
+          </div>
+
+          {/* Cuenta bancaria guardada - Vista resumida */}
+          <div className="p-4 bg-muted/50 rounded-lg border">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium">Cuenta de destino</p>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 text-xs"
+                onClick={() => setShowEditBankForm(true)}
+              >
+                <Edit className="w-3 h-3 mr-1" />
+                Cambiar cuenta
+              </Button>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <CreditCard className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-medium">{user?.bankName}</p>
+                <p className="text-sm text-muted-foreground">
+                  ****{user?.bankAccount?.slice(-4)} · {user?.name}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Notas opcionales */}
+          <div className="space-y-2">
+            <Label>Notas (opcional)</Label>
+            <Textarea
+              placeholder="Información adicional..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+            />
+          </div>
+
+          {/* Información de procesamiento */}
+          <div className="p-3 bg-muted/50 rounded-lg">
+            <p className="text-sm text-muted-foreground">
+              <Clock className="w-4 h-4 inline mr-1" />
+              El pago se procesará en 24-48 horas hábiles después de la aprobación
+            </p>
+          </div>
+
+          {/* Botón de confirmar */}
+          <Button 
+            className="w-full" 
+            onClick={handleRequestPayout}
+            disabled={requestPayoutMutation.isPending}
+          >
+            {requestPayoutMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Procesando...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Confirmar solicitud
+              </>
+            )}
+          </Button>
+        </div>
+      );
+    }
+
+    // Si NO tiene datos bancarios guardados O está editando
+    return (
+      <div className="space-y-4 mt-4">
+        {/* Balance disponible */}
+        <div className="p-4 bg-green-500/10 rounded-lg border border-green-500/20">
+          <p className="text-sm text-muted-foreground">Balance disponible</p>
+          <p className="text-2xl font-bold text-green-500">{formatCurrency(pendingBalance)}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Tu porcentaje: {investorPercentage}%
+          </p>
+        </div>
+
+        {/* Monto a solicitar */}
+        <div className="space-y-2">
+          <Label>Monto a solicitar *</Label>
+          <Input
+            type="number"
+            placeholder="Ej: 500000"
+            value={requestAmount}
+            onChange={(e) => setRequestAmount(e.target.value)}
+            max={pendingBalance}
+          />
+          <p className="text-xs text-muted-foreground">
+            Máximo: {formatCurrency(pendingBalance)}
+          </p>
+        </div>
+
+        {/* Mensaje si está editando */}
+        {hasSavedBankData && showEditBankForm && (
+          <div className="flex items-center justify-between p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+            <p className="text-sm text-blue-600 dark:text-blue-400">
+              Ingresa los datos de la nueva cuenta
+            </p>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-8 text-xs"
+              onClick={() => {
+                // Restaurar datos originales
+                if (user?.bankName) setBankName(user.bankName);
+                if (user?.bankAccount) setBankAccount(user.bankAccount);
+                if (user?.name) setAccountHolder(user.name);
+                setShowEditBankForm(false);
+              }}
+            >
+              Cancelar
+            </Button>
+          </div>
+        )}
+
+        {/* Formulario de datos bancarios */}
+        <div className="space-y-2">
+          <Label>Banco *</Label>
+          <Select value={bankName} onValueChange={setBankName}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecciona tu banco" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Bancolombia">Bancolombia</SelectItem>
+              <SelectItem value="Davivienda">Davivienda</SelectItem>
+              <SelectItem value="BBVA">BBVA</SelectItem>
+              <SelectItem value="Banco de Bogotá">Banco de Bogotá</SelectItem>
+              <SelectItem value="Banco de Occidente">Banco de Occidente</SelectItem>
+              <SelectItem value="Banco Popular">Banco Popular</SelectItem>
+              <SelectItem value="Banco AV Villas">Banco AV Villas</SelectItem>
+              <SelectItem value="Banco Caja Social">Banco Caja Social</SelectItem>
+              <SelectItem value="Scotiabank Colpatria">Scotiabank Colpatria</SelectItem>
+              <SelectItem value="Banco Falabella">Banco Falabella</SelectItem>
+              <SelectItem value="Nequi">Nequi</SelectItem>
+              <SelectItem value="Daviplata">Daviplata</SelectItem>
+              <SelectItem value="Otro">Otro</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Número de cuenta *</Label>
+          <Input
+            placeholder="Ej: 123456789012"
+            value={bankAccount}
+            onChange={(e) => setBankAccount(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Titular de la cuenta *</Label>
+          <Input
+            placeholder="Nombre completo del titular"
+            value={accountHolder}
+            onChange={(e) => setAccountHolder(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Tipo de cuenta *</Label>
+          <Select value={accountType} onValueChange={(v) => setAccountType(v as "AHORROS" | "CORRIENTE")}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="AHORROS">Cuenta de Ahorros</SelectItem>
+              <SelectItem value="CORRIENTE">Cuenta Corriente</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Notas opcionales */}
+        <div className="space-y-2">
+          <Label>Notas (opcional)</Label>
+          <Textarea
+            placeholder="Información adicional..."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+          />
+        </div>
+
+        {/* Información de procesamiento */}
+        <div className="p-3 bg-muted/50 rounded-lg">
+          <p className="text-sm text-muted-foreground">
+            <Clock className="w-4 h-4 inline mr-1" />
+            El pago se procesará en 24-48 horas hábiles después de la aprobación
+          </p>
+        </div>
+
+        {/* Botón de confirmar */}
+        <Button 
+          className="w-full" 
+          onClick={handleRequestPayout}
+          disabled={requestPayoutMutation.isPending}
+        >
+          {requestPayoutMutation.isPending ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Procesando...
+            </>
+          ) : (
+            "Confirmar solicitud"
+          )}
+        </Button>
+      </div>
+    );
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -195,128 +449,7 @@ export default function InvestorSettlements() {
               <DialogTitle>Solicitar Liquidación</DialogTitle>
             </DialogHeader>
             <ScrollArea className="max-h-[calc(90vh-80px)] px-6 pb-6">
-              <div className="space-y-4 mt-4">
-                <div className="p-4 bg-green-500/10 rounded-lg border border-green-500/20">
-                  <p className="text-sm text-muted-foreground">Balance disponible</p>
-                  <p className="text-2xl font-bold text-green-500">{formatCurrency(pendingBalance)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Tu porcentaje: {investorPercentage}%
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Monto a solicitar *</Label>
-                  <Input
-                    type="number"
-                    placeholder="Ej: 500000"
-                    value={requestAmount}
-                    onChange={(e) => setRequestAmount(e.target.value)}
-                    max={pendingBalance}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Máximo: {formatCurrency(pendingBalance)}
-                  </p>
-                </div>
-
-                {hasSavedBankData && (
-                  <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                    <div className="flex items-start gap-2">
-                      <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-blue-500">
-                        Los datos bancarios se han pre-cargado desde tu configuración. 
-                        Puedes modificarlos si lo necesitas.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label>Banco *</Label>
-                  <Select value={bankName} onValueChange={setBankName}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona tu banco" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Bancolombia">Bancolombia</SelectItem>
-                      <SelectItem value="Davivienda">Davivienda</SelectItem>
-                      <SelectItem value="BBVA">BBVA</SelectItem>
-                      <SelectItem value="Banco de Bogotá">Banco de Bogotá</SelectItem>
-                      <SelectItem value="Banco de Occidente">Banco de Occidente</SelectItem>
-                      <SelectItem value="Banco Popular">Banco Popular</SelectItem>
-                      <SelectItem value="Banco AV Villas">Banco AV Villas</SelectItem>
-                      <SelectItem value="Banco Caja Social">Banco Caja Social</SelectItem>
-                      <SelectItem value="Scotiabank Colpatria">Scotiabank Colpatria</SelectItem>
-                      <SelectItem value="Banco Falabella">Banco Falabella</SelectItem>
-                      <SelectItem value="Nequi">Nequi</SelectItem>
-                      <SelectItem value="Daviplata">Daviplata</SelectItem>
-                      <SelectItem value="Otro">Otro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Número de cuenta *</Label>
-                  <Input
-                    placeholder="Ej: 123456789012"
-                    value={bankAccount}
-                    onChange={(e) => setBankAccount(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Titular de la cuenta *</Label>
-                  <Input
-                    placeholder="Nombre completo del titular"
-                    value={accountHolder}
-                    onChange={(e) => setAccountHolder(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Tipo de cuenta *</Label>
-                  <Select value={accountType} onValueChange={(v) => setAccountType(v as "AHORROS" | "CORRIENTE")}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="AHORROS">Cuenta de Ahorros</SelectItem>
-                      <SelectItem value="CORRIENTE">Cuenta Corriente</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Notas (opcional)</Label>
-                  <Textarea
-                    placeholder="Información adicional..."
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={2}
-                  />
-                </div>
-
-                <div className="p-3 bg-muted/50 rounded-lg">
-                  <p className="text-sm text-muted-foreground">
-                    <Clock className="w-4 h-4 inline mr-1" />
-                    El pago se procesará en 24-48 horas hábiles después de la aprobación
-                  </p>
-                </div>
-
-                <Button 
-                  className="w-full" 
-                  onClick={handleRequestPayout}
-                  disabled={requestPayoutMutation.isPending}
-                >
-                  {requestPayoutMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Procesando...
-                    </>
-                  ) : (
-                    "Confirmar solicitud"
-                  )}
-                </Button>
-              </div>
+              {renderModalContent()}
             </ScrollArea>
           </DialogContent>
         </Dialog>
@@ -506,14 +639,14 @@ export default function InvestorSettlements() {
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Los datos bancarios se solicitan al momento de cada solicitud de pago.
+                  No tienes datos bancarios guardados.
                   <br />
                   <span className="text-xs">
                     Tip: Guarda tus datos bancarios en{" "}
                     <a href="/investor/settings" className="text-primary hover:underline">
                       Configuración
                     </a>{" "}
-                    para pre-cargarlos automáticamente.
+                    para agilizar tus solicitudes de pago.
                   </span>
                 </p>
               )}
