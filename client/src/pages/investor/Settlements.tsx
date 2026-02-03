@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   DollarSign, 
   Wallet, 
@@ -32,12 +33,15 @@ import {
   Loader2,
   XCircle,
   ArrowUpRight,
-  TrendingUp
+  TrendingUp,
+  Info
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 export default function InvestorSettlements() {
+  const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [requestAmount, setRequestAmount] = useState("");
   const [bankName, setBankName] = useState("");
@@ -51,6 +55,26 @@ export default function InvestorSettlements() {
   const { data: balanceData, isLoading: loadingBalance, refetch: refetchBalance } = trpc.payouts.getMyBalance.useQuery();
   // @ts-ignore - payouts router exists
   const { data: payouts, isLoading: loadingPayouts, refetch: refetchPayouts } = trpc.payouts.getMyPayouts.useQuery();
+
+  // Pre-cargar datos bancarios del perfil del usuario cuando se abre el diálogo
+  useEffect(() => {
+    if (isDialogOpen && user) {
+      // Pre-cargar datos bancarios si existen en el perfil del usuario
+      if (user.bankName && !bankName) {
+        setBankName(user.bankName);
+      }
+      if (user.bankAccount && !bankAccount) {
+        setBankAccount(user.bankAccount);
+      }
+      if (user.name && !accountHolder) {
+        setAccountHolder(user.name);
+      }
+      // Pre-cargar el monto máximo disponible
+      if (balanceData?.pendingBalance && !requestAmount) {
+        setRequestAmount(Math.floor(balanceData.pendingBalance).toString());
+      }
+    }
+  }, [isDialogOpen, user, balanceData, bankName, bankAccount, accountHolder, requestAmount]);
 
   // Mutación para solicitar pago
   // @ts-ignore - payouts router exists
@@ -139,6 +163,9 @@ export default function InvestorSettlements() {
 
   const nextSettlementDate = getNextMonday();
 
+  // Verificar si hay datos bancarios guardados en el perfil
+  const hasSavedBankData = user?.bankName && user?.bankAccount;
+
   if (loadingBalance || loadingPayouts) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
@@ -163,120 +190,134 @@ export default function InvestorSettlements() {
               Solicitar pago
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
+          <DialogContent className="max-w-md max-h-[90vh] p-0">
+            <DialogHeader className="p-6 pb-0">
               <DialogTitle>Solicitar Liquidación</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <div className="p-4 bg-green-500/10 rounded-lg border border-green-500/20">
-                <p className="text-sm text-muted-foreground">Balance disponible</p>
-                <p className="text-2xl font-bold text-green-500">{formatCurrency(pendingBalance)}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Tu porcentaje: {investorPercentage}%
-                </p>
-              </div>
+            <ScrollArea className="max-h-[calc(90vh-80px)] px-6 pb-6">
+              <div className="space-y-4 mt-4">
+                <div className="p-4 bg-green-500/10 rounded-lg border border-green-500/20">
+                  <p className="text-sm text-muted-foreground">Balance disponible</p>
+                  <p className="text-2xl font-bold text-green-500">{formatCurrency(pendingBalance)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Tu porcentaje: {investorPercentage}%
+                  </p>
+                </div>
 
-              <div className="space-y-2">
-                <Label>Monto a solicitar *</Label>
-                <Input
-                  type="number"
-                  placeholder="Ej: 500000"
-                  value={requestAmount}
-                  onChange={(e) => setRequestAmount(e.target.value)}
-                  max={pendingBalance}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Máximo: {formatCurrency(pendingBalance)}
-                </p>
-              </div>
+                <div className="space-y-2">
+                  <Label>Monto a solicitar *</Label>
+                  <Input
+                    type="number"
+                    placeholder="Ej: 500000"
+                    value={requestAmount}
+                    onChange={(e) => setRequestAmount(e.target.value)}
+                    max={pendingBalance}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Máximo: {formatCurrency(pendingBalance)}
+                  </p>
+                </div>
 
-              <div className="space-y-2">
-                <Label>Banco *</Label>
-                <Select value={bankName} onValueChange={setBankName}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona tu banco" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Bancolombia">Bancolombia</SelectItem>
-                    <SelectItem value="Davivienda">Davivienda</SelectItem>
-                    <SelectItem value="BBVA">BBVA</SelectItem>
-                    <SelectItem value="Banco de Bogotá">Banco de Bogotá</SelectItem>
-                    <SelectItem value="Banco de Occidente">Banco de Occidente</SelectItem>
-                    <SelectItem value="Banco Popular">Banco Popular</SelectItem>
-                    <SelectItem value="Banco AV Villas">Banco AV Villas</SelectItem>
-                    <SelectItem value="Banco Caja Social">Banco Caja Social</SelectItem>
-                    <SelectItem value="Scotiabank Colpatria">Scotiabank Colpatria</SelectItem>
-                    <SelectItem value="Banco Falabella">Banco Falabella</SelectItem>
-                    <SelectItem value="Nequi">Nequi</SelectItem>
-                    <SelectItem value="Daviplata">Daviplata</SelectItem>
-                    <SelectItem value="Otro">Otro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Número de cuenta *</Label>
-                <Input
-                  placeholder="Ej: 123456789012"
-                  value={bankAccount}
-                  onChange={(e) => setBankAccount(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Titular de la cuenta *</Label>
-                <Input
-                  placeholder="Nombre completo del titular"
-                  value={accountHolder}
-                  onChange={(e) => setAccountHolder(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Tipo de cuenta *</Label>
-                <Select value={accountType} onValueChange={(v) => setAccountType(v as "AHORROS" | "CORRIENTE")}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="AHORROS">Cuenta de Ahorros</SelectItem>
-                    <SelectItem value="CORRIENTE">Cuenta Corriente</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Notas (opcional)</Label>
-                <Textarea
-                  placeholder="Información adicional..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={2}
-                />
-              </div>
-
-              <div className="p-3 bg-muted/50 rounded-lg">
-                <p className="text-sm text-muted-foreground">
-                  <Clock className="w-4 h-4 inline mr-1" />
-                  El pago se procesará en 24-48 horas hábiles después de la aprobación
-                </p>
-              </div>
-
-              <Button 
-                className="w-full" 
-                onClick={handleRequestPayout}
-                disabled={requestPayoutMutation.isPending}
-              >
-                {requestPayoutMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Procesando...
-                  </>
-                ) : (
-                  "Confirmar solicitud"
+                {hasSavedBankData && (
+                  <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                    <div className="flex items-start gap-2">
+                      <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-blue-500">
+                        Los datos bancarios se han pre-cargado desde tu configuración. 
+                        Puedes modificarlos si lo necesitas.
+                      </p>
+                    </div>
+                  </div>
                 )}
-              </Button>
-            </div>
+
+                <div className="space-y-2">
+                  <Label>Banco *</Label>
+                  <Select value={bankName} onValueChange={setBankName}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona tu banco" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Bancolombia">Bancolombia</SelectItem>
+                      <SelectItem value="Davivienda">Davivienda</SelectItem>
+                      <SelectItem value="BBVA">BBVA</SelectItem>
+                      <SelectItem value="Banco de Bogotá">Banco de Bogotá</SelectItem>
+                      <SelectItem value="Banco de Occidente">Banco de Occidente</SelectItem>
+                      <SelectItem value="Banco Popular">Banco Popular</SelectItem>
+                      <SelectItem value="Banco AV Villas">Banco AV Villas</SelectItem>
+                      <SelectItem value="Banco Caja Social">Banco Caja Social</SelectItem>
+                      <SelectItem value="Scotiabank Colpatria">Scotiabank Colpatria</SelectItem>
+                      <SelectItem value="Banco Falabella">Banco Falabella</SelectItem>
+                      <SelectItem value="Nequi">Nequi</SelectItem>
+                      <SelectItem value="Daviplata">Daviplata</SelectItem>
+                      <SelectItem value="Otro">Otro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Número de cuenta *</Label>
+                  <Input
+                    placeholder="Ej: 123456789012"
+                    value={bankAccount}
+                    onChange={(e) => setBankAccount(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Titular de la cuenta *</Label>
+                  <Input
+                    placeholder="Nombre completo del titular"
+                    value={accountHolder}
+                    onChange={(e) => setAccountHolder(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tipo de cuenta *</Label>
+                  <Select value={accountType} onValueChange={(v) => setAccountType(v as "AHORROS" | "CORRIENTE")}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="AHORROS">Cuenta de Ahorros</SelectItem>
+                      <SelectItem value="CORRIENTE">Cuenta Corriente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Notas (opcional)</Label>
+                  <Textarea
+                    placeholder="Información adicional..."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <p className="text-sm text-muted-foreground">
+                    <Clock className="w-4 h-4 inline mr-1" />
+                    El pago se procesará en 24-48 horas hábiles después de la aprobación
+                  </p>
+                </div>
+
+                <Button 
+                  className="w-full" 
+                  onClick={handleRequestPayout}
+                  disabled={requestPayoutMutation.isPending}
+                >
+                  {requestPayoutMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Procesando...
+                    </>
+                  ) : (
+                    "Confirmar solicitud"
+                  )}
+                </Button>
+              </div>
+            </ScrollArea>
           </DialogContent>
         </Dialog>
       </div>
@@ -403,57 +444,34 @@ export default function InvestorSettlements() {
             <div className="space-y-4">
               {payouts.map((payout: any) => (
                 <div 
-                  key={payout.id}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  key={payout.id} 
+                  className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      payout.status === "PAID" ? "bg-green-500/20" :
-                      payout.status === "REJECTED" ? "bg-red-500/20" :
-                      payout.status === "REQUESTED" || payout.status === "APPROVED" ? "bg-blue-500/20" :
-                      "bg-yellow-500/20"
-                    }`}>
-                      <DollarSign className={`w-5 h-5 ${
-                        payout.status === "PAID" ? "text-green-500" :
-                        payout.status === "REJECTED" ? "text-red-500" :
-                        payout.status === "REQUESTED" || payout.status === "APPROVED" ? "text-blue-500" :
-                        "text-yellow-500"
-                      }`} />
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <CreditCard className="w-5 h-5 text-primary" />
                     </div>
                     <div>
-                      <p className="font-semibold">
-                        {formatCurrency(payout.investorShare)}
-                      </p>
+                      <p className="font-medium">{formatCurrency(payout.investorShare)}</p>
                       <p className="text-sm text-muted-foreground">
-                        {new Date(payout.periodStart).toLocaleDateString("es-CO", { day: "numeric", month: "short" })}
-                        {" - "}
-                        {new Date(payout.periodEnd).toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" })}
+                        {new Date(payout.createdAt).toLocaleDateString("es-CO", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric"
+                        })}
                       </p>
-                      {payout.paidAt && (
-                        <p className="text-xs text-muted-foreground">
-                          Pagado el {new Date(payout.paidAt).toLocaleDateString("es-CO")}
-                        </p>
-                      )}
-                      {payout.requestedAt && payout.status === "REQUESTED" && (
-                        <p className="text-xs text-muted-foreground">
-                          Solicitado el {new Date(payout.requestedAt).toLocaleDateString("es-CO")}
-                        </p>
-                      )}
-                      {payout.rejectionReason && (
-                        <p className="text-xs text-red-500 mt-1">
-                          Motivo: {payout.rejectionReason}
-                        </p>
-                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
                       <p className="text-sm text-muted-foreground">
-                        Bruto: {formatCurrency(payout.totalRevenue)}
+                        {payout.bankName} - ****{payout.bankAccount?.slice(-4)}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        Comisión: {formatCurrency(payout.platformFee)}
-                      </p>
+                      {payout.paidAt && (
+                        <p className="text-xs text-muted-foreground">
+                          Pagado: {new Date(payout.paidAt).toLocaleDateString("es-CO")}
+                        </p>
+                      )}
                     </div>
                     {getStatusBadge(payout.status)}
                   </div>
@@ -464,28 +482,41 @@ export default function InvestorSettlements() {
         </CardContent>
       </Card>
 
-      {/* Información de cuenta bancaria */}
+      {/* Información de pago */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CreditCard className="w-5 h-5" />
-            Información de Pago
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="p-4 bg-muted/50 rounded-lg">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
-                <Building className="w-6 h-6 text-blue-500" />
-              </div>
-              <div>
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+              <Building className="w-5 h-5 text-blue-500" />
+            </div>
+            <div>
+              <h3 className="font-semibold mb-1">Información de Pago</h3>
+              {hasSavedBankData ? (
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p>Tus datos bancarios guardados:</p>
+                  <p className="font-medium text-foreground">
+                    {user?.bankName} - ****{user?.bankAccount?.slice(-4)}
+                  </p>
+                  <p className="text-xs">
+                    Puedes actualizar estos datos en la sección de{" "}
+                    <a href="/investor/settings" className="text-primary hover:underline">
+                      Configuración
+                    </a>
+                  </p>
+                </div>
+              ) : (
                 <p className="text-sm text-muted-foreground">
                   Los datos bancarios se solicitan al momento de cada solicitud de pago.
+                  <br />
+                  <span className="text-xs">
+                    Tip: Guarda tus datos bancarios en{" "}
+                    <a href="/investor/settings" className="text-primary hover:underline">
+                      Configuración
+                    </a>{" "}
+                    para pre-cargarlos automáticamente.
+                  </span>
                 </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Asegúrate de ingresar correctamente tu información bancaria para evitar retrasos.
-                </p>
-              </div>
+              )}
             </div>
           </div>
         </CardContent>

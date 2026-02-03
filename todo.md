@@ -1565,3 +1565,16 @@
 - [x] Verificación: Balance ahora muestra $246,087.11 (consistente con Reportes)
 - [x] 300 tests pasando correctamente
 
+
+
+## Bugs Reportados - 3 Febrero 2026 (Segunda Ronda)
+
+- [ ] BUG: Error "Too many requests" - rate limiting causando fallos en API queries
+- [ ] BUG: WebSocket de Vite falla al conectar (HMR no funciona)
+
+
+- [x] MEJORA: Pre-cargar datos bancarios del perfil del inversionista en el formulario de solicitud de pago
+- [x] BUG: El modal de solicitud de pago no permite hacer scroll hacia abajo
+
+- [x] MEJORA: Página de Configuración del inversionista debe cargar y guardar datos reales del usuario (perfil, empresa, datos bancarios)
+
