@@ -1583,3 +1583,10 @@
 - [x] BUG: TypeError Cannot read properties of null (reading 'toLocaleString') en producción
 - [x] TAREA: Crear imagen llamativa para simuladores de carga
 
+
+
+## Actualización Modelo de Negocio - 3 Febrero 2026
+- [x] Actualizar página web del inversionista con nuevo modelo: 70% distribución
+- [x] Actualizar simulador de ROI con nuevas proyecciones (186% ROI, 6.4 meses payback)
+- [x] Actualizar información de escenarios de retorno
+

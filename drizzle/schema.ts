@@ -480,7 +480,7 @@ export const investorPayouts = mysqlTable("investor_payouts", {
   totalRevenue: decimal("totalRevenue", { precision: 14, scale: 2 }).notNull(),
   investorShare: decimal("investorShare", { precision: 14, scale: 2 }).notNull(), // Porcentaje del inversionista
   platformFee: decimal("platformFee", { precision: 14, scale: 2 }).notNull(), // Comisión plataforma
-  investorPercentage: int("investorPercentage").default(80).notNull(), // Porcentaje aplicado
+  investorPercentage: int("investorPercentage").default(70).notNull(), // Porcentaje aplicado
   // Detalles
   transactionCount: int("transactionCount").notNull(),
   totalKwh: decimal("totalKwh", { precision: 12, scale: 4 }).notNull(),
@@ -995,8 +995,8 @@ export const platformSettings = mysqlTable("platform_settings", {
   contactEmail: varchar("contactEmail", { length: 255 }),
   
   // Modelo de negocio (porcentajes)
-  investorPercentage: int("investorPercentage").default(80).notNull(),
-  platformFeePercentage: int("platformFeePercentage").default(20).notNull(),
+  investorPercentage: int("investorPercentage").default(70).notNull(),
+  platformFeePercentage: int("platformFeePercentage").default(30).notNull(),
   
   // Configuración de Stripe
   stripePublicKey: text("stripePublicKey"),
