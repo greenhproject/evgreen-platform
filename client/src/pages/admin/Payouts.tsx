@@ -467,8 +467,8 @@ export default function AdminPayouts() {
                 <Label>Período</Label>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Calendar className="w-4 h-4" />
-                  {new Date(selectedPayout.payout.periodStart).toLocaleDateString("es-CO")} -{" "}
-                  {new Date(selectedPayout.payout.periodEnd).toLocaleDateString("es-CO")}
+                  {selectedPayout.payout.periodStart ? new Date(selectedPayout.payout.periodStart).toLocaleDateString("es-CO") : "N/A"} -{" "}
+                  {selectedPayout.payout.periodEnd ? new Date(selectedPayout.payout.periodEnd).toLocaleDateString("es-CO") : "N/A"}
                 </div>
               </div>
 

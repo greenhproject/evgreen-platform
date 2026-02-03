@@ -346,7 +346,7 @@ export default function AdminUsers() {
                     {new Date(user.createdAt).toLocaleDateString("es-CO")}
                   </TableCell>
                   <TableCell>
-                    {new Date(user.lastSignedIn).toLocaleDateString("es-CO")}
+                    {user.lastSignedIn ? new Date(user.lastSignedIn).toLocaleDateString("es-CO") : "Nunca"}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -503,11 +503,11 @@ export default function AdminUsers() {
                 <div>
                   <Label className="text-muted-foreground">Último acceso</Label>
                   <p className="text-sm">
-                    {new Date(selectedUser.lastSignedIn).toLocaleDateString("es-CO", {
+                    {selectedUser.lastSignedIn ? new Date(selectedUser.lastSignedIn).toLocaleDateString("es-CO", {
                       year: "numeric",
                       month: "long",
                       day: "numeric",
-                    })}
+                    }) : "Nunca"}
                   </p>
                 </div>
               </div>

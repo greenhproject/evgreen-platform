@@ -346,12 +346,12 @@ export default function AdminNotifications() {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  {notification.sentAt.toLocaleDateString("es-CO", {
+                  {notification.sentAt ? new Date(notification.sentAt).toLocaleDateString("es-CO", {
                     day: "numeric",
                     month: "short",
                     hour: "2-digit",
                     minute: "2-digit",
-                  })}
+                  }) : "Pendiente"}
                 </TableCell>
                 <TableCell>
                   {notification.readCount} / {notification.totalSent}
