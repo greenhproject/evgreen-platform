@@ -1580,3 +1580,6 @@
 
 - [x] MEJORA: Modal de solicitud de pago debe mostrar datos bancarios pre-cargados con opción de cambiar cuenta (menos clics para el usuario)
 
+- [x] BUG: TypeError Cannot read properties of null (reading 'toLocaleString') en producción
+- [x] TAREA: Crear imagen llamativa para simuladores de carga
+
