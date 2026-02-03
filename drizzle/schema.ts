@@ -489,8 +489,8 @@ export const investorPayouts = mysqlTable("investor_payouts", {
   bankAccount: varchar("bankAccount", { length: 100 }),
   accountHolder: varchar("accountHolder", { length: 255 }),
   accountType: varchar("accountType", { length: 50 }), // AHORROS, CORRIENTE
-  // Estado del pago
-  status: payoutStatusEnum.default("PENDING").notNull(),
+  // Estado del pago - Nota: la columna en BD se llama 'status' (renombrada de payment_status)
+  status: mysqlEnum("status", ["PENDING", "REQUESTED", "APPROVED", "PROCESSING", "PAID", "REJECTED"]).default("PENDING").notNull(),
   requestedAt: timestamp("requestedAt"), // Cuando el inversionista solicita el pago
   approvedAt: timestamp("approvedAt"), // Cuando admin aprueba
   approvedBy: int("approvedBy"), // FK a users (admin)

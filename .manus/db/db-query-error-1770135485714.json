@@ -1,0 +1,8 @@
+{
+  "query": "SELECT t.id, t.station_id, t.status, t.total_cost, t.investor_share, s.owner_id\nFROM transactions t\nJOIN charging_stations s ON t.station_id = s.id\nWHERE t.status = 'COMPLETED'\nORDER BY t.created_at DESC\nLIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT t.id, t.station_id, t.status, t.total_cost, t.investor_share, s.owner_id\nFROM transactions t\nJOIN charging_stations s ON t.station_id = s.id\nWHERE t.status = 'COMPLETED'\nORDER BY t.created_at DESC\nLIMIT 20;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 't.station_id' in 'on clause'"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "query": "SELECT * FROM transactions LIMIT 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT * FROM transactions LIMIT 1;",
+  "rows": [
+    {
+      "id": "1",
+      "evseId": "60001",
+      "userId": "1",
+      "stationId": "60001",
+      "tariffId": "NULL",
+      "ocppTransactionId": "1CsrLqW6eXo7492OHnfmk",
+      "startTime": "2026-01-30 02:01:39",
+      "endTime": "NULL",
+      "kwhConsumed": "0.0000",
+      "meterStart": "0.0000",
+      "meterEnd": "NULL",
+      "energyCost": "0.00",
+      "timeCost": "0.00",
+      "sessionCost": "0.00",
+      "overstayCost": "0.00",
+      "totalCost": "0.00",
+      "investorShare": "0.00",
+      "platformFee": "0.00",
+      "transaction_status": "IN_PROGRESS",
+      "startMethod": "NULL",
+      "stopReason": "NULL",
+      "reservationId": "NULL",
+      "createdAt": "2026-01-30 02:01:38",
+      "updatedAt": "2026-01-30 02:01:38"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tevseId\tuserId\tstationId\ttariffId\tocppTransactionId\tstartTime\tendTime\tkwhConsumed\tmeterStart\tmeterEnd\tenergyCost\ttimeCost\tsessionCost\toverstayCost\ttotalCost\tinvestorShare\tplatformFee\ttransaction_status\tstartMethod\tstopReason\treservationId\tcreatedAt\tupdatedAt\n1\t60001\t1\t60001\tNULL\t1CsrLqW6eXo7492OHnfmk\t2026-01-30 02:01:39\tNULL\t0.0000\t0.0000\tNULL\t0.00\t0.00\t0.00\t0.00\t0.00\t0.00\t0.00\tIN_PROGRESS\tNULL\tNULL\tNULL\t2026-01-30 02:01:38\t2026-01-30 02:01:38\n",
+  "stderr": "",
+  "execution_time_ms": 349
+}

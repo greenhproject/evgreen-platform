@@ -1003,6 +1003,7 @@ export async function getInvestorPendingBalance(investorId: number) {
   const investorPercentage = settings[0]?.investorPercentage || 80;
   
   // Obtener todas las transacciones completadas
+  // Nota: El campo 'status' en el schema de drizzle mapea a 'transaction_status' en la BD
   const txs = await db.select()
     .from(transactions)
     .where(and(

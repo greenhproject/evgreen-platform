@@ -1540,3 +1540,28 @@
   - Acciones: aprobar, rechazar, marcar como pagado
   - Modal de detalles con información bancaria
 - [x] 300 tests pasando (14 nuevos tests de liquidaciones)
+
+
+## Bug: Inconsistencia de balance entre Reportes y Liquidaciones - 3 Febrero 2026
+
+- [ ] BUG: En Reportes muestra $221,848 de ingresos netos pero en Liquidaciones el balance disponible está en $0
+- [ ] Investigar el endpoint getMyBalance para ver cómo calcula el balance
+- [ ] Corregir la lógica para que el balance disponible refleje los ingresos reales menos los pagos ya realizados
+- [ ] Verificar que ambas secciones usen la misma fuente de datos
+
+
+## Corrección de Bug - 3 Febrero 2026
+
+### Bug de Balance $0 en Liquidaciones del Inversionista
+- [x] BUG: La sección de Liquidaciones mostraba $0 de balance disponible mientras Reportes mostraba $246,087.11 de ingresos netos
+- [x] Causa identificada: Desincronización entre el schema de Drizzle y la base de datos
+  - El campo `status` en el schema usaba `payoutStatusEnum` que mapeaba a `payout_status` en la BD
+  - La base de datos tenía la columna como `payment_status` con valores diferentes
+  - Faltaban columnas: investorPercentage, bankName, bankAccount, accountHolder, accountType, requestedAt, approvedAt, approvedBy, investorNotes, adminNotes, rejectionReason
+- [x] Solución aplicada:
+  - Agregadas las columnas faltantes a la tabla `investor_payouts` via SQL
+  - Renombrada columna `payment_status` a `status` con los valores correctos del enum
+  - Actualizado el schema de Drizzle para usar `mysqlEnum("status", ...)` en lugar de `payoutStatusEnum`
+- [x] Verificación: Balance ahora muestra $246,087.11 (consistente con Reportes)
+- [x] 300 tests pasando correctamente
+
