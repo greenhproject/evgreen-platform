@@ -46,6 +46,7 @@ export const reservationStatusEnum = mysqlEnum("reservation_status", [
 ]);
 export const subscriptionTierEnum = mysqlEnum("subscription_tier", ["FREE", "BASIC", "PREMIUM", "ENTERPRISE"]);
 export const paymentStatusEnum = mysqlEnum("payment_status", ["PENDING", "COMPLETED", "FAILED", "REFUNDED"]);
+export const payoutStatusEnum = mysqlEnum("payout_status", ["PENDING", "REQUESTED", "APPROVED", "PROCESSING", "PAID", "REJECTED"]);
 export const maintenanceStatusEnum = mysqlEnum("maintenance_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]);
 
 // ============================================================================
@@ -477,18 +478,29 @@ export const investorPayouts = mysqlTable("investor_payouts", {
   periodEnd: timestamp("periodEnd").notNull(),
   // Montos
   totalRevenue: decimal("totalRevenue", { precision: 14, scale: 2 }).notNull(),
-  investorShare: decimal("investorShare", { precision: 14, scale: 2 }).notNull(), // 80%
-  platformFee: decimal("platformFee", { precision: 14, scale: 2 }).notNull(), // 20%
+  investorShare: decimal("investorShare", { precision: 14, scale: 2 }).notNull(), // Porcentaje del inversionista
+  platformFee: decimal("platformFee", { precision: 14, scale: 2 }).notNull(), // Comisión plataforma
+  investorPercentage: int("investorPercentage").default(80).notNull(), // Porcentaje aplicado
   // Detalles
   transactionCount: int("transactionCount").notNull(),
   totalKwh: decimal("totalKwh", { precision: 12, scale: 4 }).notNull(),
-  // Pago
-  status: paymentStatusEnum.default("PENDING").notNull(),
-  paidAt: timestamp("paidAt"),
-  paymentMethod: varchar("paymentMethod", { length: 50 }), // BANK_TRANSFER, STRIPE
-  paymentReference: varchar("paymentReference", { length: 100 }),
+  // Información bancaria del inversionista al momento de la solicitud
+  bankName: varchar("bankName", { length: 100 }),
+  bankAccount: varchar("bankAccount", { length: 100 }),
+  accountHolder: varchar("accountHolder", { length: 255 }),
+  accountType: varchar("accountType", { length: 50 }), // AHORROS, CORRIENTE
+  // Estado del pago
+  status: payoutStatusEnum.default("PENDING").notNull(),
+  requestedAt: timestamp("requestedAt"), // Cuando el inversionista solicita el pago
+  approvedAt: timestamp("approvedAt"), // Cuando admin aprueba
+  approvedBy: int("approvedBy"), // FK a users (admin)
+  paidAt: timestamp("paidAt"), // Cuando se marca como pagado
+  paymentMethod: varchar("paymentMethod", { length: 50 }), // BANK_TRANSFER, STRIPE, WOMPI
+  paymentReference: varchar("paymentReference", { length: 100 }), // Número de transferencia
   // Notas
-  notes: text("notes"),
+  investorNotes: text("investorNotes"), // Notas del inversionista
+  adminNotes: text("adminNotes"), // Notas del admin
+  rejectionReason: text("rejectionReason"), // Razón de rechazo si aplica
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
