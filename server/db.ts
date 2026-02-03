@@ -940,6 +940,119 @@ export async function updateInvestorPayout(id: number, data: Partial<InsertInves
   await db.update(investorPayouts).set(data).where(eq(investorPayouts.id, id));
 }
 
+export async function getPayoutById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(investorPayouts).where(eq(investorPayouts.id, id));
+  return result[0] || null;
+}
+
+export async function getAllPendingPayouts() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    payout: investorPayouts,
+    investor: users,
+  })
+    .from(investorPayouts)
+    .innerJoin(users, eq(investorPayouts.investorId, users.id))
+    .where(inArray(investorPayouts.status, ['PENDING', 'REQUESTED']))
+    .orderBy(desc(investorPayouts.requestedAt));
+}
+
+export async function getAllPayoutsForAdmin(status?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  if (status && status !== 'ALL') {
+    return db.select({
+      payout: investorPayouts,
+      investor: users,
+    })
+      .from(investorPayouts)
+      .innerJoin(users, eq(investorPayouts.investorId, users.id))
+      .where(eq(investorPayouts.status, status as any))
+      .orderBy(desc(investorPayouts.createdAt));
+  }
+  
+  return db.select({
+    payout: investorPayouts,
+    investor: users,
+  })
+    .from(investorPayouts)
+    .innerJoin(users, eq(investorPayouts.investorId, users.id))
+    .orderBy(desc(investorPayouts.createdAt));
+}
+
+export async function getInvestorPendingBalance(investorId: number) {
+  const db = await getDb();
+  if (!db) return { pendingBalance: 0, totalPaid: 0, lastPayout: null };
+  
+  // Obtener estaciones del inversionista
+  const stations = await db.select({ id: chargingStations.id })
+    .from(chargingStations)
+    .where(eq(chargingStations.ownerId, investorId));
+  
+  const stationIds = stations.map(s => s.id);
+  if (stationIds.length === 0) {
+    return { pendingBalance: 0, totalPaid: 0, lastPayout: null };
+  }
+  
+  // Obtener configuración de porcentaje
+  const settings = await db.select().from(platformSettings).limit(1);
+  const investorPercentage = settings[0]?.investorPercentage || 80;
+  
+  // Obtener todas las transacciones completadas
+  const txs = await db.select()
+    .from(transactions)
+    .where(and(
+      inArray(transactions.stationId, stationIds),
+      eq(transactions.status, 'COMPLETED')
+    ));
+  
+  const totalRevenue = txs.reduce((sum, tx) => sum + Number(tx.totalCost || 0), 0);
+  const totalInvestorShare = totalRevenue * (investorPercentage / 100);
+  
+  // Obtener total ya pagado
+  const paidPayouts = await db.select()
+    .from(investorPayouts)
+    .where(and(
+      eq(investorPayouts.investorId, investorId),
+      eq(investorPayouts.status, 'PAID')
+    ));
+  
+  const totalPaid = paidPayouts.reduce((sum, p) => sum + Number(p.investorShare || 0), 0);
+  
+  // Obtener último pago
+  const lastPayout = paidPayouts.length > 0 
+    ? paidPayouts.sort((a, b) => new Date(b.paidAt || 0).getTime() - new Date(a.paidAt || 0).getTime())[0]
+    : null;
+  
+  // Obtener solicitudes pendientes (ya solicitadas pero no pagadas)
+  const pendingPayouts = await db.select()
+    .from(investorPayouts)
+    .where(and(
+      eq(investorPayouts.investorId, investorId),
+      inArray(investorPayouts.status, ['PENDING', 'REQUESTED', 'APPROVED', 'PROCESSING'])
+    ));
+  
+  const pendingRequested = pendingPayouts.reduce((sum, p) => sum + Number(p.investorShare || 0), 0);
+  
+  // Balance disponible = total ganado - total pagado - solicitudes pendientes
+  const pendingBalance = totalInvestorShare - totalPaid - pendingRequested;
+  
+  return {
+    pendingBalance: Math.max(0, pendingBalance),
+    totalPaid,
+    lastPayout,
+    investorPercentage,
+    totalRevenue,
+    totalInvestorShare,
+    pendingRequested,
+    transactionCount: txs.length,
+  };
+}
+
 // ============================================================================
 // OCPP LOG OPERATIONS
 // ============================================================================

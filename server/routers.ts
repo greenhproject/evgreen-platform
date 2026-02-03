@@ -1757,6 +1757,166 @@ const dashboardRouter = router({
 });
 
 // ============================================================================
+// PAYOUTS ROUTER (Liquidaciones)
+// ============================================================================
+
+const payoutsRouter = router({
+  // Obtener balance pendiente del inversionista
+  getMyBalance: investorProcedure.query(async ({ ctx }) => {
+    return db.getInvestorPendingBalance(ctx.user.id);
+  }),
+  
+  // Obtener historial de liquidaciones del inversionista
+  getMyPayouts: investorProcedure.query(async ({ ctx }) => {
+    return db.getPayoutsByInvestorId(ctx.user.id);
+  }),
+  
+  // Solicitar pago (inversionista)
+  requestPayout: investorProcedure
+    .input(z.object({
+      amount: z.number().positive(),
+      bankName: z.string().min(1),
+      bankAccount: z.string().min(1),
+      accountHolder: z.string().min(1),
+      accountType: z.enum(['AHORROS', 'CORRIENTE']),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Verificar balance disponible
+      const balance = await db.getInvestorPendingBalance(ctx.user.id);
+      if (input.amount > balance.pendingBalance) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Monto solicitado ($${input.amount.toLocaleString()}) excede el balance disponible ($${balance.pendingBalance.toLocaleString()})`,
+        });
+      }
+      
+      // Crear solicitud de pago
+      const now = new Date();
+      const periodStart = balance.lastPayout?.periodEnd || new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const periodEnd = now;
+      
+      const platformFee = input.amount * ((100 - (balance.investorPercentage || 80)) / (balance.investorPercentage || 80));
+      const totalRevenue = input.amount + platformFee;
+      
+      const payoutId = await db.createInvestorPayout({
+        investorId: ctx.user.id,
+        periodStart,
+        periodEnd,
+        totalRevenue: totalRevenue.toFixed(2),
+        investorShare: input.amount.toFixed(2),
+        platformFee: platformFee.toFixed(2),
+        investorPercentage: balance.investorPercentage || 80,
+        transactionCount: balance.transactionCount || 0,
+        totalKwh: '0', // Se puede calcular si es necesario
+        bankName: input.bankName,
+        bankAccount: input.bankAccount,
+        accountHolder: input.accountHolder,
+        accountType: input.accountType,
+        status: 'REQUESTED',
+        requestedAt: now,
+        investorNotes: input.notes,
+      });
+      
+      return { success: true, payoutId };
+    }),
+  
+  // Admin: Obtener todas las solicitudes de pago
+  getAllPayouts: adminProcedure
+    .input(z.object({
+      status: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getAllPayoutsForAdmin(input?.status);
+    }),
+  
+  // Admin: Obtener solicitudes pendientes
+  getPendingPayouts: adminProcedure.query(async () => {
+    return db.getAllPendingPayouts();
+  }),
+  
+  // Admin: Aprobar solicitud de pago
+  approvePayout: adminProcedure
+    .input(z.object({
+      payoutId: z.number(),
+      adminNotes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const payout = await db.getPayoutById(input.payoutId);
+      if (!payout) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Solicitud no encontrada' });
+      }
+      if (payout.status !== 'REQUESTED') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Esta solicitud ya fue procesada' });
+      }
+      
+      await db.updateInvestorPayout(input.payoutId, {
+        status: 'APPROVED',
+        approvedAt: new Date(),
+        approvedBy: ctx.user.id,
+        adminNotes: input.adminNotes,
+      });
+      
+      return { success: true };
+    }),
+  
+  // Admin: Rechazar solicitud de pago
+  rejectPayout: adminProcedure
+    .input(z.object({
+      payoutId: z.number(),
+      rejectionReason: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const payout = await db.getPayoutById(input.payoutId);
+      if (!payout) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Solicitud no encontrada' });
+      }
+      if (payout.status === 'PAID') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No se puede rechazar un pago ya completado' });
+      }
+      
+      await db.updateInvestorPayout(input.payoutId, {
+        status: 'REJECTED',
+        rejectionReason: input.rejectionReason,
+        adminNotes: `Rechazado por: ${ctx.user.name || ctx.user.email}`,
+      });
+      
+      return { success: true };
+    }),
+  
+  // Admin: Marcar como pagado
+  markAsPaid: adminProcedure
+    .input(z.object({
+      payoutId: z.number(),
+      paymentMethod: z.enum(['BANK_TRANSFER', 'STRIPE', 'WOMPI', 'OTHER']),
+      paymentReference: z.string().min(1),
+      adminNotes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const payout = await db.getPayoutById(input.payoutId);
+      if (!payout) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Solicitud no encontrada' });
+      }
+      if (payout.status === 'PAID') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este pago ya fue completado' });
+      }
+      if (payout.status === 'REJECTED') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No se puede pagar una solicitud rechazada' });
+      }
+      
+      await db.updateInvestorPayout(input.payoutId, {
+        status: 'PAID',
+        paidAt: new Date(),
+        paymentMethod: input.paymentMethod,
+        paymentReference: input.paymentReference,
+        adminNotes: input.adminNotes || `Pagado por: ${ctx.user.name || ctx.user.email}`,
+      });
+      
+      return { success: true };
+    }),
+});
+
+// ============================================================================
 // MAIN APP ROUTER
 // ============================================================================
 
@@ -1783,6 +1943,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   charging: chargingRouter,
   push: pushRouter,
+  payouts: payoutsRouter,
 });
 
 export type AppRouter = typeof appRouter;

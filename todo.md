@@ -1513,3 +1513,30 @@
   - Modal con opciones Excel y PDF
 - [x] Usar datos reales de transacciones en lugar de datos ficticios
 - [x] 286 tests pasando
+
+
+## Implementación de Liquidaciones del Inversionista - 2 Febrero 2026 [COMPLETADO]
+
+- [x] Crear tabla de liquidaciones (payouts) en la base de datos
+  - Enum payoutRequestStatus: PENDING, REQUESTED, APPROVED, PROCESSING, PAID, REJECTED, FAILED
+  - Campos: bankName, bankAccount, accountHolder, accountType, investorNotes, adminNotes
+  - Campos de seguimiento: requestedAt, approvedAt, paidAt, rejectionReason
+- [x] Implementar endpoints para liquidaciones (payoutsRouter)
+  - getMyBalance: Calcula balance disponible del inversionista
+  - getMyPayouts: Lista liquidaciones del inversionista
+  - requestPayout: Crea solicitud de pago con datos bancarios
+  - getAllPayouts: Lista todas las solicitudes (admin)
+  - approvePayout: Aprueba solicitud (admin)
+  - rejectPayout: Rechaza solicitud con motivo (admin)
+  - markAsPaid: Registra pago con referencia (admin)
+- [x] Actualizar componente Settlements.tsx con datos reales
+  - Balance disponible, solicitudes pendientes, total pagado
+  - Modal de solicitud con datos bancarios
+  - Historial de liquidaciones con estados y colores
+  - Próxima fecha de liquidación calculada
+- [x] Crear panel de admin para gestionar solicitudes de pago (/admin/payouts)
+  - Estadísticas de solicitudes pendientes y pagadas
+  - Filtros por estado y búsqueda
+  - Acciones: aprobar, rechazar, marcar como pagado
+  - Modal de detalles con información bancaria
+- [x] 300 tests pasando (14 nuevos tests de liquidaciones)
