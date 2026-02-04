@@ -1646,3 +1646,5 @@
 - [x] Crear comparador visual lado a lado Individual vs Colectivo
 - [x] Implementar simulador de escenarios con proyecciones a 3, 5 y 10 años
 - [x] Gráfico de retorno acumulado con proyecciones
+- [x] Corregir modelo para que colectivo sea más rentable (factor 2x ubicaciones premium)
+- [x] Agregar argumentos de valor: seguridad de ingresos, ubicaciones estratégicas, energía solar
