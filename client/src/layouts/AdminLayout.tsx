@@ -37,7 +37,8 @@ import {
   Bell,
   Bot,
   Terminal,
-  Wallet
+  Wallet,
+  Building2
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -51,6 +52,7 @@ const adminMenuItems = [
   { icon: Receipt, label: "Transacciones", path: "/admin/transactions" },
   { icon: DollarSign, label: "Tarifas", path: "/admin/tariffs" },
   { icon: Wallet, label: "Liquidaciones", path: "/admin/payouts" },
+  { icon: Building2, label: "Crowdfunding", path: "/admin/crowdfunding" },
   { icon: Terminal, label: "Monitor OCPP", path: "/admin/ocpp-monitor" },
   { icon: BarChart3, label: "Reportes", path: "/admin/reports" },
   { icon: Image, label: "Banners", path: "/admin/banners" },

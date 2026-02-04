@@ -3510,3 +3510,22 @@ export async function updateProjectRaisedAmountByParticipation(participationId: 
     console.error('[DB] Error updating project raised amount:', error);
   }
 }
+
+
+// Obtener una participación por ID
+export async function getCrowdfundingParticipationById(participationId: number): Promise<CrowdfundingParticipation | null> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  try {
+    const result = await db.execute(sql.raw(`
+      SELECT * FROM crowdfunding_participations WHERE id = ${participationId}
+    `));
+    
+    const rows = (result as any)[0] as CrowdfundingParticipation[];
+    return rows[0] || null;
+  } catch (error) {
+    console.error('[DB] Error getting crowdfunding participation:', error);
+    return null;
+  }
+}

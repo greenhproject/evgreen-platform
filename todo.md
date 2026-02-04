@@ -1625,3 +1625,13 @@
 - [x] Implementar sistema de crowdfunding con barras de progreso por ciudad
 - [x] Crear tablas en BD para proyectos de crowdfunding y participaciones
 - [x] Dashboard de inversionista con datos proporcionales a su participación % de participación en estación colectiva
+
+
+## Panel Admin Crowdfunding y Notificaciones - 3 Febrero 2026
+- [x] Crear página de administración de crowdfunding (/admin/crowdfunding)
+- [x] Listar todos los proyectos de inversión colectiva
+- [x] Crear/editar proyectos de crowdfunding
+- [x] Ver participaciones por proyecto
+- [x] Confirmar pagos de participaciones
+- [x] Sistema de notificaciones de progreso (50%, 75%, 100%)
+- [x] Alertar a inversionistas cuando se alcancen hitos de financiamiento
