@@ -1677,3 +1677,10 @@
 - [x] Ajustar botón "Registrar Inversionista" para móvil
 - [x] Hacer responsive la tabla de participaciones (tarjetas en móvil)
 - [x] Hacer responsive el formulario de registro de inversionista
+
+
+## Corrección Valores Crowdfunding - 4 Febrero 2026
+- [x] Eliminar valores hardcodeados de recaudación en proyectos de crowdfunding
+- [x] Calcular recaudación real basada en suma de participaciones confirmadas
+- [x] Permitir edición manual de montos recaudados desde admin
+- [x] Actualizar barras de progreso en landing con datos reales de BD
