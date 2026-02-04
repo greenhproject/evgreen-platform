@@ -67,6 +67,7 @@ import AdminBanners from "./pages/admin/Banners";
 import AdminNotifications from "./pages/admin/Notifications";
 import AdminAISettings from "./pages/admin/AISettings";
 import AdminPayouts from "./pages/admin/Payouts";
+import AdminCrowdfunding from "./pages/admin/Crowdfunding";
 import AdminOCPPMonitor from "./pages/AdminOCPPMonitor";
 import { AIChatWidget } from "./components/AIChat";
 
@@ -415,6 +416,13 @@ function Router() {
         <ProtectedRoute allowedRoles={["admin"]}>
           <AdminLayout>
             <AdminPayouts />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/crowdfunding">
+        <ProtectedRoute allowedRoles={["admin"]}>
+          <AdminLayout>
+            <AdminCrowdfunding />
           </AdminLayout>
         </ProtectedRoute>
       </Route>

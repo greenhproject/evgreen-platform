@@ -13,6 +13,7 @@ import { chargingRouter } from "./charging/charging-router";
 import { pushRouter } from "./push/push-router";
 import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
 import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } from "./notifications/broadcast-service";
+import { checkAndNotifyMilestones } from "./crowdfunding/progress-notifications";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -2095,6 +2096,17 @@ const crowdfundingRouter = router({
       paymentReference: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
+      // Obtener la participación para conocer el proyecto
+      const participation = await db.getCrowdfundingParticipationById(input.participationId);
+      if (!participation) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Participación no encontrada' });
+      }
+      
+      // Obtener el proyecto antes de actualizar para conocer el monto anterior
+      const projectBefore = await db.getCrowdfundingProjectById(participation.projectId);
+      const previousRaisedAmount = projectBefore ? Number(projectBefore.raisedAmount) : 0;
+      
+      // Actualizar estado de pago
       await db.updateCrowdfundingParticipation(input.participationId, {
         paymentStatus: 'COMPLETED',
         paymentDate: new Date(),
@@ -2102,6 +2114,29 @@ const crowdfundingRouter = router({
       
       // Actualizar monto recaudado del proyecto
       await db.updateProjectRaisedAmountByParticipation(input.participationId);
+      
+      // Obtener el proyecto actualizado para verificar hitos
+      const projectAfter = await db.getCrowdfundingProjectById(participation.projectId);
+      if (projectAfter) {
+        // Verificar y enviar notificaciones de hitos (50%, 75%, 100%)
+        try {
+          await checkAndNotifyMilestones(
+            {
+              id: projectAfter.id,
+              name: projectAfter.name,
+              city: projectAfter.city,
+              zone: projectAfter.zone,
+              targetAmount: Number(projectAfter.targetAmount),
+              raisedAmount: Number(projectAfter.raisedAmount),
+              status: projectAfter.status,
+            },
+            previousRaisedAmount
+          );
+        } catch (notifyError) {
+          console.error('[Crowdfunding] Error sending milestone notifications:', notifyError);
+          // No lanzar error, el pago ya fue confirmado
+        }
+      }
       
       return { success: true };
     }),
