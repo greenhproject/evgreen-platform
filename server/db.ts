@@ -220,6 +220,23 @@ export async function regenerateUserIdTag(userId: number): Promise<string | null
   return newIdTag;
 }
 
+// Crear un nuevo usuario y retornar su ID
+export async function createUser(userData: InsertUser): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Generar idTag único para el nuevo usuario
+  const idTag = await generateUniqueIdTag();
+  
+  const result = await db.insert(users).values({
+    ...userData,
+    idTag,
+  });
+  
+  // MySQL retorna insertId
+  return Number(result[0].insertId);
+}
+
 export async function updateUserRole(userId: number, role: User["role"]) {
   const db = await getDb();
   if (!db) return;
@@ -3354,14 +3371,21 @@ export async function getCrowdfundingParticipations(projectId: number): Promise<
 }
 
 // Obtener participaciones de un inversionista
-export async function getInvestorParticipations(investorId: number): Promise<(CrowdfundingParticipation & { project?: CrowdfundingProject })[]> {
+export async function getInvestorParticipations(investorId: number): Promise<any[]> {
   const db = await getDb();
   if (!db) return [];
   
   try {
-    const result = await db.execute(sql.raw(`
+    const result = await db.execute(sql`
       SELECT 
-        cp.*,
+        cp.id,
+        cp.projectId,
+        cp.investorId,
+        cp.amount,
+        cp.participationPercent,
+        cp.paymentStatus,
+        cp.paymentDate,
+        cp.createdAt,
         p.name as projectName,
         p.city as projectCity,
         p.zone as projectZone,
@@ -3369,14 +3393,39 @@ export async function getInvestorParticipations(investorId: number): Promise<(Cr
         p.targetAmount as projectTargetAmount,
         p.raisedAmount as projectRaisedAmount,
         p.totalPowerKw as projectTotalPowerKw,
+        p.hasSolarPanels as projectHasSolarPanels,
+        p.stationId as projectStationId,
         p.estimatedRoiPercent as projectEstimatedRoiPercent
       FROM crowdfunding_participations cp
       LEFT JOIN crowdfunding_projects p ON cp.projectId = p.id
       WHERE cp.investorId = ${investorId}
       ORDER BY cp.createdAt DESC
-    `));
+    `);
     
-    return ((result as any)[0] as any[]) || [];
+    // Transformar los resultados para incluir el proyecto como objeto anidado
+    const rows = ((result as any)[0] as any[]) || [];
+    return rows.map(row => ({
+      id: row.id,
+      projectId: row.projectId,
+      investorId: row.investorId,
+      amount: row.amount,
+      participationPercent: row.participationPercent,
+      paymentStatus: row.paymentStatus,
+      paymentDate: row.paymentDate,
+      createdAt: row.createdAt,
+      project: {
+        name: row.projectName,
+        city: row.projectCity,
+        zone: row.projectZone,
+        status: row.projectStatus,
+        targetAmount: row.projectTargetAmount,
+        raisedAmount: row.projectRaisedAmount,
+        totalPowerKw: row.projectTotalPowerKw,
+        hasSolarPanels: row.projectHasSolarPanels,
+        stationId: row.projectStationId,
+        estimatedRoiPercent: row.projectEstimatedRoiPercent,
+      }
+    }));
   } catch (error) {
     console.error('[DB] Error getting investor participations:', error);
     return [];
@@ -3390,6 +3439,8 @@ export async function createCrowdfundingParticipation(data: {
   amount: number;
   participationPercent: number;
   paymentStatus?: string;
+  paymentDate?: Date;
+  paymentReference?: string;
   stripePaymentIntentId?: string;
 }): Promise<number> {
   const db = await getDb();
@@ -3397,14 +3448,15 @@ export async function createCrowdfundingParticipation(data: {
   
   const result = await db.execute(sql`
     INSERT INTO crowdfunding_participations (
-      projectId, investorId, amount, participationPercent, paymentStatus, stripePaymentIntentId
+      projectId, investorId, amount, participationPercent, paymentStatus, paymentDate, stripePaymentIntentId
     ) VALUES (
       ${data.projectId},
       ${data.investorId},
       ${data.amount},
       ${data.participationPercent},
       ${data.paymentStatus || 'PENDING'},
-      ${data.stripePaymentIntentId || null}
+      ${data.paymentDate || null},
+      ${data.stripePaymentIntentId || data.paymentReference || null}
     )
   `);
   

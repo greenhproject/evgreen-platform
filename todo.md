@@ -1660,3 +1660,12 @@
 
 - [x] Mejorar diseño del módulo de inversionistas en Home (más punch visual)
 - [x] Arreglar botón "Conocer más" - hacerlo más visible y llamativo
+
+
+## Mejoras Crowdfunding y Landing - 4 Febrero 2026
+- [x] Eliminar imágenes feas de la sección de video en landing de inversionistas
+- [x] Implementar registro de inversionistas con datos completos (nombre, email, teléfono, monto)
+- [x] Crear usuario automáticamente al registrar inversionista
+- [x] Asignar ID de estación colectiva al inversionista
+- [x] Vincular participación para que inversionista vea ingresos proporcionales en su dashboard
+- [x] Actualizar barras de progreso con datos reales de participaciones registradas
