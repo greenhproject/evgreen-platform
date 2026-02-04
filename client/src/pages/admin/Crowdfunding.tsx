@@ -55,7 +55,13 @@ import {
   Sun,
   TrendingUp,
   Eye,
-  Bell
+  Bell,
+  UserPlus,
+  Building,
+  CreditCard,
+  Phone,
+  Mail,
+  Briefcase
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -120,6 +126,19 @@ export default function AdminCrowdfunding() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showParticipationsDialog, setShowParticipationsDialog] = useState(false);
+  const [showRegisterInvestorDialog, setShowRegisterInvestorDialog] = useState(false);
+  const [investorFormData, setInvestorFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    companyName: "",
+    taxId: "",
+    bankAccount: "",
+    bankName: "",
+    amount: 50000000,
+    paymentReference: "",
+    paymentConfirmed: false,
+  });
   
   const [formData, setFormData] = useState({
     name: "",
@@ -181,6 +200,19 @@ export default function AdminCrowdfunding() {
     },
   });
 
+  const registerInvestorMutation = trpc.crowdfunding.registerInvestor.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message || "Inversionista registrado exitosamente");
+      setShowRegisterInvestorDialog(false);
+      resetInvestorForm();
+      refetchParticipations();
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Error al registrar inversionista");
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       name: "",
@@ -199,6 +231,21 @@ export default function AdminCrowdfunding() {
       status: "DRAFT",
       targetDate: "",
       priority: 1,
+    });
+  };
+
+  const resetInvestorForm = () => {
+    setInvestorFormData({
+      name: "",
+      email: "",
+      phone: "",
+      companyName: "",
+      taxId: "",
+      bankAccount: "",
+      bankName: "",
+      amount: selectedProject?.minimumInvestment ? Number(selectedProject.minimumInvestment) : 50000000,
+      paymentReference: "",
+      paymentConfirmed: false,
     });
   };
 
@@ -666,25 +713,37 @@ export default function AdminCrowdfunding() {
 
           {selectedProject && (
             <div className="space-y-4">
-              {/* Resumen del proyecto */}
-              <Card className="p-4 bg-muted/50">
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Meta</p>
-                    <p className="font-bold">{formatCOP(Number(selectedProject.targetAmount))}</p>
+              {/* Resumen del proyecto y botón de registro */}
+              <div className="flex items-center justify-between">
+                <Card className="p-4 bg-muted/50 flex-1 mr-4">
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Meta</p>
+                      <p className="font-bold">{formatCOP(Number(selectedProject.targetAmount))}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Recaudado</p>
+                      <p className="font-bold text-green-600">{formatCOP(Number(selectedProject.raisedAmount))}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Progreso</p>
+                      <p className="font-bold">
+                        {((Number(selectedProject.raisedAmount) / Number(selectedProject.targetAmount)) * 100).toFixed(1)}%
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-muted-foreground">Recaudado</p>
-                    <p className="font-bold text-green-600">{formatCOP(Number(selectedProject.raisedAmount))}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Progreso</p>
-                    <p className="font-bold">
-                      {((Number(selectedProject.raisedAmount) / Number(selectedProject.targetAmount)) * 100).toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
-              </Card>
+                </Card>
+                <Button
+                  onClick={() => {
+                    resetInvestorForm();
+                    setShowRegisterInvestorDialog(true);
+                  }}
+                  className="gap-2 bg-green-600 hover:bg-green-700"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Registrar Inversionista
+                </Button>
+              </div>
 
               {/* Lista de participaciones */}
               {!participations || participations.length === 0 ? (
@@ -745,6 +804,207 @@ export default function AdminCrowdfunding() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de Registro de Inversionista */}
+      <Dialog open={showRegisterInvestorDialog} onOpenChange={setShowRegisterInvestorDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-green-600" />
+              Registrar Nuevo Inversionista
+            </DialogTitle>
+          </DialogHeader>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!selectedProject) return;
+              registerInvestorMutation.mutate({
+                projectId: selectedProject.id,
+                ...investorFormData,
+              });
+            }}
+            className="space-y-6"
+          >
+            {/* Datos Personales */}
+            <div className="space-y-4">
+              <h3 className="font-semibold flex items-center gap-2 text-sm text-muted-foreground">
+                <Users className="w-4 h-4" />
+                Datos Personales
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Nombre Completo *</Label>
+                  <Input
+                    required
+                    value={investorFormData.name}
+                    onChange={(e) => setInvestorFormData({ ...investorFormData, name: e.target.value })}
+                    placeholder="Juan Pérez"
+                  />
+                </div>
+                <div>
+                  <Label>Email *</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      required
+                      type="email"
+                      className="pl-10"
+                      value={investorFormData.email}
+                      onChange={(e) => setInvestorFormData({ ...investorFormData, email: e.target.value })}
+                      placeholder="juan@ejemplo.com"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>Teléfono</Label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      className="pl-10"
+                      value={investorFormData.phone}
+                      onChange={(e) => setInvestorFormData({ ...investorFormData, phone: e.target.value })}
+                      placeholder="+57 300 123 4567"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>Empresa</Label>
+                  <div className="relative">
+                    <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      className="pl-10"
+                      value={investorFormData.companyName}
+                      onChange={(e) => setInvestorFormData({ ...investorFormData, companyName: e.target.value })}
+                      placeholder="Empresa S.A.S."
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>NIT / Cédula</Label>
+                  <Input
+                    value={investorFormData.taxId}
+                    onChange={(e) => setInvestorFormData({ ...investorFormData, taxId: e.target.value })}
+                    placeholder="900.123.456-7"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Datos Bancarios */}
+            <div className="space-y-4">
+              <h3 className="font-semibold flex items-center gap-2 text-sm text-muted-foreground">
+                <Building className="w-4 h-4" />
+                Datos Bancarios (para pagos de rendimientos)
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Banco</Label>
+                  <Select
+                    value={investorFormData.bankName}
+                    onValueChange={(value) => setInvestorFormData({ ...investorFormData, bankName: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar banco" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Bancolombia">Bancolombia</SelectItem>
+                      <SelectItem value="Davivienda">Davivienda</SelectItem>
+                      <SelectItem value="BBVA">BBVA</SelectItem>
+                      <SelectItem value="Banco de Bogotá">Banco de Bogotá</SelectItem>
+                      <SelectItem value="Banco de Occidente">Banco de Occidente</SelectItem>
+                      <SelectItem value="Banco Popular">Banco Popular</SelectItem>
+                      <SelectItem value="Banco AV Villas">Banco AV Villas</SelectItem>
+                      <SelectItem value="Banco Caja Social">Banco Caja Social</SelectItem>
+                      <SelectItem value="Scotiabank Colpatria">Scotiabank Colpatria</SelectItem>
+                      <SelectItem value="Nequi">Nequi</SelectItem>
+                      <SelectItem value="Daviplata">Daviplata</SelectItem>
+                      <SelectItem value="Otro">Otro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Número de Cuenta</Label>
+                  <Input
+                    value={investorFormData.bankAccount}
+                    onChange={(e) => setInvestorFormData({ ...investorFormData, bankAccount: e.target.value })}
+                    placeholder="1234567890"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Datos de Inversión */}
+            <div className="space-y-4">
+              <h3 className="font-semibold flex items-center gap-2 text-sm text-muted-foreground">
+                <CreditCard className="w-4 h-4" />
+                Datos de la Inversión
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Monto de Inversión (COP) *</Label>
+                  <Input
+                    required
+                    type="number"
+                    min={selectedProject?.minimumInvestment ? Number(selectedProject.minimumInvestment) : 50000000}
+                    value={investorFormData.amount}
+                    onChange={(e) => setInvestorFormData({ ...investorFormData, amount: parseInt(e.target.value) || 0 })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formatCOP(investorFormData.amount)} 
+                    {selectedProject && ` (${((investorFormData.amount / Number(selectedProject.targetAmount)) * 100).toFixed(2)}% de participación)`}
+                  </p>
+                </div>
+                <div>
+                  <Label>Referencia de Pago</Label>
+                  <Input
+                    value={investorFormData.paymentReference}
+                    onChange={(e) => setInvestorFormData({ ...investorFormData, paymentReference: e.target.value })}
+                    placeholder="Ref. transferencia o comprobante"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
+                <Switch
+                  checked={investorFormData.paymentConfirmed}
+                  onCheckedChange={(checked) => setInvestorFormData({ ...investorFormData, paymentConfirmed: checked })}
+                />
+                <div>
+                  <Label className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                    Pago ya confirmado
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Marcar si el pago ya fue verificado en la cuenta bancaria
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowRegisterInvestorDialog(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={registerInvestorMutation.isPending}
+                className="gap-2 bg-green-600 hover:bg-green-700"
+              >
+                {registerInvestorMutation.isPending ? (
+                  <Clock className="w-4 h-4 animate-spin" />
+                ) : (
+                  <UserPlus className="w-4 h-4" />
+                )}
+                Registrar Inversionista
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

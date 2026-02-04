@@ -2089,6 +2089,132 @@ const crowdfundingRouter = router({
       return { success: true, participationId, participationPercent };
     }),
   
+  // Admin: Registrar nuevo inversionista con participación
+  registerInvestor: adminProcedure
+    .input(z.object({
+      projectId: z.number(),
+      // Datos del inversionista
+      name: z.string().min(1),
+      email: z.string().email(),
+      phone: z.string().optional(),
+      companyName: z.string().optional(),
+      taxId: z.string().optional(), // NIT
+      bankAccount: z.string().optional(),
+      bankName: z.string().optional(),
+      // Datos de la inversión
+      amount: z.number().positive(),
+      paymentReference: z.string().optional(),
+      paymentConfirmed: z.boolean().default(false),
+    }))
+    .mutation(async ({ input }) => {
+      // Verificar que el proyecto existe y está abierto
+      const project = await db.getCrowdfundingProjectById(input.projectId);
+      if (!project) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Proyecto no encontrado' });
+      }
+      if (project.status !== 'OPEN' && project.status !== 'IN_PROGRESS') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este proyecto no está abierto para inversiones' });
+      }
+      if (input.amount < project.minimumInvestment) {
+        throw new TRPCError({ 
+          code: 'BAD_REQUEST', 
+          message: `La inversión mínima es ${project.minimumInvestment.toLocaleString()} COP` 
+        });
+      }
+      
+      // Verificar si ya existe un usuario con ese email
+      let investorId: number;
+      const existingUser = await db.getUserByEmail(input.email);
+      
+      if (existingUser) {
+        // Actualizar rol a inversionista si no lo es
+        if (existingUser.role !== 'investor' && existingUser.role !== 'admin') {
+          await db.updateUser(existingUser.id, { role: 'investor' });
+        }
+        // Actualizar datos adicionales del inversionista
+        await db.updateUser(existingUser.id, {
+          name: input.name,
+          phone: input.phone,
+          companyName: input.companyName,
+          taxId: input.taxId,
+          bankAccount: input.bankAccount,
+          bankName: input.bankName,
+        });
+        investorId = existingUser.id;
+      } else {
+        // Crear nuevo usuario inversionista
+        const openId = `INV-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        investorId = await db.createUser({
+          openId,
+          name: input.name,
+          email: input.email,
+          phone: input.phone,
+          role: 'investor',
+          companyName: input.companyName,
+          taxId: input.taxId,
+          bankAccount: input.bankAccount,
+          bankName: input.bankName,
+          loginMethod: 'admin_created',
+        });
+      }
+      
+      // Calcular porcentaje de participación
+      const participationPercent = (input.amount / project.targetAmount) * 100;
+      
+      // Crear la participación
+      const participationId = await db.createCrowdfundingParticipation({
+        projectId: input.projectId,
+        investorId,
+        amount: input.amount,
+        participationPercent,
+        paymentStatus: input.paymentConfirmed ? 'COMPLETED' : 'PENDING',
+        paymentDate: input.paymentConfirmed ? new Date() : undefined,
+        paymentReference: input.paymentReference,
+      });
+      
+      // Si el pago está confirmado, actualizar el monto recaudado
+      if (input.paymentConfirmed) {
+        await db.updateProjectRaisedAmountByParticipation(participationId);
+        
+        // Verificar hitos de financiamiento
+        const projectAfter = await db.getCrowdfundingProjectById(input.projectId);
+        if (projectAfter) {
+          try {
+            await checkAndNotifyMilestones(
+              {
+                id: projectAfter.id,
+                name: projectAfter.name,
+                city: projectAfter.city,
+                zone: projectAfter.zone,
+                targetAmount: Number(projectAfter.targetAmount),
+                raisedAmount: Number(projectAfter.raisedAmount),
+                status: projectAfter.status,
+              },
+              Number(project.raisedAmount)
+            );
+          } catch (notifyError) {
+            console.error('[Crowdfunding] Error sending milestone notifications:', notifyError);
+          }
+        }
+      }
+      
+      // Si el proyecto tiene estación asignada, vincular al inversionista
+      if (project.stationId) {
+        // Aquí podríamos agregar lógica adicional para vincular al inversionista con la estación
+        console.log(`[Crowdfunding] Inversionista ${investorId} vinculado a estación ${project.stationId}`);
+      }
+      
+      return { 
+        success: true, 
+        investorId, 
+        participationId, 
+        participationPercent,
+        message: existingUser 
+          ? 'Participación registrada para inversionista existente' 
+          : 'Nuevo inversionista creado y participación registrada'
+      };
+    }),
+
   // Admin: Confirmar pago de participación
   confirmPayment: adminProcedure
     .input(z.object({
