@@ -1640,3 +1640,9 @@
 ## Corrección Modelo de Negocio Simulador - 3 Febrero 2026
 - [x] Corregir cálculos del simulador: el paquete colectivo con solar debe ser más rentable que el individual
 - [x] El modelo colectivo debe reflejar: mayor potencia total, menor costo energía solar, mayor demanda
+
+
+## Comparador y Simulador de Escenarios - 4 Febrero 2026
+- [x] Crear comparador visual lado a lado Individual vs Colectivo
+- [x] Implementar simulador de escenarios con proyecciones a 3, 5 y 10 años
+- [x] Gráfico de retorno acumulado con proyecciones
