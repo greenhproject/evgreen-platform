@@ -1648,3 +1648,15 @@
 - [x] Gráfico de retorno acumulado con proyecciones
 - [x] Corregir modelo para que colectivo sea más rentable (factor 2x ubicaciones premium)
 - [x] Agregar argumentos de valor: seguridad de ingresos, ubicaciones estratégicas, energía solar
+
+
+## Video Explicativo Modelo de Negocio - 4 Febrero 2026
+- [x] Crear guión y estructura del video explicativo
+- [x] Generar video de introducción EVGreen (animación del logo)
+- [x] Generar 4 infografías del modelo de negocio (mercado, paquetes, flujo, ventajas)
+- [x] Subir contenido a CDN para producción
+- [x] Incrustar video e infografías en la landing de inversionistas
+- [x] Agregar sección de video con CTA
+
+- [x] Mejorar diseño del módulo de inversionistas en Home (más punch visual)
+- [x] Arreglar botón "Conocer más" - hacerlo más visible y llamativo
