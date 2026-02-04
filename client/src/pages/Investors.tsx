@@ -6,19 +6,22 @@
  * y beneficios de la plataforma con IA.
  * 
  * Modelo de Negocio Actualizado (Feb 2026):
- * - Precio compra energía: $850 COP/kWh (promedio)
+ * - Precio compra energía: $850 COP/kWh (promedio red)
+ * - Precio compra energía solar: $250 COP/kWh
  * - Precio venta energía: $1,700 COP/kWh (promedio DC)
  * - Distribución: 70% inversionista / 30% plataforma
- * - Paquete Individual: $85M (Huawei FusionCharge 120kW)
- * - Paquete Colectivo: $1,000M (Estación Premium 4x500kW + Solar)
+ * - Paquete Individual: $85M (1x Huawei FusionCharge 120kW)
+ * - Paquete Colectivo: $1,000M (Estación 4x120kW = 480kW total + Solar)
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
+import { trpc } from "@/lib/trpc";
 import { 
   Zap, 
   TrendingUp, 
@@ -47,145 +50,303 @@ import {
   MapPin,
   Sun,
   Battery,
-  Bolt
+  Bolt,
+  Flame,
+  Timer,
+  TrendingDown
 } from "lucide-react";
 
-// Constantes de negocio actualizadas (Feb 2026)
-const PRECIO_COMPRA_KWH = 850; // COP promedio
-const PRECIO_COMPRA_KWH_SOLAR = 250; // COP con energía solar
-const PRECIO_VENTA_KWH = 1700; // COP promedio DC
-const PORCENTAJE_INVERSIONISTA = 0.70; // 70% para el inversionista
+// ============================================================================
+// CONSTANTES DE NEGOCIO - MODELO REALISTA (Feb 2026)
+// ============================================================================
 
-// Paquetes de inversión
+// Costos de energía
+const PRECIO_COMPRA_KWH_RED = 850; // COP promedio de la red
+const PRECIO_COMPRA_KWH_SOLAR = 250; // COP con energía solar propia
+
+// Precio de venta al usuario final
+const PRECIO_VENTA_KWH_MIN = 1400;
+const PRECIO_VENTA_KWH_MAX = 2200;
+const PRECIO_VENTA_KWH_DEFAULT = 1800;
+
+// Distribución de ingresos
+const PORCENTAJE_INVERSIONISTA = 0.70; // 70% para el inversionista
+const PORCENTAJE_PLATAFORMA = 0.30; // 30% para EVGreen
+
+// Costos operativos estimados (% del ingreso bruto)
+const COSTOS_OPERATIVOS_PORCENTAJE = 0.15; // 15% mantenimiento, seguros, etc.
+
+// ============================================================================
+// PAQUETES DE INVERSIÓN CORREGIDOS
+// ============================================================================
+
 const PAQUETES = {
   INDIVIDUAL: {
     nombre: "Paquete Individual",
     descripcion: "1 Cargador Huawei FusionCharge 120kW DC",
-    precio: 85000000,
-    potencia: 120,
-    tipo: "DC",
-    horasUsoPromedio: 12,
+    precio: 85000000, // $85 millones COP
+    potenciaKw: 120, // 120 kW por cargador
+    cantidadCargadores: 1,
+    tipo: "DC Rápido",
     conSolar: false,
+    horasUsoConservador: 4,
+    horasUsoOptimista: 12,
+    horasUsoRealista: 6, // Promedio realista
+    eficienciaCarga: 0.92, // 92% eficiencia
     caracteristicas: [
       "Cargador Huawei FusionCharge 120kW",
-      "Instalación incluida",
+      "Instalación profesional incluida",
       "100% propiedad del inversionista",
-      "Mantenimiento por EVGreen",
+      "Mantenimiento preventivo por EVGreen",
       "Dashboard en tiempo real",
-      "Liquidaciones mensuales"
+      "Liquidaciones mensuales automáticas"
     ]
   },
   COLECTIVO: {
-    nombre: "Estación Premium",
-    descripcion: "4 Puntos de carga DC 500kW + Energía Solar",
-    precio: 1000000000,
-    potencia: 500,
-    puntos: 4,
-    tipo: "DC Ultra-Rápido",
-    horasUsoPromedio: 14,
+    nombre: "Estación Premium Colectiva",
+    descripcion: "4 Cargadores DC 120kW = 480kW potencia total + Solar",
+    precio: 1000000000, // $1,000 millones COP
+    potenciaKw: 120, // 120 kW por cargador
+    cantidadCargadores: 4, // 4 cargadores
+    potenciaTotal: 480, // 4 × 120kW = 480kW total
+    tipo: "DC Rápido + Solar",
     conSolar: true,
-    participacionMinima: 50000000,
+    horasUsoConservador: 4,
+    horasUsoOptimista: 14,
+    horasUsoRealista: 8, // Mayor uso por ubicación premium
+    eficienciaCarga: 0.92,
+    participacionMinima: 50000000, // $50 millones mínimo
     caracteristicas: [
-      "4 cargadores DC 500kW ultra-rápidos",
+      "4 cargadores DC 120kW (480kW total)",
       "Sistema de energía solar integrado",
-      "Reducción 70% costo de energía",
-      "Participación como socio",
+      "Reducción ~70% costo de energía",
+      "Participación proporcional como socio",
       "Ubicaciones premium garantizadas",
-      "ROI superior con energía solar"
+      "Mayor ROI con energía solar"
     ]
   }
 };
 
-// Zonas premium con fee adicional
+// ============================================================================
+// ROADMAP DE ESTACIONES POR CIUDAD (CROWDFUNDING)
+// ============================================================================
+
+const ESTACIONES_ROADMAP = [
+  {
+    id: "bogota-1",
+    ciudad: "Bogotá",
+    zona: "Usaquén / Zona Norte",
+    metaInversion: 1000000000,
+    montoRecaudado: 650000000, // Ejemplo: 65% financiado
+    inversionistas: 8,
+    fechaObjetivo: "Q2 2026",
+    estado: "EN_FINANCIAMIENTO",
+    prioridad: 1
+  },
+  {
+    id: "medellin-1",
+    ciudad: "Medellín",
+    zona: "El Poblado",
+    metaInversion: 1000000000,
+    montoRecaudado: 420000000, // 42% financiado
+    inversionistas: 5,
+    fechaObjetivo: "Q3 2026",
+    estado: "EN_FINANCIAMIENTO",
+    prioridad: 2
+  },
+  {
+    id: "cali-1",
+    ciudad: "Cali",
+    zona: "Ciudad Jardín",
+    metaInversion: 1000000000,
+    montoRecaudado: 180000000, // 18% financiado
+    inversionistas: 3,
+    fechaObjetivo: "Q4 2026",
+    estado: "EN_FINANCIAMIENTO",
+    prioridad: 3
+  },
+  {
+    id: "barranquilla-1",
+    ciudad: "Barranquilla",
+    zona: "Alto Prado",
+    metaInversion: 1000000000,
+    montoRecaudado: 50000000, // 5% financiado
+    inversionistas: 1,
+    fechaObjetivo: "Q1 2027",
+    estado: "ABIERTO",
+    prioridad: 4
+  },
+  {
+    id: "cartagena-1",
+    ciudad: "Cartagena",
+    zona: "Bocagrande",
+    metaInversion: 1000000000,
+    montoRecaudado: 0,
+    inversionistas: 0,
+    fechaObjetivo: "Q2 2027",
+    estado: "PROXIMAMENTE",
+    prioridad: 5
+  }
+];
+
+// Zonas premium con fee adicional (solo paquete individual)
 const ZONAS_PREMIUM = {
   A: { nombre: "Zona Premium A", zonas: ["Usaquén", "Chapinero", "Zona T"], fee: 5000000 },
   B: { nombre: "Zona Premium B", zonas: ["Suba Norte", "Cedritos", "Santa Bárbara"], fee: 3000000 },
   C: { nombre: "Zona Estándar", zonas: ["Otras zonas de Bogotá"], fee: 0 }
 };
 
+// ============================================================================
+// COMPONENTE PRINCIPAL
+// ============================================================================
+
 export default function Investors() {
   // Estado para la calculadora
-  const [paqueteSeleccionado, setPaqueteSeleccionado] = useState<"INDIVIDUAL" | "COLECTIVO">("INDIVIDUAL");
-  const [horasUso, setHorasUso] = useState(12);
-  const [precioVenta, setPrecioVenta] = useState(1700);
+  const [paqueteSeleccionado, setPaqueteSeleccionado] = useState<"INDIVIDUAL" | "COLECTIVO">("COLECTIVO");
+  const [horasUso, setHorasUso] = useState(4); // Conservador por defecto
+  const [precioVenta, setPrecioVenta] = useState(PRECIO_VENTA_KWH_DEFAULT);
   const [zonaPremium, setZonaPremium] = useState<"A" | "B" | "C">("C");
-  const [participacionColectiva, setParticipacionColectiva] = useState(100000000);
-  const [usarSolar, setUsarSolar] = useState(false);
+  const [participacionColectiva, setParticipacionColectiva] = useState(50000000);
 
-  // Cálculos de ROI
+  // ============================================================================
+  // CÁLCULOS DE ROI - MODELO REALISTA
+  // ============================================================================
+  
   const calculos = useMemo(() => {
     const paquete = PAQUETES[paqueteSeleccionado];
-    const costoEnergia = (paqueteSeleccionado === "COLECTIVO" || usarSolar) ? PRECIO_COMPRA_KWH_SOLAR : PRECIO_COMPRA_KWH;
+    
+    // Costo de energía según tipo de paquete
+    const costoEnergia = paquete.conSolar ? PRECIO_COMPRA_KWH_SOLAR : PRECIO_COMPRA_KWH_RED;
     
     let inversionBase: number;
-    let potenciaTotal: number;
+    let potenciaEfectiva: number; // kW que realmente usa el inversionista
     let porcentajeParticipacion = 1;
 
     if (paqueteSeleccionado === "INDIVIDUAL") {
       inversionBase = paquete.precio;
-      potenciaTotal = paquete.potencia;
+      potenciaEfectiva = paquete.potenciaKw * paquete.cantidadCargadores;
     } else {
-      // Inversión colectiva - calcular participación
+      // Inversión colectiva - participación proporcional
       inversionBase = participacionColectiva;
       porcentajeParticipacion = participacionColectiva / paquete.precio;
-      potenciaTotal = paquete.potencia * (paquete as any).puntos * porcentajeParticipacion;
+      // La potencia efectiva es proporcional a la participación
+      potenciaEfectiva = (paquete as any).potenciaTotal * porcentajeParticipacion;
     }
 
-    // Fee por zona premium
+    // Fee por zona premium (solo individual)
     const feePremium = paqueteSeleccionado === "INDIVIDUAL" ? ZONAS_PREMIUM[zonaPremium].fee : 0;
     const inversionTotal = inversionBase + feePremium;
 
-    // Cálculos de energía y margen
-    const energiaDiaria = potenciaTotal * horasUso; // kWh/día
-    const energiaMensual = energiaDiaria * 30;
-    const energiaAnual = energiaDiaria * 365;
+    // ========================================
+    // CÁLCULO DE ENERGÍA VENDIDA
+    // ========================================
+    
+    // Energía teórica máxima por día = potencia × horas de uso
+    const energiaTeoricaDiaria = potenciaEfectiva * horasUso; // kWh
+    
+    // Aplicar eficiencia de carga (pérdidas en conversión)
+    const energiaRealDiaria = energiaTeoricaDiaria * paquete.eficienciaCarga;
+    
+    const energiaMensual = energiaRealDiaria * 30;
+    const energiaAnual = energiaRealDiaria * 365;
 
-    const margenPorKwh = precioVenta - costoEnergia;
-    const ingresoBrutoDiario = energiaDiaria * precioVenta;
-    const costoDiario = energiaDiaria * costoEnergia;
-    const margenBrutoDiario = energiaDiaria * margenPorKwh;
-    const ingresoInversionistaDiario = margenBrutoDiario * PORCENTAJE_INVERSIONISTA;
-
+    // ========================================
+    // CÁLCULO DE INGRESOS Y MÁRGENES
+    // ========================================
+    
+    // Margen bruto por kWh (antes de distribución)
+    const margenBrutoPorKwh = precioVenta - costoEnergia;
+    
+    // Ingreso bruto diario (lo que paga el usuario)
+    const ingresoBrutoDiario = energiaRealDiaria * precioVenta;
+    
+    // Costo de energía diario
+    const costoEnergiaDiario = energiaRealDiaria * costoEnergia;
+    
+    // Margen bruto diario (antes de distribución)
+    const margenBrutoDiario = ingresoBrutoDiario - costoEnergiaDiario;
+    
+    // Costos operativos (mantenimiento, seguros, etc.)
+    const costosOperativosDiarios = margenBrutoDiario * COSTOS_OPERATIVOS_PORCENTAJE;
+    
+    // Margen neto disponible para distribución
+    const margenNetoDistribuible = margenBrutoDiario - costosOperativosDiarios;
+    
+    // Ingreso del inversionista (70% del margen neto)
+    const ingresoInversionistaDiario = margenNetoDistribuible * PORCENTAJE_INVERSIONISTA;
+    
+    // Ingresos mensuales y anuales
     const ingresoMensual = ingresoInversionistaDiario * 30;
     const ingresoAnual = ingresoInversionistaDiario * 365;
 
-    const roiMeses = inversionTotal / ingresoMensual;
-    const roiAnual = (ingresoAnual / inversionTotal) * 100;
+    // ========================================
+    // CÁLCULO DE ROI
+    // ========================================
+    
+    // Meses para recuperar la inversión
+    const roiMeses = ingresoMensual > 0 ? inversionTotal / ingresoMensual : 999;
+    
+    // ROI anual como porcentaje
+    const roiAnual = inversionTotal > 0 ? (ingresoAnual / inversionTotal) * 100 : 0;
+
+    // Margen neto por kWh para el inversionista
+    const margenNetoPorKwhInversionista = (margenBrutoPorKwh * (1 - COSTOS_OPERATIVOS_PORCENTAJE)) * PORCENTAJE_INVERSIONISTA;
 
     return {
-      energiaDiaria,
-      energiaMensual,
-      energiaAnual,
-      ingresoBrutoDiario,
-      costoDiario,
-      costoEnergia,
-      margenBrutoDiario,
-      ingresoInversionistaDiario,
-      ingresoMensual,
-      ingresoAnual,
+      // Energía
+      energiaDiaria: Math.round(energiaRealDiaria),
+      energiaMensual: Math.round(energiaMensual),
+      energiaAnual: Math.round(energiaAnual),
+      
+      // Ingresos
+      ingresoBrutoDiario: Math.round(ingresoBrutoDiario),
+      costoEnergiaDiario: Math.round(costoEnergiaDiario),
+      margenBrutoDiario: Math.round(margenBrutoDiario),
+      ingresoInversionistaDiario: Math.round(ingresoInversionistaDiario),
+      ingresoMensual: Math.round(ingresoMensual),
+      ingresoAnual: Math.round(ingresoAnual),
+      
+      // Inversión
       inversionTotal,
       inversionBase,
       feePremium,
-      roiMeses,
-      roiAnual,
-      margenPorKwh,
-      porcentajeParticipacion
+      
+      // ROI
+      roiMeses: Math.max(roiMeses, 0),
+      roiAnual: Math.max(roiAnual, 0),
+      
+      // Márgenes
+      costoEnergia,
+      margenBrutoPorKwh,
+      margenNetoPorKwhInversionista: Math.round(margenNetoPorKwhInversionista),
+      
+      // Participación
+      porcentajeParticipacion,
+      potenciaEfectiva
     };
-  }, [paqueteSeleccionado, horasUso, precioVenta, zonaPremium, participacionColectiva, usarSolar]);
+  }, [paqueteSeleccionado, horasUso, precioVenta, zonaPremium, participacionColectiva]);
 
-  // Datos para gráfico de ingresos mensuales
+  // ============================================================================
+  // DATOS PARA GRÁFICO DE PROYECCIÓN MENSUAL
+  // ============================================================================
+  
   const datosGrafico = useMemo(() => {
     const meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+    // Factores de estacionalidad (variación por mes)
     const factores = [0.85, 0.90, 0.95, 1.0, 1.05, 1.10, 1.15, 1.10, 1.05, 1.0, 0.95, 1.20];
+    
     return meses.map((mes, i) => ({
       mes,
       ingreso: Math.round(calculos.ingresoMensual * factores[i])
     }));
   }, [calculos.ingresoMensual]);
 
-  const maxIngreso = Math.max(...datosGrafico.map(d => d.ingreso));
+  const maxIngreso = Math.max(...datosGrafico.map(d => d.ingreso), 1);
 
-  // Casos de uso
+  // ============================================================================
+  // CASOS DE USO
+  // ============================================================================
+  
   const casosDeUso = [
     {
       icon: UtensilsCrossed,
@@ -255,12 +416,12 @@ export default function Investors() {
     }
   ];
 
-  // Estadísticas del mercado actualizadas
+  // Estadísticas del mercado
   const estadisticas = [
     { valor: "115%", descripcion: "Crecimiento anual del mercado EV en Colombia" },
     { valor: "1:125", descripcion: "Déficit actual de cargadores por vehículo" },
-    { valor: "186%", descripcion: "ROI proyectado anual (paquete individual)" },
-    { valor: "70%", descripcion: "De los ingresos para el inversionista" }
+    { valor: "70%", descripcion: "De los ingresos para el inversionista" },
+    { valor: "480kW", descripcion: "Potencia total estación colectiva" }
   ];
 
   const formatCOP = (valor: number) => {
@@ -270,6 +431,212 @@ export default function Investors() {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
     }).format(valor);
+  };
+
+  const formatCOPShort = (valor: number) => {
+    if (valor >= 1000000000) {
+      return `$${(valor / 1000000000).toFixed(0)}MM`;
+    }
+    if (valor >= 1000000) {
+      return `$${(valor / 1000000).toFixed(0)}M`;
+    }
+    return formatCOP(valor);
+  };
+
+  // ============================================================================
+  // COMPONENTE DE CROWDFUNDING CON DATOS DE LA BD
+  // ============================================================================
+  
+  const CrowdfundingSection = () => {
+    const { data: proyectos, isLoading } = trpc.crowdfunding.getProjects.useQuery();
+    
+    // Fallback a datos estáticos si no hay datos de la BD
+    const estaciones = proyectos && proyectos.length > 0 ? proyectos.map(p => ({
+      id: p.id.toString(),
+      ciudad: p.city,
+      zona: p.zone,
+      metaInversion: Number(p.targetAmount),
+      montoRecaudado: Number(p.raisedAmount),
+      inversionistas: p.investorCount || 0,
+      fechaObjetivo: p.targetDate ? new Date(p.targetDate).toLocaleDateString('es-CO', { month: 'short', year: 'numeric' }) : 'TBD',
+      estado: p.status,
+      prioridad: p.priority
+    })) : ESTACIONES_ROADMAP;
+
+    return (
+      <section id="crowdfunding" className="py-20 bg-gradient-to-b from-black to-slate-900">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 mb-4">
+              <Flame className="w-4 h-4 text-amber-400" />
+              <span className="text-amber-400 text-sm font-medium">Inversión Colectiva</span>
+            </div>
+            <h2 className="text-4xl font-bold mb-4">
+              Estaciones en{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">
+                Financiamiento
+              </span>
+            </h2>
+            <p className="text-white/60 text-lg max-w-2xl mx-auto">
+              Únete a otros inversionistas para financiar estaciones premium en las principales ciudades de Colombia.
+              Meta por estación: <span className="text-amber-400 font-bold">$1,000 millones COP</span>
+            </p>
+          </div>
+
+          {isLoading ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400"></div>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+              {estaciones.map((estacion) => {
+                const porcentaje = (estacion.montoRecaudado / estacion.metaInversion) * 100;
+                const esProximamente = estacion.estado === "DRAFT" || estacion.estado === "PROXIMAMENTE";
+                const estaCompleto = porcentaje >= 100 || estacion.estado === "FUNDED";
+                
+                return (
+                  <Card 
+                    key={estacion.id} 
+                    className={`relative overflow-hidden transition-all ${
+                      esProximamente 
+                        ? "bg-slate-800/30 border-white/5 opacity-60" 
+                        : estaCompleto
+                          ? "bg-gradient-to-br from-green-900/40 to-emerald-900/40 border-green-500/30"
+                          : "bg-gradient-to-br from-amber-900/20 to-orange-900/20 border-amber-500/20 hover:border-amber-500/40"
+                    }`}
+                  >
+                    {/* Badge de estado */}
+                    <div className="absolute top-3 right-3">
+                      {esProximamente ? (
+                        <span className="px-2 py-1 rounded-full bg-slate-700 text-slate-400 text-xs">
+                          Próximamente
+                        </span>
+                      ) : estaCompleto ? (
+                        <span className="px-2 py-1 rounded-full bg-green-500/20 text-green-400 text-xs flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Financiado
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 rounded-full bg-amber-500/20 text-amber-400 text-xs flex items-center gap-1">
+                          <Timer className="w-3 h-3" />
+                          {estacion.fechaObjetivo}
+                        </span>
+                      )}
+                    </div>
+
+                    <CardContent className="p-6">
+                      {/* Ciudad y zona */}
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                          esProximamente ? "bg-slate-700" : "bg-gradient-to-br from-amber-500 to-orange-600"
+                        }`}>
+                          <MapPin className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold text-white">{estacion.ciudad}</h3>
+                          <p className="text-sm text-white/60">{estacion.zona}</p>
+                        </div>
+                      </div>
+
+                      {/* Barra de progreso */}
+                      <div className="mb-4">
+                        <div className="flex justify-between text-sm mb-2">
+                          <span className="text-white/60">Progreso</span>
+                          <span className={`font-bold ${esProximamente ? "text-slate-500" : "text-amber-400"}`}>
+                            {porcentaje.toFixed(0)}%
+                          </span>
+                        </div>
+                        <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              estaCompleto 
+                                ? "bg-gradient-to-r from-green-500 to-emerald-400" 
+                                : "bg-gradient-to-r from-amber-500 to-orange-400"
+                            }`}
+                            style={{ width: `${Math.min(porcentaje, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Montos */}
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div className="p-3 rounded-lg bg-black/30">
+                          <p className="text-xs text-white/60">Recaudado</p>
+                          <p className={`text-lg font-bold ${esProximamente ? "text-slate-500" : "text-white"}`}>
+                            {formatCOPShort(estacion.montoRecaudado)}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-black/30">
+                          <p className="text-xs text-white/60">Meta</p>
+                          <p className="text-lg font-bold text-white/80">
+                            {formatCOPShort(estacion.metaInversion)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Inversionistas */}
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-white/60">
+                          <Users className="w-4 h-4" />
+                          <span>{estacion.inversionistas} inversionistas</span>
+                        </div>
+                        <span className="text-white/40">
+                          Faltan {formatCOPShort(estacion.metaInversion - estacion.montoRecaudado)}
+                        </span>
+                      </div>
+
+                      {/* Botón de acción */}
+                      {!esProximamente && !estaCompleto && (
+                        <a href="#contacto">
+                          <Button className="w-full mt-4 bg-amber-500 hover:bg-amber-600 text-white gap-2">
+                            Invertir en {estacion.ciudad}
+                            <ArrowRight className="w-4 h-4" />
+                          </Button>
+                        </a>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Info adicional */}
+          <div className="mt-12 max-w-3xl mx-auto">
+            <Card className="bg-slate-800/50 border-amber-500/20">
+              <CardContent className="p-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                    <Shield className="w-6 h-6 text-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white mb-2">¿Cómo funciona la inversión colectiva?</h3>
+                    <ul className="space-y-2 text-white/70 text-sm">
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                        <span>Inversión mínima de <strong className="text-white">$50 millones COP</strong> por participante</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                        <span>Tu participación es <strong className="text-white">proporcional a tu inversión</strong> (ej: $100M = 10% de la estación)</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                        <span>Recibes el <strong className="text-white">70% de los ingresos</strong> según tu porcentaje de participación</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                        <span>Dashboard personalizado con <strong className="text-white">métricas en tiempo real</strong> de tu inversión</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+    );
   };
 
   return (
@@ -307,148 +674,62 @@ export default function Investors() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative pt-32 pb-20 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-green-900/20 via-black to-blue-900/20" />
+      <section className="pt-32 pb-20 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-green-900/20 to-transparent" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-green-500/10 rounded-full blur-3xl" />
         
-        <div className="container mx-auto px-4 relative z-10">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div className="space-y-8">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 border border-green-500/20">
-                <Sparkles className="w-4 h-4 text-green-400" />
-                <span className="text-green-400 text-sm font-medium">Oportunidad de Inversión 2026</span>
-              </div>
-              
-              <h1 className="text-5xl lg:text-6xl font-bold leading-tight">
-                Invierte en el{" "}
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500">
-                  futuro de la movilidad
-                </span>
-              </h1>
-              
-              <p className="text-xl text-white/70 leading-relaxed">
-                Genera ingresos pasivos con estaciones de carga para vehículos eléctricos. 
-                Nosotros operamos, tú recibes el <span className="text-green-400 font-semibold">70% de los ingresos</span>.
-              </p>
+        <div className="container mx-auto px-4 relative">
+          <div className="max-w-4xl mx-auto text-center">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 border border-green-500/20 mb-6">
+              <Sparkles className="w-4 h-4 text-green-400" />
+              <span className="text-green-400 text-sm font-medium">Oportunidad de Inversión 2026</span>
+            </div>
+            
+            <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
+              Invierte en el{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500">
+                Futuro de la Movilidad
+              </span>
+            </h1>
+            
+            <p className="text-xl text-white/70 mb-8 max-w-2xl mx-auto">
+              Sé parte de la revolución eléctrica en Colombia. Genera ingresos pasivos con estaciones de carga 
+              mientras contribuyes a un futuro más sostenible.
+            </p>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center flex-shrink-0">
-                    <TrendingUp className="w-5 h-5 text-green-400" />
-                  </div>
-                  <div>
-                    <p className="font-semibold">ROI 186%</p>
-                    <p className="text-sm text-white/60">Recupera tu inversión en 6-8 meses</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-                    <Shield className="w-5 h-5 text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="font-semibold">Tecnología Huawei</p>
-                    <p className="text-sm text-white/60">Cargadores de clase mundial</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
-                    <Brain className="w-5 h-5 text-purple-400" />
-                  </div>
-                  <div>
-                    <p className="font-semibold">IA Integrada</p>
-                    <p className="text-sm text-white/60">Precios dinámicos optimizados</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-                    <Sun className="w-5 h-5 text-amber-400" />
-                  </div>
-                  <div>
-                    <p className="font-semibold">Energía Solar</p>
-                    <p className="text-sm text-white/60">Reduce costos hasta 70%</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-4">
-                <a href="#paquetes">
-                  <Button size="lg" className="bg-green-500 hover:bg-green-600 text-white gap-2 w-full sm:w-auto">
-                    Ver Paquetes de Inversión
-                    <ChevronRight className="w-5 h-5" />
-                  </Button>
-                </a>
-                <a href="#calculadora">
-                  <Button size="lg" variant="outline" className="border-white/20 text-white hover:bg-white/10 gap-2 w-full sm:w-auto">
-                    <Calculator className="w-5 h-5" />
-                    Calcular mi ROI
-                  </Button>
-                </a>
-              </div>
+            <div className="flex flex-wrap justify-center gap-4 mb-12">
+              <a href="#calculadora">
+                <Button size="lg" className="bg-green-500 hover:bg-green-600 text-white gap-2">
+                  <Calculator className="w-5 h-5" />
+                  Calcular mi ROI
+                </Button>
+              </a>
+              <a href="#crowdfunding">
+                <Button size="lg" variant="outline" className="border-white/20 text-white hover:bg-white/10 gap-2">
+                  <Users className="w-5 h-5" />
+                  Ver Estaciones Disponibles
+                </Button>
+              </a>
             </div>
 
-            {/* Stats Card */}
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-green-500/20 to-emerald-500/20 rounded-3xl blur-xl" />
-              <Card className="relative bg-slate-900/80 border-white/10 backdrop-blur-sm">
-                <CardContent className="p-8">
-                  <div className="text-center mb-6">
-                    <p className="text-white/60 text-sm">Proyección con Paquete Individual</p>
-                    <p className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500 mt-2">
-                      +{calculos.roiAnual.toFixed(0)}% ROI anual
-                    </p>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className="p-4 rounded-xl bg-black/30">
-                      <p className="text-white/60 text-xs">Inversión</p>
-                      <p className="text-xl font-bold text-white">{formatCOP(85000000)}</p>
-                    </div>
-                    <div className="p-4 rounded-xl bg-black/30">
-                      <p className="text-white/60 text-xs">Ingreso Mensual</p>
-                      <p className="text-xl font-bold text-green-400">{formatCOP(calculos.ingresoMensual)}</p>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-xl bg-green-500/10 border border-green-500/20">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-white/60 text-xs">Meses para ROI</p>
-                        <p className="text-2xl font-bold text-white">{calculos.roiMeses.toFixed(1)}</p>
-                      </div>
-                      <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-                        <Target className="w-6 h-6 text-green-400" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="text-center text-white/40 text-xs mt-4">
-                    *Proyección basada en 12h de uso diario promedio
-                  </p>
-                </CardContent>
-              </Card>
+            {/* Estadísticas */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {estadisticas.map((stat, i) => (
+                <div key={i} className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <p className="text-2xl md:text-3xl font-bold text-green-400">{stat.valor}</p>
+                  <p className="text-sm text-white/60">{stat.descripcion}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </section>
 
-      {/* Estadísticas del mercado */}
-      <section className="py-16 bg-slate-900/50">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            {estadisticas.map((stat, i) => (
-              <div key={i} className="text-center">
-                <p className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500">
-                  {stat.valor}
-                </p>
-                <p className="text-white/60 mt-2">{stat.descripcion}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Sección de Crowdfunding - Estaciones por Ciudad */}
+      <CrowdfundingSection />
 
-      {/* Paquetes de Inversión */}
-      <section id="paquetes" className="py-20 bg-black">
+      {/* Paquetes de inversión */}
+      <section className="py-20 bg-slate-900">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-4xl font-bold mb-4">
@@ -458,36 +739,40 @@ export default function Investors() {
               </span>
             </h2>
             <p className="text-white/60 text-lg max-w-2xl mx-auto">
-              Dos modalidades diseñadas para diferentes perfiles de inversionista
+              Elige el modelo que mejor se adapte a tu capacidad de inversión
             </p>
           </div>
 
-          <div className="grid lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
             {/* Paquete Individual */}
-            <Card className="bg-slate-900/50 border-white/10 hover:border-green-500/50 transition-all">
-              <CardHeader className="pb-4">
+            <Card className="bg-gradient-to-br from-green-900/30 to-emerald-900/30 border-green-500/30 hover:border-green-500/50 transition-all relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-2xl" />
+              <CardHeader className="pb-4 relative">
                 <div className="flex items-center justify-between mb-2">
                   <span className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-sm font-medium">
-                    Más Popular
+                    100% Propietario
                   </span>
-                  <Battery className="w-8 h-8 text-green-400" />
+                  <Zap className="w-8 h-8 text-green-400" />
                 </div>
                 <CardTitle className="text-2xl text-white">{PAQUETES.INDIVIDUAL.nombre}</CardTitle>
                 <p className="text-white/60">{PAQUETES.INDIVIDUAL.descripcion}</p>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-6 relative">
                 <div className="text-center py-4 rounded-xl bg-black/30">
                   <p className="text-white/60 text-sm">Inversión Total</p>
                   <p className="text-4xl font-bold text-white">{formatCOP(PAQUETES.INDIVIDUAL.precio)}</p>
+                  <p className="text-green-400 text-sm mt-1">
+                    {PAQUETES.INDIVIDUAL.potenciaKw}kW de potencia
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded-lg bg-black/30 text-center">
-                    <p className="text-2xl font-bold text-green-400">186%</p>
-                    <p className="text-xs text-white/60">ROI Anual</p>
+                    <p className="text-2xl font-bold text-green-400">~50%</p>
+                    <p className="text-xs text-white/60">ROI Anual (6h/día)</p>
                   </div>
                   <div className="p-3 rounded-lg bg-black/30 text-center">
-                    <p className="text-2xl font-bold text-green-400">6.4</p>
+                    <p className="text-2xl font-bold text-green-400">~24</p>
                     <p className="text-xs text-white/60">Meses Payback</p>
                   </div>
                 </div>
@@ -534,11 +819,11 @@ export default function Investors() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded-lg bg-black/30 text-center">
-                    <p className="text-2xl font-bold text-amber-400">299%</p>
+                    <p className="text-2xl font-bold text-amber-400">~85%</p>
                     <p className="text-xs text-white/60">ROI Anual (con solar)</p>
                   </div>
                   <div className="p-3 rounded-lg bg-black/30 text-center">
-                    <p className="text-2xl font-bold text-amber-400">4.0</p>
+                    <p className="text-2xl font-bold text-amber-400">~14</p>
                     <p className="text-xs text-white/60">Meses Payback</p>
                   </div>
                 </div>
@@ -552,9 +837,9 @@ export default function Investors() {
                   ))}
                 </ul>
 
-                <a href="#contacto">
+                <a href="#crowdfunding">
                   <Button className="w-full bg-amber-500 hover:bg-amber-600 text-white gap-2">
-                    Solicitar Información
+                    Ver Estaciones Disponibles
                     <ArrowRight className="w-4 h-4" />
                   </Button>
                 </a>
@@ -565,7 +850,7 @@ export default function Investors() {
       </section>
 
       {/* Calculadora de ROI */}
-      <section id="calculadora" className="py-20 bg-slate-900">
+      <section id="calculadora" className="py-20 bg-black">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-4xl font-bold mb-4">
@@ -575,7 +860,9 @@ export default function Investors() {
               </span>
             </h2>
             <p className="text-white/60 text-lg max-w-2xl mx-auto">
-              Ajusta los parámetros según tu ubicación y expectativas para ver el potencial de ingresos
+              Ajusta los parámetros según tu ubicación y expectativas para ver el potencial de ingresos.
+              <br />
+              <span className="text-amber-400">Nota: Estos son estimados conservadores basados en 4 horas de uso diario.</span>
             </p>
           </div>
 
@@ -631,33 +918,8 @@ export default function Investors() {
                     </div>
                     <p className="text-xs text-amber-400">
                       Participación: {(calculos.porcentajeParticipacion * 100).toFixed(1)}% de la estación
+                      ({calculos.potenciaEfectiva.toFixed(0)}kW de 480kW)
                     </p>
-                  </div>
-                )}
-
-                {/* Zona premium (solo si es individual) */}
-                {paqueteSeleccionado === "INDIVIDUAL" && (
-                  <div className="space-y-3">
-                    <label className="text-white/80 font-medium">Zona de Ubicación</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(Object.entries(ZONAS_PREMIUM) as [keyof typeof ZONAS_PREMIUM, typeof ZONAS_PREMIUM.A][]).map(([key, zona]) => (
-                        <button
-                          key={key}
-                          onClick={() => setZonaPremium(key)}
-                          className={`p-3 rounded-lg border transition-all text-left ${
-                            zonaPremium === key
-                              ? "bg-green-500/20 border-green-500"
-                              : "bg-slate-700/50 border-white/10 hover:border-white/30"
-                          }`}
-                        >
-                          <p className="font-medium text-white text-sm">{zona.nombre}</p>
-                          <p className="text-xs text-white/60">{zona.zonas[0]}</p>
-                          {zona.fee > 0 && (
-                            <p className="text-xs text-green-400 mt-1">+{formatCOP(zona.fee)}</p>
-                          )}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 )}
 
@@ -690,8 +952,8 @@ export default function Investors() {
                   <Slider
                     value={[precioVenta]}
                     onValueChange={(v) => setPrecioVenta(v[0])}
-                    min={1400}
-                    max={2200}
+                    min={PRECIO_VENTA_KWH_MIN}
+                    max={PRECIO_VENTA_KWH_MAX}
                     step={100}
                     className="py-2"
                   />
@@ -711,8 +973,11 @@ export default function Investors() {
                     )}
                   </p>
                   <p className="text-sm text-white/60 mt-1">
-                    <span className="text-white font-medium">Tu margen (70%):</span>{" "}
-                    <span className="text-green-400">{formatCOP(calculos.margenPorKwh * PORCENTAJE_INVERSIONISTA)}/kWh</span>
+                    <span className="text-white font-medium">Tu margen neto (70%):</span>{" "}
+                    <span className="text-green-400">{formatCOP(calculos.margenNetoPorKwhInversionista)}/kWh</span>
+                  </p>
+                  <p className="text-xs text-white/40 mt-2">
+                    * Se descuenta 15% para costos operativos (mantenimiento, seguros)
                   </p>
                 </div>
               </CardContent>
@@ -731,9 +996,9 @@ export default function Investors() {
                 <div className="p-4 rounded-lg bg-black/30">
                   <p className="text-white/60 text-sm">Inversión Total</p>
                   <p className="text-3xl font-bold text-white">{formatCOP(calculos.inversionTotal)}</p>
-                  {calculos.feePremium > 0 && (
-                    <p className="text-xs text-green-400 mt-1">
-                      Incluye fee zona premium: {formatCOP(calculos.feePremium)}
+                  {paqueteSeleccionado === "COLECTIVO" && (
+                    <p className="text-xs text-amber-400 mt-1">
+                      {(calculos.porcentajeParticipacion * 100).toFixed(1)}% de la estación
                     </p>
                   )}
                 </div>
@@ -766,7 +1031,9 @@ export default function Investors() {
                 <div className="flex items-center justify-between p-4 rounded-lg bg-black/30">
                   <div>
                     <p className="text-white/60 text-sm">Recuperación de Inversión</p>
-                    <p className="text-2xl font-bold text-white">{calculos.roiMeses.toFixed(1)} meses</p>
+                    <p className="text-2xl font-bold text-white">
+                      {calculos.roiMeses < 100 ? `${calculos.roiMeses.toFixed(1)} meses` : "N/A"}
+                    </p>
                   </div>
                   <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center">
                     <Target className="w-8 h-8 text-green-400" />
@@ -776,7 +1043,7 @@ export default function Investors() {
                 {/* Energía vendida */}
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <div className="p-3 rounded-lg bg-black/30">
-                    <p className="text-lg font-bold text-white">{calculos.energiaDiaria.toFixed(0)}</p>
+                    <p className="text-lg font-bold text-white">{calculos.energiaDiaria.toLocaleString()}</p>
                     <p className="text-xs text-white/60">kWh/día</p>
                   </div>
                   <div className="p-3 rounded-lg bg-black/30">
@@ -795,6 +1062,62 @@ export default function Investors() {
                     <ArrowRight className="w-4 h-4" />
                   </Button>
                 </a>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* Gráfico de proyección mensual */}
+      <section className="py-20 bg-slate-900">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-bold mb-4">
+              Proyección de{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500">
+                Ingresos Mensuales
+              </span>
+            </h2>
+            <p className="text-white/60 text-lg">
+              Estimación basada en variación estacional del mercado
+            </p>
+          </div>
+
+          <div className="max-w-4xl mx-auto">
+            <Card className="bg-slate-800/50 border-white/10">
+              <CardContent className="p-8">
+                {/* Gráfico de barras */}
+                <div className="flex items-end justify-between gap-2 h-64">
+                  {datosGrafico.map((dato, i) => {
+                    const altura = maxIngreso > 0 ? (dato.ingreso / maxIngreso) * 100 : 0;
+                    return (
+                      <div key={i} className="flex-1 flex flex-col items-center gap-2">
+                        <div className="w-full flex flex-col items-center justify-end h-48">
+                          <span className="text-xs text-white/60 mb-1 transform -rotate-45 origin-bottom-left whitespace-nowrap">
+                            {formatCOPShort(dato.ingreso)}
+                          </span>
+                          <div 
+                            className="w-full bg-gradient-to-t from-green-500 to-emerald-400 rounded-t-lg transition-all hover:from-green-400 hover:to-emerald-300"
+                            style={{ height: `${Math.max(altura, 5)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-white/60">{dato.mes}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {/* Resumen */}
+                <div className="mt-6 pt-6 border-t border-white/10 flex items-center justify-between">
+                  <div>
+                    <p className="text-white/60 text-sm">Ingreso Promedio Mensual</p>
+                    <p className="text-2xl font-bold text-green-400">{formatCOP(calculos.ingresoMensual)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-white/60 text-sm">Ingreso Anual Total</p>
+                    <p className="text-2xl font-bold text-white">{formatCOP(calculos.ingresoAnual)}</p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -867,51 +1190,6 @@ export default function Investors() {
                 </CardContent>
               </Card>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Gráfico de proyección */}
-      <section className="py-20 bg-black">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold mb-4">
-              Proyección de{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500">
-                Ingresos Mensuales
-              </span>
-            </h2>
-            <p className="text-white/60 text-lg">
-              Estimación basada en variación estacional del mercado
-            </p>
-          </div>
-
-          <div className="max-w-4xl mx-auto">
-            <Card className="bg-slate-900/50 border-white/10">
-              <CardContent className="p-8">
-                <div className="flex items-end justify-between gap-2 h-64">
-                  {datosGrafico.map((dato, i) => (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                      <div 
-                        className="w-full bg-gradient-to-t from-green-500 to-emerald-400 rounded-t-lg transition-all hover:from-green-400 hover:to-emerald-300"
-                        style={{ height: `${(dato.ingreso / maxIngreso) * 100}%` }}
-                      />
-                      <span className="text-xs text-white/60">{dato.mes}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-6 pt-6 border-t border-white/10 flex items-center justify-between">
-                  <div>
-                    <p className="text-white/60 text-sm">Ingreso Promedio Mensual</p>
-                    <p className="text-2xl font-bold text-green-400">{formatCOP(calculos.ingresoMensual)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-white/60 text-sm">Ingreso Anual Total</p>
-                    <p className="text-2xl font-bold text-white">{formatCOP(calculos.ingresoAnual)}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </section>
