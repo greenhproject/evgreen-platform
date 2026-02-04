@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import Stripe from "stripe";
 import { stripe } from "./config";
 import * as db from "../db";
+import { sendWalletRechargeNotification } from "../notifications/paymentNotifications";
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -128,6 +129,21 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
           currency: session.currency || "cop",
           status: "completed",
         });
+        
+        // Enviar notificación por email
+        const user = await db.getUserById(parseInt(userId));
+        if (user?.email) {
+          const wallet = await db.getUserWallet(parseInt(userId));
+          const newBalance = wallet ? parseFloat(wallet.balance) : amount;
+          await sendWalletRechargeNotification({
+            userEmail: user.email,
+            userName: user.name || 'Usuario',
+            amount,
+            paymentMethod: 'Stripe (Tarjeta)',
+            transactionId: session.id,
+            newBalance: newBalance || amount,
+          });
+        }
         
         console.log(`[Stripe Webhook] Added ${amount} to wallet for user ${userId}`);
       }

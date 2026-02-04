@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+import { PaymentMethodSelector } from "@/components/PaymentMethodSelector";
 
 const PRESET_AMOUNTS = [20000, 50000, 100000];
 
@@ -31,10 +32,15 @@ export default function UserWallet() {
   const [selectedAmount, setSelectedAmount] = useState<number | null>(50000);
   const [customAmount, setCustomAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showPaymentSelector, setShowPaymentSelector] = useState(false);
   const [location] = useLocation();
 
-  // Verificar si Stripe está configurado
+  // Verificar si los proveedores de pago están configurados
   const { data: stripeConfig } = trpc.stripe.isConfigured.useQuery();
+  const { data: wompiConfig } = trpc.wompi.isConfigured.useQuery();
+  
+  // Verificar si hay algún método de pago disponible
+  const hasPaymentMethod = stripeConfig?.configured || wompiConfig?.configured;
   
   // Obtener billetera
   const { data: wallet, isLoading, refetch: refetchWallet } = trpc.wallet.getMyWallet.useQuery();
@@ -92,22 +98,22 @@ export default function UserWallet() {
 
   const handleRecharge = () => {
     const amount = customAmount ? parseInt(customAmount) : selectedAmount;
-    if (!amount || amount < 20000) {
-      toast.error("El monto mínimo de recarga es $20,000 COP");
+    if (!amount || amount < 10000) {
+      toast.error("El monto mínimo de recarga es $10,000 COP");
       return;
     }
-    if (amount > 1000000) {
-      toast.error("El monto máximo de recarga es $1,000,000 COP");
+    if (amount > 50000000) {
+      toast.error("El monto máximo de recarga es $50,000,000 COP");
       return;
     }
 
-    if (!stripeConfig?.configured) {
+    if (!hasPaymentMethod) {
       toast.error("El sistema de pagos no está disponible en este momento");
       return;
     }
 
-    setIsProcessing(true);
-    createRecharge.mutate({ amount });
+    // Abrir selector de método de pago
+    setShowPaymentSelector(true);
   };
 
   const handleSubscribe = (planId: "basic" | "premium") => {
@@ -181,8 +187,8 @@ export default function UserWallet() {
           </TabsList>
 
           <TabsContent value="recharge" className="mt-4 space-y-4">
-            {/* Estado de Stripe */}
-            {!stripeConfig?.configured && (
+            {/* Estado de pagos */}
+            {!hasPaymentMethod && (
               <Card className="p-4 bg-yellow-50 border-yellow-200">
                 <div className="flex items-center gap-2 text-yellow-800">
                   <AlertCircle className="w-5 h-5" />
@@ -239,7 +245,7 @@ export default function UserWallet() {
               size="lg"
               className="w-full h-14 text-lg gradient-primary text-white rounded-xl"
               onClick={handleRecharge}
-              disabled={isProcessing || !stripeConfig?.configured}
+              disabled={isProcessing || !hasPaymentMethod}
             >
               {isProcessing ? (
                 <>
@@ -249,14 +255,26 @@ export default function UserWallet() {
               ) : (
                 <>
                   <CreditCard className="w-5 h-5 mr-2" />
-                  Recargar con Stripe
+                  Recargar Billetera
                 </>
               )}
             </Button>
 
             <p className="text-xs text-center text-muted-foreground">
-              Pago seguro procesado por Stripe. Acepta tarjetas de crédito y débito.
+              Pago seguro. Acepta tarjetas internacionales, PSE, Nequi, Bancolombia QR y Efecty.
             </p>
+
+            {/* Modal de selección de método de pago */}
+            <PaymentMethodSelector
+              open={showPaymentSelector}
+              onOpenChange={setShowPaymentSelector}
+              amount={customAmount ? parseInt(customAmount) : (selectedAmount || 50000)}
+              type="wallet_recharge"
+              onSuccess={() => {
+                refetchWallet();
+                refetchTransactions();
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="subscription" className="mt-4 space-y-4">

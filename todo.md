@@ -1598,3 +1598,9 @@
 - [x] Revisar configuración de Stripe existente y verificar que esté funcionando
 - [x] Integrar Wompi/PSE para pagos locales en Colombia
 
+
+## Nuevas Funcionalidades - 3 Febrero 2026
+- [x] UI de selección de método de pago: Modal para elegir entre Stripe (tarjetas internacionales) o Wompi (PSE, Nequi, Efecty)
+- [x] Selector de zona premium en registro de estaciones: Campo para seleccionar zona y calcular fee automáticamente
+- [x] Notificaciones de pago: Email/push cuando se complete recarga de billetera o pago de carga
+
