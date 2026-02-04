@@ -1604,3 +1604,14 @@
 - [x] Selector de zona premium en registro de estaciones: Campo para seleccionar zona y calcular fee automáticamente
 - [x] Notificaciones de pago: Email/push cuando se complete recarga de billetera o pago de carga
 
+
+
+## Centro de Notificaciones Funcional - 3 Febrero 2026
+- [x] Revisar código actual del Centro de Notificaciones admin
+- [x] Implementar envío real de notificaciones push (FCM) a usuarios
+- [x] Implementar envío de notificaciones por email masivo
+- [x] Implementar notificaciones en la plataforma (in-app)
+- [x] Conectar formulario de envío con backend real
+- [x] Mostrar estadísticas reales (total enviadas, tasa de lectura, usuarios activos)
+- [x] Probar envío a diferentes tipos de audiencia (todos, solo clientes, inversionistas, etc.)
+

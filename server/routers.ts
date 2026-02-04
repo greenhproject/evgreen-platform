@@ -12,6 +12,7 @@ import { ocppRouter } from "./ocpp/ocpp-router";
 import { chargingRouter } from "./charging/charging-router";
 import { pushRouter } from "./push/push-router";
 import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
+import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } from "./notifications/broadcast-service";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -1399,6 +1400,42 @@ const notificationsRouter = router({
     .mutation(async ({ ctx, input }) => {
       await db.deleteNotification(input.id, ctx.user.id);
       return { success: true };
+    }),
+
+  // ============================================================================
+  // ADMIN BROADCAST ENDPOINTS
+  // ============================================================================
+  
+  // Obtener estadísticas de notificaciones
+  getStats: adminProcedure.query(async () => {
+    return getNotificationStats();
+  }),
+  
+  // Obtener historial de notificaciones broadcast
+  getHistory: adminProcedure
+    .input(z.object({ limit: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return getBroadcastHistory(input?.limit || 20);
+    }),
+  
+  // Enviar notificación broadcast
+  sendBroadcast: adminProcedure
+    .input(z.object({
+      title: z.string().min(1).max(255),
+      message: z.string().min(1).max(2000),
+      type: z.enum(["INFO", "SUCCESS", "WARNING", "ALERT", "PROMOTION"]),
+      targetAudience: z.enum(["all", "users", "investors", "technicians", "admins"]),
+      linkUrl: z.string().url().optional(),
+      sendPush: z.boolean().optional(),
+      sendEmail: z.boolean().optional(),
+      sendInApp: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const result = await sendBroadcastNotification(input);
+      return {
+        success: true,
+        ...result,
+      };
     }),
 });
 
