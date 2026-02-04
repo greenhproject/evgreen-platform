@@ -125,6 +125,9 @@ export const chargingStations = mysqlTable("charging_stations", {
   serialNumber: varchar("serialNumber", { length: 100 }),
   firmwareVersion: varchar("firmwareVersion", { length: 50 }),
   lastBootNotification: timestamp("lastBootNotification"),
+  // Zona premium para fee adicional (A: $5M, B: $3M, C: $0 estándar)
+  premiumZone: mysqlEnum("premiumZone", ["A", "B", "C"]).default("C").notNull(),
+  premiumZoneFee: decimal("premiumZoneFee", { precision: 15, scale: 2 }).default("0"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

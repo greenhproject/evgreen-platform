@@ -1590,3 +1590,11 @@
 - [x] Actualizar simulador de ROI con nuevas proyecciones (186% ROI, 6.4 meses payback)
 - [x] Actualizar información de escenarios de retorno
 
+
+
+## Mejoras Plataforma - 3 Febrero 2026
+- [x] Ajustar simulador de ROI con nuevo modelo: 70% inversionista, paquetes $85M y $1,000M colectivo
+- [x] Implementar fee por ubicación premium: $3-5M adicionales para zonas de alta demanda (Usaquén, Chapinero)
+- [x] Revisar configuración de Stripe existente y verificar que esté funcionando
+- [x] Integrar Wompi/PSE para pagos locales en Colombia
+

@@ -7,6 +7,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { aiRouter } from "./ai/ai-router";
 import { stripeRouter } from "./stripe/router";
+import { wompiRouter } from "./wompi/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
 import { chargingRouter } from "./charging/charging-router";
 import { pushRouter } from "./push/push-router";
@@ -1938,6 +1939,7 @@ export const appRouter = router({
   banners: bannersRouter,
   ai: aiRouter,
   stripe: stripeRouter,
+  wompi: wompiRouter,
   settings: settingsRouter,
   ocpp: ocppRouter,
   dashboard: dashboardRouter,
