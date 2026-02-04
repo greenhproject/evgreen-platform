@@ -1160,6 +1160,285 @@ export default function Investors() {
         </div>
       </section>
 
+      {/* ============================================================================
+          COMPARADOR LADO A LADO - Individual vs Colectivo
+          ============================================================================ */}
+      <section id="comparador" className="py-20 bg-black">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-bold mb-4">
+              Compara{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-amber-500">
+                Individual vs Colectivo
+              </span>
+            </h2>
+            <p className="text-white/60 text-lg max-w-2xl mx-auto">
+              Descubre cuál opción se adapta mejor a tu perfil de inversión
+            </p>
+          </div>
+
+          <div className="max-w-5xl mx-auto">
+            <Card className="bg-slate-800/50 border-white/10 overflow-hidden">
+              <CardContent className="p-0">
+                {/* Encabezado de la tabla */}
+                <div className="grid grid-cols-3 border-b border-white/10">
+                  <div className="p-4 bg-slate-900/50">
+                    <p className="text-white/60 font-medium">Característica</p>
+                  </div>
+                  <div className="p-4 bg-green-900/20 text-center border-l border-white/10">
+                    <div className="flex items-center justify-center gap-2">
+                      <Battery className="w-5 h-5 text-green-400" />
+                      <p className="text-green-400 font-bold">Individual</p>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-amber-900/20 text-center border-l border-white/10">
+                    <div className="flex items-center justify-center gap-2">
+                      <Sun className="w-5 h-5 text-amber-400" />
+                      <p className="text-amber-400 font-bold">Colectivo + Solar</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filas de comparación */}
+                {[
+                  { label: "Inversión Mínima", individual: "$85,000,000", colectivo: "$50,000,000", winner: "colectivo" },
+                  { label: "Potencia Total", individual: "120 kW", colectivo: "480 kW (4x120kW)", winner: "colectivo" },
+                  { label: "Fuente de Energía", individual: "Red Eléctrica", colectivo: "Solar + Red", winner: "colectivo" },
+                  { label: "Costo Energía/kWh", individual: "$850 COP", colectivo: "$250 COP", winner: "colectivo" },
+                  { label: "Margen por kWh", individual: "$950 COP", colectivo: "$1,550 COP", winner: "colectivo" },
+                  { label: "Costos Operativos", individual: "15%", colectivo: "10%", winner: "colectivo" },
+                  { label: "Ubicación", individual: "A elección", colectivo: "Premium garantizada", winner: "colectivo" },
+                  { label: "Utilización Esperada", individual: "4-6h/día", colectivo: "5-8h/día", winner: "colectivo" },
+                  { label: "ROI Anual Estimado", individual: "~50%", colectivo: "~85%", winner: "colectivo" },
+                  { label: "Payback", individual: "~24 meses", colectivo: "~14 meses", winner: "colectivo" },
+                  { label: "Propiedad", individual: "100% tuya", colectivo: "Proporcional", winner: "individual" },
+                  { label: "Flexibilidad", individual: "Total control", colectivo: "Gestión EVGreen", winner: "individual" },
+                ].map((row, i) => (
+                  <div key={i} className={`grid grid-cols-3 ${i % 2 === 0 ? 'bg-slate-900/30' : ''} border-b border-white/5`}>
+                    <div className="p-4">
+                      <p className="text-white/80 font-medium">{row.label}</p>
+                    </div>
+                    <div className={`p-4 text-center border-l border-white/10 ${row.winner === 'individual' ? 'bg-green-500/10' : ''}`}>
+                      <p className={`font-medium ${row.winner === 'individual' ? 'text-green-400' : 'text-white/70'}`}>
+                        {row.individual}
+                        {row.winner === 'individual' && <span className="ml-2">✓</span>}
+                      </p>
+                    </div>
+                    <div className={`p-4 text-center border-l border-white/10 ${row.winner === 'colectivo' ? 'bg-amber-500/10' : ''}`}>
+                      <p className={`font-medium ${row.winner === 'colectivo' ? 'text-amber-400' : 'text-white/70'}`}>
+                        {row.colectivo}
+                        {row.winner === 'colectivo' && <span className="ml-2">✓</span>}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Resumen */}
+                <div className="grid grid-cols-3 bg-slate-900/50">
+                  <div className="p-4">
+                    <p className="text-white font-bold">Recomendado para</p>
+                  </div>
+                  <div className="p-4 text-center border-l border-white/10">
+                    <p className="text-green-400 text-sm">
+                      Inversionistas que buscan<br/><strong>control total</strong> de su activo
+                    </p>
+                  </div>
+                  <div className="p-4 text-center border-l border-white/10">
+                    <p className="text-amber-400 text-sm">
+                      Inversionistas que buscan<br/><strong>máxima rentabilidad</strong>
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="mt-8 flex justify-center gap-4">
+              <a href="#calculadora">
+                <Button className="bg-green-500 hover:bg-green-600 text-white gap-2">
+                  <Calculator className="w-4 h-4" />
+                  Simular Individual
+                </Button>
+              </a>
+              <a href="#crowdfunding">
+                <Button className="bg-amber-500 hover:bg-amber-600 text-white gap-2">
+                  <Users className="w-4 h-4" />
+                  Ver Estaciones Colectivas
+                </Button>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ============================================================================
+          SIMULADOR DE ESCENARIOS - Proyecciones a 3, 5 y 10 años
+          ============================================================================ */}
+      <section id="escenarios" className="py-20 bg-slate-900">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-bold mb-4">
+              Proyección de{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500">
+                Retorno Acumulado
+              </span>
+            </h2>
+            <p className="text-white/60 text-lg max-w-2xl mx-auto">
+              Visualiza cómo crece tu inversión a lo largo del tiempo
+            </p>
+          </div>
+
+          <div className="max-w-5xl mx-auto">
+            {/* Tarjetas de proyección */}
+            <div className="grid md:grid-cols-3 gap-6 mb-12">
+              {[
+                { anos: 3, factor: 3 },
+                { anos: 5, factor: 5 },
+                { anos: 10, factor: 10 },
+              ].map(({ anos, factor }) => {
+                const retornoAcumulado = calculos.ingresoAnual * factor;
+                const roiTotal = ((retornoAcumulado / calculos.inversionTotal) * 100);
+                const gananciaTotal = retornoAcumulado - calculos.inversionTotal;
+                const esRentable = gananciaTotal > 0;
+                
+                return (
+                  <Card key={anos} className={`border-white/10 ${anos === 5 ? 'bg-gradient-to-br from-green-900/30 to-emerald-900/30 border-green-500/30 scale-105' : 'bg-slate-800/50'}`}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-white">{anos} Años</CardTitle>
+                        {anos === 5 && (
+                          <span className="px-2 py-1 rounded-full bg-green-500/20 text-green-400 text-xs font-medium">
+                            Recomendado
+                          </span>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="text-center py-4 rounded-xl bg-black/30">
+                        <p className="text-white/60 text-sm">Retorno Acumulado</p>
+                        <p className="text-3xl font-bold text-white">{formatCOP(retornoAcumulado)}</p>
+                        <p className={`text-sm mt-1 ${esRentable ? 'text-green-400' : 'text-amber-400'}`}>
+                          {roiTotal.toFixed(0)}% de tu inversión
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-white/60">Inversión Inicial</span>
+                          <span className="text-white">{formatCOP(calculos.inversionTotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-white/60">Ganancia Neta</span>
+                          <span className={esRentable ? 'text-green-400' : 'text-amber-400'}>
+                            {esRentable ? '+' : ''}{formatCOP(gananciaTotal)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-white/60">Ingreso Mensual Prom.</span>
+                          <span className="text-white">{formatCOP(calculos.ingresoMensual)}</span>
+                        </div>
+                      </div>
+
+                      {/* Barra de progreso visual */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs text-white/60">
+                          <span>Recuperación</span>
+                          <span>{Math.min(roiTotal, 100).toFixed(0)}%</span>
+                        </div>
+                        <div className="h-2 bg-black/30 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full transition-all ${roiTotal >= 100 ? 'bg-green-500' : 'bg-amber-500'}`}
+                            style={{ width: `${Math.min(roiTotal, 100)}%` }}
+                          />
+                        </div>
+                        {roiTotal >= 100 && (
+                          <p className="text-xs text-green-400 text-center mt-1">
+                            ✓ Inversión recuperada + {formatCOP(gananciaTotal)} de ganancia
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Gráfico de crecimiento acumulado */}
+            <Card className="bg-slate-800/50 border-white/10">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-green-400" />
+                  Crecimiento del Capital
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="relative h-64">
+                  {/* Línea de inversión inicial */}
+                  <div className="absolute left-0 right-0 border-t border-dashed border-amber-500/50" style={{ top: '70%' }}>
+                    <span className="absolute -top-5 left-2 text-xs text-amber-400">
+                      Inversión: {formatCOPShort(calculos.inversionTotal)}
+                    </span>
+                  </div>
+                  
+                  {/* Barras de años */}
+                  <div className="flex items-end justify-around h-full gap-4 pt-8">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((ano) => {
+                      const retorno = calculos.ingresoAnual * ano;
+                      const maxRetorno = calculos.ingresoAnual * 10;
+                      const altura = (retorno / maxRetorno) * 100;
+                      const superaInversion = retorno >= calculos.inversionTotal;
+                      
+                      return (
+                        <div key={ano} className="flex-1 flex flex-col items-center gap-1">
+                          <span className="text-xs text-white/60 mb-1">
+                            {formatCOPShort(retorno)}
+                          </span>
+                          <div 
+                            className={`w-full rounded-t-lg transition-all ${superaInversion ? 'bg-gradient-to-t from-green-600 to-green-400' : 'bg-gradient-to-t from-amber-600 to-amber-400'}`}
+                            style={{ height: `${Math.max(altura, 5)}%` }}
+                          />
+                          <span className="text-xs text-white/60">Año {ano}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                
+                {/* Leyenda */}
+                <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-center gap-8">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-amber-500" />
+                    <span className="text-white/60 text-sm">Recuperando inversión</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-green-500" />
+                    <span className="text-white/60 text-sm">Ganancia neta</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-0.5 border-t-2 border-dashed border-amber-500" />
+                    <span className="text-white/60 text-sm">Línea de inversión</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Nota importante */}
+            <div className="mt-8 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <div className="flex items-start gap-3">
+                <Flame className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-amber-400 font-medium">Nota sobre las proyecciones</p>
+                  <p className="text-white/60 text-sm mt-1">
+                    Estas proyecciones son estimaciones basadas en los parámetros actuales del simulador. 
+                    Los resultados reales pueden variar según la ubicación, demanda del mercado, y condiciones económicas.
+                    El modelo asume un crecimiento constante sin considerar inflación ni cambios en tarifas.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Casos de uso */}
       <section className="py-20 bg-black">
         <div className="container mx-auto px-4">
