@@ -713,37 +713,40 @@ export default function AdminCrowdfunding() {
 
           {selectedProject && (
             <div className="space-y-4">
-              {/* Resumen del proyecto y botón de registro */}
-              <div className="flex items-center justify-between">
-                <Card className="p-4 bg-muted/50 flex-1 mr-4">
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">Meta</p>
-                      <p className="font-bold">{formatCOP(Number(selectedProject.targetAmount))}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Recaudado</p>
-                      <p className="font-bold text-green-600">{formatCOP(Number(selectedProject.raisedAmount))}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Progreso</p>
-                      <p className="font-bold">
-                        {((Number(selectedProject.raisedAmount) / Number(selectedProject.targetAmount)) * 100).toFixed(1)}%
-                      </p>
-                    </div>
-                  </div>
-                </Card>
+              {/* Botón de registro - visible en móvil arriba */}
+              <div className="flex justify-end">
                 <Button
                   onClick={() => {
                     resetInvestorForm();
                     setShowRegisterInvestorDialog(true);
                   }}
-                  className="gap-2 bg-green-600 hover:bg-green-700"
+                  className="gap-2 bg-green-600 hover:bg-green-700 w-full sm:w-auto"
                 >
                   <UserPlus className="w-4 h-4" />
-                  Registrar Inversionista
+                  <span className="hidden sm:inline">Registrar Inversionista</span>
+                  <span className="sm:hidden">Nuevo Inversionista</span>
                 </Button>
               </div>
+
+              {/* Resumen del proyecto - responsive */}
+              <Card className="p-3 sm:p-4 bg-muted/50">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-sm">
+                  <div className="flex justify-between sm:block">
+                    <p className="text-muted-foreground">Meta</p>
+                    <p className="font-bold text-right sm:text-left">{formatCOP(Number(selectedProject.targetAmount))}</p>
+                  </div>
+                  <div className="flex justify-between sm:block">
+                    <p className="text-muted-foreground">Recaudado</p>
+                    <p className="font-bold text-green-600 text-right sm:text-left">{formatCOP(Number(selectedProject.raisedAmount))}</p>
+                  </div>
+                  <div className="flex justify-between sm:block">
+                    <p className="text-muted-foreground">Progreso</p>
+                    <p className="font-bold text-right sm:text-left">
+                      {((Number(selectedProject.raisedAmount) / Number(selectedProject.targetAmount)) * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+              </Card>
 
               {/* Lista de participaciones */}
               {!participations || participations.length === 0 ? (
@@ -751,56 +754,101 @@ export default function AdminCrowdfunding() {
                   No hay participaciones registradas
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Inversionista</TableHead>
-                      <TableHead>Monto</TableHead>
-                      <TableHead>Participación</TableHead>
-                      <TableHead>Estado Pago</TableHead>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                <div className="space-y-3">
+                  {/* Vista móvil - tarjetas */}
+                  <div className="sm:hidden space-y-3">
                     {participations.map((participation: any) => (
-                      <TableRow key={participation.id}>
-                        <TableCell>
+                      <Card key={participation.id} className="p-3">
+                        <div className="flex justify-between items-start mb-2">
                           <div>
-                            <p className="font-medium">{participation.investor?.name || 'N/A'}</p>
-                            <p className="text-sm text-muted-foreground">{participation.investor?.email || ''}</p>
+                            <p className="font-medium text-sm">{participation.investor?.name || 'N/A'}</p>
+                            <p className="text-xs text-muted-foreground">{participation.investor?.email || ''}</p>
                           </div>
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {formatCOP(Number(participation.amount))}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {Number(participation.participationPercent).toFixed(1)}%
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
                           {getPaymentStatusBadge(participation.paymentStatus)}
-                        </TableCell>
-                        <TableCell>
-                          {new Date(participation.createdAt).toLocaleDateString('es-CO')}
-                        </TableCell>
-                        <TableCell className="text-right">
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm mb-2">
+                          <div>
+                            <p className="text-muted-foreground text-xs">Monto</p>
+                            <p className="font-bold">{formatCOP(Number(participation.amount))}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-xs">Participación</p>
+                            <Badge variant="outline">{Number(participation.participationPercent).toFixed(1)}%</Badge>
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(participation.createdAt).toLocaleDateString('es-CO')}
+                          </p>
                           {participation.paymentStatus === 'PENDING' && (
                             <Button
                               size="sm"
                               onClick={() => handleConfirmPayment(participation.id)}
-                              className="gap-1"
+                              className="gap-1 text-xs h-8"
                             >
-                              <CheckCircle2 className="w-4 h-4" />
-                              Confirmar Pago
+                              <CheckCircle2 className="w-3 h-3" />
+                              Confirmar
                             </Button>
                           )}
-                        </TableCell>
-                      </TableRow>
+                        </div>
+                      </Card>
                     ))}
-                  </TableBody>
-                </Table>
+                  </div>
+
+                  {/* Vista desktop - tabla */}
+                  <div className="hidden sm:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Inversionista</TableHead>
+                          <TableHead>Monto</TableHead>
+                          <TableHead>Participación</TableHead>
+                          <TableHead>Estado Pago</TableHead>
+                          <TableHead>Fecha</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {participations.map((participation: any) => (
+                          <TableRow key={participation.id}>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{participation.investor?.name || 'N/A'}</p>
+                                <p className="text-sm text-muted-foreground">{participation.investor?.email || ''}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {formatCOP(Number(participation.amount))}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">
+                                {Number(participation.participationPercent).toFixed(1)}%
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {getPaymentStatusBadge(participation.paymentStatus)}
+                            </TableCell>
+                            <TableCell>
+                              {new Date(participation.createdAt).toLocaleDateString('es-CO')}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {participation.paymentStatus === 'PENDING' && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleConfirmPayment(participation.id)}
+                                  className="gap-1"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  Confirmar Pago
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -809,7 +857,7 @@ export default function AdminCrowdfunding() {
 
       {/* Diálogo de Registro de Inversionista */}
       <Dialog open={showRegisterInvestorDialog} onOpenChange={setShowRegisterInvestorDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-green-600" />
@@ -834,9 +882,9 @@ export default function AdminCrowdfunding() {
                 <Users className="w-4 h-4" />
                 Datos Personales
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <Label>Nombre Completo *</Label>
+                  <Label className="text-sm">Nombre Completo *</Label>
                   <Input
                     required
                     value={investorFormData.name}
@@ -845,7 +893,7 @@ export default function AdminCrowdfunding() {
                   />
                 </div>
                 <div>
-                  <Label>Email *</Label>
+                  <Label className="text-sm">Email *</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -859,7 +907,7 @@ export default function AdminCrowdfunding() {
                   </div>
                 </div>
                 <div>
-                  <Label>Teléfono</Label>
+                  <Label className="text-sm">Teléfono</Label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -871,7 +919,7 @@ export default function AdminCrowdfunding() {
                   </div>
                 </div>
                 <div>
-                  <Label>Empresa</Label>
+                  <Label className="text-sm">Empresa</Label>
                   <div className="relative">
                     <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -882,8 +930,8 @@ export default function AdminCrowdfunding() {
                     />
                   </div>
                 </div>
-                <div>
-                  <Label>NIT / Cédula</Label>
+                <div className="sm:col-span-2">
+                  <Label className="text-sm">NIT / Cédula</Label>
                   <Input
                     value={investorFormData.taxId}
                     onChange={(e) => setInvestorFormData({ ...investorFormData, taxId: e.target.value })}
@@ -899,9 +947,9 @@ export default function AdminCrowdfunding() {
                 <Building className="w-4 h-4" />
                 Datos Bancarios (para pagos de rendimientos)
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <Label>Banco</Label>
+                  <Label className="text-sm">Banco</Label>
                   <Select
                     value={investorFormData.bankName}
                     onValueChange={(value) => setInvestorFormData({ ...investorFormData, bankName: value })}
@@ -926,7 +974,7 @@ export default function AdminCrowdfunding() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Número de Cuenta</Label>
+                  <Label className="text-sm">Número de Cuenta</Label>
                   <Input
                     value={investorFormData.bankAccount}
                     onChange={(e) => setInvestorFormData({ ...investorFormData, bankAccount: e.target.value })}
@@ -942,9 +990,9 @@ export default function AdminCrowdfunding() {
                 <CreditCard className="w-4 h-4" />
                 Datos de la Inversión
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <Label>Monto de Inversión (COP) *</Label>
+                  <Label className="text-sm">Monto de Inversión (COP) *</Label>
                   <Input
                     required
                     type="number"
@@ -954,54 +1002,56 @@ export default function AdminCrowdfunding() {
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     {formatCOP(investorFormData.amount)} 
-                    {selectedProject && ` (${((investorFormData.amount / Number(selectedProject.targetAmount)) * 100).toFixed(2)}% de participación)`}
+                    {selectedProject && ` (${((investorFormData.amount / Number(selectedProject.targetAmount)) * 100).toFixed(2)}%)`}
                   </p>
                 </div>
                 <div>
-                  <Label>Referencia de Pago</Label>
+                  <Label className="text-sm">Referencia de Pago</Label>
                   <Input
                     value={investorFormData.paymentReference}
                     onChange={(e) => setInvestorFormData({ ...investorFormData, paymentReference: e.target.value })}
-                    placeholder="Ref. transferencia o comprobante"
+                    placeholder="Ref. transferencia"
                   />
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
+              <div className="flex items-start sm:items-center gap-3 p-3 sm:p-4 bg-muted/50 rounded-lg">
                 <Switch
                   checked={investorFormData.paymentConfirmed}
                   onCheckedChange={(checked) => setInvestorFormData({ ...investorFormData, paymentConfirmed: checked })}
                 />
                 <div>
-                  <Label className="flex items-center gap-2">
+                  <Label className="flex items-center gap-2 text-sm">
                     <CheckCircle2 className="w-4 h-4 text-green-600" />
-                    Pago ya confirmado
+                    Pago confirmado
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Marcar si el pago ya fue verificado en la cuenta bancaria
+                    Marcar si ya fue verificado
                   </p>
                 </div>
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setShowRegisterInvestorDialog(false)}
+                className="w-full sm:w-auto"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
                 disabled={registerInvestorMutation.isPending}
-                className="gap-2 bg-green-600 hover:bg-green-700"
+                className="gap-2 bg-green-600 hover:bg-green-700 w-full sm:w-auto"
               >
                 {registerInvestorMutation.isPending ? (
                   <Clock className="w-4 h-4 animate-spin" />
                 ) : (
                   <UserPlus className="w-4 h-4" />
                 )}
-                Registrar Inversionista
+                <span className="hidden sm:inline">Registrar Inversionista</span>
+                <span className="sm:hidden">Registrar</span>
               </Button>
             </DialogFooter>
           </form>

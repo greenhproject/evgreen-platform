@@ -1669,3 +1669,11 @@
 - [x] Asignar ID de estación colectiva al inversionista
 - [x] Vincular participación para que inversionista vea ingresos proporcionales en su dashboard
 - [x] Actualizar barras de progreso con datos reales de participaciones registradas
+
+
+## Corrección Responsive Crowdfunding - 4 Febrero 2026
+- [x] Corregir responsive del modal de participaciones en móvil
+- [x] Arreglar superposición de texto (Meta, Recaudado, Progreso)
+- [x] Ajustar botón "Registrar Inversionista" para móvil
+- [x] Hacer responsive la tabla de participaciones (tarjetas en móvil)
+- [x] Hacer responsive el formulario de registro de inversionista
