@@ -3095,3 +3095,418 @@ export async function getPriceByConnectorType(
     chargeType: evse.chargeType,
   };
 }
+
+
+// ============================================================================
+// CROWDFUNDING OPERATIONS
+// ============================================================================
+
+export interface CrowdfundingProject {
+  id: number;
+  name: string;
+  description: string | null;
+  city: string;
+  zone: string;
+  address: string | null;
+  targetAmount: number;
+  raisedAmount: number;
+  minimumInvestment: number;
+  totalPowerKw: number;
+  chargerCount: number;
+  chargerPowerKw: number;
+  hasSolarPanels: boolean;
+  estimatedRoiPercent: string | null;
+  estimatedPaybackMonths: number | null;
+  status: string;
+  targetDate: Date | null;
+  launchDate: Date | null;
+  fundedDate: Date | null;
+  operationalDate: Date | null;
+  priority: number;
+  stationId: number | null;
+  createdById: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+  investorCount?: number;
+}
+
+export interface CrowdfundingParticipation {
+  id: number;
+  projectId: number;
+  investorId: number;
+  amount: number;
+  participationPercent: string;
+  paymentStatus: string;
+  paymentDate: Date | null;
+  stripePaymentIntentId: string | null;
+  contractSigned: boolean;
+  contractSignedAt: Date | null;
+  contractUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  investor?: User;
+  project?: CrowdfundingProject;
+}
+
+// Obtener todos los proyectos de crowdfunding (públicos)
+export async function getCrowdfundingProjects(options?: {
+  status?: string;
+  includePrivate?: boolean;
+}): Promise<CrowdfundingProject[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  try {
+    let query = `
+      SELECT 
+        p.*,
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
+      FROM crowdfunding_projects p
+    `;
+    
+    const conditions = [];
+    
+    if (options?.status) {
+      conditions.push(`status = '${options.status}'`);
+    } else if (!options?.includePrivate) {
+      conditions.push(`status != 'DRAFT'`);
+    }
+    
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+    
+    query += ` ORDER BY p.priority ASC, p.createdAt DESC`;
+    
+    const result = await db.execute(sql.raw(query));
+    return ((result as any)[0] as CrowdfundingProject[]) || [];
+  } catch (error) {
+    console.error('[DB] Error getting crowdfunding projects:', error);
+    return [];
+  }
+}
+
+// Obtener un proyecto por ID
+export async function getCrowdfundingProjectById(projectId: number): Promise<CrowdfundingProject | null> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  try {
+    const result = await db.execute(sql.raw(`
+      SELECT 
+        p.*,
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
+      FROM crowdfunding_projects p
+      WHERE p.id = ${projectId}
+      LIMIT 1
+    `));
+    
+    const rows = (result as any)[0] as CrowdfundingProject[];
+    return rows[0] || null;
+  } catch (error) {
+    console.error('[DB] Error getting crowdfunding project:', error);
+    return null;
+  }
+}
+
+// Crear un nuevo proyecto de crowdfunding
+export async function createCrowdfundingProject(data: {
+  name: string;
+  description?: string;
+  city: string;
+  zone: string;
+  address?: string;
+  targetAmount: number;
+  minimumInvestment?: number;
+  totalPowerKw?: number;
+  chargerCount?: number;
+  chargerPowerKw?: number;
+  hasSolarPanels?: boolean;
+  estimatedRoiPercent?: number;
+  estimatedPaybackMonths?: number;
+  status?: string;
+  targetDate?: Date;
+  priority?: number;
+  createdById?: number;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.execute(sql`
+    INSERT INTO crowdfunding_projects (
+      name, description, city, zone, address,
+      targetAmount, minimumInvestment, totalPowerKw, chargerCount, chargerPowerKw,
+      hasSolarPanels, estimatedRoiPercent, estimatedPaybackMonths,
+      status, targetDate, priority, createdById
+    ) VALUES (
+      ${data.name},
+      ${data.description || null},
+      ${data.city},
+      ${data.zone},
+      ${data.address || null},
+      ${data.targetAmount},
+      ${data.minimumInvestment || 50000000},
+      ${data.totalPowerKw || 480},
+      ${data.chargerCount || 4},
+      ${data.chargerPowerKw || 120},
+      ${data.hasSolarPanels !== false},
+      ${data.estimatedRoiPercent || 85.00},
+      ${data.estimatedPaybackMonths || 14},
+      ${data.status || 'DRAFT'},
+      ${data.targetDate || null},
+      ${data.priority || 0},
+      ${data.createdById || null}
+    )
+  `);
+  
+  return (result[0] as any).insertId;
+}
+
+// Actualizar un proyecto de crowdfunding
+export async function updateCrowdfundingProject(
+  projectId: number,
+  data: Partial<{
+    name: string;
+    description: string;
+    city: string;
+    zone: string;
+    address: string;
+    targetAmount: number;
+    raisedAmount: number;
+    minimumInvestment: number;
+    totalPowerKw: number;
+    chargerCount: number;
+    chargerPowerKw: number;
+    hasSolarPanels: boolean;
+    estimatedRoiPercent: number;
+    estimatedPaybackMonths: number;
+    status: string;
+    targetDate: Date;
+    launchDate: Date;
+    fundedDate: Date;
+    operationalDate: Date;
+    priority: number;
+    stationId: number;
+  }>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const updates: string[] = [];
+  const values: any[] = [];
+  
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined) {
+      updates.push(`${key} = ?`);
+      values.push(value);
+    }
+  });
+  
+  if (updates.length === 0) return;
+  
+  // Construir la query con valores interpolados
+  const setClause = Object.entries(data)
+    .filter(([_, v]) => v !== undefined)
+    .map(([key, value]) => {
+      if (value instanceof Date) {
+        return `${key} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+      } else if (typeof value === 'string') {
+        return `${key} = '${value.replace(/'/g, "''")}'`;
+      } else if (typeof value === 'boolean') {
+        return `${key} = ${value ? 1 : 0}`;
+      } else {
+        return `${key} = ${value}`;
+      }
+    })
+    .join(', ');
+  
+  if (!setClause) return;
+  
+  await db.execute(sql.raw(`
+    UPDATE crowdfunding_projects 
+    SET ${setClause}
+    WHERE id = ${projectId}
+  `));
+}
+
+// Obtener participaciones de un proyecto
+export async function getCrowdfundingParticipations(projectId: number): Promise<CrowdfundingParticipation[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  try {
+    const result = await db.execute(sql.raw(`
+      SELECT 
+        cp.*,
+        u.name as investorName,
+        u.email as investorEmail
+      FROM crowdfunding_participations cp
+      LEFT JOIN users u ON cp.investorId = u.id
+      WHERE cp.projectId = ${projectId}
+      ORDER BY cp.createdAt DESC
+    `));
+    
+    return ((result as any)[0] as CrowdfundingParticipation[]) || [];
+  } catch (error) {
+    console.error('[DB] Error getting crowdfunding participations:', error);
+    return [];
+  }
+}
+
+// Obtener participaciones de un inversionista
+export async function getInvestorParticipations(investorId: number): Promise<(CrowdfundingParticipation & { project?: CrowdfundingProject })[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  try {
+    const result = await db.execute(sql.raw(`
+      SELECT 
+        cp.*,
+        p.name as projectName,
+        p.city as projectCity,
+        p.zone as projectZone,
+        p.status as projectStatus,
+        p.targetAmount as projectTargetAmount,
+        p.raisedAmount as projectRaisedAmount,
+        p.totalPowerKw as projectTotalPowerKw,
+        p.estimatedRoiPercent as projectEstimatedRoiPercent
+      FROM crowdfunding_participations cp
+      LEFT JOIN crowdfunding_projects p ON cp.projectId = p.id
+      WHERE cp.investorId = ${investorId}
+      ORDER BY cp.createdAt DESC
+    `));
+    
+    return ((result as any)[0] as any[]) || [];
+  } catch (error) {
+    console.error('[DB] Error getting investor participations:', error);
+    return [];
+  }
+}
+
+// Crear una participación en un proyecto
+export async function createCrowdfundingParticipation(data: {
+  projectId: number;
+  investorId: number;
+  amount: number;
+  participationPercent: number;
+  paymentStatus?: string;
+  stripePaymentIntentId?: string;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.execute(sql`
+    INSERT INTO crowdfunding_participations (
+      projectId, investorId, amount, participationPercent, paymentStatus, stripePaymentIntentId
+    ) VALUES (
+      ${data.projectId},
+      ${data.investorId},
+      ${data.amount},
+      ${data.participationPercent},
+      ${data.paymentStatus || 'PENDING'},
+      ${data.stripePaymentIntentId || null}
+    )
+  `);
+  
+  return (result[0] as any).insertId;
+}
+
+// Actualizar el monto recaudado de un proyecto
+export async function updateProjectRaisedAmount(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Calcular el total de participaciones completadas
+  await db.execute(sql`
+    UPDATE crowdfunding_projects p
+    SET raisedAmount = (
+      SELECT COALESCE(SUM(amount), 0)
+      FROM crowdfunding_participations
+      WHERE projectId = ${projectId} AND paymentStatus = 'COMPLETED'
+    )
+    WHERE p.id = ${projectId}
+  `);
+  
+  // Verificar si se alcanzó la meta
+  const project = await getCrowdfundingProjectById(projectId);
+  if (project && project.raisedAmount >= project.targetAmount && project.status === 'IN_PROGRESS') {
+    await db.execute(sql`
+      UPDATE crowdfunding_projects
+      SET status = 'FUNDED', fundedDate = NOW()
+      WHERE id = ${projectId}
+    `);
+  }
+}
+
+// Actualizar participación
+export async function updateCrowdfundingParticipation(
+  participationId: number,
+  data: Partial<{
+    paymentStatus: string;
+    paymentDate: Date;
+    stripePaymentIntentId: string;
+    contractSigned: boolean;
+    contractSignedAt: Date;
+    contractUrl: string;
+  }>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const updates: string[] = [];
+  const values: any[] = [];
+  
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined) {
+      updates.push(`${key} = ?`);
+      values.push(value);
+    }
+  });
+  
+  if (updates.length === 0) return;
+  
+  // Construir la query con valores interpolados
+  const setClause = Object.entries(data)
+    .filter(([_, v]) => v !== undefined)
+    .map(([key, value]) => {
+      if (value instanceof Date) {
+        return `${key} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+      } else if (typeof value === 'string') {
+        return `${key} = '${value.replace(/'/g, "''")}'`;
+      } else if (typeof value === 'boolean') {
+        return `${key} = ${value ? 1 : 0}`;
+      } else {
+        return `${key} = ${value}`;
+      }
+    })
+    .join(', ');
+  
+  if (!setClause) return;
+  
+  await db.execute(sql.raw(`
+    UPDATE crowdfunding_participations 
+    SET ${setClause}
+    WHERE id = ${participationId}
+  `));
+}
+
+
+// Actualizar monto recaudado por participación
+export async function updateProjectRaisedAmountByParticipation(participationId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  try {
+    // Obtener el projectId de la participación
+    const result = await db.execute(sql.raw(`
+      SELECT projectId FROM crowdfunding_participations WHERE id = ${participationId}
+    `));
+    
+    const rows = (result as any)[0] as any[];
+    if (rows[0]?.projectId) {
+      await updateProjectRaisedAmount(rows[0].projectId);
+    }
+  } catch (error) {
+    console.error('[DB] Error updating project raised amount:', error);
+  }
+}

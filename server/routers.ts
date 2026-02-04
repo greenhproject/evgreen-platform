@@ -1955,6 +1955,159 @@ const payoutsRouter = router({
 });
 
 // ============================================================================
+// CROWDFUNDING ROUTER
+// ============================================================================
+
+const crowdfundingRouter = router({
+  // Obtener todos los proyectos públicos
+  getProjects: publicProcedure
+    .input(z.object({
+      status: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getCrowdfundingProjects({
+        status: input?.status,
+        includePrivate: false,
+      });
+    }),
+  
+  // Obtener un proyecto por ID
+  getProjectById: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getCrowdfundingProjectById(input.id);
+    }),
+  
+  // Admin: Obtener todos los proyectos incluyendo borradores
+  getAllProjects: adminProcedure.query(async () => {
+    return db.getCrowdfundingProjects({ includePrivate: true });
+  }),
+  
+  // Admin: Crear proyecto
+  createProject: adminProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      city: z.string().min(1),
+      zone: z.string().min(1),
+      address: z.string().optional(),
+      targetAmount: z.number().positive(),
+      minimumInvestment: z.number().positive().optional(),
+      totalPowerKw: z.number().positive().optional(),
+      chargerCount: z.number().positive().optional(),
+      chargerPowerKw: z.number().positive().optional(),
+      hasSolarPanels: z.boolean().optional(),
+      estimatedRoiPercent: z.number().optional(),
+      estimatedPaybackMonths: z.number().optional(),
+      status: z.string().optional(),
+      targetDate: z.date().optional(),
+      priority: z.number().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const projectId = await db.createCrowdfundingProject({
+        ...input,
+        createdById: ctx.user.id,
+      });
+      return { success: true, projectId };
+    }),
+  
+  // Admin: Actualizar proyecto
+  updateProject: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      city: z.string().optional(),
+      zone: z.string().optional(),
+      address: z.string().optional(),
+      targetAmount: z.number().optional(),
+      raisedAmount: z.number().optional(),
+      minimumInvestment: z.number().optional(),
+      totalPowerKw: z.number().optional(),
+      chargerCount: z.number().optional(),
+      chargerPowerKw: z.number().optional(),
+      hasSolarPanels: z.boolean().optional(),
+      estimatedRoiPercent: z.number().optional(),
+      estimatedPaybackMonths: z.number().optional(),
+      status: z.string().optional(),
+      targetDate: z.date().optional(),
+      priority: z.number().optional(),
+      stationId: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateCrowdfundingProject(id, data);
+      return { success: true };
+    }),
+  
+  // Obtener participaciones de un proyecto
+  getParticipations: adminProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getCrowdfundingParticipations(input.projectId);
+    }),
+  
+  // Inversionista: Obtener mis participaciones
+  getMyParticipations: investorProcedure.query(async ({ ctx }) => {
+    return db.getInvestorParticipations(ctx.user.id);
+  }),
+  
+  // Inversionista: Crear participación (expresar interés)
+  createParticipation: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      amount: z.number().positive(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Verificar que el proyecto existe y está abierto
+      const project = await db.getCrowdfundingProjectById(input.projectId);
+      if (!project) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Proyecto no encontrado' });
+      }
+      if (project.status !== 'OPEN' && project.status !== 'IN_PROGRESS') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este proyecto no está abierto para inversiones' });
+      }
+      if (input.amount < project.minimumInvestment) {
+        throw new TRPCError({ 
+          code: 'BAD_REQUEST', 
+          message: `La inversión mínima es ${project.minimumInvestment.toLocaleString()} COP` 
+        });
+      }
+      
+      // Calcular porcentaje de participación
+      const participationPercent = (input.amount / project.targetAmount) * 100;
+      
+      const participationId = await db.createCrowdfundingParticipation({
+        projectId: input.projectId,
+        investorId: ctx.user.id,
+        amount: input.amount,
+        participationPercent,
+        paymentStatus: 'PENDING',
+      });
+      
+      return { success: true, participationId, participationPercent };
+    }),
+  
+  // Admin: Confirmar pago de participación
+  confirmPayment: adminProcedure
+    .input(z.object({
+      participationId: z.number(),
+      paymentReference: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateCrowdfundingParticipation(input.participationId, {
+        paymentStatus: 'COMPLETED',
+        paymentDate: new Date(),
+      });
+      
+      // Actualizar monto recaudado del proyecto
+      await db.updateProjectRaisedAmountByParticipation(input.participationId);
+      
+      return { success: true };
+    }),
+});
+
+// ============================================================================
 // MAIN APP ROUTER
 // ============================================================================
 
@@ -1983,6 +2136,7 @@ export const appRouter = router({
   charging: chargingRouter,
   push: pushRouter,
   payouts: payoutsRouter,
+  crowdfunding: crowdfundingRouter,
 });
 
 export type AppRouter = typeof appRouter;

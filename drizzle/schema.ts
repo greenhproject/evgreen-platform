@@ -1080,3 +1080,125 @@ export const priceHistory = mysqlTable("price_history", {
 
 export type PriceHistory = typeof priceHistory.$inferSelect;
 export type InsertPriceHistory = typeof priceHistory.$inferInsert;
+
+
+// ============================================================================
+// CROWDFUNDING - PROYECTOS DE INVERSIÓN COLECTIVA
+// ============================================================================
+
+export const crowdfundingStatusEnum = mysqlEnum("crowdfunding_status", [
+  "DRAFT",           // Borrador, no visible
+  "OPEN",            // Abierto para inversiones
+  "IN_PROGRESS",     // En financiamiento activo
+  "FUNDED",          // Meta alcanzada
+  "BUILDING",        // En construcción
+  "OPERATIONAL",     // Estación operativa
+  "CLOSED",          // Cerrado (cancelado o completado)
+]);
+
+export const crowdfundingProjects = mysqlTable("crowdfunding_projects", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Información del proyecto
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  city: varchar("city", { length: 100 }).notNull(),
+  zone: varchar("zone", { length: 255 }).notNull(),
+  address: varchar("address", { length: 500 }),
+  
+  // Meta de inversión
+  targetAmount: bigint("targetAmount", { mode: "number" }).notNull(), // Meta en COP
+  raisedAmount: bigint("raisedAmount", { mode: "number" }).default(0).notNull(), // Monto recaudado
+  minimumInvestment: bigint("minimumInvestment", { mode: "number" }).default(50000000).notNull(), // Inversión mínima
+  
+  // Especificaciones técnicas
+  totalPowerKw: int("totalPowerKw").default(480).notNull(), // Potencia total en kW
+  chargerCount: int("chargerCount").default(4).notNull(), // Número de cargadores
+  chargerPowerKw: int("chargerPowerKw").default(120).notNull(), // Potencia por cargador
+  hasSolarPanels: boolean("hasSolarPanels").default(true).notNull(),
+  
+  // Proyecciones financieras
+  estimatedRoiPercent: decimal("estimatedRoiPercent", { precision: 5, scale: 2 }).default("85.00"),
+  estimatedPaybackMonths: int("estimatedPaybackMonths").default(14),
+  
+  // Estado y fechas
+  status: crowdfundingStatusEnum.default("DRAFT").notNull(),
+  targetDate: timestamp("targetDate"), // Fecha objetivo de cierre
+  launchDate: timestamp("launchDate"), // Fecha de lanzamiento
+  fundedDate: timestamp("fundedDate"), // Fecha en que se alcanzó la meta
+  operationalDate: timestamp("operationalDate"), // Fecha de inicio de operaciones
+  
+  // Prioridad y orden
+  priority: int("priority").default(0).notNull(),
+  
+  // Relación con estación (cuando se construye)
+  stationId: int("stationId"), // FK a charging_stations (cuando esté operativa)
+  
+  // Metadata
+  createdById: int("createdById"), // FK a users (admin)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CrowdfundingProject = typeof crowdfundingProjects.$inferSelect;
+export type InsertCrowdfundingProject = typeof crowdfundingProjects.$inferInsert;
+
+// ============================================================================
+// CROWDFUNDING - PARTICIPACIONES DE INVERSIONISTAS
+// ============================================================================
+
+export const crowdfundingParticipations = mysqlTable("crowdfunding_participations", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Relaciones
+  projectId: int("projectId").notNull(), // FK a crowdfunding_projects
+  investorId: int("investorId").notNull(), // FK a users
+  
+  // Monto de inversión
+  amount: bigint("amount", { mode: "number" }).notNull(), // Monto invertido en COP
+  participationPercent: decimal("participationPercent", { precision: 6, scale: 4 }).notNull(), // % de participación
+  
+  // Estado del pago
+  paymentStatus: paymentStatusEnum.default("PENDING").notNull(),
+  paymentDate: timestamp("paymentDate"),
+  stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),
+  
+  // Contrato y documentos
+  contractSigned: boolean("contractSigned").default(false).notNull(),
+  contractSignedAt: timestamp("contractSignedAt"),
+  contractUrl: text("contractUrl"),
+  
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CrowdfundingParticipation = typeof crowdfundingParticipations.$inferSelect;
+export type InsertCrowdfundingParticipation = typeof crowdfundingParticipations.$inferInsert;
+
+// ============================================================================
+// CROWDFUNDING RELATIONS
+// ============================================================================
+
+export const crowdfundingProjectsRelations = relations(crowdfundingProjects, ({ one, many }) => ({
+  createdBy: one(users, {
+    fields: [crowdfundingProjects.createdById],
+    references: [users.id],
+  }),
+  station: one(chargingStations, {
+    fields: [crowdfundingProjects.stationId],
+    references: [chargingStations.id],
+  }),
+  participations: many(crowdfundingParticipations),
+}));
+
+export const crowdfundingParticipationsRelations = relations(crowdfundingParticipations, ({ one }) => ({
+  project: one(crowdfundingProjects, {
+    fields: [crowdfundingParticipations.projectId],
+    references: [crowdfundingProjects.id],
+  }),
+  investor: one(users, {
+    fields: [crowdfundingParticipations.investorId],
+    references: [users.id],
+  }),
+}));

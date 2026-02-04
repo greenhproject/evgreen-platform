@@ -1618,4 +1618,10 @@
 
 
 ## Mejoras Recibo de Carga - 3 Febrero 2026
-- [x] Mostrar banner configurado en el recibo de carga en lugar del mensaje genérico "Gracias por cargar con EVGreen"
+- [x] Mostrar banner configurado en el recibo de carga en lugar del mensaje genérico "Gracias por cargar con EVGreen"## Mejoras Landing Inversionistas - 3 Febrero 2026
+- [x] Revisar y corregir cálculos de ROI (actualmente muestra 316.8% - muy alto)
+- [x] Arreglar gráfico de proyección de ingresos vacío
+- [x] Corregir confusión de potencia: 4 cargadores de 120kW = 480kW total
+- [x] Implementar sistema de crowdfunding con barras de progreso por ciudad
+- [x] Crear tablas en BD para proyectos de crowdfunding y participaciones
+- [x] Dashboard de inversionista con datos proporcionales a su participación % de participación en estación colectiva
