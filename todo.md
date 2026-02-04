@@ -1635,3 +1635,8 @@
 - [x] Confirmar pagos de participaciones
 - [x] Sistema de notificaciones de progreso (50%, 75%, 100%)
 - [x] Alertar a inversionistas cuando se alcancen hitos de financiamiento
+
+
+## Corrección Modelo de Negocio Simulador - 3 Febrero 2026
+- [x] Corregir cálculos del simulador: el paquete colectivo con solar debe ser más rentable que el individual
+- [x] El modelo colectivo debe reflejar: mayor potencia total, menor costo energía solar, mayor demanda

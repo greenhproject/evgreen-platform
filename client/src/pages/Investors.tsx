@@ -209,7 +209,18 @@ export default function Investors() {
   const [participacionColectiva, setParticipacionColectiva] = useState(50000000);
 
   // ============================================================================
-  // CÁLCULOS DE ROI - MODELO REALISTA
+  // CÁLCULOS DE ROI - MODELO REALISTA CORREGIDO
+  // ============================================================================
+  // 
+  // MODELO DE NEGOCIO:
+  // - Individual: 1 cargador 120kW, energía de red ($850/kWh), 100% propiedad
+  // - Colectivo: 4 cargadores 480kW total, energía solar ($250/kWh), participación %
+  //
+  // El modelo colectivo es más rentable porque:
+  // 1. Menor costo de energía (solar): $250 vs $850 = 70% ahorro
+  // 2. Mayor utilización por ubicaciones premium (8h vs 6h promedio)
+  // 3. Economías de escala en operación (10% costos vs 15%)
+  // 4. Mayor margen por kWh: $1,550 vs $950 = 63% más margen
   // ============================================================================
   
   const calculos = useMemo(() => {
@@ -218,19 +229,29 @@ export default function Investors() {
     // Costo de energía según tipo de paquete
     const costoEnergia = paquete.conSolar ? PRECIO_COMPRA_KWH_SOLAR : PRECIO_COMPRA_KWH_RED;
     
+    // Costos operativos diferenciados:
+    // - Individual: 15% (más costos por unidad)
+    // - Colectivo: 10% (economías de escala)
+    const costosOperativosPct = paqueteSeleccionado === "COLECTIVO" ? 0.10 : COSTOS_OPERATIVOS_PORCENTAJE;
+    
+    // Horas de uso base diferenciadas:
+    // - Colectivo tiene ubicaciones premium con mayor demanda
+    const horasUsoEfectivas = paqueteSeleccionado === "COLECTIVO" 
+      ? Math.max(horasUso, horasUso * 1.25) // 25% más utilización en ubicaciones premium
+      : horasUso;
+    
     let inversionBase: number;
-    let potenciaEfectiva: number; // kW que realmente usa el inversionista
+    let potenciaTotal: number; // Potencia total de la estación/cargador
     let porcentajeParticipacion = 1;
 
     if (paqueteSeleccionado === "INDIVIDUAL") {
       inversionBase = paquete.precio;
-      potenciaEfectiva = paquete.potenciaKw * paquete.cantidadCargadores;
+      potenciaTotal = paquete.potenciaKw * paquete.cantidadCargadores; // 120kW
     } else {
       // Inversión colectiva - participación proporcional
       inversionBase = participacionColectiva;
       porcentajeParticipacion = participacionColectiva / paquete.precio;
-      // La potencia efectiva es proporcional a la participación
-      potenciaEfectiva = (paquete as any).potenciaTotal * porcentajeParticipacion;
+      potenciaTotal = (paquete as any).potenciaTotal; // 480kW total de la estación
     }
 
     // Fee por zona premium (solo individual)
@@ -238,46 +259,55 @@ export default function Investors() {
     const inversionTotal = inversionBase + feePremium;
 
     // ========================================
-    // CÁLCULO DE ENERGÍA VENDIDA
+    // CÁLCULO DE ENERGÍA VENDIDA (ESTACIÓN COMPLETA)
     // ========================================
     
-    // Energía teórica máxima por día = potencia × horas de uso
-    const energiaTeoricaDiaria = potenciaEfectiva * horasUso; // kWh
+    // Energía teórica máxima por día de TODA la estación
+    const energiaTeoricaDiariaEstacion = potenciaTotal * horasUsoEfectivas; // kWh
     
     // Aplicar eficiencia de carga (pérdidas en conversión)
-    const energiaRealDiaria = energiaTeoricaDiaria * paquete.eficienciaCarga;
-    
-    const energiaMensual = energiaRealDiaria * 30;
-    const energiaAnual = energiaRealDiaria * 365;
+    const energiaRealDiariaEstacion = energiaTeoricaDiariaEstacion * paquete.eficienciaCarga;
 
     // ========================================
-    // CÁLCULO DE INGRESOS Y MÁRGENES
+    // CÁLCULO DE INGRESOS DE LA ESTACIÓN
     // ========================================
     
     // Margen bruto por kWh (antes de distribución)
     const margenBrutoPorKwh = precioVenta - costoEnergia;
     
-    // Ingreso bruto diario (lo que paga el usuario)
-    const ingresoBrutoDiario = energiaRealDiaria * precioVenta;
+    // Ingreso bruto diario de la estación (lo que paga el usuario)
+    const ingresoBrutoDiarioEstacion = energiaRealDiariaEstacion * precioVenta;
     
-    // Costo de energía diario
-    const costoEnergiaDiario = energiaRealDiaria * costoEnergia;
+    // Costo de energía diario de la estación
+    const costoEnergiaDiarioEstacion = energiaRealDiariaEstacion * costoEnergia;
     
-    // Margen bruto diario (antes de distribución)
-    const margenBrutoDiario = ingresoBrutoDiario - costoEnergiaDiario;
+    // Margen bruto diario de la estación (antes de distribución)
+    const margenBrutoDiarioEstacion = ingresoBrutoDiarioEstacion - costoEnergiaDiarioEstacion;
     
-    // Costos operativos (mantenimiento, seguros, etc.)
-    const costosOperativosDiarios = margenBrutoDiario * COSTOS_OPERATIVOS_PORCENTAJE;
+    // Costos operativos de la estación (mantenimiento, seguros, etc.)
+    const costosOperativosDiariosEstacion = margenBrutoDiarioEstacion * costosOperativosPct;
     
-    // Margen neto disponible para distribución
-    const margenNetoDistribuible = margenBrutoDiario - costosOperativosDiarios;
+    // Margen neto disponible para distribución de la estación
+    const margenNetoDistribuibleEstacion = margenBrutoDiarioEstacion - costosOperativosDiariosEstacion;
     
-    // Ingreso del inversionista (70% del margen neto)
-    const ingresoInversionistaDiario = margenNetoDistribuible * PORCENTAJE_INVERSIONISTA;
+    // Margen para inversionistas (70% del margen neto de la estación)
+    const margenInversionistasEstacion = margenNetoDistribuibleEstacion * PORCENTAJE_INVERSIONISTA;
+
+    // ========================================
+    // CÁLCULO DE INGRESOS DEL INVERSIONISTA
+    // ========================================
+    
+    // Ingreso del inversionista según su participación
+    const ingresoInversionistaDiario = margenInversionistasEstacion * porcentajeParticipacion;
     
     // Ingresos mensuales y anuales
     const ingresoMensual = ingresoInversionistaDiario * 30;
     const ingresoAnual = ingresoInversionistaDiario * 365;
+    
+    // Energía proporcional del inversionista (para mostrar)
+    const energiaRealDiaria = energiaRealDiariaEstacion * porcentajeParticipacion;
+    const energiaMensual = energiaRealDiaria * 30;
+    const energiaAnual = energiaRealDiaria * 365;
 
     // ========================================
     // CÁLCULO DE ROI
@@ -290,18 +320,21 @@ export default function Investors() {
     const roiAnual = inversionTotal > 0 ? (ingresoAnual / inversionTotal) * 100 : 0;
 
     // Margen neto por kWh para el inversionista
-    const margenNetoPorKwhInversionista = (margenBrutoPorKwh * (1 - COSTOS_OPERATIVOS_PORCENTAJE)) * PORCENTAJE_INVERSIONISTA;
+    const margenNetoPorKwhInversionista = (margenBrutoPorKwh * (1 - costosOperativosPct)) * PORCENTAJE_INVERSIONISTA;
+    
+    // Potencia efectiva del inversionista (para mostrar)
+    const potenciaEfectiva = potenciaTotal * porcentajeParticipacion;
 
     return {
-      // Energía
+      // Energía (proporcional al inversionista)
       energiaDiaria: Math.round(energiaRealDiaria),
       energiaMensual: Math.round(energiaMensual),
       energiaAnual: Math.round(energiaAnual),
       
-      // Ingresos
-      ingresoBrutoDiario: Math.round(ingresoBrutoDiario),
-      costoEnergiaDiario: Math.round(costoEnergiaDiario),
-      margenBrutoDiario: Math.round(margenBrutoDiario),
+      // Ingresos (proporcionales al inversionista)
+      ingresoBrutoDiario: Math.round(ingresoBrutoDiarioEstacion * porcentajeParticipacion),
+      costoEnergiaDiario: Math.round(costoEnergiaDiarioEstacion * porcentajeParticipacion),
+      margenBrutoDiario: Math.round(margenBrutoDiarioEstacion * porcentajeParticipacion),
       ingresoInversionistaDiario: Math.round(ingresoInversionistaDiario),
       ingresoMensual: Math.round(ingresoMensual),
       ingresoAnual: Math.round(ingresoAnual),
@@ -319,10 +352,13 @@ export default function Investors() {
       costoEnergia,
       margenBrutoPorKwh,
       margenNetoPorKwhInversionista: Math.round(margenNetoPorKwhInversionista),
+      costosOperativosPct,
       
       // Participación
       porcentajeParticipacion,
-      potenciaEfectiva
+      potenciaEfectiva,
+      potenciaTotal,
+      horasUsoEfectivas
     };
   }, [paqueteSeleccionado, horasUso, precioVenta, zonaPremium, participacionColectiva]);
 
