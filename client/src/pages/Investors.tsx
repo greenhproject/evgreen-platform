@@ -764,6 +764,91 @@ export default function Investors() {
         </div>
       </section>
 
+      {/* Sección de Video Explicativo */}
+      <section className="py-16 bg-gradient-to-b from-slate-950 to-slate-900">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 mb-4">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span className="text-amber-400 text-sm font-medium">Conoce Nuestro Modelo</span>
+            </div>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              ¿Cómo Funciona la{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">
+                Inversión?
+              </span>
+            </h2>
+            <p className="text-white/60 max-w-2xl mx-auto">
+              Descubre cómo puedes generar ingresos pasivos con estaciones de carga EV
+            </p>
+          </div>
+
+          {/* Video Principal */}
+          <div className="max-w-4xl mx-auto mb-12">
+            <div className="relative rounded-2xl overflow-hidden border border-amber-500/20 shadow-2xl shadow-amber-500/10">
+              <video 
+                className="w-full aspect-video bg-slate-900"
+                controls
+                poster="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/xDpJxuPWKhTwpkWU.png"
+              >
+                <source src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/jxTaFDWsKNKJydBU.mp4" type="video/mp4" />
+                Tu navegador no soporta videos HTML5.
+              </video>
+            </div>
+          </div>
+
+          {/* Infografías del Modelo de Negocio */}
+          <div className="grid md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+            {/* Oportunidad de Mercado */}
+            <div className="rounded-xl overflow-hidden border border-green-500/20 hover:border-green-500/40 transition-all">
+              <img 
+                src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/xDpJxuPWKhTwpkWU.png" 
+                alt="Mercado EV Colombia - Crecimiento +200%"
+                className="w-full h-auto"
+              />
+            </div>
+            
+            {/* Comparación de Paquetes */}
+            <div className="rounded-xl overflow-hidden border border-amber-500/20 hover:border-amber-500/40 transition-all">
+              <img 
+                src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/JoTYzDKmJGePIxyY.png" 
+                alt="Comparación Paquetes Individual vs Colectivo"
+                className="w-full h-auto"
+              />
+            </div>
+            
+            {/* Flujo de Ingresos */}
+            <div className="rounded-xl overflow-hidden border border-green-500/20 hover:border-green-500/40 transition-all">
+              <img 
+                src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/rFERIOTnjibrclCR.png" 
+                alt="Flujo de Ingresos - Usuario Carga, EVGreen Gestiona, Tú Recibes 70%"
+                className="w-full h-auto"
+              />
+            </div>
+            
+            {/* Ventajas Competitivas */}
+            <div className="rounded-xl overflow-hidden border border-amber-500/20 hover:border-amber-500/40 transition-all">
+              <img 
+                src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/zxEPdgvAsMzqXnGE.png" 
+                alt="Ventajas Competitivas - Solar, Ubicaciones Premium, IA, Experiencia"
+                className="w-full h-auto"
+              />
+            </div>
+          </div>
+
+          {/* CTA */}
+          <div className="text-center mt-10">
+            <a href="#calculadora">
+              <Button size="lg" className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white gap-2 px-8">
+                <Calculator className="w-5 h-5" />
+                Calcular Mi Retorno
+                <ChevronRight className="w-5 h-5" />
+              </Button>
+            </a>
+          </div>
+        </div>
+      </section>
+
       {/* Sección de Crowdfunding - Estaciones por Ciudad */}
       <CrowdfundingSection />
 
