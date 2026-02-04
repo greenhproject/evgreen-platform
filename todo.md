@@ -1615,3 +1615,7 @@
 - [x] Mostrar estadísticas reales (total enviadas, tasa de lectura, usuarios activos)
 - [x] Probar envío a diferentes tipos de audiencia (todos, solo clientes, inversionistas, etc.)
 
+
+
+## Mejoras Recibo de Carga - 3 Febrero 2026
+- [x] Mostrar banner configurado en el recibo de carga en lugar del mensaje genérico "Gracias por cargar con EVGreen"
