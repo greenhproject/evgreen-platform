@@ -147,6 +147,7 @@ export default function AdminCrowdfunding() {
     zone: "",
     address: "",
     targetAmount: 1000000000,
+    raisedAmount: 0,
     minimumInvestment: 50000000,
     totalPowerKw: 480,
     chargerCount: 4,
@@ -221,6 +222,7 @@ export default function AdminCrowdfunding() {
       zone: "",
       address: "",
       targetAmount: 1000000000,
+      raisedAmount: 0,
       minimumInvestment: 50000000,
       totalPowerKw: 480,
       chargerCount: 4,
@@ -258,6 +260,7 @@ export default function AdminCrowdfunding() {
       zone: project.zone,
       address: project.address || "",
       targetAmount: Number(project.targetAmount),
+      raisedAmount: Number(project.raisedAmount) || 0,
       minimumInvestment: Number(project.minimumInvestment),
       totalPowerKw: project.totalPowerKw || 480,
       chargerCount: project.chargerCount || 4,
@@ -643,7 +646,7 @@ export default function AdminCrowdfunding() {
             </TabsContent>
 
             <TabsContent value="financial" className="space-y-4 mt-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>Meta de Inversión (COP)</Label>
                   <Input
@@ -653,6 +656,17 @@ export default function AdminCrowdfunding() {
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     {formatCOP(formData.targetAmount)}
+                  </p>
+                </div>
+                <div>
+                  <Label>Monto Recaudado (COP)</Label>
+                  <Input
+                    type="number"
+                    value={formData.raisedAmount}
+                    onChange={(e) => setFormData({ ...formData, raisedAmount: parseInt(e.target.value) || 0 })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formatCOP(formData.raisedAmount)} ({((formData.raisedAmount / formData.targetAmount) * 100).toFixed(1)}%)
                   </p>
                 </div>
                 <div>

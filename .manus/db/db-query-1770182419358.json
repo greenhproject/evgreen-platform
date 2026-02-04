@@ -1,0 +1,50 @@
+{
+  "query": "SELECT id, city, zone, targetAmount, raisedAmount, status FROM crowdfunding_projects;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, city, zone, targetAmount, raisedAmount, status FROM crowdfunding_projects;",
+  "rows": [
+    {
+      "id": "1",
+      "city": "Bogotá",
+      "zone": "Usaquén / Zona Norte",
+      "targetAmount": "1000000000",
+      "raisedAmount": "650000000",
+      "status": "IN_PROGRESS"
+    },
+    {
+      "id": "2",
+      "city": "Medellín",
+      "zone": "El Poblado",
+      "targetAmount": "1000000000",
+      "raisedAmount": "420000000",
+      "status": "IN_PROGRESS"
+    },
+    {
+      "id": "3",
+      "city": "Cali",
+      "zone": "Ciudad Jardín",
+      "targetAmount": "1000000000",
+      "raisedAmount": "180000000",
+      "status": "IN_PROGRESS"
+    },
+    {
+      "id": "4",
+      "city": "Barranquilla",
+      "zone": "Alto Prado",
+      "targetAmount": "1000000000",
+      "raisedAmount": "50000000",
+      "status": "OPEN"
+    },
+    {
+      "id": "5",
+      "city": "Cartagena",
+      "zone": "Bocagrande",
+      "targetAmount": "1000000000",
+      "raisedAmount": "0",
+      "status": "DRAFT"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tcity\tzone\ttargetAmount\traisedAmount\tstatus\n1\tBogotá\tUsaquén / Zona Norte\t1000000000\t650000000\tIN_PROGRESS\n2\tMedellín\tEl Poblado\t1000000000\t420000000\tIN_PROGRESS\n3\tCali\tCiudad Jardín\t1000000000\t180000000\tIN_PROGRESS\n4\tBarranquilla\tAlto Prado\t1000000000\t50000000\tOPEN\n5\tCartagena\tBocagrande\t1000000000\t0\tDRAFT\n",
+  "stderr": "",
+  "execution_time_ms": 67
+}

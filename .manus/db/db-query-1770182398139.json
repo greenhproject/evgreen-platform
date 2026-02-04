@@ -1,0 +1,37 @@
+{
+  "query": "SELECT * FROM crowdfunding_projects LIMIT 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT * FROM crowdfunding_projects LIMIT 1;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Estación Bogotá Norte",
+      "description": "Estación premium de carga rápida en la zona norte de Bogotá. 4 cargadores DC de 120kW con sistema solar integrado.",
+      "city": "Bogotá",
+      "zone": "Usaquén / Zona Norte",
+      "address": "NULL",
+      "targetAmount": "1000000000",
+      "raisedAmount": "650000000",
+      "minimumInvestment": "50000000",
+      "totalPowerKw": "480",
+      "chargerCount": "4",
+      "chargerPowerKw": "120",
+      "hasSolarPanels": "1",
+      "estimatedRoiPercent": "85.00",
+      "estimatedPaybackMonths": "14",
+      "status": "IN_PROGRESS",
+      "targetDate": "2026-06-30 23:59:59",
+      "launchDate": "NULL",
+      "fundedDate": "NULL",
+      "operationalDate": "NULL",
+      "priority": "1",
+      "stationId": "NULL",
+      "createdById": "NULL",
+      "createdAt": "2026-02-04 02:13:54",
+      "updatedAt": "2026-02-04 02:13:54"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tdescription\tcity\tzone\taddress\ttargetAmount\traisedAmount\tminimumInvestment\ttotalPowerKw\tchargerCount\tchargerPowerKw\thasSolarPanels\testimatedRoiPercent\testimatedPaybackMonths\tstatus\ttargetDate\tlaunchDate\tfundedDate\toperationalDate\tpriority\tstationId\tcreatedById\tcreatedAt\tupdatedAt\n1\tEstación Bogotá Norte\tEstación premium de carga rápida en la zona norte de Bogotá. 4 cargadores DC de 120kW con sistema solar integrado.\tBogotá\tUsaquén / Zona Norte\tNULL\t1000000000\t650000000\t50000000\t480\t4\t120\t1\t85.00\t14\tIN_PROGRESS\t2026-06-30 23:59:59\tNULL\tNULL\tNULL\t1\tNULL\tNULL\t2026-02-04 02:13:54\t2026-02-04 02:13:54\n",
+  "stderr": "",
+  "execution_time_ms": 52
+}
