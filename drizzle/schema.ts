@@ -761,7 +761,7 @@ export const banners = mysqlTable("banners", {
   imageUrl: text("imageUrl").notNull(),
   imageUrlMobile: text("imageUrlMobile"), // Versión móvil optimizada
   // Tipo y ubicación
-  type: bannerTypeEnum.notNull(),
+  type: mysqlEnum("banner_type", ["SPLASH", "CHARGING", "MAP", "PROMOTIONAL", "INFORMATIONAL"]).notNull(),
   // Enlace y acción
   linkUrl: text("linkUrl"),
   linkType: varchar("linkType", { length: 50 }), // EXTERNAL, INTERNAL, STATION, PROMOTION
@@ -780,7 +780,7 @@ export const banners = mysqlTable("banners", {
   isClosable: boolean("isClosable").default(true),
   showOnce: boolean("showOnce").default(false), // Mostrar solo una vez por usuario
   // Estado
-  status: bannerStatusEnum.default("DRAFT").notNull(),
+  status: mysqlEnum("banner_status", ["DRAFT", "ACTIVE", "PAUSED", "EXPIRED", "ARCHIVED"]).default("DRAFT").notNull(),
   // Métricas
   impressions: int("impressions").default(0).notNull(),
   clicks: int("clicks").default(0).notNull(),

@@ -1,0 +1,15 @@
+{
+  "query": "SELECT id, title, imageUrl FROM banners LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, title, imageUrl FROM banners LIMIT 5;",
+  "rows": [
+    {
+      "id": "1",
+      "title": "Prueba publicidad ",
+      "imageUrl": "https://static.wixstatic.com/media/e0f009_ef762ee0fba14f7497f56465dbf21ffc~mv2.png/v1/fill/w_560,h_82,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/e0f009_ef762ee0fba14f7497f56465dbf21ffc~mv2.png"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttitle\timageUrl\n1\tPrueba publicidad \thttps://static.wixstatic.com/media/e0f009_ef762ee0fba14f7497f56465dbf21ffc~mv2.png/v1/fill/w_560,h_82,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/e0f009_ef762ee0fba14f7497f56465dbf21ffc~mv2.png\n",
+  "stderr": "",
+  "execution_time_ms": 58
+}
