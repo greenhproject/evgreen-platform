@@ -1689,3 +1689,16 @@
 ## Correcciones Página Inversionistas - 5 Febrero 2026
 - [x] Agregar fee de cobro por zonas de alta demanda en la página de inversionistas
 - [x] Agregar opción de inversión en cargadores AC de $8.500.000
+
+
+## Sistema de Gestión de Evento - Lanzamiento EVGreen - 6 Febrero 2026
+- [x] Esquema DB: tabla invitados (event_guests), asistencia (event_attendance), pagos evento (event_payments)
+- [x] Crear rol staff y usuario staff evgreen@greenhproject.com
+- [x] Módulo Staff: vista exclusiva con check-in QR y registro de pagos
+- [x] Sistema de invitaciones: crear invitado, generar QR único por invitado
+- [x] Diseño email invitación con imagen EVGreen y QR personalizado
+- [x] Envío de invitaciones por email con diseño profesional
+- [x] Escaneo QR: datos precargados del inversionista al escanear
+- [x] Registro de pagos: depósito $1.000.000 o abono superior configurable
+- [x] Integración Wompi para procesamiento de pagos del evento
+- [x] Procedimientos tRPC para gestión completa del evento
