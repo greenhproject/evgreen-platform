@@ -1702,3 +1702,10 @@
 - [x] Registro de pagos: depósito $1.000.000 o abono superior configurable
 - [x] Integración Wompi para procesamiento de pagos del evento
 - [x] Procedimientos tRPC para gestión completa del evento
+
+## Exportación de Datos del Evento - 6 Febrero 2026
+- [x] Endpoint de exportación de invitados a Excel
+- [x] Endpoint de exportación de pagos a Excel
+- [x] Endpoint de exportación de invitados a PDF
+- [x] Endpoint de exportación de pagos a PDF
+- [x] Botones de exportación en páginas Staff (Guests y Payments)

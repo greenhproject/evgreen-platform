@@ -22,6 +22,12 @@ import {
   createWompiCheckout,
   generatePaymentReference,
 } from "../wompi/config";
+import {
+  exportGuestsToExcel,
+  exportPaymentsToExcel,
+  exportGuestsToPDF,
+  exportPaymentsToPDF,
+} from "./event-export";
 
 // Resend para envío de emails
 const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
@@ -599,6 +605,82 @@ export const eventRouter = router({
   // ============================================================================
   // ESTADÍSTICAS DEL EVENTO
   // ============================================================================
+
+  // ============================================================================
+  // EXPORTACIÓN DE DATOS
+  // ============================================================================
+
+  exportGuestsExcel: staffProcedure.mutation(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+    const guests = await db.select().from(eventGuests).orderBy(eventGuests.founderSlot);
+    const buffer = await exportGuestsToExcel(guests);
+    return { base64: buffer.toString("base64"), filename: `EVGreen_Invitados_${new Date().toISOString().split("T")[0]}.xlsx` };
+  }),
+
+  exportPaymentsExcel: staffProcedure.mutation(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+    const payments = await db
+      .select({
+        id: eventPayments.id,
+        guestName: eventGuests.fullName,
+        guestEmail: eventGuests.email,
+        guestCompany: eventGuests.company,
+        founderSlot: eventGuests.founderSlot,
+        amount: eventPayments.amount,
+        selectedPackage: eventPayments.selectedPackage,
+        paymentStatus: eventPayments.paymentStatus,
+        paymentMethod: eventPayments.paymentMethod,
+        paymentReference: eventPayments.paymentReference,
+        paidAt: eventPayments.paidAt,
+        createdAt: eventPayments.createdAt,
+      })
+      .from(eventPayments)
+      .leftJoin(eventGuests, eq(eventPayments.guestId, eventGuests.id))
+      .orderBy(desc(eventPayments.createdAt));
+
+    const buffer = await exportPaymentsToExcel(payments as any);
+    return { base64: buffer.toString("base64"), filename: `EVGreen_Pagos_${new Date().toISOString().split("T")[0]}.xlsx` };
+  }),
+
+  exportGuestsPDF: staffProcedure.mutation(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+    const guests = await db.select().from(eventGuests).orderBy(eventGuests.founderSlot);
+    const buffer = exportGuestsToPDF(guests);
+    return { base64: buffer.toString("base64"), filename: `EVGreen_Invitados_${new Date().toISOString().split("T")[0]}.pdf` };
+  }),
+
+  exportPaymentsPDF: staffProcedure.mutation(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+    const payments = await db
+      .select({
+        id: eventPayments.id,
+        guestName: eventGuests.fullName,
+        guestEmail: eventGuests.email,
+        guestCompany: eventGuests.company,
+        founderSlot: eventGuests.founderSlot,
+        amount: eventPayments.amount,
+        selectedPackage: eventPayments.selectedPackage,
+        paymentStatus: eventPayments.paymentStatus,
+        paymentMethod: eventPayments.paymentMethod,
+        paymentReference: eventPayments.paymentReference,
+        paidAt: eventPayments.paidAt,
+        createdAt: eventPayments.createdAt,
+      })
+      .from(eventPayments)
+      .leftJoin(eventGuests, eq(eventPayments.guestId, eventGuests.id))
+      .orderBy(desc(eventPayments.createdAt));
+
+    const buffer = exportPaymentsToPDF(payments as any);
+    return { base64: buffer.toString("base64"), filename: `EVGreen_Pagos_${new Date().toISOString().split("T")[0]}.pdf` };
+  }),
 
   getEventStats: staffProcedure.query(async () => {
     const db = await getDb();

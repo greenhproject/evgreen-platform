@@ -33,7 +33,16 @@ import {
   XCircle,
   QrCode,
   Copy,
+  Download,
+  FileSpreadsheet,
+  FileText,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const STATUS_LABELS: Record<string, string> = {
   INVITED: "Invitado",
@@ -133,6 +142,46 @@ export default function Guests() {
 
   const pendingInvitations = guests.filter((g) => !g.invitationSentAt);
 
+  const exportExcelMutation = trpc.event.exportGuestsExcel.useMutation({
+    onSuccess: (data) => {
+      const byteCharacters = atob(data.base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = data.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Excel descargado exitosamente");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const exportPDFMutation = trpc.event.exportGuestsPDF.useMutation({
+    onSuccess: (data) => {
+      const byteCharacters = atob(data.base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = data.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("PDF descargado exitosamente");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* Stats */}
@@ -206,6 +255,25 @@ export default function Guests() {
             Enviar Todas ({pendingInvitations.length})
           </Button>
         )}
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" disabled={exportExcelMutation.isPending || exportPDFMutation.isPending}>
+              <Download className="mr-2 h-4 w-4" />
+              Exportar
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => exportExcelMutation.mutate()}>
+              <FileSpreadsheet className="mr-2 h-4 w-4 text-green-500" />
+              Descargar Excel
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => exportPDFMutation.mutate()}>
+              <FileText className="mr-2 h-4 w-4 text-red-500" />
+              Descargar PDF
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
           <DialogTrigger asChild>
