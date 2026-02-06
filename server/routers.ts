@@ -14,6 +14,7 @@ import { pushRouter } from "./push/push-router";
 import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
 import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } from "./notifications/broadcast-service";
 import { checkAndNotifyMilestones } from "./crowdfunding/progress-notifications";
+import { eventRouter } from "./event/event-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -2298,6 +2299,7 @@ export const appRouter = router({
   push: pushRouter,
   payouts: payoutsRouter,
   crowdfunding: crowdfundingRouter,
+  event: eventRouter,
 });
 
 export type AppRouter = typeof appRouter;

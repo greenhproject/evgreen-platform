@@ -1202,3 +1202,142 @@ export const crowdfundingParticipationsRelations = relations(crowdfundingPartici
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// EVENT MANAGEMENT - INVITADOS Y ASISTENCIA
+// ============================================================================
+
+export const eventGuestStatusEnum = mysqlEnum("event_guest_status", [
+  "INVITED",        // Invitación enviada
+  "CONFIRMED",      // Confirmó asistencia
+  "CHECKED_IN",     // Registrado en el evento
+  "NO_SHOW",        // No se presentó
+  "CANCELLED",      // Canceló
+]);
+
+export const eventPaymentStatusEnum = mysqlEnum("event_payment_status", [
+  "PENDING",        // Pendiente de pago
+  "PAID",           // Pagado
+  "PARTIAL",        // Pago parcial
+  "REFUNDED",       // Reembolsado
+]);
+
+export const eventGuests = mysqlTable("event_guests", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Datos del invitado
+  fullName: varchar("fullName", { length: 255 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  phone: varchar("phone", { length: 20 }),
+  company: varchar("company", { length: 255 }),
+  position: varchar("position", { length: 255 }),
+  
+  // Código QR único para check-in
+  qrCode: varchar("qrCode", { length: 100 }).notNull().unique(),
+  
+  // Paquete de inversión de interés
+  investmentPackage: mysqlEnum("investment_package", ["AC", "DC_INDIVIDUAL", "COLECTIVO"]),
+  investmentAmount: bigint("investmentAmount", { mode: "number" }),
+  
+  // Número de cupo fundador (1-30)
+  founderSlot: int("founderSlot"),
+  
+  // Estado
+  status: eventGuestStatusEnum.default("INVITED").notNull(),
+  
+  // Invitación
+  invitationSentAt: timestamp("invitationSentAt"),
+  invitationEmailId: varchar("invitationEmailId", { length: 255 }),
+  
+  // Check-in
+  checkedInAt: timestamp("checkedInAt"),
+  checkedInBy: int("checkedInBy"), // FK a users (staff que registró)
+  
+  // Relación con usuario (si se crea cuenta)
+  userId: int("userId"), // FK a users
+  
+  // Notas
+  notes: text("notes"),
+  
+  // Creado por (staff)
+  createdById: int("createdById"), // FK a users
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EventGuest = typeof eventGuests.$inferSelect;
+export type InsertEventGuest = typeof eventGuests.$inferInsert;
+
+// ============================================================================
+// EVENT PAYMENTS - PAGOS DE RESERVA DE INVERSIÓN
+// ============================================================================
+
+export const eventPayments = mysqlTable("event_payments", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Relación con invitado
+  guestId: int("guestId").notNull(), // FK a event_guests
+  
+  // Monto del pago
+  amount: bigint("amount", { mode: "number" }).notNull(), // Monto en COP
+  reservationDeposit: bigint("reservationDeposit", { mode: "number" }).default(1000000).notNull(), // Depósito mínimo $1M
+  
+  // Estado del pago
+  paymentStatus: eventPaymentStatusEnum.default("PENDING").notNull(),
+  
+  // Método de pago
+  paymentMethod: varchar("paymentMethod", { length: 50 }), // WOMPI, CASH, TRANSFER, CARD
+  paymentReference: varchar("paymentReference", { length: 255 }),
+  wompiTransactionId: varchar("wompiTransactionId", { length: 255 }),
+  
+  // Paquete seleccionado
+  selectedPackage: mysqlEnum("selected_package", ["AC", "DC_INDIVIDUAL", "COLECTIVO"]).notNull(),
+  
+  // Beneficios fundador aplicados
+  founderBenefits: boolean("founderBenefits").default(true).notNull(),
+  founderDiscount: decimal("founderDiscount", { precision: 5, scale: 2 }).default("5.00"), // 5% descuento
+  zoneFeeFree: boolean("zoneFeeFree").default(true), // Fee de zona gratis
+  
+  // Registrado por (staff)
+  registeredById: int("registeredById"), // FK a users (staff)
+  
+  // Timestamps
+  paidAt: timestamp("paidAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EventPayment = typeof eventPayments.$inferSelect;
+export type InsertEventPayment = typeof eventPayments.$inferInsert;
+
+// ============================================================================
+// EVENT RELATIONS
+// ============================================================================
+
+export const eventGuestsRelations = relations(eventGuests, ({ one, many }) => ({
+  checkedInByUser: one(users, {
+    fields: [eventGuests.checkedInBy],
+    references: [users.id],
+  }),
+  createdBy: one(users, {
+    fields: [eventGuests.createdById],
+    references: [users.id],
+  }),
+  linkedUser: one(users, {
+    fields: [eventGuests.userId],
+    references: [users.id],
+  }),
+  payments: many(eventPayments),
+}));
+
+export const eventPaymentsRelations = relations(eventPayments, ({ one }) => ({
+  guest: one(eventGuests, {
+    fields: [eventPayments.guestId],
+    references: [eventGuests.id],
+  }),
+  registeredBy: one(users, {
+    fields: [eventPayments.registeredById],
+    references: [users.id],
+  }),
+}));
