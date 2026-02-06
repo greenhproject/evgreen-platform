@@ -1709,3 +1709,11 @@
 - [x] Endpoint de exportación de invitados a PDF
 - [x] Endpoint de exportación de pagos a PDF
 - [x] Botones de exportación en páginas Staff (Guests y Payments)
+
+
+## Resumen Ejecutivo Estadísticas Evento - 6 Febrero 2026
+- [x] Mejorar endpoint getEventStats con distribución por paquete y recaudación
+- [x] Gráfico de distribución de invitados por paquete de inversión
+- [x] Gráfico de progreso de recaudación vs meta
+- [x] Resumen ejecutivo con KPIs principales
+- [x] Timeline de actividad del evento

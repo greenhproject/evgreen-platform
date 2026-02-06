@@ -716,6 +716,58 @@ export const eventRouter = router({
       .where(sql`investment_package IS NOT NULL`)
       .groupBy(eventGuests.investmentPackage);
 
+    // Distribución por método de pago
+    const paymentMethodDist = await db
+      .select({
+        method: eventPayments.paymentMethod,
+        count: sql<number>`COUNT(*)`,
+        total: sql<number>`COALESCE(SUM(amount), 0)`,
+      })
+      .from(eventPayments)
+      .where(sql`event_payment_status = 'PAID'`)
+      .groupBy(eventPayments.paymentMethod);
+
+    // Pagos recientes (últimos 10)
+    const recentPayments = await db
+      .select({
+        id: eventPayments.id,
+        guestName: eventGuests.fullName,
+        amount: eventPayments.amount,
+        selectedPackage: eventPayments.selectedPackage,
+        paymentMethod: eventPayments.paymentMethod,
+        paymentStatus: eventPayments.paymentStatus,
+        paidAt: eventPayments.paidAt,
+        createdAt: eventPayments.createdAt,
+      })
+      .from(eventPayments)
+      .leftJoin(eventGuests, eq(eventPayments.guestId, eventGuests.id))
+      .orderBy(desc(eventPayments.createdAt))
+      .limit(10);
+
+    // Invitaciones enviadas vs pendientes
+    const [invitationStats] = await db
+      .select({
+        sent: sql<number>`SUM(CASE WHEN invitation_sent_at IS NOT NULL THEN 1 ELSE 0 END)`,
+        pending: sql<number>`SUM(CASE WHEN invitation_sent_at IS NULL THEN 1 ELSE 0 END)`,
+      })
+      .from(eventGuests);
+
+    // Meta de recaudación: 30 cupos * $1M reserva = $30M mínimo
+    const reservationGoal = 30000000;
+    const totalPaid = Number(paymentStats?.totalPaid) || 0;
+    const goalProgress = Math.min((totalPaid / reservationGoal) * 100, 100);
+
+    // Inversión potencial total por paquete
+    const PACKAGE_AMOUNTS: Record<string, number> = {
+      AC: 8500000,
+      DC_INDIVIDUAL: 85000000,
+      COLECTIVO: 200000000,
+    };
+    const potentialInvestment = packageDistribution.reduce((acc: number, p: any) => {
+      const pkg = p.package || "AC";
+      return acc + (PACKAGE_AMOUNTS[pkg] || 0) * Number(p.count);
+    }, 0);
+
     return {
       guests: {
         total: Number(guestStats?.total) || 0,
@@ -725,16 +777,33 @@ export const eventRouter = router({
         cancelled: Number(guestStats?.cancelled) || 0,
         founderSlotsUsed: Number(guestStats?.slotsUsed) || 0,
         founderSlotsAvailable: 30 - (Number(guestStats?.slotsUsed) || 0),
+        invitationsSent: Number(invitationStats?.sent) || 0,
+        invitationsPending: Number(invitationStats?.pending) || 0,
       },
       payments: {
-        totalPaid: Number(paymentStats?.totalPaid) || 0,
+        totalPaid,
         totalPending: Number(paymentStats?.totalPending) || 0,
         paidCount: Number(paymentStats?.paidCount) || 0,
         pendingCount: Number(paymentStats?.pendingCount) || 0,
+        reservationGoal,
+        goalProgress: Math.round(goalProgress * 10) / 10,
+        potentialInvestment,
+        averagePayment: Number(paymentStats?.paidCount) > 0
+          ? Math.round(totalPaid / Number(paymentStats?.paidCount))
+          : 0,
       },
       packageDistribution: packageDistribution.map((p) => ({
         package: p.package,
         count: Number(p.count),
+      })),
+      paymentMethodDistribution: paymentMethodDist.map((p) => ({
+        method: p.method,
+        count: Number(p.count),
+        total: Number(p.total),
+      })),
+      recentPayments: recentPayments.map((p) => ({
+        ...p,
+        amount: Number(p.amount),
       })),
     };
   }),
