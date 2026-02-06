@@ -81,6 +81,27 @@ const COSTOS_OPERATIVOS_PORCENTAJE = 0.15; // 15% mantenimiento, seguros, etc.
 // ============================================================================
 
 const PAQUETES = {
+  AC: {
+    nombre: "Paquete AC Básico",
+    descripcion: "1 Cargador AC 7.4kW - Ideal para residencias y comercios",
+    precio: 8500000, // $8.5 millones COP
+    potenciaKw: 7.4, // 7.4 kW carga lenta
+    cantidadCargadores: 1,
+    tipo: "AC Lento",
+    conSolar: false,
+    horasUsoConservador: 6,
+    horasUsoOptimista: 16,
+    horasUsoRealista: 10, // Mayor uso por carga nocturna
+    eficienciaCarga: 0.95, // 95% eficiencia AC
+    caracteristicas: [
+      "Cargador AC 7.4kW Tipo 2",
+      "Instalación profesional incluida",
+      "100% propiedad del inversionista",
+      "Ideal para carga nocturna",
+      "Dashboard en tiempo real",
+      "Liquidaciones mensuales automáticas"
+    ]
+  },
   INDIVIDUAL: {
     nombre: "Paquete Individual",
     descripcion: "1 Cargador Huawei FusionCharge 120kW DC",
@@ -189,11 +210,27 @@ const ESTACIONES_ROADMAP = [
   }
 ];
 
-// Zonas premium con fee adicional (solo paquete individual)
+// Zonas con fee adicional por alta demanda (paquetes Individual y AC)
+// El fee se cobra por ubicación en zonas de alto tráfico vehicular eléctrico
 const ZONAS_PREMIUM = {
-  A: { nombre: "Zona Premium A", zonas: ["Usaquén", "Chapinero", "Zona T"], fee: 5000000 },
-  B: { nombre: "Zona Premium B", zonas: ["Suba Norte", "Cedritos", "Santa Bárbara"], fee: 3000000 },
-  C: { nombre: "Zona Estándar", zonas: ["Otras zonas de Bogotá"], fee: 0 }
+  A: { 
+    nombre: "Zona Alta Demanda", 
+    zonas: ["Usaquén", "Chapinero", "Zona T", "Aeropuerto", "Centros Comerciales"], 
+    fee: 5000000,
+    descripcion: "Zonas con mayor flujo de vehículos eléctricos y demanda garantizada"
+  },
+  B: { 
+    nombre: "Zona Media Demanda", 
+    zonas: ["Suba Norte", "Cedritos", "Santa Bárbara", "Corredores Viales"], 
+    fee: 3000000,
+    descripcion: "Zonas con buen tráfico y crecimiento de demanda"
+  },
+  C: { 
+    nombre: "Zona Estándar", 
+    zonas: ["Otras zonas de Bogotá y ciudades principales"], 
+    fee: 0,
+    descripcion: "Sin fee adicional - demanda variable"
+  }
 };
 
 // ============================================================================
@@ -202,7 +239,7 @@ const ZONAS_PREMIUM = {
 
 export default function Investors() {
   // Estado para la calculadora
-  const [paqueteSeleccionado, setPaqueteSeleccionado] = useState<"INDIVIDUAL" | "COLECTIVO">("COLECTIVO");
+  const [paqueteSeleccionado, setPaqueteSeleccionado] = useState<"AC" | "INDIVIDUAL" | "COLECTIVO">("COLECTIVO");
   const [horasUso, setHorasUso] = useState(4); // Conservador por defecto
   const [precioVenta, setPrecioVenta] = useState(PRECIO_VENTA_KWH_DEFAULT);
   const [zonaPremium, setZonaPremium] = useState<"A" | "B" | "C">("C");
@@ -247,7 +284,11 @@ export default function Investors() {
     let potenciaTotal: number; // Potencia total de la estación/cargador
     let porcentajeParticipacion = 1;
 
-    if (paqueteSeleccionado === "INDIVIDUAL") {
+    if (paqueteSeleccionado === "AC") {
+      // Paquete AC - cargador lento para residencias/comercios
+      inversionBase = paquete.precio;
+      potenciaTotal = paquete.potenciaKw * paquete.cantidadCargadores; // 7.4kW
+    } else if (paqueteSeleccionado === "INDIVIDUAL") {
       inversionBase = paquete.precio;
       potenciaTotal = paquete.potenciaKw * paquete.cantidadCargadores; // 120kW
     } else {
@@ -257,8 +298,8 @@ export default function Investors() {
       potenciaTotal = (paquete as any).potenciaTotal; // 480kW total de la estación
     }
 
-    // Fee por zona premium (solo individual)
-    const feePremium = paqueteSeleccionado === "INDIVIDUAL" ? ZONAS_PREMIUM[zonaPremium].fee : 0;
+    // Fee por zona de alta demanda (aplica a AC e Individual, no a Colectivo)
+    const feePremium = (paqueteSeleccionado === "INDIVIDUAL" || paqueteSeleccionado === "AC") ? ZONAS_PREMIUM[zonaPremium].fee : 0;
     const inversionTotal = inversionBase + feePremium;
 
     // ========================================
@@ -784,8 +825,59 @@ export default function Investors() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            {/* Paquete Individual */}
+          <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+            {/* Paquete AC Básico */}
+            <Card className="bg-gradient-to-br from-blue-900/30 to-cyan-900/30 border-blue-500/30 hover:border-blue-500/50 transition-all relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl" />
+              <CardHeader className="pb-4 relative">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-sm font-medium">
+                    Entrada Fácil
+                  </span>
+                  <Battery className="w-8 h-8 text-blue-400" />
+                </div>
+                <CardTitle className="text-xl text-white">{PAQUETES.AC.nombre}</CardTitle>
+                <p className="text-white/60 text-sm">{PAQUETES.AC.descripcion}</p>
+              </CardHeader>
+              <CardContent className="space-y-4 relative">
+                <div className="text-center py-3 rounded-xl bg-black/30">
+                  <p className="text-white/60 text-sm">Inversión Total</p>
+                  <p className="text-3xl font-bold text-white">{formatCOP(PAQUETES.AC.precio)}</p>
+                  <p className="text-blue-400 text-sm mt-1">
+                    {PAQUETES.AC.potenciaKw}kW de potencia
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-2 rounded-lg bg-black/30 text-center">
+                    <p className="text-xl font-bold text-blue-400">~85%</p>
+                    <p className="text-xs text-white/60">ROI Anual</p>
+                  </div>
+                  <div className="p-2 rounded-lg bg-black/30 text-center">
+                    <p className="text-xl font-bold text-blue-400">~14</p>
+                    <p className="text-xs text-white/60">Meses Payback</p>
+                  </div>
+                </div>
+
+                <ul className="space-y-2">
+                  {PAQUETES.AC.caracteristicas.slice(0, 4).map((item, i) => (
+                    <li key={i} className="flex items-center gap-2 text-white/80 text-sm">
+                      <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <a href="#calculadora">
+                  <Button className="w-full bg-blue-500 hover:bg-blue-600 text-white gap-2">
+                    Calcular mi ROI
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </a>
+              </CardContent>
+            </Card>
+
+            {/* Paquete DC Individual */}
             <Card className="bg-gradient-to-br from-green-900/30 to-emerald-900/30 border-green-500/30 hover:border-green-500/50 transition-all relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-2xl" />
               <CardHeader className="pb-4 relative">
@@ -920,17 +1012,23 @@ export default function Investors() {
                 {/* Tipo de paquete */}
                 <div className="space-y-3">
                   <label className="text-white/80 font-medium">Paquete de Inversión</label>
-                  <Tabs value={paqueteSeleccionado} onValueChange={(v) => setPaqueteSeleccionado(v as "INDIVIDUAL" | "COLECTIVO")}>
-                    <TabsList className="grid grid-cols-2 bg-slate-700">
+                  <Tabs value={paqueteSeleccionado} onValueChange={(v) => setPaqueteSeleccionado(v as "AC" | "INDIVIDUAL" | "COLECTIVO")}>
+                    <TabsList className="grid grid-cols-3 bg-slate-700">
+                      <TabsTrigger value="AC" className="data-[state=active]:bg-blue-500">
+                        <div className="text-left">
+                          <p className="font-medium text-sm">AC Básico</p>
+                          <p className="text-xs opacity-70">{formatCOP(PAQUETES.AC.precio)}</p>
+                        </div>
+                      </TabsTrigger>
                       <TabsTrigger value="INDIVIDUAL" className="data-[state=active]:bg-green-500">
                         <div className="text-left">
-                          <p className="font-medium">Individual</p>
+                          <p className="font-medium text-sm">DC Individual</p>
                           <p className="text-xs opacity-70">{formatCOP(PAQUETES.INDIVIDUAL.precio)}</p>
                         </div>
                       </TabsTrigger>
                       <TabsTrigger value="COLECTIVO" className="data-[state=active]:bg-amber-500">
                         <div className="text-left">
-                          <p className="font-medium">Colectivo</p>
+                          <p className="font-medium text-sm">Colectivo</p>
                           <p className="text-xs opacity-70">Desde {formatCOP(PAQUETES.COLECTIVO.participacionMinima)}</p>
                         </div>
                       </TabsTrigger>
@@ -1003,6 +1101,44 @@ export default function Investors() {
                     <span>$2,200 (premium)</span>
                   </div>
                 </div>
+
+                {/* Zona de alta demanda (solo para AC e Individual) */}
+                {(paqueteSeleccionado === "AC" || paqueteSeleccionado === "INDIVIDUAL") && (
+                  <div className="space-y-3">
+                    <label className="text-white/80 font-medium">Zona de Ubicación (Fee Alta Demanda)</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {Object.entries(ZONAS_PREMIUM).map(([key, zona]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setZonaPremium(key as "A" | "B" | "C")}
+                          className={`p-3 rounded-lg border transition-all text-left ${
+                            zonaPremium === key
+                              ? "bg-green-500/20 border-green-500 text-white"
+                              : "bg-slate-700/50 border-white/10 text-white/70 hover:border-white/30"
+                          }`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className="font-medium">{zona.nombre}</p>
+                              <p className="text-xs opacity-70">{zona.zonas.join(", ")}</p>
+                            </div>
+                            <div className="text-right">
+                              {zona.fee > 0 ? (
+                                <span className="text-amber-400 font-bold">+{formatCOP(zona.fee)}</span>
+                              ) : (
+                                <span className="text-green-400">Sin fee</span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-amber-400">
+                      * El fee por zona de alta demanda se suma a la inversión base por ubicaciones con mayor tráfico de vehículos eléctricos
+                    </p>
+                  </div>
+                )}
 
                 {/* Info de costos */}
                 <div className="p-4 rounded-lg bg-slate-700/50 border border-white/10">

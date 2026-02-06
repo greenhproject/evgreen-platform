@@ -1684,3 +1684,8 @@
 - [x] Calcular recaudación real basada en suma de participaciones confirmadas
 - [x] Permitir edición manual de montos recaudados desde admin
 - [x] Actualizar barras de progreso en landing con datos reales de BD
+
+
+## Correcciones Página Inversionistas - 5 Febrero 2026
+- [x] Agregar fee de cobro por zonas de alta demanda en la página de inversionistas
+- [x] Agregar opción de inversión en cargadores AC de $8.500.000
