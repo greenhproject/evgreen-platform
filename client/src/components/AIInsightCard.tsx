@@ -90,31 +90,27 @@ export function AIInsightCard({ type, stationId, className, onAskAI }: AIInsight
     <Card className={`relative overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 to-transparent ${className}`}>
       <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2" />
       
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-2 relative">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-primary/10">
               <Sparkles className="h-4 w-4 text-primary" />
             </div>
             <CardTitle className="text-sm font-medium">Sugerencia de IA</CardTitle>
-          </div>
-          <div className="flex items-center gap-2">
             {insights.length > 1 && (
-              <Badge variant="outline" className="text-xs">
+              <Badge variant="outline" className="text-xs ml-1">
                 {currentInsightIndex + 1}/{insights.length}
               </Badge>
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 hover:bg-destructive/20 hover:text-destructive rounded-full transition-colors"
-              onClick={handleDismiss}
-              aria-label="Cerrar sugerencia"
-              type="button"
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
+          <button
+            className="h-10 w-10 min-w-[40px] flex items-center justify-center rounded-full bg-white/10 hover:bg-destructive/30 hover:text-destructive transition-colors active:scale-90"
+            onClick={handleDismiss}
+            aria-label="Cerrar sugerencia"
+            type="button"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
       </CardHeader>
 

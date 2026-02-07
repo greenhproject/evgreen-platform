@@ -1820,3 +1820,7 @@
 
 ## Animación de transición en marcadores del mapa - 7 Febrero 2026
 - [x] Agregar animación fade suave al filtrar marcadores (aparecer/desaparecer con escala bounce)
+
+## Bugs UI - EV Assistant / Sugerencia IA - 7 Febrero 2026
+- [x] Botón X de "Sugerencia de IA" corrido y difícil de cerrar - Agrandado a 40x40px con fondo visible y feedback táctil
+- [x] Dos X duplicadas en el header del EV Assistant - Eliminada X manual, se usa solo la del SheetContent

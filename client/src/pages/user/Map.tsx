@@ -417,7 +417,7 @@ export default function UserMap() {
         </div>
 
         {/* Widget de sugerencia de IA */}
-        <div className="absolute left-4 top-24 right-20 max-w-sm">
+        <div className="absolute left-4 top-24 right-4 sm:right-20 max-w-sm z-10">
           <AIInsightCard 
             type="map" 
             className="bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60"
