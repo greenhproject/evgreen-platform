@@ -44,6 +44,7 @@ type StationData = {
     id: number;
     status: string;
     connectorType: string;
+    chargeType?: string;
     powerKw: string;
   }>;
 };
@@ -78,6 +79,7 @@ interface Station {
     id: number;
     status: string;
     connectorType: string;
+    chargeType?: string;
     powerKw: string;
   }>;
 }
@@ -173,115 +175,6 @@ export default function UserMap() {
     }
   };
 
-  // Agregar marcadores de estaciones al mapa
-  useEffect(() => {
-    if (!mapInstance || !stations || stations.length === 0) return;
-
-    // Limpiar marcadores anteriores (si los hubiera)
-    const markers: google.maps.marker.AdvancedMarkerElement[] = [];
-
-    // Crear marcadores para cada estación
-    stations.forEach((stationData: any) => {
-      const station = 'station' in stationData ? stationData.station : stationData;
-      const evses = stationData.evses || [];
-      const lat = parseFloat(station.latitude);
-      const lng = parseFloat(station.longitude);
-      
-      if (isNaN(lat) || isNaN(lng)) return;
-
-      // Determinar tipo de carga de la estación
-      const hasDC = evses.some((e: any) => e.chargeType === 'DC');
-      const hasAC = evses.some((e: any) => e.chargeType === 'AC');
-      const availableCount = evses.filter((e: any) => e.status === 'AVAILABLE').length;
-      const isAvailable = availableCount > 0;
-
-      // Colores según tipo: DC=azul eléctrico, AC=ámbar, Mixto=verde
-      let bgColor = '#10b981'; // verde por defecto
-      let borderColor = '#059669';
-      let label = '⚡';
-      if (hasDC && hasAC) {
-        bgColor = '#10b981'; // verde esmeralda para mixto
-        borderColor = '#059669';
-        label = 'AC/DC';
-      } else if (hasDC) {
-        bgColor = '#3b82f6'; // azul para DC rápida
-        borderColor = '#2563eb';
-        label = 'DC';
-      } else if (hasAC) {
-        bgColor = '#f59e0b'; // ámbar para AC
-        borderColor = '#d97706';
-        label = 'AC';
-      }
-
-      // Opacidad reducida si no hay disponibles
-      const opacity = isAvailable ? '1' : '0.6';
-
-      // Crear elemento personalizado para el marcador
-      const markerContent = document.createElement('div');
-      markerContent.style.cssText = `
-        display: flex; flex-direction: column; align-items: center; cursor: pointer; opacity: ${opacity};
-      `;
-      markerContent.innerHTML = `
-        <div style="
-          display: flex; align-items: center; justify-content: center;
-          width: 44px; height: 44px; border-radius: 50%;
-          background: ${bgColor}; border: 3px solid ${borderColor};
-          box-shadow: 0 4px 12px ${bgColor}44, 0 2px 4px rgba(0,0,0,0.3);
-          position: relative;
-        ">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-          </svg>
-          ${!isAvailable ? '<div style="position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#ef4444;border:2px solid white;"></div>' : ''}
-        </div>
-        <div style="
-          margin-top: 4px; padding: 1px 6px; border-radius: 8px;
-          background: ${bgColor}; color: white;
-          font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        ">${label}</div>
-        <div style="
-          width: 0; height: 0;
-          border-left: 6px solid transparent;
-          border-right: 6px solid transparent;
-          border-top: 6px solid ${bgColor};
-          margin-top: -1px;
-        "></div>
-      `;
-
-      const marker = new google.maps.marker.AdvancedMarkerElement({
-        map: mapInstance,
-        position: { lat, lng },
-        title: station.name,
-        content: markerContent,
-      });
-
-      // Agregar evento de clic
-      marker.addListener('click', () => {
-        const normalizedStation = normalizeStation(stationData);
-        handleStationSelect(normalizedStation);
-      });
-
-      markers.push(marker);
-    });
-
-    // Si hay estaciones y no hay ubicación del usuario, centrar en la primera estación
-    if (stations.length > 0 && !userLocation) {
-      const firstStation = 'station' in stations[0] ? stations[0].station : stations[0];
-      const lat = parseFloat(firstStation.latitude);
-      const lng = parseFloat(firstStation.longitude);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        mapInstance.setCenter({ lat, lng });
-        mapInstance.setZoom(12);
-      }
-    }
-
-    // Cleanup
-    return () => {
-      markers.forEach(marker => marker.map = null);
-    };
-  }, [mapInstance, stations, userLocation]);
-
   // Manejar selección de estación
   const handleStationSelect = (station: Station) => {
     setSelectedStation(station);
@@ -317,11 +210,124 @@ export default function UserMap() {
         return false;
       }
     }
+    // Filtro por tipo de carga (AC/DC)
+    if (filters.chargeType !== "all" && station.evses) {
+      const hasMatchingEvse = station.evses.some((e) => e.chargeType === filters.chargeType);
+      if (!hasMatchingEvse) return false;
+    }
+    // Filtro por tipo de conector
+    if (filters.connectorType !== "all" && station.evses) {
+      const hasMatchingConnector = station.evses.some((e) => e.connectorType === filters.connectorType);
+      if (!hasMatchingConnector) return false;
+    }
+    // Filtro por disponibilidad
     if (filters.available && getAvailableCount(station) === 0) {
       return false;
     }
     return true;
   });
+
+  // Agregar marcadores de estaciones filtradas al mapa
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    // Limpiar marcadores anteriores
+    const markers: google.maps.marker.AdvancedMarkerElement[] = [];
+
+    // Crear marcadores para cada estación filtrada
+    filteredStations.forEach((station) => {
+      const lat = parseFloat(station.latitude);
+      const lng = parseFloat(station.longitude);
+      
+      if (isNaN(lat) || isNaN(lng)) return;
+
+      // Determinar tipo de carga de la estación
+      const hasDC = station.evses?.some((e) => e.chargeType === 'DC');
+      const hasAC = station.evses?.some((e) => e.chargeType === 'AC');
+      const availableCount = station.evses?.filter((e) => e.status === 'AVAILABLE').length || 0;
+      const isAvailable = availableCount > 0;
+
+      // Colores según tipo: DC=azul eléctrico, AC=ámbar, Mixto=verde
+      let bgColor = '#10b981';
+      let borderColor = '#059669';
+      let label = '⚡';
+      if (hasDC && hasAC) {
+        bgColor = '#10b981';
+        borderColor = '#059669';
+        label = 'AC/DC';
+      } else if (hasDC) {
+        bgColor = '#3b82f6';
+        borderColor = '#2563eb';
+        label = 'DC';
+      } else if (hasAC) {
+        bgColor = '#f59e0b';
+        borderColor = '#d97706';
+        label = 'AC';
+      }
+
+      const opacity = isAvailable ? '1' : '0.6';
+
+      const markerContent = document.createElement('div');
+      markerContent.style.cssText = `
+        display: flex; flex-direction: column; align-items: center; cursor: pointer; opacity: ${opacity};
+      `;
+      markerContent.innerHTML = `
+        <div style="
+          display: flex; align-items: center; justify-content: center;
+          width: 44px; height: 44px; border-radius: 50%;
+          background: ${bgColor}; border: 3px solid ${borderColor};
+          box-shadow: 0 4px 12px ${bgColor}44, 0 2px 4px rgba(0,0,0,0.3);
+          position: relative;
+        ">
+          <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"white\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\">
+            <path d=\"M13 2L3 14h9l-1 8 10-12h-9l1-8z\"/>
+          </svg>
+          ${!isAvailable ? '<div style="position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#ef4444;border:2px solid white;"></div>' : ''}
+        </div>
+        <div style="
+          margin-top: 4px; padding: 1px 6px; border-radius: 8px;
+          background: ${bgColor}; color: white;
+          font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        ">${label}</div>
+        <div style="
+          width: 0; height: 0;
+          border-left: 6px solid transparent;
+          border-right: 6px solid transparent;
+          border-top: 6px solid ${bgColor};
+          margin-top: -1px;
+        "></div>
+      `;
+
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        map: mapInstance,
+        position: { lat, lng },
+        title: station.name,
+        content: markerContent,
+      });
+
+      marker.addListener('click', () => {
+        handleStationSelect(station);
+      });
+
+      markers.push(marker);
+    });
+
+    // Si hay estaciones y no hay ubicación del usuario, centrar en la primera
+    if (filteredStations.length > 0 && !userLocation) {
+      const first = filteredStations[0];
+      const lat = parseFloat(first.latitude);
+      const lng = parseFloat(first.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        mapInstance.setCenter({ lat, lng });
+        mapInstance.setZoom(12);
+      }
+    }
+
+    return () => {
+      markers.forEach(marker => marker.map = null);
+    };
+  }, [mapInstance, filteredStations, userLocation]);
 
   return (
     <UserLayout showHeader={false} showBottomNav={true}>
