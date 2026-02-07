@@ -1889,7 +1889,11 @@ export async function updateUserSubscription(userId: number, data: {
   const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
   
   const tier = data.planId === "premium" ? "PREMIUM" : data.planId === "basic" ? "BASIC" : "FREE";
-  const discountPercentage = tier === "PREMIUM" ? "20" : tier === "BASIC" ? "10" : "0";
+  // Descuentos basados en los planes actualizados
+  // Básico: 3% kWh, Premium: 5% kWh (el descuento en ocupación se aplica por separado)
+  const discountPercentage = tier === "PREMIUM" ? "5" : tier === "BASIC" ? "3" : "0";
+  const freeReservationsPerMonth = tier === "PREMIUM" ? 5 : tier === "BASIC" ? 2 : 0;
+  const prioritySupport = tier !== "FREE";
   
   if (existing.length === 0) {
     // Crear nueva suscripción
@@ -1898,6 +1902,8 @@ export async function updateUserSubscription(userId: number, data: {
       tier: tier as any,
       stripeSubscriptionId: data.stripeSubscriptionId,
       discountPercentage,
+      freeReservationsPerMonth,
+      prioritySupport,
       startDate: new Date(),
       isActive: data.status === "active",
     });
@@ -1908,6 +1914,8 @@ export async function updateUserSubscription(userId: number, data: {
     if (data.planId) {
       updateData.tier = tier;
       updateData.discountPercentage = discountPercentage;
+      updateData.freeReservationsPerMonth = freeReservationsPerMonth;
+      updateData.prioritySupport = prioritySupport;
     }
     if (data.status) {
       updateData.isActive = data.status === "active";

@@ -32,28 +32,35 @@ export const PRODUCTS = {
   SUBSCRIPTION_BASIC: {
     id: "subscription_basic",
     name: "Plan Básico EVGreen",
-    description: "10% de descuento en todas las cargas + prioridad en reservas",
-    pricePerMonth: 29900, // $29,900 COP/mes
+    description: "3% desc. en kWh + 10% desc. en tarifa de ocupación + reservas extendidas",
+    pricePerMonth: 18900, // $18,900 COP/mes
     currency: "cop",
+    discountKwh: 3, // 3% descuento en kWh
+    discountOccupancy: 10, // 10% descuento en tarifa de ocupación
+    reservationExtensionMinutes: 15, // 15 min extra en reservas
     benefits: [
-      "10% de descuento en todas las cargas",
-      "Prioridad en reservas",
-      "Soporte por chat",
+      "3% de descuento en el kWh en la red de estaciones",
+      "10% de descuento en la tarifa de ocupación",
+      "15 min de rango extendido en reservas de cargadores",
+      "Soporte prioritario en estaciones de carga",
     ],
   },
   
   SUBSCRIPTION_PREMIUM: {
     id: "subscription_premium",
     name: "Plan Premium EVGreen",
-    description: "20% de descuento + acceso a cargadores exclusivos + sin penalización por ocupación",
-    pricePerMonth: 59900, // $59,900 COP/mes
+    description: "5% desc. en kWh + 15% desc. en ocupación + tarjeta física personalizada",
+    pricePerMonth: 33900, // $33,900 COP/mes
     currency: "cop",
+    discountKwh: 5, // 5% descuento en kWh
+    discountOccupancy: 15, // 15% descuento en tarifa de ocupación
+    reservationExtensionMinutes: 20, // 20 min extra en reservas
     benefits: [
-      "20% de descuento en todas las cargas",
-      "Acceso a cargadores exclusivos",
-      "Sin penalización por ocupación",
-      "Prioridad máxima en reservas",
-      "Soporte telefónico 24/7",
+      "5% de descuento en el kWh en la red de cargadores",
+      "15% de descuento en la tarifa de ocupación",
+      "20 min de rango extendido en reservas de cargadores",
+      "Soporte prioritario en estaciones de carga",
+      "Tarjeta física personalizada para inicio rápido de carga",
     ],
   },
   

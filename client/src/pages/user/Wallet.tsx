@@ -299,7 +299,7 @@ export default function UserWallet() {
             {/* Planes disponibles */}
             <div className="grid gap-4">
               {/* Plan Básico */}
-              <Card className="p-4 border-2 hover:border-primary/50 transition-all">
+              <Card className="p-4 border-2 hover:border-blue-500/50 transition-all">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <h4 className="font-semibold flex items-center gap-2">
@@ -307,14 +307,15 @@ export default function UserWallet() {
                       Plan Básico
                     </h4>
                     <p className="text-2xl font-bold mt-1">
-                      {formatCurrency(29900)}<span className="text-sm font-normal text-muted-foreground">/mes</span>
+                      {formatCurrency(18900)}<span className="text-sm font-normal text-muted-foreground">/mes</span>
                     </p>
                   </div>
-                  <Badge variant="secondary">10% descuento</Badge>
+                  <Badge variant="secondary">3% kWh + 10% ocup.</Badge>
                 </div>
                 <ul className="text-sm text-muted-foreground space-y-1 mb-4">
-                  <li>✓ 10% de descuento en todas las cargas</li>
-                  <li>✓ 2 reservas gratis al mes</li>
+                  <li>✓ 3% de descuento en el kWh</li>
+                  <li>✓ 10% descuento en tarifa de ocupación</li>
+                  <li>✓ 15 min rango extendido en reservas</li>
                   <li>✓ Soporte prioritario</li>
                 </ul>
                 <Button 
@@ -336,16 +337,17 @@ export default function UserWallet() {
                       Plan Premium
                     </h4>
                     <p className="text-2xl font-bold mt-1">
-                      {formatCurrency(59900)}<span className="text-sm font-normal text-muted-foreground">/mes</span>
+                      {formatCurrency(33900)}<span className="text-sm font-normal text-muted-foreground">/mes</span>
                     </p>
                   </div>
-                  <Badge className="bg-primary text-white">20% descuento</Badge>
+                  <Badge className="bg-primary text-white">5% kWh + 15% ocup.</Badge>
                 </div>
                 <ul className="text-sm text-muted-foreground space-y-1 mb-4">
-                  <li>✓ 20% de descuento en todas las cargas</li>
-                  <li>✓ Reservas ilimitadas</li>
-                  <li>✓ Soporte VIP 24/7</li>
-                  <li>✓ Acceso prioritario a cargadores</li>
+                  <li>✓ 5% de descuento en el kWh</li>
+                  <li>✓ 15% descuento en tarifa de ocupación</li>
+                  <li>✓ 20 min rango extendido en reservas</li>
+                  <li>✓ Soporte prioritario</li>
+                  <li>✓ Tarjeta física personalizada</li>
                 </ul>
                 <Button 
                   className="w-full gradient-primary text-white"

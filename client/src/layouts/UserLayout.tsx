@@ -16,7 +16,8 @@ import {
   Settings,
   LogOut,
   ChevronRight,
-  Bell
+  Bell,
+  Crown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -61,7 +62,7 @@ export default function UserLayout({
     { icon: Wallet, label: "Billetera", path: "/wallet" },
     { icon: History, label: "Historial de carga", path: "/history" },
     { icon: Calendar, label: "Reservaciones", path: "/reservations" },
-    { icon: Zap, label: "Suscripción VIP", path: "/subscription" },
+    { icon: Crown, label: "Membresía", path: "/subscription" },
     { icon: MessageCircle, label: "Soporte", path: "/support" },
     { icon: Settings, label: "Ajustes", path: "/settings" },
   ];
