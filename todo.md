@@ -1817,3 +1817,6 @@
 - [x] BUG: Los chips de filtro rápido AC/DC no filtran los marcadores ni la lista de estaciones
 - [x] Corregido: filteredStations ahora aplica filtro chargeType y connectorType
 - [x] Corregido: marcadores del mapa ahora usan filteredStations en lugar de stations crudas
+
+## Animación de transición en marcadores del mapa - 7 Febrero 2026
+- [x] Agregar animación fade suave al filtrar marcadores (aparecer/desaparecer con escala bounce)

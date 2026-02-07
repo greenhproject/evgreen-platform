@@ -269,8 +269,17 @@ export default function UserMap() {
 
       const markerContent = document.createElement('div');
       markerContent.style.cssText = `
-        display: flex; flex-direction: column; align-items: center; cursor: pointer; opacity: ${opacity};
+        display: flex; flex-direction: column; align-items: center; cursor: pointer;
+        opacity: 0; transform: scale(0.5); transition: opacity 0.35s ease-out, transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
       `;
+      // Animar entrada con delay escalonado
+      const stationIndex = filteredStations.indexOf(station);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          markerContent.style.opacity = opacity;
+          markerContent.style.transform = 'scale(1)';
+        }, stationIndex * 80);
+      });
       markerContent.innerHTML = `
         <div style="
           display: flex; align-items: center; justify-content: center;
@@ -325,7 +334,18 @@ export default function UserMap() {
     }
 
     return () => {
-      markers.forEach(marker => marker.map = null);
+      // Animar salida antes de remover
+      markers.forEach((marker, i) => {
+        const el = marker.content as HTMLElement;
+        if (el && el.style) {
+          el.style.opacity = '0';
+          el.style.transform = 'scale(0.5)';
+        }
+      });
+      // Remover después de la animación
+      setTimeout(() => {
+        markers.forEach(marker => marker.map = null);
+      }, 300);
     };
   }, [mapInstance, filteredStations, userLocation]);
 
