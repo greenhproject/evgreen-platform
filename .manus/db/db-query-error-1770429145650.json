@@ -1,0 +1,10 @@
+{
+  "query": "SELECT COUNT(*) as total_guests FROM event_guests; SELECT COUNT(*) as checked_in FROM event_guests WHERE checked_in_at IS NOT NULL; SELECT COUNT(*) as total_payments, SUM(amount) as total_amount FROM event_payments; SELECT * FROM event_guests LIMIT 5; SELECT * FROM event_payments LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT COUNT(*) as total_guests FROM event_guests; SELECT COUNT(*) as checked_in FROM event_guests WHERE checked_in_at IS NOT NULL; SELECT COUNT(*) as total_payments, SUM(amount) as total_amount FROM event_payments; SELECT * FROM event_guests LIMIT 5; SELECT * FROM event_payments LIMIT 5;",
+  "returncode": 1,
+  "logs": [
+    "total_guests",
+    "1",
+    "ERROR 1054 (42S22) at line 1: Unknown column 'checked_in_at' in 'where clause'"
+  ]
+}

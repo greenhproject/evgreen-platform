@@ -1717,3 +1717,12 @@
 - [x] Gráfico de progreso de recaudación vs meta
 - [x] Resumen ejecutivo con KPIs principales
 - [x] Timeline de actividad del evento
+
+
+## Bug Fix - Emails no llegan - 6 Febrero 2026
+- [ ] Diagnosticar por qué los emails de invitación no llegan a Resend
+- [ ] Corregir el envío de emails con manejo de errores adecuado
+
+
+## Bug Fix - Estadísticas no muestran datos reales - 6 Febrero 2026
+- [x] Corregir endpoint getEventStats que retorna ceros a pesar de tener datos

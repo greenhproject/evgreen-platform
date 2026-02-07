@@ -1,0 +1,90 @@
+{
+  "query": "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'event_guests' AND TABLE_SCHEMA = DATABASE();",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'event_guests' AND TABLE_SCHEMA = DATABASE();",
+  "rows": [
+    {
+      "COLUMN_NAME": "id",
+      "DATA_TYPE": "int"
+    },
+    {
+      "COLUMN_NAME": "fullName",
+      "DATA_TYPE": "varchar"
+    },
+    {
+      "COLUMN_NAME": "email",
+      "DATA_TYPE": "varchar"
+    },
+    {
+      "COLUMN_NAME": "phone",
+      "DATA_TYPE": "varchar"
+    },
+    {
+      "COLUMN_NAME": "company",
+      "DATA_TYPE": "varchar"
+    },
+    {
+      "COLUMN_NAME": "position",
+      "DATA_TYPE": "varchar"
+    },
+    {
+      "COLUMN_NAME": "qrCode",
+      "DATA_TYPE": "varchar"
+    },
+    {
+      "COLUMN_NAME": "investment_package",
+      "DATA_TYPE": "enum"
+    },
+    {
+      "COLUMN_NAME": "investmentAmount",
+      "DATA_TYPE": "bigint"
+    },
+    {
+      "COLUMN_NAME": "founderSlot",
+      "DATA_TYPE": "int"
+    },
+    {
+      "COLUMN_NAME": "event_guest_status",
+      "DATA_TYPE": "enum"
+    },
+    {
+      "COLUMN_NAME": "invitationSentAt",
+      "DATA_TYPE": "timestamp"
+    },
+    {
+      "COLUMN_NAME": "invitationEmailId",
+      "DATA_TYPE": "varchar"
+    },
+    {
+      "COLUMN_NAME": "checkedInAt",
+      "DATA_TYPE": "timestamp"
+    },
+    {
+      "COLUMN_NAME": "checkedInBy",
+      "DATA_TYPE": "int"
+    },
+    {
+      "COLUMN_NAME": "userId",
+      "DATA_TYPE": "int"
+    },
+    {
+      "COLUMN_NAME": "notes",
+      "DATA_TYPE": "text"
+    },
+    {
+      "COLUMN_NAME": "createdById",
+      "DATA_TYPE": "int"
+    },
+    {
+      "COLUMN_NAME": "createdAt",
+      "DATA_TYPE": "timestamp"
+    },
+    {
+      "COLUMN_NAME": "updatedAt",
+      "DATA_TYPE": "timestamp"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\tDATA_TYPE\nid\tint\nfullName\tvarchar\nemail\tvarchar\nphone\tvarchar\ncompany\tvarchar\nposition\tvarchar\nqrCode\tvarchar\ninvestment_package\tenum\ninvestmentAmount\tbigint\nfounderSlot\tint\nevent_guest_status\tenum\ninvitationSentAt\ttimestamp\ninvitationEmailId\tvarchar\ncheckedInAt\ttimestamp\ncheckedInBy\tint\nuserId\tint\nnotes\ttext\ncreatedById\tint\ncreatedAt\ttimestamp\nupdatedAt\ttimestamp\n",
+  "stderr": "",
+  "execution_time_ms": 54
+}
