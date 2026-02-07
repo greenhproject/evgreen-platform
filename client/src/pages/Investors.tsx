@@ -1641,32 +1641,39 @@ export default function Investors() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="relative h-64">
+                <div className="relative" style={{ height: '280px' }}>
                   {/* Línea de inversión inicial */}
-                  <div className="absolute left-0 right-0 border-t border-dashed border-amber-500/50" style={{ top: '70%' }}>
-                    <span className="absolute -top-5 left-2 text-xs text-amber-400">
-                      Inversión: {formatCOPShort(calculos.inversionTotal)}
-                    </span>
-                  </div>
+                  {(() => {
+                    const maxRetorno = calculos.ingresoMensual * 120;
+                    const invPct = maxRetorno > 0 ? Math.min((calculos.inversionTotal / maxRetorno) * 100, 95) : 50;
+                    return (
+                      <div className="absolute left-0 right-0 border-t-2 border-dashed border-amber-500/60 z-10" style={{ bottom: `${invPct + 8}%` }}>
+                        <span className="absolute -top-5 left-2 text-xs text-amber-400 font-medium">
+                          Inversión: {formatCOPShort(calculos.inversionTotal)}
+                        </span>
+                      </div>
+                    );
+                  })()}
                   
                   {/* Barras de años */}
-                  <div className="flex items-end justify-around h-full gap-4 pt-8">
+                  <div className="flex items-end gap-1" style={{ height: '100%', paddingTop: '24px', paddingBottom: '24px' }}>
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((ano) => {
                       const retorno = calculos.ingresoMensual * (ano * 12);
                       const maxRetorno = calculos.ingresoMensual * 120;
-                      const altura = (retorno / maxRetorno) * 100;
+                      const alturaPct = maxRetorno > 0 ? (retorno / maxRetorno) * 100 : 5;
                       const superaInversion = retorno >= calculos.inversionTotal;
+                      const barHeight = Math.max(alturaPct, 4);
                       
                       return (
-                        <div key={ano} className="flex-1 flex flex-col items-center gap-1">
-                          <span className="text-xs text-white/60 mb-1">
+                        <div key={ano} className="flex-1 flex flex-col items-center" style={{ height: '100%', justifyContent: 'flex-end' }}>
+                          <span className="text-[10px] text-white/60 mb-1 whitespace-nowrap">
                             {formatCOPShort(retorno)}
                           </span>
                           <div 
-                            className={`w-full rounded-t-lg transition-all ${superaInversion ? 'bg-gradient-to-t from-green-600 to-green-400' : 'bg-gradient-to-t from-amber-600 to-amber-400'}`}
-                            style={{ height: `${Math.max(altura, 5)}%` }}
+                            className={`w-full max-w-[40px] mx-auto rounded-t-md ${superaInversion ? 'bg-gradient-to-t from-green-600 to-green-400' : 'bg-gradient-to-t from-amber-600 to-amber-400'}`}
+                            style={{ height: `${barHeight}%` }}
                           />
-                          <span className="text-xs text-white/60">Año {ano}</span>
+                          <span className="text-[10px] text-white/60 mt-1">Año {ano}</span>
                         </div>
                       );
                     })}

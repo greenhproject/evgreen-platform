@@ -1762,3 +1762,9 @@
 - [x] Actualizar NIT en disclaimer legal: 901.447.678-0
 - [x] Actualizar email de contacto: evgreen@greenhproject.com
 - [x] Actualizar teléfono de contacto: +57 3054124009
+
+## Bug - Gráfico Crecimiento del Capital en blanco - 7 Febrero 2026
+- [ ] BUG: Gráfico de barras "Crecimiento del Capital" aparece vacío (sin barras visibles)
+
+## Bug - Gráfico Crecimiento del Capital en blanco - 7 Febrero 2026
+- [x] BUG: Gráfico de barras Crecimiento del Capital aparece vacío (sin barras visibles)
