@@ -294,13 +294,6 @@ export function AIChatWidget() {
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setIsOpen(false)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
               </div>
             </div>
           </SheetHeader>
