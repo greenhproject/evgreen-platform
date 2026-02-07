@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Search,
   Filter,
@@ -274,24 +275,40 @@ export default function UserMap() {
         </div>
 
         {/* Botones flotantes */}
-        <div className="absolute right-4 top-24 flex flex-col gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-11 w-11 rounded-full bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60 text-white hover:bg-gray-800/95"
-            onClick={() => refetch()}
-          >
-            <RefreshCw className="w-5 h-5" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-11 w-11 rounded-full bg-emerald-600/90 backdrop-blur-md shadow-xl border border-emerald-500/60 text-white hover:bg-emerald-500/95"
-            onClick={centerOnUser}
-          >
-            <Navigation className="w-5 h-5" />
-          </Button>
-        </div>
+        <TooltipProvider delayDuration={300}>
+          <div className="absolute right-4 top-24 flex flex-col gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-11 w-11 rounded-full bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60 text-white hover:bg-gray-800/95"
+                  onClick={() => refetch()}
+                >
+                  <RefreshCw className="w-5 h-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="bg-gray-900 text-white border-gray-700">
+                Actualizar estaciones
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-11 w-11 rounded-full bg-emerald-600/90 backdrop-blur-md shadow-xl border border-emerald-500/60 text-white hover:bg-emerald-500/95"
+                  onClick={centerOnUser}
+                >
+                  <Navigation className="w-5 h-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="bg-gray-900 text-white border-gray-700">
+                Mi ubicación
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
 
         {/* Lista de estaciones (bottom sheet) */}
         <Sheet>

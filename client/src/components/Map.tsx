@@ -116,6 +116,36 @@ interface MapViewProps {
   onMapReady?: (map: google.maps.Map) => void;
 }
 
+// Estilos de modo nocturno para Google Maps
+const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
+  { elementType: "geometry", stylers: [{ color: "#1a1a2e" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#1a1a2e" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#8a8a9a" }] },
+  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#2a2a3e" }] },
+  { featureType: "administrative.land_parcel", elementType: "labels.text.fill", stylers: [{ color: "#5a5a6a" }] },
+  { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#16213e" }] },
+  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#1a2540" }] },
+  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#6a7a8a" }] },
+  { featureType: "poi.park", elementType: "geometry.fill", stylers: [{ color: "#0d3320" }] },
+  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#3a8a5a" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#253050" }] },
+  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#1a2540" }] },
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#7a8a9a" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#2a4060" }] },
+  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1a3050" }] },
+  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#8a9aaa" }] },
+  { featureType: "transit", elementType: "geometry", stylers: [{ color: "#1a2540" }] },
+  { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#6a7a8a" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0a1628" }] },
+  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#3a5a7a" }] },
+];
+
+// Detectar si el tema oscuro está activo
+function isDarkTheme(): boolean {
+  return document.documentElement.classList.contains('dark') ||
+    window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 export function MapView({
   className,
   initialCenter = { lat: 37.7749, lng: -122.4194 },
@@ -131,14 +161,15 @@ export function MapView({
       console.error("Map container not found");
       return;
     }
+    const darkMode = isDarkTheme();
     map.current = new window.google.maps.Map(mapContainer.current, {
       zoom: initialZoom,
       center: initialCenter,
-      mapTypeControl: true,
-      fullscreenControl: true,
+      mapTypeControl: false,
+      fullscreenControl: false,
       zoomControl: true,
       streetViewControl: true,
-      mapId: "DEMO_MAP_ID",
+      ...(darkMode ? { styles: DARK_MAP_STYLES } : { mapId: "DEMO_MAP_ID" }),
     });
     if (onMapReady) {
       onMapReady(map.current);

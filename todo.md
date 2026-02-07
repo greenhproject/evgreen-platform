@@ -1791,3 +1791,8 @@
 - [x] Mejorar contraste de botones de acción del mapa (expandir, ubicación, zoom)
 - [x] Mejorar visibilidad de barra "estaciones cerca" en la parte inferior
 - [x] Hacer botones modernos y estéticos con buen contraste
+
+## Mejoras UX Mapa - 7 Febrero 2026
+- [x] Efecto pulso/glow verde en botón central QR de la barra inferior
+- [x] Tooltips en botones flotantes del mapa (refresh, ubicación)
+- [x] Modo nocturno del mapa de Google Maps cuando el tema es oscuro
