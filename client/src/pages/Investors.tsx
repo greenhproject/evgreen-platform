@@ -1821,23 +1821,23 @@ export default function Investors() {
             <Card className="bg-slate-800/50 border-white/10">
               <CardContent className="p-8">
                 <div className="grid md:grid-cols-3 gap-6">
-                  <a href="mailto:inversiones@evgreen.lat" className="flex items-center gap-4 p-4 rounded-lg bg-black/30 hover:bg-black/50 transition-colors">
+                  <a href="mailto:evgreen@greenhproject.com" className="flex items-center gap-4 p-4 rounded-lg bg-black/30 hover:bg-black/50 transition-colors">
                     <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
                       <Mail className="w-6 h-6 text-green-400" />
                     </div>
                     <div>
                       <p className="text-white/60 text-sm">Email</p>
-                      <p className="text-white font-medium">inversiones@evgreen.lat</p>
+                      <p className="text-white font-medium">evgreen@greenhproject.com</p>
                     </div>
                   </a>
                   
-                  <a href="tel:+573001234567" className="flex items-center gap-4 p-4 rounded-lg bg-black/30 hover:bg-black/50 transition-colors">
+                  <a href="tel:+573054124009" className="flex items-center gap-4 p-4 rounded-lg bg-black/30 hover:bg-black/50 transition-colors">
                     <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
                       <Phone className="w-6 h-6 text-blue-400" />
                     </div>
                     <div>
                       <p className="text-white/60 text-sm">WhatsApp</p>
-                      <p className="text-white font-medium">+57 300 123 4567</p>
+                      <p className="text-white font-medium">+57 305 412 4009</p>
                     </div>
                   </a>
                   
