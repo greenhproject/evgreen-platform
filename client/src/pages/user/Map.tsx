@@ -259,6 +259,33 @@ export default function UserMap() {
               <Filter className="w-5 h-5" />
             </Button>
           </div>
+
+          {/* Chips de filtro rápido */}
+          <div className="flex gap-2 mt-2 overflow-x-auto no-scrollbar">
+            {["all", "AC", "DC"].map((type) => (
+              <button
+                key={type}
+                onClick={() => setFilters({ ...filters, chargeType: type })}
+                className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 shadow-lg ${
+                  filters.chargeType === type
+                    ? "bg-emerald-500 text-white shadow-emerald-500/30"
+                    : "bg-gray-900/80 backdrop-blur-md text-gray-300 border border-gray-700/60 hover:bg-gray-800/90"
+                }`}
+              >
+                {type === "all" ? "⚡ Todos" : type === "AC" ? "🔌 AC" : "⚡ DC Rápida"}
+              </button>
+            ))}
+            <button
+              onClick={() => setFilters({ ...filters, available: !filters.available })}
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 shadow-lg ${
+                filters.available
+                  ? "bg-emerald-500 text-white shadow-emerald-500/30"
+                  : "bg-gray-900/80 backdrop-blur-md text-gray-300 border border-gray-700/60 hover:bg-gray-800/90"
+              }`}
+            >
+              ✅ Disponibles
+            </button>
+          </div>
         </div>
 
         {/* Widget de sugerencia de IA */}
