@@ -1796,3 +1796,7 @@
 - [x] Efecto pulso/glow verde en botón central QR de la barra inferior
 - [x] Tooltips en botones flotantes del mapa (refresh, ubicación)
 - [x] Modo nocturno del mapa de Google Maps cuando el tema es oscuro
+
+## Mejoras UX Escaneo QR y Filtros Mapa - 7 Febrero 2026
+- [x] Animación de carga al escanear QR con spinner verde y feedback visual
+- [x] Filtros rápidos AC/DC como chips visibles debajo de la barra de búsqueda del mapa
