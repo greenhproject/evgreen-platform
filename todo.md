@@ -1800,3 +1800,7 @@
 ## Mejoras UX Escaneo QR y Filtros Mapa - 7 Febrero 2026
 - [x] Animación de carga al escanear QR con spinner verde y feedback visual
 - [x] Filtros rápidos AC/DC como chips visibles debajo de la barra de búsqueda del mapa
+
+## Bug - Error Google Maps "Esta página no puede cargar Google Maps" - 7 Febrero 2026
+- [x] Investigar error de carga de Google Maps (causado por omitir mapId en modo nocturno)
+- [x] Corregir: siempre usar mapId y aplicar estilos oscuros después de inicialización

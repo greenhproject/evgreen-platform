@@ -161,7 +161,6 @@ export function MapView({
       console.error("Map container not found");
       return;
     }
-    const darkMode = isDarkTheme();
     map.current = new window.google.maps.Map(mapContainer.current, {
       zoom: initialZoom,
       center: initialCenter,
@@ -169,8 +168,24 @@ export function MapView({
       fullscreenControl: false,
       zoomControl: true,
       streetViewControl: true,
-      ...(darkMode ? { styles: DARK_MAP_STYLES } : { mapId: "DEMO_MAP_ID" }),
+      mapId: "DEMO_MAP_ID",
     });
+
+    // Aplicar estilos oscuros después de la inicialización si el tema es oscuro
+    const darkMode = isDarkTheme();
+    if (darkMode) {
+      map.current.setOptions({ styles: DARK_MAP_STYLES });
+    }
+
+    // Escuchar cambios de tema del sistema
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleThemeChange = (e: MediaQueryListEvent) => {
+      if (map.current) {
+        map.current.setOptions({ styles: e.matches ? DARK_MAP_STYLES : [] });
+      }
+    };
+    mediaQuery.addEventListener('change', handleThemeChange);
+
     if (onMapReady) {
       onMapReady(map.current);
     }
