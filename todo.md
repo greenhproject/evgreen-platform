@@ -1726,3 +1726,16 @@
 
 ## Bug Fix - Estadísticas no muestran datos reales - 6 Febrero 2026
 - [x] Corregir endpoint getEventStats que retorna ceros a pesar de tener datos
+
+
+## Sistema de Aliados Staff - 7 Febrero 2026
+- [x] Vincular cada invitado con el staff que lo creó (createdById ya existe en DB)
+- [x] Filtrar endpoints para que cada staff solo vea sus propios invitados
+- [x] Vista global solo para evgreen@greenhproject.com (super staff)
+- [x] Estadísticas filtradas por staff (recaudo y asistencia de sus invitados)
+- [x] Control de comisiones: vincular inversionista con staff para liquidación
+- [x] Frontend: mostrar indicador de "Mis Invitados" vs "Todos" según permisos
+- [x] Ranking de aliados en vista global con métricas de rendimiento
+- [x] Sección de comisión estimada en vista personal
+- [x] Exportaciones filtradas por staff (Excel y PDF)
+- [x] Permisos de edición/eliminación: solo el staff creador o super staff

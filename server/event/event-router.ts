@@ -13,7 +13,7 @@ import { z } from "zod";
 import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { eventGuests, eventPayments } from "../../drizzle/schema";
+import { eventGuests, eventPayments, users } from "../../drizzle/schema";
 import { eq, desc, sql, and, like } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { Resend } from "resend";
@@ -35,6 +35,14 @@ const resend = new Resend(resendApiKey);
 
 // URL de la imagen de fondo del evento (CDN)
 const EVENT_BG_IMAGE = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/wQkcPaQJqYVsUtRV.png";
+
+// Email del super staff (vista global de todos los inversionistas)
+const SUPER_STAFF_EMAIL = "evgreen@greenhproject.com";
+
+// Verificar si el usuario es super staff (vista global) o admin
+function isSuperStaff(user: { email?: string | null; role: string }): boolean {
+  return user.role === "admin" || user.email === SUPER_STAFF_EMAIL;
+}
 
 // Procedimiento para staff y admin
 const staffProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -64,7 +72,7 @@ export const eventRouter = router({
   // GESTIÓN DE INVITADOS (Staff)
   // ============================================================================
 
-  // Listar todos los invitados
+  // Listar invitados (filtrado por staff)
   listGuests: staffProcedure
     .input(z.object({
       search: z.string().optional(),
@@ -72,7 +80,7 @@ export const eventRouter = router({
       limit: z.number().min(1).max(100).default(50),
       offset: z.number().min(0).default(0),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
 
@@ -81,6 +89,12 @@ export const eventRouter = router({
       const limit = input?.limit ?? 50;
       const offset = input?.offset ?? 0;
       const conditions: any[] = [];
+      const isGlobal = isSuperStaff(ctx.user);
+
+      // Filtrar por staff si no es super staff
+      if (!isGlobal) {
+        conditions.push(eq(eventGuests.createdById, ctx.user.id));
+      }
 
       if (status && status !== "ALL") {
         conditions.push(eq(eventGuests.status, status));
@@ -93,10 +107,15 @@ export const eventRouter = router({
       }
 
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const statsCondition = !isGlobal ? eq(eventGuests.createdById, ctx.user.id) : undefined;
 
       const guests = await db
-        .select()
+        .select({
+          guest: eventGuests,
+          staffName: users.name,
+        })
         .from(eventGuests)
+        .leftJoin(users, eq(eventGuests.createdById, users.id))
         .where(whereClause)
         .orderBy(desc(eventGuests.createdAt))
         .limit(limit)
@@ -107,20 +126,22 @@ export const eventRouter = router({
         .from(eventGuests)
         .where(whereClause);
 
-      // Estadísticas
+      // Estadísticas (filtradas por staff)
       const [stats] = await db
         .select({
           total: sql<number>`COUNT(*)`,
-          invited: sql<number>`SUM(CASE WHEN event_guest_status = 'INVITED' THEN 1 ELSE 0 END)`,
-          confirmed: sql<number>`SUM(CASE WHEN event_guest_status = 'CONFIRMED' THEN 1 ELSE 0 END)`,
-          checkedIn: sql<number>`SUM(CASE WHEN event_guest_status = 'CHECKED_IN' THEN 1 ELSE 0 END)`,
-          cancelled: sql<number>`SUM(CASE WHEN event_guest_status = 'CANCELLED' THEN 1 ELSE 0 END)`,
+          invited: sql<number>`SUM(CASE WHEN ${eventGuests.status} = 'INVITED' THEN 1 ELSE 0 END)`,
+          confirmed: sql<number>`SUM(CASE WHEN ${eventGuests.status} = 'CONFIRMED' THEN 1 ELSE 0 END)`,
+          checkedIn: sql<number>`SUM(CASE WHEN ${eventGuests.status} = 'CHECKED_IN' THEN 1 ELSE 0 END)`,
+          cancelled: sql<number>`SUM(CASE WHEN ${eventGuests.status} = 'CANCELLED' THEN 1 ELSE 0 END)`,
         })
-        .from(eventGuests);
+        .from(eventGuests)
+        .where(statsCondition);
 
       return {
-        guests,
+        guests: guests.map(g => ({ ...g.guest, staffName: g.staffName })),
         total: countResult?.count || 0,
+        isGlobalView: isGlobal,
         stats: {
           total: Number(stats?.total) || 0,
           invited: Number(stats?.invited) || 0,
@@ -179,7 +200,7 @@ export const eventRouter = router({
       return { success: true, qrCode, founderSlot };
     }),
 
-  // Actualizar invitado
+  // Actualizar invitado (solo el staff que lo creó o super staff)
   updateGuest: staffProcedure
     .input(z.object({
       id: z.number(),
@@ -192,7 +213,7 @@ export const eventRouter = router({
       notes: z.string().optional(),
       status: z.enum(["INVITED", "CONFIRMED", "CHECKED_IN", "NO_SHOW", "CANCELLED"]).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
 
@@ -209,17 +230,33 @@ export const eventRouter = router({
       if (input.notes !== undefined) updateData.notes = input.notes || null;
       if (input.status) updateData.status = input.status;
 
+      // Verificar que el staff tiene permiso sobre este invitado
+      if (!isSuperStaff(ctx.user)) {
+        const [guest] = await db.select().from(eventGuests).where(eq(eventGuests.id, input.id));
+        if (guest && guest.createdById !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Solo puedes editar invitados que tú creaste." });
+        }
+      }
+
       await db.update(eventGuests).set(updateData).where(eq(eventGuests.id, input.id));
 
       return { success: true };
     }),
 
-  // Eliminar invitado
+  // Eliminar invitado (solo el staff que lo creó o super staff)
   deleteGuest: staffProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+      // Verificar que el staff tiene permiso sobre este invitado
+      if (!isSuperStaff(ctx.user)) {
+        const [guest] = await db.select().from(eventGuests).where(eq(eventGuests.id, input.id));
+        if (guest && guest.createdById !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Solo puedes eliminar invitados que tú creaste." });
+        }
+      }
 
       // Primero eliminar pagos asociados
       await db.delete(eventPayments).where(eq(eventPayments.guestId, input.id));
@@ -438,18 +475,24 @@ export const eventRouter = router({
       };
     }),
 
-  // Listar pagos
+  // Listar pagos (filtrado por staff)
   listPayments: staffProcedure
     .input(z.object({
       guestId: z.number().optional(),
       status: z.enum(["PENDING", "PAID", "PARTIAL", "REFUNDED", "ALL"]).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
 
       const params = input || {};
       const conditions: any[] = [];
+      const isGlobal = isSuperStaff(ctx.user);
+
+      // Filtrar por staff: solo ver pagos de invitados que este staff creó
+      if (!isGlobal) {
+        conditions.push(eq(eventGuests.createdById, ctx.user.id));
+      }
 
       if (params.guestId) {
         conditions.push(eq(eventPayments.guestId, params.guestId));
@@ -468,24 +511,35 @@ export const eventRouter = router({
           guestEmail: eventGuests.email,
           guestCompany: eventGuests.company,
           founderSlot: eventGuests.founderSlot,
+          staffName: users.name,
         })
         .from(eventPayments)
         .leftJoin(eventGuests, eq(eventPayments.guestId, eventGuests.id))
+        .leftJoin(users, eq(eventGuests.createdById, users.id))
         .where(whereClause)
         .orderBy(desc(eventPayments.createdAt));
 
-      // Estadísticas de pagos
+      // Estadísticas de pagos (filtradas por staff)
+      const statsConditions: any[] = [];
+      if (!isGlobal) {
+        statsConditions.push(eq(eventGuests.createdById, ctx.user.id));
+      }
+      const statsWhere = statsConditions.length > 0 ? and(...statsConditions) : undefined;
+
       const [paymentStats] = await db
         .select({
           totalPayments: sql<number>`COUNT(*)`,
-          totalAmount: sql<number>`COALESCE(SUM(CASE WHEN event_payment_status = 'PAID' THEN amount ELSE 0 END), 0)`,
-          paidCount: sql<number>`SUM(CASE WHEN event_payment_status = 'PAID' THEN 1 ELSE 0 END)`,
-          pendingCount: sql<number>`SUM(CASE WHEN event_payment_status = 'PENDING' THEN 1 ELSE 0 END)`,
+          totalAmount: sql<number>`COALESCE(SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PAID' THEN ${eventPayments.amount} ELSE 0 END), 0)`,
+          paidCount: sql<number>`SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PAID' THEN 1 ELSE 0 END)`,
+          pendingCount: sql<number>`SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PENDING' THEN 1 ELSE 0 END)`,
         })
-        .from(eventPayments);
+        .from(eventPayments)
+        .leftJoin(eventGuests, eq(eventPayments.guestId, eventGuests.id))
+        .where(statsWhere);
 
       return {
         payments,
+        isGlobalView: isGlobal,
         stats: {
           totalPayments: Number(paymentStats?.totalPayments) || 0,
           totalAmount: Number(paymentStats?.totalAmount) || 0,
@@ -636,7 +690,10 @@ export const eventRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
 
-    const guests = await db.select().from(eventGuests).orderBy(eventGuests.founderSlot);
+    const isGlobal = isSuperStaff(ctx.user);
+    const guests = await db.select().from(eventGuests)
+      .where(!isGlobal ? eq(eventGuests.createdById, ctx.user.id) : undefined)
+      .orderBy(eventGuests.founderSlot);
     const buffer = await exportGuestsToExcel(guests);
     return { base64: buffer.toString("base64"), filename: `EVGreen_Invitados_${new Date().toISOString().split("T")[0]}.xlsx` };
   }),
@@ -645,6 +702,7 @@ export const eventRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
 
+    const isGlobal = isSuperStaff(ctx.user);
     const payments = await db
       .select({
         id: eventPayments.id,
@@ -662,6 +720,7 @@ export const eventRouter = router({
       })
       .from(eventPayments)
       .leftJoin(eventGuests, eq(eventPayments.guestId, eventGuests.id))
+      .where(!isGlobal ? eq(eventGuests.createdById, ctx.user.id) : undefined)
       .orderBy(desc(eventPayments.createdAt));
 
     const buffer = await exportPaymentsToExcel(payments as any);
@@ -672,7 +731,10 @@ export const eventRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
 
-    const guests = await db.select().from(eventGuests).orderBy(eventGuests.founderSlot);
+    const isGlobal = isSuperStaff(ctx.user);
+    const guests = await db.select().from(eventGuests)
+      .where(!isGlobal ? eq(eventGuests.createdById, ctx.user.id) : undefined)
+      .orderBy(eventGuests.founderSlot);
     const buffer = exportGuestsToPDF(guests);
     return { base64: buffer.toString("base64"), filename: `EVGreen_Invitados_${new Date().toISOString().split("T")[0]}.pdf` };
   }),
@@ -681,6 +743,7 @@ export const eventRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
 
+    const isGlobal = isSuperStaff(ctx.user);
     const payments = await db
       .select({
         id: eventPayments.id,
@@ -698,15 +761,19 @@ export const eventRouter = router({
       })
       .from(eventPayments)
       .leftJoin(eventGuests, eq(eventPayments.guestId, eventGuests.id))
+      .where(!isGlobal ? eq(eventGuests.createdById, ctx.user.id) : undefined)
       .orderBy(desc(eventPayments.createdAt));
 
     const buffer = exportPaymentsToPDF(payments as any);
     return { base64: buffer.toString("base64"), filename: `EVGreen_Pagos_${new Date().toISOString().split("T")[0]}.pdf` };
   }),
 
-  getEventStats: staffProcedure.query(async () => {
+  getEventStats: staffProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+    const isGlobal = isSuperStaff(ctx.user);
+    const staffFilter = !isGlobal ? eq(eventGuests.createdById, ctx.user.id) : undefined;
 
     const [guestStats] = await db
       .select({
@@ -717,7 +784,15 @@ export const eventRouter = router({
         cancelled: sql<number>`SUM(CASE WHEN ${eventGuests.status} = 'CANCELLED' THEN 1 ELSE 0 END)`,
         slotsUsed: sql<number>`SUM(CASE WHEN ${eventGuests.founderSlot} IS NOT NULL THEN 1 ELSE 0 END)`,
       })
-      .from(eventGuests);
+      .from(eventGuests)
+      .where(staffFilter);
+
+    // Para pagos, filtrar por invitados del staff
+    const paymentJoinConditions: any[] = [];
+    if (!isGlobal) {
+      paymentJoinConditions.push(eq(eventGuests.createdById, ctx.user.id));
+    }
+    const paymentStaffFilter = paymentJoinConditions.length > 0 ? and(...paymentJoinConditions) : undefined;
 
     const [paymentStats] = await db
       .select({
@@ -726,19 +801,25 @@ export const eventRouter = router({
         paidCount: sql<number>`SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PAID' THEN 1 ELSE 0 END)`,
         pendingCount: sql<number>`SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PENDING' THEN 1 ELSE 0 END)`,
       })
-      .from(eventPayments);
+      .from(eventPayments)
+      .leftJoin(eventGuests, eq(eventPayments.guestId, eventGuests.id))
+      .where(paymentStaffFilter);
 
     // Distribución por paquete
+    const pkgConditions: any[] = [sql`${eventGuests.investmentPackage} IS NOT NULL`];
+    if (!isGlobal) pkgConditions.push(eq(eventGuests.createdById, ctx.user.id));
     const packageDistribution = await db
       .select({
         package: eventGuests.investmentPackage,
         count: sql<number>`COUNT(*)`,
       })
       .from(eventGuests)
-      .where(sql`${eventGuests.investmentPackage} IS NOT NULL`)
+      .where(and(...pkgConditions))
       .groupBy(eventGuests.investmentPackage);
 
     // Distribución por método de pago
+    const pmConditions: any[] = [sql`${eventPayments.paymentStatus} = 'PAID'`];
+    if (!isGlobal) pmConditions.push(eq(eventGuests.createdById, ctx.user.id));
     const paymentMethodDist = await db
       .select({
         method: eventPayments.paymentMethod,
@@ -746,10 +827,13 @@ export const eventRouter = router({
         total: sql<number>`COALESCE(SUM(${eventPayments.amount}), 0)`,
       })
       .from(eventPayments)
-      .where(sql`${eventPayments.paymentStatus} = 'PAID'`)
+      .leftJoin(eventGuests, eq(eventPayments.guestId, eventGuests.id))
+      .where(and(...pmConditions))
       .groupBy(eventPayments.paymentMethod);
 
     // Pagos recientes (últimos 10)
+    const recentConditions: any[] = [];
+    if (!isGlobal) recentConditions.push(eq(eventGuests.createdById, ctx.user.id));
     const recentPayments = await db
       .select({
         id: eventPayments.id,
@@ -760,9 +844,12 @@ export const eventRouter = router({
         paymentStatus: eventPayments.paymentStatus,
         paidAt: eventPayments.paidAt,
         createdAt: eventPayments.createdAt,
+        staffName: users.name,
       })
       .from(eventPayments)
       .leftJoin(eventGuests, eq(eventPayments.guestId, eventGuests.id))
+      .leftJoin(users, eq(eventGuests.createdById, users.id))
+      .where(recentConditions.length > 0 ? and(...recentConditions) : undefined)
       .orderBy(desc(eventPayments.createdAt))
       .limit(10);
 
@@ -772,7 +859,8 @@ export const eventRouter = router({
         sent: sql<number>`SUM(CASE WHEN ${eventGuests.invitationSentAt} IS NOT NULL THEN 1 ELSE 0 END)`,
         pending: sql<number>`SUM(CASE WHEN ${eventGuests.invitationSentAt} IS NULL THEN 1 ELSE 0 END)`,
       })
-      .from(eventGuests);
+      .from(eventGuests)
+      .where(staffFilter);
 
     // Meta de recaudación: 30 cupos * $1M reserva = $30M mínimo
     const reservationGoal = 30000000;
@@ -790,7 +878,29 @@ export const eventRouter = router({
       return acc + (PACKAGE_AMOUNTS[pkg] || 0) * Number(p.count);
     }, 0);
 
+    // Ranking de aliados (solo para super staff)
+    let staffRanking: any[] = [];
+    if (isGlobal) {
+      staffRanking = await db
+        .select({
+          staffId: users.id,
+          staffName: users.name,
+          staffEmail: users.email,
+          totalGuests: sql<number>`COUNT(DISTINCT ${eventGuests.id})`,
+          totalPaid: sql<number>`COALESCE(SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PAID' THEN ${eventPayments.amount} ELSE 0 END), 0)`,
+          paidCount: sql<number>`SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PAID' THEN 1 ELSE 0 END)`,
+        })
+        .from(eventGuests)
+        .innerJoin(users, eq(eventGuests.createdById, users.id))
+        .leftJoin(eventPayments, eq(eventPayments.guestId, eventGuests.id))
+        .where(sql`${users.role} = 'staff'`)
+        .groupBy(users.id, users.name, users.email)
+        .orderBy(sql`totalPaid DESC`);
+    }
+
     return {
+      isGlobalView: isGlobal,
+      staffName: ctx.user.name,
       guests: {
         total: Number(guestStats?.total) || 0,
         invited: Number(guestStats?.invited) || 0,
@@ -826,6 +936,14 @@ export const eventRouter = router({
       recentPayments: recentPayments.map((p) => ({
         ...p,
         amount: Number(p.amount),
+      })),
+      staffRanking: staffRanking.map((s) => ({
+        staffId: s.staffId,
+        staffName: s.staffName,
+        staffEmail: s.staffEmail,
+        totalGuests: Number(s.totalGuests),
+        totalPaid: Number(s.totalPaid),
+        paidCount: Number(s.paidCount),
       })),
     };
   }),
