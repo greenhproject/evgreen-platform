@@ -33,6 +33,7 @@ import UserSettingsPersonalInfo from "./pages/user/settings/PersonalInfo";
 import UserSettingsVehicles from "./pages/user/settings/Vehicles";
 import UserSettingsPaymentMethods from "./pages/user/settings/PaymentMethods";
 import UserSettingsConfig from "./pages/user/settings/Config";
+import UserSubscription from "./pages/user/Subscription";
 
 // Páginas de inversionista
 import InvestorDashboard from "./pages/investor/Dashboard";
@@ -214,6 +215,7 @@ function Router() {
       <Route path="/vehicles" component={UserSettingsVehicles} />
       <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
       <Route path="/settings/config" component={UserSettingsConfig} />
+      <Route path="/subscription" component={UserSubscription} />
 
       {/* ============================================
           RUTAS DE INVERSIONISTA (con layout)

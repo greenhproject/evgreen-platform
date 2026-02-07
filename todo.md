@@ -1772,3 +1772,17 @@
 ## Enlace WhatsApp directo - 7 Febrero 2026
 - [x] Vincular botón de WhatsApp con wa.me/573054124009 y mensaje predefinido
 - [x] Actualizar todos los enlaces de contacto/teléfono a WhatsApp directo
+
+## Planes de Membresía EVGreen - 7 Febrero 2026
+- [x] Análisis financiero de viabilidad de planes Básico ($18.900) y Premium ($33.900)
+- [x] Schema de suscripciones en BD (tabla subscriptions ya existía)
+- [x] Endpoints backend: planes, suscripción, estado de membresía (ya existían, actualizados)
+- [x] Página de membresía funcional (corregido 404 en /subscription)
+- [x] UI de planes con comparativa y beneficios
+- [x] Flujo de suscripción/activación (vía Stripe Checkout)
+- [x] Integración con perfil de usuario (menú lateral con ícono Crown)
+- [x] Actualizar precios: Básico $18,900, Premium $33,900
+- [x] Actualizar config.ts de Stripe con nuevos planes y beneficios
+- [x] Actualizar db.ts con nuevos porcentajes (3% y 5% kWh)
+- [x] Actualizar Wallet.tsx con nuevos precios
+- [x] FAQ de membresía incluido en la página
