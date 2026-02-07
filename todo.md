@@ -1757,3 +1757,8 @@
 - [x] Factores de escenario: pesimista (horas ×0.6, precio ×0.85), optimista (horas ×1.4, precio ×1.10)
 - [x] Indicador visual del escenario activo en los resultados
 - [x] Calculadora conectada a parámetros dinámicos del backend (ya no hardcodeada)
+
+## Actualización Datos de Contacto - 7 Febrero 2026
+- [x] Actualizar NIT en disclaimer legal: 901.447.678-0
+- [x] Actualizar email de contacto: evgreen@greenhproject.com
+- [x] Actualizar teléfono de contacto: +57 3054124009
