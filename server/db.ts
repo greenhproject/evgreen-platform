@@ -53,6 +53,9 @@ import {
   favoriteStations,
   FavoriteStation,
   InsertFavoriteStation,
+  wompiTransactions,
+  WompiTransaction,
+  InsertWompiTransaction,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -2010,15 +2013,16 @@ export async function upsertPlatformSettings(settings: Partial<InsertPlatformSet
   }
 }
 
-export async function getStripeConfig() {
+export async function getWompiConfig() {
   const settings = await getPlatformSettings();
   if (!settings) return null;
   
   return {
-    publicKey: settings.stripePublicKey,
-    secretKey: settings.stripeSecretKey,
-    webhookSecret: settings.stripeWebhookSecret,
-    testMode: settings.stripeTestMode,
+    publicKey: settings.wompiPublicKey,
+    privateKey: settings.wompiPrivateKey,
+    integritySecret: settings.wompiIntegritySecret,
+    eventsSecret: settings.wompiEventsSecret,
+    testMode: settings.wompiTestMode,
   };
 }
 
@@ -3658,4 +3662,95 @@ export async function removeFavoriteStation(userId: number, stationId: number) {
     console.error('[DB] Error removing favorite station:', error);
     throw error;
   }
+}
+
+
+// ============================================================================
+// WOMPI TRANSACTIONS OPERATIONS
+// ============================================================================
+
+export async function createWompiTransaction(data: {
+  userId: number;
+  reference: string;
+  amountInCents: number;
+  currency?: string;
+  type: string;
+  customerEmail?: string;
+  description?: string;
+  integritySignature?: string;
+}): Promise<number> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+
+  const result = await database.insert(wompiTransactions).values({
+    userId: data.userId,
+    reference: data.reference,
+    amountInCents: data.amountInCents,
+    currency: data.currency || "COP",
+    type: data.type as any,
+    customerEmail: data.customerEmail,
+    description: data.description,
+    integritySignature: data.integritySignature,
+    status: "PENDING",
+  });
+
+  return (result as any)[0].insertId;
+}
+
+export async function getWompiTransactionByReference(reference: string): Promise<WompiTransaction | null> {
+  const database = await getDb();
+  if (!database) return null;
+
+  const result = await database
+    .select()
+    .from(wompiTransactions)
+    .where(eq(wompiTransactions.reference, reference))
+    .limit(1);
+
+  return result[0] || null;
+}
+
+export async function updateWompiTransactionByReference(
+  reference: string,
+  data: {
+    wompiTransactionId?: string;
+    status?: string;
+    paymentMethodType?: string;
+    processedAt?: Date;
+    webhookReceivedAt?: Date;
+  }
+): Promise<void> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+
+  const updateData: Record<string, any> = {};
+  if (data.wompiTransactionId) updateData.wompiTransactionId = data.wompiTransactionId;
+  if (data.status) updateData.status = data.status;
+  if (data.paymentMethodType) updateData.paymentMethodType = data.paymentMethodType;
+  if (data.processedAt) updateData.processedAt = data.processedAt;
+  if (data.webhookReceivedAt) updateData.webhookReceivedAt = data.webhookReceivedAt;
+
+  if (Object.keys(updateData).length === 0) return;
+
+  await database
+    .update(wompiTransactions)
+    .set(updateData)
+    .where(eq(wompiTransactions.reference, reference));
+}
+
+export async function getWompiTransactionsByUser(
+  userId: number,
+  limit: number = 20,
+  offset: number = 0
+): Promise<WompiTransaction[]> {
+  const database = await getDb();
+  if (!database) return [];
+
+  return database
+    .select()
+    .from(wompiTransactions)
+    .where(eq(wompiTransactions.userId, userId))
+    .orderBy(desc(wompiTransactions.createdAt))
+    .limit(limit)
+    .offset(offset);
 }

@@ -1,80 +1,96 @@
 /**
  * Configuración de Wompi para pagos en Colombia
  * 
- * Wompi es una pasarela de pagos colombiana que soporta:
- * - Tarjetas de crédito/débito
- * - PSE (transferencia bancaria)
- * - Nequi
- * - Bancolombia QR
- * - Efectivo (Efecty, Baloto)
+ * Las llaves se leen dinámicamente desde la tabla platform_settings,
+ * permitiendo al admin cambiarlas desde el panel sin reiniciar el servidor.
+ * 
+ * Wompi soporta: Tarjetas, PSE, Nequi, Bancolombia QR, Efecty
  */
 
 import crypto from "crypto";
+import { getWompiConfig } from "../db";
 
-// Variables de entorno de Wompi
-const WOMPI_PUBLIC_KEY = process.env.WOMPI_PUBLIC_KEY;
-const WOMPI_PRIVATE_KEY = process.env.WOMPI_PRIVATE_KEY;
-const WOMPI_INTEGRITY_SECRET = process.env.WOMPI_INTEGRITY_SECRET;
-const WOMPI_TEST_MODE = process.env.WOMPI_TEST_MODE === "true";
+// ============================================================================
+// TYPES
+// ============================================================================
 
-// URLs de API
-const WOMPI_API_URL = WOMPI_TEST_MODE 
-  ? "https://sandbox.wompi.co/v1"
-  : "https://production.wompi.co/v1";
-
-export interface WompiConfig {
-  publicKey: string | undefined;
-  privateKey: string | undefined;
-  integritySecret: string | undefined;
+export interface WompiKeys {
+  publicKey: string;
+  privateKey: string;
+  integritySecret: string;
+  eventsSecret: string;
   testMode: boolean;
   apiUrl: string;
 }
 
-export const wompiConfig: WompiConfig = {
-  publicKey: WOMPI_PUBLIC_KEY,
-  privateKey: WOMPI_PRIVATE_KEY,
-  integritySecret: WOMPI_INTEGRITY_SECRET,
-  testMode: WOMPI_TEST_MODE,
-  apiUrl: WOMPI_API_URL,
-};
+// ============================================================================
+// DYNAMIC CONFIG (reads from DB each time)
+// ============================================================================
 
 /**
- * Verificar si Wompi está configurado
+ * Obtener configuración de Wompi desde la BD.
+ * Retorna null si no está configurado.
  */
-export function isWompiConfigured(): boolean {
-  return !!(WOMPI_PUBLIC_KEY && WOMPI_PRIVATE_KEY && WOMPI_INTEGRITY_SECRET);
+export async function getWompiKeys(): Promise<WompiKeys | null> {
+  const config = await getWompiConfig();
+  if (!config || !config.publicKey || !config.privateKey || !config.integritySecret) {
+    return null;
+  }
+
+  const testMode = config.testMode ?? true;
+  const apiUrl = testMode
+    ? "https://sandbox.wompi.co/v1"
+    : "https://production.wompi.co/v1";
+
+  return {
+    publicKey: config.publicKey,
+    privateKey: config.privateKey,
+    integritySecret: config.integritySecret,
+    eventsSecret: config.eventsSecret || "",
+    testMode,
+    apiUrl,
+  };
 }
 
 /**
- * Generar firma de integridad para transacciones Wompi
- * @param reference - Referencia única de la transacción
- * @param amountInCents - Monto en centavos
- * @param currency - Moneda (default: COP)
- * @param expirationTime - Fecha de expiración opcional
+ * Verificar si Wompi está configurado (tiene llaves en BD)
+ */
+export async function isWompiConfigured(): Promise<boolean> {
+  const keys = await getWompiKeys();
+  return keys !== null;
+}
+
+// ============================================================================
+// INTEGRITY SIGNATURE
+// ============================================================================
+
+/**
+ * Generar firma de integridad para el widget de checkout de Wompi.
+ * Fórmula: SHA256(reference + amountInCents + currency + [expirationTime] + integritySecret)
  */
 export function generateIntegritySignature(
   reference: string,
   amountInCents: number,
-  currency: string = "COP",
+  currency: string,
+  integritySecret: string,
   expirationTime?: string
 ): string {
-  if (!WOMPI_INTEGRITY_SECRET) {
-    throw new Error("WOMPI_INTEGRITY_SECRET no está configurado");
-  }
-
   let dataToSign = `${reference}${amountInCents}${currency}`;
-  
   if (expirationTime) {
     dataToSign += expirationTime;
   }
-  
-  dataToSign += WOMPI_INTEGRITY_SECRET;
+  dataToSign += integritySecret;
 
   return crypto.createHash("sha256").update(dataToSign).digest("hex");
 }
 
+// ============================================================================
+// REFERENCE GENERATOR
+// ============================================================================
+
 /**
- * Generar referencia única para transacciones
+ * Generar referencia única para transacciones.
+ * Formato: {PREFIX}-{timestamp_base36}-{random}
  */
 export function generatePaymentReference(prefix: string = "EVG"): string {
   const timestamp = Date.now().toString(36);
@@ -82,92 +98,67 @@ export function generatePaymentReference(prefix: string = "EVG"): string {
   return `${prefix}-${timestamp}-${random}`.toUpperCase();
 }
 
+// ============================================================================
+// CHECKOUT URL BUILDER
+// ============================================================================
+
 /**
- * Crear sesión de checkout de Wompi
+ * Construir URL de checkout de Wompi con todos los parámetros.
  */
-export async function createWompiCheckout(params: {
+export function buildCheckoutUrl(params: {
+  publicKey: string;
   reference: string;
   amountInCents: number;
-  currency?: string;
+  currency: string;
+  signature: string;
+  redirectUrl: string;
   customerEmail: string;
   customerName?: string;
   customerPhone?: string;
-  redirectUrl: string;
   expirationTime?: string;
-}): Promise<{
-  checkoutUrl: string;
-  reference: string;
-  signature: string;
-} | null> {
-  if (!isWompiConfigured()) {
-    console.error("[Wompi] Wompi no está configurado");
-    return null;
-  }
-
-  const {
-    reference,
-    amountInCents,
-    currency = "COP",
-    customerEmail,
-    redirectUrl,
-    expirationTime,
-  } = params;
-
-  const signature = generateIntegritySignature(
-    reference,
-    amountInCents,
-    currency,
-    expirationTime
-  );
-
-  // URL del checkout de Wompi
+}): string {
   const checkoutParams = new URLSearchParams({
-    "public-key": WOMPI_PUBLIC_KEY!,
-    currency,
-    "amount-in-cents": amountInCents.toString(),
-    reference,
-    "signature:integrity": signature,
-    "redirect-url": redirectUrl,
-    "customer-data:email": customerEmail,
+    "public-key": params.publicKey,
+    currency: params.currency,
+    "amount-in-cents": params.amountInCents.toString(),
+    reference: params.reference,
+    "signature:integrity": params.signature,
+    "redirect-url": params.redirectUrl,
+    "customer-data:email": params.customerEmail,
   });
 
   if (params.customerName) {
     checkoutParams.append("customer-data:full-name", params.customerName);
   }
-
   if (params.customerPhone) {
     checkoutParams.append("customer-data:phone-number", params.customerPhone);
   }
-
-  if (expirationTime) {
-    checkoutParams.append("expiration-time", expirationTime);
+  if (params.expirationTime) {
+    checkoutParams.append("expiration-time", params.expirationTime);
   }
 
-  const checkoutUrl = `https://checkout.wompi.co/p/?${checkoutParams.toString()}`;
-
-  return {
-    checkoutUrl,
-    reference,
-    signature,
-  };
+  return `https://checkout.wompi.co/p/?${checkoutParams.toString()}`;
 }
 
-/**
- * Consultar estado de una transacción
- */
-export async function getTransactionStatus(transactionId: string): Promise<any> {
-  if (!WOMPI_PRIVATE_KEY) {
-    throw new Error("WOMPI_PRIVATE_KEY no está configurado");
-  }
+// ============================================================================
+// API CALLS (use private key from DB)
+// ============================================================================
 
-  const response = await fetch(`${WOMPI_API_URL}/transactions/${transactionId}`, {
+/**
+ * Consultar estado de una transacción por su ID de Wompi
+ */
+export async function getTransactionStatus(
+  transactionId: string,
+  keys: WompiKeys
+): Promise<any> {
+  const response = await fetch(`${keys.apiUrl}/transactions/${transactionId}`, {
     headers: {
-      Authorization: `Bearer ${WOMPI_PRIVATE_KEY}`,
+      Authorization: `Bearer ${keys.privateKey}`,
     },
   });
 
   if (!response.ok) {
-    throw new Error(`Error consultando transacción: ${response.statusText}`);
+    throw new Error(`Error consultando transacción: ${response.status} ${response.statusText}`);
   }
 
   return response.json();
@@ -176,50 +167,85 @@ export async function getTransactionStatus(transactionId: string): Promise<any> 
 /**
  * Consultar transacción por referencia
  */
-export async function getTransactionByReference(reference: string): Promise<any> {
-  if (!WOMPI_PRIVATE_KEY) {
-    throw new Error("WOMPI_PRIVATE_KEY no está configurado");
-  }
-
+export async function getTransactionByReference(
+  reference: string,
+  keys: WompiKeys
+): Promise<any> {
   const response = await fetch(
-    `${WOMPI_API_URL}/transactions?reference=${encodeURIComponent(reference)}`,
+    `${keys.apiUrl}/transactions?reference=${encodeURIComponent(reference)}`,
     {
       headers: {
-        Authorization: `Bearer ${WOMPI_PRIVATE_KEY}`,
+        Authorization: `Bearer ${keys.privateKey}`,
       },
     }
   );
 
   if (!response.ok) {
-    throw new Error(`Error consultando transacción: ${response.statusText}`);
+    throw new Error(`Error consultando transacción: ${response.status} ${response.statusText}`);
   }
 
   return response.json();
 }
 
+// ============================================================================
+// WEBHOOK SIGNATURE VERIFICATION
+// ============================================================================
+
 /**
- * Verificar firma de webhook de Wompi
+ * Verificar firma de webhook de Wompi.
+ * 
+ * Según la documentación de Wompi:
+ * 1. Concatenar los valores de signature.properties del evento
+ * 2. Concatenar el timestamp del evento
+ * 3. Concatenar el events secret
+ * 4. SHA256 del resultado
+ * 5. Comparar con signature.checksum
  */
-export function verifyWebhookSignature(
-  payload: string,
-  signature: string,
-  timestamp: string
+export function verifyWebhookChecksum(
+  event: any,
+  eventsSecret: string
 ): boolean {
-  if (!WOMPI_INTEGRITY_SECRET) {
+  try {
+    const { signature, timestamp } = event;
+    if (!signature || !signature.properties || !signature.checksum) {
+      return false;
+    }
+
+    // Obtener los valores de las propiedades indicadas
+    let concatenated = "";
+    for (const prop of signature.properties) {
+      const value = getNestedValue(event, prop);
+      concatenated += String(value);
+    }
+
+    // Agregar timestamp y events secret
+    concatenated += timestamp;
+    concatenated += eventsSecret;
+
+    const expectedChecksum = crypto
+      .createHash("sha256")
+      .update(concatenated)
+      .digest("hex");
+
+    return expectedChecksum === signature.checksum;
+  } catch (error) {
+    console.error("[Wompi] Error verificando checksum:", error);
     return false;
   }
-
-  const expectedSignature = crypto
-    .createHash("sha256")
-    .update(`${timestamp}${payload}${WOMPI_INTEGRITY_SECRET}`)
-    .digest("hex");
-
-  return signature === expectedSignature;
 }
 
 /**
- * Estados de transacción de Wompi
+ * Obtener valor anidado de un objeto usando notación de puntos
+ * Ej: getNestedValue(obj, "data.transaction.id")
  */
+function getNestedValue(obj: any, path: string): any {
+  return path.split(".").reduce((current, key) => current?.[key], obj);
+}
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
 export const WOMPI_TRANSACTION_STATUS = {
   PENDING: "PENDING",
   APPROVED: "APPROVED",
@@ -228,9 +254,6 @@ export const WOMPI_TRANSACTION_STATUS = {
   ERROR: "ERROR",
 } as const;
 
-/**
- * Métodos de pago disponibles en Wompi
- */
 export const WOMPI_PAYMENT_METHODS = {
   CARD: "CARD",
   PSE: "PSE",
@@ -238,5 +261,4 @@ export const WOMPI_PAYMENT_METHODS = {
   BANCOLOMBIA_QR: "BANCOLOMBIA_QR",
   BANCOLOMBIA_TRANSFER: "BANCOLOMBIA_TRANSFER",
   EFECTY: "EFECTY",
-  BALOTO: "BALOTO",
 } as const;

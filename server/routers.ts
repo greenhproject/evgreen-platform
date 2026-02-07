@@ -1687,10 +1687,11 @@ const settingsRouter = router({
         contactEmail: "",
         investorPercentage: 80,
         platformFeePercentage: 20,
-        stripePublicKey: "",
-        stripeSecretKey: "",
-        stripeWebhookSecret: "",
-        stripeTestMode: true,
+        wompiPublicKey: "",
+        wompiPrivateKey: "",
+        wompiIntegritySecret: "",
+        wompiEventsSecret: "",
+        wompiTestMode: true,
         enableEnergyBilling: true,
         enableReservationBilling: true,
         enableOccupancyPenalty: true,
@@ -1718,8 +1719,9 @@ const settingsRouter = router({
     // Ocultar claves secretas parcialmente
     return {
       ...settings,
-      stripeSecretKey: settings.stripeSecretKey ? "sk_****" + settings.stripeSecretKey.slice(-4) : "",
-      stripeWebhookSecret: settings.stripeWebhookSecret ? "whsec_****" : "",
+      wompiPrivateKey: settings.wompiPrivateKey ? "prv_****" + settings.wompiPrivateKey.slice(-4) : "",
+      wompiIntegritySecret: settings.wompiIntegritySecret ? "****" + settings.wompiIntegritySecret.slice(-4) : "",
+      wompiEventsSecret: settings.wompiEventsSecret ? "****" + settings.wompiEventsSecret.slice(-4) : "",
       upmeToken: settings.upmeToken ? "****" + settings.upmeToken.slice(-4) : "",
     };
   }),
@@ -1732,10 +1734,11 @@ const settingsRouter = router({
       contactEmail: z.string().email().optional().or(z.literal("")),
       investorPercentage: z.number().min(0).max(100).optional(),
       platformFeePercentage: z.number().min(0).max(100).optional(),
-      stripePublicKey: z.string().optional(),
-      stripeSecretKey: z.string().optional(),
-      stripeWebhookSecret: z.string().optional(),
-      stripeTestMode: z.boolean().optional(),
+      wompiPublicKey: z.string().optional(),
+      wompiPrivateKey: z.string().optional(),
+      wompiIntegritySecret: z.string().optional(),
+      wompiEventsSecret: z.string().optional(),
+      wompiTestMode: z.boolean().optional(),
       enableEnergyBilling: z.boolean().optional(),
       enableReservationBilling: z.boolean().optional(),
       enableOccupancyPenalty: z.boolean().optional(),
@@ -1765,8 +1768,9 @@ const settingsRouter = router({
       const data: any = { ...input, updatedBy: ctx.user.id };
       
       // No actualizar claves si vienen con máscara
-      if (data.stripeSecretKey?.startsWith("sk_****")) delete data.stripeSecretKey;
-      if (data.stripeWebhookSecret?.startsWith("whsec_****")) delete data.stripeWebhookSecret;
+      if (data.wompiPrivateKey?.startsWith("prv_****")) delete data.wompiPrivateKey;
+      if (data.wompiIntegritySecret?.startsWith("****")) delete data.wompiIntegritySecret;
+      if (data.wompiEventsSecret?.startsWith("****")) delete data.wompiEventsSecret;
       if (data.upmeToken?.startsWith("****")) delete data.upmeToken;
       
       await db.upsertPlatformSettings(data);

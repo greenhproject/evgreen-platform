@@ -1001,11 +1001,12 @@ export const platformSettings = mysqlTable("platform_settings", {
   investorPercentage: int("investorPercentage").default(70).notNull(),
   platformFeePercentage: int("platformFeePercentage").default(30).notNull(),
   
-  // Configuración de Stripe
-  stripePublicKey: text("stripePublicKey"),
-  stripeSecretKey: text("stripeSecretKey"),
-  stripeWebhookSecret: text("stripeWebhookSecret"),
-  stripeTestMode: boolean("stripeTestMode").default(true).notNull(),
+  // Configuración de Wompi (pasarela de pagos Colombia)
+  wompiPublicKey: text("wompiPublicKey"),
+  wompiPrivateKey: text("wompiPrivateKey"),
+  wompiIntegritySecret: text("wompiIntegritySecret"),
+  wompiEventsSecret: text("wompiEventsSecret"),
+  wompiTestMode: boolean("wompiTestMode").default(true).notNull(),
   
   // Métodos de ingreso habilitados
   enableEnergyBilling: boolean("enableEnergyBilling").default(true).notNull(),
@@ -1390,5 +1391,71 @@ export const favoriteStationsRelations = relations(favoriteStations, ({ one }) =
   station: one(chargingStations, {
     fields: [favoriteStations.stationId],
     references: [chargingStations.id],
+  }),
+}));
+
+// ============================================================================
+// WOMPI TRANSACTIONS - Transacciones de pago vía Wompi
+// ============================================================================
+
+export const wompiTransactionStatusEnum = mysqlEnum("wompi_tx_status", [
+  "PENDING",
+  "APPROVED",
+  "DECLINED",
+  "VOIDED",
+  "ERROR",
+]);
+
+export const wompiTransactionTypeEnum = mysqlEnum("wompi_tx_type", [
+  "WALLET_RECHARGE",     // Recarga de billetera
+  "SUBSCRIPTION",        // Pago de suscripción
+  "INVESTMENT_DEPOSIT",  // Depósito de inversión
+  "OTHER",
+]);
+
+export const wompiTransactions = mysqlTable("wompi_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Relación con usuario
+  userId: int("userId").notNull(), // FK a users
+  
+  // Datos de Wompi
+  wompiTransactionId: varchar("wompiTransactionId", { length: 255 }).unique(), // ID de transacción de Wompi
+  reference: varchar("reference", { length: 255 }).notNull().unique(), // Referencia única generada por nosotros
+  
+  // Montos
+  amountInCents: bigint("amountInCents", { mode: "number" }).notNull(), // Monto en centavos COP
+  currency: varchar("currency", { length: 3 }).default("COP").notNull(),
+  
+  // Estado y tipo
+  status: wompiTransactionStatusEnum.default("PENDING").notNull(),
+  type: wompiTransactionTypeEnum.notNull(),
+  
+  // Método de pago (CARD, NEQUI, PSE, BANCOLOMBIA_TRANSFER, etc.)
+  paymentMethodType: varchar("paymentMethodType", { length: 50 }),
+  
+  // Metadata del pago
+  customerEmail: varchar("customerEmail", { length: 320 }),
+  description: text("description"),
+  
+  // Firma de integridad generada
+  integritySignature: text("integritySignature"),
+  
+  // Procesamiento
+  processedAt: timestamp("processedAt"),
+  webhookReceivedAt: timestamp("webhookReceivedAt"),
+  
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type WompiTransaction = typeof wompiTransactions.$inferSelect;
+export type InsertWompiTransaction = typeof wompiTransactions.$inferInsert;
+
+export const wompiTransactionsRelations = relations(wompiTransactions, ({ one }) => ({
+  user: one(users, {
+    fields: [wompiTransactions.userId],
+    references: [users.id],
   }),
 }));
