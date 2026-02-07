@@ -1721,7 +1721,7 @@ export default function Investors() {
                   </p>
                   
                   <p className="text-white/50 text-xs mt-2 italic">
-                    Green House Project S.A.S. — NIT pendiente de registro. La información contenida en este sitio web 
+                    Green House Project S.A.S. — NIT 901.447.678-0. La información contenida en este sitio web 
                     es de carácter informativo y no constituye una oferta pública de valores en los términos de la 
                     Ley 964 de 2005 y sus decretos reglamentarios.
                   </p>
