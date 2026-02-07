@@ -1786,3 +1786,8 @@
 - [x] Actualizar db.ts con nuevos porcentajes (3% y 5% kWh)
 - [x] Actualizar Wallet.tsx con nuevos precios
 - [x] FAQ de membresía incluido en la página
+
+## Mejora Contraste Botones Mapa - 7 Febrero 2026
+- [x] Mejorar contraste de botones de acción del mapa (expandir, ubicación, zoom)
+- [x] Mejorar visibilidad de barra "estaciones cerca" en la parte inferior
+- [x] Hacer botones modernos y estéticos con buen contraste

@@ -246,13 +246,13 @@ export default function UserMap() {
                 placeholder="Buscar estaciones cercanas"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 h-12 rounded-xl bg-card/95 backdrop-blur-sm border-border/50 shadow-lg"
+                className="pl-10 pr-4 h-12 rounded-xl bg-gray-900/90 backdrop-blur-md border-gray-700/60 shadow-xl text-white placeholder:text-gray-400"
               />
             </div>
             <Button
               variant="outline"
               size="icon"
-              className="h-12 w-12 rounded-xl bg-card/95 backdrop-blur-sm border-border/50 shadow-lg"
+              className="h-12 w-12 rounded-xl bg-gray-900/90 backdrop-blur-md border-gray-700/60 shadow-xl text-white hover:bg-gray-800/95"
               onClick={() => setShowFilters(true)}
             >
               <Filter className="w-5 h-5" />
@@ -264,7 +264,7 @@ export default function UserMap() {
         <div className="absolute left-4 top-24 right-20 max-w-sm">
           <AIInsightCard 
             type="map" 
-            className="bg-card/95 backdrop-blur-sm shadow-lg"
+            className="bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60"
             onAskAI={(question) => {
               // Abrir el chat de IA con la pregunta
               const chatButton = document.querySelector('[data-ai-chat-trigger]') as HTMLButtonElement;
@@ -278,18 +278,18 @@ export default function UserMap() {
           <Button
             variant="outline"
             size="icon"
-            className="h-10 w-10 rounded-full bg-card/95 backdrop-blur-sm shadow-lg"
+            className="h-11 w-11 rounded-full bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60 text-white hover:bg-gray-800/95"
             onClick={() => refetch()}
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className="w-5 h-5" />
           </Button>
           <Button
             variant="outline"
             size="icon"
-            className="h-10 w-10 rounded-full bg-card/95 backdrop-blur-sm shadow-lg"
+            className="h-11 w-11 rounded-full bg-emerald-600/90 backdrop-blur-md shadow-xl border border-emerald-500/60 text-white hover:bg-emerald-500/95"
             onClick={centerOnUser}
           >
-            <Navigation className="w-4 h-4" />
+            <Navigation className="w-5 h-5" />
           </Button>
         </div>
 
@@ -298,7 +298,7 @@ export default function UserMap() {
           <SheetTrigger asChild>
             <Button
               variant="outline"
-              className="absolute bottom-36 left-1/2 -translate-x-1/2 h-8 px-4 rounded-full bg-card/95 backdrop-blur-sm shadow-lg text-sm"
+              className="absolute bottom-36 left-1/2 -translate-x-1/2 h-10 px-5 rounded-full bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60 text-white hover:bg-gray-800/95 text-sm font-medium"
             >
               {filteredStations.length} estaciones cerca
               <ChevronRight className="w-4 h-4 ml-1 rotate-90" />
