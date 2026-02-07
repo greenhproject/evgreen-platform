@@ -703,7 +703,7 @@ export default function Investors() {
 
                       {/* Botón de acción */}
                       {!esProximamente && !estaCompleto && (
-                        <a href="#contacto">
+                        <a href={`https://wa.me/573054124009?text=${encodeURIComponent(`Hola EVGreen, estoy interesado en invertir en la estación de ${estacion.ciudad}. Me gustaría recibir más información.`)}`} target="_blank" rel="noopener noreferrer">
                           <Button className="w-full mt-4 bg-amber-500 hover:bg-amber-600 text-white gap-2">
                             Invertir en {estacion.ciudad}
                             <ArrowRight className="w-4 h-4" />
@@ -780,7 +780,7 @@ export default function Investors() {
                 Estaciones
               </Button>
             </Link>
-            <a href="#contacto">
+            <a href="https://wa.me/573054124009?text=Hola%20EVGreen%2C%20estoy%20interesado%20en%20conocer%20m%C3%A1s%20sobre%20las%20oportunidades%20de%20inversi%C3%B3n%20en%20estaciones%20de%20carga." target="_blank" rel="noopener noreferrer">
               <Button className="bg-green-500 hover:bg-green-600 text-white">
                 Contactar
               </Button>
@@ -1323,7 +1323,7 @@ export default function Investors() {
                   </div>
                 </div>
 
-                <a href="#contacto">
+                <a href="https://wa.me/573054124009?text=Hola%20EVGreen%2C%20me%20gustar%C3%ADa%20solicitar%20una%20asesor%C3%ADa%20personalizada%20sobre%20inversi%C3%B3n%20en%20estaciones%20de%20carga%20de%20veh%C3%ADculos%20el%C3%A9ctricos." target="_blank" rel="noopener noreferrer">
                   <Button className="w-full bg-green-500 hover:bg-green-600 text-white gap-2">
                     Solicitar Asesoría Personalizada
                     <ArrowRight className="w-4 h-4" />
@@ -1838,9 +1838,9 @@ export default function Investors() {
                     </div>
                   </a>
                   
-                  <a href="tel:+573054124009" className="flex items-center gap-4 p-4 rounded-lg bg-black/30 hover:bg-black/50 transition-colors">
-                    <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
-                      <Phone className="w-6 h-6 text-blue-400" />
+                  <a href="https://wa.me/573054124009?text=Hola%20EVGreen%2C%20estoy%20interesado%20en%20invertir%20en%20estaciones%20de%20carga%20EV.%20%C2%BFPodr%C3%ADan%20darme%20m%C3%A1s%20informaci%C3%B3n%3F" target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 rounded-lg bg-black/30 hover:bg-black/50 transition-colors">
+                    <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
+                      <Phone className="w-6 h-6 text-green-400" />
                     </div>
                     <div>
                       <p className="text-white/60 text-sm">WhatsApp</p>
