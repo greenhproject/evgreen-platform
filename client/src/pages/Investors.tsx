@@ -1080,6 +1080,12 @@ export default function Investors() {
                     <span>4h (conservador)</span>
                     <span>20h (optimista)</span>
                   </div>
+                  {paqueteSeleccionado === "COLECTIVO" && (
+                    <p className="text-xs text-amber-400">
+                      * Ubicaciones premium: utilización efectiva de {calculos.horasUsoEfectivas}h/día
+                      (factor 2x por alto tráfico en zonas estratégicas)
+                    </p>
+                  )}
                 </div>
 
                 {/* Precio de venta */}
@@ -1154,7 +1160,8 @@ export default function Investors() {
                     <span className="text-green-400">{formatCOP(calculos.margenNetoPorKwhInversionista)}/kWh</span>
                   </p>
                   <p className="text-xs text-white/40 mt-2">
-                    * Se descuenta 15% para costos operativos (mantenimiento, seguros)
+                    * Se descuenta {Math.round(calculos.costosOperativosPct * 100)}% para costos operativos (mantenimiento, seguros)
+                    {paqueteSeleccionado === "COLECTIVO" && " — economías de escala"}
                   </p>
                 </div>
               </CardContent>
@@ -1471,11 +1478,11 @@ export default function Investors() {
             {/* Tarjetas de proyección */}
             <div className="grid md:grid-cols-3 gap-6 mb-12">
               {[
-                { anos: 3, factor: 3 },
-                { anos: 5, factor: 5 },
-                { anos: 10, factor: 10 },
-              ].map(({ anos, factor }) => {
-                const retornoAcumulado = calculos.ingresoAnual * factor;
+                { anos: 3, meses: 36 },
+                { anos: 5, meses: 60 },
+                { anos: 10, meses: 120 },
+              ].map(({ anos, meses }) => {
+                const retornoAcumulado = calculos.ingresoMensual * meses;
                 const roiTotal = ((retornoAcumulado / calculos.inversionTotal) * 100);
                 const gananciaTotal = retornoAcumulado - calculos.inversionTotal;
                 const esRentable = gananciaTotal > 0;
@@ -1562,8 +1569,8 @@ export default function Investors() {
                   {/* Barras de años */}
                   <div className="flex items-end justify-around h-full gap-4 pt-8">
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((ano) => {
-                      const retorno = calculos.ingresoAnual * ano;
-                      const maxRetorno = calculos.ingresoAnual * 10;
+                      const retorno = calculos.ingresoMensual * (ano * 12);
+                      const maxRetorno = calculos.ingresoMensual * 120;
                       const altura = (retorno / maxRetorno) * 100;
                       const superaInversion = retorno >= calculos.inversionTotal;
                       
