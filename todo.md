@@ -1768,3 +1768,7 @@
 
 ## Bug - Gráfico Crecimiento del Capital en blanco - 7 Febrero 2026
 - [x] BUG: Gráfico de barras Crecimiento del Capital aparece vacío (sin barras visibles)
+
+## Enlace WhatsApp directo - 7 Febrero 2026
+- [x] Vincular botón de WhatsApp con wa.me/573054124009 y mensaje predefinido
+- [x] Actualizar todos los enlaces de contacto/teléfono a WhatsApp directo
