@@ -1041,6 +1041,32 @@ export const platformSettings = mysqlTable("platform_settings", {
   defaultPricePerKwhDC: decimal("defaultPricePerKwhDC", { precision: 10, scale: 2 }).default("1200").notNull(), // Precio base DC (carga rápida)
   enableDifferentiatedPricing: boolean("enableDifferentiatedPricing").default(true).notNull(), // Habilitar precios diferenciados AC/DC
   
+  // ============================================================================
+  // Configuración de la Calculadora de Inversión (página /investors)
+  // ============================================================================
+  
+  // Factor de utilización premium para estaciones colectivas (multiplicador)
+  // Refleja que ubicaciones premium tienen mayor demanda vs ubicaciones estándar
+  factorUtilizacionPremium: decimal("factorUtilizacionPremium", { precision: 4, scale: 2 }).default("2.00").notNull(),
+  
+  // Costos operativos diferenciados por tipo de paquete (%)
+  costosOperativosIndividual: int("costosOperativosIndividual").default(15).notNull(), // 15% para individual
+  costosOperativosColectivo: int("costosOperativosColectivo").default(10).notNull(), // 10% para colectivo (economías de escala)
+  costosOperativosAC: int("costosOperativosAC").default(15).notNull(), // 15% para AC
+  
+  // Eficiencia de carga por tipo (%)
+  eficienciaCargaDC: int("eficienciaCargaDC").default(92).notNull(), // 92% eficiencia DC
+  eficienciaCargaAC: int("eficienciaCargaAC").default(95).notNull(), // 95% eficiencia AC
+  
+  // Costos de energía (COP/kWh)
+  costoEnergiaRed: int("costoEnergiaRed").default(850).notNull(), // Costo promedio red eléctrica
+  costoEnergiaSolar: int("costoEnergiaSolar").default(250).notNull(), // Costo con energía solar
+  
+  // Precio de venta por defecto (COP/kWh)
+  precioVentaDefault: int("precioVentaDefault").default(1800).notNull(),
+  precioVentaMin: int("precioVentaMin").default(1400).notNull(),
+  precioVentaMax: int("precioVentaMax").default(2200).notNull(),
+
   // Metadata
   updatedBy: int("updatedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

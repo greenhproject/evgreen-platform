@@ -1655,6 +1655,25 @@ const settingsRouter = router({
       platformFeePercentage: settings?.platformFeePercentage ?? 20,
     };
   }),
+
+  // Endpoint público para obtener parámetros de la calculadora de inversión
+  getCalculatorParams: publicProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    return {
+      investorPercentage: settings?.investorPercentage ?? 70,
+      factorUtilizacionPremium: parseFloat(String(settings?.factorUtilizacionPremium ?? "2.00")),
+      costosOperativosIndividual: settings?.costosOperativosIndividual ?? 15,
+      costosOperativosColectivo: settings?.costosOperativosColectivo ?? 10,
+      costosOperativosAC: settings?.costosOperativosAC ?? 15,
+      eficienciaCargaDC: settings?.eficienciaCargaDC ?? 92,
+      eficienciaCargaAC: settings?.eficienciaCargaAC ?? 95,
+      costoEnergiaRed: settings?.costoEnergiaRed ?? 850,
+      costoEnergiaSolar: settings?.costoEnergiaSolar ?? 250,
+      precioVentaDefault: settings?.precioVentaDefault ?? 1800,
+      precioVentaMin: settings?.precioVentaMin ?? 1400,
+      precioVentaMax: settings?.precioVentaMax ?? 2200,
+    };
+  }),
   
   get: adminProcedure.query(async () => {
     const settings = await db.getPlatformSettings();
@@ -1683,6 +1702,17 @@ const settingsRouter = router({
         upmeAutoReport: true,
         ocppPort: 9000,
         ocppServerActive: true,
+        factorUtilizacionPremium: "2.00",
+        costosOperativosIndividual: 15,
+        costosOperativosColectivo: 10,
+        costosOperativosAC: 15,
+        eficienciaCargaDC: 92,
+        eficienciaCargaAC: 95,
+        costoEnergiaRed: 850,
+        costoEnergiaSolar: 250,
+        precioVentaDefault: 1800,
+        precioVentaMin: 1400,
+        precioVentaMax: 2200,
       };
     }
     // Ocultar claves secretas parcialmente
@@ -1717,6 +1747,18 @@ const settingsRouter = router({
       upmeAutoReport: z.boolean().optional(),
       ocppPort: z.number().optional(),
       ocppServerActive: z.boolean().optional(),
+      // Parámetros de la calculadora de inversión
+      factorUtilizacionPremium: z.number().min(1).max(5).optional(),
+      costosOperativosIndividual: z.number().min(0).max(50).optional(),
+      costosOperativosColectivo: z.number().min(0).max(50).optional(),
+      costosOperativosAC: z.number().min(0).max(50).optional(),
+      eficienciaCargaDC: z.number().min(50).max(100).optional(),
+      eficienciaCargaAC: z.number().min(50).max(100).optional(),
+      costoEnergiaRed: z.number().min(0).optional(),
+      costoEnergiaSolar: z.number().min(0).optional(),
+      precioVentaDefault: z.number().min(0).optional(),
+      precioVentaMin: z.number().min(0).optional(),
+      precioVentaMax: z.number().min(0).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Filtrar campos vacíos o con valores de máscara
