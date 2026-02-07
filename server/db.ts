@@ -50,6 +50,9 @@ import {
   platformSettings,
   PlatformSettings,
   InsertPlatformSettings,
+  favoriteStations,
+  FavoriteStation,
+  InsertFavoriteStation,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -3587,5 +3590,72 @@ export async function getCrowdfundingParticipationById(participationId: number):
   } catch (error) {
     console.error('[DB] Error getting crowdfunding participation:', error);
     return null;
+  }
+}
+
+// ============================================================================
+// FAVORITOS DE ESTACIONES
+// ============================================================================
+
+export async function getUserFavoriteStations(userId: number) {
+  const database = await getDb();
+  if (!database) return [];
+  try {
+    return await database
+      .select()
+      .from(favoriteStations)
+      .where(eq(favoriteStations.userId, userId))
+      .orderBy(desc(favoriteStations.createdAt));
+  } catch (error) {
+    console.error('[DB] Error getting favorite stations:', error);
+    return [];
+  }
+}
+
+export async function isFavoriteStation(userId: number, stationId: number): Promise<boolean> {
+  const database = await getDb();
+  if (!database) return false;
+  try {
+    const result = await database
+      .select()
+      .from(favoriteStations)
+      .where(and(
+        eq(favoriteStations.userId, userId),
+        eq(favoriteStations.stationId, stationId)
+      ))
+      .limit(1);
+    return result.length > 0;
+  } catch (error) {
+    console.error('[DB] Error checking favorite station:', error);
+    return false;
+  }
+}
+
+export async function addFavoriteStation(userId: number, stationId: number) {
+  const database = await getDb();
+  if (!database) throw new Error('Database not available');
+  try {
+    await database.insert(favoriteStations).values({ userId, stationId }).onDuplicateKeyUpdate({ set: { userId } });
+    return true;
+  } catch (error) {
+    console.error('[DB] Error adding favorite station:', error);
+    throw error;
+  }
+}
+
+export async function removeFavoriteStation(userId: number, stationId: number) {
+  const database = await getDb();
+  if (!database) throw new Error('Database not available');
+  try {
+    await database
+      .delete(favoriteStations)
+      .where(and(
+        eq(favoriteStations.userId, userId),
+        eq(favoriteStations.stationId, stationId)
+      ));
+    return true;
+  } catch (error) {
+    console.error('[DB] Error removing favorite station:', error);
+    throw error;
   }
 }

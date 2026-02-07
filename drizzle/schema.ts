@@ -1367,3 +1367,28 @@ export const eventPaymentsRelations = relations(eventPayments, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+// ============================================================================
+// FAVORITOS DE ESTACIONES
+// ============================================================================
+
+export const favoriteStations = mysqlTable("favorite_stations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK a users
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FavoriteStation = typeof favoriteStations.$inferSelect;
+export type InsertFavoriteStation = typeof favoriteStations.$inferInsert;
+
+export const favoriteStationsRelations = relations(favoriteStations, ({ one }) => ({
+  user: one(users, {
+    fields: [favoriteStations.userId],
+    references: [users.id],
+  }),
+  station: one(chargingStations, {
+    fields: [favoriteStations.stationId],
+    references: [chargingStations.id],
+  }),
+}));

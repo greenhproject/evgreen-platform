@@ -2315,6 +2315,44 @@ const crowdfundingRouter = router({
 // MAIN APP ROUTER
 // ============================================================================
 
+// ============================================================================
+// FAVORITOS ROUTER
+// ============================================================================
+
+const favoritesRouter = router({
+  getMyFavorites: protectedProcedure.query(async ({ ctx }) => {
+    const favorites = await db.getUserFavoriteStations(ctx.user.id);
+    // Obtener detalles de cada estación
+    const stationsWithDetails = await Promise.all(
+      favorites.map(async (fav) => {
+        const station = await db.getChargingStationById(fav.stationId);
+        const stationEvses = await db.getEvsesByStationId(fav.stationId);
+        return station ? { ...fav, station, evses: stationEvses } : null;
+      })
+    );
+    return stationsWithDetails.filter(Boolean);
+  }),
+
+  isFavorite: protectedProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return db.isFavoriteStation(ctx.user.id, input.stationId);
+    }),
+
+  toggle: protectedProcedure
+    .input(z.object({ stationId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const isFav = await db.isFavoriteStation(ctx.user.id, input.stationId);
+      if (isFav) {
+        await db.removeFavoriteStation(ctx.user.id, input.stationId);
+        return { isFavorite: false };
+      } else {
+        await db.addFavoriteStation(ctx.user.id, input.stationId);
+        return { isFavorite: true };
+      }
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -2342,6 +2380,7 @@ export const appRouter = router({
   payouts: payoutsRouter,
   crowdfunding: crowdfundingRouter,
   event: eventRouter,
+  favorites: favoritesRouter,
 });
 
 export type AppRouter = typeof appRouter;
