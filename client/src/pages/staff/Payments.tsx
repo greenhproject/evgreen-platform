@@ -32,6 +32,8 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Eye,
+  Shield,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -101,6 +103,7 @@ export default function Payments() {
 
   const payments = paymentsQuery.data?.payments || [];
   const paymentStats = paymentsQuery.data?.stats;
+  const isGlobalView = paymentsQuery.data?.isGlobalView || false;
   const guests = guestsQuery.data?.guests || [];
 
   const exportExcelMutation = trpc.event.exportPaymentsExcel.useMutation({
@@ -168,6 +171,24 @@ export default function Payments() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
+      {/* Vista indicator */}
+      {isGlobalView && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+          <Eye className="h-4 w-4 text-amber-400" />
+          <span className="text-sm text-amber-400 font-medium">
+            Vista Global — Viendo pagos de todos los aliados
+          </span>
+        </div>
+      )}
+      {!isGlobalView && !paymentsQuery.isLoading && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+          <Shield className="h-4 w-4 text-blue-400" />
+          <span className="text-sm text-blue-400 font-medium">
+            Mis Pagos — Solo ves pagos de tus invitados
+          </span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Pagos de Reserva</h1>
@@ -430,6 +451,11 @@ export default function Payments() {
                       {p.founderSlot && (
                         <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
                           Cupo #{p.founderSlot}
+                        </Badge>
+                      )}
+                      {isGlobalView && (p as any).staffName && (
+                        <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-400 border-purple-500/30">
+                          Aliado: {(p as any).staffName}
                         </Badge>
                       )}
                     </div>
