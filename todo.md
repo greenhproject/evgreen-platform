@@ -1804,3 +1804,11 @@
 ## Bug - Error Google Maps "Esta página no puede cargar Google Maps" - 7 Febrero 2026
 - [x] Investigar error de carga de Google Maps (causado por omitir mapId en modo nocturno)
 - [x] Corregir: siempre usar mapId y aplicar estilos oscuros después de inicialización
+
+## Marcadores AC/DC y Favoritos de Estaciones - 7 Febrero 2026
+- [x] Marcadores diferenciados AC/DC en el mapa (rayo amarillo AC, rayo azul DC)
+- [x] Indicador visual de tipo de carga en cada marcador
+- [x] Sistema de favoritos: tabla en BD para guardar estaciones favoritas
+- [x] Endpoint para agregar/quitar favoritos (toggle con optimistic update)
+- [x] Botón de favorito en tarjeta de estación y lista del bottom sheet
+- [ ] Sección "Favoritos" accesible desde el mapa

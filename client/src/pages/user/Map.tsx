@@ -23,7 +23,8 @@ import {
   CreditCard,
   Car,
   X,
-  Sparkles
+  Sparkles,
+  Heart
 } from "lucide-react";
 import { AIInsightCard } from "@/components/AIInsightCard";
 
@@ -79,6 +80,51 @@ interface Station {
     connectorType: string;
     powerKw: string;
   }>;
+}
+
+// Componente de botón de favorito
+function FavoriteButton({ stationId }: { stationId: number }) {
+  const utils = trpc.useUtils();
+  const { data: isFavorite, isLoading } = trpc.favorites.isFavorite.useQuery({ stationId });
+  const toggleMutation = trpc.favorites.toggle.useMutation({
+    onMutate: async () => {
+      // Optimistic update
+      await utils.favorites.isFavorite.cancel({ stationId });
+      const prev = utils.favorites.isFavorite.getData({ stationId });
+      utils.favorites.isFavorite.setData({ stationId }, !prev);
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev !== undefined) {
+        utils.favorites.isFavorite.setData({ stationId }, context.prev);
+      }
+    },
+    onSettled: () => {
+      utils.favorites.isFavorite.invalidate({ stationId });
+      utils.favorites.getMyFavorites.invalidate();
+    },
+  });
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="rounded-full -mt-1"
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleMutation.mutate({ stationId });
+      }}
+      disabled={isLoading || toggleMutation.isPending}
+    >
+      <Heart
+        className={`w-5 h-5 transition-colors ${
+          isFavorite
+            ? "fill-red-500 text-red-500"
+            : "text-muted-foreground hover:text-red-400"
+        }`}
+      />
+    </Button>
+  );
 }
 
 export default function UserMap() {
@@ -137,15 +183,71 @@ export default function UserMap() {
     // Crear marcadores para cada estación
     stations.forEach((stationData: any) => {
       const station = 'station' in stationData ? stationData.station : stationData;
+      const evses = stationData.evses || [];
       const lat = parseFloat(station.latitude);
       const lng = parseFloat(station.longitude);
       
       if (isNaN(lat) || isNaN(lng)) return;
 
+      // Determinar tipo de carga de la estación
+      const hasDC = evses.some((e: any) => e.chargeType === 'DC');
+      const hasAC = evses.some((e: any) => e.chargeType === 'AC');
+      const availableCount = evses.filter((e: any) => e.status === 'AVAILABLE').length;
+      const isAvailable = availableCount > 0;
+
+      // Colores según tipo: DC=azul eléctrico, AC=ámbar, Mixto=verde
+      let bgColor = '#10b981'; // verde por defecto
+      let borderColor = '#059669';
+      let label = '⚡';
+      if (hasDC && hasAC) {
+        bgColor = '#10b981'; // verde esmeralda para mixto
+        borderColor = '#059669';
+        label = 'AC/DC';
+      } else if (hasDC) {
+        bgColor = '#3b82f6'; // azul para DC rápida
+        borderColor = '#2563eb';
+        label = 'DC';
+      } else if (hasAC) {
+        bgColor = '#f59e0b'; // ámbar para AC
+        borderColor = '#d97706';
+        label = 'AC';
+      }
+
+      // Opacidad reducida si no hay disponibles
+      const opacity = isAvailable ? '1' : '0.6';
+
       // Crear elemento personalizado para el marcador
       const markerContent = document.createElement('div');
-      markerContent.className = 'flex items-center justify-center w-10 h-10 rounded-full bg-primary text-white shadow-lg cursor-pointer';
-      markerContent.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 18H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.19M15 6h2.81A2 2 0 0 1 20 8v8a2 2 0 0 1-2 2h-2"/><path d="M15 2v4"/><path d="M9 2v4"/><path d="M7 10v4"/><path d="M17 10v4"/></svg>`;
+      markerContent.style.cssText = `
+        display: flex; flex-direction: column; align-items: center; cursor: pointer; opacity: ${opacity};
+      `;
+      markerContent.innerHTML = `
+        <div style="
+          display: flex; align-items: center; justify-content: center;
+          width: 44px; height: 44px; border-radius: 50%;
+          background: ${bgColor}; border: 3px solid ${borderColor};
+          box-shadow: 0 4px 12px ${bgColor}44, 0 2px 4px rgba(0,0,0,0.3);
+          position: relative;
+        ">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+          </svg>
+          ${!isAvailable ? '<div style="position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#ef4444;border:2px solid white;"></div>' : ''}
+        </div>
+        <div style="
+          margin-top: 4px; padding: 1px 6px; border-radius: 8px;
+          background: ${bgColor}; color: white;
+          font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        ">${label}</div>
+        <div style="
+          width: 0; height: 0;
+          border-left: 6px solid transparent;
+          border-right: 6px solid transparent;
+          border-top: 6px solid ${bgColor};
+          margin-top: -1px;
+        "></div>
+      `;
 
       const marker = new google.maps.marker.AdvancedMarkerElement({
         map: mapInstance,
@@ -384,13 +486,11 @@ export default function UserMap() {
                         )}
                       </div>
                     </div>
-                    <div className="flex flex-col items-end">
+                    <div className="flex flex-col items-center gap-1">
+                      <FavoriteButton stationId={station.id} />
                       <div className={`w-3 h-3 rounded-full ${
                         station.isOnline ? "status-available" : "status-faulted"
                       }`} />
-                      <span className="text-xs text-muted-foreground mt-2">
-                        2.3 km
-                      </span>
                     </div>
                   </div>
                 </Card>
@@ -411,20 +511,23 @@ export default function UserMap() {
             >
               <Card className="p-4 shadow-2xl border-primary/20">
                 <div className="flex items-start justify-between mb-3">
-                  <div>
+                  <div className="flex-1">
                     <h4 className="font-semibold text-lg">{selectedStation.name}</h4>
                     <p className="text-sm text-muted-foreground">
                       {selectedStation.address}, {selectedStation.city}
                     </p>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full -mt-1 -mr-1"
-                    onClick={() => setSelectedStation(null)}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <FavoriteButton stationId={selectedStation.id} />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="rounded-full -mt-1 -mr-1"
+                      onClick={() => setSelectedStation(null)}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-4 mb-4">
