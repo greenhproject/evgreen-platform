@@ -522,12 +522,25 @@ export const eventRouter = router({
       const emailHtml = generateInvitationEmail(guest, qrUrl);
 
       try {
+        console.log(`[Event] Enviando invitación a ${guest.email} con API Key: ${resendApiKey.substring(0, 10)}...`);
+        
         const result = await resend.emails.send({
           from: "EVGreen <invitaciones@evgreen.lat>",
           to: guest.email,
           subject: "🔋 Invitación Exclusiva | Gran Lanzamiento Red de Carga EVGreen",
           html: emailHtml,
         });
+
+        console.log(`[Event] Resultado Resend:`, JSON.stringify(result));
+
+        // Verificar si Resend retornó un error
+        if (result.error) {
+          console.error(`[Event] Error de Resend:`, result.error);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `Error de Resend: ${result.error.message || JSON.stringify(result.error)}`,
+          });
+        }
 
         // Actualizar estado
         await db
@@ -540,11 +553,12 @@ export const eventRouter = router({
           .where(eq(eventGuests.id, input.guestId));
 
         return { success: true, emailId: result.data?.id };
-      } catch (error) {
-        console.error("[Event] Error enviando invitación:", error);
+      } catch (error: any) {
+        console.error("[Event] Error enviando invitación:", error?.message || error);
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Error enviando la invitación por email",
+          message: `Error enviando la invitación: ${error?.message || 'Error desconocido'}`,
         });
       }
     }),
@@ -573,12 +587,20 @@ export const eventRouter = router({
           const qrUrl = `https://evgreen.lat/event-checkin/${guest.qrCode}`;
           const emailHtml = generateInvitationEmail(guest, qrUrl);
 
+          console.log(`[Event Bulk] Enviando invitación a ${guest.email}...`);
           const result = await resend.emails.send({
             from: "EVGreen <invitaciones@evgreen.lat>",
             to: guest.email,
             subject: "🔋 Invitación Exclusiva | Gran Lanzamiento Red de Carga EVGreen",
             html: emailHtml,
           });
+          console.log(`[Event Bulk] Resultado:`, JSON.stringify(result));
+
+          if (result.error) {
+            console.error(`[Event Bulk] Error Resend para ${guest.email}:`, result.error);
+            failed++;
+            continue;
+          }
 
           await db
             .update(eventGuests)
@@ -689,20 +711,20 @@ export const eventRouter = router({
     const [guestStats] = await db
       .select({
         total: sql<number>`COUNT(*)`,
-        invited: sql<number>`SUM(CASE WHEN event_guest_status = 'INVITED' THEN 1 ELSE 0 END)`,
-        confirmed: sql<number>`SUM(CASE WHEN event_guest_status = 'CONFIRMED' THEN 1 ELSE 0 END)`,
-        checkedIn: sql<number>`SUM(CASE WHEN event_guest_status = 'CHECKED_IN' THEN 1 ELSE 0 END)`,
-        cancelled: sql<number>`SUM(CASE WHEN event_guest_status = 'CANCELLED' THEN 1 ELSE 0 END)`,
-        slotsUsed: sql<number>`SUM(CASE WHEN founderSlot IS NOT NULL THEN 1 ELSE 0 END)`,
+        invited: sql<number>`SUM(CASE WHEN ${eventGuests.status} = 'INVITED' THEN 1 ELSE 0 END)`,
+        confirmed: sql<number>`SUM(CASE WHEN ${eventGuests.status} = 'CONFIRMED' THEN 1 ELSE 0 END)`,
+        checkedIn: sql<number>`SUM(CASE WHEN ${eventGuests.status} = 'CHECKED_IN' THEN 1 ELSE 0 END)`,
+        cancelled: sql<number>`SUM(CASE WHEN ${eventGuests.status} = 'CANCELLED' THEN 1 ELSE 0 END)`,
+        slotsUsed: sql<number>`SUM(CASE WHEN ${eventGuests.founderSlot} IS NOT NULL THEN 1 ELSE 0 END)`,
       })
       .from(eventGuests);
 
     const [paymentStats] = await db
       .select({
-        totalPaid: sql<number>`COALESCE(SUM(CASE WHEN event_payment_status = 'PAID' THEN amount ELSE 0 END), 0)`,
-        totalPending: sql<number>`COALESCE(SUM(CASE WHEN event_payment_status = 'PENDING' THEN amount ELSE 0 END), 0)`,
-        paidCount: sql<number>`SUM(CASE WHEN event_payment_status = 'PAID' THEN 1 ELSE 0 END)`,
-        pendingCount: sql<number>`SUM(CASE WHEN event_payment_status = 'PENDING' THEN 1 ELSE 0 END)`,
+        totalPaid: sql<number>`COALESCE(SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PAID' THEN ${eventPayments.amount} ELSE 0 END), 0)`,
+        totalPending: sql<number>`COALESCE(SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PENDING' THEN ${eventPayments.amount} ELSE 0 END), 0)`,
+        paidCount: sql<number>`SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PAID' THEN 1 ELSE 0 END)`,
+        pendingCount: sql<number>`SUM(CASE WHEN ${eventPayments.paymentStatus} = 'PENDING' THEN 1 ELSE 0 END)`,
       })
       .from(eventPayments);
 
@@ -713,7 +735,7 @@ export const eventRouter = router({
         count: sql<number>`COUNT(*)`,
       })
       .from(eventGuests)
-      .where(sql`investment_package IS NOT NULL`)
+      .where(sql`${eventGuests.investmentPackage} IS NOT NULL`)
       .groupBy(eventGuests.investmentPackage);
 
     // Distribución por método de pago
@@ -721,10 +743,10 @@ export const eventRouter = router({
       .select({
         method: eventPayments.paymentMethod,
         count: sql<number>`COUNT(*)`,
-        total: sql<number>`COALESCE(SUM(amount), 0)`,
+        total: sql<number>`COALESCE(SUM(${eventPayments.amount}), 0)`,
       })
       .from(eventPayments)
-      .where(sql`event_payment_status = 'PAID'`)
+      .where(sql`${eventPayments.paymentStatus} = 'PAID'`)
       .groupBy(eventPayments.paymentMethod);
 
     // Pagos recientes (últimos 10)
@@ -747,8 +769,8 @@ export const eventRouter = router({
     // Invitaciones enviadas vs pendientes
     const [invitationStats] = await db
       .select({
-        sent: sql<number>`SUM(CASE WHEN invitation_sent_at IS NOT NULL THEN 1 ELSE 0 END)`,
-        pending: sql<number>`SUM(CASE WHEN invitation_sent_at IS NULL THEN 1 ELSE 0 END)`,
+        sent: sql<number>`SUM(CASE WHEN ${eventGuests.invitationSentAt} IS NOT NULL THEN 1 ELSE 0 END)`,
+        pending: sql<number>`SUM(CASE WHEN ${eventGuests.invitationSentAt} IS NULL THEN 1 ELSE 0 END)`,
       })
       .from(eventGuests);
 
