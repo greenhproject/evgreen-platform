@@ -1,10 +1,8 @@
 /**
  * Router de Wompi para pagos en Colombia
  * 
- * Endpoints para:
- * - Crear sesiones de checkout
- * - Consultar estado de transacciones
- * - Recargar billetera con PSE/Nequi
+ * Las llaves se leen dinámicamente desde platform_settings (BD).
+ * Las transacciones se guardan en la tabla wompi_transactions.
  */
 
 import { z } from "zod";
@@ -12,42 +10,48 @@ import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import {
+  getWompiKeys,
   isWompiConfigured,
-  createWompiCheckout,
   generatePaymentReference,
-  getTransactionStatus,
+  generateIntegritySignature,
+  buildCheckoutUrl,
   getTransactionByReference,
-  wompiConfig,
   WOMPI_TRANSACTION_STATUS,
 } from "./config";
 
 export const wompiRouter = router({
+  // ========================================================================
   // Verificar si Wompi está configurado
-  isConfigured: publicProcedure.query(() => {
+  // ========================================================================
+  isConfigured: publicProcedure.query(async () => {
+    const keys = await getWompiKeys();
     return {
-      configured: isWompiConfigured(),
-      testMode: wompiConfig.testMode,
-      publicKey: wompiConfig.publicKey ? wompiConfig.publicKey.substring(0, 20) + "..." : null,
+      configured: !!keys,
+      testMode: keys?.testMode ?? true,
+      publicKey: keys?.publicKey ? keys.publicKey.substring(0, 20) + "..." : null,
     };
   }),
 
-  // Obtener llave pública para el frontend
-  getPublicKey: publicProcedure.query(() => {
-    if (!isWompiConfigured()) {
-      return null;
-    }
-    return wompiConfig.publicKey;
+  // ========================================================================
+  // Obtener llave pública para el widget del frontend
+  // ========================================================================
+  getPublicKey: publicProcedure.query(async () => {
+    const keys = await getWompiKeys();
+    return keys?.publicKey ?? null;
   }),
 
+  // ========================================================================
   // Crear sesión de checkout para recarga de billetera
+  // ========================================================================
   createWalletRecharge: protectedProcedure
     .input(
       z.object({
-        amount: z.number().min(10000).max(50000000), // Min $10,000 COP, Max $50,000,000 COP
+        amount: z.number().min(10000).max(50000000), // Min $10,000 COP, Max $50M COP
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (!isWompiConfigured()) {
+      const keys = await getWompiKeys();
+      if (!keys) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: "Wompi no está configurado. Contacta al administrador.",
@@ -55,36 +59,58 @@ export const wompiRouter = router({
       }
 
       const reference = generatePaymentReference("WLT");
-      const amountInCents = input.amount * 100; // Convertir a centavos
+      const amountInCents = input.amount * 100;
+      const currency = "COP";
+
+      // Generar firma de integridad
+      const signature = generateIntegritySignature(
+        reference,
+        amountInCents,
+        currency,
+        keys.integritySecret
+      );
 
       // Obtener URL de origen para redirección
       const origin = (ctx.req.headers.origin as string) || "https://evgreen.lat";
 
-      const checkout = await createWompiCheckout({
+      // Construir URL de checkout
+      const checkoutUrl = buildCheckoutUrl({
+        publicKey: keys.publicKey,
         reference,
         amountInCents,
+        currency,
+        signature,
+        redirectUrl: `${origin}/wallet?payment=wompi&reference=${reference}`,
         customerEmail: ctx.user.email || "",
         customerName: ctx.user.name ?? undefined,
-        redirectUrl: `${origin}/wallet?payment=wompi&reference=${reference}`,
       });
 
-      if (!checkout) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Error creando sesión de pago con Wompi",
+      // Guardar transacción pendiente en BD
+      try {
+        await db.createWompiTransaction({
+          userId: ctx.user.id,
+          reference,
+          amountInCents,
+          currency,
+          type: "WALLET_RECHARGE",
+          customerEmail: ctx.user.email || "",
+          description: `Recarga de billetera - $${input.amount.toLocaleString()} COP`,
+          integritySignature: signature,
         });
+      } catch (err) {
+        console.error("[Wompi] Error guardando transacción pendiente:", err);
+        // No fallar si no se puede guardar, el webhook se encargará
       }
 
-      // Guardar referencia pendiente en base de datos
-      // TODO: Crear tabla de transacciones Wompi pendientes
-
       return {
-        checkoutUrl: checkout.checkoutUrl,
-        reference: checkout.reference,
+        checkoutUrl,
+        reference,
       };
     }),
 
+  // ========================================================================
   // Crear sesión de checkout para pago de carga
+  // ========================================================================
   createChargingPayment: protectedProcedure
     .input(
       z.object({
@@ -93,7 +119,8 @@ export const wompiRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (!isWompiConfigured()) {
+      const keys = await getWompiKeys();
+      if (!keys) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: "Wompi no está configurado. Contacta al administrador.",
@@ -102,39 +129,123 @@ export const wompiRouter = router({
 
       const reference = generatePaymentReference("CHG");
       const amountInCents = input.amount * 100;
+      const currency = "COP";
+
+      const signature = generateIntegritySignature(
+        reference,
+        amountInCents,
+        currency,
+        keys.integritySecret
+      );
 
       const origin = (ctx.req.headers.origin as string) || "https://evgreen.lat";
 
-      const checkout = await createWompiCheckout({
+      const checkoutUrl = buildCheckoutUrl({
+        publicKey: keys.publicKey,
         reference,
         amountInCents,
+        currency,
+        signature,
+        redirectUrl: `${origin}/charging/payment?reference=${reference}&transaction=${input.transactionId}`,
         customerEmail: ctx.user.email || "",
         customerName: ctx.user.name ?? undefined,
-        redirectUrl: `${origin}/charging/payment?reference=${reference}&transaction=${input.transactionId}`,
       });
 
-      if (!checkout) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Error creando sesión de pago con Wompi",
+      // Guardar transacción pendiente
+      try {
+        await db.createWompiTransaction({
+          userId: ctx.user.id,
+          reference,
+          amountInCents,
+          currency,
+          type: "OTHER",
+          customerEmail: ctx.user.email || "",
+          description: `Pago de carga #${input.transactionId}`,
+          integritySignature: signature,
         });
+      } catch (err) {
+        console.error("[Wompi] Error guardando transacción pendiente:", err);
       }
 
       return {
-        checkoutUrl: checkout.checkoutUrl,
-        reference: checkout.reference,
+        checkoutUrl,
+        reference,
       };
     }),
 
-  // Consultar estado de transacción por referencia
-  checkPaymentStatus: protectedProcedure
+  // ========================================================================
+  // Crear sesión de checkout para depósito de inversión
+  // ========================================================================
+  createInvestmentDeposit: protectedProcedure
     .input(
       z.object({
-        reference: z.string(),
+        amount: z.number().min(100000), // Min $100,000 COP
+        projectId: z.number().optional(),
+        description: z.string().optional(),
       })
     )
+    .mutation(async ({ ctx, input }) => {
+      const keys = await getWompiKeys();
+      if (!keys) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Wompi no está configurado. Contacta al administrador.",
+        });
+      }
+
+      const reference = generatePaymentReference("INV");
+      const amountInCents = input.amount * 100;
+      const currency = "COP";
+
+      const signature = generateIntegritySignature(
+        reference,
+        amountInCents,
+        currency,
+        keys.integritySecret
+      );
+
+      const origin = (ctx.req.headers.origin as string) || "https://evgreen.lat";
+
+      const checkoutUrl = buildCheckoutUrl({
+        publicKey: keys.publicKey,
+        reference,
+        amountInCents,
+        currency,
+        signature,
+        redirectUrl: `${origin}/investors?payment=wompi&reference=${reference}`,
+        customerEmail: ctx.user.email || "",
+        customerName: ctx.user.name ?? undefined,
+      });
+
+      try {
+        await db.createWompiTransaction({
+          userId: ctx.user.id,
+          reference,
+          amountInCents,
+          currency,
+          type: "INVESTMENT_DEPOSIT",
+          customerEmail: ctx.user.email || "",
+          description: input.description || `Depósito de inversión - $${input.amount.toLocaleString()} COP`,
+          integritySignature: signature,
+        });
+      } catch (err) {
+        console.error("[Wompi] Error guardando transacción pendiente:", err);
+      }
+
+      return {
+        checkoutUrl,
+        reference,
+      };
+    }),
+
+  // ========================================================================
+  // Consultar estado de transacción por referencia
+  // ========================================================================
+  checkPaymentStatus: protectedProcedure
+    .input(z.object({ reference: z.string() }))
     .query(async ({ input }) => {
-      if (!isWompiConfigured()) {
+      const keys = await getWompiKeys();
+      if (!keys) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: "Wompi no está configurado",
@@ -142,30 +253,26 @@ export const wompiRouter = router({
       }
 
       try {
-        const result = await getTransactionByReference(input.reference);
-        
+        const result = await getTransactionByReference(input.reference, keys);
+
         if (!result.data || result.data.length === 0) {
-          return {
-            found: false,
-            status: null,
-            transaction: null,
-          };
+          return { found: false, status: null, transaction: null };
         }
 
-        const transaction = result.data[0];
-        
+        const tx = result.data[0];
+
         return {
           found: true,
-          status: transaction.status,
+          status: tx.status,
           transaction: {
-            id: transaction.id,
-            reference: transaction.reference,
-            amount: transaction.amount_in_cents / 100,
-            currency: transaction.currency,
-            status: transaction.status,
-            paymentMethod: transaction.payment_method_type,
-            createdAt: transaction.created_at,
-            finalizedAt: transaction.finalized_at,
+            id: tx.id,
+            reference: tx.reference,
+            amount: tx.amount_in_cents / 100,
+            currency: tx.currency,
+            status: tx.status,
+            paymentMethod: tx.payment_method_type,
+            createdAt: tx.created_at,
+            finalizedAt: tx.finalized_at,
           },
         };
       } catch (error) {
@@ -177,16 +284,19 @@ export const wompiRouter = router({
       }
     }),
 
-  // Verificar y procesar pago completado
+  // ========================================================================
+  // Verificar y procesar pago completado (llamado desde frontend)
+  // ========================================================================
   verifyAndProcessPayment: protectedProcedure
     .input(
       z.object({
         reference: z.string(),
-        type: z.enum(["wallet_recharge", "charging_payment"]),
+        type: z.enum(["wallet_recharge", "charging_payment", "investment_deposit"]),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (!isWompiConfigured()) {
+      const keys = await getWompiKeys();
+      if (!keys) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: "Wompi no está configurado",
@@ -194,30 +304,37 @@ export const wompiRouter = router({
       }
 
       try {
-        const result = await getTransactionByReference(input.reference);
-        
+        const result = await getTransactionByReference(input.reference, keys);
+
         if (!result.data || result.data.length === 0) {
           throw new TRPCError({
             code: "NOT_FOUND",
-            message: "Transacción no encontrada",
+            message: "Transacción no encontrada en Wompi",
           });
         }
 
-        const transaction = result.data[0];
+        const tx = result.data[0];
 
-        if (transaction.status !== WOMPI_TRANSACTION_STATUS.APPROVED) {
+        // Actualizar transacción en nuestra BD
+        await db.updateWompiTransactionByReference(input.reference, {
+          wompiTransactionId: tx.id,
+          status: tx.status,
+          paymentMethodType: tx.payment_method_type,
+          processedAt: new Date(),
+        });
+
+        if (tx.status !== WOMPI_TRANSACTION_STATUS.APPROVED) {
           return {
             success: false,
-            status: transaction.status,
-            message: `El pago no fue aprobado. Estado: ${transaction.status}`,
+            status: tx.status,
+            message: `El pago no fue aprobado. Estado: ${tx.status}`,
           };
         }
 
         // Procesar según el tipo de pago
         if (input.type === "wallet_recharge") {
-          const amount = transaction.amount_in_cents / 100;
-          
-          // Recargar billetera del usuario
+          const amount = tx.amount_in_cents / 100;
+
           const wallet = await db.getUserWallet(ctx.user.id);
           if (wallet) {
             const currentBalance = parseFloat(wallet.balance) || 0;
@@ -231,27 +348,25 @@ export const wompiRouter = router({
               balanceAfter: newBalance.toString(),
               description: `Recarga Wompi: ${input.reference}`,
             });
-            // Actualizar balance de la billetera
             await db.updateWalletBalance(ctx.user.id, newBalance.toString());
           }
-          
+
           return {
             success: true,
-            status: transaction.status,
+            status: tx.status,
             message: `Billetera recargada con $${amount.toLocaleString()} COP`,
             amount,
           };
         }
 
-        // Para pagos de carga, el webhook debería manejar esto
         return {
           success: true,
-          status: transaction.status,
+          status: tx.status,
           message: "Pago verificado exitosamente",
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        
+
         console.error("[Wompi] Error verificando pago:", error);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -260,44 +375,32 @@ export const wompiRouter = router({
       }
     }),
 
-  // Obtener métodos de pago disponibles
+  // ========================================================================
+  // Historial de transacciones del usuario
+  // ========================================================================
+  myTransactions: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      return db.getWompiTransactionsByUser(ctx.user.id, limit, offset);
+    }),
+
+  // ========================================================================
+  // Métodos de pago disponibles
+  // ========================================================================
   getPaymentMethods: publicProcedure.query(() => {
     return [
-      {
-        id: "CARD",
-        name: "Tarjeta de Crédito/Débito",
-        description: "Visa, Mastercard, American Express",
-        icon: "credit-card",
-        enabled: true,
-      },
-      {
-        id: "PSE",
-        name: "PSE",
-        description: "Transferencia bancaria desde tu banco",
-        icon: "building-2",
-        enabled: true,
-      },
-      {
-        id: "NEQUI",
-        name: "Nequi",
-        description: "Paga desde tu cuenta Nequi",
-        icon: "smartphone",
-        enabled: true,
-      },
-      {
-        id: "BANCOLOMBIA_QR",
-        name: "Bancolombia QR",
-        description: "Escanea el código QR con tu app Bancolombia",
-        icon: "qr-code",
-        enabled: true,
-      },
-      {
-        id: "EFECTY",
-        name: "Efecty",
-        description: "Paga en efectivo en puntos Efecty",
-        icon: "banknote",
-        enabled: true,
-      },
+      { id: "CARD", name: "Tarjeta de Crédito/Débito", description: "Visa, Mastercard, American Express", icon: "credit-card", enabled: true },
+      { id: "PSE", name: "PSE", description: "Transferencia bancaria desde tu banco", icon: "building-2", enabled: true },
+      { id: "NEQUI", name: "Nequi", description: "Paga desde tu cuenta Nequi", icon: "smartphone", enabled: true },
+      { id: "BANCOLOMBIA_QR", name: "Bancolombia QR", description: "Escanea el código QR con tu app Bancolombia", icon: "qr-code", enabled: true },
+      { id: "EFECTY", name: "Efecty", description: "Paga en efectivo en puntos Efecty", icon: "banknote", enabled: true },
     ];
   }),
 });

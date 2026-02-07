@@ -19,8 +19,10 @@ import { v4 as uuidv4 } from "uuid";
 import { Resend } from "resend";
 import {
   isWompiConfigured,
-  createWompiCheckout,
+  getWompiKeys,
   generatePaymentReference,
+  generateIntegritySignature,
+  buildCheckoutUrl,
 } from "../wompi/config";
 import {
   exportGuestsToExcel,
@@ -415,7 +417,7 @@ export const eventRouter = router({
       selectedPackage: z.enum(["AC", "DC_INDIVIDUAL", "COLECTIVO"]),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (!isWompiConfigured()) {
+      if (!(await isWompiConfigured())) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: "Wompi no está configurado. Use otro método de pago.",
@@ -438,21 +440,29 @@ export const eventRouter = router({
       const amountInCents = input.amount * 100;
       const origin = (ctx.req.headers.origin as string) || "https://evgreen.lat";
 
-      const checkout = await createWompiCheckout({
+      const keys = await getWompiKeys();
+      if (!keys) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Error: llaves de Wompi no configuradas",
+        });
+      }
+
+      const currency = "COP";
+      const signature = generateIntegritySignature(reference, amountInCents, currency, keys.integritySecret);
+      const checkoutUrl = buildCheckoutUrl({
+        publicKey: keys.publicKey,
         reference,
         amountInCents,
+        currency,
+        signature,
+        redirectUrl: `${origin}/staff/event?payment=success&reference=${reference}&guest=${input.guestId}`,
         customerEmail: guest.email,
         customerName: guest.fullName,
         customerPhone: guest.phone || undefined,
-        redirectUrl: `${origin}/staff/event?payment=success&reference=${reference}&guest=${input.guestId}`,
       });
 
-      if (!checkout) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Error creando sesión de pago con Wompi",
-        });
-      }
+      const checkout = { checkoutUrl, reference, signature };
 
       // Crear registro de pago pendiente
       await db.insert(eventPayments).values({

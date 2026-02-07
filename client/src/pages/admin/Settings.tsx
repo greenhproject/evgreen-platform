@@ -32,9 +32,11 @@ export default function AdminSettings() {
   });
 
   const [paymentsForm, setPaymentsForm] = useState({
-    stripePublicKey: "",
-    stripeSecretKey: "",
-    stripeTestMode: true,
+    wompiPublicKey: "",
+    wompiPrivateKey: "",
+    wompiIntegritySecret: "",
+    wompiEventsSecret: "",
+    wompiTestMode: true,
     enableEnergyBilling: true,
     enableReservationBilling: true,
     enableOccupancyPenalty: true,
@@ -81,9 +83,11 @@ export default function AdminSettings() {
       });
 
       setPaymentsForm({
-        stripePublicKey: settings.stripePublicKey || "",
-        stripeSecretKey: settings.stripeSecretKey || "",
-        stripeTestMode: settings.stripeTestMode,
+        wompiPublicKey: settings.wompiPublicKey || "",
+        wompiPrivateKey: settings.wompiPrivateKey || "",
+        wompiIntegritySecret: settings.wompiIntegritySecret || "",
+        wompiEventsSecret: settings.wompiEventsSecret || "",
+        wompiTestMode: settings.wompiTestMode,
         enableEnergyBilling: settings.enableEnergyBilling,
         enableReservationBilling: settings.enableReservationBilling,
         enableOccupancyPenalty: settings.enableOccupancyPenalty,
@@ -260,39 +264,109 @@ export default function AdminSettings() {
         <TabsContent value="payments">
           <Card className="p-6 space-y-6">
             <div>
-              <h3 className="font-semibold mb-4">Configuración de Stripe</h3>
+              <h3 className="font-semibold mb-4 flex items-center gap-2">
+                <img src="https://wompi.com/favicon.ico" alt="Wompi" className="w-5 h-5" />
+                Configuración de Wompi
+                {paymentsForm.wompiPublicKey && paymentsForm.wompiPrivateKey && paymentsForm.wompiIntegritySecret ? (
+                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    Configurado
+                  </span>
+                ) : (
+                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                    <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                    Sin configurar
+                  </span>
+                )}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Configura las llaves de tu cuenta de Wompi para procesar pagos con tarjetas, PSE, Nequi y Bancolombia.
+                Obtén tus llaves en <a href="https://comercios.wompi.co" target="_blank" rel="noopener" className="text-primary underline">comercios.wompi.co</a> &rarr; Desarrolladores.
+              </p>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Stripe Public Key</Label>
+                  <Label>Llave pública</Label>
                   <Input
-                    value={paymentsForm.stripePublicKey}
-                    onChange={(e) => setPaymentsForm({ ...paymentsForm, stripePublicKey: e.target.value })}
-                    placeholder="pk_test_... o pk_live_..."
+                    value={paymentsForm.wompiPublicKey}
+                    onChange={(e) => setPaymentsForm({ ...paymentsForm, wompiPublicKey: e.target.value })}
+                    placeholder="pub_prod_... o pub_test_..."
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Se usa en el widget de pago del frontend.
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Stripe Secret Key</Label>
+                  <Label>Llave privada</Label>
                   <Input
-                    value={paymentsForm.stripeSecretKey}
-                    onChange={(e) => setPaymentsForm({ ...paymentsForm, stripeSecretKey: e.target.value })}
-                    placeholder="sk_test_... o sk_live_..."
+                    value={paymentsForm.wompiPrivateKey}
+                    onChange={(e) => setPaymentsForm({ ...paymentsForm, wompiPrivateKey: e.target.value })}
+                    placeholder="prv_prod_... o prv_test_..."
                     type="password"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Las claves se guardan de forma segura. Si ya hay una clave guardada, verás una versión enmascarada.
+                    Se usa en el servidor para consultar transacciones. Si ya hay una clave guardada, verás una versión enmascarada.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Secreto de integridad</Label>
+                  <Input
+                    value={paymentsForm.wompiIntegritySecret}
+                    onChange={(e) => setPaymentsForm({ ...paymentsForm, wompiIntegritySecret: e.target.value })}
+                    placeholder="prod_integrity_... o test_integrity_..."
+                    type="password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Se encuentra en Desarrolladores &rarr; Secretos para integración técnica.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Secreto de eventos</Label>
+                  <Input
+                    value={paymentsForm.wompiEventsSecret}
+                    onChange={(e) => setPaymentsForm({ ...paymentsForm, wompiEventsSecret: e.target.value })}
+                    placeholder="prod_events_... o test_events_..."
+                    type="password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Se usa para verificar la autenticidad de los webhooks de Wompi.
                   </p>
                 </div>
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label>Modo de pruebas</Label>
+                    <Label>Modo de pruebas (Sandbox)</Label>
                     <p className="text-sm text-muted-foreground">
-                      Usar claves de prueba de Stripe
+                      Usar claves de prueba de Wompi (pub_test_, prv_test_)
                     </p>
                   </div>
                   <Switch
-                    checked={paymentsForm.stripeTestMode}
-                    onCheckedChange={(checked) => setPaymentsForm({ ...paymentsForm, stripeTestMode: checked })}
+                    checked={paymentsForm.wompiTestMode}
+                    onCheckedChange={(checked) => setPaymentsForm({ ...paymentsForm, wompiTestMode: checked })}
                   />
+                </div>
+
+                {/* URL de Webhook */}
+                <div className="mt-4 p-4 bg-muted/50 rounded-lg border">
+                  <Label className="text-sm font-medium">URL de Eventos (Webhook)</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Configura esta URL en <a href="https://comercios.wompi.co" target="_blank" rel="noopener" className="text-primary underline">comercios.wompi.co</a> &rarr; Desarrolladores &rarr; Seguimiento de transacciones.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      readOnly
+                      value={`${window.location.origin}/api/wompi/webhook`}
+                      className="font-mono text-xs bg-background"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/api/wompi/webhook`);
+                        toast.success("URL copiada al portapapeles");
+                      }}
+                    >
+                      Copiar
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>

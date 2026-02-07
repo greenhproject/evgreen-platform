@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { PaymentMethodSelector } from "@/components/PaymentMethodSelector";
+// PaymentMethodSelector ya no se necesita - Wompi maneja la selección de método de pago
 
 const PRESET_AMOUNTS = [20000, 50000, 100000];
 
@@ -35,12 +35,11 @@ export default function UserWallet() {
   const [showPaymentSelector, setShowPaymentSelector] = useState(false);
   const [location] = useLocation();
 
-  // Verificar si los proveedores de pago están configurados
-  const { data: stripeConfig } = trpc.stripe.isConfigured.useQuery();
+  // Verificar si Wompi está configurado
   const { data: wompiConfig } = trpc.wompi.isConfigured.useQuery();
   
   // Verificar si hay algún método de pago disponible
-  const hasPaymentMethod = stripeConfig?.configured || wompiConfig?.configured;
+  const hasPaymentMethod = wompiConfig?.configured;
   
   // Obtener billetera
   const { data: wallet, isLoading, refetch: refetchWallet } = trpc.wallet.getMyWallet.useQuery();
@@ -48,15 +47,15 @@ export default function UserWallet() {
   // Obtener historial de transacciones
   const { data: transactions, refetch: refetchTransactions } = trpc.wallet.getTransactions.useQuery({ limit: 20 });
 
-  // Obtener suscripción actual
-  const { data: subscription } = trpc.stripe.getMySubscription.useQuery();
+  // Obtener suscripción actual (placeholder - las suscripciones se manejarán por Wompi en el futuro)
+  const subscription: any = null;
 
-  // Mutation para crear checkout de recarga
-  const createRecharge = trpc.stripe.createWalletRecharge.useMutation({
+  // Mutation para crear checkout de recarga con Wompi
+  const createWompiRecharge = trpc.wompi.createWalletRecharge.useMutation({
     onSuccess: (data) => {
-      if (data.url) {
-        toast.info("Redirigiendo a la página de pago...");
-        window.open(data.url, "_blank");
+      if (data.checkoutUrl) {
+        toast.info("Redirigiendo a Wompi para completar el pago...");
+        window.open(data.checkoutUrl, "_blank");
       }
       setIsProcessing(false);
     },
@@ -66,29 +65,40 @@ export default function UserWallet() {
     },
   });
 
-  // Mutation para crear checkout de suscripción
-  const createSubscription = trpc.stripe.createSubscription.useMutation({
+  // Mutation para verificar pago después de redirección
+  const verifyPayment = trpc.wompi.verifyAndProcessPayment.useMutation({
     onSuccess: (data) => {
-      if (data.url) {
-        toast.info("Redirigiendo a la página de suscripción...");
-        window.open(data.url, "_blank");
+      if (data.success) {
+        toast.success(data.message);
+        refetchWallet();
+        refetchTransactions();
+      } else {
+        toast.error(data.message);
       }
-      setIsProcessing(false);
     },
     onError: (error) => {
-      toast.error(error.message || "Error al procesar la suscripción");
-      setIsProcessing(false);
+      toast.error(error.message || "Error verificando el pago");
     },
   });
 
-  // Verificar parámetros de URL para confirmación de pago
+  // Verificar parámetros de URL para confirmación de pago Wompi
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("success") === "true") {
+    const payment = params.get("payment");
+    const reference = params.get("reference");
+    
+    if (payment === "wompi" && reference) {
+      toast.info("Verificando pago...");
+      verifyPayment.mutate({
+        reference,
+        type: "wallet_recharge",
+      });
+      // Limpiar URL
+      window.history.replaceState({}, "", "/wallet");
+    } else if (params.get("success") === "true") {
       toast.success("¡Pago completado exitosamente!");
       refetchWallet();
       refetchTransactions();
-      // Limpiar URL
       window.history.replaceState({}, "", "/wallet");
     } else if (params.get("canceled") === "true") {
       toast.info("Pago cancelado");
@@ -112,18 +122,13 @@ export default function UserWallet() {
       return;
     }
 
-    // Abrir selector de método de pago
-    setShowPaymentSelector(true);
+    // Crear checkout de Wompi directamente
+    setIsProcessing(true);
+    createWompiRecharge.mutate({ amount });
   };
 
   const handleSubscribe = (planId: "basic" | "premium") => {
-    if (!stripeConfig?.configured) {
-      toast.error("El sistema de pagos no está disponible en este momento");
-      return;
-    }
-
-    setIsProcessing(true);
-    createSubscription.mutate({ planId });
+    toast.info("Las suscripciones estarán disponibles próximamente");
   };
 
   const formatCurrency = (amount: string | number) => {
@@ -139,6 +144,7 @@ export default function UserWallet() {
     switch (type) {
       case "RECHARGE":
       case "STRIPE_PAYMENT":
+      case "WOMPI_RECHARGE":
         return <ArrowDownLeft className="w-4 h-4 text-primary" />;
       case "CHARGE":
       case "CHARGE_PAYMENT":
@@ -264,17 +270,7 @@ export default function UserWallet() {
               Pago seguro. Acepta tarjetas internacionales, PSE, Nequi, Bancolombia QR y Efecty.
             </p>
 
-            {/* Modal de selección de método de pago */}
-            <PaymentMethodSelector
-              open={showPaymentSelector}
-              onOpenChange={setShowPaymentSelector}
-              amount={customAmount ? parseInt(customAmount) : (selectedAmount || 50000)}
-              type="wallet_recharge"
-              onSuccess={() => {
-                refetchWallet();
-                refetchTransactions();
-              }}
-            />
+            {/* Wompi maneja la selección de método de pago en su propio checkout */}
           </TabsContent>
 
           <TabsContent value="subscription" className="mt-4 space-y-4">
@@ -371,7 +367,7 @@ export default function UserWallet() {
                 <Card key={tx.id} className="p-4">
                   <div className="flex items-center gap-4">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      tx.type === "RECHARGE" || tx.type === "STRIPE_PAYMENT" ? "bg-primary/10" : "bg-orange-100"
+                      ["RECHARGE", "STRIPE_PAYMENT", "WOMPI_RECHARGE"].includes(tx.type) ? "bg-primary/10" : "bg-orange-100"
                     }`}>
                       {getTransactionIcon(tx.type)}
                     </div>
@@ -387,9 +383,9 @@ export default function UserWallet() {
                       </div>
                     </div>
                     <div className={`font-semibold ${
-                      tx.type === "RECHARGE" || tx.type === "STRIPE_PAYMENT" ? "text-primary" : "text-foreground"
+                      ["RECHARGE", "STRIPE_PAYMENT", "WOMPI_RECHARGE"].includes(tx.type) ? "text-primary" : "text-foreground"
                     }`}>
-                      {tx.type === "RECHARGE" || tx.type === "STRIPE_PAYMENT" ? "+" : "-"}
+                      {["RECHARGE", "STRIPE_PAYMENT", "WOMPI_RECHARGE"].includes(tx.type) ? "+" : "-"}
                       {formatCurrency(tx.amount)}
                     </div>
                   </div>
@@ -400,14 +396,14 @@ export default function UserWallet() {
         </Tabs>
 
         {/* Información de prueba */}
-        {stripeConfig?.configured && (
+        {wompiConfig?.configured && wompiConfig?.testMode && (
           <Card className="p-4 bg-blue-50 border-blue-200">
             <div className="flex items-start gap-2">
               <CreditCard className="w-5 h-5 text-blue-600 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-blue-800">Modo de prueba</p>
+                <p className="text-sm font-medium text-blue-800">Modo de prueba (Sandbox)</p>
                 <p className="text-xs text-blue-600">
-                  Usa la tarjeta 4242 4242 4242 4242 para probar pagos
+                  Usa la tarjeta 4242 4242 4242 4242 para probar pagos con Wompi
                 </p>
               </div>
             </div>

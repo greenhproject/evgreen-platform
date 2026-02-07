@@ -1831,3 +1831,30 @@
 - [x] Reemplazar distancia fija por distancia real calculada (m, km con formato inteligente)
 - [x] Ordenar estaciones por cercanía al usuario (más cercanas primero)
 - [x] Fallback a Bogotá cuando GPS no disponible (sin mostrar distancia falsa)
+
+## Integración Wompi - Pasarela de Pagos Colombia - 7 Febrero 2026
+### Configuración Admin
+- [x] Columnas Wompi en platformSettings (wompiPublicKey, wompiPrivateKey, wompiIntegritySecret, wompiEventsSecret, wompiTestMode)
+- [x] Endpoints CRUD para configuración de pagos (admin only) - settings.update
+- [x] Página de configuración de pagos en Admin > Settings > Pagos con indicador de estado
+- [x] Campos: llave pública, llave privada, secreto de integridad, secreto de eventos, modo sandbox
+- [x] URL de webhook copiable para configurar en comercios.wompi.co
+
+### Backend Wompi
+- [x] Servicio de Wompi: crear transacción, verificar estado (config.ts)
+- [x] Endpoint para iniciar pago - genera URL de checkout de Wompi (router.ts)
+- [x] Webhook para recibir notificaciones de transacciones (webhook.ts)
+- [x] Verificar firma de integridad (checksum SHA256) en webhook
+- [x] Actualizar billetera del usuario al confirmar pago APPROVED
+- [x] Tabla wompi_transactions para registrar todas las transacciones
+
+### Frontend Pagos
+- [x] Flujo de recarga de billetera con Wompi (Wallet.tsx)
+- [ ] Flujo de pago de suscripción con Wompi (pendiente - suscripciones requieren pago recurrente)
+- [x] Verificación de pago al regresar de Wompi (?payment=wompi&reference=...)
+- [x] Historial de transacciones de pago en billetera
+
+### Tests
+- [x] Tests unitarios para servicio de Wompi (firma SHA256, referencia, checkout URL, webhook checksum)
+- [x] Tests para constantes de estado y métodos de pago
+- [x] 349 tests pasando (22 archivos)
