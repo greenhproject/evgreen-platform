@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
@@ -75,6 +75,7 @@ interface Station {
   longitude: string;
   isOnline: boolean;
   distance?: number;
+  calculatedDistance?: number;
   evses: Array<{
     id: number;
     status: string;
@@ -196,36 +197,88 @@ export default function UserMap() {
     return station.evses?.length || 0;
   };
 
-  // Normalizar y filtrar estaciones
+    // Fórmula Haversine para calcular distancia entre dos coordenadas GPS (en km)
+  const haversineDistance = useCallback((lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Radio de la Tierra en km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }, []);
+
+  // Formatear distancia para mostrar
+  const formatDistance = useCallback((distanceKm: number): string => {
+    if (distanceKm < 1) {
+      return `${Math.round(distanceKm * 1000)} m`;
+    }
+    if (distanceKm < 10) {
+      return `${distanceKm.toFixed(1)} km`;
+    }
+    return `${Math.round(distanceKm)} km`;
+  }, []);
+
+  // Normalizar, calcular distancias y filtrar estaciones
   const normalizedStations: Station[] = stations?.map((s: any) => normalizeStation(s)) || [];
+
+  // Calcular distancia real para cada estación
+  const stationsWithDistance = useMemo(() => {
+    return normalizedStations.map((station) => {
+      if (userLocation) {
+        const lat = parseFloat(station.latitude);
+        const lng = parseFloat(station.longitude);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          const dist = haversineDistance(userLocation.lat, userLocation.lng, lat, lng);
+          return { ...station, calculatedDistance: dist };
+        }
+      }
+      return { ...station, calculatedDistance: undefined as number | undefined };
+    });
+  }, [normalizedStations, userLocation, haversineDistance]);
   
-  const filteredStations = normalizedStations.filter((station) => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      if (
-        !station.name.toLowerCase().includes(query) &&
-        !station.address.toLowerCase().includes(query) &&
-        !station.city.toLowerCase().includes(query)
-      ) {
+  const filteredStations = useMemo(() => {
+    const filtered = stationsWithDistance.filter((station) => {
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        if (
+          !station.name.toLowerCase().includes(query) &&
+          !station.address.toLowerCase().includes(query) &&
+          !station.city.toLowerCase().includes(query)
+        ) {
+          return false;
+        }
+      }
+      // Filtro por tipo de carga (AC/DC)
+      if (filters.chargeType !== "all" && station.evses) {
+        const hasMatchingEvse = station.evses.some((e) => e.chargeType === filters.chargeType);
+        if (!hasMatchingEvse) return false;
+      }
+      // Filtro por tipo de conector
+      if (filters.connectorType !== "all" && station.evses) {
+        const hasMatchingConnector = station.evses.some((e) => e.connectorType === filters.connectorType);
+        if (!hasMatchingConnector) return false;
+      }
+      // Filtro por disponibilidad
+      if (filters.available && getAvailableCount(station) === 0) {
         return false;
       }
-    }
-    // Filtro por tipo de carga (AC/DC)
-    if (filters.chargeType !== "all" && station.evses) {
-      const hasMatchingEvse = station.evses.some((e) => e.chargeType === filters.chargeType);
-      if (!hasMatchingEvse) return false;
-    }
-    // Filtro por tipo de conector
-    if (filters.connectorType !== "all" && station.evses) {
-      const hasMatchingConnector = station.evses.some((e) => e.connectorType === filters.connectorType);
-      if (!hasMatchingConnector) return false;
-    }
-    // Filtro por disponibilidad
-    if (filters.available && getAvailableCount(station) === 0) {
-      return false;
-    }
-    return true;
-  });
+      return true;
+    });
+    // Ordenar por distancia (más cercanas primero)
+    return filtered.sort((a, b) => {
+      if (a.calculatedDistance !== undefined && b.calculatedDistance !== undefined) {
+        return a.calculatedDistance - b.calculatedDistance;
+      }
+      if (a.calculatedDistance !== undefined) return -1;
+      if (b.calculatedDistance !== undefined) return 1;
+      return 0;
+    });
+  }, [stationsWithDistance, searchQuery, filters]);
 
   // Agregar marcadores de estaciones filtradas al mapa
   useEffect(() => {
@@ -493,9 +546,17 @@ export default function UserMap() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <h4 className="font-semibold">{station.name}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-semibold">{station.name}</h4>
+                        {station.calculatedDistance !== undefined && (
+                          <span className="text-xs text-muted-foreground font-medium bg-muted/50 px-2 py-0.5 rounded-full whitespace-nowrap">
+                            <Navigation className="w-3 h-3 inline mr-0.5" />
+                            {formatDistance(station.calculatedDistance)}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                        <MapPin className="w-3 h-3" />
+                        <MapPin className="w-3 h-3 shrink-0" />
                         {station.address}
                       </p>
                       <div className="flex items-center gap-2 mt-2">
@@ -556,7 +617,7 @@ export default function UserMap() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 mb-4">
+                <div className="flex items-center gap-4 mb-4 flex-wrap">
                   <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${
                       getAvailableCount(selectedStation) > 0 ? "bg-primary" : "bg-muted"
@@ -565,6 +626,12 @@ export default function UserMap() {
                       {getAvailableCount(selectedStation)} de {getTotalCount(selectedStation)} disponibles
                     </span>
                   </div>
+                  {selectedStation.calculatedDistance !== undefined && (
+                    <div className="flex items-center gap-1 text-sm text-primary font-medium">
+                      <Navigation className="w-4 h-4" />
+                      {formatDistance(selectedStation.calculatedDistance)}
+                    </div>
+                  )}
                   <div className="flex items-center gap-1 text-sm text-muted-foreground">
                     <Clock className="w-4 h-4" />
                     24/7

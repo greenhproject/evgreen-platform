@@ -1824,3 +1824,10 @@
 ## Bugs UI - EV Assistant / Sugerencia IA - 7 Febrero 2026
 - [x] Botón X de "Sugerencia de IA" corrido y difícil de cerrar - Agrandado a 40x40px con fondo visible y feedback táctil
 - [x] Dos X duplicadas en el header del EV Assistant - Eliminada X manual, se usa solo la del SheetContent
+
+## Distancia real GPS - 7 Febrero 2026
+- [x] Obtener ubicación GPS real del usuario con geolocalización del navegador
+- [x] Implementar fórmula Haversine para calcular distancia entre coordenadas
+- [x] Reemplazar distancia fija por distancia real calculada (m, km con formato inteligente)
+- [x] Ordenar estaciones por cercanía al usuario (más cercanas primero)
+- [x] Fallback a Bogotá cuando GPS no disponible (sin mostrar distancia falsa)
