@@ -1812,3 +1812,8 @@
 - [x] Endpoint para agregar/quitar favoritos (toggle con optimistic update)
 - [x] Botón de favorito en tarjeta de estación y lista del bottom sheet
 - [ ] Sección "Favoritos" accesible desde el mapa
+
+## Bug - Filtros AC/DC no funcionan en el mapa - 7 Febrero 2026
+- [x] BUG: Los chips de filtro rápido AC/DC no filtran los marcadores ni la lista de estaciones
+- [x] Corregido: filteredStations ahora aplica filtro chargeType y connectorType
+- [x] Corregido: marcadores del mapa ahora usan filteredStations en lugar de stations crudas
