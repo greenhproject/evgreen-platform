@@ -1739,3 +1739,10 @@
 - [x] Sección de comisión estimada en vista personal
 - [x] Exportaciones filtradas por staff (Excel y PDF)
 - [x] Permisos de edición/eliminación: solo el staff creador o super staff
+
+
+## Auditoría Financiera Página Inversionistas - 7 Febrero 2026
+- [x] CORREGIR: Texto costos operativos dice "15%" pero colectivo usa 10% (hacerlo dinámico)
+- [x] CORREGIR: Proyecciones acumuladas (3y, 5y, 10y) no coinciden con ingreso mensual × meses
+- [x] MEJORAR: Mostrar horas efectivas cuando se aplica factor premium 2x en colectivo
+- [x] VERIFICAR: Tabla comparativa ROI individual y colectivo vs cálculos reales
