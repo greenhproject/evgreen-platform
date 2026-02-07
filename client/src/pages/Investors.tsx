@@ -244,6 +244,35 @@ export default function Investors() {
   const [precioVenta, setPrecioVenta] = useState(PRECIO_VENTA_KWH_DEFAULT);
   const [zonaPremium, setZonaPremium] = useState<"A" | "B" | "C">("C");
   const [participacionColectiva, setParticipacionColectiva] = useState(50000000);
+  const [escenario, setEscenario] = useState<"pesimista" | "realista" | "optimista">("realista");
+
+  // Cargar parámetros de la calculadora desde el backend
+  const { data: calcParams } = trpc.settings.getCalculatorParams.useQuery();
+
+  // Parámetros dinámicos (del backend o defaults)
+  const params = useMemo(() => ({
+    factorUtilizacionPremium: calcParams?.factorUtilizacionPremium ?? 2.0,
+    costosOpIndividual: (calcParams?.costosOperativosIndividual ?? 15) / 100,
+    costosOpColectivo: (calcParams?.costosOperativosColectivo ?? 10) / 100,
+    costosOpAC: (calcParams?.costosOperativosAC ?? 15) / 100,
+    eficienciaDC: (calcParams?.eficienciaCargaDC ?? 92) / 100,
+    eficienciaAC: (calcParams?.eficienciaCargaAC ?? 95) / 100,
+    costoEnergiaRed: calcParams?.costoEnergiaRed ?? 850,
+    costoEnergiaSolar: calcParams?.costoEnergiaSolar ?? 250,
+    precioVentaDefault: calcParams?.precioVentaDefault ?? 1800,
+    precioVentaMin: calcParams?.precioVentaMin ?? 1400,
+    precioVentaMax: calcParams?.precioVentaMax ?? 2200,
+    inversionistaPct: (calcParams?.investorPercentage ?? 70) / 100,
+  }), [calcParams]);
+
+  // Factores de escenario: afectan las horas de uso y el precio
+  const factorEscenario = useMemo(() => {
+    switch (escenario) {
+      case "pesimista": return { horasMult: 0.6, precioMult: 0.85, label: "Pesimista", desc: "Baja demanda, precios competitivos" };
+      case "realista": return { horasMult: 1.0, precioMult: 1.0, label: "Realista", desc: "Proyección base con parámetros actuales" };
+      case "optimista": return { horasMult: 1.4, precioMult: 1.10, label: "Optimista", desc: "Alta demanda, precios premium" };
+    }
+  }, [escenario]);
 
   // ============================================================================
   // CÁLCULOS DE ROI - MODELO REALISTA CORREGIDO
@@ -263,22 +292,26 @@ export default function Investors() {
   const calculos = useMemo(() => {
     const paquete = PAQUETES[paqueteSeleccionado];
     
-    // Costo de energía según tipo de paquete
-    const costoEnergia = paquete.conSolar ? PRECIO_COMPRA_KWH_SOLAR : PRECIO_COMPRA_KWH_RED;
+    // Costo de energía según tipo de paquete (desde backend)
+    const costoEnergia = paquete.conSolar ? params.costoEnergiaSolar : params.costoEnergiaRed;
     
-    // Costos operativos diferenciados:
-    // - Individual: 15% (más costos por unidad)
-    // - Colectivo: 10% (economías de escala)
-    const costosOperativosPct = paqueteSeleccionado === "COLECTIVO" ? 0.10 : COSTOS_OPERATIVOS_PORCENTAJE;
+    // Costos operativos diferenciados (desde backend)
+    const costosOperativosPct = paqueteSeleccionado === "COLECTIVO" 
+      ? params.costosOpColectivo 
+      : paqueteSeleccionado === "AC" 
+        ? params.costosOpAC 
+        : params.costosOpIndividual;
     
-    // Horas de uso base diferenciadas:
-    // - Colectivo tiene ubicaciones premium con MUCHA mayor demanda
-    // - Ubicaciones estratégicas (centros comerciales, corredores viales) tienen 2-3x más tráfico
-    // - El factor de utilización premium es 2.0x para reflejar la realidad del mercado
-    const FACTOR_UTILIZACION_PREMIUM = 2.0; // Ubicaciones premium tienen el doble de demanda
+    // Horas de uso con factor de escenario
+    const horasBase = horasUso * factorEscenario.horasMult;
+    
+    // Factor de utilización premium (desde backend) para colectivo
     const horasUsoEfectivas = paqueteSeleccionado === "COLECTIVO" 
-      ? horasUso * FACTOR_UTILIZACION_PREMIUM // 2x utilización en ubicaciones premium
-      : horasUso;
+      ? horasBase * params.factorUtilizacionPremium
+      : horasBase;
+    
+    // Precio de venta ajustado por escenario
+    const precioVentaEfectivo = Math.round(precioVenta * factorEscenario.precioMult);
     
     let inversionBase: number;
     let potenciaTotal: number; // Potencia total de la estación/cargador
@@ -309,18 +342,19 @@ export default function Investors() {
     // Energía teórica máxima por día de TODA la estación
     const energiaTeoricaDiariaEstacion = potenciaTotal * horasUsoEfectivas; // kWh
     
-    // Aplicar eficiencia de carga (pérdidas en conversión)
-    const energiaRealDiariaEstacion = energiaTeoricaDiariaEstacion * paquete.eficienciaCarga;
+    // Aplicar eficiencia de carga (desde backend según tipo)
+    const eficiencia = paqueteSeleccionado === "AC" ? params.eficienciaAC : params.eficienciaDC;
+    const energiaRealDiariaEstacion = energiaTeoricaDiariaEstacion * eficiencia;
 
     // ========================================
     // CÁLCULO DE INGRESOS DE LA ESTACIÓN
     // ========================================
     
     // Margen bruto por kWh (antes de distribución)
-    const margenBrutoPorKwh = precioVenta - costoEnergia;
+    const margenBrutoPorKwh = precioVentaEfectivo - costoEnergia;
     
     // Ingreso bruto diario de la estación (lo que paga el usuario)
-    const ingresoBrutoDiarioEstacion = energiaRealDiariaEstacion * precioVenta;
+    const ingresoBrutoDiarioEstacion = energiaRealDiariaEstacion * precioVentaEfectivo;
     
     // Costo de energía diario de la estación
     const costoEnergiaDiarioEstacion = energiaRealDiariaEstacion * costoEnergia;
@@ -334,8 +368,8 @@ export default function Investors() {
     // Margen neto disponible para distribución de la estación
     const margenNetoDistribuibleEstacion = margenBrutoDiarioEstacion - costosOperativosDiariosEstacion;
     
-    // Margen para inversionistas (70% del margen neto de la estación)
-    const margenInversionistasEstacion = margenNetoDistribuibleEstacion * PORCENTAJE_INVERSIONISTA;
+    // Margen para inversionistas (% del margen neto de la estación, desde backend)
+    const margenInversionistasEstacion = margenNetoDistribuibleEstacion * params.inversionistaPct;
 
     // ========================================
     // CÁLCULO DE INGRESOS DEL INVERSIONISTA
@@ -364,7 +398,7 @@ export default function Investors() {
     const roiAnual = inversionTotal > 0 ? (ingresoAnual / inversionTotal) * 100 : 0;
 
     // Margen neto por kWh para el inversionista
-    const margenNetoPorKwhInversionista = (margenBrutoPorKwh * (1 - costosOperativosPct)) * PORCENTAJE_INVERSIONISTA;
+    const margenNetoPorKwhInversionista = (margenBrutoPorKwh * (1 - costosOperativosPct)) * params.inversionistaPct;
     
     // Potencia efectiva del inversionista (para mostrar)
     const potenciaEfectiva = potenciaTotal * porcentajeParticipacion;
@@ -402,9 +436,11 @@ export default function Investors() {
       porcentajeParticipacion,
       potenciaEfectiva,
       potenciaTotal,
-      horasUsoEfectivas
+      horasUsoEfectivas,
+      precioVentaEfectivo,
+      escenarioLabel: factorEscenario.label
     };
-  }, [paqueteSeleccionado, horasUso, precioVenta, zonaPremium, participacionColectiva]);
+  }, [paqueteSeleccionado, horasUso, precioVenta, zonaPremium, participacionColectiva, params, factorEscenario]);
 
   // ============================================================================
   // DATOS PARA GRÁFICO DE PROYECCIÓN MENSUAL
@@ -1062,6 +1098,37 @@ export default function Investors() {
                   </div>
                 )}
 
+                {/* Selector de Escenario */}
+                <div className="space-y-3">
+                  <label className="text-white/80 font-medium">Escenario de Proyección</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { key: "pesimista" as const, label: "Pesimista", icon: "⚠️", color: "from-red-500/20 to-orange-500/20 border-red-500" },
+                      { key: "realista" as const, label: "Realista", icon: "⚖️", color: "from-blue-500/20 to-cyan-500/20 border-blue-500" },
+                      { key: "optimista" as const, label: "Optimista", icon: "🚀", color: "from-green-500/20 to-emerald-500/20 border-green-500" },
+                    ]).map((esc) => (
+                      <button
+                        key={esc.key}
+                        type="button"
+                        onClick={() => setEscenario(esc.key)}
+                        className={`p-3 rounded-lg border transition-all text-center ${
+                          escenario === esc.key
+                            ? `bg-gradient-to-br ${esc.color} text-white`
+                            : "bg-slate-700/50 border-white/10 text-white/50 hover:border-white/30"
+                        }`}
+                      >
+                        <span className="text-lg">{esc.icon}</span>
+                        <p className="text-xs font-medium mt-1">{esc.label}</p>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-white/40">
+                    {factorEscenario.desc}
+                    {escenario === "pesimista" && " — Horas ×0.6, Precio ×0.85"}
+                    {escenario === "optimista" && " — Horas ×1.4, Precio ×1.10"}
+                  </p>
+                </div>
+
                 {/* Horas de uso diario */}
                 <div className="space-y-3">
                   <div className="flex justify-between">
@@ -1082,8 +1149,13 @@ export default function Investors() {
                   </div>
                   {paqueteSeleccionado === "COLECTIVO" && (
                     <p className="text-xs text-amber-400">
-                      * Ubicaciones premium: utilización efectiva de {calculos.horasUsoEfectivas}h/día
-                      (factor 2x por alto tráfico en zonas estratégicas)
+                      * Ubicaciones premium: utilización efectiva de {calculos.horasUsoEfectivas.toFixed(1)}h/día
+                      (factor {params.factorUtilizacionPremium}x por alto tráfico en zonas estratégicas)
+                    </p>
+                  )}
+                  {escenario !== "realista" && (
+                    <p className="text-xs text-cyan-400">
+                      Escenario {factorEscenario.label}: horas ajustadas a {(horasUso * factorEscenario.horasMult).toFixed(1)}h base
                     </p>
                   )}
                 </div>
@@ -1097,8 +1169,8 @@ export default function Investors() {
                   <Slider
                     value={[precioVenta]}
                     onValueChange={(v) => setPrecioVenta(v[0])}
-                    min={PRECIO_VENTA_KWH_MIN}
-                    max={PRECIO_VENTA_KWH_MAX}
+                    min={params.precioVentaMin}
+                    max={params.precioVentaMax}
                     step={100}
                     className="py-2"
                   />
@@ -1186,6 +1258,17 @@ export default function Investors() {
                     </p>
                   )}
                 </div>
+
+                {/* Indicador de escenario activo */}
+                {escenario !== "realista" && (
+                  <div className={`p-3 rounded-lg border text-center text-sm ${
+                    escenario === "pesimista" 
+                      ? "bg-red-500/10 border-red-500/30 text-red-300" 
+                      : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                  }`}>
+                    Escenario <strong>{factorEscenario.label}</strong>: Precio efectivo {formatCOP(calculos.precioVentaEfectivo)}/kWh
+                  </div>
+                )}
 
                 {/* Ingresos */}
                 <div className="grid grid-cols-2 gap-4">
@@ -1608,16 +1691,39 @@ export default function Investors() {
               </CardContent>
             </Card>
 
-            {/* Nota importante */}
-            <div className="mt-8 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            {/* Disclaimer Legal Robusto */}
+            <div className="mt-8 p-6 rounded-lg bg-amber-500/10 border border-amber-500/20">
               <div className="flex items-start gap-3">
-                <Flame className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-amber-400 font-medium">Nota sobre las proyecciones</p>
-                  <p className="text-white/60 text-sm mt-1">
-                    Estas proyecciones son estimaciones basadas en los parámetros actuales del simulador. 
-                    Los resultados reales pueden variar según la ubicación, demanda del mercado, y condiciones económicas.
-                    El modelo asume un crecimiento constante sin considerar inflación ni cambios en tarifas.
+                <Shield className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div className="space-y-3">
+                  <p className="text-amber-400 font-semibold text-base">Aviso Legal de Inversión</p>
+                  
+                  <p className="text-white/60 text-sm leading-relaxed">
+                    <strong className="text-white/80">Rendimientos pasados no garantizan rendimientos futuros.</strong>{" "}
+                    Las proyecciones presentadas en esta calculadora son estimaciones basadas en parámetros actuales del mercado 
+                    de carga de vehículos eléctricos en Colombia y no constituyen una promesa, garantía ni compromiso de 
+                    rentabilidad por parte de Green House Project S.A.S.
+                  </p>
+                  
+                  <p className="text-white/60 text-sm leading-relaxed">
+                    <strong className="text-white/80">Factores de riesgo:</strong> Los resultados reales pueden variar significativamente 
+                    debido a cambios en: (i) tarifas de energía reguladas por la CREG, (ii) demanda del mercado de vehículos eléctricos, 
+                    (iii) competencia en el sector, (iv) condiciones macroeconómicas (inflación, tipo de cambio), 
+                    (v) regulaciones gubernamentales, y (vi) disponibilidad y costo de mantenimiento de equipos.
+                  </p>
+                  
+                  <p className="text-white/60 text-sm leading-relaxed">
+                    <strong className="text-white/80">Naturaleza de la inversión:</strong> Esta inversión implica riesgos inherentes 
+                    propios de cualquier actividad empresarial. El capital invertido no está garantizado por el Fondo de 
+                    Garantías de Instituciones Financieras (FOGAFÍN) ni por ningún otro mecanismo de protección estatal. 
+                    Se recomienda al inversionista realizar su propia evaluación de riesgos y consultar con un asesor 
+                    financiero independiente antes de tomar cualquier decisión de inversión.
+                  </p>
+                  
+                  <p className="text-white/50 text-xs mt-2 italic">
+                    Green House Project S.A.S. — NIT pendiente de registro. La información contenida en este sitio web 
+                    es de carácter informativo y no constituye una oferta pública de valores en los términos de la 
+                    Ley 964 de 2005 y sus decretos reglamentarios.
                   </p>
                 </div>
               </div>

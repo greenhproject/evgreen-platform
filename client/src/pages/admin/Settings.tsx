@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, Bell, CreditCard, Globe, Loader2 } from "lucide-react";
+import { Settings, Bell, CreditCard, Globe, Loader2, Calculator } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
@@ -54,6 +54,20 @@ export default function AdminSettings() {
     ocppServerActive: true,
   });
 
+  const [calculatorForm, setCalculatorForm] = useState({
+    factorUtilizacionPremium: 2.0,
+    costosOperativosIndividual: 15,
+    costosOperativosColectivo: 10,
+    costosOperativosAC: 15,
+    eficienciaCargaDC: 92,
+    eficienciaCargaAC: 95,
+    costoEnergiaRed: 850,
+    costoEnergiaSolar: 250,
+    precioVentaDefault: 1800,
+    precioVentaMin: 1400,
+    precioVentaMax: 2200,
+  });
+
   // Cargar datos cuando llegan del servidor
   useEffect(() => {
     if (settings) {
@@ -88,6 +102,20 @@ export default function AdminSettings() {
         ocppPort: settings.ocppPort || 9000,
         ocppServerActive: settings.ocppServerActive,
       });
+
+      setCalculatorForm({
+        factorUtilizacionPremium: parseFloat(String(settings.factorUtilizacionPremium ?? "2.00")),
+        costosOperativosIndividual: settings.costosOperativosIndividual ?? 15,
+        costosOperativosColectivo: settings.costosOperativosColectivo ?? 10,
+        costosOperativosAC: settings.costosOperativosAC ?? 15,
+        eficienciaCargaDC: settings.eficienciaCargaDC ?? 92,
+        eficienciaCargaAC: settings.eficienciaCargaAC ?? 95,
+        costoEnergiaRed: settings.costoEnergiaRed ?? 850,
+        costoEnergiaSolar: settings.costoEnergiaSolar ?? 250,
+        precioVentaDefault: settings.precioVentaDefault ?? 1800,
+        precioVentaMin: settings.precioVentaMin ?? 1400,
+        precioVentaMax: settings.precioVentaMax ?? 2200,
+      });
     }
   }, [settings]);
 
@@ -105,6 +133,10 @@ export default function AdminSettings() {
 
   const handleSaveIntegrations = () => {
     updateMutation.mutate(integrationsForm);
+  };
+
+  const handleSaveCalculator = () => {
+    updateMutation.mutate(calculatorForm);
   };
 
   if (isLoading) {
@@ -141,6 +173,10 @@ export default function AdminSettings() {
           <TabsTrigger value="integrations">
             <Globe className="w-4 h-4 mr-2" />
             Integraciones
+          </TabsTrigger>
+          <TabsTrigger value="calculator">
+            <Calculator className="w-4 h-4 mr-2" />
+            Calculadora
           </TabsTrigger>
         </TabsList>
 
@@ -437,6 +473,168 @@ export default function AdminSettings() {
             </div>
 
             <Button onClick={handleSaveIntegrations} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Guardando...
+                </>
+              ) : (
+                "Guardar cambios"
+              )}
+            </Button>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="calculator">
+          <Card className="p-6 space-y-6">
+            <div>
+              <h3 className="font-semibold mb-2">Calculadora de Inversión</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Estos parámetros controlan los cálculos mostrados en la página pública de inversionistas (/investors).
+                Cualquier cambio se refleja inmediatamente en la calculadora interactiva.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Factor de Utilización</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Factor premium (multiplicador)</Label>
+                  <Input
+                    value={calculatorForm.factorUtilizacionPremium}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, factorUtilizacionPremium: parseFloat(e.target.value) || 1 })}
+                    type="number"
+                    min={1}
+                    max={5}
+                    step={0.1}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Multiplicador de horas para ubicaciones premium (colectivo). Ej: 2.0 = el doble de horas efectivas.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Costos Operativos (%)</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Individual DC (%)</Label>
+                  <Input
+                    value={calculatorForm.costosOperativosIndividual}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, costosOperativosIndividual: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                    max={50}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Colectivo DC (%)</Label>
+                  <Input
+                    value={calculatorForm.costosOperativosColectivo}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, costosOperativosColectivo: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                    max={50}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>AC (%)</Label>
+                  <Input
+                    value={calculatorForm.costosOperativosAC}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, costosOperativosAC: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                    max={50}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Eficiencia de Carga (%)</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>DC (carga rápida)</Label>
+                  <Input
+                    value={calculatorForm.eficienciaCargaDC}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, eficienciaCargaDC: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={50}
+                    max={100}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>AC (carga lenta)</Label>
+                  <Input
+                    value={calculatorForm.eficienciaCargaAC}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, eficienciaCargaAC: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={50}
+                    max={100}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Costos de Energía (COP/kWh)</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Red eléctrica</Label>
+                  <Input
+                    value={calculatorForm.costoEnergiaRed}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, costoEnergiaRed: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Energía solar</Label>
+                  <Input
+                    value={calculatorForm.costoEnergiaSolar}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, costoEnergiaSolar: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Precio de Venta (COP/kWh)</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Mínimo</Label>
+                  <Input
+                    value={calculatorForm.precioVentaMin}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, precioVentaMin: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Por defecto</Label>
+                  <Input
+                    value={calculatorForm.precioVentaDefault}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, precioVentaDefault: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Máximo</Label>
+                  <Input
+                    value={calculatorForm.precioVentaMax}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, precioVentaMax: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Button onClick={handleSaveCalculator} disabled={updateMutation.isPending}>
               {updateMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />

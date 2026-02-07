@@ -1746,3 +1746,14 @@
 - [x] CORREGIR: Proyecciones acumuladas (3y, 5y, 10y) no coinciden con ingreso mensual × meses
 - [x] MEJORAR: Mostrar horas efectivas cuando se aplica factor premium 2x en colectivo
 - [x] VERIFICAR: Tabla comparativa ROI individual y colectivo vs cálculos reales
+
+## Mejoras Sugeridas Post-Auditoría - 7 Febrero 2026
+- [x] Factor de utilización premium configurable desde panel admin (no hardcodeado 2.0)
+- [x] Nuevos campos en BD: factorUtilizacionPremium, costosOperativos, eficiencia, precios
+- [x] Endpoint público getCalculatorParams para que la calculadora lea del backend
+- [x] Pestaña "Calculadora" en admin Settings con todos los parámetros editables
+- [x] Disclaimer legal robusto según regulación financiera colombiana (CREG, FOGAFÍN, Ley 964/2005)
+- [x] Escenario pesimista/realista/optimista en la calculadora de inversionistas
+- [x] Factores de escenario: pesimista (horas ×0.6, precio ×0.85), optimista (horas ×1.4, precio ×1.10)
+- [x] Indicador visual del escenario activo en los resultados
+- [x] Calculadora conectada a parámetros dinámicos del backend (ya no hardcodeada)
