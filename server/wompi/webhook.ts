@@ -61,7 +61,7 @@ export async function handleWompiWebhook(req: Request, res: Response) {
       // Procesar según el estado
       if (status === WOMPI_TRANSACTION_STATUS.APPROVED) {
         if (reference.startsWith("WLT-")) {
-          await processWalletRecharge(reference, amount_in_cents / 100, payment_method_type, id);
+          await processWalletRecharge(reference, amount_in_cents / 100, payment_method_type, id, transaction);
         } else if (reference.startsWith("CHG-")) {
           await processChargingPayment(reference, amount_in_cents / 100);
         } else if (reference.startsWith("INV-")) {
@@ -90,7 +90,8 @@ async function processWalletRecharge(
   reference: string,
   amount: number,
   paymentMethod: string,
-  wompiTxId: string
+  wompiTxId: string,
+  transaction?: any
 ) {
   console.log(`[Wompi] Procesando recarga de billetera: ${reference} - $${amount}`);
 
@@ -104,6 +105,23 @@ async function processWalletRecharge(
   try {
     // Agregar saldo a la billetera del usuario
     await db.addUserWalletBalance(localTx.userId, amount);
+
+    // Guardar datos de la tarjeta si es pago con tarjeta (para futuras recargas con un clic)
+    if (paymentMethod === "CARD" && transaction?.payment_method?.extra) {
+      const cardBrand = transaction.payment_method.extra.brand;
+      const cardLastFour = transaction.payment_method.extra.last_four;
+      if (cardBrand && cardLastFour) {
+        try {
+          await db.updateUserSubscription(localTx.userId, {
+            cardBrand,
+            cardLastFour,
+          });
+          console.log(`[Wompi] Datos de tarjeta guardados: ${cardBrand} ****${cardLastFour}`);
+        } catch (cardErr) {
+          console.warn("[Wompi] Error guardando datos de tarjeta:", cardErr);
+        }
+      }
+    }
 
     // Obtener datos del usuario para notificación
     const user = await db.getUserById(localTx.userId);
