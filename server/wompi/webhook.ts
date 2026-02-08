@@ -65,11 +65,12 @@ export async function handleWompiWebhook(req: Request, res: Response) {
           await processChargingPayment(reference, amount_in_cents / 100);
         } else if (reference.startsWith("INV-")) {
           await processInvestmentDeposit(reference, amount_in_cents / 100, id);
+        } else if (reference.startsWith("SUB-")) {
+          await processSubscriptionPayment(reference, amount_in_cents / 100, payment_method_type, id, transaction);
         }
-      } else if (status === WOMPI_TRANSACTION_STATUS.DECLINED) {
-        console.log(`[Wompi Webhook] Pago rechazado: ${reference}`);
-      } else if (status === WOMPI_TRANSACTION_STATUS.ERROR) {
-        console.log(`[Wompi Webhook] Pago con error: ${reference}`);
+      } else if (status === WOMPI_TRANSACTION_STATUS.DECLINED || status === WOMPI_TRANSACTION_STATUS.ERROR) {
+        console.log(`[Wompi Webhook] Pago ${status}: ${reference}`);
+        await notifyPaymentFailed(reference, status);
       }
     }
 
@@ -135,6 +136,32 @@ async function processWalletRecharge(
       }
     }
 
+    // Crear notificación in-app de recarga exitosa
+    try {
+      const formatCOP = (n: number) =>
+        new Intl.NumberFormat("es-CO", {
+          style: "currency",
+          currency: "COP",
+          minimumFractionDigits: 0,
+        }).format(n);
+
+      await db.createNotification({
+        userId: localTx.userId,
+        title: "¡Recarga exitosa!",
+        message: `Tu billetera fue recargada con ${formatCOP(amount)}. Nuevo saldo: ${formatCOP(wallet ? parseFloat(wallet.balance) : amount)}.`,
+        type: "PAYMENT",
+        data: JSON.stringify({
+          key: `recharge-${reference}`,
+          amount,
+          reference,
+          wompiTxId,
+          newBalance: wallet ? parseFloat(wallet.balance) : amount,
+        }),
+      });
+    } catch (notifDbErr) {
+      console.warn("[Wompi] Error creando notificación in-app de recarga:", notifDbErr);
+    }
+
     console.log(`[Wompi] Recarga completada para usuario ${localTx.userId}: $${amount}`);
   } catch (error) {
     console.error(`[Wompi] Error procesando recarga:`, error);
@@ -164,4 +191,130 @@ async function processInvestmentDeposit(reference: string, amount: number, wompi
   }
 
   console.log(`[Wompi] Depósito de inversión procesado para usuario ${localTx.userId}: $${amount}`);
+}
+
+// ============================================================================
+// PROCESAMIENTO DE SUSCRIPCIONES
+// ============================================================================
+
+async function processSubscriptionPayment(
+  reference: string,
+  amount: number,
+  paymentMethod: string,
+  wompiTxId: string,
+  transaction: any
+) {
+  console.log(`[Wompi] Procesando pago de suscripción: ${reference} - $${amount}`);
+
+  const localTx = await db.getWompiTransactionByReference(reference);
+  if (!localTx) {
+    console.error(`[Wompi] No se encontró transacción local para: ${reference}`);
+    return;
+  }
+
+  try {
+    // Determinar el plan basado en el monto
+    const planId = amount >= 33900 ? "premium" : "basic";
+
+    // Extraer datos de la tarjeta si están disponibles
+    const cardBrand = transaction?.payment_method?.extra?.brand;
+    const cardLastFour = transaction?.payment_method?.extra?.last_four;
+
+    // Activar/actualizar suscripción
+    await db.updateUserSubscription(localTx.userId, {
+      planId,
+      status: "active",
+      monthlyAmountCents: amount * 100,
+      lastPaymentDate: new Date(),
+      lastPaymentReference: reference,
+      cardBrand,
+      cardLastFour,
+    });
+
+    // Crear notificación in-app de suscripción activada
+    const planName = planId === "premium" ? "Premium" : "Básico";
+    const formatCurrency = (n: number) =>
+      new Intl.NumberFormat("es-CO", {
+        style: "currency",
+        currency: "COP",
+        minimumFractionDigits: 0,
+      }).format(n);
+
+    await db.createNotification({
+      userId: localTx.userId,
+      title: "¡Suscripción activada!",
+      message: `Tu plan ${planName} (${formatCurrency(amount)}/mes) está activo. Disfruta de tus descuentos en cargas y beneficios exclusivos.`,
+      type: "PAYMENT",
+      data: JSON.stringify({
+        key: `sub-activated-${reference}`,
+        planId,
+        amount,
+        reference,
+        wompiTxId,
+      }),
+    });
+
+    // Enviar email de confirmación
+    try {
+      const user = await db.getUserById(localTx.userId);
+      if (user?.email) {
+        const { sendWalletRechargeNotification } = await import("../notifications/paymentNotifications");
+        await sendWalletRechargeNotification({
+          userEmail: user.email,
+          userName: user.name || "Usuario",
+          amount,
+          paymentMethod: `Wompi (${paymentMethod || "Tarjeta"})`,
+          transactionId: wompiTxId,
+        });
+      }
+    } catch (emailErr) {
+      console.warn("[Wompi] Error enviando email de suscripción:", emailErr);
+    }
+
+    console.log(`[Wompi] Suscripción ${planName} activada para usuario ${localTx.userId}`);
+  } catch (error) {
+    console.error(`[Wompi] Error procesando suscripción:`, error);
+  }
+}
+
+// ============================================================================
+// NOTIFICACIÓN DE PAGO FALLIDO
+// ============================================================================
+
+async function notifyPaymentFailed(reference: string, status: string) {
+  try {
+    const localTx = await db.getWompiTransactionByReference(reference);
+    if (!localTx) return;
+
+    const typeLabels: Record<string, string> = {
+      WALLET_RECHARGE: "recarga de billetera",
+      SUBSCRIPTION: "suscripción",
+      INVESTMENT_DEPOSIT: "depósito de inversión",
+      OTHER: "pago",
+    };
+
+    const typeLabel = typeLabels[localTx.type] || "pago";
+    const statusLabel = status === "DECLINED" ? "rechazado" : "con error";
+
+    await db.createNotification({
+      userId: localTx.userId,
+      title: `Pago ${statusLabel}`,
+      message: `Tu ${typeLabel} de ${new Intl.NumberFormat("es-CO", {
+        style: "currency",
+        currency: "COP",
+        minimumFractionDigits: 0,
+      }).format(localTx.amountInCents / 100)} fue ${statusLabel}. Intenta de nuevo o usa otro método de pago.`,
+      type: "PAYMENT",
+      data: JSON.stringify({
+        key: `payment-failed-${reference}`,
+        reference,
+        status,
+        type: localTx.type,
+      }),
+    });
+
+    console.log(`[Wompi] Notificación de pago fallido enviada a usuario ${localTx.userId}`);
+  } catch (error) {
+    console.error("[Wompi] Error creando notificación de pago fallido:", error);
+  }
 }

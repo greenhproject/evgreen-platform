@@ -1850,11 +1850,30 @@
 
 ### Frontend Pagos
 - [x] Flujo de recarga de billetera con Wompi (Wallet.tsx)
-- [ ] Flujo de pago de suscripción con Wompi (pendiente - suscripciones requieren pago recurrente)
+- [x] Flujo de pago de suscripción con Wompi (checkout + verificación + activación)
 - [x] Verificación de pago al regresar de Wompi (?payment=wompi&reference=...)
 - [x] Historial de transacciones de pago en billetera
 
 ### Tests
 - [x] Tests unitarios para servicio de Wompi (firma SHA256, referencia, checkout URL, webhook checksum)
 - [x] Tests para constantes de estado y métodos de pago
-- [x] 349 tests pasando (22 archivos)
+- [x] 354 tests pasando (22 archivos)
+
+## Suscripciones Recurrentes Wompi + Notificaciones Push de Pago - 7 Febrero 2026
+
+### Suscripciones Recurrentes con Wompi
+- [x] Investigar API de tokenización de tarjetas de Wompi (checkout + payment source)
+- [x] Actualizar tabla subscriptions: Stripe → Wompi (wompiPaymentSourceId, wompiCardToken, cardBrand, cardLastFour, etc.)
+- [x] Endpoint createSubscriptionPayment para suscribirse a plan (Básico $18,900/Premium $33,900)
+- [x] Endpoint verifyAndActivateSubscription para verificar pago y activar plan
+- [x] Procesamiento de suscripción en webhook (processSubscriptionPayment)
+- [x] Endpoint cancelSubscription para cancelar suscripción
+- [x] UI de planes con estado activo, datos de tarjeta, próximo cobro y botón cancelar
+- [x] Funciones BD: cancelUserSubscription, getActiveSubscriptionsForBilling, updateSubscriptionBilling
+
+### Notificaciones In-App de Confirmación de Pago
+- [x] Notificación in-app al confirmar recarga de billetera (webhook + createNotification)
+- [x] Notificación in-app al confirmar pago de suscripción (webhook + createNotification)
+- [x] Notificación in-app al fallar un pago (notifyPaymentFailed en webhook)
+- [x] Notificación in-app al cancelar suscripción
+- [x] Tests unitarios: 354 tests pasando (22 archivos) - incluye tests de suscripción y checksum

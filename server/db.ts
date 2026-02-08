@@ -1884,39 +1884,60 @@ export async function createPaymentRecord(data: {
 }
 
 export async function updateUserSubscription(userId: number, data: {
-  stripeSubscriptionId?: string | null;
   planId?: string;
   status?: string;
+  wompiPaymentSourceId?: string | null;
+  wompiCardToken?: string | null;
+  cardBrand?: string;
+  cardLastFour?: string;
+  cardHolderName?: string;
+  monthlyAmountCents?: number;
+  lastPaymentDate?: Date;
+  lastPaymentReference?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  // Buscar suscripción existente
   const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
   
   const tier = data.planId === "premium" ? "PREMIUM" : data.planId === "basic" ? "BASIC" : "FREE";
-  // Descuentos basados en los planes actualizados
-  // Básico: 3% kWh, Premium: 5% kWh (el descuento en ocupación se aplica por separado)
   const discountPercentage = tier === "PREMIUM" ? "5" : tier === "BASIC" ? "3" : "0";
   const freeReservationsPerMonth = tier === "PREMIUM" ? 5 : tier === "BASIC" ? 2 : 0;
   const prioritySupport = tier !== "FREE";
   
+  // Calcular próxima fecha de facturación (30 días desde hoy)
+  const nextBilling = new Date();
+  nextBilling.setDate(nextBilling.getDate() + 30);
+  
   if (existing.length === 0) {
-    // Crear nueva suscripción
     await db.insert(subscriptions).values({
       userId,
       tier: tier as any,
-      stripeSubscriptionId: data.stripeSubscriptionId,
+      wompiPaymentSourceId: data.wompiPaymentSourceId,
+      wompiCardToken: data.wompiCardToken,
+      cardBrand: data.cardBrand,
+      cardLastFour: data.cardLastFour,
+      cardHolderName: data.cardHolderName,
+      monthlyAmountCents: data.monthlyAmountCents || 0,
       discountPercentage,
       freeReservationsPerMonth,
       prioritySupport,
       startDate: new Date(),
+      nextBillingDate: nextBilling,
+      lastPaymentDate: data.lastPaymentDate || new Date(),
+      lastPaymentReference: data.lastPaymentReference,
       isActive: data.status === "active",
     });
   } else {
-    // Actualizar suscripción existente
     const updateData: any = {};
-    if (data.stripeSubscriptionId !== undefined) updateData.stripeSubscriptionId = data.stripeSubscriptionId;
+    if (data.wompiPaymentSourceId !== undefined) updateData.wompiPaymentSourceId = data.wompiPaymentSourceId;
+    if (data.wompiCardToken !== undefined) updateData.wompiCardToken = data.wompiCardToken;
+    if (data.cardBrand) updateData.cardBrand = data.cardBrand;
+    if (data.cardLastFour) updateData.cardLastFour = data.cardLastFour;
+    if (data.cardHolderName) updateData.cardHolderName = data.cardHolderName;
+    if (data.monthlyAmountCents !== undefined) updateData.monthlyAmountCents = data.monthlyAmountCents;
+    if (data.lastPaymentDate) updateData.lastPaymentDate = data.lastPaymentDate;
+    if (data.lastPaymentReference) updateData.lastPaymentReference = data.lastPaymentReference;
     if (data.planId) {
       updateData.tier = tier;
       updateData.discountPercentage = discountPercentage;
@@ -1925,8 +1946,10 @@ export async function updateUserSubscription(userId: number, data: {
     }
     if (data.status) {
       updateData.isActive = data.status === "active";
+      updateData.nextBillingDate = nextBilling;
       if (data.status === "canceled") {
         updateData.cancelledAt = new Date();
+        updateData.nextBillingDate = null;
       }
     }
     
@@ -1934,15 +1957,60 @@ export async function updateUserSubscription(userId: number, data: {
   }
 }
 
-export async function getUserByStripeSubscriptionId(subscriptionId: string) {
+export async function cancelUserSubscription(userId: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   
-  const sub = await db.select().from(subscriptions).where(eq(subscriptions.stripeSubscriptionId, subscriptionId)).limit(1);
-  if (sub.length === 0) return null;
+  await db.update(subscriptions).set({
+    isActive: false,
+    cancelledAt: new Date(),
+    nextBillingDate: null,
+    tier: "FREE" as any,
+    discountPercentage: "0",
+    freeReservationsPerMonth: 0,
+    prioritySupport: false,
+  }).where(eq(subscriptions.userId, userId));
+}
+
+export async function getActiveSubscriptionsForBilling() {
+  const db = await getDb();
+  if (!db) return [];
   
-  const user = await db.select().from(users).where(eq(users.id, sub[0].userId)).limit(1);
-  return user[0] || null;
+  const now = new Date();
+  return db.select().from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.isActive, true),
+        sql`${subscriptions.nextBillingDate} <= ${now}`,
+        sql`${subscriptions.tier} != 'FREE'`
+      )
+    );
+}
+
+export async function updateSubscriptionBilling(subscriptionId: number, data: {
+  lastPaymentDate: Date;
+  lastPaymentReference: string;
+  nextBillingDate: Date;
+  failedPaymentCount?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(subscriptions).set({
+    lastPaymentDate: data.lastPaymentDate,
+    lastPaymentReference: data.lastPaymentReference,
+    nextBillingDate: data.nextBillingDate,
+    failedPaymentCount: data.failedPaymentCount ?? 0,
+  }).where(eq(subscriptions.id, subscriptionId));
+}
+
+export async function incrementSubscriptionFailedPayments(subscriptionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(subscriptions).set({
+    failedPaymentCount: sql`${subscriptions.failedPaymentCount} + 1`,
+  }).where(eq(subscriptions.id, subscriptionId));
 }
 
 export async function updateTransactionPaymentStatus(transactionId: string, data: {

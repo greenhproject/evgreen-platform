@@ -360,9 +360,16 @@ export const subscriptions = mysqlTable("subscriptions", {
   discountPercentage: decimal("discountPercentage", { precision: 5, scale: 2 }).default("0"),
   freeReservationsPerMonth: int("freeReservationsPerMonth").default(0),
   prioritySupport: boolean("prioritySupport").default(false),
-  // Stripe
-  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 100 }),
-  stripePriceId: varchar("stripePriceId", { length: 100 }),
+  // Wompi tokenización
+  wompiPaymentSourceId: varchar("wompiPaymentSourceId", { length: 100 }),
+  wompiCardToken: varchar("wompiCardToken", { length: 100 }),
+  cardBrand: varchar("cardBrand", { length: 20 }),
+  cardLastFour: varchar("cardLastFour", { length: 4 }),
+  cardHolderName: varchar("cardHolderName", { length: 255 }),
+  monthlyAmountCents: bigint("monthlyAmountCents", { mode: "number" }).default(0),
+  lastPaymentDate: timestamp("lastPaymentDate"),
+  lastPaymentReference: varchar("lastPaymentReference", { length: 255 }),
+  failedPaymentCount: int("failedPaymentCount").default(0),
   // Fechas
   startDate: timestamp("startDate").notNull(),
   endDate: timestamp("endDate"),

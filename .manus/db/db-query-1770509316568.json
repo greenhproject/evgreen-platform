@@ -1,0 +1,85 @@
+{
+  "query": "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'subscriptions' ORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT COLUMN_NAME, DATA_TYPE, COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'subscriptions' ORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id",
+      "DATA_TYPE": "int",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "COLUMN_NAME": "userId",
+      "DATA_TYPE": "int",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "COLUMN_NAME": "subscription_tier",
+      "DATA_TYPE": "enum",
+      "COLUMN_DEFAULT": "FREE"
+    },
+    {
+      "COLUMN_NAME": "discountPercentage",
+      "DATA_TYPE": "decimal",
+      "COLUMN_DEFAULT": "0"
+    },
+    {
+      "COLUMN_NAME": "freeReservationsPerMonth",
+      "DATA_TYPE": "int",
+      "COLUMN_DEFAULT": "0"
+    },
+    {
+      "COLUMN_NAME": "prioritySupport",
+      "DATA_TYPE": "tinyint",
+      "COLUMN_DEFAULT": "0"
+    },
+    {
+      "COLUMN_NAME": "stripeSubscriptionId",
+      "DATA_TYPE": "varchar",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "COLUMN_NAME": "stripePriceId",
+      "DATA_TYPE": "varchar",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "COLUMN_NAME": "startDate",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "COLUMN_NAME": "endDate",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "COLUMN_NAME": "nextBillingDate",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "COLUMN_NAME": "isActive",
+      "DATA_TYPE": "tinyint",
+      "COLUMN_DEFAULT": "1"
+    },
+    {
+      "COLUMN_NAME": "cancelledAt",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "COLUMN_NAME": "createdAt",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "COLUMN_NAME": "updatedAt",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\tDATA_TYPE\tCOLUMN_DEFAULT\nid\tint\tNULL\nuserId\tint\tNULL\nsubscription_tier\tenum\tFREE\ndiscountPercentage\tdecimal\t0\nfreeReservationsPerMonth\tint\t0\nprioritySupport\ttinyint\t0\nstripeSubscriptionId\tvarchar\tNULL\nstripePriceId\tvarchar\tNULL\nstartDate\ttimestamp\tNULL\nendDate\ttimestamp\tNULL\nnextBillingDate\ttimestamp\tNULL\nisActive\ttinyint\t1\ncancelledAt\ttimestamp\tNULL\ncreatedAt\ttimestamp\tCURRENT_TIMESTAMP\nupdatedAt\ttimestamp\tCURRENT_TIMESTAMP\n",
+  "stderr": "",
+  "execution_time_ms": 60
+}
