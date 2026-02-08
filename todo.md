@@ -1955,3 +1955,13 @@
 - [x] Botones con gradiente azul/verde para cada estación con coordenadas
 - [x] Fallback a búsqueda por texto cuando no hay coordenadas
 - [x] 385 tests pasando (24 archivos)
+
+## Bug: Simulación de carga siempre llega al 100% - 8 Febrero 2026 - CORREGIDO
+- [x] BUG: Cuando el usuario selecciona un % de batería menor al 100%, la simulación siempre llegaba al 100%
+- [x] BUG: Cuando el usuario selecciona un monto específico (ej. $80,000), la carga cobraba un valor incorrecto
+- [x] Corregir la lógica de simulación: agregado realTargetKwh para mapear progreso simulado a valores reales
+- [x] Corregir el cálculo de energía consumida según el monto seleccionado (monto fijo cobra exactamente lo pedido)
+- [x] Gauge de batería ahora muestra nivel real (empieza en 20% y sube hasta el objetivo)
+- [x] getActiveSimulationInfo ahora devuelve kWh/costo reales proporcionales al progreso
+- [x] completeSimulation usa realTargetKwh para cálculos finales correctos
+- [x] 385 tests pasando (24 archivos)
