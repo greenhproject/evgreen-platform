@@ -75,13 +75,13 @@ export default function PaymentMethods() {
               </div>
             </Card>
           ) : !wompiConfig?.configured ? (
-            <Card className="p-4 bg-destructive/10 border-destructive/30">
+            <Card className="p-4 bg-amber-950/20 border-amber-800/30">
               <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-destructive mt-0.5" />
+                <AlertCircle className="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-destructive">Sistema de pagos no configurado</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    El administrador debe configurar las credenciales de Wompi para habilitar los pagos.
+                  <p className="text-sm font-medium text-amber-300">Pagos en configuración</p>
+                  <p className="text-xs text-amber-400/60 mt-1">
+                    El sistema de pagos está siendo configurado. Pronto podrás usar todos los métodos de pago disponibles.
                   </p>
                 </div>
               </div>

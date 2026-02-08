@@ -1920,3 +1920,9 @@
 - [x] TypeScript compila sin errores
 - [x] 369 tests pasando (23 archivos)
 - [x] No quedan referencias funcionales a Stripe en el frontend
+
+## Bug: Banner "sistema de pagos no disponible" en Suscripciones - 8 Febrero 2026
+- [x] Corregido: banners rojos reemplazados por banners ámbar suaves en Subscription, Wallet y PaymentMethods
+- [x] Toast de error actualizado a mensaje amigable ("Los pagos están siendo configurados")
+- [x] Validación de formato de llaves Wompi (no acepta llaves de Stripe: pub_/prv_ requerido)
+- [x] Limpiadas llaves de Stripe de la BD que estaban en campos de Wompi

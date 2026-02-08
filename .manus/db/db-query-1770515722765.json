@@ -1,0 +1,17 @@
+{
+  "query": "SELECT wompiPublicKey, wompiPrivateKey, wompiIntegritySecret, wompiEventsSecret, wompiTestMode FROM platform_settings LIMIT 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT wompiPublicKey, wompiPrivateKey, wompiIntegritySecret, wompiEventsSecret, wompiTestMode FROM platform_settings LIMIT 1;",
+  "rows": [
+    {
+      "wompiPublicKey": "pk_test_51SucufHD0GykvX1WgoMSdwv1sXsbcAfWa2w532peEpnKS1vYi3HgGSqpQtaGWGoObTFF92FVeU3fyG5YMQHI2Edd0031YgNKL3",
+      "wompiPrivateKey": "sk_test_51SucufHD0GykvX1WR1Q9FW69XlPyetEoeYWQ9nChokr6OlDALWWqr5wN0mOok3BYqNW6tK5Ul9ZNv29tzwkveR6k00nNNlwZDj",
+      "wompiIntegritySecret": "prod_integrity_pDlaYAgpuSJ7gBk0u2X6qLNnayFqjPfb",
+      "wompiEventsSecret": "prod_events_y38PlB9h8PRtkP0tf60pazaWUuc9SG6a",
+      "wompiTestMode": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "wompiPublicKey\twompiPrivateKey\twompiIntegritySecret\twompiEventsSecret\twompiTestMode\npk_test_51SucufHD0GykvX1WgoMSdwv1sXsbcAfWa2w532peEpnKS1vYi3HgGSqpQtaGWGoObTFF92FVeU3fyG5YMQHI2Edd0031YgNKL3\tsk_test_51SucufHD0GykvX1WR1Q9FW69XlPyetEoeYWQ9nChokr6OlDALWWqr5wN0mOok3BYqNW6tK5Ul9ZNv29tzwkveR6k00nNNlwZDj\tprod_integrity_pDlaYAgpuSJ7gBk0u2X6qLNnayFqjPfb\tprod_events_y38PlB9h8PRtkP0tf60pazaWUuc9SG6a\t1\n",
+  "stderr": "",
+  "execution_time_ms": 442
+}
