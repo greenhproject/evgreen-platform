@@ -42,6 +42,22 @@ export default function AdminSettings() {
     enableOccupancyPenalty: true,
   });
 
+  // Rastrear qué campos secretos tienen valor guardado en BD (para mostrar placeholder)
+  const [savedSecrets, setSavedSecrets] = useState({
+    wompiPublicKey: false,
+    wompiPrivateKey: false,
+    wompiIntegritySecret: false,
+    wompiEventsSecret: false,
+  });
+
+  // Rastrear qué campos secretos fueron tocados/modificados por el usuario
+  const [touchedSecrets, setTouchedSecrets] = useState({
+    wompiPublicKey: false,
+    wompiPrivateKey: false,
+    wompiIntegritySecret: false,
+    wompiEventsSecret: false,
+  });
+
   const [notificationsForm, setNotificationsForm] = useState({
     notifyChargeComplete: true,
     notifyReservationReminder: true,
@@ -82,11 +98,25 @@ export default function AdminSettings() {
         platformFeePercentage: settings.platformFeePercentage,
       });
 
+      // Para campos secretos: NO llenar con valores enmascarados, dejar vacíos
+      // Solo marcar que tienen valor guardado para mostrar placeholder
+      setSavedSecrets({
+        wompiPublicKey: !!settings.wompiPublicKey,
+        wompiPrivateKey: !!settings.wompiPrivateKey,
+        wompiIntegritySecret: !!settings.wompiIntegritySecret,
+        wompiEventsSecret: !!settings.wompiEventsSecret,
+      });
+      setTouchedSecrets({
+        wompiPublicKey: false,
+        wompiPrivateKey: false,
+        wompiIntegritySecret: false,
+        wompiEventsSecret: false,
+      });
       setPaymentsForm({
-        wompiPublicKey: settings.wompiPublicKey || "",
-        wompiPrivateKey: settings.wompiPrivateKey || "",
-        wompiIntegritySecret: settings.wompiIntegritySecret || "",
-        wompiEventsSecret: settings.wompiEventsSecret || "",
+        wompiPublicKey: "",
+        wompiPrivateKey: "",
+        wompiIntegritySecret: "",
+        wompiEventsSecret: "",
         wompiTestMode: settings.wompiTestMode,
         enableEnergyBilling: settings.enableEnergyBilling,
         enableReservationBilling: settings.enableReservationBilling,
@@ -128,7 +158,27 @@ export default function AdminSettings() {
   };
 
   const handleSavePayments = () => {
-    updateMutation.mutate(paymentsForm);
+    // Solo enviar campos secretos que fueron modificados por el usuario
+    const payload: any = {
+      wompiTestMode: paymentsForm.wompiTestMode,
+      enableEnergyBilling: paymentsForm.enableEnergyBilling,
+      enableReservationBilling: paymentsForm.enableReservationBilling,
+      enableOccupancyPenalty: paymentsForm.enableOccupancyPenalty,
+    };
+    // Solo incluir credenciales que el usuario modificó explícitamente
+    if (touchedSecrets.wompiPublicKey && paymentsForm.wompiPublicKey) {
+      payload.wompiPublicKey = paymentsForm.wompiPublicKey;
+    }
+    if (touchedSecrets.wompiPrivateKey && paymentsForm.wompiPrivateKey) {
+      payload.wompiPrivateKey = paymentsForm.wompiPrivateKey;
+    }
+    if (touchedSecrets.wompiIntegritySecret && paymentsForm.wompiIntegritySecret) {
+      payload.wompiIntegritySecret = paymentsForm.wompiIntegritySecret;
+    }
+    if (touchedSecrets.wompiEventsSecret && paymentsForm.wompiEventsSecret) {
+      payload.wompiEventsSecret = paymentsForm.wompiEventsSecret;
+    }
+    updateMutation.mutate(payload);
   };
 
   const handleSaveNotifications = () => {
@@ -267,7 +317,7 @@ export default function AdminSettings() {
               <h3 className="font-semibold mb-4 flex items-center gap-2">
                 <img src="https://wompi.com/favicon.ico" alt="Wompi" className="w-5 h-5" />
                 Configuración de Wompi
-                {paymentsForm.wompiPublicKey && paymentsForm.wompiPrivateKey && paymentsForm.wompiIntegritySecret ? (
+                {(savedSecrets.wompiPublicKey || paymentsForm.wompiPublicKey) && (savedSecrets.wompiPrivateKey || paymentsForm.wompiPrivateKey) && (savedSecrets.wompiIntegritySecret || paymentsForm.wompiIntegritySecret) ? (
                   <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
                     <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                     Configurado
@@ -288,8 +338,11 @@ export default function AdminSettings() {
                   <Label>Llave pública</Label>
                   <Input
                     value={paymentsForm.wompiPublicKey}
-                    onChange={(e) => setPaymentsForm({ ...paymentsForm, wompiPublicKey: e.target.value })}
-                    placeholder="pub_prod_... o pub_test_..."
+                    onChange={(e) => {
+                      setPaymentsForm({ ...paymentsForm, wompiPublicKey: e.target.value });
+                      setTouchedSecrets({ ...touchedSecrets, wompiPublicKey: true });
+                    }}
+                    placeholder={savedSecrets.wompiPublicKey ? "✅ Clave guardada — escribe para reemplazar" : "pub_prod_... o pub_test_..."}
                   />
                   <p className="text-xs text-muted-foreground">
                     Se usa en el widget de pago del frontend.
@@ -299,20 +352,26 @@ export default function AdminSettings() {
                   <Label>Llave privada</Label>
                   <Input
                     value={paymentsForm.wompiPrivateKey}
-                    onChange={(e) => setPaymentsForm({ ...paymentsForm, wompiPrivateKey: e.target.value })}
-                    placeholder="prv_prod_... o prv_test_..."
+                    onChange={(e) => {
+                      setPaymentsForm({ ...paymentsForm, wompiPrivateKey: e.target.value });
+                      setTouchedSecrets({ ...touchedSecrets, wompiPrivateKey: true });
+                    }}
+                    placeholder={savedSecrets.wompiPrivateKey ? "✅ Clave guardada — escribe para reemplazar" : "prv_prod_... o prv_test_..."}
                     type="password"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Se usa en el servidor para consultar transacciones. Si ya hay una clave guardada, verás una versión enmascarada.
+                    Se usa en el servidor para consultar transacciones.
                   </p>
                 </div>
                 <div className="space-y-2">
                   <Label>Secreto de integridad</Label>
                   <Input
                     value={paymentsForm.wompiIntegritySecret}
-                    onChange={(e) => setPaymentsForm({ ...paymentsForm, wompiIntegritySecret: e.target.value })}
-                    placeholder="prod_integrity_... o test_integrity_..."
+                    onChange={(e) => {
+                      setPaymentsForm({ ...paymentsForm, wompiIntegritySecret: e.target.value });
+                      setTouchedSecrets({ ...touchedSecrets, wompiIntegritySecret: true });
+                    }}
+                    placeholder={savedSecrets.wompiIntegritySecret ? "✅ Clave guardada — escribe para reemplazar" : "prod_integrity_... o test_integrity_..."}
                     type="password"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -323,8 +382,11 @@ export default function AdminSettings() {
                   <Label>Secreto de eventos</Label>
                   <Input
                     value={paymentsForm.wompiEventsSecret}
-                    onChange={(e) => setPaymentsForm({ ...paymentsForm, wompiEventsSecret: e.target.value })}
-                    placeholder="prod_events_... o test_events_..."
+                    onChange={(e) => {
+                      setPaymentsForm({ ...paymentsForm, wompiEventsSecret: e.target.value });
+                      setTouchedSecrets({ ...touchedSecrets, wompiEventsSecret: true });
+                    }}
+                    placeholder={savedSecrets.wompiEventsSecret ? "✅ Clave guardada — escribe para reemplazar" : "prod_events_... o test_events_..."}
                     type="password"
                   />
                   <p className="text-xs text-muted-foreground">

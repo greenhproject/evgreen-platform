@@ -10,6 +10,7 @@ import { serveStatic, setupVite } from "./vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { handleStripeWebhook } from "../stripe/webhook";
 import { handleWompiWebhook } from "../wompi/webhook";
+import { startBillingCronJob } from "../wompi/recurring-billing";
 import * as ocppManager from "../ocpp/connection-manager";
 import * as alertsService from "../ocpp/alerts-service";
 
@@ -226,6 +227,9 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
     console.log(`OCPP WebSocket endpoint: ws://localhost:${port}/ocpp/{chargePointId}`);
+    
+    // Iniciar cron job de cobro recurrente de suscripciones
+    startBillingCronJob();
   });
 }
 
