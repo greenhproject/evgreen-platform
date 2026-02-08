@@ -37,6 +37,15 @@ export async function getWompiKeys(): Promise<WompiKeys | null> {
     return null;
   }
 
+  // Validar que las llaves sean de Wompi (no de Stripe u otro proveedor)
+  const isWompiPublicKey = config.publicKey.startsWith("pub_") || config.publicKey.startsWith("pub_test_") || config.publicKey.startsWith("pub_prod_") || config.publicKey.startsWith("pub_staging_");
+  const isWompiPrivateKey = config.privateKey.startsWith("prv_") || config.privateKey.startsWith("prv_test_") || config.privateKey.startsWith("prv_prod_") || config.privateKey.startsWith("prv_staging_");
+  
+  if (!isWompiPublicKey || !isWompiPrivateKey) {
+    console.warn("[Wompi] Las llaves configuradas no tienen formato de Wompi. Verifique que sean llaves de Wompi (pub_xxx / prv_xxx)");
+    return null;
+  }
+
   const testMode = config.testMode ?? true;
   const apiUrl = testMode
     ? "https://sandbox.wompi.co/v1"

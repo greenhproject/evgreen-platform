@@ -105,7 +105,7 @@ export default function UserSubscription() {
 
   const handleSubscribe = (planId: "basic" | "premium") => {
     if (!wompiConfig?.configured) {
-      toast.error("El sistema de pagos no está disponible en este momento.");
+      toast.error("Los pagos están siendo configurados. Intenta de nuevo en unos minutos.");
       return;
     }
     setIsProcessing(true);
@@ -194,12 +194,12 @@ export default function UserSubscription() {
 
         {/* Alerta si Wompi no está configurado */}
         {!loadingConfig && !wompiConfig?.configured && (
-          <Card className="p-4 bg-yellow-950/30 border-yellow-800/50">
+          <Card className="p-4 bg-amber-950/20 border-amber-800/30">
             <div className="flex items-start gap-2">
-              <AlertCircle className="w-5 h-5 text-yellow-400 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium text-yellow-300">Sistema de pagos en configuración</p>
-                <p className="text-xs text-yellow-400/70">Los pagos estarán disponibles pronto. Puedes explorar los planes mientras tanto.</p>
+                <p className="text-sm font-medium text-amber-300">Pagos en configuración</p>
+                <p className="text-xs text-amber-400/60 mt-0.5">El administrador está configurando el sistema de pagos. Pronto podrás activar tu plan.</p>
               </div>
             </div>
           </Card>

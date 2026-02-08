@@ -167,7 +167,7 @@ export default function UserWallet() {
     }
 
     if (!hasPaymentMethod) {
-      toast.error("El sistema de pagos no está disponible en este momento");
+      toast.error("Los pagos están siendo configurados. Intenta de nuevo en unos minutos.");
       return;
     }
 
@@ -177,7 +177,7 @@ export default function UserWallet() {
 
   const handleSubscribe = (planId: "basic" | "premium") => {
     if (!hasPaymentMethod) {
-      toast.error("El sistema de pagos no está disponible en este momento");
+      toast.error("Los pagos están siendo configurados. Intenta de nuevo en unos minutos.");
       return;
     }
 
@@ -263,10 +263,10 @@ export default function UserWallet() {
           <TabsContent value="recharge" className="mt-4 space-y-4">
             {/* Estado de pagos */}
             {!hasPaymentMethod && (
-              <Card className="p-4 bg-yellow-50 border-yellow-200">
-                <div className="flex items-center gap-2 text-yellow-800">
-                  <AlertCircle className="w-5 h-5" />
-                  <span className="text-sm">Sistema de pagos en configuración</span>
+              <Card className="p-4 bg-amber-950/20 border-amber-800/30">
+                <div className="flex items-center gap-2 text-amber-300">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm">Pagos en configuración. Pronto podrás recargar tu billetera.</span>
                 </div>
               </Card>
             )}
@@ -472,10 +472,10 @@ export default function UserWallet() {
             </div>
 
             {!hasPaymentMethod && (
-              <Card className="p-4 bg-yellow-50 border-yellow-200">
-                <div className="flex items-center gap-2 text-yellow-800">
-                  <AlertCircle className="w-5 h-5" />
-                  <span className="text-sm">Sistema de pagos en configuración. Las suscripciones estarán disponibles pronto.</span>
+              <Card className="p-4 bg-amber-950/20 border-amber-800/30">
+                <div className="flex items-center gap-2 text-amber-300">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm">Pagos en configuración. Las suscripciones estarán disponibles pronto.</span>
                 </div>
               </Card>
             )}
