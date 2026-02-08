@@ -1937,3 +1937,21 @@
 - [x] Balance de billetera visible como hero card con saldo prominente
 - [x] Webhook guarda datos de tarjeta (marca, últimos 4) al procesar recarga con tarjeta
 - [x] 369 tests pasando (23 archivos)
+
+## Mejoras Asistente IA - 8 Febrero 2026
+### Escritura Progresiva (Streaming)
+- [x] Implementar efecto de escritura progresiva en las respuestas del asistente (palabra por palabra con cursor pulsante)
+- [x] Auto-scroll hacia abajo a medida que el texto va apareciendo (intervalo de 100ms)
+- [x] Evitar que el usuario tenga que devolverse para leer desde el principio
+- [x] Botón "Mostrar todo" para saltar la animación
+- [x] Indicador "Escribiendo..." en el header durante la animación
+
+### Integración Google Maps - Rutas a Estaciones
+- [x] Detectar cuando el usuario pide ir a una estación o la más cercana
+- [x] Abrir Google Maps directamente con la ruta calculada desde la ubicación del usuario
+- [x] Integrar con el sistema de estaciones existente para obtener coordenadas
+- [x] Tags [NAV:lat,lng|nombre] en system prompt para coordenadas exactas
+- [x] Limpieza de tags NAV del texto visible (usuario no ve marcado interno)
+- [x] Botones con gradiente azul/verde para cada estación con coordenadas
+- [x] Fallback a búsqueda por texto cuando no hay coordenadas
+- [x] 385 tests pasando (24 archivos)
