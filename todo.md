@@ -1926,3 +1926,14 @@
 - [x] Toast de error actualizado a mensaje amigable ("Los pagos están siendo configurados")
 - [x] Validación de formato de llaves Wompi (no acepta llaves de Stripe: pub_/prv_ requerido)
 - [x] Limpiadas llaves de Stripe de la BD que estaban en campos de Wompi
+
+## Rediseño Billetera - Enfoque Tarjeta Inscrita - 8 Febrero 2026
+- [x] Rediseñar UI de billetera con tarjeta de crédito inscrita como centro (tabs: Billetera / Historial)
+- [x] Mostrar tarjeta guardada prominente (estilo tarjeta visual con gradiente por marca: Visa azul, MC rojo, Amex gris)
+- [x] Flujo de "Agregar tarjeta" que tokeniza vía checkout de Wompi (recarga mínima $20,000)
+- [x] Recargar billetera directamente desde tarjeta inscrita (botón "Recargar con Visa ····4242")
+- [x] Opción de cambiar tarjeta inscrita (nueva recarga reemplaza datos de tarjeta)
+- [x] Sección colapsable de otros métodos (PSE, Nequi, Bancolombia QR, Efecty)
+- [x] Balance de billetera visible como hero card con saldo prominente
+- [x] Webhook guarda datos de tarjeta (marca, últimos 4) al procesar recarga con tarjeta
+- [x] 369 tests pasando (23 archivos)
