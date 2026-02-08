@@ -119,7 +119,7 @@ export const stripeRouter = router({
     }
 
     const subscription = await db.getUserSubscription(ctx.user.id);
-    if (!subscription || !subscription.stripeSubscriptionId) {
+    if (!subscription || !subscription.isActive) {
       throw new TRPCError({
         code: "NOT_FOUND",
         message: "No tienes una suscripción activa",
@@ -127,15 +127,8 @@ export const stripeRouter = router({
     }
 
     try {
-      // Cancelar en Stripe (al final del período actual)
-      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-        cancel_at_period_end: true,
-      });
-
-      // Actualizar en base de datos
-      await db.updateUserSubscription(ctx.user.id, {
-        status: "canceling",
-      });
+      // Cancelar suscripción
+      await db.cancelUserSubscription(ctx.user.id);
 
       return { success: true, message: "Tu suscripción se cancelará al final del período actual" };
     } catch (error) {

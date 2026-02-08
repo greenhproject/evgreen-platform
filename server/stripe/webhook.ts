@@ -156,7 +156,6 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       
       // Actualizar suscripción del usuario
       await db.updateUserSubscription(parseInt(userId), {
-        stripeSubscriptionId: subscriptionId,
         planId: planId || "basic",
         status: "active",
       });
@@ -193,25 +192,10 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
   console.log(`[Stripe Webhook] Subscription updated: ${subscription.id}, status: ${subscription.status}`);
-  
-  // Buscar usuario por subscription ID y actualizar estado
-  const user = await db.getUserByStripeSubscriptionId(subscription.id);
-  if (user) {
-    await db.updateUserSubscription(user.id, {
-      status: subscription.status,
-    });
-  }
+  // Las suscripciones ahora se manejan por Wompi
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   console.log(`[Stripe Webhook] Subscription deleted: ${subscription.id}`);
-  
-  // Buscar usuario y cancelar suscripción
-  const user = await db.getUserByStripeSubscriptionId(subscription.id);
-  if (user) {
-    await db.updateUserSubscription(user.id, {
-      status: "canceled",
-      stripeSubscriptionId: null,
-    });
-  }
+  // Las suscripciones ahora se manejan por Wompi
 }

@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Wallet,
-  Plus,
   CreditCard,
   Clock,
   ArrowUpRight,
@@ -18,13 +17,13 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
-  ExternalLink,
   Crown,
-  Star
+  Star,
+  XCircle,
+  CalendarDays,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-// PaymentMethodSelector ya no se necesita - Wompi maneja la selección de método de pago
 
 const PRESET_AMOUNTS = [20000, 50000, 100000];
 
@@ -32,23 +31,20 @@ export default function UserWallet() {
   const [selectedAmount, setSelectedAmount] = useState<number | null>(50000);
   const [customAmount, setCustomAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [showPaymentSelector, setShowPaymentSelector] = useState(false);
   const [location] = useLocation();
 
   // Verificar si Wompi está configurado
   const { data: wompiConfig } = trpc.wompi.isConfigured.useQuery();
-  
-  // Verificar si hay algún método de pago disponible
   const hasPaymentMethod = wompiConfig?.configured;
-  
+
   // Obtener billetera
   const { data: wallet, isLoading, refetch: refetchWallet } = trpc.wallet.getMyWallet.useQuery();
-  
+
   // Obtener historial de transacciones
   const { data: transactions, refetch: refetchTransactions } = trpc.wallet.getTransactions.useQuery({ limit: 20 });
 
-  // Obtener suscripción actual (placeholder - las suscripciones se manejarán por Wompi en el futuro)
-  const subscription: any = null;
+  // Obtener suscripción actual
+  const { data: subscription, refetch: refetchSubscription } = trpc.wompi.getMySubscription.useQuery();
 
   // Mutation para crear checkout de recarga con Wompi
   const createWompiRecharge = trpc.wompi.createWalletRecharge.useMutation({
@@ -61,6 +57,21 @@ export default function UserWallet() {
     },
     onError: (error) => {
       toast.error(error.message || "Error al procesar el pago");
+      setIsProcessing(false);
+    },
+  });
+
+  // Mutation para crear checkout de suscripción
+  const createSubscriptionPayment = trpc.wompi.createSubscriptionPayment.useMutation({
+    onSuccess: (data) => {
+      if (data.checkoutUrl) {
+        toast.info("Redirigiendo a Wompi para completar la suscripción...");
+        window.open(data.checkoutUrl, "_blank");
+      }
+      setIsProcessing(false);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al procesar la suscripción");
       setIsProcessing(false);
     },
   });
@@ -81,24 +92,62 @@ export default function UserWallet() {
     },
   });
 
+  // Mutation para verificar y activar suscripción
+  const verifySubscription = trpc.wompi.verifyAndActivateSubscription.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(data.message);
+        refetchSubscription();
+        refetchTransactions();
+      } else {
+        toast.error(data.message);
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error verificando la suscripción");
+    },
+  });
+
+  // Mutation para cancelar suscripción
+  const cancelSubscription = trpc.wompi.cancelSubscription.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      refetchSubscription();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error cancelando la suscripción");
+    },
+  });
+
   // Verificar parámetros de URL para confirmación de pago Wompi
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const payment = params.get("payment");
     const reference = params.get("reference");
-    
+    const type = params.get("type");
+    const plan = params.get("plan");
+
     if (payment === "wompi" && reference) {
-      toast.info("Verificando pago...");
-      verifyPayment.mutate({
-        reference,
-        type: "wallet_recharge",
-      });
+      if (type === "subscription" && plan) {
+        toast.info("Verificando suscripción...");
+        verifySubscription.mutate({
+          reference,
+          planId: plan as "basic" | "premium",
+        });
+      } else {
+        toast.info("Verificando pago...");
+        verifyPayment.mutate({
+          reference,
+          type: "wallet_recharge",
+        });
+      }
       // Limpiar URL
       window.history.replaceState({}, "", "/wallet");
     } else if (params.get("success") === "true") {
       toast.success("¡Pago completado exitosamente!");
       refetchWallet();
       refetchTransactions();
+      refetchSubscription();
       window.history.replaceState({}, "", "/wallet");
     } else if (params.get("canceled") === "true") {
       toast.info("Pago cancelado");
@@ -122,13 +171,30 @@ export default function UserWallet() {
       return;
     }
 
-    // Crear checkout de Wompi directamente
     setIsProcessing(true);
     createWompiRecharge.mutate({ amount });
   };
 
   const handleSubscribe = (planId: "basic" | "premium") => {
-    toast.info("Las suscripciones estarán disponibles próximamente");
+    if (!hasPaymentMethod) {
+      toast.error("El sistema de pagos no está disponible en este momento");
+      return;
+    }
+
+    // Si ya tiene ese plan activo, no hacer nada
+    if (subscription?.isActive && subscription?.tier === (planId === "premium" ? "PREMIUM" : "BASIC")) {
+      toast.info("Ya tienes este plan activo");
+      return;
+    }
+
+    setIsProcessing(true);
+    createSubscriptionPayment.mutate({ planId });
+  };
+
+  const handleCancelSubscription = () => {
+    if (confirm("¿Estás seguro de cancelar tu suscripción? Perderás los beneficios inmediatamente.")) {
+      cancelSubscription.mutate();
+    }
   };
 
   const formatCurrency = (amount: string | number) => {
@@ -156,6 +222,8 @@ export default function UserWallet() {
     }
   };
 
+  const isSubscriptionActive = subscription?.isActive && subscription?.tier !== "FREE";
+
   return (
     <UserLayout title="Billetera" showBack>
       <div className="p-4 space-y-6 pb-24">
@@ -167,7 +235,7 @@ export default function UserWallet() {
           <Card className="p-4 sm:p-6 gradient-primary text-white rounded-2xl shadow-glow">
             <div className="flex items-center justify-between mb-3 sm:mb-4">
               <span className="text-white/80 text-sm sm:text-base">Saldo actual</span>
-              {subscription && subscription.tier !== "FREE" && (
+              {isSubscriptionActive && (
                 <Badge className="bg-white/20 text-white border-0">
                   <Crown className="w-3 h-3 mr-1" />
                   {subscription.tier}
@@ -236,7 +304,7 @@ export default function UserWallet() {
               </span>
               <Input
                 type="number"
-                placeholder="Otro monto (mín. 20,000)"
+                placeholder="Otro monto (mín. 10,000)"
                 value={customAmount}
                 onChange={(e) => {
                   setCustomAmount(e.target.value);
@@ -269,33 +337,61 @@ export default function UserWallet() {
             <p className="text-xs text-center text-muted-foreground">
               Pago seguro. Acepta tarjetas internacionales, PSE, Nequi, Bancolombia QR y Efecty.
             </p>
-
-            {/* Wompi maneja la selección de método de pago en su propio checkout */}
           </TabsContent>
 
           <TabsContent value="subscription" className="mt-4 space-y-4">
-            {/* Plan actual */}
-            {subscription && subscription.tier !== "FREE" && (
+            {/* Plan actual activo */}
+            {isSubscriptionActive && (
               <Card className="p-4 bg-primary/5 border-primary/20">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <Crown className="w-5 h-5 text-primary" />
-                    <span className="font-medium">Plan {subscription.tier}</span>
+                    <span className="font-semibold">Plan {subscription.tier}</span>
                   </div>
                   <Badge variant="outline" className="text-primary border-primary">
                     Activo
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Descuento del {subscription.discountPercentage}% en todas tus cargas
-                </p>
+                <div className="space-y-1 text-sm text-muted-foreground">
+                  <p>Descuento del {subscription.discountPercentage}% en todas tus cargas</p>
+                  {subscription.cardLastFour && (
+                    <p className="flex items-center gap-1">
+                      <CreditCard className="w-3.5 h-3.5" />
+                      {subscription.cardBrand || "Tarjeta"} terminada en {subscription.cardLastFour}
+                    </p>
+                  )}
+                  {subscription.nextBillingDate && (
+                    <p className="flex items-center gap-1">
+                      <CalendarDays className="w-3.5 h-3.5" />
+                      Próximo cobro: {new Date(subscription.nextBillingDate).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-3 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={handleCancelSubscription}
+                  disabled={cancelSubscription.isPending}
+                >
+                  {cancelSubscription.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  ) : (
+                    <XCircle className="w-4 h-4 mr-1" />
+                  )}
+                  Cancelar suscripción
+                </Button>
               </Card>
             )}
 
             {/* Planes disponibles */}
             <div className="grid gap-4">
               {/* Plan Básico */}
-              <Card className="p-4 border-2 hover:border-blue-500/50 transition-all">
+              <Card className={`p-4 border-2 transition-all ${
+                isSubscriptionActive && subscription?.tier === "BASIC"
+                  ? "border-blue-500 bg-blue-500/5"
+                  : "hover:border-blue-500/50"
+              }`}>
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <h4 className="font-semibold flex items-center gap-2">
@@ -314,18 +410,30 @@ export default function UserWallet() {
                   <li>✓ 15 min rango extendido en reservas</li>
                   <li>✓ Soporte prioritario</li>
                 </ul>
-                <Button 
-                  className="w-full" 
+                <Button
+                  className="w-full"
                   variant="outline"
                   onClick={() => handleSubscribe("basic")}
-                  disabled={isProcessing || subscription?.tier === "BASIC"}
+                  disabled={isProcessing || (isSubscriptionActive && subscription?.tier === "BASIC")}
                 >
-                  {subscription?.tier === "BASIC" ? "Plan actual" : "Suscribirse"}
+                  {isProcessing && createSubscriptionPayment.variables?.planId === "basic" ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</>
+                  ) : isSubscriptionActive && subscription?.tier === "BASIC" ? (
+                    <><CheckCircle className="w-4 h-4 mr-2" /> Plan actual</>
+                  ) : isSubscriptionActive && subscription?.tier === "PREMIUM" ? (
+                    "Cambiar a Básico"
+                  ) : (
+                    "Suscribirse"
+                  )}
                 </Button>
               </Card>
 
               {/* Plan Premium */}
-              <Card className="p-4 border-2 border-primary bg-primary/5">
+              <Card className={`p-4 border-2 transition-all ${
+                isSubscriptionActive && subscription?.tier === "PREMIUM"
+                  ? "border-primary bg-primary/5"
+                  : "border-primary/30 bg-primary/5"
+              }`}>
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <h4 className="font-semibold flex items-center gap-2">
@@ -345,15 +453,32 @@ export default function UserWallet() {
                   <li>✓ Soporte prioritario</li>
                   <li>✓ Tarjeta física personalizada</li>
                 </ul>
-                <Button 
+                <Button
                   className="w-full gradient-primary text-white"
                   onClick={() => handleSubscribe("premium")}
-                  disabled={isProcessing || subscription?.tier === "PREMIUM"}
+                  disabled={isProcessing || (isSubscriptionActive && subscription?.tier === "PREMIUM")}
                 >
-                  {subscription?.tier === "PREMIUM" ? "Plan actual" : "Suscribirse"}
+                  {isProcessing && createSubscriptionPayment.variables?.planId === "premium" ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</>
+                  ) : isSubscriptionActive && subscription?.tier === "PREMIUM" ? (
+                    <><CheckCircle className="w-4 h-4 mr-2" /> Plan actual</>
+                  ) : isSubscriptionActive && subscription?.tier === "BASIC" ? (
+                    "Mejorar a Premium"
+                  ) : (
+                    "Suscribirse"
+                  )}
                 </Button>
               </Card>
             </div>
+
+            {!hasPaymentMethod && (
+              <Card className="p-4 bg-yellow-50 border-yellow-200">
+                <div className="flex items-center gap-2 text-yellow-800">
+                  <AlertCircle className="w-5 h-5" />
+                  <span className="text-sm">Sistema de pagos en configuración. Las suscripciones estarán disponibles pronto.</span>
+                </div>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="history" className="mt-4 space-y-3">

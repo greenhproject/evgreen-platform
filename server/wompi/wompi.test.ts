@@ -223,4 +223,119 @@ describe("Wompi Config", () => {
       expect(WOMPI_PAYMENT_METHODS.EFECTY).toBe("EFECTY");
     });
   });
+
+  describe("Subscription Payment References", () => {
+    it("genera referencia con prefijo SUB para suscripciones", () => {
+      const ref = generatePaymentReference("SUB");
+      expect(ref).toMatch(/^SUB-/);
+      expect(ref.length).toBeGreaterThan(10);
+    });
+
+    it("genera firmas de integridad válidas para montos de suscripción", () => {
+      const secret = "test_integrity_secret";
+      
+      // Plan Básico: $18,900 COP = 1890000 centavos
+      const sigBasic = generateIntegritySignature("SUB-BASIC-001", 1890000, "COP", secret);
+      expect(sigBasic).toHaveLength(64);
+      expect(sigBasic).toMatch(/^[a-f0-9]{64}$/);
+
+      // Plan Premium: $33,900 COP = 3390000 centavos
+      const sigPremium = generateIntegritySignature("SUB-PREMIUM-001", 3390000, "COP", secret);
+      expect(sigPremium).toHaveLength(64);
+      expect(sigPremium).toMatch(/^[a-f0-9]{64}$/);
+
+      // Las firmas deben ser diferentes
+      expect(sigBasic).not.toBe(sigPremium);
+    });
+
+    it("construye URL de checkout para suscripción con redirect correcto", () => {
+      const url = buildCheckoutUrl({
+        publicKey: "pub_test_abc123",
+        reference: "SUB-PREMIUM-XYZ",
+        amountInCents: 3390000,
+        currency: "COP",
+        signature: "abc123signature",
+        redirectUrl: "https://evgreen.lat/wallet?payment=wompi&reference=SUB-PREMIUM-XYZ&type=subscription&plan=premium",
+        customerEmail: "user@test.com",
+      });
+
+      expect(url).toContain("https://checkout.wompi.co/p/");
+      expect(url).toContain("reference=SUB-PREMIUM-XYZ");
+      expect(url).toContain("amount-in-cents=3390000");
+      expect(url).toContain("type%3Dsubscription");
+      expect(url).toContain("plan%3Dpremium");
+    });
+  });
+
+  describe("Webhook Checksum for Subscription Events", () => {
+    it("verifica checksum de evento de suscripción aprobada", () => {
+      const crypto = require("crypto");
+      const eventsSecret = "test_events_secret";
+      const timestamp = 1707350400;
+
+      const event = {
+        event: "transaction.updated",
+        data: {
+          transaction: {
+            id: "sub-tx-456",
+            status: "APPROVED",
+            amount_in_cents: 3390000,
+          },
+        },
+        timestamp,
+        signature: {
+          properties: [
+            "data.transaction.id",
+            "data.transaction.status",
+            "data.transaction.amount_in_cents",
+          ],
+          checksum: "",
+        },
+      };
+
+      const concatenated = "sub-tx-456APPROVED3390000" + timestamp + eventsSecret;
+      event.signature.checksum = crypto
+        .createHash("sha256")
+        .update(concatenated)
+        .digest("hex");
+
+      const result = verifyWebhookChecksum(event, eventsSecret);
+      expect(result).toBe(true);
+    });
+
+    it("verifica checksum de evento de pago rechazado", () => {
+      const crypto = require("crypto");
+      const eventsSecret = "test_events_secret";
+      const timestamp = 1707350500;
+
+      const event = {
+        event: "transaction.updated",
+        data: {
+          transaction: {
+            id: "sub-tx-789",
+            status: "DECLINED",
+            amount_in_cents: 1890000,
+          },
+        },
+        timestamp,
+        signature: {
+          properties: [
+            "data.transaction.id",
+            "data.transaction.status",
+            "data.transaction.amount_in_cents",
+          ],
+          checksum: "",
+        },
+      };
+
+      const concatenated = "sub-tx-789DECLINED1890000" + timestamp + eventsSecret;
+      event.signature.checksum = crypto
+        .createHash("sha256")
+        .update(concatenated)
+        .digest("hex");
+
+      const result = verifyWebhookChecksum(event, eventsSecret);
+      expect(result).toBe(true);
+    });
+  });
 });

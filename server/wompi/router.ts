@@ -392,6 +392,215 @@ export const wompiRouter = router({
     }),
 
   // ========================================================================
+  // Crear checkout para suscripción mensual
+  // ========================================================================
+  createSubscriptionPayment: protectedProcedure
+    .input(
+      z.object({
+        planId: z.enum(["basic", "premium"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const keys = await getWompiKeys();
+      if (!keys) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Wompi no está configurado. Contacta al administrador.",
+        });
+      }
+
+      // Precios de suscripción
+      const PLAN_PRICES: Record<string, number> = {
+        basic: 18900,
+        premium: 33900,
+      };
+
+      const amount = PLAN_PRICES[input.planId];
+      if (!amount) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Plan inválido" });
+      }
+
+      const reference = generatePaymentReference("SUB");
+      const amountInCents = amount * 100;
+      const currency = "COP";
+
+      const signature = generateIntegritySignature(
+        reference,
+        amountInCents,
+        currency,
+        keys.integritySecret
+      );
+
+      const origin = (ctx.req.headers.origin as string) || "https://evgreen.lat";
+
+      const checkoutUrl = buildCheckoutUrl({
+        publicKey: keys.publicKey,
+        reference,
+        amountInCents,
+        currency,
+        signature,
+        redirectUrl: `${origin}/wallet?payment=wompi&reference=${reference}&type=subscription&plan=${input.planId}`,
+        customerEmail: ctx.user.email || "",
+        customerName: ctx.user.name ?? undefined,
+      });
+
+      // Guardar transacción pendiente
+      try {
+        await db.createWompiTransaction({
+          userId: ctx.user.id,
+          reference,
+          amountInCents,
+          currency,
+          type: "SUBSCRIPTION",
+          customerEmail: ctx.user.email || "",
+          description: `Suscripción Plan ${input.planId === "premium" ? "Premium" : "Básico"} - ${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(amount)}/mes`,
+          integritySignature: signature,
+        });
+      } catch (err) {
+        console.error("[Wompi] Error guardando transacción de suscripción:", err);
+      }
+
+      return {
+        checkoutUrl,
+        reference,
+        planId: input.planId,
+      };
+    }),
+
+  // ========================================================================
+  // Verificar y activar suscripción después del pago
+  // ========================================================================
+  verifyAndActivateSubscription: protectedProcedure
+    .input(
+      z.object({
+        reference: z.string(),
+        planId: z.enum(["basic", "premium"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const keys = await getWompiKeys();
+      if (!keys) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Wompi no está configurado",
+        });
+      }
+
+      try {
+        const result = await getTransactionByReference(input.reference, keys);
+
+        if (!result.data || result.data.length === 0) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Transacción no encontrada en Wompi",
+          });
+        }
+
+        const tx = result.data[0];
+
+        // Actualizar transacción en BD
+        await db.updateWompiTransactionByReference(input.reference, {
+          wompiTransactionId: tx.id,
+          status: tx.status,
+          paymentMethodType: tx.payment_method_type,
+          processedAt: new Date(),
+        });
+
+        if (tx.status !== WOMPI_TRANSACTION_STATUS.APPROVED) {
+          return {
+            success: false,
+            status: tx.status,
+            message: `El pago no fue aprobado. Estado: ${tx.status}`,
+          };
+        }
+
+        // Activar suscripción
+        const PLAN_PRICES: Record<string, number> = {
+          basic: 18900,
+          premium: 33900,
+        };
+
+        await db.updateUserSubscription(ctx.user.id, {
+          planId: input.planId,
+          status: "active",
+          monthlyAmountCents: (PLAN_PRICES[input.planId] || 0) * 100,
+          lastPaymentDate: new Date(),
+          lastPaymentReference: input.reference,
+          cardBrand: tx.payment_method?.extra?.brand,
+          cardLastFour: tx.payment_method?.extra?.last_four,
+        });
+
+        // Crear notificación in-app
+        try {
+          await db.createNotification({
+            userId: ctx.user.id,
+            title: "¡Suscripción activada!",
+            message: `Tu plan ${input.planId === "premium" ? "Premium" : "Básico"} está activo. Disfruta de tus beneficios exclusivos.`,
+            type: "PAYMENT",
+            data: JSON.stringify({
+              key: `sub-${input.reference}`,
+              planId: input.planId,
+              reference: input.reference,
+            }),
+          });
+        } catch (notifErr) {
+          console.warn("[Wompi] Error creando notificación de suscripción:", notifErr);
+        }
+
+        return {
+          success: true,
+          status: tx.status,
+          message: `¡Plan ${input.planId === "premium" ? "Premium" : "Básico"} activado exitosamente!`,
+          planId: input.planId,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        console.error("[Wompi] Error verificando suscripción:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Error verificando el pago de suscripción",
+        });
+      }
+    }),
+
+  // ========================================================================
+  // Cancelar suscripción
+  // ========================================================================
+  cancelSubscription: protectedProcedure.mutation(async ({ ctx }) => {
+    const subscription = await db.getUserSubscription(ctx.user.id);
+    if (!subscription || !subscription.isActive || subscription.tier === "FREE") {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "No tienes una suscripción activa",
+      });
+    }
+
+    await db.cancelUserSubscription(ctx.user.id);
+
+    // Notificación de cancelación
+    try {
+      await db.createNotification({
+        userId: ctx.user.id,
+        title: "Suscripción cancelada",
+        message: "Tu suscripción ha sido cancelada. Puedes reactivarla en cualquier momento.",
+        type: "PAYMENT",
+        data: JSON.stringify({ key: `sub-cancel-${Date.now()}` }),
+      });
+    } catch (notifErr) {
+      console.warn("[Wompi] Error creando notificación de cancelación:", notifErr);
+    }
+
+    return { success: true, message: "Suscripción cancelada exitosamente" };
+  }),
+
+  // ========================================================================
+  // Obtener suscripción actual del usuario
+  // ========================================================================
+  getMySubscription: protectedProcedure.query(async ({ ctx }) => {
+    return db.getUserSubscription(ctx.user.id);
+  }),
+
+  // ========================================================================
   // Métodos de pago disponibles
   // ========================================================================
   getPaymentMethods: publicProcedure.query(() => {
