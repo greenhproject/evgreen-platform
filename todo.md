@@ -1877,3 +1877,27 @@
 - [x] Notificación in-app al fallar un pago (notifyPaymentFailed en webhook)
 - [x] Notificación in-app al cancelar suscripción
 - [x] Tests unitarios: 354 tests pasando (22 archivos) - incluye tests de suscripción y checksum
+
+## Bug Fix + Cobro Recurrente + Push Notifications - 8 Febrero 2026
+
+### Bug: Credenciales Wompi no se guardan en Admin Settings
+- [x] Diagnosticar: endpoint get devuelve valores enmascarados que llenan los inputs, al borrar quedan vacíos
+- [x] Corregir: campos secretos vacíos con placeholder dinámico, solo envían valor si el usuario lo modifica
+- [x] Verificar: handleSavePayments solo incluye credenciales tocadas, no sobreescribe con vacío
+
+### Cobro Recurrente Automático (Cron Job)
+- [x] Servicio de cobro recurrente (recurring-billing.ts) que consulta suscripciones vencidas
+- [x] Tokenización de Wompi para cobrar automáticamente vía payment_source_id
+- [x] Registrar cada cobro en wompi_transactions + actualizar suscripción
+- [x] Notificar al usuario del cobro exitoso o fallido (in-app + push)
+- [x] Desactivar suscripción después de 3 intentos fallidos consecutivos
+- [x] Cron job diario a las 6:00 AM Colombia + endpoint admin runBillingManually
+- [x] Endpoints: getAcceptanceToken, tokenizeCard, createPaymentSource
+
+### Notificaciones Push con Firebase Cloud Messaging
+- [x] Webhook Wompi conectado con FCM para enviar push al celular del usuario
+- [x] Push notification al confirmar recarga de billetera
+- [x] Push notification al confirmar/fallar suscripción
+- [x] Push notification al cobro recurrente exitoso/fallido/cancelado
+- [x] Push notification para renovación manual pendiente
+- [x] 369 tests pasando (23 archivos)

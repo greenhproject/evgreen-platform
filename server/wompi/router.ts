@@ -18,6 +18,11 @@ import {
   getTransactionByReference,
   WOMPI_TRANSACTION_STATUS,
 } from "./config";
+import {
+  createPaymentSource,
+  getAcceptanceToken,
+  processRecurringBilling,
+} from "./recurring-billing";
 
 export const wompiRouter = router({
   // ========================================================================
@@ -611,5 +616,83 @@ export const wompiRouter = router({
       { id: "BANCOLOMBIA_QR", name: "Bancolombia QR", description: "Escanea el código QR con tu app Bancolombia", icon: "qr-code", enabled: true },
       { id: "EFECTY", name: "Efecty", description: "Paga en efectivo en puntos Efecty", icon: "banknote", enabled: true },
     ];
+  }),
+
+  // ========================================================================
+  // Obtener acceptance token de Wompi (para tokenización de tarjetas)
+  // ========================================================================
+  getAcceptanceToken: protectedProcedure.query(async () => {
+    const result = await getAcceptanceToken();
+    if (!result) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Wompi no está configurado",
+      });
+    }
+    return result;
+  }),
+
+  // ========================================================================
+  // Tokenizar tarjeta y crear payment source para cobros recurrentes
+  // ========================================================================
+  tokenizeCard: protectedProcedure
+    .input(
+      z.object({
+        cardToken: z.string().min(1),
+        acceptanceToken: z.string().min(1),
+        personalAuthToken: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const keys = await getWompiKeys();
+      if (!keys) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Wompi no está configurado",
+        });
+      }
+
+      // Crear payment source
+      const paymentSource = await createPaymentSource({
+        cardToken: input.cardToken,
+        customerEmail: ctx.user.email || "",
+        acceptanceToken: input.acceptanceToken,
+        personalAuthToken: input.personalAuthToken,
+      });
+
+      if (!paymentSource) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "No se pudo crear el método de pago. Verifica los datos de tu tarjeta.",
+        });
+      }
+
+      // Guardar payment source en la suscripción del usuario
+      await db.updateUserSubscription(ctx.user.id, {
+        wompiPaymentSourceId: paymentSource.paymentSourceId,
+        wompiCardToken: input.cardToken,
+      });
+
+      return {
+        success: true,
+        paymentSourceId: paymentSource.paymentSourceId,
+        message: "Tarjeta guardada exitosamente para cobros recurrentes",
+      };
+    }),
+
+  // ========================================================================
+  // Ejecutar cobro recurrente manualmente (admin only)
+  // ========================================================================
+  runBillingManually: protectedProcedure.mutation(async ({ ctx }) => {
+    // Solo admin puede ejecutar cobros manuales
+    if (ctx.user.role !== "admin") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Solo administradores pueden ejecutar cobros manuales",
+      });
+    }
+
+    const result = await processRecurringBilling();
+    return result;
   }),
 });

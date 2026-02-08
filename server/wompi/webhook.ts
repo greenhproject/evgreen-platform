@@ -12,6 +12,7 @@ import {
   WOMPI_TRANSACTION_STATUS,
 } from "./config";
 import * as db from "../db";
+import { sendPushNotification } from "../firebase/fcm";
 
 export async function handleWompiWebhook(req: Request, res: Response) {
   try {
@@ -136,15 +137,15 @@ async function processWalletRecharge(
       }
     }
 
+    const formatCOP = (n: number) =>
+      new Intl.NumberFormat("es-CO", {
+        style: "currency",
+        currency: "COP",
+        minimumFractionDigits: 0,
+      }).format(n);
+
     // Crear notificación in-app de recarga exitosa
     try {
-      const formatCOP = (n: number) =>
-        new Intl.NumberFormat("es-CO", {
-          style: "currency",
-          currency: "COP",
-          minimumFractionDigits: 0,
-        }).format(n);
-
       await db.createNotification({
         userId: localTx.userId,
         title: "¡Recarga exitosa!",
@@ -160,6 +161,24 @@ async function processWalletRecharge(
       });
     } catch (notifDbErr) {
       console.warn("[Wompi] Error creando notificación in-app de recarga:", notifDbErr);
+    }
+
+    // Enviar push notification
+    try {
+      if (user?.fcmToken) {
+        await sendPushNotification(user.fcmToken, {
+          type: "balance_added",
+          title: "¡Recarga exitosa!",
+          body: `Tu billetera fue recargada con ${formatCOP(amount)}. ¡Ya puedes cargar tu vehículo!`,
+          clickAction: "/wallet",
+          data: {
+            reference,
+            amount: amount.toString(),
+          },
+        });
+      }
+    } catch (pushErr) {
+      console.warn("[Wompi] Error enviando push de recarga:", pushErr);
     }
 
     console.log(`[Wompi] Recarga completada para usuario ${localTx.userId}: $${amount}`);
@@ -271,6 +290,25 @@ async function processSubscriptionPayment(
       console.warn("[Wompi] Error enviando email de suscripción:", emailErr);
     }
 
+    // Enviar push notification
+    try {
+      const user = await db.getUserById(localTx.userId);
+      if (user?.fcmToken) {
+        await sendPushNotification(user.fcmToken, {
+          type: "balance_added",
+          title: "¡Suscripción activada!",
+          body: `Tu plan ${planName} (${formatCurrency(amount)}/mes) está activo. Disfruta de tus descuentos en cargas.`,
+          clickAction: "/wallet",
+          data: {
+            reference,
+            planId,
+          },
+        });
+      }
+    } catch (pushErr) {
+      console.warn("[Wompi] Error enviando push de suscripción:", pushErr);
+    }
+
     console.log(`[Wompi] Suscripción ${planName} activada para usuario ${localTx.userId}`);
   } catch (error) {
     console.error(`[Wompi] Error procesando suscripción:`, error);
@@ -312,6 +350,25 @@ async function notifyPaymentFailed(reference: string, status: string) {
         type: localTx.type,
       }),
     });
+
+    // Enviar push notification de fallo
+    try {
+      const user = await db.getUserById(localTx.userId);
+      if (user?.fcmToken) {
+        await sendPushNotification(user.fcmToken, {
+          type: "system_alert",
+          title: `Pago ${statusLabel}`,
+          body: `Tu ${typeLabel} no pudo ser procesado. Intenta de nuevo o usa otro método de pago.`,
+          clickAction: "/wallet",
+          data: {
+            reference,
+            status,
+          },
+        });
+      }
+    } catch (pushErr) {
+      console.warn("[Wompi] Error enviando push de fallo:", pushErr);
+    }
 
     console.log(`[Wompi] Notificación de pago fallido enviada a usuario ${localTx.userId}`);
   } catch (error) {
