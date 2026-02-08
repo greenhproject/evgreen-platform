@@ -1,6 +1,6 @@
 /**
  * Componente de selección de método de pago
- * Permite al usuario elegir entre Stripe (tarjetas internacionales) o Wompi (métodos colombianos)
+ * Usa Wompi como pasarela de pagos para Colombia
  */
 
 import { useState } from "react";
@@ -22,9 +22,7 @@ import {
   QrCode, 
   Banknote,
   Loader2,
-  CheckCircle2,
-  Globe,
-  MapPin
+  CheckCircle2
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -88,50 +86,15 @@ export function PaymentMethodSelector({
   const [customAmount, setCustomAmount] = useState(amount.toString());
   const [isLoading, setIsLoading] = useState(false);
 
-  // Verificar si los proveedores están configurados
-  const { data: stripeConfig } = trpc.stripe.isConfigured.useQuery();
+  // Verificar si Wompi está configurado
   const { data: wompiConfig } = trpc.wompi.isConfigured.useQuery();
 
-  // Mutations para crear sesiones de pago
-  const createStripeSession = trpc.stripe.createWalletRecharge.useMutation();
+  // Mutation para crear sesión de pago con Wompi
   const createWompiSession = trpc.wompi.createWalletRecharge.useMutation();
 
-  const handleProviderSelect = (selectedProvider: PaymentProvider) => {
-    setProvider(selectedProvider);
-    if (selectedProvider === "stripe") {
-      // Stripe va directo al checkout
-      handleStripePayment();
-    } else {
-      // Wompi muestra opciones de método de pago
-      setStep("method");
-    }
-  };
-
-  const handleStripePayment = async () => {
-    setIsLoading(true);
-    try {
-      const finalAmount = parseFloat(customAmount);
-      if (isNaN(finalAmount) || finalAmount < 10000) {
-        toast.error("El monto mínimo es $10,000 COP");
-        setIsLoading(false);
-        return;
-      }
-
-      const result = await createStripeSession.mutateAsync({
-        amount: finalAmount,
-      });
-
-      if (result.url) {
-        toast.info("Redirigiendo a Stripe...");
-        window.open(result.url, "_blank");
-        onOpenChange(false);
-        onSuccess?.();
-      }
-    } catch (error: any) {
-      toast.error(error.message || "Error al crear sesión de pago");
-    } finally {
-      setIsLoading(false);
-    }
+  const handleProviderSelect = () => {
+    setProvider("wompi");
+    setStep("method");
   };
 
   const handleWompiPayment = async () => {
@@ -264,36 +227,9 @@ export function PaymentMethodSelector({
             </div>
 
             <div className="grid gap-3">
-              {/* Opción Stripe */}
+              {/* Opción Wompi - todos los métodos */}
               <button
-                onClick={() => handleProviderSelect("stripe")}
-                disabled={!stripeConfig || isLoading}
-                className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-all text-left ${
-                  !stripeConfig
-                    ? "opacity-50 cursor-not-allowed border-muted"
-                    : "hover:border-primary cursor-pointer border-border"
-                }`}
-              >
-                <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
-                  <Globe className="w-6 h-6 text-white" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold">Tarjetas Internacionales</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Visa, Mastercard, American Express
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Powered by Stripe
-                  </p>
-                </div>
-                {isLoading && provider === "stripe" && (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                )}
-              </button>
-
-              {/* Opción Wompi */}
-              <button
-                onClick={() => handleProviderSelect("wompi")}
+                onClick={() => handleProviderSelect()}
                 disabled={!wompiConfig?.configured || isLoading}
                 className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-all text-left ${
                   !wompiConfig?.configured
@@ -302,15 +238,15 @@ export function PaymentMethodSelector({
                 }`}
               >
                 <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
-                  <MapPin className="w-6 h-6 text-white" />
+                  <CreditCard className="w-6 h-6 text-white" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-semibold">Métodos Colombia</h3>
+                  <h3 className="font-semibold">Métodos de Pago</h3>
                   <p className="text-sm text-muted-foreground">
-                    PSE, Nequi, Bancolombia QR, Efecty
+                    Tarjetas, PSE, Nequi, Bancolombia QR, Efecty
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Powered by Wompi
+                    Pagos seguros con Wompi
                   </p>
                 </div>
               </button>
