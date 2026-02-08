@@ -1901,3 +1901,22 @@
 - [x] Push notification al cobro recurrente exitoso/fallido/cancelado
 - [x] Push notification para renovación manual pendiente
 - [x] 369 tests pasando (23 archivos)
+
+## Migración Completa de Pagos Stripe → Wompi - 8 Febrero 2026
+
+### Frontend
+- [x] Reescribir PaymentMethods.tsx (/settings/payment) para usar Wompi: métodos disponibles, tarjeta guardada, pagos recientes
+- [x] Reescribir Subscription.tsx (/subscription) para usar Wompi: planes, checkout, verificación, cancelación
+- [x] Eliminar referencias a trpc.stripe en PaymentMethodSelector.tsx
+- [x] Wallet.tsx ya usaba Wompi correctamente (solo mantiene STRIPE_PAYMENT para historial)
+
+### Backend
+- [x] Convertir stripe/config.ts en stub sin dependencia de Stripe SDK
+- [x] Convertir stripe/router.ts en stub que retorna configured: false
+- [x] Convertir stripe/webhook.ts en stub que retorna 410 Gone
+- [x] Mantener stripeRouter registrado para evitar errores de tipo
+
+### Verificación
+- [x] TypeScript compila sin errores
+- [x] 369 tests pasando (23 archivos)
+- [x] No quedan referencias funcionales a Stripe en el frontend
