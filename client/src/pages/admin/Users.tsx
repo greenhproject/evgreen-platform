@@ -37,7 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, MoreVertical, UserPlus, Users, Shield, Wrench, Briefcase, Eye, Copy, Hash, Pencil, Trash2, Tag, Wallet, Plus, Minus, RotateCcw, Loader2 } from "lucide-react";
+import { Search, MoreVertical, UserPlus, Users, Shield, Wrench, Briefcase, Eye, Copy, Hash, Pencil, Trash2, Tag, Wallet, Plus, Minus, RotateCcw, Loader2, Download, FileSpreadsheet, FileText, ChevronDown, ChevronUp, History } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -61,6 +61,9 @@ export default function AdminUsers() {
   const [walletAdjustType, setWalletAdjustType] = useState<"credit" | "debit" | "refund">("credit");
   const [walletAdjustAmount, setWalletAdjustAmount] = useState("");
   const [walletAdjustReason, setWalletAdjustReason] = useState("");
+  const [showWalletHistory, setShowWalletHistory] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   
   // Form state for editing
   const [editForm, setEditForm] = useState({
@@ -82,6 +85,7 @@ export default function AdminUsers() {
     setShowWalletAdjust(false);
     setWalletAdjustAmount("");
     setWalletAdjustReason("");
+    setShowWalletHistory(false);
     setShowUserModal(true);
   };
 
@@ -155,6 +159,126 @@ export default function AdminUsers() {
     { userId: selectedUser?.id || 0 },
     { enabled: !!selectedUser && showUserModal }
   );
+
+  // Query de transacciones de billetera
+  const walletTxQuery = trpc.users.getUserWalletTransactions.useQuery(
+    { userId: selectedUser?.id || 0, limit: 100 },
+    { enabled: !!selectedUser && showUserModal && showWalletHistory }
+  );
+
+  const getTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      RECHARGE: "Recarga",
+      CHARGE_PAYMENT: "Pago de carga",
+      CHARGE: "Cargo por carga",
+      RESERVATION: "Reserva",
+      PENALTY: "Penalidad",
+      REFUND: "Reembolso",
+      SUBSCRIPTION: "Suscripción",
+      ADMIN_CREDIT: "Crédito (Admin)",
+      ADMIN_DEBIT: "Débito (Admin)",
+      ADMIN_REFUND: "Reembolso (Admin)",
+      EARNING: "Ganancia",
+      STRIPE_PAYMENT: "Pago Stripe",
+    };
+    return labels[type] || type;
+  };
+
+  const getTypeColor = (type: string) => {
+    if (type.includes("CREDIT") || type === "RECHARGE" || type === "REFUND" || type === "ADMIN_REFUND" || type === "EARNING" || type === "STRIPE_PAYMENT") return "text-green-600";
+    if (type.includes("DEBIT") || type === "CHARGE" || type === "CHARGE_PAYMENT" || type === "PENALTY" || type === "SUBSCRIPTION") return "text-red-600";
+    return "text-muted-foreground";
+  };
+
+  const handleExportPdf = async () => {
+    if (!selectedUser || !walletTxQuery.data) return;
+    setExportingPdf(true);
+    try {
+      const transactions = walletTxQuery.data;
+      // Generar HTML para PDF
+      const htmlContent = `
+        <html><head><style>
+          body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+          h1 { color: #16a34a; font-size: 22px; }
+          h2 { color: #555; font-size: 16px; margin-top: 5px; }
+          .info { margin: 15px 0; padding: 10px; background: #f0fdf4; border-radius: 8px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+          th { background: #16a34a; color: white; padding: 8px; text-align: left; }
+          td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; }
+          tr:nth-child(even) { background: #f9fafb; }
+          .positive { color: #16a34a; font-weight: bold; }
+          .negative { color: #dc2626; font-weight: bold; }
+          .footer { margin-top: 20px; text-align: center; font-size: 11px; color: #999; }
+        </style></head><body>
+          <h1>⚡ EVGreen - Movimientos de Billetera</h1>
+          <h2>${selectedUser.name || selectedUser.email}</h2>
+          <div class="info">
+            <strong>Saldo actual:</strong> $${(walletQuery.data?.balance || 0).toLocaleString("es-CO")} COP<br/>
+            <strong>Total movimientos:</strong> ${transactions.length}<br/>
+            <strong>Fecha de reporte:</strong> ${new Date().toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+          </div>
+          <table>
+            <thead><tr><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Saldo Antes</th><th>Saldo Después</th><th>Motivo</th></tr></thead>
+            <tbody>
+              ${transactions.map((tx: any) => `
+                <tr>
+                  <td>${new Date(tx.createdAt).toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                  <td>${getTypeLabel(tx.type)}</td>
+                  <td class="${tx.amount >= 0 ? 'positive' : 'negative'}">$${tx.amount.toLocaleString("es-CO")} COP</td>
+                  <td>$${tx.balanceBefore.toLocaleString("es-CO")}</td>
+                  <td>$${tx.balanceAfter.toLocaleString("es-CO")}</td>
+                  <td>${tx.description || "-"}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+          <div class="footer">Generado por EVGreen Platform - www.evgreen.lat</div>
+        </body></html>
+      `;
+      // Crear blob y descargar
+      const blob = new Blob([htmlContent], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const printWindow = window.open(url, "_blank");
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+      }
+      toast.success("PDF generado. Use Ctrl+P o Cmd+P para guardar como PDF.");
+    } catch (e) {
+      toast.error("Error al generar PDF");
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    if (!selectedUser || !walletTxQuery.data) return;
+    setExportingExcel(true);
+    try {
+      const transactions = walletTxQuery.data;
+      // Generar CSV (compatible con Excel)
+      const headers = "Fecha,Tipo,Monto (COP),Saldo Antes,Saldo Después,Estado,Motivo";
+      const rows = transactions.map((tx: any) => {
+        const date = new Date(tx.createdAt).toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+        const desc = (tx.description || "-").replace(/,/g, ";").replace(/\n/g, " ");
+        return `${date},${getTypeLabel(tx.type)},${tx.amount},${tx.balanceBefore},${tx.balanceAfter},${tx.status},"${desc}"`;
+      });
+      const csvContent = "\uFEFF" + headers + "\n" + rows.join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `movimientos_billetera_${selectedUser.name || selectedUser.id}_${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Archivo Excel (CSV) descargado");
+    } catch (e) {
+      toast.error("Error al exportar");
+    } finally {
+      setExportingExcel(false);
+    }
+  };
 
   const adjustWalletMutation = trpc.users.adjustWalletBalance.useMutation({
     onSuccess: (data) => {
@@ -460,7 +584,7 @@ export default function AdminUsers() {
 
       {/* Modal de Detalles de Usuario */}
       <Dialog open={showUserModal} onOpenChange={setShowUserModal}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="w-5 h-5" />
@@ -685,6 +809,87 @@ export default function AdminUsers() {
                       >
                         Cancelar
                       </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Historial de Movimientos */}
+              <div className="border rounded-lg">
+                <button
+                  className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+                  onClick={() => setShowWalletHistory(!showWalletHistory)}
+                >
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <History className="w-4 h-4" />
+                    Historial de Movimientos
+                  </span>
+                  {showWalletHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+                
+                {showWalletHistory && (
+                  <div className="border-t">
+                    {/* Botones de exportación */}
+                    <div className="flex gap-2 p-3 border-b bg-muted/30">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportPdf}
+                        disabled={exportingPdf || !walletTxQuery.data?.length}
+                      >
+                        {exportingPdf ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <FileText className="w-3 h-3 mr-1" />}
+                        PDF
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportExcel}
+                        disabled={exportingExcel || !walletTxQuery.data?.length}
+                      >
+                        {exportingExcel ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <FileSpreadsheet className="w-3 h-3 mr-1" />}
+                        Excel
+                      </Button>
+                    </div>
+                    
+                    {/* Tabla de transacciones */}
+                    <div className="max-h-64 overflow-y-auto">
+                      {walletTxQuery.isLoading ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">Cargando movimientos...</div>
+                      ) : !walletTxQuery.data?.length ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">Sin movimientos registrados</div>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-muted">
+                            <tr>
+                              <th className="text-left p-2">Fecha</th>
+                              <th className="text-left p-2">Tipo</th>
+                              <th className="text-right p-2">Monto</th>
+                              <th className="text-right p-2">Saldo</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {walletTxQuery.data.map((tx: any) => (
+                              <tr key={tx.id} className="border-t hover:bg-muted/30" title={tx.description || ""}>
+                                <td className="p-2 whitespace-nowrap">
+                                  {new Date(tx.createdAt).toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                                </td>
+                                <td className="p-2">
+                                  <span className="truncate block max-w-[120px]">{getTypeLabel(tx.type)}</span>
+                                  {tx.description && (
+                                    <span className="text-[10px] text-muted-foreground truncate block max-w-[120px]">{tx.description}</span>
+                                  )}
+                                </td>
+                                <td className={`p-2 text-right font-medium whitespace-nowrap ${getTypeColor(tx.type)}`}>
+                                  {tx.amount >= 0 ? "+" : ""}${tx.amount.toLocaleString("es-CO")}
+                                </td>
+                                <td className="p-2 text-right whitespace-nowrap">
+                                  ${tx.balanceAfter.toLocaleString("es-CO")}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   </div>
                 )}

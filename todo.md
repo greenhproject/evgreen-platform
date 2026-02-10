@@ -1975,3 +1975,19 @@
 - [x] Endpoint backend para consultar saldo por userId (admin) - users.getUserWallet
 - [x] Endpoint backend para ajustar saldo manualmente (admin) - users.adjustWalletBalance
 - [x] 394 tests pasando (24 archivos)
+
+## Mejoras Billetera Admin - 10 Febrero 2026
+### 1. Historial de ajustes manuales en modal
+- [x] Endpoint backend para obtener transacciones de billetera por userId (users.getUserWalletTransactions)
+- [x] Tabla de últimos movimientos dentro del modal de detalles de usuario (acordeón expandible)
+- [x] Mostrar fecha, tipo, monto, saldo resultante y motivo con tooltip
+
+### 2. Exportar movimientos de billetera
+- [x] Exportar transacciones en PDF (abre ventana de impresión con reporte brandeado EVGreen)
+- [x] Exportar transacciones en Excel/CSV (descarga directa con BOM UTF-8)
+- [x] Botones PDF y Excel en la barra del historial
+
+### 3. Notificación al usuario por ajuste de saldo
+- [x] Enviar notificación in-app al usuario cuando admin ajuste su saldo
+- [x] Incluir detalles: tipo de ajuste, monto, nuevo saldo, motivo
+- [x] 403 tests pasando (24 archivos)

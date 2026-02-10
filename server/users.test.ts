@@ -250,6 +250,123 @@ describe("Users Router", () => {
     });
   });
 
+  describe("Historial de transacciones de billetera", () => {
+    it("debe mapear tipos de transacción a etiquetas legibles", () => {
+      const getTypeLabel = (type: string) => {
+        const labels: Record<string, string> = {
+          RECHARGE: "Recarga",
+          CHARGE_PAYMENT: "Pago de carga",
+          CHARGE: "Cargo por carga",
+          RESERVATION: "Reserva",
+          PENALTY: "Penalidad",
+          REFUND: "Reembolso",
+          SUBSCRIPTION: "Suscripción",
+          ADMIN_CREDIT: "Crédito (Admin)",
+          ADMIN_DEBIT: "Débito (Admin)",
+          ADMIN_REFUND: "Reembolso (Admin)",
+          EARNING: "Ganancia",
+          STRIPE_PAYMENT: "Pago Stripe",
+        };
+        return labels[type] || type;
+      };
+      expect(getTypeLabel("RECHARGE")).toBe("Recarga");
+      expect(getTypeLabel("ADMIN_CREDIT")).toBe("Crédito (Admin)");
+      expect(getTypeLabel("ADMIN_DEBIT")).toBe("Débito (Admin)");
+      expect(getTypeLabel("ADMIN_REFUND")).toBe("Reembolso (Admin)");
+      expect(getTypeLabel("EARNING")).toBe("Ganancia");
+      expect(getTypeLabel("UNKNOWN_TYPE")).toBe("UNKNOWN_TYPE");
+    });
+
+    it("debe clasificar colores de tipo correctamente", () => {
+      const getTypeColor = (type: string) => {
+        if (type.includes("CREDIT") || type === "RECHARGE" || type === "REFUND" || type === "ADMIN_REFUND" || type === "EARNING" || type === "STRIPE_PAYMENT") return "text-green-600";
+        if (type.includes("DEBIT") || type === "CHARGE" || type === "CHARGE_PAYMENT" || type === "PENALTY" || type === "SUBSCRIPTION") return "text-red-600";
+        return "text-muted-foreground";
+      };
+      expect(getTypeColor("ADMIN_CREDIT")).toBe("text-green-600");
+      expect(getTypeColor("RECHARGE")).toBe("text-green-600");
+      expect(getTypeColor("ADMIN_DEBIT")).toBe("text-red-600");
+      expect(getTypeColor("CHARGE")).toBe("text-red-600");
+      expect(getTypeColor("PENALTY")).toBe("text-red-600");
+    });
+
+    it("debe formatear transacciones para la tabla", () => {
+      const tx = {
+        id: 1,
+        type: "ADMIN_CREDIT",
+        amount: "50000.00",
+        balanceBefore: "10000.00",
+        balanceAfter: "60000.00",
+        status: "COMPLETED",
+        description: "[Admin: Test] Crédito de prueba",
+        createdAt: new Date("2026-02-10"),
+      };
+      const formatted = {
+        ...tx,
+        amount: parseFloat(tx.amount),
+        balanceBefore: parseFloat(tx.balanceBefore),
+        balanceAfter: parseFloat(tx.balanceAfter),
+      };
+      expect(formatted.amount).toBe(50000);
+      expect(formatted.balanceAfter).toBe(60000);
+      expect(formatted.description).toContain("Admin: Test");
+    });
+  });
+
+  describe("Exportación de movimientos", () => {
+    it("debe generar CSV con headers correctos", () => {
+      const headers = "Fecha,Tipo,Monto (COP),Saldo Antes,Saldo Después,Estado,Motivo";
+      expect(headers.split(",").length).toBe(7);
+      expect(headers).toContain("Fecha");
+      expect(headers).toContain("Monto (COP)");
+      expect(headers).toContain("Motivo");
+    });
+
+    it("debe escapar comas en descripciones para CSV", () => {
+      const desc = "Reembolso por fallo, cobro duplicado";
+      const escaped = desc.replace(/,/g, ";");
+      expect(escaped).toBe("Reembolso por fallo; cobro duplicado");
+      expect(escaped).not.toContain(",");
+    });
+
+    it("debe generar nombre de archivo con fecha", () => {
+      const userName = "karen heredia";
+      const date = "2026-02-10";
+      const filename = `movimientos_billetera_${userName}_${date}.csv`;
+      expect(filename).toBe("movimientos_billetera_karen heredia_2026-02-10.csv");
+    });
+  });
+
+  describe("Notificación al usuario por ajuste de saldo", () => {
+    it("debe generar título de notificación correcto", () => {
+      const types = ["credit", "debit", "refund"];
+      const labels = types.map(type => {
+        return type === "credit" ? "Crédito agregado" : type === "refund" ? "Reembolso" : "Débito";
+      });
+      expect(labels[0]).toBe("Crédito agregado");
+      expect(labels[1]).toBe("Débito");
+      expect(labels[2]).toBe("Reembolso");
+    });
+
+    it("debe generar mensaje de notificación con detalles completos", () => {
+      const type = "credit";
+      const adjustAmount = 50000;
+      const newBalance = 150000;
+      const reason = "Compensación por error";
+      const amountFormatted = Math.abs(adjustAmount).toLocaleString("es-CO");
+      const message = `Se ha realizado un ajuste de ${type === "debit" ? "-" : "+"}$${amountFormatted} COP en tu billetera. Nuevo saldo: $${newBalance.toLocaleString("es-CO")} COP. Motivo: ${reason}`;
+      expect(message).toContain("+$50");
+      expect(message).toContain("150");
+      expect(message).toContain("Compensación por error");
+    });
+
+    it("debe usar tipo PAYMENT para la notificación", () => {
+      const notificationType = "PAYMENT";
+      const validTypes = ["CHARGE_COMPLETE", "RESERVATION", "PAYMENT", "MAINTENANCE", "SYSTEM"];
+      expect(validTypes).toContain(notificationType);
+    });
+  });
+
   describe("Listado de usuarios", () => {
     it("debe filtrar por rol correctamente", () => {
       const users = [

@@ -189,6 +189,26 @@ const usersRouter = router({
       };
     }),
 
+  // Admin: obtener historial de transacciones de billetera de un usuario
+  getUserWalletTransactions: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      limit: z.number().min(1).max(200).optional(),
+    }))
+    .query(async ({ input }) => {
+      const transactions = await db.getWalletTransactionsByUserId(input.userId, input.limit || 50);
+      return transactions.map((tx: any) => ({
+        id: tx.id,
+        type: tx.type,
+        amount: parseFloat(tx.amount?.toString() || "0"),
+        balanceBefore: parseFloat(tx.balanceBefore?.toString() || "0"),
+        balanceAfter: parseFloat(tx.balanceAfter?.toString() || "0"),
+        status: tx.status,
+        description: tx.description || "",
+        createdAt: tx.createdAt,
+      }));
+    }),
+
   // Admin: ajustar saldo de billetera manualmente
   adjustWalletBalance: adminProcedure
     .input(z.object({
@@ -233,6 +253,18 @@ const usersRouter = router({
         balanceAfter: newBalance.toString(),
         status: "COMPLETED",
         description: `[Admin: ${ctx.user.name || ctx.user.email}] ${reason}`,
+      });
+      
+      // Crear notificación para el usuario
+      const user = await db.getUserById(userId);
+      const typeLabel = type === "credit" ? "Crédito agregado" : type === "refund" ? "Reembolso" : "Débito";
+      const amountFormatted = Math.abs(adjustAmount).toLocaleString("es-CO");
+      await db.createNotification({
+        userId,
+        title: `💰 ${typeLabel} en tu billetera`,
+        message: `Se ha realizado un ajuste de ${type === "debit" ? "-" : "+"}$${amountFormatted} COP en tu billetera. Nuevo saldo: $${newBalance.toLocaleString("es-CO")} COP. Motivo: ${reason}`,
+        type: "PAYMENT",
+        isRead: false,
       });
       
       return {
