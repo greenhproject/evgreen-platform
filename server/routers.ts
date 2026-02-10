@@ -174,6 +174,75 @@ const usersRouter = router({
       return { success: true };
     }),
 
+  // Admin: obtener billetera de un usuario
+  getUserWallet: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const wallet = await db.getWalletByUserId(input.userId);
+      if (!wallet) {
+        return { balance: 0, currency: "COP", walletId: null };
+      }
+      return {
+        balance: parseFloat(wallet.balance?.toString() || "0"),
+        currency: wallet.currency || "COP",
+        walletId: wallet.id,
+      };
+    }),
+
+  // Admin: ajustar saldo de billetera manualmente
+  adjustWalletBalance: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      amount: z.number(), // Positivo para agregar, negativo para descontar
+      reason: z.string().min(3, "Debe indicar un motivo"),
+      type: z.enum(["credit", "debit", "refund"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { userId, amount, reason, type } = input;
+      
+      // Obtener o crear billetera
+      let wallet = await db.getWalletByUserId(userId);
+      if (!wallet) {
+        await db.createWallet({ userId, balance: "0", currency: "COP" });
+        wallet = await db.getWalletByUserId(userId);
+        if (!wallet) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo crear la billetera" });
+      }
+      
+      const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+      const adjustAmount = type === "debit" ? -Math.abs(amount) : Math.abs(amount);
+      const newBalance = currentBalance + adjustAmount;
+      
+      if (newBalance < 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Saldo insuficiente. Saldo actual: $${currentBalance.toLocaleString()} COP`,
+        });
+      }
+      
+      // Actualizar saldo
+      await db.updateWalletBalance(userId, newBalance.toString());
+      
+      // Registrar transacción
+      const txType = type === "credit" ? "ADMIN_CREDIT" : type === "refund" ? "ADMIN_REFUND" : "ADMIN_DEBIT";
+      await db.createWalletTransaction({
+        walletId: wallet.id,
+        userId,
+        type: txType,
+        amount: adjustAmount.toString(),
+        balanceBefore: currentBalance.toString(),
+        balanceAfter: newBalance.toString(),
+        status: "COMPLETED",
+        description: `[Admin: ${ctx.user.name || ctx.user.email}] ${reason}`,
+      });
+      
+      return {
+        success: true,
+        previousBalance: currentBalance,
+        newBalance,
+        adjustment: adjustAmount,
+      };
+    }),
+
   // Admin: actualizar usuario completo (incluyendo email y rol)
   updateFull: adminProcedure
     .input(z.object({

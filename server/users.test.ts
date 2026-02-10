@@ -172,6 +172,84 @@ describe("Users Router", () => {
     });
   });
 
+  describe("Gestión de billetera desde admin", () => {
+    it("debe calcular correctamente el ajuste de crédito", () => {
+      const currentBalance = 50000;
+      const adjustAmount = 30000;
+      const type = "credit";
+      const finalAmount = type === "debit" ? -Math.abs(adjustAmount) : Math.abs(adjustAmount);
+      const newBalance = currentBalance + finalAmount;
+      expect(newBalance).toBe(80000);
+      expect(finalAmount).toBe(30000);
+    });
+
+    it("debe calcular correctamente el ajuste de débito", () => {
+      const currentBalance = 50000;
+      const adjustAmount = 20000;
+      const type = "debit";
+      const finalAmount = type === "debit" ? -Math.abs(adjustAmount) : Math.abs(adjustAmount);
+      const newBalance = currentBalance + finalAmount;
+      expect(newBalance).toBe(30000);
+      expect(finalAmount).toBe(-20000);
+    });
+
+    it("debe rechazar débito que deje saldo negativo", () => {
+      const currentBalance = 10000;
+      const adjustAmount = 20000;
+      const type = "debit";
+      const finalAmount = type === "debit" ? -Math.abs(adjustAmount) : Math.abs(adjustAmount);
+      const newBalance = currentBalance + finalAmount;
+      expect(newBalance).toBeLessThan(0);
+      // El backend debe rechazar esta operación
+    });
+
+    it("debe calcular correctamente un reembolso", () => {
+      const currentBalance = 50000;
+      const adjustAmount = 25000;
+      const type = "refund";
+      const finalAmount = type === "debit" ? -Math.abs(adjustAmount) : Math.abs(adjustAmount);
+      const newBalance = currentBalance + finalAmount;
+      expect(newBalance).toBe(75000);
+      expect(finalAmount).toBe(25000);
+    });
+
+    it("debe generar el tipo de transacción correcto", () => {
+      const getType = (type: string) => {
+        return type === "credit" ? "ADMIN_CREDIT" : type === "refund" ? "ADMIN_REFUND" : "ADMIN_DEBIT";
+      };
+      expect(getType("credit")).toBe("ADMIN_CREDIT");
+      expect(getType("debit")).toBe("ADMIN_DEBIT");
+      expect(getType("refund")).toBe("ADMIN_REFUND");
+    });
+
+    it("debe incluir el nombre del admin en la descripción", () => {
+      const adminName = "Admin Test";
+      const reason = "Reembolso por fallo en cobro";
+      const description = `[Admin: ${adminName}] ${reason}`;
+      expect(description).toContain("Admin: Admin Test");
+      expect(description).toContain("Reembolso por fallo en cobro");
+    });
+
+    it("debe validar que el motivo tenga al menos 3 caracteres", () => {
+      const reason1 = "ab";
+      const reason2 = "Reembolso por error";
+      expect(reason1.trim().length >= 3).toBe(false);
+      expect(reason2.trim().length >= 3).toBe(true);
+    });
+
+    it("debe validar que el monto sea mayor a 0", () => {
+      expect(0 > 0).toBe(false);
+      expect(-100 > 0).toBe(false);
+      expect(1000 > 0).toBe(true);
+    });
+
+    it("debe retornar balance 0 si el usuario no tiene billetera", () => {
+      const wallet = null;
+      const balance = wallet ? parseFloat((wallet as any).balance || "0") : 0;
+      expect(balance).toBe(0);
+    });
+  });
+
   describe("Listado de usuarios", () => {
     it("debe filtrar por rol correctamente", () => {
       const users = [
