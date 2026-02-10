@@ -1965,3 +1965,13 @@
 - [x] getActiveSimulationInfo ahora devuelve kWh/costo reales proporcionales al progreso
 - [x] completeSimulation usa realTargetKwh para cálculos finales correctos
 - [x] 385 tests pasando (24 archivos)
+
+## Mejora: Gestión de billetera desde Admin - 10 Febrero 2026
+- [x] Mostrar saldo de billetera en modal de detalles de usuario (admin)
+- [x] Botón para agregar crédito/saldo a la billetera del usuario
+- [x] Botón para descontar/debitar saldo de la billetera del usuario
+- [x] Botón para reembolso (devolver dinero por fallo de cobro)
+- [x] Registro de ajustes manuales con motivo/razón (incluye nombre del admin)
+- [x] Endpoint backend para consultar saldo por userId (admin) - users.getUserWallet
+- [x] Endpoint backend para ajustar saldo manualmente (admin) - users.adjustWalletBalance
+- [x] 394 tests pasando (24 archivos)

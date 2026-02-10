@@ -37,7 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, MoreVertical, UserPlus, Users, Shield, Wrench, Briefcase, Eye, Copy, Hash, Pencil, Trash2, Tag } from "lucide-react";
+import { Search, MoreVertical, UserPlus, Users, Shield, Wrench, Briefcase, Eye, Copy, Hash, Pencil, Trash2, Tag, Wallet, Plus, Minus, RotateCcw, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -57,6 +57,10 @@ export default function AdminUsers() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [showWalletAdjust, setShowWalletAdjust] = useState(false);
+  const [walletAdjustType, setWalletAdjustType] = useState<"credit" | "debit" | "refund">("credit");
+  const [walletAdjustAmount, setWalletAdjustAmount] = useState("");
+  const [walletAdjustReason, setWalletAdjustReason] = useState("");
   
   // Form state for editing
   const [editForm, setEditForm] = useState({
@@ -75,6 +79,9 @@ export default function AdminUsers() {
 
   const handleViewUser = (user: any) => {
     setSelectedUser(user);
+    setShowWalletAdjust(false);
+    setWalletAdjustAmount("");
+    setWalletAdjustReason("");
     setShowUserModal(true);
   };
 
@@ -142,6 +149,46 @@ export default function AdminUsers() {
       toast.error(error.message);
     },
   });
+
+  // Query de billetera del usuario seleccionado
+  const walletQuery = trpc.users.getUserWallet.useQuery(
+    { userId: selectedUser?.id || 0 },
+    { enabled: !!selectedUser && showUserModal }
+  );
+
+  const adjustWalletMutation = trpc.users.adjustWalletBalance.useMutation({
+    onSuccess: (data) => {
+      toast.success(
+        `Saldo ajustado. Anterior: $${data.previousBalance.toLocaleString()} → Nuevo: $${data.newBalance.toLocaleString()} COP`
+      );
+      setShowWalletAdjust(false);
+      setWalletAdjustAmount("");
+      setWalletAdjustReason("");
+      walletQuery.refetch();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const handleWalletAdjust = () => {
+    if (!selectedUser) return;
+    const amount = parseFloat(walletAdjustAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Ingrese un monto válido mayor a 0");
+      return;
+    }
+    if (!walletAdjustReason.trim() || walletAdjustReason.trim().length < 3) {
+      toast.error("Debe indicar un motivo (mínimo 3 caracteres)");
+      return;
+    }
+    adjustWalletMutation.mutate({
+      userId: selectedUser.id,
+      amount,
+      reason: walletAdjustReason.trim(),
+      type: walletAdjustType,
+    });
+  };
 
   const handleSaveEdit = () => {
     if (!selectedUser) return;
@@ -524,6 +571,124 @@ export default function AdminUsers() {
                   </div>
                 </div>
               )}
+
+              {/* Billetera del Usuario */}
+              <div className="p-4 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Wallet className="w-3 h-3" /> Saldo en Billetera
+                    </Label>
+                    <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
+                      {walletQuery.isLoading ? (
+                        <span className="text-sm text-muted-foreground">Cargando...</span>
+                      ) : (
+                        `$ ${(walletQuery.data?.balance || 0).toLocaleString("es-CO")} COP`
+                      )}
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Botones de ajuste */}
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-green-600 border-green-600/30 hover:bg-green-600/10"
+                    onClick={() => {
+                      setWalletAdjustType("credit");
+                      setShowWalletAdjust(true);
+                    }}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Agregar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-600 border-red-600/30 hover:bg-red-600/10"
+                    onClick={() => {
+                      setWalletAdjustType("debit");
+                      setShowWalletAdjust(true);
+                    }}
+                  >
+                    <Minus className="w-3 h-3 mr-1" />
+                    Descontar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-blue-600 border-blue-600/30 hover:bg-blue-600/10"
+                    onClick={() => {
+                      setWalletAdjustType("refund");
+                      setShowWalletAdjust(true);
+                    }}
+                  >
+                    <RotateCcw className="w-3 h-3 mr-1" />
+                    Reembolso
+                  </Button>
+                </div>
+
+                {/* Formulario de ajuste */}
+                {showWalletAdjust && (
+                  <div className="mt-3 p-3 bg-background rounded-lg border space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Badge className={
+                        walletAdjustType === "credit" ? "bg-green-100 text-green-700" :
+                        walletAdjustType === "refund" ? "bg-blue-100 text-blue-700" :
+                        "bg-red-100 text-red-700"
+                      }>
+                        {walletAdjustType === "credit" ? "Agregar crédito" :
+                         walletAdjustType === "refund" ? "Reembolso" : "Descontar"}
+                      </Badge>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Monto (COP)</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="Ej: 50000"
+                        value={walletAdjustAmount}
+                        onChange={(e) => setWalletAdjustAmount(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Motivo / Razón</Label>
+                      <Input
+                        placeholder="Ej: Reembolso por fallo en cobro de carga #1234"
+                        value={walletAdjustReason}
+                        onChange={(e) => setWalletAdjustReason(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleWalletAdjust}
+                        disabled={adjustWalletMutation.isPending}
+                        className={
+                          walletAdjustType === "credit" ? "bg-green-600 hover:bg-green-700" :
+                          walletAdjustType === "refund" ? "bg-blue-600 hover:bg-blue-700" :
+                          "bg-red-600 hover:bg-red-700"
+                        }
+                      >
+                        {adjustWalletMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+                        Confirmar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setShowWalletAdjust(false);
+                          setWalletAdjustAmount("");
+                          setWalletAdjustReason("");
+                        }}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Acciones */}
               <div className="flex gap-2 pt-4 border-t">
