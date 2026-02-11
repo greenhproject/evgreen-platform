@@ -1932,9 +1932,9 @@ export async function updateUserSubscription(userId: number, data: {
     const updateData: any = {};
     if (data.wompiPaymentSourceId !== undefined) updateData.wompiPaymentSourceId = data.wompiPaymentSourceId;
     if (data.wompiCardToken !== undefined) updateData.wompiCardToken = data.wompiCardToken;
-    if (data.cardBrand) updateData.cardBrand = data.cardBrand;
-    if (data.cardLastFour) updateData.cardLastFour = data.cardLastFour;
-    if (data.cardHolderName) updateData.cardHolderName = data.cardHolderName;
+    if (data.cardBrand !== undefined) updateData.cardBrand = data.cardBrand;
+    if (data.cardLastFour !== undefined) updateData.cardLastFour = data.cardLastFour;
+    if (data.cardHolderName !== undefined) updateData.cardHolderName = data.cardHolderName;
     if (data.monthlyAmountCents !== undefined) updateData.monthlyAmountCents = data.monthlyAmountCents;
     if (data.lastPaymentDate) updateData.lastPaymentDate = data.lastPaymentDate;
     if (data.lastPaymentReference) updateData.lastPaymentReference = data.lastPaymentReference;
