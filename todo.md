@@ -2072,3 +2072,13 @@
 - [x] Corregido recurring-billing.ts: misma corrección para cobros recurrentes de suscripción
 - [x] Mejorado manejo de errores: ahora muestra detalles del error de Wompi al usuario
 - [x] 417 tests pasando (25 archivos)
+
+## Bug: Recarga rápida cobra pero no se refleja en billetera - 10 Febrero 2026 - COMPLETADO
+- [x] BUG: Se descontaron $10,000 de la tarjeta VISA ****2668 pero saldo sigue en $370,208.01
+- [x] No aparece la recarga en el historial de la billetera
+- [x] Causa raíz: quickRecharge usa prefijo "QRC-" y auto-charge usa "ATC-", pero el webhook solo manejaba "WLT-", "CHG-", "INV-", "SUB-"
+- [x] Corregido webhook: agregado manejo de prefijos QRC- y ATC- con función processQuickRecharge
+- [x] Nuevo endpoint checkQuickRechargeStatus: polling del estado de transacciones PENDING consultando Wompi directamente
+- [x] Frontend: polling automático cada 3s (máx 60s) cuando la transacción está PENDING
+- [x] Protección contra doble acreditación verificando transacciones recientes
+- [x] 417 tests pasando (25 archivos)

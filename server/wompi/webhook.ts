@@ -63,6 +63,9 @@ export async function handleWompiWebhook(req: Request, res: Response) {
       if (status === WOMPI_TRANSACTION_STATUS.APPROVED) {
         if (reference.startsWith("WLT-")) {
           await processWalletRecharge(reference, amount_in_cents / 100, payment_method_type, id, transaction);
+        } else if (reference.startsWith("QRC-") || reference.startsWith("ATC-")) {
+          // Recarga rápida con tarjeta (QRC) o auto-cobro (ATC) - acreditar billetera
+          await processQuickRecharge(reference, amount_in_cents / 100, id);
         } else if (reference.startsWith("CHG-")) {
           await processChargingPayment(reference, amount_in_cents / 100);
         } else if (reference.startsWith("INV-")) {
@@ -226,6 +229,92 @@ async function processWalletRecharge(
     console.log(`[Wompi] Recarga completada para usuario ${localTx.userId}: $${amount}`);
   } catch (error) {
     console.error(`[Wompi] Error procesando recarga:`, error);
+  }
+}
+
+/**
+ * Procesar recarga rápida con tarjeta (QRC-) o auto-cobro (ATC-)
+ * Estas transacciones se crean como PENDING y se confirman vía webhook.
+ */
+async function processQuickRecharge(reference: string, amount: number, wompiTxId: string) {
+  const prefix = reference.startsWith("QRC-") ? "Recarga rápida" : "Auto-cobro";
+  console.log(`[Wompi] Procesando ${prefix}: ${reference} - $${amount}`);
+
+  const localTx = await db.getWompiTransactionByReference(reference);
+  if (!localTx) {
+    console.error(`[Wompi] No se encontró transacción local para: ${reference}`);
+    return;
+  }
+
+  try {
+    // Verificar si ya fue acreditada (evitar doble acreditación)
+    // Buscamos en las transacciones recientes del usuario si ya existe una con esta referencia
+    const recentTxs = await db.getWalletTransactionsByUserId(localTx.userId, 20);
+    const alreadyCredited = recentTxs.some(t => t.description?.includes(reference));
+    if (alreadyCredited) {
+      console.log(`[Wompi] ${prefix} ya fue acreditada previamente: ${reference}`);
+      return;
+    }
+
+    // Acreditar billetera
+    await db.addUserWalletBalance(localTx.userId, amount);
+
+    // Obtener wallet actualizada para el registro
+    const wallet = await db.getUserWallet(localTx.userId);
+    const newBalance = wallet ? parseFloat(wallet.balance) : amount;
+
+    // Registrar transacción de billetera
+    await db.createWalletTransaction({
+      walletId: wallet?.id || 0,
+      userId: localTx.userId,
+      type: "WOMPI_RECHARGE",
+      amount: amount.toString(),
+      balanceBefore: (newBalance - amount).toString(),
+      balanceAfter: newBalance.toString(),
+      description: `${prefix} con tarjeta: ${reference}`,
+    });
+
+    const formatCOP = (n: number) =>
+      new Intl.NumberFormat("es-CO", {
+        style: "currency",
+        currency: "COP",
+        minimumFractionDigits: 0,
+      }).format(n);
+
+    // Notificación in-app
+    await db.createNotification({
+      userId: localTx.userId,
+      title: prefix === "Recarga rápida" ? "¡Recarga exitosa!" : "Auto-recarga exitosa",
+      message: `Tu billetera fue recargada con ${formatCOP(amount)}. Nuevo saldo: ${formatCOP(newBalance)}.`,
+      type: "PAYMENT",
+      data: JSON.stringify({
+        key: `${reference.startsWith("QRC-") ? "quick-recharge" : "auto-charge"}-${reference}`,
+        amount,
+        reference,
+        wompiTxId,
+        newBalance,
+      }),
+    });
+
+    // Push notification
+    try {
+      const user = await db.getUserById(localTx.userId);
+      if (user?.fcmToken) {
+        await sendPushNotification(user.fcmToken, {
+          type: "balance_added",
+          title: prefix === "Recarga rápida" ? "¡Recarga exitosa!" : "Auto-recarga exitosa",
+          body: `Tu billetera fue recargada con ${formatCOP(amount)}.`,
+          clickAction: "/wallet",
+          data: { reference, amount: amount.toString() },
+        });
+      }
+    } catch (pushErr) {
+      console.warn(`[Wompi] Error enviando push de ${prefix}:`, pushErr);
+    }
+
+    console.log(`[Wompi] ${prefix} completada para usuario ${localTx.userId}: $${amount}`);
+  } catch (error) {
+    console.error(`[Wompi] Error procesando ${prefix}:`, error);
   }
 }
 

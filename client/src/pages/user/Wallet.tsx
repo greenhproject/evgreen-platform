@@ -99,6 +99,43 @@ export default function UserWallet() {
     },
   });
 
+  // Estado para polling de transacciones pendientes
+  const [pendingReference, setPendingReference] = useState<string | null>(null);
+  const [pollingCount, setPollingCount] = useState(0);
+
+  // Polling: consultar estado de transacción PENDING cada 3 segundos (máx 20 intentos = 60s)
+  const { data: pendingStatus } = trpc.wompi.checkQuickRechargeStatus.useQuery(
+    { reference: pendingReference || "" },
+    {
+      enabled: !!pendingReference && pollingCount < 20,
+      refetchInterval: pendingReference && pollingCount < 20 ? 3000 : false,
+    }
+  );
+
+  // Efecto para manejar resultado del polling
+  useEffect(() => {
+    if (!pendingReference || !pendingStatus) return;
+
+    if (pendingStatus.status === "APPROVED" && pendingStatus.credited) {
+      toast.success("¡Recarga exitosa! Tu billetera ha sido actualizada.");
+      setPendingReference(null);
+      setPollingCount(0);
+      refetchWallet();
+      refetchTransactions();
+    } else if (pendingStatus.status === "DECLINED" || pendingStatus.status === "ERROR" || pendingStatus.status === "VOIDED") {
+      toast.error(`El cobro fue ${pendingStatus.status === "DECLINED" ? "rechazado" : "cancelado"}. Intenta de nuevo.`);
+      setPendingReference(null);
+      setPollingCount(0);
+    } else if (pendingStatus.status === "PENDING") {
+      setPollingCount(prev => prev + 1);
+      if (pollingCount >= 19) {
+        toast.info("El cobro sigue en proceso. Tu billetera se actualizará automáticamente cuando se confirme.");
+        setPendingReference(null);
+        setPollingCount(0);
+      }
+    }
+  }, [pendingStatus, pendingReference, pollingCount]);
+
   // Mutation para recarga rápida con tarjeta inscrita
   const quickRecharge = trpc.wompi.quickRecharge.useMutation({
     onSuccess: (data) => {
@@ -108,7 +145,12 @@ export default function UserWallet() {
         refetchWallet();
         refetchTransactions();
       } else if (data.status === "PENDING") {
-        toast.info(data.message);
+        toast.info("Procesando cobro... Tu billetera se actualizará en unos momentos.");
+        // Iniciar polling
+        if (data.reference) {
+          setPendingReference(data.reference);
+          setPollingCount(0);
+        }
       } else {
         toast.error(data.message);
       }
