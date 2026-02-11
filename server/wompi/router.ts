@@ -741,6 +741,23 @@ export const wompiRouter = router({
       const amountInCents = input.amount * 100;
       const currency = "COP";
 
+      // Obtener acceptance token (obligatorio según API de Wompi)
+      const acceptanceData = await getAcceptanceToken();
+      if (!acceptanceData?.acceptanceToken) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "No se pudo obtener el token de aceptación de Wompi. Intenta de nuevo.",
+        });
+      }
+
+      // Generar firma de integridad (obligatoria según API de Wompi)
+      const signature = generateIntegritySignature(
+        reference,
+        amountInCents,
+        currency,
+        keys.integritySecret
+      );
+
       console.log(`[Wompi] Recarga rápida: $${input.amount} para usuario ${ctx.user.id} con payment source ${subscription.wompiPaymentSourceId}`);
 
       try {
@@ -757,7 +774,10 @@ export const wompiRouter = router({
             payment_source_id: parseInt(subscription.wompiPaymentSourceId),
             reference,
             customer_email: ctx.user.email || "",
+            signature,
+            acceptance_token: acceptanceData.acceptanceToken,
             payment_method: {
+              type: "CARD",
               installments: 1,
             },
           }),
@@ -766,9 +786,22 @@ export const wompiRouter = router({
         if (!response.ok) {
           const errorBody = await response.text();
           console.error(`[Wompi] Error en recarga rápida (${response.status}):`, errorBody);
+          
+          // Intentar parsear el error para dar mejor feedback
+          let errorMessage = "Error procesando el cobro. Intenta de nuevo o usa otro método de pago.";
+          try {
+            const errorJson = JSON.parse(errorBody);
+            if (errorJson.error?.messages) {
+              const msgs = Object.values(errorJson.error.messages).flat();
+              if (msgs.length > 0) errorMessage = `Error Wompi: ${msgs.join(", ")}`;
+            } else if (errorJson.error?.reason) {
+              errorMessage = `Error Wompi: ${errorJson.error.reason}`;
+            }
+          } catch (_) { /* usar mensaje genérico */ }
+          
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Error procesando el cobro. Intenta de nuevo o usa otro método de pago.",
+            message: errorMessage,
           });
         }
 

@@ -11,6 +11,7 @@
 import {
   getWompiKeys,
   generatePaymentReference,
+  generateIntegritySignature,
   WompiKeys,
 } from "./config";
 import * as db from "../db";
@@ -129,6 +130,18 @@ async function chargeWithPaymentSource(
   console.log(`[Billing] Cobrando $${amount} a suscripción ${subscription.id} con payment source ${subscription.wompiPaymentSourceId}`);
 
   try {
+    // Obtener acceptance token (obligatorio según API de Wompi)
+    const acceptanceData = await getAcceptanceToken();
+    const acceptanceToken = acceptanceData?.acceptanceToken || "";
+
+    // Generar firma de integridad (obligatoria según API de Wompi)
+    const signature = generateIntegritySignature(
+      reference,
+      amountInCents,
+      "COP",
+      keys.integritySecret
+    );
+
     // Crear transacción con payment source en Wompi
     const response = await fetch(`${keys.apiUrl}/transactions`, {
       method: "POST",
@@ -142,7 +155,10 @@ async function chargeWithPaymentSource(
         payment_source_id: parseInt(subscription.wompiPaymentSourceId),
         reference,
         customer_email: subscription.customerEmail || "",
+        signature,
+        acceptance_token: acceptanceToken,
         payment_method: {
+          type: "CARD",
           installments: 1,
         },
       }),

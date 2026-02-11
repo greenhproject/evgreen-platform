@@ -16,6 +16,16 @@ vi.mock("../db", () => ({
 vi.mock("./config", () => ({
   getWompiKeys: vi.fn(),
   generatePaymentReference: vi.fn().mockReturnValue("ATC-TEST-123"),
+  generateIntegritySignature: vi.fn().mockReturnValue("test-signature-hash"),
+}));
+
+// Mock de recurring-billing (getAcceptanceToken)
+vi.mock("./recurring-billing", () => ({
+  getAcceptanceToken: vi.fn().mockResolvedValue({
+    acceptanceToken: "test-acceptance-token",
+    personalAuthToken: "test-personal-auth-token",
+    permalink: "https://wompi.co/terms",
+  }),
 }));
 
 // Mock de fetch
@@ -25,10 +35,17 @@ global.fetch = mockFetch;
 import { autoChargeIfNeeded } from "./auto-charge";
 import * as db from "../db";
 import { getWompiKeys } from "./config";
+import { getAcceptanceToken } from "./recurring-billing";
 
 describe("autoChargeIfNeeded", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset default mock for getAcceptanceToken
+    vi.mocked(getAcceptanceToken).mockResolvedValue({
+      acceptanceToken: "test-acceptance-token",
+      personalAuthToken: "test-personal-auth-token",
+      permalink: "https://wompi.co/terms",
+    });
   });
 
   it("should return null if wallet has sufficient balance", async () => {
@@ -164,7 +181,10 @@ describe("autoChargeIfNeeded", () => {
     expect(result!.newBalance).toBe(35000); // 5000 + 30000
     expect(result!.reference).toBe("ATC-TEST-123");
 
-    // Verify Wompi API was called correctly
+    // Verify acceptance token was obtained
+    expect(getAcceptanceToken).toHaveBeenCalled();
+
+    // Verify Wompi API was called with acceptance_token and signature
     expect(mockFetch).toHaveBeenCalledWith(
       "https://sandbox.wompi.co/v1/transactions",
       expect.objectContaining({
@@ -174,6 +194,13 @@ describe("autoChargeIfNeeded", () => {
         }),
       })
     );
+
+    // Verify the body includes acceptance_token and signature
+    const fetchCall = mockFetch.mock.calls[0];
+    const body = JSON.parse(fetchCall[1].body);
+    expect(body.acceptance_token).toBe("test-acceptance-token");
+    expect(body.signature).toBe("test-signature-hash");
+    expect(body.payment_method.type).toBe("CARD");
 
     // Verify wallet was updated
     expect(db.updateWalletBalance).toHaveBeenCalledWith(1, "35000");
@@ -404,5 +431,48 @@ describe("autoChargeIfNeeded", () => {
     expect(result!.error).toContain("pendiente");
     // Wallet should NOT be updated for pending
     expect(db.updateWalletBalance).not.toHaveBeenCalled();
+  });
+
+  it("should return failure when acceptance token cannot be obtained", async () => {
+    vi.mocked(db.getWalletByUserId).mockResolvedValue({
+      id: 1,
+      userId: 1,
+      balance: "5000",
+      currency: "COP",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any);
+
+    vi.mocked(db.getUserSubscription).mockResolvedValue({
+      id: 1,
+      userId: 1,
+      tier: "BASIC",
+      wompiPaymentSourceId: "ps_123",
+      cardLastFour: "4242",
+    } as any);
+
+    vi.mocked(db.getUserById).mockResolvedValue({
+      id: 1,
+      email: "user@test.com",
+    } as any);
+
+    vi.mocked(getWompiKeys).mockResolvedValue({
+      publicKey: "pub_test_123",
+      privateKey: "prv_test_123",
+      integritySecret: "test_integrity",
+      eventsSecret: "test_events",
+      testMode: true,
+      apiUrl: "https://sandbox.wompi.co/v1",
+    });
+
+    // Mock getAcceptanceToken to return null
+    vi.mocked(getAcceptanceToken).mockResolvedValue(null as any);
+
+    const result = await autoChargeIfNeeded(1, 30000);
+
+    expect(result).not.toBeNull();
+    expect(result!.success).toBe(false);
+    expect(result!.error).toContain("token de aceptación");
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
