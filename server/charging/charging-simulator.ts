@@ -423,7 +423,24 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
   // Descontar del saldo del usuario
   const wallet = await db.getWalletByUserId(session.userId);
   if (wallet) {
-    const currentBalance = parseFloat(wallet.balance);
+    let currentBalance = parseFloat(wallet.balance);
+
+    // Auto-cobro: si el saldo es insuficiente y tiene tarjeta inscrita, cobrar automáticamente
+    if (currentBalance < totalCost) {
+      try {
+        const { autoChargeIfNeeded } = await import("../wompi/auto-charge");
+        const autoResult = await autoChargeIfNeeded(session.userId, totalCost);
+        if (autoResult?.success) {
+          currentBalance = autoResult.newBalance;
+          console.log(`[Simulator] Auto-cobro exitoso: $${autoResult.amountCharged} cobrados a tarjeta. Nuevo saldo: $${currentBalance}`);
+        } else if (autoResult) {
+          console.log(`[Simulator] Auto-cobro fallido: ${autoResult.error}`);
+        }
+      } catch (autoErr) {
+        console.warn(`[Simulator] Error en auto-cobro:`, autoErr);
+      }
+    }
+
     const newBalance = Math.max(0, currentBalance - totalCost);
     await db.updateWalletBalance(session.userId, String(newBalance));
 

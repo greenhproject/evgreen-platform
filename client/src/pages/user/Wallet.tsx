@@ -57,6 +57,14 @@ export default function UserWallet() {
   const [isQuickRecharging, setIsQuickRecharging] = useState(false);
   const [location] = useLocation();
 
+  // Card form states
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpMonth, setCardExpMonth] = useState("");
+  const [cardExpYear, setCardExpYear] = useState("");
+  const [cardCvc, setCardCvc] = useState("");
+  const [cardHolder, setCardHolder] = useState("");
+  const [isTokenizing, setIsTokenizing] = useState(false);
+
   // Verificar si Wompi está configurado
   const { data: wompiConfig } = trpc.wompi.isConfigured.useQuery();
   const hasPaymentMethod = wompiConfig?.configured;
@@ -108,6 +116,33 @@ export default function UserWallet() {
     onError: (error) => {
       setIsQuickRecharging(false);
       toast.error(error.message || "Error en la recarga rápida");
+    },
+  });
+
+  // Query para obtener acceptance token de Wompi
+  const { data: acceptanceData } = trpc.wompi.getAcceptanceToken.useQuery(undefined, {
+    enabled: !!wompiConfig?.configured,
+  });
+
+  // Mutation para tokenizar tarjeta y crear payment source
+  const tokenizeCard = trpc.wompi.tokenizeCard.useMutation({
+    onSuccess: (data) => {
+      setIsTokenizing(false);
+      if (data.success) {
+        toast.success("¡Tarjeta inscrita exitosamente!");
+        refetchSubscription();
+        setShowAddCard(false);
+        // Reset form
+        setCardNumber("");
+        setCardExpMonth("");
+        setCardExpYear("");
+        setCardCvc("");
+        setCardHolder("");
+      }
+    },
+    onError: (error) => {
+      setIsTokenizing(false);
+      toast.error(error.message || "Error inscribiendo la tarjeta");
     },
   });
 
@@ -603,9 +638,18 @@ export default function UserWallet() {
         )}
 
         {/* ================================================================ */}
-        {/* DIÁLOGO: AGREGAR / CAMBIAR TARJETA */}
+        {/* DIÁLOGO: AGREGAR / CAMBIAR TARJETA (TOKENIZACIÓN DIRECTA) */}
         {/* ================================================================ */}
-        <Dialog open={showAddCard} onOpenChange={setShowAddCard}>
+        <Dialog open={showAddCard} onOpenChange={(open) => {
+          setShowAddCard(open);
+          if (!open) {
+            setCardNumber("");
+            setCardExpMonth("");
+            setCardExpYear("");
+            setCardCvc("");
+            setCardHolder("");
+          }
+        }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -615,7 +659,7 @@ export default function UserWallet() {
               <DialogDescription>
                 {hasSavedCard
                   ? "Al inscribir una nueva tarjeta, se reemplazará la actual."
-                  : "Inscribe tu tarjeta de crédito o débito para recargar con un solo clic."}
+                  : "Inscribe tu tarjeta para recargar tu billetera con un solo clic."}
               </DialogDescription>
             </DialogHeader>
 
@@ -626,36 +670,204 @@ export default function UserWallet() {
                 <div>
                   <p className="text-sm font-medium">Pago 100% seguro</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Tus datos son procesados directamente por Wompi (certificado PCI DSS Nivel 1).
+                    Tus datos son tokenizados directamente por Wompi (PCI DSS Nivel 1).
                     EVGreen nunca almacena los datos completos de tu tarjeta.
                   </p>
                 </div>
               </div>
 
-              {/* Botón para abrir checkout de Wompi */}
+              {/* Formulario de tarjeta */}
+              <div className="space-y-3">
+                {/* Nombre del titular */}
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Nombre del titular</label>
+                  <Input
+                    placeholder="Como aparece en la tarjeta"
+                    value={cardHolder}
+                    onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
+                    className="h-11"
+                    maxLength={50}
+                  />
+                </div>
+
+                {/* Número de tarjeta */}
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Número de tarjeta</label>
+                  <Input
+                    placeholder="1234 5678 9012 3456"
+                    value={cardNumber}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 16);
+                      const formatted = val.replace(/(\d{4})(?=\d)/g, "$1 ");
+                      setCardNumber(formatted);
+                    }}
+                    className="h-11 font-mono tracking-wider"
+                    inputMode="numeric"
+                  />
+                </div>
+
+                {/* Fecha de vencimiento + CVV */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Mes</label>
+                    <Input
+                      placeholder="MM"
+                      value={cardExpMonth}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, "").slice(0, 2);
+                        setCardExpMonth(val);
+                      }}
+                      className="h-11 text-center font-mono"
+                      inputMode="numeric"
+                      maxLength={2}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Año</label>
+                    <Input
+                      placeholder="AA"
+                      value={cardExpYear}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, "").slice(0, 2);
+                        setCardExpYear(val);
+                      }}
+                      className="h-11 text-center font-mono"
+                      inputMode="numeric"
+                      maxLength={2}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">CVV</label>
+                    <Input
+                      placeholder="123"
+                      type="password"
+                      value={cardCvc}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                        setCardCvc(val);
+                      }}
+                      className="h-11 text-center font-mono"
+                      inputMode="numeric"
+                      maxLength={4}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Aceptación de términos */}
+              {acceptanceData?.permalink && (
+                <p className="text-[10px] text-muted-foreground text-center">
+                  Al inscribir tu tarjeta, aceptas los{" "}
+                  <a
+                    href={acceptanceData.permalink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary underline"
+                  >
+                    términos y condiciones de Wompi
+                  </a>
+                  .
+                </p>
+              )}
+
+              {/* Botón de inscripción */}
               <Button
                 className="w-full h-12 gradient-primary text-white"
-                onClick={() => {
-                  setShowAddCard(false);
-                  setSelectedAmount(20000);
-                  setCustomAmount("");
-                  setTimeout(() => {
-                    setIsProcessing(true);
-                    createWompiRecharge.mutate({ amount: 20000 });
-                  }, 100);
-                  toast.info("Al completar la recarga, tu tarjeta quedará inscrita para futuros pagos.");
-                }}
-                disabled={!hasPaymentMethod}
-              >
-                <CreditCard className="w-5 h-5 mr-2" />
-                Inscribir con recarga de {formatCurrency(20000)}
-              </Button>
+                onClick={async () => {
+                  // Validaciones
+                  const cleanNumber = cardNumber.replace(/\s/g, "");
+                  if (!cardHolder.trim()) {
+                    toast.error("Ingresa el nombre del titular");
+                    return;
+                  }
+                  if (cleanNumber.length < 13 || cleanNumber.length > 19) {
+                    toast.error("Número de tarjeta inválido");
+                    return;
+                  }
+                  const month = parseInt(cardExpMonth);
+                  if (!month || month < 1 || month > 12) {
+                    toast.error("Mes de vencimiento inválido");
+                    return;
+                  }
+                  const year = parseInt(cardExpYear);
+                  if (!year || year < 24) {
+                    toast.error("Año de vencimiento inválido");
+                    return;
+                  }
+                  if (cardCvc.length < 3) {
+                    toast.error("CVV inválido");
+                    return;
+                  }
+                  if (!publicKey) {
+                    toast.error("Error de configuración. Intenta de nuevo.");
+                    return;
+                  }
+                  if (!acceptanceData?.acceptanceToken) {
+                    toast.error("Error obteniendo tokens de aceptación. Intenta de nuevo.");
+                    return;
+                  }
 
-              <p className="text-[10px] text-center text-muted-foreground">
-                Realiza una recarga mínima de $20,000 para inscribir tu tarjeta.
-                Los datos de tu tarjeta serán guardados de forma segura por Wompi
-                para futuras recargas con un solo clic.
-              </p>
+                  setIsTokenizing(true);
+
+                  try {
+                    // Paso 1: Tokenizar tarjeta directamente con Wompi API
+                    const apiUrl = publicKey.startsWith("pub_test_")
+                      ? "https://sandbox.wompi.co/v1"
+                      : "https://production.wompi.co/v1";
+
+                    const tokenResponse = await fetch(`${apiUrl}/tokens/cards`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${publicKey}`,
+                      },
+                      body: JSON.stringify({
+                        number: cleanNumber,
+                        cvc: cardCvc,
+                        exp_month: cardExpMonth.padStart(2, "0"),
+                        exp_year: cardExpYear.padStart(2, "0"),
+                        card_holder: cardHolder.trim(),
+                      }),
+                    });
+
+                    if (!tokenResponse.ok) {
+                      const errBody = await tokenResponse.text();
+                      console.error("[Wompi] Error tokenizando:", errBody);
+                      throw new Error("No se pudo tokenizar la tarjeta. Verifica los datos.");
+                    }
+
+                    const tokenResult = await tokenResponse.json();
+                    const cardToken = tokenResult.data?.id;
+
+                    if (!cardToken) {
+                      throw new Error("No se recibió token de la tarjeta.");
+                    }
+
+                    // Paso 2: Enviar token al backend para crear payment source
+                    tokenizeCard.mutate({
+                      cardToken,
+                      acceptanceToken: acceptanceData.acceptanceToken,
+                      personalAuthToken: acceptanceData.personalAuthToken || undefined,
+                    });
+                  } catch (error: any) {
+                    setIsTokenizing(false);
+                    toast.error(error.message || "Error inscribiendo la tarjeta");
+                  }
+                }}
+                disabled={isTokenizing || !hasPaymentMethod}
+              >
+                {isTokenizing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Inscribiendo tarjeta...
+                  </>
+                ) : (
+                  <>
+                    <Shield className="w-5 h-5 mr-2" />
+                    Inscribir tarjeta de forma segura
+                  </>
+                )}
+              </Button>
 
               {/* Marcas aceptadas */}
               <div className="flex items-center justify-center gap-4 pt-2 border-t border-border/50">

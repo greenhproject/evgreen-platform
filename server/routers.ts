@@ -1107,8 +1107,25 @@ const transactionsRouter = router({
       // Descontar de la billetera del usuario
       const wallet = await db.getWalletByUserId(ctx.user.id);
       if (wallet) {
-        const currentBalance = parseFloat(wallet.balance?.toString() || "0");
-        const newBalance = currentBalance - totalCost;
+        let currentBalance = parseFloat(wallet.balance?.toString() || "0");
+
+        // Auto-cobro: si el saldo es insuficiente y tiene tarjeta inscrita
+        if (currentBalance < totalCost) {
+          try {
+            const { autoChargeIfNeeded } = await import("./wompi/auto-charge");
+            const autoResult = await autoChargeIfNeeded(ctx.user.id, totalCost);
+            if (autoResult?.success) {
+              currentBalance = autoResult.newBalance;
+              console.log(`[Charging] Auto-cobro exitoso: $${autoResult.amountCharged} cobrados a tarjeta`);
+            } else if (autoResult) {
+              console.log(`[Charging] Auto-cobro fallido: ${autoResult.error}`);
+            }
+          } catch (autoErr) {
+            console.warn(`[Charging] Error en auto-cobro:`, autoErr);
+          }
+        }
+
+        const newBalance = Math.max(0, currentBalance - totalCost);
         await db.updateWalletBalance(ctx.user.id, newBalance.toString());
         // Registrar transacción de billetera
         await db.createWalletTransaction({
