@@ -503,80 +503,134 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Investor Section */}
-      <section className="py-12 sm:py-20 px-4">
-        <div className="container">
+      {/* Investor Section - MEJORADO */}
+      <section className="py-16 sm:py-24 px-4 relative overflow-hidden">
+        {/* Background con gradiente llamativo */}
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-yellow-500/10" />
+        <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-orange-500/20 rounded-full blur-3xl" />
+        
+        <div className="container relative z-10">
           <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
-            <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/10 text-secondary text-sm font-medium mb-6">
-                <TrendingUp className="w-4 h-4" />
-                Para inversionistas
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 text-amber-400 text-sm font-semibold mb-6">
+                <TrendingUp className="w-5 h-5" />
+                <span>OPORTUNIDAD DE INVERSIÓN</span>
+                <Sparkles className="w-4 h-4 animate-pulse" />
               </div>
-              <h2 className="text-3xl sm:text-4xl font-bold mb-6">
-                Invierte en el futuro de la movilidad eléctrica
+              
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-6">
+                Invierte en el futuro de la{" "}
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">
+                  movilidad eléctrica
+                </span>
               </h2>
-              <p className="text-muted-foreground text-sm sm:text-base mb-6 sm:mb-8">
-                Adquiere estaciones de carga y genera ingresos pasivos. Nosotros nos encargamos 
-                de la operación, mantenimiento y soporte. Tú recibes el 80% de los ingresos.
+              
+              <p className="text-lg text-muted-foreground mb-8">
+                Adquiere estaciones de carga y genera <strong className="text-amber-400">ingresos pasivos de hasta 126% ROI anual</strong>. 
+                Nosotros nos encargamos de la operación, mantenimiento y soporte.
               </p>
-              <ul className="space-y-3 sm:space-y-4 mb-6 sm:mb-8 text-sm sm:text-base">
+              
+              {/* Stats destacados */}
+              <div className="grid grid-cols-3 gap-4 mb-8">
+                <div className="text-center p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                  <div className="text-2xl sm:text-3xl font-bold text-amber-400">126%</div>
+                  <div className="text-xs text-muted-foreground">ROI Anual</div>
+                </div>
+                <div className="text-center p-4 rounded-xl bg-orange-500/10 border border-orange-500/20">
+                  <div className="text-2xl sm:text-3xl font-bold text-orange-400">10</div>
+                  <div className="text-xs text-muted-foreground">Meses Payback</div>
+                </div>
+                <div className="text-center p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+                  <div className="text-2xl sm:text-3xl font-bold text-yellow-400">70%</div>
+                  <div className="text-xs text-muted-foreground">Tu Participación</div>
+                </div>
+              </div>
+              
+              <ul className="space-y-3 mb-8">
                 <li className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Zap className="w-4 h-4 text-primary" />
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+                    <Zap className="w-4 h-4 text-white" />
                   </div>
-                  <span>Dashboard en tiempo real con métricas de tu inversión</span>
+                  <span className="text-foreground">Dashboard en tiempo real con métricas de tu inversión</span>
                 </li>
                 <li className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Zap className="w-4 h-4 text-primary" />
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+                    <LineChart className="w-4 h-4 text-white" />
                   </div>
-                  <span>Reportes detallados de ingresos y consumo</span>
+                  <span className="text-foreground">Reportes detallados de ingresos y consumo</span>
                 </li>
                 <li className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Zap className="w-4 h-4 text-primary" />
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center">
+                    <Brain className="w-4 h-4 text-white" />
                   </div>
-                  <span>Configura precios y horarios de operación</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-purple-500/10 flex items-center justify-center">
-                    <Brain className="w-4 h-4 text-purple-500" />
-                  </div>
-                  <span><strong>IA predictiva</strong> para optimizar tus ingresos</span>
+                  <span className="text-foreground"><strong className="text-purple-400">IA predictiva</strong> para optimizar tus ingresos</span>
                 </li>
               </ul>
-              <Link href="/investors">
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="border-secondary text-secondary hover:bg-secondary hover:text-secondary-foreground"
-                >
-                  Conocer más
-                  <ChevronRight className="w-5 h-5 ml-2" />
-                </Button>
-              </Link>
-            </div>
-            <div className="relative">
-              <div className="aspect-square rounded-3xl bg-gradient-to-br from-secondary/20 to-primary/20 p-8 flex items-center justify-center">
-                <div className="w-full max-w-sm bg-card rounded-2xl shadow-2xl p-6 border">
+              
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Link href="/investors">
+                  <Button
+                    size="lg"
+                    className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-8 py-6 text-lg rounded-xl shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-all"
+                  >
+                    <PiggyBank className="w-5 h-5 mr-2" />
+                    Invertir Ahora
+                    <ChevronRight className="w-5 h-5 ml-2" />
+                  </Button>
+                </Link>
+                <Link href="/investors#calculadora">
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="border-2 border-amber-500/50 text-amber-400 hover:bg-amber-500/10 px-8 py-6 text-lg rounded-xl"
+                  >
+                    Calcular ROI
+                    <TrendingUp className="w-5 h-5 ml-2" />
+                  </Button>
+                </Link>
+              </div>
+            </motion.div>
+            
+            <motion.div 
+              initial={{ opacity: 0, x: 30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="relative"
+            >
+              <div className="aspect-square rounded-3xl bg-gradient-to-br from-amber-500/20 via-orange-500/10 to-yellow-500/20 p-8 flex items-center justify-center border border-amber-500/20">
+                {/* Efecto de brillo */}
+                <div className="absolute top-4 right-4 w-24 h-24 bg-amber-400/30 rounded-full blur-2xl animate-pulse" />
+                
+                <div className="w-full max-w-sm bg-card/90 backdrop-blur rounded-2xl shadow-2xl p-6 border border-amber-500/20">
                   <div className="flex items-center justify-between mb-6">
                     <span className="text-sm text-muted-foreground">Ingresos del mes</span>
-                    <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded-full">+12.5%</span>
+                    <span className="text-sm font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full">+12.5%</span>
                   </div>
-                  <div className="text-3xl font-bold mb-2">$2,450,000</div>
-                  <div className="text-sm text-muted-foreground mb-6">COP</div>
-                  <div className="h-32 bg-muted/50 rounded-xl flex items-end justify-around p-4">
-                    {[40, 65, 45, 80, 55, 90, 70].map((h, i) => (
+                  <div className="text-4xl font-bold text-foreground mb-1">$8,796,937</div>
+                  <div className="text-sm text-muted-foreground mb-6">COP / Inversión $85M</div>
+                  <div className="h-36 bg-gradient-to-t from-amber-500/5 to-transparent rounded-xl flex items-end justify-around p-4 border border-amber-500/10">
+                    {[40, 65, 45, 80, 55, 90, 70, 85, 95, 75, 88, 92].map((h, i) => (
                       <div
                         key={i}
-                        className="w-6 bg-primary/80 rounded-t-md transition-all hover:bg-primary"
+                        className="w-4 bg-gradient-to-t from-amber-500 to-orange-400 rounded-t-md transition-all hover:from-amber-400 hover:to-orange-300"
                         style={{ height: `${h}%` }}
                       />
                     ))}
                   </div>
+                  <div className="mt-4 pt-4 border-t border-border/50 flex justify-between text-sm">
+                    <span className="text-muted-foreground">ROI Acumulado</span>
+                    <span className="font-bold text-amber-400">+126% anual</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           </div>
         </div>
       </section>

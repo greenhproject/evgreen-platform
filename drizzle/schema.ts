@@ -46,6 +46,7 @@ export const reservationStatusEnum = mysqlEnum("reservation_status", [
 ]);
 export const subscriptionTierEnum = mysqlEnum("subscription_tier", ["FREE", "BASIC", "PREMIUM", "ENTERPRISE"]);
 export const paymentStatusEnum = mysqlEnum("payment_status", ["PENDING", "COMPLETED", "FAILED", "REFUNDED"]);
+export const payoutStatusEnum = mysqlEnum("payout_status", ["PENDING", "REQUESTED", "APPROVED", "PROCESSING", "PAID", "REJECTED"]);
 export const maintenanceStatusEnum = mysqlEnum("maintenance_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]);
 
 // ============================================================================
@@ -124,6 +125,9 @@ export const chargingStations = mysqlTable("charging_stations", {
   serialNumber: varchar("serialNumber", { length: 100 }),
   firmwareVersion: varchar("firmwareVersion", { length: 50 }),
   lastBootNotification: timestamp("lastBootNotification"),
+  // Zona premium para fee adicional (A: $5M, B: $3M, C: $0 estándar)
+  premiumZone: mysqlEnum("premiumZone", ["A", "B", "C"]).default("C").notNull(),
+  premiumZoneFee: decimal("premiumZoneFee", { precision: 15, scale: 2 }).default("0"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -356,9 +360,16 @@ export const subscriptions = mysqlTable("subscriptions", {
   discountPercentage: decimal("discountPercentage", { precision: 5, scale: 2 }).default("0"),
   freeReservationsPerMonth: int("freeReservationsPerMonth").default(0),
   prioritySupport: boolean("prioritySupport").default(false),
-  // Stripe
-  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 100 }),
-  stripePriceId: varchar("stripePriceId", { length: 100 }),
+  // Wompi tokenización
+  wompiPaymentSourceId: varchar("wompiPaymentSourceId", { length: 100 }),
+  wompiCardToken: varchar("wompiCardToken", { length: 100 }),
+  cardBrand: varchar("cardBrand", { length: 20 }),
+  cardLastFour: varchar("cardLastFour", { length: 4 }),
+  cardHolderName: varchar("cardHolderName", { length: 255 }),
+  monthlyAmountCents: bigint("monthlyAmountCents", { mode: "number" }).default(0),
+  lastPaymentDate: timestamp("lastPaymentDate"),
+  lastPaymentReference: varchar("lastPaymentReference", { length: 255 }),
+  failedPaymentCount: int("failedPaymentCount").default(0),
   // Fechas
   startDate: timestamp("startDate").notNull(),
   endDate: timestamp("endDate"),
@@ -477,18 +488,29 @@ export const investorPayouts = mysqlTable("investor_payouts", {
   periodEnd: timestamp("periodEnd").notNull(),
   // Montos
   totalRevenue: decimal("totalRevenue", { precision: 14, scale: 2 }).notNull(),
-  investorShare: decimal("investorShare", { precision: 14, scale: 2 }).notNull(), // 80%
-  platformFee: decimal("platformFee", { precision: 14, scale: 2 }).notNull(), // 20%
+  investorShare: decimal("investorShare", { precision: 14, scale: 2 }).notNull(), // Porcentaje del inversionista
+  platformFee: decimal("platformFee", { precision: 14, scale: 2 }).notNull(), // Comisión plataforma
+  investorPercentage: int("investorPercentage").default(70).notNull(), // Porcentaje aplicado
   // Detalles
   transactionCount: int("transactionCount").notNull(),
   totalKwh: decimal("totalKwh", { precision: 12, scale: 4 }).notNull(),
-  // Pago
-  status: paymentStatusEnum.default("PENDING").notNull(),
-  paidAt: timestamp("paidAt"),
-  paymentMethod: varchar("paymentMethod", { length: 50 }), // BANK_TRANSFER, STRIPE
-  paymentReference: varchar("paymentReference", { length: 100 }),
+  // Información bancaria del inversionista al momento de la solicitud
+  bankName: varchar("bankName", { length: 100 }),
+  bankAccount: varchar("bankAccount", { length: 100 }),
+  accountHolder: varchar("accountHolder", { length: 255 }),
+  accountType: varchar("accountType", { length: 50 }), // AHORROS, CORRIENTE
+  // Estado del pago - Nota: la columna en BD se llama 'status' (renombrada de payment_status)
+  status: mysqlEnum("status", ["PENDING", "REQUESTED", "APPROVED", "PROCESSING", "PAID", "REJECTED"]).default("PENDING").notNull(),
+  requestedAt: timestamp("requestedAt"), // Cuando el inversionista solicita el pago
+  approvedAt: timestamp("approvedAt"), // Cuando admin aprueba
+  approvedBy: int("approvedBy"), // FK a users (admin)
+  paidAt: timestamp("paidAt"), // Cuando se marca como pagado
+  paymentMethod: varchar("paymentMethod", { length: 50 }), // BANK_TRANSFER, STRIPE, WOMPI
+  paymentReference: varchar("paymentReference", { length: 100 }), // Número de transferencia
   // Notas
-  notes: text("notes"),
+  investorNotes: text("investorNotes"), // Notas del inversionista
+  adminNotes: text("adminNotes"), // Notas del admin
+  rejectionReason: text("rejectionReason"), // Razón de rechazo si aplica
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -746,7 +768,7 @@ export const banners = mysqlTable("banners", {
   imageUrl: text("imageUrl").notNull(),
   imageUrlMobile: text("imageUrlMobile"), // Versión móvil optimizada
   // Tipo y ubicación
-  type: bannerTypeEnum.notNull(),
+  type: mysqlEnum("banner_type", ["SPLASH", "CHARGING", "MAP", "PROMOTIONAL", "INFORMATIONAL"]).notNull(),
   // Enlace y acción
   linkUrl: text("linkUrl"),
   linkType: varchar("linkType", { length: 50 }), // EXTERNAL, INTERNAL, STATION, PROMOTION
@@ -765,7 +787,7 @@ export const banners = mysqlTable("banners", {
   isClosable: boolean("isClosable").default(true),
   showOnce: boolean("showOnce").default(false), // Mostrar solo una vez por usuario
   // Estado
-  status: bannerStatusEnum.default("DRAFT").notNull(),
+  status: mysqlEnum("banner_status", ["DRAFT", "ACTIVE", "PAUSED", "EXPIRED", "ARCHIVED"]).default("DRAFT").notNull(),
   // Métricas
   impressions: int("impressions").default(0).notNull(),
   clicks: int("clicks").default(0).notNull(),
@@ -983,14 +1005,15 @@ export const platformSettings = mysqlTable("platform_settings", {
   contactEmail: varchar("contactEmail", { length: 255 }),
   
   // Modelo de negocio (porcentajes)
-  investorPercentage: int("investorPercentage").default(80).notNull(),
-  platformFeePercentage: int("platformFeePercentage").default(20).notNull(),
+  investorPercentage: int("investorPercentage").default(70).notNull(),
+  platformFeePercentage: int("platformFeePercentage").default(30).notNull(),
   
-  // Configuración de Stripe
-  stripePublicKey: text("stripePublicKey"),
-  stripeSecretKey: text("stripeSecretKey"),
-  stripeWebhookSecret: text("stripeWebhookSecret"),
-  stripeTestMode: boolean("stripeTestMode").default(true).notNull(),
+  // Configuración de Wompi (pasarela de pagos Colombia)
+  wompiPublicKey: text("wompiPublicKey"),
+  wompiPrivateKey: text("wompiPrivateKey"),
+  wompiIntegritySecret: text("wompiIntegritySecret"),
+  wompiEventsSecret: text("wompiEventsSecret"),
+  wompiTestMode: boolean("wompiTestMode").default(true).notNull(),
   
   // Métodos de ingreso habilitados
   enableEnergyBilling: boolean("enableEnergyBilling").default(true).notNull(),
@@ -1026,6 +1049,32 @@ export const platformSettings = mysqlTable("platform_settings", {
   defaultPricePerKwhDC: decimal("defaultPricePerKwhDC", { precision: 10, scale: 2 }).default("1200").notNull(), // Precio base DC (carga rápida)
   enableDifferentiatedPricing: boolean("enableDifferentiatedPricing").default(true).notNull(), // Habilitar precios diferenciados AC/DC
   
+  // ============================================================================
+  // Configuración de la Calculadora de Inversión (página /investors)
+  // ============================================================================
+  
+  // Factor de utilización premium para estaciones colectivas (multiplicador)
+  // Refleja que ubicaciones premium tienen mayor demanda vs ubicaciones estándar
+  factorUtilizacionPremium: decimal("factorUtilizacionPremium", { precision: 4, scale: 2 }).default("2.00").notNull(),
+  
+  // Costos operativos diferenciados por tipo de paquete (%)
+  costosOperativosIndividual: int("costosOperativosIndividual").default(15).notNull(), // 15% para individual
+  costosOperativosColectivo: int("costosOperativosColectivo").default(10).notNull(), // 10% para colectivo (economías de escala)
+  costosOperativosAC: int("costosOperativosAC").default(15).notNull(), // 15% para AC
+  
+  // Eficiencia de carga por tipo (%)
+  eficienciaCargaDC: int("eficienciaCargaDC").default(92).notNull(), // 92% eficiencia DC
+  eficienciaCargaAC: int("eficienciaCargaAC").default(95).notNull(), // 95% eficiencia AC
+  
+  // Costos de energía (COP/kWh)
+  costoEnergiaRed: int("costoEnergiaRed").default(850).notNull(), // Costo promedio red eléctrica
+  costoEnergiaSolar: int("costoEnergiaSolar").default(250).notNull(), // Costo con energía solar
+  
+  // Precio de venta por defecto (COP/kWh)
+  precioVentaDefault: int("precioVentaDefault").default(1800).notNull(),
+  precioVentaMin: int("precioVentaMin").default(1400).notNull(),
+  precioVentaMax: int("precioVentaMax").default(2200).notNull(),
+
   // Metadata
   updatedBy: int("updatedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1065,3 +1114,355 @@ export const priceHistory = mysqlTable("price_history", {
 
 export type PriceHistory = typeof priceHistory.$inferSelect;
 export type InsertPriceHistory = typeof priceHistory.$inferInsert;
+
+
+// ============================================================================
+// CROWDFUNDING - PROYECTOS DE INVERSIÓN COLECTIVA
+// ============================================================================
+
+export const crowdfundingStatusEnum = mysqlEnum("crowdfunding_status", [
+  "DRAFT",           // Borrador, no visible
+  "OPEN",            // Abierto para inversiones
+  "IN_PROGRESS",     // En financiamiento activo
+  "FUNDED",          // Meta alcanzada
+  "BUILDING",        // En construcción
+  "OPERATIONAL",     // Estación operativa
+  "CLOSED",          // Cerrado (cancelado o completado)
+]);
+
+export const crowdfundingProjects = mysqlTable("crowdfunding_projects", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Información del proyecto
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  city: varchar("city", { length: 100 }).notNull(),
+  zone: varchar("zone", { length: 255 }).notNull(),
+  address: varchar("address", { length: 500 }),
+  
+  // Meta de inversión
+  targetAmount: bigint("targetAmount", { mode: "number" }).notNull(), // Meta en COP
+  raisedAmount: bigint("raisedAmount", { mode: "number" }).default(0).notNull(), // Monto recaudado
+  minimumInvestment: bigint("minimumInvestment", { mode: "number" }).default(50000000).notNull(), // Inversión mínima
+  
+  // Especificaciones técnicas
+  totalPowerKw: int("totalPowerKw").default(480).notNull(), // Potencia total en kW
+  chargerCount: int("chargerCount").default(4).notNull(), // Número de cargadores
+  chargerPowerKw: int("chargerPowerKw").default(120).notNull(), // Potencia por cargador
+  hasSolarPanels: boolean("hasSolarPanels").default(true).notNull(),
+  
+  // Proyecciones financieras
+  estimatedRoiPercent: decimal("estimatedRoiPercent", { precision: 5, scale: 2 }).default("85.00"),
+  estimatedPaybackMonths: int("estimatedPaybackMonths").default(14),
+  
+  // Estado y fechas
+  status: crowdfundingStatusEnum.default("DRAFT").notNull(),
+  targetDate: timestamp("targetDate"), // Fecha objetivo de cierre
+  launchDate: timestamp("launchDate"), // Fecha de lanzamiento
+  fundedDate: timestamp("fundedDate"), // Fecha en que se alcanzó la meta
+  operationalDate: timestamp("operationalDate"), // Fecha de inicio de operaciones
+  
+  // Prioridad y orden
+  priority: int("priority").default(0).notNull(),
+  
+  // Relación con estación (cuando se construye)
+  stationId: int("stationId"), // FK a charging_stations (cuando esté operativa)
+  
+  // Metadata
+  createdById: int("createdById"), // FK a users (admin)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CrowdfundingProject = typeof crowdfundingProjects.$inferSelect;
+export type InsertCrowdfundingProject = typeof crowdfundingProjects.$inferInsert;
+
+// ============================================================================
+// CROWDFUNDING - PARTICIPACIONES DE INVERSIONISTAS
+// ============================================================================
+
+export const crowdfundingParticipations = mysqlTable("crowdfunding_participations", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Relaciones
+  projectId: int("projectId").notNull(), // FK a crowdfunding_projects
+  investorId: int("investorId").notNull(), // FK a users
+  
+  // Monto de inversión
+  amount: bigint("amount", { mode: "number" }).notNull(), // Monto invertido en COP
+  participationPercent: decimal("participationPercent", { precision: 6, scale: 4 }).notNull(), // % de participación
+  
+  // Estado del pago
+  paymentStatus: paymentStatusEnum.default("PENDING").notNull(),
+  paymentDate: timestamp("paymentDate"),
+  stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),
+  
+  // Contrato y documentos
+  contractSigned: boolean("contractSigned").default(false).notNull(),
+  contractSignedAt: timestamp("contractSignedAt"),
+  contractUrl: text("contractUrl"),
+  
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CrowdfundingParticipation = typeof crowdfundingParticipations.$inferSelect;
+export type InsertCrowdfundingParticipation = typeof crowdfundingParticipations.$inferInsert;
+
+// ============================================================================
+// CROWDFUNDING RELATIONS
+// ============================================================================
+
+export const crowdfundingProjectsRelations = relations(crowdfundingProjects, ({ one, many }) => ({
+  createdBy: one(users, {
+    fields: [crowdfundingProjects.createdById],
+    references: [users.id],
+  }),
+  station: one(chargingStations, {
+    fields: [crowdfundingProjects.stationId],
+    references: [chargingStations.id],
+  }),
+  participations: many(crowdfundingParticipations),
+}));
+
+export const crowdfundingParticipationsRelations = relations(crowdfundingParticipations, ({ one }) => ({
+  project: one(crowdfundingProjects, {
+    fields: [crowdfundingParticipations.projectId],
+    references: [crowdfundingProjects.id],
+  }),
+  investor: one(users, {
+    fields: [crowdfundingParticipations.investorId],
+    references: [users.id],
+  }),
+}));
+
+
+// ============================================================================
+// EVENT MANAGEMENT - INVITADOS Y ASISTENCIA
+// ============================================================================
+
+export const eventGuestStatusEnum = mysqlEnum("event_guest_status", [
+  "INVITED",        // Invitación enviada
+  "CONFIRMED",      // Confirmó asistencia
+  "CHECKED_IN",     // Registrado en el evento
+  "NO_SHOW",        // No se presentó
+  "CANCELLED",      // Canceló
+]);
+
+export const eventPaymentStatusEnum = mysqlEnum("event_payment_status", [
+  "PENDING",        // Pendiente de pago
+  "PAID",           // Pagado
+  "PARTIAL",        // Pago parcial
+  "REFUNDED",       // Reembolsado
+]);
+
+export const eventGuests = mysqlTable("event_guests", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Datos del invitado
+  fullName: varchar("fullName", { length: 255 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  phone: varchar("phone", { length: 20 }),
+  company: varchar("company", { length: 255 }),
+  position: varchar("position", { length: 255 }),
+  
+  // Código QR único para check-in
+  qrCode: varchar("qrCode", { length: 100 }).notNull().unique(),
+  
+  // Paquete de inversión de interés
+  investmentPackage: mysqlEnum("investment_package", ["AC", "DC_INDIVIDUAL", "COLECTIVO"]),
+  investmentAmount: bigint("investmentAmount", { mode: "number" }),
+  
+  // Número de cupo fundador (1-30)
+  founderSlot: int("founderSlot"),
+  
+  // Estado
+  status: eventGuestStatusEnum.default("INVITED").notNull(),
+  
+  // Invitación
+  invitationSentAt: timestamp("invitationSentAt"),
+  invitationEmailId: varchar("invitationEmailId", { length: 255 }),
+  
+  // Check-in
+  checkedInAt: timestamp("checkedInAt"),
+  checkedInBy: int("checkedInBy"), // FK a users (staff que registró)
+  
+  // Relación con usuario (si se crea cuenta)
+  userId: int("userId"), // FK a users
+  
+  // Notas
+  notes: text("notes"),
+  
+  // Creado por (staff)
+  createdById: int("createdById"), // FK a users
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EventGuest = typeof eventGuests.$inferSelect;
+export type InsertEventGuest = typeof eventGuests.$inferInsert;
+
+// ============================================================================
+// EVENT PAYMENTS - PAGOS DE RESERVA DE INVERSIÓN
+// ============================================================================
+
+export const eventPayments = mysqlTable("event_payments", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Relación con invitado
+  guestId: int("guestId").notNull(), // FK a event_guests
+  
+  // Monto del pago
+  amount: bigint("amount", { mode: "number" }).notNull(), // Monto en COP
+  reservationDeposit: bigint("reservationDeposit", { mode: "number" }).default(1000000).notNull(), // Depósito mínimo $1M
+  
+  // Estado del pago
+  paymentStatus: eventPaymentStatusEnum.default("PENDING").notNull(),
+  
+  // Método de pago
+  paymentMethod: varchar("paymentMethod", { length: 50 }), // WOMPI, CASH, TRANSFER, CARD
+  paymentReference: varchar("paymentReference", { length: 255 }),
+  wompiTransactionId: varchar("wompiTransactionId", { length: 255 }),
+  
+  // Paquete seleccionado
+  selectedPackage: mysqlEnum("selected_package", ["AC", "DC_INDIVIDUAL", "COLECTIVO"]).notNull(),
+  
+  // Beneficios fundador aplicados
+  founderBenefits: boolean("founderBenefits").default(true).notNull(),
+  founderDiscount: decimal("founderDiscount", { precision: 5, scale: 2 }).default("5.00"), // 5% descuento
+  zoneFeeFree: boolean("zoneFeeFree").default(true), // Fee de zona gratis
+  
+  // Registrado por (staff)
+  registeredById: int("registeredById"), // FK a users (staff)
+  
+  // Timestamps
+  paidAt: timestamp("paidAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EventPayment = typeof eventPayments.$inferSelect;
+export type InsertEventPayment = typeof eventPayments.$inferInsert;
+
+// ============================================================================
+// EVENT RELATIONS
+// ============================================================================
+
+export const eventGuestsRelations = relations(eventGuests, ({ one, many }) => ({
+  checkedInByUser: one(users, {
+    fields: [eventGuests.checkedInBy],
+    references: [users.id],
+  }),
+  createdBy: one(users, {
+    fields: [eventGuests.createdById],
+    references: [users.id],
+  }),
+  linkedUser: one(users, {
+    fields: [eventGuests.userId],
+    references: [users.id],
+  }),
+  payments: many(eventPayments),
+}));
+
+export const eventPaymentsRelations = relations(eventPayments, ({ one }) => ({
+  guest: one(eventGuests, {
+    fields: [eventPayments.guestId],
+    references: [eventGuests.id],
+  }),
+  registeredBy: one(users, {
+    fields: [eventPayments.registeredById],
+    references: [users.id],
+  }),
+}));
+
+// ============================================================================
+// FAVORITOS DE ESTACIONES
+// ============================================================================
+
+export const favoriteStations = mysqlTable("favorite_stations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK a users
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FavoriteStation = typeof favoriteStations.$inferSelect;
+export type InsertFavoriteStation = typeof favoriteStations.$inferInsert;
+
+export const favoriteStationsRelations = relations(favoriteStations, ({ one }) => ({
+  user: one(users, {
+    fields: [favoriteStations.userId],
+    references: [users.id],
+  }),
+  station: one(chargingStations, {
+    fields: [favoriteStations.stationId],
+    references: [chargingStations.id],
+  }),
+}));
+
+// ============================================================================
+// WOMPI TRANSACTIONS - Transacciones de pago vía Wompi
+// ============================================================================
+
+export const wompiTransactionStatusEnum = mysqlEnum("wompi_tx_status", [
+  "PENDING",
+  "APPROVED",
+  "DECLINED",
+  "VOIDED",
+  "ERROR",
+]);
+
+export const wompiTransactionTypeEnum = mysqlEnum("wompi_tx_type", [
+  "WALLET_RECHARGE",     // Recarga de billetera
+  "SUBSCRIPTION",        // Pago de suscripción
+  "INVESTMENT_DEPOSIT",  // Depósito de inversión
+  "OTHER",
+]);
+
+export const wompiTransactions = mysqlTable("wompi_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Relación con usuario
+  userId: int("userId").notNull(), // FK a users
+  
+  // Datos de Wompi
+  wompiTransactionId: varchar("wompiTransactionId", { length: 255 }).unique(), // ID de transacción de Wompi
+  reference: varchar("reference", { length: 255 }).notNull().unique(), // Referencia única generada por nosotros
+  
+  // Montos
+  amountInCents: bigint("amountInCents", { mode: "number" }).notNull(), // Monto en centavos COP
+  currency: varchar("currency", { length: 3 }).default("COP").notNull(),
+  
+  // Estado y tipo
+  status: wompiTransactionStatusEnum.default("PENDING").notNull(),
+  type: wompiTransactionTypeEnum.notNull(),
+  
+  // Método de pago (CARD, NEQUI, PSE, BANCOLOMBIA_TRANSFER, etc.)
+  paymentMethodType: varchar("paymentMethodType", { length: 50 }),
+  
+  // Metadata del pago
+  customerEmail: varchar("customerEmail", { length: 320 }),
+  description: text("description"),
+  
+  // Firma de integridad generada
+  integritySignature: text("integritySignature"),
+  
+  // Procesamiento
+  processedAt: timestamp("processedAt"),
+  webhookReceivedAt: timestamp("webhookReceivedAt"),
+  
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type WompiTransaction = typeof wompiTransactions.$inferSelect;
+export type InsertWompiTransaction = typeof wompiTransactions.$inferInsert;
+
+export const wompiTransactionsRelations = relations(wompiTransactions, ({ one }) => ({
+  user: one(users, {
+    fields: [wompiTransactions.userId],
+    references: [users.id],
+  }),
+}));

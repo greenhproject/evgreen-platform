@@ -33,7 +33,8 @@ interface SimulationSession {
   startTime: Date;
   meterStart: number;
   currentMeter: number;
-  targetKwh: number;
+  targetKwh: number; // kWh limitado para duración de simulación
+  realTargetKwh: number; // kWh real que el usuario pidió (para cálculos de costo/progreso)
   pricePerKwh: number;
   powerKw: number; // Potencia real del cargador en kW
   chargeMode: "fixed_amount" | "percentage" | "full_charge";
@@ -200,6 +201,7 @@ export async function startSimulation(params: {
     meterStart,
     currentMeter: meterStart,
     targetKwh,
+    realTargetKwh,
     pricePerKwh,
     powerKw: realPowerKw, // Potencia real del cargador
     chargeMode,
@@ -386,9 +388,17 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
   notifyStatusChange(session, "finishing", { message: "Finalizando carga..." });
 
   const endTime = new Date();
-  const kwhConsumed = (session.currentMeter - session.meterStart) / 1000;
-  const totalCost = kwhConsumed * session.pricePerKwh;
   const duration = Math.floor((endTime.getTime() - session.startTime.getTime()) / 1000);
+  
+  // Usar realTargetKwh para los cálculos finales (no el targetKwh limitado de la simulación)
+  // Esto asegura que el costo final coincida con lo que el usuario pidió
+  const kwhConsumed = session.realTargetKwh;
+  const totalCost = session.chargeMode === "fixed_amount" 
+    ? session.targetValue  // Si el usuario pidió un monto fijo, cobrar exactamente ese monto
+    : kwhConsumed * session.pricePerKwh; // Para porcentaje y carga completa, calcular por kWh
+  
+  // Ajustar el medidor para que refleje los kWh reales
+  session.currentMeter = session.meterStart + (kwhConsumed * 1000);
 
   // Calcular distribución de ingresos según configuración del admin
   const revenueConfig = await db.getRevenueShareConfig();
@@ -413,7 +423,24 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
   // Descontar del saldo del usuario
   const wallet = await db.getWalletByUserId(session.userId);
   if (wallet) {
-    const currentBalance = parseFloat(wallet.balance);
+    let currentBalance = parseFloat(wallet.balance);
+
+    // Auto-cobro: si el saldo es insuficiente y tiene tarjeta inscrita, cobrar automáticamente
+    if (currentBalance < totalCost) {
+      try {
+        const { autoChargeIfNeeded } = await import("../wompi/auto-charge");
+        const autoResult = await autoChargeIfNeeded(session.userId, totalCost);
+        if (autoResult?.success) {
+          currentBalance = autoResult.newBalance;
+          console.log(`[Simulator] Auto-cobro exitoso: $${autoResult.amountCharged} cobrados a tarjeta. Nuevo saldo: $${currentBalance}`);
+        } else if (autoResult) {
+          console.log(`[Simulator] Auto-cobro fallido: ${autoResult.error}`);
+        }
+      } catch (autoErr) {
+        console.warn(`[Simulator] Error en auto-cobro:`, autoErr);
+      }
+    }
+
     const newBalance = Math.max(0, currentBalance - totalCost);
     await db.updateWalletBalance(session.userId, String(newBalance));
 
@@ -512,15 +539,24 @@ export async function stopSimulation(userId: number): Promise<{
     session.intervalId = undefined;
   }
 
-  // Completar la transacción con los valores actuales
+  // Calcular kWh proporcionales al progreso actual antes de completar
+  const simulatedKwh = (session.currentMeter - session.meterStart) / 1000;
+  const simulationProgress = Math.min(1, simulatedKwh / session.targetKwh);
+  const realKwhConsumed = simulationProgress * session.realTargetKwh;
+  
+  // Ajustar el realTargetKwh al valor actual para que completeSimulation use el valor correcto
+  session.realTargetKwh = realKwhConsumed;
+  
+  // Completar la transacción con los valores proporcionales
   await completeSimulation(session);
 
-  const kwhConsumed = (session.currentMeter - session.meterStart) / 1000;
-  const totalCost = kwhConsumed * session.pricePerKwh;
+  const totalCost = session.chargeMode === "fixed_amount"
+    ? simulationProgress * session.targetValue
+    : realKwhConsumed * session.pricePerKwh;
 
   return {
     transactionId: session.transactionId,
-    kwhConsumed: Math.round(kwhConsumed * 100) / 100,
+    kwhConsumed: Math.round(realKwhConsumed * 100) / 100,
     totalCost: Math.round(totalCost),
   };
 }
@@ -556,16 +592,30 @@ export function getActiveSimulationInfo(userId: number): {
     return null;
   }
 
-  const currentKwh = (session.currentMeter - session.meterStart) / 1000;
-  const currentCost = currentKwh * session.pricePerKwh;
-  const progress = Math.min(100, (currentKwh / session.targetKwh) * 100);
+  // Calcular kWh simulados (limitados) y mapear al progreso real
+  const simulatedKwh = (session.currentMeter - session.meterStart) / 1000;
+  const simulationProgress = Math.min(1, simulatedKwh / session.targetKwh); // 0 a 1
+  
+  // Mapear el progreso de la simulación a los valores reales
+  const currentKwh = simulationProgress * session.realTargetKwh;
+  
+  // Calcular costo actual proporcional al progreso
+  let currentCost: number;
+  if (session.chargeMode === "fixed_amount") {
+    // Para monto fijo, el costo avanza proporcionalmente al monto objetivo
+    currentCost = simulationProgress * session.targetValue;
+  } else {
+    currentCost = currentKwh * session.pricePerKwh;
+  }
+  
+  const progress = Math.min(100, simulationProgress * 100);
   const elapsedSeconds = Math.floor((Date.now() - session.startTime.getTime()) / 1000);
 
   return {
     status: session.status,
     currentKwh: Math.round(currentKwh * 100) / 100,
     currentCost: Math.round(currentCost),
-    targetKwh: session.targetKwh,
+    targetKwh: session.realTargetKwh, // Devolver el target real, no el limitado
     progress: Math.round(progress),
     elapsedSeconds,
     pricePerKwh: session.pricePerKwh,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,112 +11,122 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   DollarSign, 
   Wallet, 
   Clock, 
   CheckCircle, 
   AlertCircle,
-  Download,
   CreditCard,
   Building,
   Calendar,
-  ArrowRight,
-  FileText
+  FileText,
+  Loader2,
+  XCircle,
+  ArrowUpRight,
+  TrendingUp,
+  Edit,
+  ChevronRight
 } from "lucide-react";
 import { toast } from "sonner";
-
-interface Settlement {
-  id: number;
-  period: string;
-  periodStart: Date;
-  periodEnd: Date;
-  grossAmount: number;
-  commission: number;
-  netAmount: number;
-  status: "pending" | "processing" | "completed" | "failed";
-  paidAt?: Date;
-  transactionId?: string;
-}
-
-// Datos de ejemplo
-const mockSettlements: Settlement[] = [
-  {
-    id: 1,
-    period: "Enero 2026 - Semana 3",
-    periodStart: new Date(2026, 0, 13),
-    periodEnd: new Date(2026, 0, 19),
-    grossAmount: 1242480,
-    commission: 248496,
-    netAmount: 993984,
-    status: "pending",
-  },
-  {
-    id: 2,
-    period: "Enero 2026 - Semana 2",
-    periodStart: new Date(2026, 0, 6),
-    periodEnd: new Date(2026, 0, 12),
-    grossAmount: 1456200,
-    commission: 291240,
-    netAmount: 1164960,
-    status: "completed",
-    paidAt: new Date(2026, 0, 14),
-    transactionId: "TXN-2026-0114-001",
-  },
-  {
-    id: 3,
-    period: "Enero 2026 - Semana 1",
-    periodStart: new Date(2026, 0, 1),
-    periodEnd: new Date(2026, 0, 5),
-    grossAmount: 892560,
-    commission: 178512,
-    netAmount: 714048,
-    status: "completed",
-    paidAt: new Date(2026, 0, 7),
-    transactionId: "TXN-2026-0107-001",
-  },
-  {
-    id: 4,
-    period: "Diciembre 2025 - Semana 4",
-    periodStart: new Date(2025, 11, 23),
-    periodEnd: new Date(2025, 11, 31),
-    grossAmount: 1678400,
-    commission: 335680,
-    netAmount: 1342720,
-    status: "completed",
-    paidAt: new Date(2026, 0, 2),
-    transactionId: "TXN-2026-0102-001",
-  },
-];
+import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 export default function InvestorSettlements() {
-  const [settlements] = useState<Settlement[]>(mockSettlements);
+  const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [requestAmount, setRequestAmount] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
+  const [accountHolder, setAccountHolder] = useState("");
+  const [accountType, setAccountType] = useState<"AHORROS" | "CORRIENTE">("AHORROS");
+  const [notes, setNotes] = useState("");
+  const [showEditBankForm, setShowEditBankForm] = useState(false);
 
-  const pendingAmount = settlements
-    .filter(s => s.status === "pending")
-    .reduce((sum, s) => sum + s.netAmount, 0);
+  // Obtener balance y datos reales
+  // @ts-ignore - payouts router exists
+  const { data: balanceData, isLoading: loadingBalance, refetch: refetchBalance } = trpc.payouts.getMyBalance.useQuery();
+  // @ts-ignore - payouts router exists
+  const { data: payouts, isLoading: loadingPayouts, refetch: refetchPayouts } = trpc.payouts.getMyPayouts.useQuery();
 
-  const totalPaid = settlements
-    .filter(s => s.status === "completed")
-    .reduce((sum, s) => sum + s.netAmount, 0);
+  // Verificar si hay datos bancarios guardados en el perfil
+  const hasSavedBankData = user?.bankName && user?.bankAccount;
 
-  const formatCurrency = (amount: number) => {
+  // Pre-cargar datos bancarios del perfil del usuario cuando se abre el diálogo
+  useEffect(() => {
+    if (isDialogOpen && user) {
+      // Pre-cargar datos bancarios si existen en el perfil del usuario
+      if (user.bankName) {
+        setBankName(user.bankName);
+      }
+      if (user.bankAccount) {
+        setBankAccount(user.bankAccount);
+      }
+      if (user.name) {
+        setAccountHolder(user.name);
+      }
+      // Pre-cargar el monto máximo disponible
+      if (balanceData?.pendingBalance) {
+        setRequestAmount(Math.floor(balanceData.pendingBalance).toString());
+      }
+      // Si tiene datos bancarios guardados, no mostrar el formulario de edición
+      setShowEditBankForm(!hasSavedBankData);
+    }
+  }, [isDialogOpen, user, balanceData, hasSavedBankData]);
+
+  // Resetear estados cuando se cierra el diálogo
+  useEffect(() => {
+    if (!isDialogOpen) {
+      setShowEditBankForm(false);
+      setNotes("");
+    }
+  }, [isDialogOpen]);
+
+  // Mutación para solicitar pago
+  // @ts-ignore - payouts router exists
+  const requestPayoutMutation = trpc.payouts.requestPayout.useMutation({
+    onSuccess: () => {
+      toast.success("Solicitud de pago enviada exitosamente. Se procesará en 24-48 horas.");
+      setIsDialogOpen(false);
+      setRequestAmount("");
+      setNotes("");
+      refetchBalance();
+      refetchPayouts();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Error al solicitar el pago");
+    },
+  });
+
+  const formatCurrency = (amount: number | string | null | undefined) => {
+    const num = typeof amount === "string" ? parseFloat(amount) : (amount || 0);
     return new Intl.NumberFormat("es-CO", {
       style: "currency",
       currency: "COP",
       minimumFractionDigits: 0,
-    }).format(amount);
+    }).format(num);
   };
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, { bg: string; label: string; icon: any }> = {
-      pending: { bg: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400", label: "Pendiente", icon: Clock },
-      processing: { bg: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", label: "Procesando", icon: Clock },
-      completed: { bg: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", label: "Pagado", icon: CheckCircle },
-      failed: { bg: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", label: "Fallido", icon: AlertCircle },
+      PENDING: { bg: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400", label: "Pendiente", icon: Clock },
+      REQUESTED: { bg: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", label: "Solicitado", icon: ArrowUpRight },
+      APPROVED: { bg: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400", label: "Aprobado", icon: CheckCircle },
+      PROCESSING: { bg: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", label: "Procesando", icon: Loader2 },
+      PAID: { bg: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", label: "Pagado", icon: CheckCircle },
+      REJECTED: { bg: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", label: "Rechazado", icon: XCircle },
+      FAILED: { bg: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", label: "Fallido", icon: AlertCircle },
     };
-    const style = styles[status];
+    const style = styles[status] || styles.PENDING;
     const Icon = style.icon;
     return (
       <Badge className={style.bg}>
@@ -127,8 +137,295 @@ export default function InvestorSettlements() {
   };
 
   const handleRequestPayout = () => {
-    toast.success("Solicitud de pago enviada. Se procesará en 24-48 horas.");
-    setIsDialogOpen(false);
+    const amount = parseFloat(requestAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Ingresa un monto válido");
+      return;
+    }
+    if (!bankName || !bankAccount || !accountHolder) {
+      toast.error("Completa todos los datos bancarios");
+      return;
+    }
+    if (amount > (balanceData?.pendingBalance || 0)) {
+      toast.error("El monto excede tu balance disponible");
+      return;
+    }
+
+    requestPayoutMutation.mutate({
+      amount,
+      bankName,
+      bankAccount,
+      accountHolder,
+      accountType,
+      notes: notes || undefined,
+    });
+  };
+
+  const pendingBalance = balanceData?.pendingBalance || 0;
+  const totalPaid = balanceData?.totalPaid || 0;
+  const investorPercentage = balanceData?.investorPercentage || 80;
+  const pendingRequested = balanceData?.pendingRequested || 0;
+
+  // Calcular próxima liquidación (próximo lunes)
+  const getNextMonday = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
+    const nextMonday = new Date(today);
+    nextMonday.setDate(today.getDate() + daysUntilMonday);
+    return nextMonday;
+  };
+
+  const nextSettlementDate = getNextMonday();
+
+  if (loadingBalance || loadingPayouts) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Renderizar el contenido del modal según si tiene datos bancarios o no
+  const renderModalContent = () => {
+    // Si tiene datos bancarios guardados y no está editando
+    if (hasSavedBankData && !showEditBankForm) {
+      return (
+        <div className="space-y-4 mt-4">
+          {/* Balance disponible */}
+          <div className="p-4 bg-green-500/10 rounded-lg border border-green-500/20">
+            <p className="text-sm text-muted-foreground">Balance disponible</p>
+            <p className="text-2xl font-bold text-green-500">{formatCurrency(pendingBalance)}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Tu porcentaje: {investorPercentage}%
+            </p>
+          </div>
+
+          {/* Monto a solicitar */}
+          <div className="space-y-2">
+            <Label>Monto a solicitar *</Label>
+            <Input
+              type="number"
+              placeholder="Ej: 500000"
+              value={requestAmount}
+              onChange={(e) => setRequestAmount(e.target.value)}
+              max={pendingBalance}
+            />
+            <p className="text-xs text-muted-foreground">
+              Máximo: {formatCurrency(pendingBalance)}
+            </p>
+          </div>
+
+          {/* Cuenta bancaria guardada - Vista resumida */}
+          <div className="p-4 bg-muted/50 rounded-lg border">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium">Cuenta de destino</p>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 text-xs"
+                onClick={() => setShowEditBankForm(true)}
+              >
+                <Edit className="w-3 h-3 mr-1" />
+                Cambiar cuenta
+              </Button>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <CreditCard className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-medium">{user?.bankName}</p>
+                <p className="text-sm text-muted-foreground">
+                  ****{user?.bankAccount?.slice(-4)} · {user?.name}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Notas opcionales */}
+          <div className="space-y-2">
+            <Label>Notas (opcional)</Label>
+            <Textarea
+              placeholder="Información adicional..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+            />
+          </div>
+
+          {/* Información de procesamiento */}
+          <div className="p-3 bg-muted/50 rounded-lg">
+            <p className="text-sm text-muted-foreground">
+              <Clock className="w-4 h-4 inline mr-1" />
+              El pago se procesará en 24-48 horas hábiles después de la aprobación
+            </p>
+          </div>
+
+          {/* Botón de confirmar */}
+          <Button 
+            className="w-full" 
+            onClick={handleRequestPayout}
+            disabled={requestPayoutMutation.isPending}
+          >
+            {requestPayoutMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Procesando...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Confirmar solicitud
+              </>
+            )}
+          </Button>
+        </div>
+      );
+    }
+
+    // Si NO tiene datos bancarios guardados O está editando
+    return (
+      <div className="space-y-4 mt-4">
+        {/* Balance disponible */}
+        <div className="p-4 bg-green-500/10 rounded-lg border border-green-500/20">
+          <p className="text-sm text-muted-foreground">Balance disponible</p>
+          <p className="text-2xl font-bold text-green-500">{formatCurrency(pendingBalance)}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Tu porcentaje: {investorPercentage}%
+          </p>
+        </div>
+
+        {/* Monto a solicitar */}
+        <div className="space-y-2">
+          <Label>Monto a solicitar *</Label>
+          <Input
+            type="number"
+            placeholder="Ej: 500000"
+            value={requestAmount}
+            onChange={(e) => setRequestAmount(e.target.value)}
+            max={pendingBalance}
+          />
+          <p className="text-xs text-muted-foreground">
+            Máximo: {formatCurrency(pendingBalance)}
+          </p>
+        </div>
+
+        {/* Mensaje si está editando */}
+        {hasSavedBankData && showEditBankForm && (
+          <div className="flex items-center justify-between p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+            <p className="text-sm text-blue-600 dark:text-blue-400">
+              Ingresa los datos de la nueva cuenta
+            </p>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-8 text-xs"
+              onClick={() => {
+                // Restaurar datos originales
+                if (user?.bankName) setBankName(user.bankName);
+                if (user?.bankAccount) setBankAccount(user.bankAccount);
+                if (user?.name) setAccountHolder(user.name);
+                setShowEditBankForm(false);
+              }}
+            >
+              Cancelar
+            </Button>
+          </div>
+        )}
+
+        {/* Formulario de datos bancarios */}
+        <div className="space-y-2">
+          <Label>Banco *</Label>
+          <Select value={bankName} onValueChange={setBankName}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecciona tu banco" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Bancolombia">Bancolombia</SelectItem>
+              <SelectItem value="Davivienda">Davivienda</SelectItem>
+              <SelectItem value="BBVA">BBVA</SelectItem>
+              <SelectItem value="Banco de Bogotá">Banco de Bogotá</SelectItem>
+              <SelectItem value="Banco de Occidente">Banco de Occidente</SelectItem>
+              <SelectItem value="Banco Popular">Banco Popular</SelectItem>
+              <SelectItem value="Banco AV Villas">Banco AV Villas</SelectItem>
+              <SelectItem value="Banco Caja Social">Banco Caja Social</SelectItem>
+              <SelectItem value="Scotiabank Colpatria">Scotiabank Colpatria</SelectItem>
+              <SelectItem value="Banco Falabella">Banco Falabella</SelectItem>
+              <SelectItem value="Nequi">Nequi</SelectItem>
+              <SelectItem value="Daviplata">Daviplata</SelectItem>
+              <SelectItem value="Otro">Otro</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Número de cuenta *</Label>
+          <Input
+            placeholder="Ej: 123456789012"
+            value={bankAccount}
+            onChange={(e) => setBankAccount(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Titular de la cuenta *</Label>
+          <Input
+            placeholder="Nombre completo del titular"
+            value={accountHolder}
+            onChange={(e) => setAccountHolder(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Tipo de cuenta *</Label>
+          <Select value={accountType} onValueChange={(v) => setAccountType(v as "AHORROS" | "CORRIENTE")}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="AHORROS">Cuenta de Ahorros</SelectItem>
+              <SelectItem value="CORRIENTE">Cuenta Corriente</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Notas opcionales */}
+        <div className="space-y-2">
+          <Label>Notas (opcional)</Label>
+          <Textarea
+            placeholder="Información adicional..."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+          />
+        </div>
+
+        {/* Información de procesamiento */}
+        <div className="p-3 bg-muted/50 rounded-lg">
+          <p className="text-sm text-muted-foreground">
+            <Clock className="w-4 h-4 inline mr-1" />
+            El pago se procesará en 24-48 horas hábiles después de la aprobación
+          </p>
+        </div>
+
+        {/* Botón de confirmar */}
+        <Button 
+          className="w-full" 
+          onClick={handleRequestPayout}
+          disabled={requestPayoutMutation.isPending}
+        >
+          {requestPayoutMutation.isPending ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Procesando...
+            </>
+          ) : (
+            "Confirmar solicitud"
+          )}
+        </Button>
+      </div>
+    );
   };
 
   return (
@@ -142,54 +439,49 @@ export default function InvestorSettlements() {
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="gradient-primary" disabled={pendingAmount === 0}>
+            <Button className="gradient-primary" disabled={pendingBalance === 0}>
               <Wallet className="w-4 h-4 mr-2" />
               Solicitar pago
             </Button>
           </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
+          <DialogContent className="max-w-md max-h-[90vh] p-0">
+            <DialogHeader className="p-6 pb-0">
               <DialogTitle>Solicitar Liquidación</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <div className="p-4 bg-green-500/10 rounded-lg border border-green-500/20">
-                <p className="text-sm text-muted-foreground">Monto disponible</p>
-                <p className="text-2xl font-bold text-green-500">{formatCurrency(pendingAmount)}</p>
-              </div>
-              <div className="space-y-2">
-                <Label>Cuenta bancaria</Label>
-                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                  <Building className="w-5 h-5 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">Bancolombia ****4521</p>
-                    <p className="text-sm text-muted-foreground">Cuenta de ahorros</p>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Tiempo estimado</Label>
-                <p className="text-sm text-muted-foreground">
-                  El pago se procesará en 24-48 horas hábiles
-                </p>
-              </div>
-              <Button className="w-full" onClick={handleRequestPayout}>
-                Confirmar solicitud
-              </Button>
-            </div>
+            <ScrollArea className="max-h-[calc(90vh-80px)] px-6 pb-6">
+              {renderModalContent()}
+            </ScrollArea>
           </DialogContent>
         </Dialog>
       </div>
 
       {/* Resumen */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card className="bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Balance disponible</p>
+                <p className="text-2xl font-bold text-green-500">{formatCurrency(pendingBalance)}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Disponible para solicitar
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
+                <DollarSign className="w-6 h-6 text-green-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="bg-gradient-to-br from-yellow-500/10 to-yellow-600/5 border-yellow-500/20">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Pendiente de pago</p>
-                <p className="text-2xl font-bold text-yellow-500">{formatCurrency(pendingAmount)}</p>
+                <p className="text-sm text-muted-foreground">Solicitudes pendientes</p>
+                <p className="text-2xl font-bold text-yellow-500">{formatCurrency(pendingRequested)}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {settlements.filter(s => s.status === "pending").length} liquidación(es)
+                  En proceso de aprobación
                 </p>
               </div>
               <div className="w-12 h-12 rounded-full bg-yellow-500/20 flex items-center justify-center">
@@ -198,63 +490,70 @@ export default function InvestorSettlements() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
+
+        <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-500/20">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total pagado</p>
-                <p className="text-2xl font-bold text-green-500">{formatCurrency(totalPaid)}</p>
+                <p className="text-2xl font-bold text-emerald-500">{formatCurrency(totalPaid)}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {settlements.filter(s => s.status === "completed").length} pagos completados
+                  Pagos completados
                 </p>
               </div>
-              <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-                <CheckCircle className="w-6 h-6 text-green-500" />
+              <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-emerald-500" />
               </div>
             </div>
           </CardContent>
         </Card>
+
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Próxima liquidación</p>
-                <p className="text-2xl font-bold">Lun 20 Ene</p>
+                <p className="text-sm text-muted-foreground">Tu porcentaje</p>
+                <p className="text-2xl font-bold">{investorPercentage}%</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Liquidación semanal
+                  De los ingresos brutos
                 </p>
               </div>
               <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
-                <Calendar className="w-6 h-6 text-blue-500" />
+                <TrendingUp className="w-6 h-6 text-blue-500" />
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Cuenta bancaria */}
+      {/* Próxima liquidación */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CreditCard className="w-5 h-5" />
-            Cuenta de Pago
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
-                <Building className="w-6 h-6 text-blue-500" />
+                <Calendar className="w-6 h-6 text-blue-500" />
               </div>
               <div>
-                <p className="font-semibold">Bancolombia</p>
-                <p className="text-sm text-muted-foreground">Cuenta de ahorros ****4521</p>
-                <p className="text-xs text-muted-foreground">Titular: Green House Project S.A.S</p>
+                <p className="text-sm text-muted-foreground">Próxima fecha de liquidación</p>
+                <p className="text-xl font-bold">
+                  {nextSettlementDate.toLocaleDateString("es-CO", { 
+                    weekday: "short", 
+                    day: "numeric", 
+                    month: "short" 
+                  })}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Las liquidaciones se procesan semanalmente
+                </p>
               </div>
             </div>
-            <Button variant="outline" size="sm">
-              Cambiar cuenta
-            </Button>
+            {pendingBalance > 0 && (
+              <Button variant="outline" onClick={() => setIsDialogOpen(true)}>
+                <Wallet className="w-4 h-4 mr-2" />
+                Solicitar ahora
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -268,84 +567,89 @@ export default function InvestorSettlements() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {settlements.map(settlement => (
-              <div 
-                key={settlement.id}
-                className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    settlement.status === "completed" ? "bg-green-500/20" :
-                    settlement.status === "pending" ? "bg-yellow-500/20" :
-                    "bg-blue-500/20"
-                  }`}>
-                    <DollarSign className={`w-5 h-5 ${
-                      settlement.status === "completed" ? "text-green-500" :
-                      settlement.status === "pending" ? "text-yellow-500" :
-                      "text-blue-500"
-                    }`} />
-                  </div>
-                  <div>
-                    <p className="font-semibold">{settlement.period}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {new Date(settlement.periodStart).toLocaleDateString("es-CO", { day: "numeric", month: "short" })}
-                      {" - "}
-                      {new Date(settlement.periodEnd).toLocaleDateString("es-CO", { day: "numeric", month: "short" })}
-                    </p>
-                    {settlement.paidAt && (
-                      <p className="text-xs text-muted-foreground">
-                        Pagado el {new Date(settlement.paidAt).toLocaleDateString("es-CO")}
+          {!payouts || payouts.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Wallet className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p>No tienes liquidaciones registradas</p>
+              <p className="text-sm">Solicita tu primer pago cuando tengas balance disponible</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {payouts.map((payout: any) => (
+                <div 
+                  key={payout.id} 
+                  className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <CreditCard className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{formatCurrency(payout.investorShare)}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {new Date(payout.createdAt).toLocaleDateString("es-CO", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric"
+                        })}
                       </p>
-                    )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">
+                        {payout.bankName} - ****{payout.bankAccount?.slice(-4)}
+                      </p>
+                      {payout.paidAt && (
+                        <p className="text-xs text-muted-foreground">
+                          Pagado: {new Date(payout.paidAt).toLocaleDateString("es-CO")}
+                        </p>
+                      )}
+                    </div>
+                    {getStatusBadge(payout.status)}
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="font-bold text-lg">{formatCurrency(settlement.netAmount)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Bruto: {formatCurrency(settlement.grossAmount)}
-                    </p>
-                  </div>
-                  {getStatusBadge(settlement.status)}
-                  {settlement.status === "completed" && (
-                    <Button variant="ghost" size="icon">
-                      <Download className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Información sobre liquidaciones */}
+      {/* Información de pago */}
       <Card>
-        <CardHeader>
-          <CardTitle>Información sobre Liquidaciones</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-3">
-              <h4 className="font-semibold flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
-                Ciclo de liquidación
-              </h4>
-              <p className="text-sm text-muted-foreground">
-                Las liquidaciones se generan semanalmente (lunes a domingo) y se procesan 
-                el siguiente día hábil. Los pagos se realizan dentro de 24-48 horas hábiles.
-              </p>
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+              <Building className="w-5 h-5 text-blue-500" />
             </div>
-            <div className="space-y-3">
-              <h4 className="font-semibold flex items-center gap-2">
-                <DollarSign className="w-4 h-4" />
-                Monto mínimo
-              </h4>
-              <p className="text-sm text-muted-foreground">
-                El monto mínimo para solicitar un pago es de $50,000 COP. Si tu saldo 
-                es menor, se acumulará para la siguiente liquidación.
-              </p>
+            <div>
+              <h3 className="font-semibold mb-1">Información de Pago</h3>
+              {hasSavedBankData ? (
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p>Tus datos bancarios guardados:</p>
+                  <p className="font-medium text-foreground">
+                    {user?.bankName} - ****{user?.bankAccount?.slice(-4)}
+                  </p>
+                  <p className="text-xs">
+                    Puedes actualizar estos datos en la sección de{" "}
+                    <a href="/investor/settings" className="text-primary hover:underline">
+                      Configuración
+                    </a>
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No tienes datos bancarios guardados.
+                  <br />
+                  <span className="text-xs">
+                    Tip: Guarda tus datos bancarios en{" "}
+                    <a href="/investor/settings" className="text-primary hover:underline">
+                      Configuración
+                    </a>{" "}
+                    para agilizar tus solicitudes de pago.
+                  </span>
+                </p>
+              )}
             </div>
           </div>
         </CardContent>

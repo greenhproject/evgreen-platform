@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -35,7 +36,11 @@ import {
   AlertTriangle,
   Info,
   CheckCircle,
-  Megaphone
+  Megaphone,
+  Mail,
+  Smartphone,
+  Loader2,
+  RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -53,6 +58,7 @@ const TARGET_AUDIENCES = [
   { value: "users", label: "Solo clientes" },
   { value: "investors", label: "Solo inversionistas" },
   { value: "technicians", label: "Solo técnicos" },
+  { value: "admins", label: "Solo administradores" },
 ];
 
 export default function AdminNotifications() {
@@ -63,15 +69,46 @@ export default function AdminNotifications() {
     type: "INFO",
     targetAudience: "all",
     linkUrl: "",
+    sendPush: true,
+    sendEmail: false,
+    sendInApp: true,
   });
 
-  // Obtener estadísticas de notificaciones (simulado por ahora)
-  const stats = {
-    totalSent: 1250,
-    readRate: 78.5,
-    activeUsers: 342,
-    pendingNotifications: 15,
-  };
+  // Obtener estadísticas reales
+  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = trpc.notifications.getStats.useQuery();
+
+  // Obtener historial real
+  const { data: history, isLoading: historyLoading, refetch: refetchHistory } = trpc.notifications.getHistory.useQuery({ limit: 20 });
+
+  // Mutación para enviar notificación
+  const sendBroadcast = trpc.notifications.sendBroadcast.useMutation({
+    onSuccess: (result) => {
+      toast.success(
+        `Notificación enviada exitosamente`,
+        {
+          description: `In-app: ${result.inAppCreated} | Push: ${result.pushSent} | Email: ${result.emailSent}`,
+        }
+      );
+      setShowSendDialog(false);
+      setFormData({
+        title: "",
+        message: "",
+        type: "INFO",
+        targetAudience: "all",
+        linkUrl: "",
+        sendPush: true,
+        sendEmail: false,
+        sendInApp: true,
+      });
+      refetchStats();
+      refetchHistory();
+    },
+    onError: (error) => {
+      toast.error("Error al enviar notificación", {
+        description: error.message,
+      });
+    },
+  });
 
   const handleSendNotification = async () => {
     if (!formData.title || !formData.message) {
@@ -79,15 +116,20 @@ export default function AdminNotifications() {
       return;
     }
 
-    // TODO: Implementar envío masivo de notificaciones
-    toast.success(`Notificación enviada a ${formData.targetAudience === "all" ? "todos los usuarios" : formData.targetAudience}`);
-    setShowSendDialog(false);
-    setFormData({
-      title: "",
-      message: "",
-      type: "INFO",
-      targetAudience: "all",
-      linkUrl: "",
+    if (!formData.sendPush && !formData.sendEmail && !formData.sendInApp) {
+      toast.error("Selecciona al menos un canal de envío");
+      return;
+    }
+
+    sendBroadcast.mutate({
+      title: formData.title,
+      message: formData.message,
+      type: formData.type as "INFO" | "SUCCESS" | "WARNING" | "ALERT" | "PROMOTION",
+      targetAudience: formData.targetAudience as "all" | "users" | "investors" | "technicians" | "admins",
+      linkUrl: formData.linkUrl || undefined,
+      sendPush: formData.sendPush,
+      sendEmail: formData.sendEmail,
+      sendInApp: formData.sendInApp,
     });
   };
 
@@ -98,39 +140,20 @@ export default function AdminNotifications() {
     return <Icon className={`w-4 h-4 ${typeConfig.color}`} />;
   };
 
-  // Historial de notificaciones enviadas (simulado)
-  const sentNotifications = [
-    {
-      id: 1,
-      title: "Nuevo cargador disponible",
-      message: "Hemos instalado un nuevo cargador en Mosquera. ¡Pruébalo!",
-      type: "INFO",
-      targetAudience: "all",
-      sentAt: new Date(Date.now() - 86400000),
-      readCount: 245,
-      totalSent: 342,
-    },
-    {
-      id: 2,
-      title: "Mantenimiento programado",
-      message: "El cargador GEV-001 estará en mantenimiento el 20 de enero.",
-      type: "WARNING",
-      targetAudience: "users",
-      sentAt: new Date(Date.now() - 172800000),
-      readCount: 189,
-      totalSent: 256,
-    },
-    {
-      id: 3,
-      title: "¡Promoción especial!",
-      message: "20% de descuento en tu próxima carga. Usa el código GREENEV20.",
-      type: "PROMOTION",
-      targetAudience: "all",
-      sentAt: new Date(Date.now() - 259200000),
-      readCount: 312,
-      totalSent: 342,
-    },
-  ];
+  const getAudienceLabel = (audience: string) => {
+    const found = TARGET_AUDIENCES.find(a => a.value === audience);
+    return found?.label || audience;
+  };
+
+  const formatDate = (date: Date | string | null) => {
+    if (!date) return "—";
+    return new Date(date).toLocaleString("es-CO", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -138,123 +161,172 @@ export default function AdminNotifications() {
         <div>
           <h1 className="text-2xl font-bold">Centro de Notificaciones</h1>
           <p className="text-muted-foreground">
-            Envía notificaciones push a los usuarios de la plataforma
+            Envía notificaciones push, email y en la plataforma a los usuarios
           </p>
         </div>
-        <Dialog open={showSendDialog} onOpenChange={setShowSendDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <Send className="w-4 h-4 mr-2" />
-              Enviar notificación
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Enviar notificación masiva</DialogTitle>
-            </DialogHeader>
-            
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label>Título *</Label>
-                <Input 
-                  placeholder="Título de la notificación" 
-                  value={formData.title}
-                  onChange={(e) => setFormData({...formData, title: e.target.value})}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Mensaje *</Label>
-                <Textarea 
-                  placeholder="Escribe el mensaje de la notificación..."
-                  rows={4}
-                  value={formData.message}
-                  onChange={(e) => setFormData({...formData, message: e.target.value})}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+        <div className="flex gap-2">
+          <Button variant="outline" size="icon" onClick={() => { refetchStats(); refetchHistory(); }}>
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+          <Dialog open={showSendDialog} onOpenChange={setShowSendDialog}>
+            <DialogTrigger asChild>
+              <Button>
+                <Send className="w-4 h-4 mr-2" />
+                Enviar notificación
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Enviar notificación masiva</DialogTitle>
+              </DialogHeader>
+              
+              <div className="grid gap-4 py-4">
                 <div className="space-y-2">
-                  <Label>Tipo</Label>
-                  <Select 
-                    value={formData.type} 
-                    onValueChange={(value) => setFormData({...formData, type: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {NOTIFICATION_TYPES.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          <div className="flex items-center gap-2">
-                            <t.icon className={`w-4 h-4 ${t.color}`} />
-                            {t.label}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Título *</Label>
+                  <Input 
+                    placeholder="Título de la notificación" 
+                    value={formData.title}
+                    onChange={(e) => setFormData({...formData, title: e.target.value})}
+                  />
                 </div>
+
                 <div className="space-y-2">
-                  <Label>Audiencia</Label>
-                  <Select 
-                    value={formData.targetAudience} 
-                    onValueChange={(value) => setFormData({...formData, targetAudience: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TARGET_AUDIENCES.map((a) => (
-                        <SelectItem key={a.value} value={a.value}>
-                          {a.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Mensaje *</Label>
+                  <Textarea 
+                    placeholder="Escribe el mensaje de la notificación..."
+                    rows={4}
+                    value={formData.message}
+                    onChange={(e) => setFormData({...formData, message: e.target.value})}
+                  />
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label>URL de destino (opcional)</Label>
-                <Input 
-                  placeholder="https://ejemplo.com/promocion" 
-                  value={formData.linkUrl}
-                  onChange={(e) => setFormData({...formData, linkUrl: e.target.value})}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Si se incluye, el usuario será redirigido al hacer clic en la notificación
-                </p>
-              </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Tipo</Label>
+                    <Select 
+                      value={formData.type} 
+                      onValueChange={(value) => setFormData({...formData, type: value})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {NOTIFICATION_TYPES.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>
+                            <div className="flex items-center gap-2">
+                              <t.icon className={`w-4 h-4 ${t.color}`} />
+                              {t.label}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Audiencia</Label>
+                    <Select 
+                      value={formData.targetAudience} 
+                      onValueChange={(value) => setFormData({...formData, targetAudience: value})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TARGET_AUDIENCES.map((a) => (
+                          <SelectItem key={a.value} value={a.value}>
+                            {a.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
 
-              {/* Vista previa */}
-              <div className="space-y-2">
-                <Label>Vista previa</Label>
-                <div className="border rounded-lg p-4 bg-muted/30">
-                  <div className="flex items-start gap-3">
-                    {getTypeIcon(formData.type)}
-                    <div className="flex-1">
-                      <div className="font-medium">{formData.title || "Título de la notificación"}</div>
-                      <div className="text-sm text-muted-foreground mt-1">
-                        {formData.message || "Mensaje de la notificación..."}
+                <div className="space-y-2">
+                  <Label>URL de destino (opcional)</Label>
+                  <Input 
+                    placeholder="https://evgreen.lat/promocion" 
+                    value={formData.linkUrl}
+                    onChange={(e) => setFormData({...formData, linkUrl: e.target.value})}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Si se incluye, el usuario será redirigido al hacer clic en la notificación
+                  </p>
+                </div>
+
+                {/* Canales de envío */}
+                <div className="space-y-3">
+                  <Label>Canales de envío</Label>
+                  <div className="flex flex-wrap gap-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox 
+                        id="sendInApp" 
+                        checked={formData.sendInApp}
+                        onCheckedChange={(checked) => setFormData({...formData, sendInApp: checked as boolean})}
+                      />
+                      <label htmlFor="sendInApp" className="text-sm flex items-center gap-1 cursor-pointer">
+                        <Bell className="w-4 h-4" />
+                        En la plataforma
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox 
+                        id="sendPush" 
+                        checked={formData.sendPush}
+                        onCheckedChange={(checked) => setFormData({...formData, sendPush: checked as boolean})}
+                      />
+                      <label htmlFor="sendPush" className="text-sm flex items-center gap-1 cursor-pointer">
+                        <Smartphone className="w-4 h-4" />
+                        Push (móvil)
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox 
+                        id="sendEmail" 
+                        checked={formData.sendEmail}
+                        onCheckedChange={(checked) => setFormData({...formData, sendEmail: checked as boolean})}
+                      />
+                      <label htmlFor="sendEmail" className="text-sm flex items-center gap-1 cursor-pointer">
+                        <Mail className="w-4 h-4" />
+                        Email
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Vista previa */}
+                <div className="space-y-2">
+                  <Label>Vista previa</Label>
+                  <div className="border rounded-lg p-4 bg-muted/30">
+                    <div className="flex items-start gap-3">
+                      {getTypeIcon(formData.type)}
+                      <div className="flex-1">
+                        <div className="font-medium">{formData.title || "Título de la notificación"}</div>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          {formData.message || "Mensaje de la notificación..."}
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowSendDialog(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleSendNotification}>
-                <Send className="w-4 h-4 mr-2" />
-                Enviar
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowSendDialog(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleSendNotification} disabled={sendBroadcast.isPending}>
+                  {sendBroadcast.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4 mr-2" />
+                  )}
+                  {sendBroadcast.isPending ? "Enviando..." : "Enviar"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Estadísticas */}
@@ -265,7 +337,9 @@ export default function AdminNotifications() {
               <Bell className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <div className="text-2xl font-bold">{stats.totalSent.toLocaleString()}</div>
+              <div className="text-2xl font-bold">
+                {statsLoading ? "..." : (stats?.totalSent || 0).toLocaleString()}
+              </div>
               <div className="text-sm text-muted-foreground">Total enviadas</div>
             </div>
           </div>
@@ -276,7 +350,9 @@ export default function AdminNotifications() {
               <CheckCircle className="w-5 h-5 text-green-500" />
             </div>
             <div>
-              <div className="text-2xl font-bold">{stats.readRate}%</div>
+              <div className="text-2xl font-bold">
+                {statsLoading ? "..." : `${stats?.readRate || 0}%`}
+              </div>
               <div className="text-sm text-muted-foreground">Tasa de lectura</div>
             </div>
           </div>
@@ -287,7 +363,9 @@ export default function AdminNotifications() {
               <Users className="w-5 h-5 text-blue-500" />
             </div>
             <div>
-              <div className="text-2xl font-bold">{stats.activeUsers}</div>
+              <div className="text-2xl font-bold">
+                {statsLoading ? "..." : (stats?.activeUsers || 0).toLocaleString()}
+              </div>
               <div className="text-sm text-muted-foreground">Usuarios activos</div>
             </div>
           </div>
@@ -298,7 +376,9 @@ export default function AdminNotifications() {
               <AlertTriangle className="w-5 h-5 text-yellow-500" />
             </div>
             <div>
-              <div className="text-2xl font-bold">{stats.pendingNotifications}</div>
+              <div className="text-2xl font-bold">
+                {statsLoading ? "..." : (stats?.pendingNotifications || 0).toLocaleString()}
+              </div>
               <div className="text-sm text-muted-foreground">Pendientes</div>
             </div>
           </div>
@@ -322,53 +402,66 @@ export default function AdminNotifications() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sentNotifications.map((notification) => (
-              <TableRow key={notification.id}>
-                <TableCell>
-                  <div>
-                    <div className="font-medium">{notification.title}</div>
-                    <div className="text-sm text-muted-foreground line-clamp-1">
-                      {notification.message}
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {getTypeIcon(notification.type)}
-                    <span className="text-sm">
-                      {NOTIFICATION_TYPES.find(t => t.value === notification.type)?.label}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline">
-                    {TARGET_AUDIENCES.find(a => a.value === notification.targetAudience)?.label}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {notification.sentAt.toLocaleDateString("es-CO", {
-                    day: "numeric",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </TableCell>
-                <TableCell>
-                  {notification.readCount} / {notification.totalSent}
-                </TableCell>
-                <TableCell>
-                  <Badge className={
-                    (notification.readCount / notification.totalSent) > 0.7 
-                      ? "bg-green-500" 
-                      : (notification.readCount / notification.totalSent) > 0.4 
-                        ? "bg-yellow-500" 
-                        : "bg-red-500"
-                  }>
-                    {((notification.readCount / notification.totalSent) * 100).toFixed(1)}%
-                  </Badge>
+            {historyLoading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : history && history.length > 0 ? (
+              history.map((notification) => (
+                <TableRow key={notification.id}>
+                  <TableCell>
+                    <div className="max-w-xs">
+                      <div className="font-medium truncate">{notification.title}</div>
+                      <div className="text-sm text-muted-foreground truncate">
+                        {notification.message}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {getTypeIcon(notification.type)}
+                      <span className="capitalize">
+                        {NOTIFICATION_TYPES.find(t => t.value === notification.type)?.label || notification.type}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">
+                      {getAudienceLabel(notification.targetAudience)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(notification.sentAt)}
+                  </TableCell>
+                  <TableCell>
+                    {notification.readCount} / {notification.totalSent}
+                  </TableCell>
+                  <TableCell>
+                    <Badge 
+                      variant={
+                        notification.totalSent > 0 
+                          ? (notification.readCount / notification.totalSent) >= 0.7 
+                            ? "default" 
+                            : "secondary"
+                          : "outline"
+                      }
+                    >
+                      {notification.totalSent > 0 
+                        ? `${Math.round((notification.readCount / notification.totalSent) * 100)}%`
+                        : "—"}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  No hay notificaciones enviadas aún. Envía tu primera notificación.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </Card>

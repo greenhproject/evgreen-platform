@@ -16,7 +16,8 @@ import {
   Settings,
   LogOut,
   ChevronRight,
-  Bell
+  Bell,
+  Crown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -61,7 +62,7 @@ export default function UserLayout({
     { icon: Wallet, label: "Billetera", path: "/wallet" },
     { icon: History, label: "Historial de carga", path: "/history" },
     { icon: Calendar, label: "Reservaciones", path: "/reservations" },
-    { icon: Zap, label: "Suscripción VIP", path: "/subscription" },
+    { icon: Crown, label: "Membresía", path: "/subscription" },
     { icon: MessageCircle, label: "Soporte", path: "/support" },
     { icon: Settings, label: "Ajustes", path: "/settings" },
   ];
@@ -206,9 +207,14 @@ export default function UserLayout({
               if (item.isCenter) {
                 return (
                   <Link key={item.path} href={item.path}>
-                    <a className="relative -mt-6">
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/40">
-                        <item.icon className="w-6 h-6 text-white" />
+                    <a className="relative -mt-6 group">
+                      {/* Anillo de pulso exterior */}
+                      <div className="absolute inset-0 w-14 h-14 rounded-full bg-emerald-400/30 animate-ping" style={{ animationDuration: '2.5s' }} />
+                      {/* Glow estático */}
+                      <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-emerald-400/40 to-green-500/40 blur-md" />
+                      {/* Botón principal */}
+                      <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shadow-xl shadow-emerald-500/50 ring-2 ring-emerald-400/30 group-hover:scale-110 transition-transform duration-200">
+                        <item.icon className="w-7 h-7 text-white drop-shadow-sm" />
                       </div>
                     </a>
                   </Link>

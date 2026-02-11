@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, Bell, CreditCard, Globe, Loader2 } from "lucide-react";
+import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
@@ -32,12 +32,30 @@ export default function AdminSettings() {
   });
 
   const [paymentsForm, setPaymentsForm] = useState({
-    stripePublicKey: "",
-    stripeSecretKey: "",
-    stripeTestMode: true,
+    wompiPublicKey: "",
+    wompiPrivateKey: "",
+    wompiIntegritySecret: "",
+    wompiEventsSecret: "",
+    wompiTestMode: true,
     enableEnergyBilling: true,
     enableReservationBilling: true,
     enableOccupancyPenalty: true,
+  });
+
+  // Rastrear qué campos secretos tienen valor guardado en BD (para mostrar placeholder)
+  const [savedSecrets, setSavedSecrets] = useState({
+    wompiPublicKey: false,
+    wompiPrivateKey: false,
+    wompiIntegritySecret: false,
+    wompiEventsSecret: false,
+  });
+
+  // Rastrear qué campos secretos fueron tocados/modificados por el usuario
+  const [touchedSecrets, setTouchedSecrets] = useState({
+    wompiPublicKey: false,
+    wompiPrivateKey: false,
+    wompiIntegritySecret: false,
+    wompiEventsSecret: false,
   });
 
   const [notificationsForm, setNotificationsForm] = useState({
@@ -54,6 +72,20 @@ export default function AdminSettings() {
     ocppServerActive: true,
   });
 
+  const [calculatorForm, setCalculatorForm] = useState({
+    factorUtilizacionPremium: 2.0,
+    costosOperativosIndividual: 15,
+    costosOperativosColectivo: 10,
+    costosOperativosAC: 15,
+    eficienciaCargaDC: 92,
+    eficienciaCargaAC: 95,
+    costoEnergiaRed: 850,
+    costoEnergiaSolar: 250,
+    precioVentaDefault: 1800,
+    precioVentaMin: 1400,
+    precioVentaMax: 2200,
+  });
+
   // Cargar datos cuando llegan del servidor
   useEffect(() => {
     if (settings) {
@@ -66,10 +98,26 @@ export default function AdminSettings() {
         platformFeePercentage: settings.platformFeePercentage,
       });
 
+      // Para campos secretos: NO llenar con valores enmascarados, dejar vacíos
+      // Solo marcar que tienen valor guardado para mostrar placeholder
+      setSavedSecrets({
+        wompiPublicKey: !!settings.wompiPublicKey,
+        wompiPrivateKey: !!settings.wompiPrivateKey,
+        wompiIntegritySecret: !!settings.wompiIntegritySecret,
+        wompiEventsSecret: !!settings.wompiEventsSecret,
+      });
+      setTouchedSecrets({
+        wompiPublicKey: false,
+        wompiPrivateKey: false,
+        wompiIntegritySecret: false,
+        wompiEventsSecret: false,
+      });
       setPaymentsForm({
-        stripePublicKey: settings.stripePublicKey || "",
-        stripeSecretKey: settings.stripeSecretKey || "",
-        stripeTestMode: settings.stripeTestMode,
+        wompiPublicKey: "",
+        wompiPrivateKey: "",
+        wompiIntegritySecret: "",
+        wompiEventsSecret: "",
+        wompiTestMode: settings.wompiTestMode,
         enableEnergyBilling: settings.enableEnergyBilling,
         enableReservationBilling: settings.enableReservationBilling,
         enableOccupancyPenalty: settings.enableOccupancyPenalty,
@@ -88,6 +136,20 @@ export default function AdminSettings() {
         ocppPort: settings.ocppPort || 9000,
         ocppServerActive: settings.ocppServerActive,
       });
+
+      setCalculatorForm({
+        factorUtilizacionPremium: parseFloat(String(settings.factorUtilizacionPremium ?? "2.00")),
+        costosOperativosIndividual: settings.costosOperativosIndividual ?? 15,
+        costosOperativosColectivo: settings.costosOperativosColectivo ?? 10,
+        costosOperativosAC: settings.costosOperativosAC ?? 15,
+        eficienciaCargaDC: settings.eficienciaCargaDC ?? 92,
+        eficienciaCargaAC: settings.eficienciaCargaAC ?? 95,
+        costoEnergiaRed: settings.costoEnergiaRed ?? 850,
+        costoEnergiaSolar: settings.costoEnergiaSolar ?? 250,
+        precioVentaDefault: settings.precioVentaDefault ?? 1800,
+        precioVentaMin: settings.precioVentaMin ?? 1400,
+        precioVentaMax: settings.precioVentaMax ?? 2200,
+      });
     }
   }, [settings]);
 
@@ -96,7 +158,27 @@ export default function AdminSettings() {
   };
 
   const handleSavePayments = () => {
-    updateMutation.mutate(paymentsForm);
+    // Solo enviar campos secretos que fueron modificados por el usuario
+    const payload: any = {
+      wompiTestMode: paymentsForm.wompiTestMode,
+      enableEnergyBilling: paymentsForm.enableEnergyBilling,
+      enableReservationBilling: paymentsForm.enableReservationBilling,
+      enableOccupancyPenalty: paymentsForm.enableOccupancyPenalty,
+    };
+    // Solo incluir credenciales que el usuario modificó explícitamente
+    if (touchedSecrets.wompiPublicKey && paymentsForm.wompiPublicKey) {
+      payload.wompiPublicKey = paymentsForm.wompiPublicKey;
+    }
+    if (touchedSecrets.wompiPrivateKey && paymentsForm.wompiPrivateKey) {
+      payload.wompiPrivateKey = paymentsForm.wompiPrivateKey;
+    }
+    if (touchedSecrets.wompiIntegritySecret && paymentsForm.wompiIntegritySecret) {
+      payload.wompiIntegritySecret = paymentsForm.wompiIntegritySecret;
+    }
+    if (touchedSecrets.wompiEventsSecret && paymentsForm.wompiEventsSecret) {
+      payload.wompiEventsSecret = paymentsForm.wompiEventsSecret;
+    }
+    updateMutation.mutate(payload);
   };
 
   const handleSaveNotifications = () => {
@@ -105,6 +187,10 @@ export default function AdminSettings() {
 
   const handleSaveIntegrations = () => {
     updateMutation.mutate(integrationsForm);
+  };
+
+  const handleSaveCalculator = () => {
+    updateMutation.mutate(calculatorForm);
   };
 
   if (isLoading) {
@@ -141,6 +227,10 @@ export default function AdminSettings() {
           <TabsTrigger value="integrations">
             <Globe className="w-4 h-4 mr-2" />
             Integraciones
+          </TabsTrigger>
+          <TabsTrigger value="calculator">
+            <Calculator className="w-4 h-4 mr-2" />
+            Calculadora
           </TabsTrigger>
         </TabsList>
 
@@ -224,39 +314,130 @@ export default function AdminSettings() {
         <TabsContent value="payments">
           <Card className="p-6 space-y-6">
             <div>
-              <h3 className="font-semibold mb-4">Configuración de Stripe</h3>
+              <h3 className="font-semibold mb-4 flex items-center gap-2">
+                <img src="https://wompi.com/favicon.ico" alt="Wompi" className="w-5 h-5" />
+                Configuración de Wompi
+                {(savedSecrets.wompiPublicKey || paymentsForm.wompiPublicKey) && (savedSecrets.wompiPrivateKey || paymentsForm.wompiPrivateKey) && (savedSecrets.wompiIntegritySecret || paymentsForm.wompiIntegritySecret) ? (
+                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    Configurado
+                  </span>
+                ) : (
+                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                    <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                    Sin configurar
+                  </span>
+                )}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Configura las llaves de tu cuenta de Wompi para procesar pagos con tarjetas, PSE, Nequi y Bancolombia.
+                Obtén tus llaves en <a href="https://comercios.wompi.co" target="_blank" rel="noopener" className="text-primary underline">comercios.wompi.co</a> &rarr; Desarrolladores.
+              </p>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Stripe Public Key</Label>
+                  <Label>Llave pública</Label>
                   <Input
-                    value={paymentsForm.stripePublicKey}
-                    onChange={(e) => setPaymentsForm({ ...paymentsForm, stripePublicKey: e.target.value })}
-                    placeholder="pk_test_... o pk_live_..."
+                    value={paymentsForm.wompiPublicKey}
+                    onChange={(e) => {
+                      setPaymentsForm({ ...paymentsForm, wompiPublicKey: e.target.value });
+                      setTouchedSecrets({ ...touchedSecrets, wompiPublicKey: true });
+                    }}
+                    placeholder={savedSecrets.wompiPublicKey ? "✅ Clave guardada — escribe para reemplazar" : "pub_prod_... o pub_test_..."}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Se usa en el widget de pago del frontend.
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Stripe Secret Key</Label>
+                  <Label>Llave privada</Label>
                   <Input
-                    value={paymentsForm.stripeSecretKey}
-                    onChange={(e) => setPaymentsForm({ ...paymentsForm, stripeSecretKey: e.target.value })}
-                    placeholder="sk_test_... o sk_live_..."
+                    value={paymentsForm.wompiPrivateKey}
+                    onChange={(e) => {
+                      setPaymentsForm({ ...paymentsForm, wompiPrivateKey: e.target.value });
+                      setTouchedSecrets({ ...touchedSecrets, wompiPrivateKey: true });
+                    }}
+                    placeholder={savedSecrets.wompiPrivateKey ? "✅ Clave guardada — escribe para reemplazar" : "prv_prod_... o prv_test_..."}
                     type="password"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Las claves se guardan de forma segura. Si ya hay una clave guardada, verás una versión enmascarada.
+                    Se usa en el servidor para consultar transacciones.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Secreto de integridad</Label>
+                  <Input
+                    value={paymentsForm.wompiIntegritySecret}
+                    onChange={(e) => {
+                      setPaymentsForm({ ...paymentsForm, wompiIntegritySecret: e.target.value });
+                      setTouchedSecrets({ ...touchedSecrets, wompiIntegritySecret: true });
+                    }}
+                    placeholder={savedSecrets.wompiIntegritySecret ? "✅ Clave guardada — escribe para reemplazar" : "prod_integrity_... o test_integrity_..."}
+                    type="password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Se encuentra en Desarrolladores &rarr; Secretos para integración técnica.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Secreto de eventos</Label>
+                  <Input
+                    value={paymentsForm.wompiEventsSecret}
+                    onChange={(e) => {
+                      setPaymentsForm({ ...paymentsForm, wompiEventsSecret: e.target.value });
+                      setTouchedSecrets({ ...touchedSecrets, wompiEventsSecret: true });
+                    }}
+                    placeholder={savedSecrets.wompiEventsSecret ? "✅ Clave guardada — escribe para reemplazar" : "prod_events_... o test_events_..."}
+                    type="password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Se usa para verificar la autenticidad de los webhooks de Wompi.
                   </p>
                 </div>
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label>Modo de pruebas</Label>
+                    <Label>Modo de pruebas (Sandbox)</Label>
                     <p className="text-sm text-muted-foreground">
-                      Usar claves de prueba de Stripe
+                      Usar claves de prueba de Wompi (pub_test_, prv_test_)
                     </p>
                   </div>
                   <Switch
-                    checked={paymentsForm.stripeTestMode}
-                    onCheckedChange={(checked) => setPaymentsForm({ ...paymentsForm, stripeTestMode: checked })}
+                    checked={paymentsForm.wompiTestMode}
+                    onCheckedChange={(checked) => setPaymentsForm({ ...paymentsForm, wompiTestMode: checked })}
                   />
+                </div>
+
+                {/* URL de Webhook */}
+                <div className="mt-4 p-4 bg-muted/50 rounded-lg border">
+                  <Label className="text-sm font-medium">URL de Eventos (Webhook)</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Configura esta URL en <a href="https://comercios.wompi.co" target="_blank" rel="noopener" className="text-primary underline">comercios.wompi.co</a> &rarr; Desarrolladores &rarr; Seguimiento de transacciones.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      readOnly
+                      value={`${window.location.origin}/api/wompi/webhook`}
+                      className="font-mono text-xs bg-background"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/api/wompi/webhook`);
+                        toast.success("URL copiada al portapapeles");
+                      }}
+                    >
+                      Copiar
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Botón de reconciliación de transacciones pendientes */}
+                <div className="mt-4 p-4 bg-amber-950/20 rounded-lg border border-amber-800/30">
+                  <Label className="text-sm font-medium text-amber-300">Reconciliar transacciones pendientes</Label>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Verifica en Wompi las transacciones de recarga rápida y auto-cobro que quedaron pendientes y acredita las que ya fueron aprobadas.
+                  </p>
+                  <ReconcileButton />
                 </div>
               </div>
             </div>
@@ -448,7 +629,225 @@ export default function AdminSettings() {
             </Button>
           </Card>
         </TabsContent>
+
+        <TabsContent value="calculator">
+          <Card className="p-6 space-y-6">
+            <div>
+              <h3 className="font-semibold mb-2">Calculadora de Inversión</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Estos parámetros controlan los cálculos mostrados en la página pública de inversionistas (/investors).
+                Cualquier cambio se refleja inmediatamente en la calculadora interactiva.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Factor de Utilización</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Factor premium (multiplicador)</Label>
+                  <Input
+                    value={calculatorForm.factorUtilizacionPremium}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, factorUtilizacionPremium: parseFloat(e.target.value) || 1 })}
+                    type="number"
+                    min={1}
+                    max={5}
+                    step={0.1}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Multiplicador de horas para ubicaciones premium (colectivo). Ej: 2.0 = el doble de horas efectivas.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Costos Operativos (%)</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Individual DC (%)</Label>
+                  <Input
+                    value={calculatorForm.costosOperativosIndividual}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, costosOperativosIndividual: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                    max={50}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Colectivo DC (%)</Label>
+                  <Input
+                    value={calculatorForm.costosOperativosColectivo}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, costosOperativosColectivo: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                    max={50}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>AC (%)</Label>
+                  <Input
+                    value={calculatorForm.costosOperativosAC}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, costosOperativosAC: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                    max={50}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Eficiencia de Carga (%)</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>DC (carga rápida)</Label>
+                  <Input
+                    value={calculatorForm.eficienciaCargaDC}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, eficienciaCargaDC: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={50}
+                    max={100}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>AC (carga lenta)</Label>
+                  <Input
+                    value={calculatorForm.eficienciaCargaAC}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, eficienciaCargaAC: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={50}
+                    max={100}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Costos de Energía (COP/kWh)</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Red eléctrica</Label>
+                  <Input
+                    value={calculatorForm.costoEnergiaRed}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, costoEnergiaRed: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Energía solar</Label>
+                  <Input
+                    value={calculatorForm.costoEnergiaSolar}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, costoEnergiaSolar: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Precio de Venta (COP/kWh)</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Mínimo</Label>
+                  <Input
+                    value={calculatorForm.precioVentaMin}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, precioVentaMin: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Por defecto</Label>
+                  <Input
+                    value={calculatorForm.precioVentaDefault}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, precioVentaDefault: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Máximo</Label>
+                  <Input
+                    value={calculatorForm.precioVentaMax}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, precioVentaMax: parseInt(e.target.value) || 0 })}
+                    type="number"
+                    min={0}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Button onClick={handleSaveCalculator} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Guardando...
+                </>
+              ) : (
+                "Guardar cambios"
+              )}
+            </Button>
+          </Card>
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// Componente para reconciliar transacciones pendientes de Wompi
+function ReconcileButton() {
+  const reconcile = trpc.wompi.reconcilePendingTransactions.useMutation({
+    onSuccess: (data) => {
+      if (data.credited > 0) {
+        toast.success(
+          `Reconciliación completada: ${data.credited} transacciones acreditadas por $${data.totalCreditedAmount.toLocaleString("es-CO")} COP`
+        );
+      } else if (data.processed > 0) {
+        toast.info(`Se verificaron ${data.processed} transacciones. Ninguna pendiente de acreditar.`);
+      } else {
+        toast.info("No hay transacciones pendientes de reconciliar.");
+      }
+    },
+    onError: (error) => {
+      toast.error(`Error al reconciliar: ${error.message}`);
+    },
+  });
+
+  return (
+    <div className="space-y-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => reconcile.mutate()}
+        disabled={reconcile.isPending}
+        className="border-amber-700 text-amber-300 hover:bg-amber-900/30"
+      >
+        {reconcile.isPending ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Reconciliando...
+          </>
+        ) : (
+          <>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Reconciliar ahora
+          </>
+        )}
+      </Button>
+      {reconcile.data && reconcile.data.processed > 0 && (
+        <div className="text-xs space-y-1">
+          <p className="text-muted-foreground">
+            Procesadas: {reconcile.data.processed} | Acreditadas: {reconcile.data.credited} | Total: ${reconcile.data.totalCreditedAmount.toLocaleString("es-CO")} COP
+          </p>
+          {reconcile.data.details.map((d, i) => (
+            <p key={i} className={d.credited ? "text-green-400" : "text-muted-foreground"}>
+              {d.reference}: {d.oldStatus} → {d.newStatus} {d.credited ? `(+$${d.amount.toLocaleString("es-CO")})` : ""}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

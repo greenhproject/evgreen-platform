@@ -195,8 +195,8 @@ describe("Charging Simulator", () => {
 
       const info = simulator.getActiveSimulationInfo(103);
       expect(info).not.toBeNull();
-      // (80 - 20) / 100 * 60 = 36 kWh, limitado a 15
-      expect(info!.targetKwh).toBe(15);
+      // (80 - 20) / 100 * 60 = 36 kWh (ahora devuelve el valor real)
+      expect(info!.targetKwh).toBe(36);
 
       await simulator.stopSimulation(103);
     });
@@ -215,7 +215,8 @@ describe("Charging Simulator", () => {
 
       const info = simulator.getActiveSimulationInfo(104);
       expect(info).not.toBeNull();
-      expect(info!.targetKwh).toBeLessThanOrEqual(15);
+      // full_charge: (100 - 20) / 100 * 60 = 48 kWh (ahora devuelve el valor real)
+      expect(info!.targetKwh).toBe(48);
 
       await simulator.stopSimulation(104);
     });
@@ -234,7 +235,8 @@ describe("Charging Simulator", () => {
 
       const info = simulator.getActiveSimulationInfo(105);
       expect(info).not.toBeNull();
-      expect(info!.targetKwh).toBeGreaterThanOrEqual(2);
+      // 100 / 800 = 0.125 kWh (ahora devuelve el valor real, no el limitado)
+      expect(info!.targetKwh).toBeCloseTo(0.125, 2);
 
       await simulator.stopSimulation(105);
     });
@@ -380,8 +382,8 @@ describe("Charging Simulator", () => {
       });
 
       const info = simulator.getActiveSimulationInfo(109);
-      // (50 - 20) / 100 * 60 = 18 kWh, limitado a 15
-      expect(info!.targetKwh).toBe(15);
+      // (50 - 20) / 100 * 60 = 18 kWh (ahora devuelve el valor real)
+      expect(info!.targetKwh).toBe(18);
 
       await simulator.stopSimulation(109);
     });
@@ -399,8 +401,8 @@ describe("Charging Simulator", () => {
       });
 
       const info = simulator.getActiveSimulationInfo(110);
-      // 0.8 * 60 = 48 kWh, limitado a 15
-      expect(info!.targetKwh).toBe(15);
+      // 0.8 * 60 = 48 kWh (ahora devuelve el valor real)
+      expect(info!.targetKwh).toBe(48);
 
       await simulator.stopSimulation(110);
     });

@@ -11,6 +11,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { InvestorInsights } from "@/components/InvestorInsights";
+import { CollectiveInvestmentCard } from "@/components/CollectiveInvestmentCard";
 import {
   LineChart,
   Line,
@@ -276,6 +277,9 @@ export default function InvestorDashboard() {
           </div>
         </Card>
       </div>
+
+      {/* Inversiones Colectivas */}
+      <CollectiveInvestmentCard />
 
       {/* Insights de IA */}
       <InvestorInsights stationIds={stations?.map(s => s.id)} />

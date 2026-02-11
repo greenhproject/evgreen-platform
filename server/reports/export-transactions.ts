@@ -2,9 +2,6 @@ import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
-// Logo EVGreen en base64 (versión pequeña)
-const EVGREEN_LOGO_BASE64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAABkCAYAAAA8AQ3AAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAAhGVYSWZNTQAqAAAACAAFARIAAwAAAAEAAQAAARoABQAAAAEAAABKARsABQAAAAEAAABSASgAAwAAAAEAAgAAh2kABAAAAAEAAABaAAAAAAAAASwAAAABAAABLAAAAAEAA6ABAAMAAAABAAEAAKACAAQAAAABAAACLKADAAQAAAABAAAAZAAAAADGhQ7VAAAACXBIWXMAABYlAAAWJQFJUiTwAAACzmlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iWE1QIENvcmUgNi4wLjAiPgogICA8cmRmOlJERiB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiPgogICAgICA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0iIgogICAgICAgICAgICB4bWxuczp0aWZmPSJodHRwOi8vbnMuYWRvYmUuY29tL3RpZmYvMS4wLyIKICAgICAgICAgICAgeG1sbnM6ZXhpZj0iaHR0cDovL25zLmFkb2JlLmNvbS9leGlmLzEuMC8iPgogICAgICAgICA8dGlmZjpZUmVzb2x1dGlvbj4zMDA8L3RpZmY6WVJlc29sdXRpb24+CiAgICAgICAgIDx0aWZmOlJlc29sdXRpb25Vbml0PjI8L3RpZmY6UmVzb2x1dGlvblVuaXQ+CiAgICAgICAgIDx0aWZmOlhSZXNvbHV0aW9uPjMwMDwvdGlmZjpYUmVzb2x1dGlvbj4KICAgICAgICAgPHRpZmY6T3JpZW50YXRpb24+MTwvdGlmZjpPcmllbnRhdGlvbj4KICAgICAgICAgPGV4aWY6UGl4ZWxYRGltZW5zaW9uPjU1NjwvZXhpZjpQaXhlbFhEaW1lbnNpb24+CiAgICAgICAgIDxleGlmOlBpeGVsWURpbWVuc2lvbj4xMDA8L2V4aWY6UGl4ZWxZRGltZW5zaW9uPgogICAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgPC9yZGY6UkRGPgo8L3g6eG1wbWV0YT4K";
-
 interface TransactionData {
   id: number;
   stationId: number;
@@ -24,8 +21,8 @@ interface ExportOptions {
   endDate?: Date;
 }
 
-const formatCurrency = (amount: string | number): string => {
-  const num = typeof amount === "string" ? parseFloat(amount) : amount;
+const formatCurrency = (amount: string | number | null): string => {
+  const num = typeof amount === "string" ? parseFloat(amount) : (amount ?? 0);
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
     currency: "COP",
@@ -87,10 +84,7 @@ export function generateExcelReport(
   ];
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-  
-  // Ajustar anchos de columna
   wsSummary["!cols"] = [{ wch: 40 }, { wch: 30 }];
-  
   XLSX.utils.book_append_sheet(wb, wsSummary, "Resumen");
 
   // Hoja de transacciones
@@ -115,8 +109,6 @@ export function generateExcelReport(
   ]);
 
   const wsTransactions = XLSX.utils.aoa_to_sheet([transactionsHeader, ...transactionsData]);
-  
-  // Ajustar anchos de columna
   wsTransactions["!cols"] = [
     { wch: 10 },
     { wch: 25 },
@@ -129,7 +121,6 @@ export function generateExcelReport(
 
   XLSX.utils.book_append_sheet(wb, wsTransactions, "Transacciones");
 
-  // Generar buffer
   const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
   return buffer;
 }
@@ -144,7 +135,6 @@ export function generatePDFReport(
   const totalEnergy = completedTransactions.reduce((sum, t) => sum + parseFloat(t.kwhConsumed || "0"), 0);
   const investorShare = totalRevenue * (options.investorPercentage / 100);
 
-  // Crear PDF
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -156,15 +146,14 @@ export function generatePDFReport(
   const margin = 15;
 
   // Colores de la marca
-  const primaryGreen = [16, 185, 129]; // #10B981
-  const darkGreen = [5, 150, 105]; // #059669
-  const lightGray = [243, 244, 246]; // #F3F4F6
+  const primaryGreen = [16, 185, 129];
+  const darkGreen = [5, 150, 105];
+  const lightGray = [243, 244, 246];
 
   // Header con fondo verde
   doc.setFillColor(primaryGreen[0], primaryGreen[1], primaryGreen[2]);
   doc.rect(0, 0, pageWidth, 40, "F");
 
-  // Título
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(24);
   doc.setFont("helvetica", "bold");
@@ -174,7 +163,6 @@ export function generatePDFReport(
   doc.setFont("helvetica", "normal");
   doc.text("Reporte de Transacciones", margin, 30);
 
-  // Fecha de generación
   doc.setFontSize(10);
   doc.text(`Generado: ${new Date().toLocaleDateString("es-CO")}`, pageWidth - margin - 50, 20);
 
@@ -263,8 +251,7 @@ export function generatePDFReport(
 
   yPos += 5;
 
-  // Usar autoTable para la tabla
-  const tableData = transactions.map((t, index) => [
+  const tableData = transactions.map((t) => [
     t.id.toString(),
     t.stationName || `Est. ${t.stationId}`,
     formatDate(t.startTime),
@@ -302,7 +289,6 @@ export function generatePDFReport(
     },
     margin: { left: margin, right: margin },
     didDrawPage: (data: any) => {
-      // Footer en cada página
       doc.setFillColor(darkGreen[0], darkGreen[1], darkGreen[2]);
       doc.rect(0, pageHeight - 15, pageWidth, 15, "F");
       doc.setTextColor(255, 255, 255);
@@ -312,7 +298,6 @@ export function generatePDFReport(
     },
   });
 
-  // Generar buffer
   const pdfBuffer = Buffer.from(doc.output("arraybuffer"));
   return pdfBuffer;
 }

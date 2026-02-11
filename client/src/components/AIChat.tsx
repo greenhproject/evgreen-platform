@@ -1,6 +1,8 @@
 /**
  * Componente de Chat de IA para EVGreen
  * Widget flotante y página de pantalla completa
+ * Con escritura progresiva (streaming simulado) y auto-scroll
+ * Integración con Google Maps para rutas a estaciones
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -10,14 +12,11 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from "@/components/ui/sheet";
 import {
   DropdownMenu,
@@ -42,10 +41,8 @@ import {
   Plus,
   Trash2,
   MoreVertical,
-  ChevronRight,
-  Maximize2,
-  Minimize2,
   History,
+  ExternalLink,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -58,6 +55,7 @@ interface Message {
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: Date;
+  isStreaming?: boolean;
 }
 
 interface Conversation {
@@ -69,10 +67,102 @@ interface Conversation {
 }
 
 // ============================================================================
-// COMPONENTE DE MENSAJE
+// HOOK DE ESCRITURA PROGRESIVA
 // ============================================================================
 
-function ChatMessage({ message, isUser }: { message: Message; isUser: boolean }) {
+function useProgressiveText(fullText: string, isActive: boolean, speed: number = 12) {
+  const [displayedText, setDisplayedText] = useState("");
+  const [isComplete, setIsComplete] = useState(false);
+  const indexRef = useRef(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!isActive || !fullText) {
+      setDisplayedText(fullText || "");
+      setIsComplete(true);
+      return;
+    }
+
+    setDisplayedText("");
+    setIsComplete(false);
+    indexRef.current = 0;
+
+    // Escritura progresiva palabra por palabra para velocidad natural
+    const words = fullText.split(/(\s+)/); // preservar espacios
+    let wordIndex = 0;
+    let accumulated = "";
+
+    intervalRef.current = setInterval(() => {
+      if (wordIndex < words.length) {
+        // Agregar entre 1 y 3 palabras por tick para velocidad natural
+        const wordsPerTick = Math.min(2, words.length - wordIndex);
+        for (let i = 0; i < wordsPerTick; i++) {
+          accumulated += words[wordIndex];
+          wordIndex++;
+        }
+        setDisplayedText(accumulated);
+      } else {
+        setIsComplete(true);
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+      }
+    }, speed);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [fullText, isActive, speed]);
+
+  // Permitir saltar al final
+  const skipToEnd = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    setDisplayedText(fullText);
+    setIsComplete(true);
+  }, [fullText]);
+
+  return { displayedText, isComplete, skipToEnd };
+}
+
+// ============================================================================
+// COMPONENTE DE MENSAJE CON STREAMING
+// ============================================================================
+
+function ChatMessage({
+  message,
+  isUser,
+  isLatestAssistant,
+  onStreamComplete,
+}: {
+  message: Message;
+  isUser: boolean;
+  isLatestAssistant: boolean;
+  onStreamComplete?: () => void;
+}) {
+  const shouldStream = isLatestAssistant && message.isStreaming;
+  const { displayedText, isComplete, skipToEnd } = useProgressiveText(
+    message.content,
+    shouldStream || false,
+    15
+  );
+
+  useEffect(() => {
+    if (isComplete && shouldStream && onStreamComplete) {
+      onStreamComplete();
+    }
+  }, [isComplete, shouldStream, onStreamComplete]);
+
+  const rawText = shouldStream ? displayedText : message.content;
+  // Limpiar tags [NAV:...] del texto visible pero conservar para GoogleMapsButtons
+  const cleanText = rawText.replace(/\[NAV:(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\|([^\]]+)\]/g, '');
+
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
       <Avatar className={`h-8 w-8 shrink-0 ${isUser ? "bg-primary" : "bg-green-600"}`}>
@@ -82,19 +172,142 @@ function ChatMessage({ message, isUser }: { message: Message; isUser: boolean })
       </Avatar>
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-          isUser
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted"
+          isUser ? "bg-primary text-primary-foreground" : "bg-muted"
         }`}
       >
         {isUser ? (
           <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         ) : (
           <div className="text-sm prose prose-sm dark:prose-invert max-w-none">
-            <Streamdown>{message.content}</Streamdown>
+            <Streamdown>{cleanText}</Streamdown>
+            {shouldStream && !isComplete && (
+              <span className="inline-block w-1.5 h-4 bg-primary animate-pulse ml-0.5 align-middle" />
+            )}
+            {shouldStream && !isComplete && (
+              <button
+                onClick={skipToEnd}
+                className="block mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Mostrar todo ↓
+              </button>
+            )}
+            {/* Botón de Google Maps si la respuesta contiene coordenadas o nombres de estaciones */}
+            {!isUser && isComplete && <GoogleMapsButtons content={rawText} />}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// BOTONES DE GOOGLE MAPS
+// ============================================================================
+
+function GoogleMapsButtons({ content }: { content: string }) {
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => {}
+      );
+    }
+  }, []);
+
+  // 1. Detectar tags [NAV:lat,lng|nombre] del LLM (método principal)
+  const navMatches: { lat: number; lng: number; name: string }[] = [];
+  const navTagRegex = /\[NAV:(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\|([^\]]+)\]/g;
+  let m;
+  while ((m = navTagRegex.exec(content)) !== null) {
+    navMatches.push({
+      lat: parseFloat(m[1]),
+      lng: parseFloat(m[2]),
+      name: m[3].trim(),
+    });
+  }
+
+  // 2. Fallback: detectar si la respuesta menciona estaciones
+  const hasNavigationContext =
+    navMatches.length > 0 ||
+    /estaci[oó]n|direcci[oó]n|ubicaci[oó]n|llegar|ruta|navegar|m[aá]s cercana|c[oó]mo llego|ll[eé]vame|ir a/i.test(content);
+
+  if (!hasNavigationContext) return null;
+
+  const openGoogleMapsCoords = (lat: number, lng: number) => {
+    let url: string;
+    if (userLocation) {
+      url = `https://www.google.com/maps/dir/?api=1&origin=${userLocation.lat},${userLocation.lng}&destination=${lat},${lng}&travelmode=driving`;
+    } else {
+      url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+    }
+    window.open(url, "_blank");
+  };
+
+  const openGoogleMapsSearch = (query: string) => {
+    let url: string;
+    if (userLocation) {
+      url = `https://www.google.com/maps/dir/?api=1&origin=${userLocation.lat},${userLocation.lng}&destination=${encodeURIComponent(query)}&travelmode=driving`;
+    } else {
+      url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    }
+    window.open(url, "_blank");
+  };
+
+  // Si tenemos coordenadas exactas del LLM
+  if (navMatches.length > 0) {
+    return (
+      <div className="mt-3 space-y-2">
+        {navMatches.slice(0, 3).map((nav, i) => (
+          <button
+            key={i}
+            onClick={() => openGoogleMapsCoords(nav.lat, nav.lng)}
+            className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-600/10 to-green-600/10 text-blue-500 hover:from-blue-600/20 hover:to-green-600/20 transition-all text-sm font-medium border border-blue-500/20 active:scale-[0.98]"
+          >
+            <div className="h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+              <Navigation className="h-4 w-4" />
+            </div>
+            <div className="flex-1 text-left">
+              <span className="block text-xs font-semibold">{nav.name}</span>
+              <span className="block text-[10px] text-muted-foreground">Abrir ruta en Google Maps</span>
+            </div>
+            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  // Fallback: buscar por texto
+  const stationMatches = content.match(/(?:estaci[oó]n|cargador|punto de carga)\s+(?:de\s+)?["\u201c\u201d]?([^"\u201c\u201d.,\n]{3,40})["\u201c\u201d]?/gi) || [];
+  const addressMatches = content.match(/(?:(?:Calle|Carrera|Cra|Cl|Av|Avenida|Diagonal|Transversal|Autopista)\s*\.?\s*\d+[A-Za-z]?\s*(?:#|No\.?\s*)\s*\d+[A-Za-z]?\s*[-\u2013]\s*\d+[A-Za-z]?)/gi) || [];
+  const searchTerms = [...stationMatches, ...addressMatches];
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {searchTerms.length > 0 ? (
+        searchTerms.slice(0, 2).map((term, i) => (
+          <button
+            key={i}
+            onClick={() => openGoogleMapsSearch(term.trim())}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/10 text-blue-500 hover:bg-blue-600/20 transition-colors text-xs font-medium border border-blue-500/20"
+          >
+            <Navigation className="h-3 w-3" />
+            Ir con Google Maps
+            <ExternalLink className="h-3 w-3" />
+          </button>
+        ))
+      ) : (
+        <button
+          onClick={() => openGoogleMapsSearch("estación de carga eléctrica EVGreen Colombia")}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/10 text-blue-500 hover:bg-blue-600/20 transition-colors text-xs font-medium border border-blue-500/20"
+        >
+          <Navigation className="h-3 w-3" />
+          Abrir en Google Maps
+          <ExternalLink className="h-3 w-3" />
+        </button>
+      )}
     </div>
   );
 }
@@ -107,7 +320,7 @@ const quickSuggestions = [
   {
     icon: MapPin,
     text: "¿Dónde puedo cargar cerca?",
-    prompt: "¿Cuáles son las estaciones de carga más cercanas a mi ubicación?",
+    prompt: "¿Cuáles son las estaciones de carga más cercanas a mi ubicación? Dame las direcciones para poder ir.",
   },
   {
     icon: Zap,
@@ -116,8 +329,8 @@ const quickSuggestions = [
   },
   {
     icon: Navigation,
-    text: "Planificar viaje",
-    prompt: "Quiero planificar un viaje largo con mi vehículo eléctrico. ¿Puedes ayudarme?",
+    text: "Llévame a cargar",
+    prompt: "Llévame a la estación de carga más cercana. Necesito la dirección exacta para navegar con Google Maps.",
   },
   {
     icon: TrendingUp,
@@ -130,8 +343,7 @@ const quickSuggestions = [
 // WIDGET DE CHAT FLOTANTE
 // ============================================================================
 
-// Evento global para abrir el chat con una pregunta predefinida
-const AI_CHAT_OPEN_EVENT = 'ai-chat-open';
+const AI_CHAT_OPEN_EVENT = "ai-chat-open";
 
 export function openAIChatWithQuestion(question: string) {
   window.dispatchEvent(new CustomEvent(AI_CHAT_OPEN_EVENT, { detail: { question } }));
@@ -145,6 +357,7 @@ export function AIChatWidget() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -152,12 +365,25 @@ export function AIChatWidget() {
   const createConversation = trpc.ai.createConversation.useMutation();
   const sendMessage = trpc.ai.sendMessage.useMutation();
 
-  // Auto-scroll al final
+  // Auto-scroll continuo durante streaming
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const el = scrollRef.current;
+      // Scroll suave al final
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
   }, [messages]);
+
+  // Auto-scroll durante streaming (más frecuente)
+  useEffect(() => {
+    if (streamingMessageId === null) return;
+    const interval = setInterval(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, [streamingMessageId]);
 
   // Focus en input cuando se abre
   useEffect(() => {
@@ -172,7 +398,6 @@ export function AIChatWidget() {
       setIsOpen(true);
       setPendingQuestion(e.detail.question);
     };
-    
     window.addEventListener(AI_CHAT_OPEN_EVENT, handleOpenChat as EventListener);
     return () => {
       window.removeEventListener(AI_CHAT_OPEN_EVENT, handleOpenChat as EventListener);
@@ -184,57 +409,69 @@ export function AIChatWidget() {
     if (isOpen && pendingQuestion && !isLoading) {
       const question = pendingQuestion;
       setPendingQuestion(null);
-      // Pequeño delay para asegurar que el chat esté listo
       setTimeout(() => {
         handleSendMessage(question);
       }, 300);
     }
   }, [isOpen, pendingQuestion, isLoading]);
 
-  const handleSendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isLoading) return;
+  const handleSendMessage = useCallback(
+    async (text: string) => {
+      if (!text.trim() || isLoading) return;
 
-    setIsLoading(true);
-    setMessage("");
+      setIsLoading(true);
+      setMessage("");
 
-    try {
-      // Crear conversación si no existe
-      let currentConversationId = conversationId;
-      if (!currentConversationId) {
-        const result = await createConversation.mutateAsync({ type: "chat" });
-        currentConversationId = result.id;
-        setConversationId(result.id);
+      try {
+        let currentConversationId = conversationId;
+        if (!currentConversationId) {
+          const result = await createConversation.mutateAsync({ type: "chat" });
+          currentConversationId = result.id;
+          setConversationId(result.id);
+        }
+
+        // Agregar mensaje del usuario inmediatamente
+        const userMessage: Message = {
+          id: Date.now(),
+          role: "user",
+          content: text,
+          createdAt: new Date(),
+        };
+        setMessages((prev) => [...prev, userMessage]);
+
+        // Enviar mensaje y obtener respuesta
+        const response = await sendMessage.mutateAsync({
+          conversationId: currentConversationId,
+          message: text,
+        });
+
+        // Agregar respuesta del asistente con flag de streaming
+        const assistantMsgId = Date.now() + 1;
+        const assistantMessage: Message = {
+          id: assistantMsgId,
+          role: "assistant",
+          content: response.content,
+          createdAt: new Date(),
+          isStreaming: true,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+        setStreamingMessageId(assistantMsgId);
+      } catch (error: any) {
+        toast.error(error.message || "Error al enviar mensaje");
+      } finally {
+        setIsLoading(false);
       }
+    },
+    [conversationId, isLoading, createConversation, sendMessage]
+  );
 
-      // Agregar mensaje del usuario inmediatamente
-      const userMessage: Message = {
-        id: Date.now(),
-        role: "user",
-        content: text,
-        createdAt: new Date(),
-      };
-      setMessages((prev) => [...prev, userMessage]);
-
-      // Enviar mensaje y obtener respuesta
-      const response = await sendMessage.mutateAsync({
-        conversationId: currentConversationId,
-        message: text,
-      });
-
-      // Agregar respuesta del asistente
-      const assistantMessage: Message = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content: response.content,
-        createdAt: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error: any) {
-      toast.error(error.message || "Error al enviar mensaje");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [conversationId, isLoading, createConversation, sendMessage]);
+  const handleStreamComplete = useCallback(() => {
+    setStreamingMessageId(null);
+    // Marcar el mensaje como ya no streaming
+    setMessages((prev) =>
+      prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+    );
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -246,15 +483,18 @@ export function AIChatWidget() {
   const handleNewChat = () => {
     setConversationId(null);
     setMessages([]);
+    setStreamingMessageId(null);
   };
 
   if (!isAuthenticated) {
     return null;
   }
 
+  const lastAssistantMsgId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
+
   return (
     <>
-      {/* Botón flotante - posicionado más arriba en móvil para no tapar el menú inferior */}
+      {/* Botón flotante */}
       <button
         data-ai-chat-trigger
         onClick={() => setIsOpen(true)}
@@ -281,7 +521,7 @@ export function AIChatWidget() {
                 <div>
                   <SheetTitle className="text-base">EV Assistant</SheetTitle>
                   <p className="text-xs text-muted-foreground">
-                    Asistente EVGreen
+                    {isLoading ? "Pensando..." : streamingMessageId ? "Escribiendo..." : "Asistente EVGreen"}
                   </p>
                 </div>
               </div>
@@ -294,13 +534,6 @@ export function AIChatWidget() {
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setIsOpen(false)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
               </div>
             </div>
           </SheetHeader>
@@ -312,9 +545,11 @@ export function AIChatWidget() {
                 <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
                   <Sparkles className="h-8 w-8 text-primary" />
                 </div>
-                <h3 className="font-semibold mb-2">¡Hola, {user?.name?.split(" ")[0] || "Usuario"}!</h3>
-                <p className="text-sm text-muted-foreground mb-6 max-w-[280px]">
-                  Soy tu asistente de EVGreen. Puedo ayudarte a encontrar estaciones de carga, planificar viajes y más.
+                <h3 className="font-semibold mb-2">
+                  ¡Hola, {user?.name?.split(" ")[0] || "Usuario"}!
+                </h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  Soy tu asistente de EVGreen. Puedo ayudarte a encontrar estaciones, planificar viajes y más.
                 </p>
                 <div className="grid grid-cols-2 gap-2 w-full">
                   {quickSuggestions.map((suggestion, index) => (
@@ -336,6 +571,8 @@ export function AIChatWidget() {
                     key={msg.id}
                     message={msg}
                     isUser={msg.role === "user"}
+                    isLatestAssistant={msg.id === lastAssistantMsgId}
+                    onStreamComplete={handleStreamComplete}
                   />
                 ))}
                 {isLoading && (
@@ -348,9 +585,7 @@ export function AIChatWidget() {
                     <div className="bg-muted rounded-2xl px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        <span className="text-sm text-muted-foreground">
-                          Pensando...
-                        </span>
+                        <span className="text-sm text-muted-foreground">Pensando...</span>
                       </div>
                     </div>
                   </div>
@@ -359,7 +594,7 @@ export function AIChatWidget() {
             )}
           </div>
 
-          {/* Input - fijo en la parte inferior */}
+          {/* Input */}
           <div className="shrink-0 p-4 border-t bg-background pb-[max(1rem,env(safe-area-inset-bottom))]">
             <div className="flex gap-2">
               <Input
@@ -402,6 +637,7 @@ export function AIChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -440,55 +676,79 @@ export function AIChatPage() {
     }
   }, [conversationMessages]);
 
-  // Auto-scroll
+  // Auto-scroll al cargar mensajes
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }
   }, [messages]);
 
-  const handleSendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isLoading) return;
-
-    setIsLoading(true);
-    setMessage("");
-
-    try {
-      let currentConversationId = conversationId;
-      if (!currentConversationId) {
-        const result = await createConversation.mutateAsync({ type: "chat" });
-        currentConversationId = result.id;
-        setConversationId(result.id);
-        refetchConversations();
+  // Auto-scroll continuo durante streaming
+  useEffect(() => {
+    if (streamingMessageId === null) return;
+    const interval = setInterval(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
       }
+    }, 100);
+    return () => clearInterval(interval);
+  }, [streamingMessageId]);
 
-      const userMessage: Message = {
-        id: Date.now(),
-        role: "user",
-        content: text,
-        createdAt: new Date(),
-      };
-      setMessages((prev) => [...prev, userMessage]);
+  const handleSendMessage = useCallback(
+    async (text: string) => {
+      if (!text.trim() || isLoading) return;
 
-      const response = await sendMessageMutation.mutateAsync({
-        conversationId: currentConversationId,
-        message: text,
-      });
+      setIsLoading(true);
+      setMessage("");
 
-      const assistantMessage: Message = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content: response.content,
-        createdAt: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      refetchConversations();
-    } catch (error: any) {
-      toast.error(error.message || "Error al enviar mensaje");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [conversationId, isLoading, createConversation, sendMessageMutation, refetchConversations]);
+      try {
+        let currentConversationId = conversationId;
+        if (!currentConversationId) {
+          const result = await createConversation.mutateAsync({ type: "chat" });
+          currentConversationId = result.id;
+          setConversationId(result.id);
+          refetchConversations();
+        }
+
+        const userMessage: Message = {
+          id: Date.now(),
+          role: "user",
+          content: text,
+          createdAt: new Date(),
+        };
+        setMessages((prev) => [...prev, userMessage]);
+
+        const response = await sendMessageMutation.mutateAsync({
+          conversationId: currentConversationId,
+          message: text,
+        });
+
+        const assistantMsgId = Date.now() + 1;
+        const assistantMessage: Message = {
+          id: assistantMsgId,
+          role: "assistant",
+          content: response.content,
+          createdAt: new Date(),
+          isStreaming: true,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+        setStreamingMessageId(assistantMsgId);
+        refetchConversations();
+      } catch (error: any) {
+        toast.error(error.message || "Error al enviar mensaje");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [conversationId, isLoading, createConversation, sendMessageMutation, refetchConversations]
+  );
+
+  const handleStreamComplete = useCallback(() => {
+    setStreamingMessageId(null);
+    setMessages((prev) =>
+      prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+    );
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -500,12 +760,15 @@ export function AIChatPage() {
   const handleNewChat = () => {
     setConversationId(null);
     setMessages([]);
+    setStreamingMessageId(null);
   };
 
   const handleSelectConversation = (id: number) => {
     setConversationId(id);
     setShowHistory(false);
   };
+
+  const lastAssistantMsgId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
 
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-background">
@@ -601,7 +864,7 @@ export function AIChatPage() {
               <div>
                 <p className="text-sm font-medium">EV Assistant</p>
                 <p className="text-xs text-muted-foreground">
-                  {isLoading ? "Escribiendo..." : "En línea"}
+                  {isLoading ? "Pensando..." : streamingMessageId ? "Escribiendo..." : "En línea"}
                 </p>
               </div>
             </div>
@@ -615,7 +878,7 @@ export function AIChatPage() {
         </div>
 
         {/* Mensajes */}
-        <ScrollArea className="flex-1 p-6" ref={scrollRef}>
+        <div className="flex-1 overflow-y-auto p-6" ref={scrollRef}>
           <div className="max-w-3xl mx-auto">
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-16">
@@ -650,6 +913,8 @@ export function AIChatPage() {
                     key={msg.id}
                     message={msg}
                     isUser={msg.role === "user"}
+                    isLatestAssistant={msg.id === lastAssistantMsgId}
+                    onStreamComplete={handleStreamComplete}
                   />
                 ))}
                 {isLoading && (
@@ -662,9 +927,7 @@ export function AIChatPage() {
                     <div className="bg-muted rounded-2xl px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        <span className="text-sm text-muted-foreground">
-                          Pensando...
-                        </span>
+                        <span className="text-sm text-muted-foreground">Pensando...</span>
                       </div>
                     </div>
                   </div>
@@ -672,7 +935,7 @@ export function AIChatPage() {
               </div>
             )}
           </div>
-        </ScrollArea>
+        </div>
 
         {/* Input */}
         <div className="p-4 border-t bg-background">

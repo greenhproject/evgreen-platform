@@ -310,6 +310,7 @@ Tu nombre es "EV Assistant" y tu objetivo es ayudar a los usuarios con informaci
         prompt += `
 ⚡ ${station.name}
    - Dirección: ${station.address}, ${station.city}
+   - Coordenadas GPS: ${station.latitude}, ${station.longitude}
    - Distancia: ${distanceText}
    - Estado: ${station.status === 'online' ? 'En línea' : 'Fuera de línea'}
    - Conectores disponibles: ${station.availableConnectors}/${station.totalConnectors}
@@ -350,9 +351,12 @@ Tu nombre es "EV Assistant" y tu objetivo es ayudar a los usuarios con informaci
 7. Responde siempre en español colombiano de manera amigable y profesional
 8. Sé específico con nombres de estaciones, direcciones y precios reales
 9. Si no tienes datos de algo, indícalo claramente en lugar de inventar
+10. IMPORTANTE: Cuando el usuario pida navegar, llegar, o ir a una estación, SIEMPRE incluye las coordenadas GPS en tu respuesta usando el formato exacto: [NAV:latitud,longitud|Nombre de la estación]. Ejemplo: [NAV:4.6782,-74.0582|Estación Centro Bogotá]. Esto permite al usuario abrir Google Maps directamente.
+11. Si el usuario dice "llévame", "cómo llego", "navegar a", "ir a" o similar, incluye el tag [NAV:...] para CADA estación que menciones
 
 Capacidades:
 - Recomendar estaciones de carga cercanas con precios actuales
+- Navegar a estaciones con integración directa a Google Maps
 - Planificar viajes con paradas de carga optimizadas
 - Estimar costos de carga basados en precios dinámicos
 - Responder preguntas sobre vehículos eléctricos

@@ -1476,23 +1476,618 @@
 - [x] 280 tests pasando
 
 
-## Exportación de Transacciones del Inversionista - 2 Febrero 2026 [COMPLETADO]
+## Bug: Página de Ingresos del Inversionista con datos ficticios - 2 Febrero 2026 [CORREGIDO]
 
-- [x] Crear endpoint backend para generar reportes Excel y PDF
-  - Nuevo archivo: server/reports/export-transactions.ts
-  - Endpoint: transactions.exportInvestorTransactions
-- [x] Implementar generación de PDF con diseño profesional, bandeado y logos de la marca
-  - Header verde con título EVGreen
-  - Cajas de resumen financiero con colores de marca
-  - Tabla con filas alternadas (striped)
-  - Footer con número de página
-- [x] Implementar generación de Excel con formato profesional
-  - Hoja de resumen con información del inversionista
-  - Hoja de transacciones con todos los detalles
-  - Columnas con anchos ajustados
-- [x] Crear modal de exportación en el frontend con opciones de formato (Excel/PDF)
-  - Botones para Excel y PDF con iconos
-  - Estado de carga durante la generación
-  - Descarga automática del archivo
-- [x] Incluir información del inversionista y resumen de totales en el reporte
-- [x] 288 tests pasando (8 nuevos tests de exportación)
+- [x] BUG: La página de Ingresos muestra datos hardcodeados en lugar de datos reales
+  - Eliminados los mockEarnings y reemplazados por datos reales de transacciones
+- [x] Corregir Earnings.tsx para usar datos de transacciones reales del inversionista
+  - Usa trpc.transactions.investorTransactions para obtener datos reales
+  - Agrupa transacciones por día para mostrar resumen diario
+- [x] Agregar botón de exportar funcional a la página de Ingresos
+  - Modal con opciones Excel y PDF
+  - Usa el mismo endpoint exportInvestorTransactions
+- [x] Calcular ingresos netos, brutos y comisión de plataforma desde transacciones reales
+  - Usa el porcentaje dinámico desde platform_settings
+- [x] Mostrar comparación con período anterior basada en datos reales
+  - Calcula automáticamente el período anterior y muestra % de cambio
+- [x] 286 tests pasando
+
+
+## Rediseño de Mis Reportes del Inversionista - 2 Febrero 2026 [COMPLETADO]
+
+- [x] Revisar y rediseñar el componente Reports.tsx para diferenciarlo de Ingresos
+  - Nuevo diseño con análisis de ocupación, rendimiento por estación y métricas avanzadas
+- [x] Agregar filtro por estación específica o todas las estaciones
+  - Selector con todas las estaciones del inversionista
+- [x] Agregar selector de rango de fechas (semana, mes, trimestre, año)
+- [x] Mostrar métricas de rendimiento por estación (comparativa)
+  - Tabla con ranking de estaciones por ingresos, cargas y energía
+- [x] Agregar análisis de ocupación (horarios pico, días más activos)
+  - Gráfica de ocupación por hora del día
+  - Gráfica de cargas por día de la semana
+  - Tarjetas de insights (hora pico, día más activo, estaciones activas)
+- [x] Implementar gráficas con datos reales de tendencias
+  - Tendencia de ingresos diarios
+  - Distribución de ingresos (pie chart)
+- [x] Agregar exportación de reporte completo con análisis detallado
+  - Modal con opciones Excel y PDF
+- [x] Usar datos reales de transacciones en lugar de datos ficticios
+- [x] 286 tests pasando
+
+
+## Implementación de Liquidaciones del Inversionista - 2 Febrero 2026 [COMPLETADO]
+
+- [x] Crear tabla de liquidaciones (payouts) en la base de datos
+  - Enum payoutRequestStatus: PENDING, REQUESTED, APPROVED, PROCESSING, PAID, REJECTED, FAILED
+  - Campos: bankName, bankAccount, accountHolder, accountType, investorNotes, adminNotes
+  - Campos de seguimiento: requestedAt, approvedAt, paidAt, rejectionReason
+- [x] Implementar endpoints para liquidaciones (payoutsRouter)
+  - getMyBalance: Calcula balance disponible del inversionista
+  - getMyPayouts: Lista liquidaciones del inversionista
+  - requestPayout: Crea solicitud de pago con datos bancarios
+  - getAllPayouts: Lista todas las solicitudes (admin)
+  - approvePayout: Aprueba solicitud (admin)
+  - rejectPayout: Rechaza solicitud con motivo (admin)
+  - markAsPaid: Registra pago con referencia (admin)
+- [x] Actualizar componente Settlements.tsx con datos reales
+  - Balance disponible, solicitudes pendientes, total pagado
+  - Modal de solicitud con datos bancarios
+  - Historial de liquidaciones con estados y colores
+  - Próxima fecha de liquidación calculada
+- [x] Crear panel de admin para gestionar solicitudes de pago (/admin/payouts)
+  - Estadísticas de solicitudes pendientes y pagadas
+  - Filtros por estado y búsqueda
+  - Acciones: aprobar, rechazar, marcar como pagado
+  - Modal de detalles con información bancaria
+- [x] 300 tests pasando (14 nuevos tests de liquidaciones)
+
+
+## Bug: Inconsistencia de balance entre Reportes y Liquidaciones - 3 Febrero 2026
+
+- [ ] BUG: En Reportes muestra $221,848 de ingresos netos pero en Liquidaciones el balance disponible está en $0
+- [ ] Investigar el endpoint getMyBalance para ver cómo calcula el balance
+- [ ] Corregir la lógica para que el balance disponible refleje los ingresos reales menos los pagos ya realizados
+- [ ] Verificar que ambas secciones usen la misma fuente de datos
+
+
+## Corrección de Bug - 3 Febrero 2026
+
+### Bug de Balance $0 en Liquidaciones del Inversionista
+- [x] BUG: La sección de Liquidaciones mostraba $0 de balance disponible mientras Reportes mostraba $246,087.11 de ingresos netos
+- [x] Causa identificada: Desincronización entre el schema de Drizzle y la base de datos
+  - El campo `status` en el schema usaba `payoutStatusEnum` que mapeaba a `payout_status` en la BD
+  - La base de datos tenía la columna como `payment_status` con valores diferentes
+  - Faltaban columnas: investorPercentage, bankName, bankAccount, accountHolder, accountType, requestedAt, approvedAt, approvedBy, investorNotes, adminNotes, rejectionReason
+- [x] Solución aplicada:
+  - Agregadas las columnas faltantes a la tabla `investor_payouts` via SQL
+  - Renombrada columna `payment_status` a `status` con los valores correctos del enum
+  - Actualizado el schema de Drizzle para usar `mysqlEnum("status", ...)` en lugar de `payoutStatusEnum`
+- [x] Verificación: Balance ahora muestra $246,087.11 (consistente con Reportes)
+- [x] 300 tests pasando correctamente
+
+
+
+## Bugs Reportados - 3 Febrero 2026 (Segunda Ronda)
+
+- [ ] BUG: Error "Too many requests" - rate limiting causando fallos en API queries
+- [ ] BUG: WebSocket de Vite falla al conectar (HMR no funciona)
+
+
+- [x] MEJORA: Pre-cargar datos bancarios del perfil del inversionista en el formulario de solicitud de pago
+- [x] BUG: El modal de solicitud de pago no permite hacer scroll hacia abajo
+
+- [x] MEJORA: Página de Configuración del inversionista debe cargar y guardar datos reales del usuario (perfil, empresa, datos bancarios)
+
+- [x] MEJORA: Modal de solicitud de pago debe mostrar datos bancarios pre-cargados con opción de cambiar cuenta (menos clics para el usuario)
+
+- [x] BUG: TypeError Cannot read properties of null (reading 'toLocaleString') en producción
+- [x] TAREA: Crear imagen llamativa para simuladores de carga
+
+
+
+## Actualización Modelo de Negocio - 3 Febrero 2026
+- [x] Actualizar página web del inversionista con nuevo modelo: 70% distribución
+- [x] Actualizar simulador de ROI con nuevas proyecciones (186% ROI, 6.4 meses payback)
+- [x] Actualizar información de escenarios de retorno
+
+
+
+## Mejoras Plataforma - 3 Febrero 2026
+- [x] Ajustar simulador de ROI con nuevo modelo: 70% inversionista, paquetes $85M y $1,000M colectivo
+- [x] Implementar fee por ubicación premium: $3-5M adicionales para zonas de alta demanda (Usaquén, Chapinero)
+- [x] Revisar configuración de Stripe existente y verificar que esté funcionando
+- [x] Integrar Wompi/PSE para pagos locales en Colombia
+
+
+## Nuevas Funcionalidades - 3 Febrero 2026
+- [x] UI de selección de método de pago: Modal para elegir entre Stripe (tarjetas internacionales) o Wompi (PSE, Nequi, Efecty)
+- [x] Selector de zona premium en registro de estaciones: Campo para seleccionar zona y calcular fee automáticamente
+- [x] Notificaciones de pago: Email/push cuando se complete recarga de billetera o pago de carga
+
+
+
+## Centro de Notificaciones Funcional - 3 Febrero 2026
+- [x] Revisar código actual del Centro de Notificaciones admin
+- [x] Implementar envío real de notificaciones push (FCM) a usuarios
+- [x] Implementar envío de notificaciones por email masivo
+- [x] Implementar notificaciones en la plataforma (in-app)
+- [x] Conectar formulario de envío con backend real
+- [x] Mostrar estadísticas reales (total enviadas, tasa de lectura, usuarios activos)
+- [x] Probar envío a diferentes tipos de audiencia (todos, solo clientes, inversionistas, etc.)
+
+
+
+## Mejoras Recibo de Carga - 3 Febrero 2026
+- [x] Mostrar banner configurado en el recibo de carga en lugar del mensaje genérico "Gracias por cargar con EVGreen"## Mejoras Landing Inversionistas - 3 Febrero 2026
+- [x] Revisar y corregir cálculos de ROI (actualmente muestra 316.8% - muy alto)
+- [x] Arreglar gráfico de proyección de ingresos vacío
+- [x] Corregir confusión de potencia: 4 cargadores de 120kW = 480kW total
+- [x] Implementar sistema de crowdfunding con barras de progreso por ciudad
+- [x] Crear tablas en BD para proyectos de crowdfunding y participaciones
+- [x] Dashboard de inversionista con datos proporcionales a su participación % de participación en estación colectiva
+
+
+## Panel Admin Crowdfunding y Notificaciones - 3 Febrero 2026
+- [x] Crear página de administración de crowdfunding (/admin/crowdfunding)
+- [x] Listar todos los proyectos de inversión colectiva
+- [x] Crear/editar proyectos de crowdfunding
+- [x] Ver participaciones por proyecto
+- [x] Confirmar pagos de participaciones
+- [x] Sistema de notificaciones de progreso (50%, 75%, 100%)
+- [x] Alertar a inversionistas cuando se alcancen hitos de financiamiento
+
+
+## Corrección Modelo de Negocio Simulador - 3 Febrero 2026
+- [x] Corregir cálculos del simulador: el paquete colectivo con solar debe ser más rentable que el individual
+- [x] El modelo colectivo debe reflejar: mayor potencia total, menor costo energía solar, mayor demanda
+
+
+## Comparador y Simulador de Escenarios - 4 Febrero 2026
+- [x] Crear comparador visual lado a lado Individual vs Colectivo
+- [x] Implementar simulador de escenarios con proyecciones a 3, 5 y 10 años
+- [x] Gráfico de retorno acumulado con proyecciones
+- [x] Corregir modelo para que colectivo sea más rentable (factor 2x ubicaciones premium)
+- [x] Agregar argumentos de valor: seguridad de ingresos, ubicaciones estratégicas, energía solar
+
+
+## Video Explicativo Modelo de Negocio - 4 Febrero 2026
+- [x] Crear guión y estructura del video explicativo
+- [x] Generar video de introducción EVGreen (animación del logo)
+- [x] Generar 4 infografías del modelo de negocio (mercado, paquetes, flujo, ventajas)
+- [x] Subir contenido a CDN para producción
+- [x] Incrustar video e infografías en la landing de inversionistas
+- [x] Agregar sección de video con CTA
+
+- [x] Mejorar diseño del módulo de inversionistas en Home (más punch visual)
+- [x] Arreglar botón "Conocer más" - hacerlo más visible y llamativo
+
+
+## Mejoras Crowdfunding y Landing - 4 Febrero 2026
+- [x] Eliminar imágenes feas de la sección de video en landing de inversionistas
+- [x] Implementar registro de inversionistas con datos completos (nombre, email, teléfono, monto)
+- [x] Crear usuario automáticamente al registrar inversionista
+- [x] Asignar ID de estación colectiva al inversionista
+- [x] Vincular participación para que inversionista vea ingresos proporcionales en su dashboard
+- [x] Actualizar barras de progreso con datos reales de participaciones registradas
+
+
+## Corrección Responsive Crowdfunding - 4 Febrero 2026
+- [x] Corregir responsive del modal de participaciones en móvil
+- [x] Arreglar superposición de texto (Meta, Recaudado, Progreso)
+- [x] Ajustar botón "Registrar Inversionista" para móvil
+- [x] Hacer responsive la tabla de participaciones (tarjetas en móvil)
+- [x] Hacer responsive el formulario de registro de inversionista
+
+
+## Corrección Valores Crowdfunding - 4 Febrero 2026
+- [x] Eliminar valores hardcodeados de recaudación en proyectos de crowdfunding
+- [x] Calcular recaudación real basada en suma de participaciones confirmadas
+- [x] Permitir edición manual de montos recaudados desde admin
+- [x] Actualizar barras de progreso en landing con datos reales de BD
+
+
+## Correcciones Página Inversionistas - 5 Febrero 2026
+- [x] Agregar fee de cobro por zonas de alta demanda en la página de inversionistas
+- [x] Agregar opción de inversión en cargadores AC de $8.500.000
+
+
+## Sistema de Gestión de Evento - Lanzamiento EVGreen - 6 Febrero 2026
+- [x] Esquema DB: tabla invitados (event_guests), asistencia (event_attendance), pagos evento (event_payments)
+- [x] Crear rol staff y usuario staff evgreen@greenhproject.com
+- [x] Módulo Staff: vista exclusiva con check-in QR y registro de pagos
+- [x] Sistema de invitaciones: crear invitado, generar QR único por invitado
+- [x] Diseño email invitación con imagen EVGreen y QR personalizado
+- [x] Envío de invitaciones por email con diseño profesional
+- [x] Escaneo QR: datos precargados del inversionista al escanear
+- [x] Registro de pagos: depósito $1.000.000 o abono superior configurable
+- [x] Integración Wompi para procesamiento de pagos del evento
+- [x] Procedimientos tRPC para gestión completa del evento
+
+## Exportación de Datos del Evento - 6 Febrero 2026
+- [x] Endpoint de exportación de invitados a Excel
+- [x] Endpoint de exportación de pagos a Excel
+- [x] Endpoint de exportación de invitados a PDF
+- [x] Endpoint de exportación de pagos a PDF
+- [x] Botones de exportación en páginas Staff (Guests y Payments)
+
+
+## Resumen Ejecutivo Estadísticas Evento - 6 Febrero 2026
+- [x] Mejorar endpoint getEventStats con distribución por paquete y recaudación
+- [x] Gráfico de distribución de invitados por paquete de inversión
+- [x] Gráfico de progreso de recaudación vs meta
+- [x] Resumen ejecutivo con KPIs principales
+- [x] Timeline de actividad del evento
+
+
+## Bug Fix - Emails no llegan - 6 Febrero 2026
+- [ ] Diagnosticar por qué los emails de invitación no llegan a Resend
+- [ ] Corregir el envío de emails con manejo de errores adecuado
+
+
+## Bug Fix - Estadísticas no muestran datos reales - 6 Febrero 2026
+- [x] Corregir endpoint getEventStats que retorna ceros a pesar de tener datos
+
+
+## Sistema de Aliados Staff - 7 Febrero 2026
+- [x] Vincular cada invitado con el staff que lo creó (createdById ya existe en DB)
+- [x] Filtrar endpoints para que cada staff solo vea sus propios invitados
+- [x] Vista global solo para evgreen@greenhproject.com (super staff)
+- [x] Estadísticas filtradas por staff (recaudo y asistencia de sus invitados)
+- [x] Control de comisiones: vincular inversionista con staff para liquidación
+- [x] Frontend: mostrar indicador de "Mis Invitados" vs "Todos" según permisos
+- [x] Ranking de aliados en vista global con métricas de rendimiento
+- [x] Sección de comisión estimada en vista personal
+- [x] Exportaciones filtradas por staff (Excel y PDF)
+- [x] Permisos de edición/eliminación: solo el staff creador o super staff
+
+
+## Auditoría Financiera Página Inversionistas - 7 Febrero 2026
+- [x] CORREGIR: Texto costos operativos dice "15%" pero colectivo usa 10% (hacerlo dinámico)
+- [x] CORREGIR: Proyecciones acumuladas (3y, 5y, 10y) no coinciden con ingreso mensual × meses
+- [x] MEJORAR: Mostrar horas efectivas cuando se aplica factor premium 2x en colectivo
+- [x] VERIFICAR: Tabla comparativa ROI individual y colectivo vs cálculos reales
+
+## Mejoras Sugeridas Post-Auditoría - 7 Febrero 2026
+- [x] Factor de utilización premium configurable desde panel admin (no hardcodeado 2.0)
+- [x] Nuevos campos en BD: factorUtilizacionPremium, costosOperativos, eficiencia, precios
+- [x] Endpoint público getCalculatorParams para que la calculadora lea del backend
+- [x] Pestaña "Calculadora" en admin Settings con todos los parámetros editables
+- [x] Disclaimer legal robusto según regulación financiera colombiana (CREG, FOGAFÍN, Ley 964/2005)
+- [x] Escenario pesimista/realista/optimista en la calculadora de inversionistas
+- [x] Factores de escenario: pesimista (horas ×0.6, precio ×0.85), optimista (horas ×1.4, precio ×1.10)
+- [x] Indicador visual del escenario activo en los resultados
+- [x] Calculadora conectada a parámetros dinámicos del backend (ya no hardcodeada)
+
+## Actualización Datos de Contacto - 7 Febrero 2026
+- [x] Actualizar NIT en disclaimer legal: 901.447.678-0
+- [x] Actualizar email de contacto: evgreen@greenhproject.com
+- [x] Actualizar teléfono de contacto: +57 3054124009
+
+## Bug - Gráfico Crecimiento del Capital en blanco - 7 Febrero 2026
+- [ ] BUG: Gráfico de barras "Crecimiento del Capital" aparece vacío (sin barras visibles)
+
+## Bug - Gráfico Crecimiento del Capital en blanco - 7 Febrero 2026
+- [x] BUG: Gráfico de barras Crecimiento del Capital aparece vacío (sin barras visibles)
+
+## Enlace WhatsApp directo - 7 Febrero 2026
+- [x] Vincular botón de WhatsApp con wa.me/573054124009 y mensaje predefinido
+- [x] Actualizar todos los enlaces de contacto/teléfono a WhatsApp directo
+
+## Planes de Membresía EVGreen - 7 Febrero 2026
+- [x] Análisis financiero de viabilidad de planes Básico ($18.900) y Premium ($33.900)
+- [x] Schema de suscripciones en BD (tabla subscriptions ya existía)
+- [x] Endpoints backend: planes, suscripción, estado de membresía (ya existían, actualizados)
+- [x] Página de membresía funcional (corregido 404 en /subscription)
+- [x] UI de planes con comparativa y beneficios
+- [x] Flujo de suscripción/activación (vía Stripe Checkout)
+- [x] Integración con perfil de usuario (menú lateral con ícono Crown)
+- [x] Actualizar precios: Básico $18,900, Premium $33,900
+- [x] Actualizar config.ts de Stripe con nuevos planes y beneficios
+- [x] Actualizar db.ts con nuevos porcentajes (3% y 5% kWh)
+- [x] Actualizar Wallet.tsx con nuevos precios
+- [x] FAQ de membresía incluido en la página
+
+## Mejora Contraste Botones Mapa - 7 Febrero 2026
+- [x] Mejorar contraste de botones de acción del mapa (expandir, ubicación, zoom)
+- [x] Mejorar visibilidad de barra "estaciones cerca" en la parte inferior
+- [x] Hacer botones modernos y estéticos con buen contraste
+
+## Mejoras UX Mapa - 7 Febrero 2026
+- [x] Efecto pulso/glow verde en botón central QR de la barra inferior
+- [x] Tooltips en botones flotantes del mapa (refresh, ubicación)
+- [x] Modo nocturno del mapa de Google Maps cuando el tema es oscuro
+
+## Mejoras UX Escaneo QR y Filtros Mapa - 7 Febrero 2026
+- [x] Animación de carga al escanear QR con spinner verde y feedback visual
+- [x] Filtros rápidos AC/DC como chips visibles debajo de la barra de búsqueda del mapa
+
+## Bug - Error Google Maps "Esta página no puede cargar Google Maps" - 7 Febrero 2026
+- [x] Investigar error de carga de Google Maps (causado por omitir mapId en modo nocturno)
+- [x] Corregir: siempre usar mapId y aplicar estilos oscuros después de inicialización
+
+## Marcadores AC/DC y Favoritos de Estaciones - 7 Febrero 2026
+- [x] Marcadores diferenciados AC/DC en el mapa (rayo amarillo AC, rayo azul DC)
+- [x] Indicador visual de tipo de carga en cada marcador
+- [x] Sistema de favoritos: tabla en BD para guardar estaciones favoritas
+- [x] Endpoint para agregar/quitar favoritos (toggle con optimistic update)
+- [x] Botón de favorito en tarjeta de estación y lista del bottom sheet
+- [ ] Sección "Favoritos" accesible desde el mapa
+
+## Bug - Filtros AC/DC no funcionan en el mapa - 7 Febrero 2026
+- [x] BUG: Los chips de filtro rápido AC/DC no filtran los marcadores ni la lista de estaciones
+- [x] Corregido: filteredStations ahora aplica filtro chargeType y connectorType
+- [x] Corregido: marcadores del mapa ahora usan filteredStations en lugar de stations crudas
+
+## Animación de transición en marcadores del mapa - 7 Febrero 2026
+- [x] Agregar animación fade suave al filtrar marcadores (aparecer/desaparecer con escala bounce)
+
+## Bugs UI - EV Assistant / Sugerencia IA - 7 Febrero 2026
+- [x] Botón X de "Sugerencia de IA" corrido y difícil de cerrar - Agrandado a 40x40px con fondo visible y feedback táctil
+- [x] Dos X duplicadas en el header del EV Assistant - Eliminada X manual, se usa solo la del SheetContent
+
+## Distancia real GPS - 7 Febrero 2026
+- [x] Obtener ubicación GPS real del usuario con geolocalización del navegador
+- [x] Implementar fórmula Haversine para calcular distancia entre coordenadas
+- [x] Reemplazar distancia fija por distancia real calculada (m, km con formato inteligente)
+- [x] Ordenar estaciones por cercanía al usuario (más cercanas primero)
+- [x] Fallback a Bogotá cuando GPS no disponible (sin mostrar distancia falsa)
+
+## Integración Wompi - Pasarela de Pagos Colombia - 7 Febrero 2026
+### Configuración Admin
+- [x] Columnas Wompi en platformSettings (wompiPublicKey, wompiPrivateKey, wompiIntegritySecret, wompiEventsSecret, wompiTestMode)
+- [x] Endpoints CRUD para configuración de pagos (admin only) - settings.update
+- [x] Página de configuración de pagos en Admin > Settings > Pagos con indicador de estado
+- [x] Campos: llave pública, llave privada, secreto de integridad, secreto de eventos, modo sandbox
+- [x] URL de webhook copiable para configurar en comercios.wompi.co
+
+### Backend Wompi
+- [x] Servicio de Wompi: crear transacción, verificar estado (config.ts)
+- [x] Endpoint para iniciar pago - genera URL de checkout de Wompi (router.ts)
+- [x] Webhook para recibir notificaciones de transacciones (webhook.ts)
+- [x] Verificar firma de integridad (checksum SHA256) en webhook
+- [x] Actualizar billetera del usuario al confirmar pago APPROVED
+- [x] Tabla wompi_transactions para registrar todas las transacciones
+
+### Frontend Pagos
+- [x] Flujo de recarga de billetera con Wompi (Wallet.tsx)
+- [x] Flujo de pago de suscripción con Wompi (checkout + verificación + activación)
+- [x] Verificación de pago al regresar de Wompi (?payment=wompi&reference=...)
+- [x] Historial de transacciones de pago en billetera
+
+### Tests
+- [x] Tests unitarios para servicio de Wompi (firma SHA256, referencia, checkout URL, webhook checksum)
+- [x] Tests para constantes de estado y métodos de pago
+- [x] 354 tests pasando (22 archivos)
+
+## Suscripciones Recurrentes Wompi + Notificaciones Push de Pago - 7 Febrero 2026
+
+### Suscripciones Recurrentes con Wompi
+- [x] Investigar API de tokenización de tarjetas de Wompi (checkout + payment source)
+- [x] Actualizar tabla subscriptions: Stripe → Wompi (wompiPaymentSourceId, wompiCardToken, cardBrand, cardLastFour, etc.)
+- [x] Endpoint createSubscriptionPayment para suscribirse a plan (Básico $18,900/Premium $33,900)
+- [x] Endpoint verifyAndActivateSubscription para verificar pago y activar plan
+- [x] Procesamiento de suscripción en webhook (processSubscriptionPayment)
+- [x] Endpoint cancelSubscription para cancelar suscripción
+- [x] UI de planes con estado activo, datos de tarjeta, próximo cobro y botón cancelar
+- [x] Funciones BD: cancelUserSubscription, getActiveSubscriptionsForBilling, updateSubscriptionBilling
+
+### Notificaciones In-App de Confirmación de Pago
+- [x] Notificación in-app al confirmar recarga de billetera (webhook + createNotification)
+- [x] Notificación in-app al confirmar pago de suscripción (webhook + createNotification)
+- [x] Notificación in-app al fallar un pago (notifyPaymentFailed en webhook)
+- [x] Notificación in-app al cancelar suscripción
+- [x] Tests unitarios: 354 tests pasando (22 archivos) - incluye tests de suscripción y checksum
+
+## Bug Fix + Cobro Recurrente + Push Notifications - 8 Febrero 2026
+
+### Bug: Credenciales Wompi no se guardan en Admin Settings
+- [x] Diagnosticar: endpoint get devuelve valores enmascarados que llenan los inputs, al borrar quedan vacíos
+- [x] Corregir: campos secretos vacíos con placeholder dinámico, solo envían valor si el usuario lo modifica
+- [x] Verificar: handleSavePayments solo incluye credenciales tocadas, no sobreescribe con vacío
+
+### Cobro Recurrente Automático (Cron Job)
+- [x] Servicio de cobro recurrente (recurring-billing.ts) que consulta suscripciones vencidas
+- [x] Tokenización de Wompi para cobrar automáticamente vía payment_source_id
+- [x] Registrar cada cobro en wompi_transactions + actualizar suscripción
+- [x] Notificar al usuario del cobro exitoso o fallido (in-app + push)
+- [x] Desactivar suscripción después de 3 intentos fallidos consecutivos
+- [x] Cron job diario a las 6:00 AM Colombia + endpoint admin runBillingManually
+- [x] Endpoints: getAcceptanceToken, tokenizeCard, createPaymentSource
+
+### Notificaciones Push con Firebase Cloud Messaging
+- [x] Webhook Wompi conectado con FCM para enviar push al celular del usuario
+- [x] Push notification al confirmar recarga de billetera
+- [x] Push notification al confirmar/fallar suscripción
+- [x] Push notification al cobro recurrente exitoso/fallido/cancelado
+- [x] Push notification para renovación manual pendiente
+- [x] 369 tests pasando (23 archivos)
+
+## Migración Completa de Pagos Stripe → Wompi - 8 Febrero 2026
+
+### Frontend
+- [x] Reescribir PaymentMethods.tsx (/settings/payment) para usar Wompi: métodos disponibles, tarjeta guardada, pagos recientes
+- [x] Reescribir Subscription.tsx (/subscription) para usar Wompi: planes, checkout, verificación, cancelación
+- [x] Eliminar referencias a trpc.stripe en PaymentMethodSelector.tsx
+- [x] Wallet.tsx ya usaba Wompi correctamente (solo mantiene STRIPE_PAYMENT para historial)
+
+### Backend
+- [x] Convertir stripe/config.ts en stub sin dependencia de Stripe SDK
+- [x] Convertir stripe/router.ts en stub que retorna configured: false
+- [x] Convertir stripe/webhook.ts en stub que retorna 410 Gone
+- [x] Mantener stripeRouter registrado para evitar errores de tipo
+
+### Verificación
+- [x] TypeScript compila sin errores
+- [x] 369 tests pasando (23 archivos)
+- [x] No quedan referencias funcionales a Stripe en el frontend
+
+## Bug: Banner "sistema de pagos no disponible" en Suscripciones - 8 Febrero 2026
+- [x] Corregido: banners rojos reemplazados por banners ámbar suaves en Subscription, Wallet y PaymentMethods
+- [x] Toast de error actualizado a mensaje amigable ("Los pagos están siendo configurados")
+- [x] Validación de formato de llaves Wompi (no acepta llaves de Stripe: pub_/prv_ requerido)
+- [x] Limpiadas llaves de Stripe de la BD que estaban en campos de Wompi
+
+## Rediseño Billetera - Enfoque Tarjeta Inscrita - 8 Febrero 2026
+- [x] Rediseñar UI de billetera con tarjeta de crédito inscrita como centro (tabs: Billetera / Historial)
+- [x] Mostrar tarjeta guardada prominente (estilo tarjeta visual con gradiente por marca: Visa azul, MC rojo, Amex gris)
+- [x] Flujo de "Agregar tarjeta" que tokeniza vía checkout de Wompi (recarga mínima $20,000)
+- [x] Recargar billetera directamente desde tarjeta inscrita (botón "Recargar con Visa ····4242")
+- [x] Opción de cambiar tarjeta inscrita (nueva recarga reemplaza datos de tarjeta)
+- [x] Sección colapsable de otros métodos (PSE, Nequi, Bancolombia QR, Efecty)
+- [x] Balance de billetera visible como hero card con saldo prominente
+- [x] Webhook guarda datos de tarjeta (marca, últimos 4) al procesar recarga con tarjeta
+- [x] 369 tests pasando (23 archivos)
+
+## Mejoras Asistente IA - 8 Febrero 2026
+### Escritura Progresiva (Streaming)
+- [x] Implementar efecto de escritura progresiva en las respuestas del asistente (palabra por palabra con cursor pulsante)
+- [x] Auto-scroll hacia abajo a medida que el texto va apareciendo (intervalo de 100ms)
+- [x] Evitar que el usuario tenga que devolverse para leer desde el principio
+- [x] Botón "Mostrar todo" para saltar la animación
+- [x] Indicador "Escribiendo..." en el header durante la animación
+
+### Integración Google Maps - Rutas a Estaciones
+- [x] Detectar cuando el usuario pide ir a una estación o la más cercana
+- [x] Abrir Google Maps directamente con la ruta calculada desde la ubicación del usuario
+- [x] Integrar con el sistema de estaciones existente para obtener coordenadas
+- [x] Tags [NAV:lat,lng|nombre] en system prompt para coordenadas exactas
+- [x] Limpieza de tags NAV del texto visible (usuario no ve marcado interno)
+- [x] Botones con gradiente azul/verde para cada estación con coordenadas
+- [x] Fallback a búsqueda por texto cuando no hay coordenadas
+- [x] 385 tests pasando (24 archivos)
+
+## Bug: Simulación de carga siempre llega al 100% - 8 Febrero 2026 - CORREGIDO
+- [x] BUG: Cuando el usuario selecciona un % de batería menor al 100%, la simulación siempre llegaba al 100%
+- [x] BUG: Cuando el usuario selecciona un monto específico (ej. $80,000), la carga cobraba un valor incorrecto
+- [x] Corregir la lógica de simulación: agregado realTargetKwh para mapear progreso simulado a valores reales
+- [x] Corregir el cálculo de energía consumida según el monto seleccionado (monto fijo cobra exactamente lo pedido)
+- [x] Gauge de batería ahora muestra nivel real (empieza en 20% y sube hasta el objetivo)
+- [x] getActiveSimulationInfo ahora devuelve kWh/costo reales proporcionales al progreso
+- [x] completeSimulation usa realTargetKwh para cálculos finales correctos
+- [x] 385 tests pasando (24 archivos)
+
+## Mejora: Gestión de billetera desde Admin - 10 Febrero 2026
+- [x] Mostrar saldo de billetera en modal de detalles de usuario (admin)
+- [x] Botón para agregar crédito/saldo a la billetera del usuario
+- [x] Botón para descontar/debitar saldo de la billetera del usuario
+- [x] Botón para reembolso (devolver dinero por fallo de cobro)
+- [x] Registro de ajustes manuales con motivo/razón (incluye nombre del admin)
+- [x] Endpoint backend para consultar saldo por userId (admin) - users.getUserWallet
+- [x] Endpoint backend para ajustar saldo manualmente (admin) - users.adjustWalletBalance
+- [x] 394 tests pasando (24 archivos)
+
+## Mejoras Billetera Admin - 10 Febrero 2026
+### 1. Historial de ajustes manuales en modal
+- [x] Endpoint backend para obtener transacciones de billetera por userId (users.getUserWalletTransactions)
+- [x] Tabla de últimos movimientos dentro del modal de detalles de usuario (acordeón expandible)
+- [x] Mostrar fecha, tipo, monto, saldo resultante y motivo con tooltip
+
+### 2. Exportar movimientos de billetera
+- [x] Exportar transacciones en PDF (abre ventana de impresión con reporte brandeado EVGreen)
+- [x] Exportar transacciones en Excel/CSV (descarga directa con BOM UTF-8)
+- [x] Botones PDF y Excel en la barra del historial
+
+### 3. Notificación al usuario por ajuste de saldo
+- [x] Enviar notificación in-app al usuario cuando admin ajuste su saldo
+- [x] Incluir detalles: tipo de ajuste, monto, nuevo saldo, motivo
+- [x] 403 tests pasando (24 archivos)
+
+## Bug: Notificaciones no se quitan al marcar como leídas - 10 Febrero 2026 - CORREGIDO
+- [x] BUG: Al hacer clic en "Marcar todas como leídas" las notificaciones no se actualizan visualmente
+- [x] Causa: Frontend mapeaba `n.read` pero Drizzle devuelve `n.isRead`
+- [x] Corregido mapeo de isRead y agregada invalidación optimista con refetch
+
+## Bug: Tarjeta de crédito no queda inscrita después de pago - 10 Febrero 2026 - CORREGIDO
+- [x] BUG: Se realizó pago de $50,000 en Wompi pero la tarjeta no quedó guardada
+- [x] Causa 1: Webhook buscaba payment_method.extra.brand pero Wompi usa payment_method.brand
+- [x] Causa 2: isActive se creaba como false cuando no existía suscripción previa
+- [x] Corregido: Webhook consulta API de Wompi (GET /transactions/{id}) si no hay datos en el evento
+- [x] Corregido: verifyAndProcessPayment también guarda datos de tarjeta al verificar recarga
+- [x] Corregido: verifyAndActivateSubscription usa formato correcto de payment_method
+- [x] Corregido: isActive por defecto true al crear nuevo registro de suscripción
+- [x] 407 tests pasando (24 archivos)
+
+## Mejoras Tarjeta de Crédito - 10 Febrero 2026 - COMPLETADO
+### 1. Recarga rápida con tarjeta inscrita
+- [x] Investigar API de Wompi para cobros con tarjeta tokenizada (sin checkout)
+- [x] Endpoint backend quickRecharge: cobra con payment_source_id guardado
+- [x] Botón "Recarga rápida con ····1234" en la billetera (con icono Zap)
+- [x] Indicador "Recarga instantánea – sin salir de la app"
+- [x] Procesamiento del pago y actualización de saldo automática
+- [x] Manejo de estados APPROVED/PENDING/DECLINED
+
+### 2. Eliminar/desvincular tarjeta guardada
+- [x] Endpoint backend removeCard: limpia datos de tarjeta de la suscripción
+- [x] Botón "Eliminar" en rojo junto a "Cambiar" en sección "Mi tarjeta"
+- [x] Diálogo de confirmación con advertencia de acción irreversible
+- [x] 407 tests pasando (24 archivos)
+- [x] Confirmación antes de eliminar (diálogo con botón destructivo)
+- [x] Actualización visual después de eliminar (refetchSubscription)
+
+## Bug: Recarga rápida redirige a checkout - 10 Febrero 2026 - COMPLETADO
+- [x] BUG: Al dar clic en "Recargar con tarjeta ····8299" sigue redirigiendo al checkout de Wompi
+- [x] Causa raíz: Wompi checkout NO tokeniza la tarjeta ni crea payment_source_id
+- [x] Solución: Implementar formulario de tokenización directa en Wallet.tsx
+- [x] Formulario captura: número de tarjeta, CVV, fecha de vencimiento, nombre del titular
+- [x] Frontend llama directamente a Wompi API POST /v1/tokens/cards con llave pública
+- [x] Backend recibe token y crea payment_source vía POST /v1/payment_sources
+- [x] Se guarda wompiPaymentSourceId en la suscripción del usuario
+- [x] Obtención de acceptance_token y personal_auth_token de Wompi para cumplir requisitos
+- [x] Verificar que quickRecharge funcione correctamente con payment_source_id
+
+## Mejora: Cobro automático de tarjeta cuando no hay saldo - 10 Febrero 2026 - COMPLETADO
+- [x] Módulo server/wompi/auto-charge.ts con función autoChargeIfNeeded()
+- [x] Si el usuario completa carga y no tiene saldo suficiente, cobra automáticamente de tarjeta inscrita
+- [x] Integrado en charging-simulator.ts (simulación de carga)
+- [x] Integrado en ocpp/csms.ts (carga real OCPP)
+- [x] Integrado en routers.ts stopChargingSession (detener carga manual)
+- [x] Monto mínimo de auto-cobro: $10,000 COP (requisito Wompi)
+- [x] Margen extra de $5,000 para evitar saldo negativo inmediato
+- [x] Notificación al usuario del cobro automático
+- [x] 9 tests unitarios para auto-charge (todos pasando)
+- [x] 416 tests totales pasando (25 archivos)
+
+## Bug: No se puede eliminar ni cambiar tarjeta - 10 Febrero 2026 - COMPLETADO
+- [x] BUG: Al hacer clic en "Sí, eliminar" tarjeta no funciona
+- [x] Error "No values to set" aparece en la parte superior de la billetera
+- [x] Causa raíz: updateUserSubscription usaba `if (data.cardBrand)` que evalúa "" como falsy, resultando en updateData vacío
+- [x] Corregido: Cambiar `if (data.cardBrand)` a `if (data.cardBrand !== undefined)` para los 3 campos de tarjeta
+- [x] Corregido: removeCard ahora pasa `null` en lugar de `undefined` para wompiPaymentSourceId y wompiCardToken
+- [x] 416 tests pasando (25 archivos)
+
+## Bug: Tarjeta muestra inscrita pero no se guarda - 10 Febrero 2026 - COMPLETADO
+- [x] BUG: Toast dice "Tarjeta inscrita exitosamente" pero la tarjeta no se persiste
+- [x] La sección "Mi tarjeta" sigue mostrando "Inscribe tu tarjeta" después de inscribir
+- [x] Al recargar billetera sigue redirigiendo al checkout de Wompi en lugar de recarga rápida
+- [x] Causa raíz: tokenizeCard solo guardaba wompiPaymentSourceId y wompiCardToken, pero NO cardBrand, cardLastFour ni cardHolderName
+- [x] Corregido backend: tokenizeCard ahora acepta y guarda cardLastFour, cardBrand y cardHolderName
+- [x] Corregido frontend: Wallet.tsx ahora envía los datos de tarjeta (detecta marca por BIN) al llamar tokenizeCard.mutate
+- [x] 416 tests pasando (25 archivos)
+
+## Bug: Recarga rápida falla con "Error procesando el cobro" - 10 Febrero 2026 - COMPLETADO
+- [x] BUG: Tarjeta VISA ****2668 aparece correctamente pero recarga rápida falla
+- [x] Causa raíz: Faltaban campos OBLIGATORIOS en la API de Wompi: acceptance_token y signature
+- [x] Corregido quickRecharge: ahora obtiene acceptance_token y genera signature antes de crear transacción
+- [x] Corregido auto-charge.ts: misma corrección para auto-cobros
+- [x] Corregido recurring-billing.ts: misma corrección para cobros recurrentes de suscripción
+- [x] Mejorado manejo de errores: ahora muestra detalles del error de Wompi al usuario
+- [x] 417 tests pasando (25 archivos)
+
+## Bug: Recarga rápida cobra pero no se refleja en billetera - 10 Febrero 2026 - COMPLETADO
+- [x] BUG: Se descontaron $10,000 de la tarjeta VISA ****2668 pero saldo sigue en $370,208.01
+- [x] No aparece la recarga en el historial de la billetera
+- [x] Causa raíz: quickRecharge usa prefijo "QRC-" y auto-charge usa "ATC-", pero el webhook solo manejaba "WLT-", "CHG-", "INV-", "SUB-"
+- [x] Corregido webhook: agregado manejo de prefijos QRC- y ATC- con función processQuickRecharge
+- [x] Nuevo endpoint checkQuickRechargeStatus: polling del estado de transacciones PENDING consultando Wompi directamente
+- [x] Frontend: polling automático cada 3s (máx 60s) cuando la transacción está PENDING
+- [x] Protección contra doble acreditación verificando transacciones recientes
+- [x] 417 tests pasando (25 archivos)
+
+## Mejoras: Recarga rápida y acreditación pendiente - 11 Febrero 2026 - COMPLETADO
+- [x] Crear endpoint admin reconcilePendingTransactions para verificar y acreditar transacciones QRC/ATC pendientes
+- [x] Función getPendingWompiTransactions en db.ts para consultar transacciones PENDING
+- [x] Botón "Reconciliar ahora" en Admin > Settings > Wompi para recuperar $10,000 pendientes
+- [x] Muestra detalle de cada transacción procesada con estado anterior y nuevo
+- [x] Indicador visual "Procesando recarga..." en tarjeta de saldo durante polling activo
+- [x] Botón de recarga deshabilitado y muestra "Verificando pago..." durante polling
+- [x] 417 tests pasando (25 archivos)

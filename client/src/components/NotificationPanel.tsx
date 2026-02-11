@@ -58,6 +58,7 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
   const markAsReadMutation = trpc.notifications.markAsRead.useMutation();
   const markAllAsReadMutation = trpc.notifications.markAllAsRead.useMutation();
   const deleteMutation = trpc.notifications.delete.useMutation();
+  const utils = trpc.useUtils();
 
   // Convertir notificaciones de la API al formato local
   const notifications: Notification[] = (notificationsQuery.data || []).map((n: any) => ({
@@ -65,7 +66,7 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
     type: n.type as Notification["type"],
     title: n.title,
     message: n.message,
-    read: n.read,
+    read: n.isRead ?? n.read ?? false,
     createdAt: new Date(n.createdAt),
     actionUrl: n.actionUrl,
   }));
@@ -90,7 +91,7 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
   const handleMarkAsRead = async (id: number) => {
     try {
       await markAsReadMutation.mutateAsync({ id });
-      notificationsQuery.refetch();
+      await utils.notifications.list.invalidate();
     } catch (error) {
       console.error("Error marking notification as read:", error);
     }
@@ -99,7 +100,8 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
   const handleMarkAllAsRead = async () => {
     try {
       await markAllAsReadMutation.mutateAsync();
-      notificationsQuery.refetch();
+      // Invalidar y refetch para actualizar la UI inmediatamente
+      await utils.notifications.list.invalidate();
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
     }
@@ -119,7 +121,7 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
     e.stopPropagation();
     try {
       await deleteMutation.mutateAsync({ id });
-      notificationsQuery.refetch();
+      await utils.notifications.list.invalidate();
     } catch (error) {
       console.error("Error deleting notification:", error);
     }

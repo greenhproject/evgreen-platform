@@ -42,10 +42,17 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity } from "lucide-react";
+import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 import { StationQRCode } from "@/components/StationQRCode";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+// Zonas premium con fee adicional
+const PREMIUM_ZONES = [
+  { value: "A", label: "Zona Premium A", description: "Usaquén, Chapinero, Zona T", fee: 5000000 },
+  { value: "B", label: "Zona Premium B", description: "Suba Norte, Cedritos, Santa Bárbara", fee: 3000000 },
+  { value: "C", label: "Zona Estándar", description: "Otras zonas de la ciudad", fee: 0 },
+];
 
 // Tipos de conectores disponibles según OCPI
 const CONNECTOR_TYPES = [
@@ -78,6 +85,7 @@ interface StationFormData {
   ocppIdentity: string;
   isActive: boolean;
   isPublic: boolean;
+  premiumZone: string;
 }
 
 const initialFormData: StationFormData = {
@@ -92,6 +100,7 @@ const initialFormData: StationFormData = {
   ocppIdentity: "",
   isActive: true,
   isPublic: true,
+  premiumZone: "C",
 };
 
 export default function AdminStations() {
@@ -227,6 +236,7 @@ export default function AdminStations() {
       ocppIdentity: station.ocppIdentity || "",
       isActive: station.isActive ?? true,
       isPublic: station.isPublic ?? true,
+      premiumZone: station.premiumZone || "C",
     });
     
     // Cargar conectores existentes
@@ -507,6 +517,58 @@ export default function AdminStations() {
               onChange={(e) => setFormData({...formData, department: e.target.value})}
             />
           </div>
+          
+          {/* Selector de Zona Premium */}
+          <div className="space-y-2 col-span-2">
+            <Label className="flex items-center gap-2">
+              <Crown className="w-4 h-4 text-yellow-500" />
+              Zona de Ubicación
+            </Label>
+            <Select
+              value={formData.premiumZone}
+              onValueChange={(value) => setFormData({...formData, premiumZone: value})}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona la zona" />
+              </SelectTrigger>
+              <SelectContent>
+                {PREMIUM_ZONES.map((zone) => (
+                  <SelectItem key={zone.value} value={zone.value}>
+                    <div className="flex items-center justify-between w-full">
+                      <span>{zone.label}</span>
+                      {zone.fee > 0 && (
+                        <span className="ml-2 text-xs text-yellow-600">+${(zone.fee / 1000000).toFixed(0)}M</span>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {formData.premiumZone && (
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {PREMIUM_ZONES.find(z => z.value === formData.premiumZone)?.label}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {PREMIUM_ZONES.find(z => z.value === formData.premiumZone)?.description}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">Fee adicional</p>
+                    <p className="font-semibold text-yellow-600">
+                      {(() => {
+                        const fee = PREMIUM_ZONES.find(z => z.value === formData.premiumZone)?.fee || 0;
+                        return fee > 0 ? `$${fee.toLocaleString('es-CO')} COP` : 'Sin costo adicional';
+                      })()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
           <div className="space-y-2">
             <Label>Latitud</Label>
             <Input 

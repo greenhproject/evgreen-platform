@@ -50,6 +50,12 @@ import {
   platformSettings,
   PlatformSettings,
   InsertPlatformSettings,
+  favoriteStations,
+  FavoriteStation,
+  InsertFavoriteStation,
+  wompiTransactions,
+  WompiTransaction,
+  InsertWompiTransaction,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -218,6 +224,23 @@ export async function regenerateUserIdTag(userId: number): Promise<string | null
   const newIdTag = await generateUniqueIdTag();
   await db.update(users).set({ idTag: newIdTag }).where(eq(users.id, userId));
   return newIdTag;
+}
+
+// Crear un nuevo usuario y retornar su ID
+export async function createUser(userData: InsertUser): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Generar idTag único para el nuevo usuario
+  const idTag = await generateUniqueIdTag();
+  
+  const result = await db.insert(users).values({
+    ...userData,
+    idTag,
+  });
+  
+  // MySQL retorna insertId
+  return Number(result[0].insertId);
 }
 
 export async function updateUserRole(userId: number, role: User["role"]) {
@@ -938,6 +961,120 @@ export async function updateInvestorPayout(id: number, data: Partial<InsertInves
   const db = await getDb();
   if (!db) return;
   await db.update(investorPayouts).set(data).where(eq(investorPayouts.id, id));
+}
+
+export async function getPayoutById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(investorPayouts).where(eq(investorPayouts.id, id));
+  return result[0] || null;
+}
+
+export async function getAllPendingPayouts() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    payout: investorPayouts,
+    investor: users,
+  })
+    .from(investorPayouts)
+    .innerJoin(users, eq(investorPayouts.investorId, users.id))
+    .where(inArray(investorPayouts.status, ['PENDING', 'REQUESTED']))
+    .orderBy(desc(investorPayouts.requestedAt));
+}
+
+export async function getAllPayoutsForAdmin(status?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  if (status && status !== 'ALL') {
+    return db.select({
+      payout: investorPayouts,
+      investor: users,
+    })
+      .from(investorPayouts)
+      .innerJoin(users, eq(investorPayouts.investorId, users.id))
+      .where(eq(investorPayouts.status, status as any))
+      .orderBy(desc(investorPayouts.createdAt));
+  }
+  
+  return db.select({
+    payout: investorPayouts,
+    investor: users,
+  })
+    .from(investorPayouts)
+    .innerJoin(users, eq(investorPayouts.investorId, users.id))
+    .orderBy(desc(investorPayouts.createdAt));
+}
+
+export async function getInvestorPendingBalance(investorId: number) {
+  const db = await getDb();
+  if (!db) return { pendingBalance: 0, totalPaid: 0, lastPayout: null };
+  
+  // Obtener estaciones del inversionista
+  const stations = await db.select({ id: chargingStations.id })
+    .from(chargingStations)
+    .where(eq(chargingStations.ownerId, investorId));
+  
+  const stationIds = stations.map(s => s.id);
+  if (stationIds.length === 0) {
+    return { pendingBalance: 0, totalPaid: 0, lastPayout: null };
+  }
+  
+  // Obtener configuración de porcentaje
+  const settings = await db.select().from(platformSettings).limit(1);
+  const investorPercentage = settings[0]?.investorPercentage || 80;
+  
+  // Obtener todas las transacciones completadas
+  // Nota: El campo 'status' en el schema de drizzle mapea a 'transaction_status' en la BD
+  const txs = await db.select()
+    .from(transactions)
+    .where(and(
+      inArray(transactions.stationId, stationIds),
+      eq(transactions.status, 'COMPLETED')
+    ));
+  
+  const totalRevenue = txs.reduce((sum, tx) => sum + Number(tx.totalCost || 0), 0);
+  const totalInvestorShare = totalRevenue * (investorPercentage / 100);
+  
+  // Obtener total ya pagado
+  const paidPayouts = await db.select()
+    .from(investorPayouts)
+    .where(and(
+      eq(investorPayouts.investorId, investorId),
+      eq(investorPayouts.status, 'PAID')
+    ));
+  
+  const totalPaid = paidPayouts.reduce((sum, p) => sum + Number(p.investorShare || 0), 0);
+  
+  // Obtener último pago
+  const lastPayout = paidPayouts.length > 0 
+    ? paidPayouts.sort((a, b) => new Date(b.paidAt || 0).getTime() - new Date(a.paidAt || 0).getTime())[0]
+    : null;
+  
+  // Obtener solicitudes pendientes (ya solicitadas pero no pagadas)
+  const pendingPayouts = await db.select()
+    .from(investorPayouts)
+    .where(and(
+      eq(investorPayouts.investorId, investorId),
+      inArray(investorPayouts.status, ['PENDING', 'REQUESTED', 'APPROVED', 'PROCESSING'])
+    ));
+  
+  const pendingRequested = pendingPayouts.reduce((sum, p) => sum + Number(p.investorShare || 0), 0);
+  
+  // Balance disponible = total ganado - total pagado - solicitudes pendientes
+  const pendingBalance = totalInvestorShare - totalPaid - pendingRequested;
+  
+  return {
+    pendingBalance: Math.max(0, pendingBalance),
+    totalPaid,
+    lastPayout,
+    investorPercentage,
+    totalRevenue,
+    totalInvestorShare,
+    pendingRequested,
+    transactionCount: txs.length,
+  };
 }
 
 // ============================================================================
@@ -1747,41 +1884,72 @@ export async function createPaymentRecord(data: {
 }
 
 export async function updateUserSubscription(userId: number, data: {
-  stripeSubscriptionId?: string | null;
   planId?: string;
   status?: string;
+  wompiPaymentSourceId?: string | null;
+  wompiCardToken?: string | null;
+  cardBrand?: string;
+  cardLastFour?: string;
+  cardHolderName?: string;
+  monthlyAmountCents?: number;
+  lastPaymentDate?: Date;
+  lastPaymentReference?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  // Buscar suscripción existente
   const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
   
   const tier = data.planId === "premium" ? "PREMIUM" : data.planId === "basic" ? "BASIC" : "FREE";
-  const discountPercentage = tier === "PREMIUM" ? "20" : tier === "BASIC" ? "10" : "0";
+  const discountPercentage = tier === "PREMIUM" ? "5" : tier === "BASIC" ? "3" : "0";
+  const freeReservationsPerMonth = tier === "PREMIUM" ? 5 : tier === "BASIC" ? 2 : 0;
+  const prioritySupport = tier !== "FREE";
+  
+  // Calcular próxima fecha de facturación (30 días desde hoy)
+  const nextBilling = new Date();
+  nextBilling.setDate(nextBilling.getDate() + 30);
   
   if (existing.length === 0) {
-    // Crear nueva suscripción
     await db.insert(subscriptions).values({
       userId,
       tier: tier as any,
-      stripeSubscriptionId: data.stripeSubscriptionId,
+      wompiPaymentSourceId: data.wompiPaymentSourceId,
+      wompiCardToken: data.wompiCardToken,
+      cardBrand: data.cardBrand,
+      cardLastFour: data.cardLastFour,
+      cardHolderName: data.cardHolderName,
+      monthlyAmountCents: data.monthlyAmountCents || 0,
       discountPercentage,
+      freeReservationsPerMonth,
+      prioritySupport,
       startDate: new Date(),
-      isActive: data.status === "active",
+      nextBillingDate: nextBilling,
+      lastPaymentDate: data.lastPaymentDate || new Date(),
+      lastPaymentReference: data.lastPaymentReference,
+      isActive: data.status ? data.status === "active" : true,
     });
   } else {
-    // Actualizar suscripción existente
     const updateData: any = {};
-    if (data.stripeSubscriptionId !== undefined) updateData.stripeSubscriptionId = data.stripeSubscriptionId;
+    if (data.wompiPaymentSourceId !== undefined) updateData.wompiPaymentSourceId = data.wompiPaymentSourceId;
+    if (data.wompiCardToken !== undefined) updateData.wompiCardToken = data.wompiCardToken;
+    if (data.cardBrand !== undefined) updateData.cardBrand = data.cardBrand;
+    if (data.cardLastFour !== undefined) updateData.cardLastFour = data.cardLastFour;
+    if (data.cardHolderName !== undefined) updateData.cardHolderName = data.cardHolderName;
+    if (data.monthlyAmountCents !== undefined) updateData.monthlyAmountCents = data.monthlyAmountCents;
+    if (data.lastPaymentDate) updateData.lastPaymentDate = data.lastPaymentDate;
+    if (data.lastPaymentReference) updateData.lastPaymentReference = data.lastPaymentReference;
     if (data.planId) {
       updateData.tier = tier;
       updateData.discountPercentage = discountPercentage;
+      updateData.freeReservationsPerMonth = freeReservationsPerMonth;
+      updateData.prioritySupport = prioritySupport;
     }
     if (data.status) {
       updateData.isActive = data.status === "active";
+      updateData.nextBillingDate = nextBilling;
       if (data.status === "canceled") {
         updateData.cancelledAt = new Date();
+        updateData.nextBillingDate = null;
       }
     }
     
@@ -1789,15 +1957,60 @@ export async function updateUserSubscription(userId: number, data: {
   }
 }
 
-export async function getUserByStripeSubscriptionId(subscriptionId: string) {
+export async function cancelUserSubscription(userId: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   
-  const sub = await db.select().from(subscriptions).where(eq(subscriptions.stripeSubscriptionId, subscriptionId)).limit(1);
-  if (sub.length === 0) return null;
+  await db.update(subscriptions).set({
+    isActive: false,
+    cancelledAt: new Date(),
+    nextBillingDate: null,
+    tier: "FREE" as any,
+    discountPercentage: "0",
+    freeReservationsPerMonth: 0,
+    prioritySupport: false,
+  }).where(eq(subscriptions.userId, userId));
+}
+
+export async function getActiveSubscriptionsForBilling() {
+  const db = await getDb();
+  if (!db) return [];
   
-  const user = await db.select().from(users).where(eq(users.id, sub[0].userId)).limit(1);
-  return user[0] || null;
+  const now = new Date();
+  return db.select().from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.isActive, true),
+        sql`${subscriptions.nextBillingDate} <= ${now}`,
+        sql`${subscriptions.tier} != 'FREE'`
+      )
+    );
+}
+
+export async function updateSubscriptionBilling(subscriptionId: number, data: {
+  lastPaymentDate: Date;
+  lastPaymentReference: string;
+  nextBillingDate: Date;
+  failedPaymentCount?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(subscriptions).set({
+    lastPaymentDate: data.lastPaymentDate,
+    lastPaymentReference: data.lastPaymentReference,
+    nextBillingDate: data.nextBillingDate,
+    failedPaymentCount: data.failedPaymentCount ?? 0,
+  }).where(eq(subscriptions.id, subscriptionId));
+}
+
+export async function incrementSubscriptionFailedPayments(subscriptionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(subscriptions).set({
+    failedPaymentCount: sql`${subscriptions.failedPaymentCount} + 1`,
+  }).where(eq(subscriptions.id, subscriptionId));
 }
 
 export async function updateTransactionPaymentStatus(transactionId: string, data: {
@@ -1868,15 +2081,16 @@ export async function upsertPlatformSettings(settings: Partial<InsertPlatformSet
   }
 }
 
-export async function getStripeConfig() {
+export async function getWompiConfig() {
   const settings = await getPlatformSettings();
   if (!settings) return null;
   
   return {
-    publicKey: settings.stripePublicKey,
-    secretKey: settings.stripeSecretKey,
-    webhookSecret: settings.stripeWebhookSecret,
-    testMode: settings.stripeTestMode,
+    publicKey: settings.wompiPublicKey,
+    privateKey: settings.wompiPrivateKey,
+    integritySecret: settings.wompiIntegritySecret,
+    eventsSecret: settings.wompiEventsSecret,
+    testMode: settings.wompiTestMode,
   };
 }
 
@@ -2980,4 +3194,647 @@ export async function getPriceByConnectorType(
     connectorType: evse.connectorType,
     chargeType: evse.chargeType,
   };
+}
+
+
+// ============================================================================
+// CROWDFUNDING OPERATIONS
+// ============================================================================
+
+export interface CrowdfundingProject {
+  id: number;
+  name: string;
+  description: string | null;
+  city: string;
+  zone: string;
+  address: string | null;
+  targetAmount: number;
+  raisedAmount: number;
+  minimumInvestment: number;
+  totalPowerKw: number;
+  chargerCount: number;
+  chargerPowerKw: number;
+  hasSolarPanels: boolean;
+  estimatedRoiPercent: string | null;
+  estimatedPaybackMonths: number | null;
+  status: string;
+  targetDate: Date | null;
+  launchDate: Date | null;
+  fundedDate: Date | null;
+  operationalDate: Date | null;
+  priority: number;
+  stationId: number | null;
+  createdById: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+  investorCount?: number;
+}
+
+export interface CrowdfundingParticipation {
+  id: number;
+  projectId: number;
+  investorId: number;
+  amount: number;
+  participationPercent: string;
+  paymentStatus: string;
+  paymentDate: Date | null;
+  stripePaymentIntentId: string | null;
+  contractSigned: boolean;
+  contractSignedAt: Date | null;
+  contractUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  investor?: User;
+  project?: CrowdfundingProject;
+}
+
+// Obtener todos los proyectos de crowdfunding (públicos)
+export async function getCrowdfundingProjects(options?: {
+  status?: string;
+  includePrivate?: boolean;
+}): Promise<CrowdfundingProject[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  try {
+    let query = `
+      SELECT 
+        p.*,
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
+      FROM crowdfunding_projects p
+    `;
+    
+    const conditions = [];
+    
+    if (options?.status) {
+      conditions.push(`status = '${options.status}'`);
+    } else if (!options?.includePrivate) {
+      conditions.push(`status != 'DRAFT'`);
+    }
+    
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+    
+    query += ` ORDER BY p.priority ASC, p.createdAt DESC`;
+    
+    const result = await db.execute(sql.raw(query));
+    return ((result as any)[0] as CrowdfundingProject[]) || [];
+  } catch (error) {
+    console.error('[DB] Error getting crowdfunding projects:', error);
+    return [];
+  }
+}
+
+// Obtener un proyecto por ID
+export async function getCrowdfundingProjectById(projectId: number): Promise<CrowdfundingProject | null> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  try {
+    const result = await db.execute(sql.raw(`
+      SELECT 
+        p.*,
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
+      FROM crowdfunding_projects p
+      WHERE p.id = ${projectId}
+      LIMIT 1
+    `));
+    
+    const rows = (result as any)[0] as CrowdfundingProject[];
+    return rows[0] || null;
+  } catch (error) {
+    console.error('[DB] Error getting crowdfunding project:', error);
+    return null;
+  }
+}
+
+// Crear un nuevo proyecto de crowdfunding
+export async function createCrowdfundingProject(data: {
+  name: string;
+  description?: string;
+  city: string;
+  zone: string;
+  address?: string;
+  targetAmount: number;
+  minimumInvestment?: number;
+  totalPowerKw?: number;
+  chargerCount?: number;
+  chargerPowerKw?: number;
+  hasSolarPanels?: boolean;
+  estimatedRoiPercent?: number;
+  estimatedPaybackMonths?: number;
+  status?: string;
+  targetDate?: Date;
+  priority?: number;
+  createdById?: number;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.execute(sql`
+    INSERT INTO crowdfunding_projects (
+      name, description, city, zone, address,
+      targetAmount, minimumInvestment, totalPowerKw, chargerCount, chargerPowerKw,
+      hasSolarPanels, estimatedRoiPercent, estimatedPaybackMonths,
+      status, targetDate, priority, createdById
+    ) VALUES (
+      ${data.name},
+      ${data.description || null},
+      ${data.city},
+      ${data.zone},
+      ${data.address || null},
+      ${data.targetAmount},
+      ${data.minimumInvestment || 50000000},
+      ${data.totalPowerKw || 480},
+      ${data.chargerCount || 4},
+      ${data.chargerPowerKw || 120},
+      ${data.hasSolarPanels !== false},
+      ${data.estimatedRoiPercent || 85.00},
+      ${data.estimatedPaybackMonths || 14},
+      ${data.status || 'DRAFT'},
+      ${data.targetDate || null},
+      ${data.priority || 0},
+      ${data.createdById || null}
+    )
+  `);
+  
+  return (result[0] as any).insertId;
+}
+
+// Actualizar un proyecto de crowdfunding
+export async function updateCrowdfundingProject(
+  projectId: number,
+  data: Partial<{
+    name: string;
+    description: string;
+    city: string;
+    zone: string;
+    address: string;
+    targetAmount: number;
+    raisedAmount: number;
+    minimumInvestment: number;
+    totalPowerKw: number;
+    chargerCount: number;
+    chargerPowerKw: number;
+    hasSolarPanels: boolean;
+    estimatedRoiPercent: number;
+    estimatedPaybackMonths: number;
+    status: string;
+    targetDate: Date;
+    launchDate: Date;
+    fundedDate: Date;
+    operationalDate: Date;
+    priority: number;
+    stationId: number;
+  }>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const updates: string[] = [];
+  const values: any[] = [];
+  
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined) {
+      updates.push(`${key} = ?`);
+      values.push(value);
+    }
+  });
+  
+  if (updates.length === 0) return;
+  
+  // Construir la query con valores interpolados
+  const setClause = Object.entries(data)
+    .filter(([_, v]) => v !== undefined)
+    .map(([key, value]) => {
+      if (value instanceof Date) {
+        return `${key} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+      } else if (typeof value === 'string') {
+        return `${key} = '${value.replace(/'/g, "''")}'`;
+      } else if (typeof value === 'boolean') {
+        return `${key} = ${value ? 1 : 0}`;
+      } else {
+        return `${key} = ${value}`;
+      }
+    })
+    .join(', ');
+  
+  if (!setClause) return;
+  
+  await db.execute(sql.raw(`
+    UPDATE crowdfunding_projects 
+    SET ${setClause}
+    WHERE id = ${projectId}
+  `));
+}
+
+// Obtener participaciones de un proyecto
+export async function getCrowdfundingParticipations(projectId: number): Promise<CrowdfundingParticipation[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  try {
+    const result = await db.execute(sql.raw(`
+      SELECT 
+        cp.*,
+        u.name as investorName,
+        u.email as investorEmail
+      FROM crowdfunding_participations cp
+      LEFT JOIN users u ON cp.investorId = u.id
+      WHERE cp.projectId = ${projectId}
+      ORDER BY cp.createdAt DESC
+    `));
+    
+    return ((result as any)[0] as CrowdfundingParticipation[]) || [];
+  } catch (error) {
+    console.error('[DB] Error getting crowdfunding participations:', error);
+    return [];
+  }
+}
+
+// Obtener participaciones de un inversionista
+export async function getInvestorParticipations(investorId: number): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  try {
+    const result = await db.execute(sql`
+      SELECT 
+        cp.id,
+        cp.projectId,
+        cp.investorId,
+        cp.amount,
+        cp.participationPercent,
+        cp.paymentStatus,
+        cp.paymentDate,
+        cp.createdAt,
+        p.name as projectName,
+        p.city as projectCity,
+        p.zone as projectZone,
+        p.status as projectStatus,
+        p.targetAmount as projectTargetAmount,
+        p.raisedAmount as projectRaisedAmount,
+        p.totalPowerKw as projectTotalPowerKw,
+        p.hasSolarPanels as projectHasSolarPanels,
+        p.stationId as projectStationId,
+        p.estimatedRoiPercent as projectEstimatedRoiPercent
+      FROM crowdfunding_participations cp
+      LEFT JOIN crowdfunding_projects p ON cp.projectId = p.id
+      WHERE cp.investorId = ${investorId}
+      ORDER BY cp.createdAt DESC
+    `);
+    
+    // Transformar los resultados para incluir el proyecto como objeto anidado
+    const rows = ((result as any)[0] as any[]) || [];
+    return rows.map(row => ({
+      id: row.id,
+      projectId: row.projectId,
+      investorId: row.investorId,
+      amount: row.amount,
+      participationPercent: row.participationPercent,
+      paymentStatus: row.paymentStatus,
+      paymentDate: row.paymentDate,
+      createdAt: row.createdAt,
+      project: {
+        name: row.projectName,
+        city: row.projectCity,
+        zone: row.projectZone,
+        status: row.projectStatus,
+        targetAmount: row.projectTargetAmount,
+        raisedAmount: row.projectRaisedAmount,
+        totalPowerKw: row.projectTotalPowerKw,
+        hasSolarPanels: row.projectHasSolarPanels,
+        stationId: row.projectStationId,
+        estimatedRoiPercent: row.projectEstimatedRoiPercent,
+      }
+    }));
+  } catch (error) {
+    console.error('[DB] Error getting investor participations:', error);
+    return [];
+  }
+}
+
+// Crear una participación en un proyecto
+export async function createCrowdfundingParticipation(data: {
+  projectId: number;
+  investorId: number;
+  amount: number;
+  participationPercent: number;
+  paymentStatus?: string;
+  paymentDate?: Date;
+  paymentReference?: string;
+  stripePaymentIntentId?: string;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.execute(sql`
+    INSERT INTO crowdfunding_participations (
+      projectId, investorId, amount, participationPercent, paymentStatus, paymentDate, stripePaymentIntentId
+    ) VALUES (
+      ${data.projectId},
+      ${data.investorId},
+      ${data.amount},
+      ${data.participationPercent},
+      ${data.paymentStatus || 'PENDING'},
+      ${data.paymentDate || null},
+      ${data.stripePaymentIntentId || data.paymentReference || null}
+    )
+  `);
+  
+  return (result[0] as any).insertId;
+}
+
+// Actualizar el monto recaudado de un proyecto
+export async function updateProjectRaisedAmount(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Calcular el total de participaciones completadas
+  await db.execute(sql`
+    UPDATE crowdfunding_projects p
+    SET raisedAmount = (
+      SELECT COALESCE(SUM(amount), 0)
+      FROM crowdfunding_participations
+      WHERE projectId = ${projectId} AND paymentStatus = 'COMPLETED'
+    )
+    WHERE p.id = ${projectId}
+  `);
+  
+  // Verificar si se alcanzó la meta
+  const project = await getCrowdfundingProjectById(projectId);
+  if (project && project.raisedAmount >= project.targetAmount && project.status === 'IN_PROGRESS') {
+    await db.execute(sql`
+      UPDATE crowdfunding_projects
+      SET status = 'FUNDED', fundedDate = NOW()
+      WHERE id = ${projectId}
+    `);
+  }
+}
+
+// Actualizar participación
+export async function updateCrowdfundingParticipation(
+  participationId: number,
+  data: Partial<{
+    paymentStatus: string;
+    paymentDate: Date;
+    stripePaymentIntentId: string;
+    contractSigned: boolean;
+    contractSignedAt: Date;
+    contractUrl: string;
+  }>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const updates: string[] = [];
+  const values: any[] = [];
+  
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined) {
+      updates.push(`${key} = ?`);
+      values.push(value);
+    }
+  });
+  
+  if (updates.length === 0) return;
+  
+  // Construir la query con valores interpolados
+  const setClause = Object.entries(data)
+    .filter(([_, v]) => v !== undefined)
+    .map(([key, value]) => {
+      if (value instanceof Date) {
+        return `${key} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+      } else if (typeof value === 'string') {
+        return `${key} = '${value.replace(/'/g, "''")}'`;
+      } else if (typeof value === 'boolean') {
+        return `${key} = ${value ? 1 : 0}`;
+      } else {
+        return `${key} = ${value}`;
+      }
+    })
+    .join(', ');
+  
+  if (!setClause) return;
+  
+  await db.execute(sql.raw(`
+    UPDATE crowdfunding_participations 
+    SET ${setClause}
+    WHERE id = ${participationId}
+  `));
+}
+
+
+// Actualizar monto recaudado por participación
+export async function updateProjectRaisedAmountByParticipation(participationId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  try {
+    // Obtener el projectId de la participación
+    const result = await db.execute(sql.raw(`
+      SELECT projectId FROM crowdfunding_participations WHERE id = ${participationId}
+    `));
+    
+    const rows = (result as any)[0] as any[];
+    if (rows[0]?.projectId) {
+      await updateProjectRaisedAmount(rows[0].projectId);
+    }
+  } catch (error) {
+    console.error('[DB] Error updating project raised amount:', error);
+  }
+}
+
+
+// Obtener una participación por ID
+export async function getCrowdfundingParticipationById(participationId: number): Promise<CrowdfundingParticipation | null> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  try {
+    const result = await db.execute(sql.raw(`
+      SELECT * FROM crowdfunding_participations WHERE id = ${participationId}
+    `));
+    
+    const rows = (result as any)[0] as CrowdfundingParticipation[];
+    return rows[0] || null;
+  } catch (error) {
+    console.error('[DB] Error getting crowdfunding participation:', error);
+    return null;
+  }
+}
+
+// ============================================================================
+// FAVORITOS DE ESTACIONES
+// ============================================================================
+
+export async function getUserFavoriteStations(userId: number) {
+  const database = await getDb();
+  if (!database) return [];
+  try {
+    return await database
+      .select()
+      .from(favoriteStations)
+      .where(eq(favoriteStations.userId, userId))
+      .orderBy(desc(favoriteStations.createdAt));
+  } catch (error) {
+    console.error('[DB] Error getting favorite stations:', error);
+    return [];
+  }
+}
+
+export async function isFavoriteStation(userId: number, stationId: number): Promise<boolean> {
+  const database = await getDb();
+  if (!database) return false;
+  try {
+    const result = await database
+      .select()
+      .from(favoriteStations)
+      .where(and(
+        eq(favoriteStations.userId, userId),
+        eq(favoriteStations.stationId, stationId)
+      ))
+      .limit(1);
+    return result.length > 0;
+  } catch (error) {
+    console.error('[DB] Error checking favorite station:', error);
+    return false;
+  }
+}
+
+export async function addFavoriteStation(userId: number, stationId: number) {
+  const database = await getDb();
+  if (!database) throw new Error('Database not available');
+  try {
+    await database.insert(favoriteStations).values({ userId, stationId }).onDuplicateKeyUpdate({ set: { userId } });
+    return true;
+  } catch (error) {
+    console.error('[DB] Error adding favorite station:', error);
+    throw error;
+  }
+}
+
+export async function removeFavoriteStation(userId: number, stationId: number) {
+  const database = await getDb();
+  if (!database) throw new Error('Database not available');
+  try {
+    await database
+      .delete(favoriteStations)
+      .where(and(
+        eq(favoriteStations.userId, userId),
+        eq(favoriteStations.stationId, stationId)
+      ));
+    return true;
+  } catch (error) {
+    console.error('[DB] Error removing favorite station:', error);
+    throw error;
+  }
+}
+
+
+// ============================================================================
+// WOMPI TRANSACTIONS OPERATIONS
+// ============================================================================
+
+export async function createWompiTransaction(data: {
+  userId: number;
+  reference: string;
+  amountInCents: number;
+  currency?: string;
+  type: string;
+  customerEmail?: string;
+  description?: string;
+  integritySignature?: string;
+}): Promise<number> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+
+  const result = await database.insert(wompiTransactions).values({
+    userId: data.userId,
+    reference: data.reference,
+    amountInCents: data.amountInCents,
+    currency: data.currency || "COP",
+    type: data.type as any,
+    customerEmail: data.customerEmail,
+    description: data.description,
+    integritySignature: data.integritySignature,
+    status: "PENDING",
+  });
+
+  return (result as any)[0].insertId;
+}
+
+export async function getWompiTransactionByReference(reference: string): Promise<WompiTransaction | null> {
+  const database = await getDb();
+  if (!database) return null;
+
+  const result = await database
+    .select()
+    .from(wompiTransactions)
+    .where(eq(wompiTransactions.reference, reference))
+    .limit(1);
+
+  return result[0] || null;
+}
+
+export async function updateWompiTransactionByReference(
+  reference: string,
+  data: {
+    wompiTransactionId?: string;
+    status?: string;
+    paymentMethodType?: string;
+    processedAt?: Date;
+    webhookReceivedAt?: Date;
+  }
+): Promise<void> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+
+  const updateData: Record<string, any> = {};
+  if (data.wompiTransactionId) updateData.wompiTransactionId = data.wompiTransactionId;
+  if (data.status) updateData.status = data.status;
+  if (data.paymentMethodType) updateData.paymentMethodType = data.paymentMethodType;
+  if (data.processedAt) updateData.processedAt = data.processedAt;
+  if (data.webhookReceivedAt) updateData.webhookReceivedAt = data.webhookReceivedAt;
+
+  if (Object.keys(updateData).length === 0) return;
+
+  await database
+    .update(wompiTransactions)
+    .set(updateData)
+    .where(eq(wompiTransactions.reference, reference));
+}
+
+export async function getWompiTransactionsByUser(
+  userId: number,
+  limit: number = 20,
+  offset: number = 0
+): Promise<WompiTransaction[]> {
+  const database = await getDb();
+  if (!database) return [];
+
+  return database
+    .select()
+    .from(wompiTransactions)
+    .where(eq(wompiTransactions.userId, userId))
+    .orderBy(desc(wompiTransactions.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+/**
+ * Obtener transacciones de Wompi con estado PENDING
+ * Usado para reconciliación de transacciones que no fueron procesadas por webhook
+ */
+export async function getPendingWompiTransactions(): Promise<WompiTransaction[]> {
+  const database = await getDb();
+  if (!database) return [];
+
+  return database
+    .select()
+    .from(wompiTransactions)
+    .where(eq(wompiTransactions.status, "PENDING"))
+    .orderBy(desc(wompiTransactions.createdAt))
+    .limit(100);
 }

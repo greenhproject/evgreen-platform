@@ -239,17 +239,50 @@ export default function ScanPage() {
 
         {/* Contenido principal */}
         <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-6">
-          {/* Estado de búsqueda */}
+          {/* Estado de búsqueda con animación elaborada */}
           {isSearching && scannedCode && (
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
-                <Loader2 className="h-10 w-10 text-primary animate-spin" />
+            <div className="flex flex-col items-center gap-6">
+              {/* Spinner con anillos concéntricos */}
+              <div className="relative w-28 h-28 flex items-center justify-center">
+                {/* Anillo exterior girando lento */}
+                <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-emerald-400 border-r-emerald-400/30 animate-spin" style={{ animationDuration: '2s' }} />
+                {/* Anillo medio girando en dirección opuesta */}
+                <div className="absolute inset-2 rounded-full border-4 border-transparent border-b-emerald-500 border-l-emerald-500/30 animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }} />
+                {/* Anillo interior con pulso */}
+                <div className="absolute inset-4 rounded-full bg-emerald-500/10 animate-pulse" />
+                {/* Ícono central */}
+                <Zap className="h-10 w-10 text-emerald-400 drop-shadow-lg relative z-10" />
               </div>
-              <div className="text-center">
-                <h2 className="text-xl font-semibold">Buscando estación...</h2>
-                <p className="text-muted-foreground text-sm mt-1">
-                  Código: {scannedCode}
+
+              <div className="text-center space-y-2">
+                <h2 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-green-500 bg-clip-text text-transparent">
+                  Buscando estación...
+                </h2>
+                <p className="text-muted-foreground text-sm">
+                  Código: <span className="font-mono text-emerald-400">{scannedCode}</span>
                 </p>
+              </div>
+
+              {/* Pasos de progreso */}
+              <div className="w-full max-w-xs space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+                    <CheckCircle className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="text-sm text-emerald-400">Código QR detectado</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                    <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                  </div>
+                  <span className="text-sm text-muted-foreground">Verificando estación en la red...</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center">
+                    <Zap className="w-3 h-3 text-muted-foreground" />
+                  </div>
+                  <span className="text-sm text-muted-foreground/50">Preparando sesión de carga</span>
+                </div>
               </div>
             </div>
           )}

@@ -7,10 +7,14 @@ import { z } from "zod";
 import * as db from "./db";
 import { aiRouter } from "./ai/ai-router";
 import { stripeRouter } from "./stripe/router";
+import { wompiRouter } from "./wompi/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
 import { chargingRouter } from "./charging/charging-router";
 import { pushRouter } from "./push/push-router";
 import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
+import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } from "./notifications/broadcast-service";
+import { checkAndNotifyMilestones } from "./crowdfunding/progress-notifications";
+import { eventRouter } from "./event/event-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -168,6 +172,107 @@ const usersRouter = router({
       }
       await db.deleteUser(input.userId);
       return { success: true };
+    }),
+
+  // Admin: obtener billetera de un usuario
+  getUserWallet: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const wallet = await db.getWalletByUserId(input.userId);
+      if (!wallet) {
+        return { balance: 0, currency: "COP", walletId: null };
+      }
+      return {
+        balance: parseFloat(wallet.balance?.toString() || "0"),
+        currency: wallet.currency || "COP",
+        walletId: wallet.id,
+      };
+    }),
+
+  // Admin: obtener historial de transacciones de billetera de un usuario
+  getUserWalletTransactions: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      limit: z.number().min(1).max(200).optional(),
+    }))
+    .query(async ({ input }) => {
+      const transactions = await db.getWalletTransactionsByUserId(input.userId, input.limit || 50);
+      return transactions.map((tx: any) => ({
+        id: tx.id,
+        type: tx.type,
+        amount: parseFloat(tx.amount?.toString() || "0"),
+        balanceBefore: parseFloat(tx.balanceBefore?.toString() || "0"),
+        balanceAfter: parseFloat(tx.balanceAfter?.toString() || "0"),
+        status: tx.status,
+        description: tx.description || "",
+        createdAt: tx.createdAt,
+      }));
+    }),
+
+  // Admin: ajustar saldo de billetera manualmente
+  adjustWalletBalance: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      amount: z.number(), // Positivo para agregar, negativo para descontar
+      reason: z.string().min(3, "Debe indicar un motivo"),
+      type: z.enum(["credit", "debit", "refund"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { userId, amount, reason, type } = input;
+      
+      // Obtener o crear billetera
+      let wallet = await db.getWalletByUserId(userId);
+      if (!wallet) {
+        await db.createWallet({ userId, balance: "0", currency: "COP" });
+        wallet = await db.getWalletByUserId(userId);
+        if (!wallet) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo crear la billetera" });
+      }
+      
+      const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+      const adjustAmount = type === "debit" ? -Math.abs(amount) : Math.abs(amount);
+      const newBalance = currentBalance + adjustAmount;
+      
+      if (newBalance < 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Saldo insuficiente. Saldo actual: $${currentBalance.toLocaleString()} COP`,
+        });
+      }
+      
+      // Actualizar saldo
+      await db.updateWalletBalance(userId, newBalance.toString());
+      
+      // Registrar transacción
+      const txType = type === "credit" ? "ADMIN_CREDIT" : type === "refund" ? "ADMIN_REFUND" : "ADMIN_DEBIT";
+      await db.createWalletTransaction({
+        walletId: wallet.id,
+        userId,
+        type: txType,
+        amount: adjustAmount.toString(),
+        balanceBefore: currentBalance.toString(),
+        balanceAfter: newBalance.toString(),
+        status: "COMPLETED",
+        description: `[Admin: ${ctx.user.name || ctx.user.email}] ${reason}`,
+      });
+      
+      // Crear notificación para el usuario
+      const user = await db.getUserById(userId);
+      const typeLabel = type === "credit" ? "Crédito agregado" : type === "refund" ? "Reembolso" : "Débito";
+      const amountFormatted = Math.abs(adjustAmount).toLocaleString("es-CO");
+      await db.createNotification({
+        userId,
+        title: `💰 ${typeLabel} en tu billetera`,
+        message: `Se ha realizado un ajuste de ${type === "debit" ? "-" : "+"}$${amountFormatted} COP en tu billetera. Nuevo saldo: $${newBalance.toLocaleString("es-CO")} COP. Motivo: ${reason}`,
+        type: "PAYMENT",
+        isRead: false,
+      });
+      
+      return {
+        success: true,
+        previousBalance: currentBalance,
+        newBalance,
+        adjustment: adjustAmount,
+      };
     }),
 
   // Admin: actualizar usuario completo (incluyendo email y rol)
@@ -812,18 +917,15 @@ const transactionsRouter = router({
       endDate: z.date().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      // Obtener transacciones del inversionista
       const transactions = await db.getTransactionsByInvestor(ctx.user.id, {
         startDate: input.startDate,
         endDate: input.endDate,
       });
 
-      // Obtener configuración de la plataforma
       const settings = await db.getPlatformSettings();
       const investorPercentage = settings?.investorPercentage ?? 80;
       const platformFeePercentage = settings?.platformFeePercentage ?? 20;
 
-      // Obtener nombres de estaciones
       const stationIds = Array.from(new Set(transactions.map(t => t.stationId)));
       const stationsMap: Record<number, string> = {};
       for (const stationId of stationIds) {
@@ -833,7 +935,6 @@ const transactionsRouter = router({
         }
       }
 
-      // Preparar datos de transacciones con nombres de estación
       const transactionsWithNames = transactions.map(t => ({
         ...t,
         stationName: stationsMap[t.stationId] || `Estación ${t.stationId}`,
@@ -861,7 +962,6 @@ const transactionsRouter = router({
         mimeType = "application/pdf";
       }
 
-      // Convertir buffer a base64 para enviar al cliente
       const base64 = buffer.toString("base64");
 
       return {
@@ -1007,8 +1107,25 @@ const transactionsRouter = router({
       // Descontar de la billetera del usuario
       const wallet = await db.getWalletByUserId(ctx.user.id);
       if (wallet) {
-        const currentBalance = parseFloat(wallet.balance?.toString() || "0");
-        const newBalance = currentBalance - totalCost;
+        let currentBalance = parseFloat(wallet.balance?.toString() || "0");
+
+        // Auto-cobro: si el saldo es insuficiente y tiene tarjeta inscrita
+        if (currentBalance < totalCost) {
+          try {
+            const { autoChargeIfNeeded } = await import("./wompi/auto-charge");
+            const autoResult = await autoChargeIfNeeded(ctx.user.id, totalCost);
+            if (autoResult?.success) {
+              currentBalance = autoResult.newBalance;
+              console.log(`[Charging] Auto-cobro exitoso: $${autoResult.amountCharged} cobrados a tarjeta`);
+            } else if (autoResult) {
+              console.log(`[Charging] Auto-cobro fallido: ${autoResult.error}`);
+            }
+          } catch (autoErr) {
+            console.warn(`[Charging] Error en auto-cobro:`, autoErr);
+          }
+        }
+
+        const newBalance = Math.max(0, currentBalance - totalCost);
         await db.updateWalletBalance(ctx.user.id, newBalance.toString());
         // Registrar transacción de billetera
         await db.createWalletTransaction({
@@ -1404,6 +1521,42 @@ const notificationsRouter = router({
       await db.deleteNotification(input.id, ctx.user.id);
       return { success: true };
     }),
+
+  // ============================================================================
+  // ADMIN BROADCAST ENDPOINTS
+  // ============================================================================
+  
+  // Obtener estadísticas de notificaciones
+  getStats: adminProcedure.query(async () => {
+    return getNotificationStats();
+  }),
+  
+  // Obtener historial de notificaciones broadcast
+  getHistory: adminProcedure
+    .input(z.object({ limit: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return getBroadcastHistory(input?.limit || 20);
+    }),
+  
+  // Enviar notificación broadcast
+  sendBroadcast: adminProcedure
+    .input(z.object({
+      title: z.string().min(1).max(255),
+      message: z.string().min(1).max(2000),
+      type: z.enum(["INFO", "SUCCESS", "WARNING", "ALERT", "PROMOTION"]),
+      targetAudience: z.enum(["all", "users", "investors", "technicians", "admins"]),
+      linkUrl: z.string().url().optional(),
+      sendPush: z.boolean().optional(),
+      sendEmail: z.boolean().optional(),
+      sendInApp: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const result = await sendBroadcastNotification(input);
+      return {
+        success: true,
+        ...result,
+      };
+    }),
 });
 
 // ============================================================================
@@ -1620,6 +1773,25 @@ const settingsRouter = router({
       platformFeePercentage: settings?.platformFeePercentage ?? 20,
     };
   }),
+
+  // Endpoint público para obtener parámetros de la calculadora de inversión
+  getCalculatorParams: publicProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    return {
+      investorPercentage: settings?.investorPercentage ?? 70,
+      factorUtilizacionPremium: parseFloat(String(settings?.factorUtilizacionPremium ?? "2.00")),
+      costosOperativosIndividual: settings?.costosOperativosIndividual ?? 15,
+      costosOperativosColectivo: settings?.costosOperativosColectivo ?? 10,
+      costosOperativosAC: settings?.costosOperativosAC ?? 15,
+      eficienciaCargaDC: settings?.eficienciaCargaDC ?? 92,
+      eficienciaCargaAC: settings?.eficienciaCargaAC ?? 95,
+      costoEnergiaRed: settings?.costoEnergiaRed ?? 850,
+      costoEnergiaSolar: settings?.costoEnergiaSolar ?? 250,
+      precioVentaDefault: settings?.precioVentaDefault ?? 1800,
+      precioVentaMin: settings?.precioVentaMin ?? 1400,
+      precioVentaMax: settings?.precioVentaMax ?? 2200,
+    };
+  }),
   
   get: adminProcedure.query(async () => {
     const settings = await db.getPlatformSettings();
@@ -1633,10 +1805,11 @@ const settingsRouter = router({
         contactEmail: "",
         investorPercentage: 80,
         platformFeePercentage: 20,
-        stripePublicKey: "",
-        stripeSecretKey: "",
-        stripeWebhookSecret: "",
-        stripeTestMode: true,
+        wompiPublicKey: "",
+        wompiPrivateKey: "",
+        wompiIntegritySecret: "",
+        wompiEventsSecret: "",
+        wompiTestMode: true,
         enableEnergyBilling: true,
         enableReservationBilling: true,
         enableOccupancyPenalty: true,
@@ -1648,13 +1821,25 @@ const settingsRouter = router({
         upmeAutoReport: true,
         ocppPort: 9000,
         ocppServerActive: true,
+        factorUtilizacionPremium: "2.00",
+        costosOperativosIndividual: 15,
+        costosOperativosColectivo: 10,
+        costosOperativosAC: 15,
+        eficienciaCargaDC: 92,
+        eficienciaCargaAC: 95,
+        costoEnergiaRed: 850,
+        costoEnergiaSolar: 250,
+        precioVentaDefault: 1800,
+        precioVentaMin: 1400,
+        precioVentaMax: 2200,
       };
     }
     // Ocultar claves secretas parcialmente
     return {
       ...settings,
-      stripeSecretKey: settings.stripeSecretKey ? "sk_****" + settings.stripeSecretKey.slice(-4) : "",
-      stripeWebhookSecret: settings.stripeWebhookSecret ? "whsec_****" : "",
+      wompiPrivateKey: settings.wompiPrivateKey ? "prv_****" + settings.wompiPrivateKey.slice(-4) : "",
+      wompiIntegritySecret: settings.wompiIntegritySecret ? "****" + settings.wompiIntegritySecret.slice(-4) : "",
+      wompiEventsSecret: settings.wompiEventsSecret ? "****" + settings.wompiEventsSecret.slice(-4) : "",
       upmeToken: settings.upmeToken ? "****" + settings.upmeToken.slice(-4) : "",
     };
   }),
@@ -1667,10 +1852,11 @@ const settingsRouter = router({
       contactEmail: z.string().email().optional().or(z.literal("")),
       investorPercentage: z.number().min(0).max(100).optional(),
       platformFeePercentage: z.number().min(0).max(100).optional(),
-      stripePublicKey: z.string().optional(),
-      stripeSecretKey: z.string().optional(),
-      stripeWebhookSecret: z.string().optional(),
-      stripeTestMode: z.boolean().optional(),
+      wompiPublicKey: z.string().optional(),
+      wompiPrivateKey: z.string().optional(),
+      wompiIntegritySecret: z.string().optional(),
+      wompiEventsSecret: z.string().optional(),
+      wompiTestMode: z.boolean().optional(),
       enableEnergyBilling: z.boolean().optional(),
       enableReservationBilling: z.boolean().optional(),
       enableOccupancyPenalty: z.boolean().optional(),
@@ -1682,14 +1868,27 @@ const settingsRouter = router({
       upmeAutoReport: z.boolean().optional(),
       ocppPort: z.number().optional(),
       ocppServerActive: z.boolean().optional(),
+      // Parámetros de la calculadora de inversión
+      factorUtilizacionPremium: z.number().min(1).max(5).optional(),
+      costosOperativosIndividual: z.number().min(0).max(50).optional(),
+      costosOperativosColectivo: z.number().min(0).max(50).optional(),
+      costosOperativosAC: z.number().min(0).max(50).optional(),
+      eficienciaCargaDC: z.number().min(50).max(100).optional(),
+      eficienciaCargaAC: z.number().min(50).max(100).optional(),
+      costoEnergiaRed: z.number().min(0).optional(),
+      costoEnergiaSolar: z.number().min(0).optional(),
+      precioVentaDefault: z.number().min(0).optional(),
+      precioVentaMin: z.number().min(0).optional(),
+      precioVentaMax: z.number().min(0).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Filtrar campos vacíos o con valores de máscara
       const data: any = { ...input, updatedBy: ctx.user.id };
       
       // No actualizar claves si vienen con máscara
-      if (data.stripeSecretKey?.startsWith("sk_****")) delete data.stripeSecretKey;
-      if (data.stripeWebhookSecret?.startsWith("whsec_****")) delete data.stripeWebhookSecret;
+      if (data.wompiPrivateKey?.startsWith("prv_****")) delete data.wompiPrivateKey;
+      if (data.wompiIntegritySecret?.startsWith("****")) delete data.wompiIntegritySecret;
+      if (data.wompiEventsSecret?.startsWith("****")) delete data.wompiEventsSecret;
       if (data.upmeToken?.startsWith("****")) delete data.upmeToken;
       
       await db.upsertPlatformSettings(data);
@@ -1762,8 +1961,519 @@ const dashboardRouter = router({
 });
 
 // ============================================================================
+// PAYOUTS ROUTER (Liquidaciones)
+// ============================================================================
+
+const payoutsRouter = router({
+  // Obtener balance pendiente del inversionista
+  getMyBalance: investorProcedure.query(async ({ ctx }) => {
+    return db.getInvestorPendingBalance(ctx.user.id);
+  }),
+  
+  // Obtener historial de liquidaciones del inversionista
+  getMyPayouts: investorProcedure.query(async ({ ctx }) => {
+    return db.getPayoutsByInvestorId(ctx.user.id);
+  }),
+  
+  // Solicitar pago (inversionista)
+  requestPayout: investorProcedure
+    .input(z.object({
+      amount: z.number().positive(),
+      bankName: z.string().min(1),
+      bankAccount: z.string().min(1),
+      accountHolder: z.string().min(1),
+      accountType: z.enum(['AHORROS', 'CORRIENTE']),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Verificar balance disponible
+      const balance = await db.getInvestorPendingBalance(ctx.user.id);
+      if (input.amount > balance.pendingBalance) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Monto solicitado ($${input.amount.toLocaleString()}) excede el balance disponible ($${balance.pendingBalance.toLocaleString()})`,
+        });
+      }
+      
+      // Crear solicitud de pago
+      const now = new Date();
+      const periodStart = balance.lastPayout?.periodEnd || new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const periodEnd = now;
+      
+      const platformFee = input.amount * ((100 - (balance.investorPercentage || 80)) / (balance.investorPercentage || 80));
+      const totalRevenue = input.amount + platformFee;
+      
+      const payoutId = await db.createInvestorPayout({
+        investorId: ctx.user.id,
+        periodStart,
+        periodEnd,
+        totalRevenue: totalRevenue.toFixed(2),
+        investorShare: input.amount.toFixed(2),
+        platformFee: platformFee.toFixed(2),
+        investorPercentage: balance.investorPercentage || 80,
+        transactionCount: balance.transactionCount || 0,
+        totalKwh: '0', // Se puede calcular si es necesario
+        bankName: input.bankName,
+        bankAccount: input.bankAccount,
+        accountHolder: input.accountHolder,
+        accountType: input.accountType,
+        status: 'REQUESTED',
+        requestedAt: now,
+        investorNotes: input.notes,
+      });
+      
+      return { success: true, payoutId };
+    }),
+  
+  // Admin: Obtener todas las solicitudes de pago
+  getAllPayouts: adminProcedure
+    .input(z.object({
+      status: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getAllPayoutsForAdmin(input?.status);
+    }),
+  
+  // Admin: Obtener solicitudes pendientes
+  getPendingPayouts: adminProcedure.query(async () => {
+    return db.getAllPendingPayouts();
+  }),
+  
+  // Admin: Aprobar solicitud de pago
+  approvePayout: adminProcedure
+    .input(z.object({
+      payoutId: z.number(),
+      adminNotes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const payout = await db.getPayoutById(input.payoutId);
+      if (!payout) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Solicitud no encontrada' });
+      }
+      if (payout.status !== 'REQUESTED') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Esta solicitud ya fue procesada' });
+      }
+      
+      await db.updateInvestorPayout(input.payoutId, {
+        status: 'APPROVED',
+        approvedAt: new Date(),
+        approvedBy: ctx.user.id,
+        adminNotes: input.adminNotes,
+      });
+      
+      return { success: true };
+    }),
+  
+  // Admin: Rechazar solicitud de pago
+  rejectPayout: adminProcedure
+    .input(z.object({
+      payoutId: z.number(),
+      rejectionReason: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const payout = await db.getPayoutById(input.payoutId);
+      if (!payout) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Solicitud no encontrada' });
+      }
+      if (payout.status === 'PAID') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No se puede rechazar un pago ya completado' });
+      }
+      
+      await db.updateInvestorPayout(input.payoutId, {
+        status: 'REJECTED',
+        rejectionReason: input.rejectionReason,
+        adminNotes: `Rechazado por: ${ctx.user.name || ctx.user.email}`,
+      });
+      
+      return { success: true };
+    }),
+  
+  // Admin: Marcar como pagado
+  markAsPaid: adminProcedure
+    .input(z.object({
+      payoutId: z.number(),
+      paymentMethod: z.enum(['BANK_TRANSFER', 'STRIPE', 'WOMPI', 'OTHER']),
+      paymentReference: z.string().min(1),
+      adminNotes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const payout = await db.getPayoutById(input.payoutId);
+      if (!payout) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Solicitud no encontrada' });
+      }
+      if (payout.status === 'PAID') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este pago ya fue completado' });
+      }
+      if (payout.status === 'REJECTED') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No se puede pagar una solicitud rechazada' });
+      }
+      
+      await db.updateInvestorPayout(input.payoutId, {
+        status: 'PAID',
+        paidAt: new Date(),
+        paymentMethod: input.paymentMethod,
+        paymentReference: input.paymentReference,
+        adminNotes: input.adminNotes || `Pagado por: ${ctx.user.name || ctx.user.email}`,
+      });
+      
+      return { success: true };
+    }),
+});
+
+// ============================================================================
+// CROWDFUNDING ROUTER
+// ============================================================================
+
+const crowdfundingRouter = router({
+  // Obtener todos los proyectos públicos
+  getProjects: publicProcedure
+    .input(z.object({
+      status: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getCrowdfundingProjects({
+        status: input?.status,
+        includePrivate: false,
+      });
+    }),
+  
+  // Obtener un proyecto por ID
+  getProjectById: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getCrowdfundingProjectById(input.id);
+    }),
+  
+  // Admin: Obtener todos los proyectos incluyendo borradores
+  getAllProjects: adminProcedure.query(async () => {
+    return db.getCrowdfundingProjects({ includePrivate: true });
+  }),
+  
+  // Admin: Crear proyecto
+  createProject: adminProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      city: z.string().min(1),
+      zone: z.string().min(1),
+      address: z.string().optional(),
+      targetAmount: z.number().positive(),
+      minimumInvestment: z.number().positive().optional(),
+      totalPowerKw: z.number().positive().optional(),
+      chargerCount: z.number().positive().optional(),
+      chargerPowerKw: z.number().positive().optional(),
+      hasSolarPanels: z.boolean().optional(),
+      estimatedRoiPercent: z.number().optional(),
+      estimatedPaybackMonths: z.number().optional(),
+      status: z.string().optional(),
+      targetDate: z.date().optional(),
+      priority: z.number().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const projectId = await db.createCrowdfundingProject({
+        ...input,
+        createdById: ctx.user.id,
+      });
+      return { success: true, projectId };
+    }),
+  
+  // Admin: Actualizar proyecto
+  updateProject: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      city: z.string().optional(),
+      zone: z.string().optional(),
+      address: z.string().optional(),
+      targetAmount: z.number().optional(),
+      raisedAmount: z.number().optional(),
+      minimumInvestment: z.number().optional(),
+      totalPowerKw: z.number().optional(),
+      chargerCount: z.number().optional(),
+      chargerPowerKw: z.number().optional(),
+      hasSolarPanels: z.boolean().optional(),
+      estimatedRoiPercent: z.number().optional(),
+      estimatedPaybackMonths: z.number().optional(),
+      status: z.string().optional(),
+      targetDate: z.date().optional(),
+      priority: z.number().optional(),
+      stationId: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateCrowdfundingProject(id, data);
+      return { success: true };
+    }),
+  
+  // Obtener participaciones de un proyecto
+  getParticipations: adminProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getCrowdfundingParticipations(input.projectId);
+    }),
+  
+  // Inversionista: Obtener mis participaciones
+  getMyParticipations: investorProcedure.query(async ({ ctx }) => {
+    return db.getInvestorParticipations(ctx.user.id);
+  }),
+  
+  // Inversionista: Crear participación (expresar interés)
+  createParticipation: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      amount: z.number().positive(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Verificar que el proyecto existe y está abierto
+      const project = await db.getCrowdfundingProjectById(input.projectId);
+      if (!project) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Proyecto no encontrado' });
+      }
+      if (project.status !== 'OPEN' && project.status !== 'IN_PROGRESS') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este proyecto no está abierto para inversiones' });
+      }
+      if (input.amount < project.minimumInvestment) {
+        throw new TRPCError({ 
+          code: 'BAD_REQUEST', 
+          message: `La inversión mínima es ${project.minimumInvestment.toLocaleString()} COP` 
+        });
+      }
+      
+      // Calcular porcentaje de participación
+      const participationPercent = (input.amount / project.targetAmount) * 100;
+      
+      const participationId = await db.createCrowdfundingParticipation({
+        projectId: input.projectId,
+        investorId: ctx.user.id,
+        amount: input.amount,
+        participationPercent,
+        paymentStatus: 'PENDING',
+      });
+      
+      return { success: true, participationId, participationPercent };
+    }),
+  
+  // Admin: Registrar nuevo inversionista con participación
+  registerInvestor: adminProcedure
+    .input(z.object({
+      projectId: z.number(),
+      // Datos del inversionista
+      name: z.string().min(1),
+      email: z.string().email(),
+      phone: z.string().optional(),
+      companyName: z.string().optional(),
+      taxId: z.string().optional(), // NIT
+      bankAccount: z.string().optional(),
+      bankName: z.string().optional(),
+      // Datos de la inversión
+      amount: z.number().positive(),
+      paymentReference: z.string().optional(),
+      paymentConfirmed: z.boolean().default(false),
+    }))
+    .mutation(async ({ input }) => {
+      // Verificar que el proyecto existe y está abierto
+      const project = await db.getCrowdfundingProjectById(input.projectId);
+      if (!project) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Proyecto no encontrado' });
+      }
+      if (project.status !== 'OPEN' && project.status !== 'IN_PROGRESS') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este proyecto no está abierto para inversiones' });
+      }
+      if (input.amount < project.minimumInvestment) {
+        throw new TRPCError({ 
+          code: 'BAD_REQUEST', 
+          message: `La inversión mínima es ${project.minimumInvestment.toLocaleString()} COP` 
+        });
+      }
+      
+      // Verificar si ya existe un usuario con ese email
+      let investorId: number;
+      const existingUser = await db.getUserByEmail(input.email);
+      
+      if (existingUser) {
+        // Actualizar rol a inversionista si no lo es
+        if (existingUser.role !== 'investor' && existingUser.role !== 'admin') {
+          await db.updateUser(existingUser.id, { role: 'investor' });
+        }
+        // Actualizar datos adicionales del inversionista
+        await db.updateUser(existingUser.id, {
+          name: input.name,
+          phone: input.phone,
+          companyName: input.companyName,
+          taxId: input.taxId,
+          bankAccount: input.bankAccount,
+          bankName: input.bankName,
+        });
+        investorId = existingUser.id;
+      } else {
+        // Crear nuevo usuario inversionista
+        const openId = `INV-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        investorId = await db.createUser({
+          openId,
+          name: input.name,
+          email: input.email,
+          phone: input.phone,
+          role: 'investor',
+          companyName: input.companyName,
+          taxId: input.taxId,
+          bankAccount: input.bankAccount,
+          bankName: input.bankName,
+          loginMethod: 'admin_created',
+        });
+      }
+      
+      // Calcular porcentaje de participación
+      const participationPercent = (input.amount / project.targetAmount) * 100;
+      
+      // Crear la participación
+      const participationId = await db.createCrowdfundingParticipation({
+        projectId: input.projectId,
+        investorId,
+        amount: input.amount,
+        participationPercent,
+        paymentStatus: input.paymentConfirmed ? 'COMPLETED' : 'PENDING',
+        paymentDate: input.paymentConfirmed ? new Date() : undefined,
+        paymentReference: input.paymentReference,
+      });
+      
+      // Si el pago está confirmado, actualizar el monto recaudado
+      if (input.paymentConfirmed) {
+        await db.updateProjectRaisedAmountByParticipation(participationId);
+        
+        // Verificar hitos de financiamiento
+        const projectAfter = await db.getCrowdfundingProjectById(input.projectId);
+        if (projectAfter) {
+          try {
+            await checkAndNotifyMilestones(
+              {
+                id: projectAfter.id,
+                name: projectAfter.name,
+                city: projectAfter.city,
+                zone: projectAfter.zone,
+                targetAmount: Number(projectAfter.targetAmount),
+                raisedAmount: Number(projectAfter.raisedAmount),
+                status: projectAfter.status,
+              },
+              Number(project.raisedAmount)
+            );
+          } catch (notifyError) {
+            console.error('[Crowdfunding] Error sending milestone notifications:', notifyError);
+          }
+        }
+      }
+      
+      // Si el proyecto tiene estación asignada, vincular al inversionista
+      if (project.stationId) {
+        // Aquí podríamos agregar lógica adicional para vincular al inversionista con la estación
+        console.log(`[Crowdfunding] Inversionista ${investorId} vinculado a estación ${project.stationId}`);
+      }
+      
+      return { 
+        success: true, 
+        investorId, 
+        participationId, 
+        participationPercent,
+        message: existingUser 
+          ? 'Participación registrada para inversionista existente' 
+          : 'Nuevo inversionista creado y participación registrada'
+      };
+    }),
+
+  // Admin: Confirmar pago de participación
+  confirmPayment: adminProcedure
+    .input(z.object({
+      participationId: z.number(),
+      paymentReference: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      // Obtener la participación para conocer el proyecto
+      const participation = await db.getCrowdfundingParticipationById(input.participationId);
+      if (!participation) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Participación no encontrada' });
+      }
+      
+      // Obtener el proyecto antes de actualizar para conocer el monto anterior
+      const projectBefore = await db.getCrowdfundingProjectById(participation.projectId);
+      const previousRaisedAmount = projectBefore ? Number(projectBefore.raisedAmount) : 0;
+      
+      // Actualizar estado de pago
+      await db.updateCrowdfundingParticipation(input.participationId, {
+        paymentStatus: 'COMPLETED',
+        paymentDate: new Date(),
+      });
+      
+      // Actualizar monto recaudado del proyecto
+      await db.updateProjectRaisedAmountByParticipation(input.participationId);
+      
+      // Obtener el proyecto actualizado para verificar hitos
+      const projectAfter = await db.getCrowdfundingProjectById(participation.projectId);
+      if (projectAfter) {
+        // Verificar y enviar notificaciones de hitos (50%, 75%, 100%)
+        try {
+          await checkAndNotifyMilestones(
+            {
+              id: projectAfter.id,
+              name: projectAfter.name,
+              city: projectAfter.city,
+              zone: projectAfter.zone,
+              targetAmount: Number(projectAfter.targetAmount),
+              raisedAmount: Number(projectAfter.raisedAmount),
+              status: projectAfter.status,
+            },
+            previousRaisedAmount
+          );
+        } catch (notifyError) {
+          console.error('[Crowdfunding] Error sending milestone notifications:', notifyError);
+          // No lanzar error, el pago ya fue confirmado
+        }
+      }
+      
+      return { success: true };
+    }),
+});
+
+// ============================================================================
 // MAIN APP ROUTER
 // ============================================================================
+
+// ============================================================================
+// FAVORITOS ROUTER
+// ============================================================================
+
+const favoritesRouter = router({
+  getMyFavorites: protectedProcedure.query(async ({ ctx }) => {
+    const favorites = await db.getUserFavoriteStations(ctx.user.id);
+    // Obtener detalles de cada estación
+    const stationsWithDetails = await Promise.all(
+      favorites.map(async (fav) => {
+        const station = await db.getChargingStationById(fav.stationId);
+        const stationEvses = await db.getEvsesByStationId(fav.stationId);
+        return station ? { ...fav, station, evses: stationEvses } : null;
+      })
+    );
+    return stationsWithDetails.filter(Boolean);
+  }),
+
+  isFavorite: protectedProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return db.isFavoriteStation(ctx.user.id, input.stationId);
+    }),
+
+  toggle: protectedProcedure
+    .input(z.object({ stationId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const isFav = await db.isFavoriteStation(ctx.user.id, input.stationId);
+      if (isFav) {
+        await db.removeFavoriteStation(ctx.user.id, input.stationId);
+        return { isFavorite: false };
+      } else {
+        await db.addFavoriteStation(ctx.user.id, input.stationId);
+        return { isFavorite: true };
+      }
+    }),
+});
 
 export const appRouter = router({
   system: systemRouter,
@@ -1783,11 +2493,16 @@ export const appRouter = router({
   banners: bannersRouter,
   ai: aiRouter,
   stripe: stripeRouter,
+  wompi: wompiRouter,
   settings: settingsRouter,
   ocpp: ocppRouter,
   dashboard: dashboardRouter,
   charging: chargingRouter,
   push: pushRouter,
+  payouts: payoutsRouter,
+  crowdfunding: crowdfundingRouter,
+  event: eventRouter,
+  favorites: favoritesRouter,
 });
 
 export type AppRouter = typeof appRouter;

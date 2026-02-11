@@ -33,6 +33,7 @@ import UserSettingsPersonalInfo from "./pages/user/settings/PersonalInfo";
 import UserSettingsVehicles from "./pages/user/settings/Vehicles";
 import UserSettingsPaymentMethods from "./pages/user/settings/PaymentMethods";
 import UserSettingsConfig from "./pages/user/settings/Config";
+import UserSubscription from "./pages/user/Subscription";
 
 // Páginas de inversionista
 import InvestorDashboard from "./pages/investor/Dashboard";
@@ -66,19 +67,31 @@ import AdminSettings from "./pages/admin/Settings";
 import AdminBanners from "./pages/admin/Banners";
 import AdminNotifications from "./pages/admin/Notifications";
 import AdminAISettings from "./pages/admin/AISettings";
+import AdminPayouts from "./pages/admin/Payouts";
+import AdminCrowdfunding from "./pages/admin/Crowdfunding";
 import AdminOCPPMonitor from "./pages/AdminOCPPMonitor";
 import { AIChatWidget } from "./components/AIChat";
+
+// Páginas de Staff (Evento)
+import EventCheckIn from "./pages/staff/EventCheckIn";
+import StaffGuests from "./pages/staff/Guests";
+import StaffPayments from "./pages/staff/Payments";
+import StaffInvitations from "./pages/staff/Invitations";
+import StaffEventStats from "./pages/staff/EventStats";
 
 // Layouts
 import AdminLayout from "./layouts/AdminLayout";
 import InvestorLayout from "./layouts/InvestorLayout";
 import TechnicianLayout from "./layouts/TechnicianLayout";
+import StaffLayout from "./layouts/StaffLayout";
 
 // Función para obtener la ruta de inicio según el rol
 function getHomeRouteByRole(role: string | undefined): string {
   switch (role) {
     case "admin":
       return "/admin";
+    case "staff":
+      return "/staff/event";
     case "investor":
       return "/investor";
     case "technician":
@@ -202,6 +215,7 @@ function Router() {
       <Route path="/vehicles" component={UserSettingsVehicles} />
       <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
       <Route path="/settings/config" component={UserSettingsConfig} />
+      <Route path="/subscription" component={UserSubscription} />
 
       {/* ============================================
           RUTAS DE INVERSIONISTA (con layout)
@@ -408,6 +422,59 @@ function Router() {
           <AdminLayout>
             <AdminOCPPMonitor />
           </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/payouts">
+        <ProtectedRoute allowedRoles={["admin"]}>
+          <AdminLayout>
+            <AdminPayouts />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/crowdfunding">
+        <ProtectedRoute allowedRoles={["admin"]}>
+          <AdminLayout>
+            <AdminCrowdfunding />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* ============================================
+          RUTAS DE STAFF (Gestión de Evento)
+          ============================================ */}
+      <Route path="/staff/event">
+        <ProtectedRoute allowedRoles={["staff", "admin"]}>
+          <StaffLayout>
+            <EventCheckIn />
+          </StaffLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/staff/guests">
+        <ProtectedRoute allowedRoles={["staff", "admin"]}>
+          <StaffLayout>
+            <StaffGuests />
+          </StaffLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/staff/payments">
+        <ProtectedRoute allowedRoles={["staff", "admin"]}>
+          <StaffLayout>
+            <StaffPayments />
+          </StaffLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/staff/invitations">
+        <ProtectedRoute allowedRoles={["staff", "admin"]}>
+          <StaffLayout>
+            <StaffInvitations />
+          </StaffLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/staff/stats">
+        <ProtectedRoute allowedRoles={["staff", "admin"]}>
+          <StaffLayout>
+            <StaffEventStats />
+          </StaffLayout>
         </ProtectedRoute>
       </Route>
 

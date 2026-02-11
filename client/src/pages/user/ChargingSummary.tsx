@@ -43,7 +43,7 @@ import { EVGREEN_LOGO_BASE64 } from "@/assets/evgreen-logo-base64";
 // Componente de banner publicitario para el resumen
 function ChargingSummaryBanner() {
   const { data: banners } = trpc.banners.getActive.useQuery({ 
-    type: "charging_session" 
+    type: "CHARGING" 
   });
   
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);

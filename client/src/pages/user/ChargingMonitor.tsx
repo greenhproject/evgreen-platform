@@ -245,27 +245,46 @@ export default function ChargingMonitor() {
   // Calcular porcentaje de progreso
   const chargeMode = session.chargeMode as string;
   
-  // Usar el progreso de la simulación si está disponible
+  // El progreso de la simulación (0-100%) representa cuánto del objetivo se ha completado
   const simulationProgress = (session as any).progress;
   let progressPercentage = 0;
   
-  if (typeof simulationProgress === 'number' && !isNaN(simulationProgress)) {
-    // Si es simulación, usar el progreso directo
-    progressPercentage = simulationProgress;
-  } else if (session.estimatedKwh > 0) {
-    // Calcular basado en kWh
-    const kwhProgress = (session.currentKwh / session.estimatedKwh) * 100;
-    progressPercentage = Math.min(100, Math.max(0, kwhProgress));
-  } else if (session.targetAmount > 0) {
-    // Calcular basado en costo
-    const costProgress = (session.currentCost / session.targetAmount) * 100;
-    progressPercentage = Math.min(100, Math.max(0, costProgress));
+  // Para el gauge, necesitamos mostrar el porcentaje de batería, no el progreso de la simulación
+  // La batería empieza en 20% (startPercentage)
+  const startBattery = session.startPercentage || 20;
+  
+  if (chargeMode === "percentage") {
+    // Modo porcentaje: el gauge muestra el nivel de batería actual
+    const targetBattery = session.targetPercentage || 100;
+    const batteryRange = targetBattery - startBattery;
+    const simProgress = typeof simulationProgress === 'number' ? simulationProgress / 100 : 0;
+    progressPercentage = startBattery + (batteryRange * simProgress);
+  } else if (chargeMode === "full_charge") {
+    // Carga completa: de 20% a 100%
+    const batteryRange = 100 - startBattery;
+    const simProgress = typeof simulationProgress === 'number' ? simulationProgress / 100 : 0;
+    progressPercentage = startBattery + (batteryRange * simProgress);
+  } else if (chargeMode === "fixed_amount") {
+    // Monto fijo: calcular el porcentaje de batería basado en kWh entregados
+    const batteryCapacity = 60;
+    const kwhDelivered = session.currentKwh || 0;
+    const percentAdded = (kwhDelivered / batteryCapacity) * 100;
+    progressPercentage = startBattery + percentAdded;
+  } else {
+    // Fallback
+    if (typeof simulationProgress === 'number' && !isNaN(simulationProgress)) {
+      progressPercentage = simulationProgress;
+    } else if (session.estimatedKwh > 0) {
+      const kwhProgress = (session.currentKwh / session.estimatedKwh) * 100;
+      progressPercentage = Math.min(100, Math.max(0, kwhProgress));
+    }
   }
   
-  // Asegurar que nunca sea NaN
+  // Asegurar que nunca sea NaN y esté en rango válido
   if (isNaN(progressPercentage)) {
-    progressPercentage = 0;
+    progressPercentage = startBattery;
   }
+  progressPercentage = Math.min(100, Math.max(0, progressPercentage));
   
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 pb-24">
@@ -299,7 +318,13 @@ export default function ChargingMonitor() {
         <div className="bg-background rounded-full p-4 shadow-xl">
           <ChargingGauge
             percentage={progressPercentage}
-            targetPercentage={chargeMode === "percentage" ? session.targetPercentage : 100}
+            targetPercentage={
+              chargeMode === "percentage" 
+                ? (session.targetPercentage || 100)
+                : chargeMode === "fixed_amount"
+                  ? Math.min(100, (session.startPercentage || 20) + ((session.estimatedKwh / 60) * 100))
+                  : 100
+            }
             size={260}
             strokeWidth={18}
             isCharging={true}
