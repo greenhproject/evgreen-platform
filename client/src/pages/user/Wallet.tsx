@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import UserLayout from "@/layouts/UserLayout";
@@ -101,40 +101,70 @@ export default function UserWallet() {
 
   // Estado para polling de transacciones pendientes
   const [pendingReference, setPendingReference] = useState<string | null>(null);
-  const [pollingCount, setPollingCount] = useState(0);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingCountRef = useRef(0);
+  const utils = trpc.useUtils();
 
-  // Polling: consultar estado de transacción PENDING cada 3 segundos (máx 20 intentos = 60s)
-  const { data: pendingStatus } = trpc.wompi.checkQuickRechargeStatus.useQuery(
-    { reference: pendingReference || "" },
-    {
-      enabled: !!pendingReference && pollingCount < 20,
-      refetchInterval: pendingReference && pollingCount < 20 ? 3000 : false,
-    }
-  );
-
-  // Efecto para manejar resultado del polling
+  // Polling robusto con setInterval - consulta Wompi cada 3s hasta APPROVED o timeout
   useEffect(() => {
-    if (!pendingReference || !pendingStatus) return;
-
-    if (pendingStatus.status === "APPROVED" && pendingStatus.credited) {
-      toast.success("¡Recarga exitosa! Tu billetera ha sido actualizada.");
-      setPendingReference(null);
-      setPollingCount(0);
-      refetchWallet();
-      refetchTransactions();
-    } else if (pendingStatus.status === "DECLINED" || pendingStatus.status === "ERROR" || pendingStatus.status === "VOIDED") {
-      toast.error(`El cobro fue ${pendingStatus.status === "DECLINED" ? "rechazado" : "cancelado"}. Intenta de nuevo.`);
-      setPendingReference(null);
-      setPollingCount(0);
-    } else if (pendingStatus.status === "PENDING") {
-      setPollingCount(prev => prev + 1);
-      if (pollingCount >= 19) {
-        toast.info("El cobro sigue en proceso. Tu billetera se actualizará automáticamente cuando se confirme.");
-        setPendingReference(null);
-        setPollingCount(0);
+    if (!pendingReference) {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
       }
+      pollingCountRef.current = 0;
+      return;
     }
-  }, [pendingStatus, pendingReference, pollingCount]);
+
+    const pollStatus = async () => {
+      pollingCountRef.current += 1;
+      console.log(`[Polling] Intento ${pollingCountRef.current} para ${pendingReference}`);
+
+      try {
+        const result = await utils.wompi.checkQuickRechargeStatus.fetch({ reference: pendingReference });
+        console.log(`[Polling] Resultado:`, result);
+
+        if (result.status === "APPROVED" && result.credited) {
+          toast.success("\u00a1Recarga exitosa! Tu billetera ha sido actualizada.");
+          setPendingReference(null);
+          refetchWallet();
+          refetchTransactions();
+          return;
+        }
+
+        if (result.status === "DECLINED" || result.status === "ERROR" || result.status === "VOIDED") {
+          toast.error(`El cobro fue ${result.status === "DECLINED" ? "rechazado" : "cancelado"}. Intenta de nuevo.`);
+          setPendingReference(null);
+          return;
+        }
+
+        // Timeout después de 20 intentos (60 segundos)
+        if (pollingCountRef.current >= 20) {
+          toast.info("El cobro sigue en proceso. Tu billetera se actualizar\u00e1 autom\u00e1ticamente cuando se confirme.");
+          setPendingReference(null);
+          return;
+        }
+      } catch (err) {
+        console.warn("[Polling] Error consultando estado:", err);
+        if (pollingCountRef.current >= 20) {
+          toast.info("No pudimos verificar el estado del cobro. Tu billetera se actualizar\u00e1 cuando se confirme.");
+          setPendingReference(null);
+        }
+      }
+    };
+
+    // Primera consulta inmediata
+    pollStatus();
+    // Luego cada 3 segundos
+    pollingRef.current = setInterval(pollStatus, 3000);
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [pendingReference]);
 
   // Mutation para recarga rápida con tarjeta inscrita
   const quickRecharge = trpc.wompi.quickRecharge.useMutation({
@@ -149,7 +179,7 @@ export default function UserWallet() {
         // Iniciar polling
         if (data.reference) {
           setPendingReference(data.reference);
-          setPollingCount(0);
+          pollingCountRef.current = 0;
         }
       } else {
         toast.error(data.message);

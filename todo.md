@@ -2091,3 +2091,12 @@
 - [x] Indicador visual "Procesando recarga..." en tarjeta de saldo durante polling activo
 - [x] Botón de recarga deshabilitado y muestra "Verificando pago..." durante polling
 - [x] 417 tests pasando (25 archivos)
+
+## Bug: Recarga rápida no actualiza saldo automáticamente - 11 Febrero 2026 - COMPLETADO
+- [x] BUG: Cobro se procesa en Wompi pero saldo no se actualiza automáticamente en billetera
+- [x] Causa raíz 1: Polling con useQuery + refetchInterval no era confiable (React no re-ejecuta useEffect si pendingStatus no cambia)
+- [x] Solución: Reescrito polling con setInterval + utils.fetch() para consultas imperativas confiables
+- [x] Causa raíz 2: Transacciones Wompi se aprueban en ~2s pero quickRecharge retornaba PENDING inmediatamente
+- [x] Solución: Backend ahora espera 2s y re-consulta Wompi antes de retornar, capturando aprobaciones rápidas
+- [x] Polling frontend: setInterval cada 3s, máx 20 intentos (60s), con cleanup en unmount
+- [x] 417 tests pasando (25 archivos)
