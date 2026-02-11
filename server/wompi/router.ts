@@ -698,6 +698,205 @@ export const wompiRouter = router({
     }),
 
   // ========================================================================
+  // Recarga rápida con tarjeta inscrita (sin checkout)
+  // ========================================================================
+  quickRecharge: protectedProcedure
+    .input(
+      z.object({
+        amount: z.number().min(10000).max(50000000),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const keys = await getWompiKeys();
+      if (!keys) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Wompi no está configurado. Contacta al administrador.",
+        });
+      }
+
+      // Verificar que el usuario tenga tarjeta inscrita con payment source
+      const subscription = await db.getUserSubscription(ctx.user.id);
+      if (!subscription?.wompiPaymentSourceId) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "No tienes una tarjeta inscrita. Realiza una recarga por el checkout de Wompi primero.",
+        });
+      }
+
+      const reference = generatePaymentReference("QRC");
+      const amountInCents = input.amount * 100;
+      const currency = "COP";
+
+      console.log(`[Wompi] Recarga rápida: $${input.amount} para usuario ${ctx.user.id} con payment source ${subscription.wompiPaymentSourceId}`);
+
+      try {
+        // Crear transacción directa con payment source en Wompi
+        const response = await fetch(`${keys.apiUrl}/transactions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${keys.privateKey}`,
+          },
+          body: JSON.stringify({
+            amount_in_cents: amountInCents,
+            currency,
+            payment_source_id: parseInt(subscription.wompiPaymentSourceId),
+            reference,
+            customer_email: ctx.user.email || "",
+            payment_method: {
+              installments: 1,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.text();
+          console.error(`[Wompi] Error en recarga rápida (${response.status}):`, errorBody);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Error procesando el cobro. Intenta de nuevo o usa otro método de pago.",
+          });
+        }
+
+        const result = await response.json();
+        const tx = result.data;
+
+        console.log(`[Wompi] Recarga rápida - Transacción: ${tx.id}, Estado: ${tx.status}`);
+
+        // Guardar transacción en BD
+        try {
+          await db.createWompiTransaction({
+            userId: ctx.user.id,
+            reference,
+            amountInCents,
+            currency,
+            type: "WALLET_RECHARGE",
+            customerEmail: ctx.user.email || "",
+            description: `Recarga rápida con tarjeta - $${input.amount.toLocaleString()} COP`,
+            integritySignature: "",
+          });
+          await db.updateWompiTransactionByReference(reference, {
+            wompiTransactionId: tx.id,
+            status: tx.status,
+            paymentMethodType: tx.payment_method_type || "CARD",
+            processedAt: new Date(),
+          });
+        } catch (dbErr) {
+          console.warn("[Wompi] Error guardando transacción de recarga rápida:", dbErr);
+        }
+
+        // Si fue aprobada inmediatamente, acreditar la billetera
+        if (tx.status === "APPROVED") {
+          const wallet = await db.getUserWallet(ctx.user.id);
+          if (wallet) {
+            const currentBalance = parseFloat(wallet.balance) || 0;
+            const newBalance = currentBalance + input.amount;
+            await db.createWalletTransaction({
+              walletId: wallet.id,
+              userId: ctx.user.id,
+              type: "WOMPI_RECHARGE",
+              amount: input.amount.toString(),
+              balanceBefore: currentBalance.toString(),
+              balanceAfter: newBalance.toString(),
+              description: `Recarga rápida con tarjeta ****${subscription.cardLastFour || ""}: ${reference}`,
+            });
+            await db.updateWalletBalance(ctx.user.id, newBalance.toString());
+          }
+
+          // Notificación
+          try {
+            await db.createNotification({
+              userId: ctx.user.id,
+              title: "Recarga exitosa",
+              message: `Se acreditaron $${input.amount.toLocaleString()} COP a tu billetera con tu tarjeta ****${subscription.cardLastFour || ""}.`,
+              type: "PAYMENT",
+              data: JSON.stringify({
+                key: `quick-recharge-${reference}`,
+                amount: input.amount,
+                reference,
+              }),
+            });
+          } catch (notifErr) {
+            console.warn("[Wompi] Error creando notificación de recarga rápida:", notifErr);
+          }
+
+          return {
+            success: true,
+            status: "APPROVED",
+            message: `¡Billetera recargada con $${input.amount.toLocaleString()} COP!`,
+            amount: input.amount,
+            reference,
+          };
+        } else if (tx.status === "PENDING") {
+          return {
+            success: true,
+            status: "PENDING",
+            message: "El cobro está siendo procesado. Tu billetera se actualizará en unos momentos.",
+            amount: input.amount,
+            reference,
+          };
+        } else {
+          return {
+            success: false,
+            status: tx.status,
+            message: `El cobro no fue aprobado (${tx.status}). Intenta de nuevo o usa otro método de pago.`,
+            reference,
+          };
+        }
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        console.error("[Wompi] Error en recarga rápida:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Error procesando la recarga. Intenta de nuevo.",
+        });
+      }
+    }),
+
+  // ========================================================================
+  // Eliminar tarjeta inscrita
+  // ========================================================================
+  removeCard: protectedProcedure.mutation(async ({ ctx }) => {
+    const subscription = await db.getUserSubscription(ctx.user.id);
+    if (!subscription || (!subscription.cardLastFour && !subscription.wompiPaymentSourceId)) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "No tienes una tarjeta inscrita",
+      });
+    }
+
+    // Limpiar datos de tarjeta de la suscripción
+    await db.updateUserSubscription(ctx.user.id, {
+      wompiPaymentSourceId: undefined,
+      wompiCardToken: undefined,
+      cardBrand: "",
+      cardLastFour: "",
+      cardHolderName: "",
+    });
+
+    console.log(`[Wompi] Tarjeta eliminada para usuario ${ctx.user.id}`);
+
+    // Notificación
+    try {
+      await db.createNotification({
+        userId: ctx.user.id,
+        title: "Tarjeta eliminada",
+        message: "Tu tarjeta ha sido desvinculada exitosamente. Puedes inscribir una nueva en cualquier momento.",
+        type: "SYSTEM",
+        data: JSON.stringify({ key: `card-removed-${Date.now()}` }),
+      });
+    } catch (notifErr) {
+      console.warn("[Wompi] Error creando notificación de eliminación de tarjeta:", notifErr);
+    }
+
+    return {
+      success: true,
+      message: "Tarjeta eliminada exitosamente",
+    };
+  }),
+
+  // ========================================================================
   // Ejecutar cobro recurrente manualmente (admin only)
   // ========================================================================
   runBillingManually: protectedProcedure.mutation(async ({ ctx }) => {
