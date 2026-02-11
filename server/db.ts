@@ -3822,3 +3822,19 @@ export async function getWompiTransactionsByUser(
     .limit(limit)
     .offset(offset);
 }
+
+/**
+ * Obtener transacciones de Wompi con estado PENDING
+ * Usado para reconciliación de transacciones que no fueron procesadas por webhook
+ */
+export async function getPendingWompiTransactions(): Promise<WompiTransaction[]> {
+  const database = await getDb();
+  if (!database) return [];
+
+  return database
+    .select()
+    .from(wompiTransactions)
+    .where(eq(wompiTransactions.status, "PENDING"))
+    .orderBy(desc(wompiTransactions.createdAt))
+    .limit(100);
+}

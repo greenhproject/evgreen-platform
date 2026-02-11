@@ -2082,3 +2082,12 @@
 - [x] Frontend: polling automático cada 3s (máx 60s) cuando la transacción está PENDING
 - [x] Protección contra doble acreditación verificando transacciones recientes
 - [x] 417 tests pasando (25 archivos)
+
+## Mejoras: Recarga rápida y acreditación pendiente - 11 Febrero 2026 - COMPLETADO
+- [x] Crear endpoint admin reconcilePendingTransactions para verificar y acreditar transacciones QRC/ATC pendientes
+- [x] Función getPendingWompiTransactions en db.ts para consultar transacciones PENDING
+- [x] Botón "Reconciliar ahora" en Admin > Settings > Wompi para recuperar $10,000 pendientes
+- [x] Muestra detalle de cada transacción procesada con estado anterior y nuevo
+- [x] Indicador visual "Procesando recarga..." en tarjeta de saldo durante polling activo
+- [x] Botón de recarga deshabilitado y muestra "Verificando pago..." durante polling
+- [x] 417 tests pasando (25 archivos)

@@ -1042,4 +1042,108 @@ export const wompiRouter = router({
     const result = await processRecurringBilling();
     return result;
   }),
+
+  // ========================================================================
+  // Reconciliar transacciones pendientes (admin only)
+  // Verifica en Wompi las transacciones QRC-/ATC- que quedaron PENDING
+  // y las acredita si ya fueron aprobadas
+  // ========================================================================
+  reconcilePendingTransactions: protectedProcedure.mutation(async ({ ctx }) => {
+    if (ctx.user.role !== "admin") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Solo administradores pueden reconciliar transacciones",
+      });
+    }
+
+    const keys = await getWompiKeys();
+    if (!keys) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Wompi no est\u00e1 configurado",
+      });
+    }
+
+    // Buscar transacciones PENDING de tipo QRC y ATC
+    const pendingTxs = await db.getPendingWompiTransactions();
+    const qrcAtcPending = pendingTxs.filter(
+      (tx) => tx.reference.startsWith("QRC-") || tx.reference.startsWith("ATC-")
+    );
+
+    const results: { reference: string; oldStatus: string; newStatus: string; credited: boolean; amount: number }[] = [];
+
+    for (const tx of qrcAtcPending) {
+      try {
+        if (!tx.wompiTransactionId) {
+          results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: "NO_WOMPI_ID", credited: false, amount: tx.amountInCents / 100 });
+          continue;
+        }
+
+        const txDetail = await getTransactionStatus(tx.wompiTransactionId, keys);
+        const wompiStatus = txDetail?.data?.status;
+
+        if (wompiStatus === "APPROVED") {
+          // Actualizar estado en BD
+          await db.updateWompiTransactionByReference(tx.reference, {
+            status: "APPROVED",
+            processedAt: new Date(),
+          });
+
+          // Verificar si ya fue acreditada
+          const amount = tx.amountInCents / 100;
+          const recentTxs = await db.getWalletTransactionsByUserId(tx.userId, 50);
+          const alreadyCredited = recentTxs.some(t => t.description?.includes(tx.reference));
+
+          if (!alreadyCredited) {
+            await db.addUserWalletBalance(tx.userId, amount);
+            const wallet = await db.getUserWallet(tx.userId);
+            const newBalance = wallet ? parseFloat(wallet.balance) : amount;
+
+            await db.createWalletTransaction({
+              walletId: wallet?.id || 0,
+              userId: tx.userId,
+              type: "WOMPI_RECHARGE",
+              amount: amount.toString(),
+              balanceBefore: (newBalance - amount).toString(),
+              balanceAfter: newBalance.toString(),
+              description: `Reconciliaci\u00f3n: ${tx.reference}`,
+            });
+
+            const formatCOP = (n: number) =>
+              new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(n);
+
+            await db.createNotification({
+              userId: tx.userId,
+              title: "Recarga acreditada",
+              message: `Se acreditaron ${formatCOP(amount)} a tu billetera (transacci\u00f3n ${tx.reference}).`,
+              type: "PAYMENT",
+              data: JSON.stringify({ key: `reconcile-${tx.reference}`, amount, reference: tx.reference }),
+            });
+
+            results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: "APPROVED", credited: true, amount });
+          } else {
+            results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: "APPROVED", credited: false, amount });
+          }
+        } else if (wompiStatus === "DECLINED" || wompiStatus === "ERROR" || wompiStatus === "VOIDED") {
+          await db.updateWompiTransactionByReference(tx.reference, { status: wompiStatus });
+          results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: wompiStatus, credited: false, amount: tx.amountInCents / 100 });
+        } else {
+          results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: wompiStatus || "STILL_PENDING", credited: false, amount: tx.amountInCents / 100 });
+        }
+      } catch (err) {
+        console.error(`[Reconcile] Error procesando ${tx.reference}:`, err);
+        results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: "ERROR", credited: false, amount: tx.amountInCents / 100 });
+      }
+    }
+
+    const totalCredited = results.filter(r => r.credited).reduce((sum, r) => sum + r.amount, 0);
+    console.log(`[Reconcile] Procesadas ${results.length} transacciones. Total acreditado: $${totalCredited}`);
+
+    return {
+      processed: results.length,
+      credited: results.filter(r => r.credited).length,
+      totalCreditedAmount: totalCredited,
+      details: results,
+    };
+  }),
 });

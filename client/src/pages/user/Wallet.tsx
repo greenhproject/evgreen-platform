@@ -345,10 +345,17 @@ export default function UserWallet() {
             <div className="text-3xl font-bold mb-1">
               {isLoading ? "..." : formatCurrency(wallet?.balance || 0)}
             </div>
-            <div className="flex items-center gap-2 text-white/50 text-xs">
-              <Wallet className="w-3.5 h-3.5" />
-              EVGreen Wallet
-            </div>
+            {pendingReference ? (
+              <div className="flex items-center gap-2 text-emerald-300 text-xs mt-1">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Procesando recarga... Tu saldo se actualizará en unos momentos</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-white/50 text-xs">
+                <Wallet className="w-3.5 h-3.5" />
+                EVGreen Wallet
+              </div>
+            )}
           </Card>
         </motion.div>
 
@@ -542,12 +549,12 @@ export default function UserWallet() {
               size="lg"
               className="w-full h-14 text-base gradient-primary text-white rounded-xl"
               onClick={handleRecharge}
-              disabled={isProcessing || isQuickRecharging || !hasPaymentMethod}
+              disabled={isProcessing || isQuickRecharging || !!pendingReference || !hasPaymentMethod}
             >
-              {isProcessing || isQuickRecharging ? (
+              {isProcessing || isQuickRecharging || pendingReference ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  {isQuickRecharging ? "Cobrando..." : "Procesando..."}
+                  {pendingReference ? "Verificando pago..." : isQuickRecharging ? "Cobrando..." : "Procesando..."}
                 </>
               ) : hasSavedCard && hasPaymentSource ? (
                 <>

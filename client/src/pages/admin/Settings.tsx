@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, Bell, CreditCard, Globe, Loader2, Calculator } from "lucide-react";
+import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
@@ -430,6 +430,15 @@ export default function AdminSettings() {
                     </Button>
                   </div>
                 </div>
+
+                {/* Botón de reconciliación de transacciones pendientes */}
+                <div className="mt-4 p-4 bg-amber-950/20 rounded-lg border border-amber-800/30">
+                  <Label className="text-sm font-medium text-amber-300">Reconciliar transacciones pendientes</Label>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Verifica en Wompi las transacciones de recarga rápida y auto-cobro que quedaron pendientes y acredita las que ya fueron aprobadas.
+                  </p>
+                  <ReconcileButton />
+                </div>
               </div>
             </div>
 
@@ -783,6 +792,62 @@ export default function AdminSettings() {
           </Card>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// Componente para reconciliar transacciones pendientes de Wompi
+function ReconcileButton() {
+  const reconcile = trpc.wompi.reconcilePendingTransactions.useMutation({
+    onSuccess: (data) => {
+      if (data.credited > 0) {
+        toast.success(
+          `Reconciliación completada: ${data.credited} transacciones acreditadas por $${data.totalCreditedAmount.toLocaleString("es-CO")} COP`
+        );
+      } else if (data.processed > 0) {
+        toast.info(`Se verificaron ${data.processed} transacciones. Ninguna pendiente de acreditar.`);
+      } else {
+        toast.info("No hay transacciones pendientes de reconciliar.");
+      }
+    },
+    onError: (error) => {
+      toast.error(`Error al reconciliar: ${error.message}`);
+    },
+  });
+
+  return (
+    <div className="space-y-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => reconcile.mutate()}
+        disabled={reconcile.isPending}
+        className="border-amber-700 text-amber-300 hover:bg-amber-900/30"
+      >
+        {reconcile.isPending ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Reconciliando...
+          </>
+        ) : (
+          <>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Reconciliar ahora
+          </>
+        )}
+      </Button>
+      {reconcile.data && reconcile.data.processed > 0 && (
+        <div className="text-xs space-y-1">
+          <p className="text-muted-foreground">
+            Procesadas: {reconcile.data.processed} | Acreditadas: {reconcile.data.credited} | Total: ${reconcile.data.totalCreditedAmount.toLocaleString("es-CO")} COP
+          </p>
+          {reconcile.data.details.map((d, i) => (
+            <p key={i} className={d.credited ? "text-green-400" : "text-muted-foreground"}>
+              {d.reference}: {d.oldStatus} → {d.newStatus} {d.credited ? `(+$${d.amount.toLocaleString("es-CO")})` : ""}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
