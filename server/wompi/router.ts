@@ -658,6 +658,9 @@ export const wompiRouter = router({
         cardToken: z.string().min(1),
         acceptanceToken: z.string().min(1),
         personalAuthToken: z.string().optional(),
+        cardLastFour: z.string().min(4).max(4).optional(),
+        cardBrand: z.string().optional(),
+        cardHolderName: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -684,15 +687,25 @@ export const wompiRouter = router({
         });
       }
 
-      // Guardar payment source en la suscripción del usuario
+      // Detectar marca de tarjeta por BIN (primeros dígitos) si no viene del frontend
+      let cardBrand = input.cardBrand || "CARD";
+
+      // Guardar payment source + datos de tarjeta en la suscripción del usuario
       await db.updateUserSubscription(ctx.user.id, {
         wompiPaymentSourceId: paymentSource.paymentSourceId,
         wompiCardToken: input.cardToken,
+        cardBrand: cardBrand,
+        cardLastFour: input.cardLastFour || "",
+        cardHolderName: input.cardHolderName || "",
       });
+
+      console.log(`[Wompi] Tarjeta tokenizada para usuario ${ctx.user.id}: ${cardBrand} ****${input.cardLastFour || "????"}, PS: ${paymentSource.paymentSourceId}`);
 
       return {
         success: true,
         paymentSourceId: paymentSource.paymentSourceId,
+        cardBrand,
+        cardLastFour: input.cardLastFour || "",
         message: "Tarjeta guardada exitosamente para cobros recurrentes",
       };
     }),

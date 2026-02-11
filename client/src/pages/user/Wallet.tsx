@@ -843,11 +843,23 @@ export default function UserWallet() {
                       throw new Error("No se recibió token de la tarjeta.");
                     }
 
+                    // Detectar marca de tarjeta por BIN (primeros dígitos)
+                    const bin = cleanNumber.substring(0, 6);
+                    let detectedBrand = "CARD";
+                    if (/^4/.test(bin)) detectedBrand = "VISA";
+                    else if (/^5[1-5]/.test(bin) || /^2[2-7]/.test(bin)) detectedBrand = "MASTERCARD";
+                    else if (/^3[47]/.test(bin)) detectedBrand = "AMEX";
+                    else if (/^6(?:011|5)/.test(bin)) detectedBrand = "DISCOVER";
+                    else if (/^3(?:0[0-5]|[68])/.test(bin)) detectedBrand = "DINERS";
+
                     // Paso 2: Enviar token al backend para crear payment source
                     tokenizeCard.mutate({
                       cardToken,
                       acceptanceToken: acceptanceData.acceptanceToken,
                       personalAuthToken: acceptanceData.personalAuthToken || undefined,
+                      cardLastFour: cleanNumber.slice(-4),
+                      cardBrand: detectedBrand,
+                      cardHolderName: cardHolder.trim(),
                     });
                   } catch (error: any) {
                     setIsTokenizing(false);

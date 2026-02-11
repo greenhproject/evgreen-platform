@@ -2054,3 +2054,12 @@
 - [x] Corregido: Cambiar `if (data.cardBrand)` a `if (data.cardBrand !== undefined)` para los 3 campos de tarjeta
 - [x] Corregido: removeCard ahora pasa `null` en lugar de `undefined` para wompiPaymentSourceId y wompiCardToken
 - [x] 416 tests pasando (25 archivos)
+
+## Bug: Tarjeta muestra inscrita pero no se guarda - 10 Febrero 2026 - COMPLETADO
+- [x] BUG: Toast dice "Tarjeta inscrita exitosamente" pero la tarjeta no se persiste
+- [x] La sección "Mi tarjeta" sigue mostrando "Inscribe tu tarjeta" después de inscribir
+- [x] Al recargar billetera sigue redirigiendo al checkout de Wompi en lugar de recarga rápida
+- [x] Causa raíz: tokenizeCard solo guardaba wompiPaymentSourceId y wompiCardToken, pero NO cardBrand, cardLastFour ni cardHolderName
+- [x] Corregido backend: tokenizeCard ahora acepta y guarda cardLastFour, cardBrand y cardHolderName
+- [x] Corregido frontend: Wallet.tsx ahora envía los datos de tarjeta (detecta marca por BIN) al llamar tokenizeCard.mutate
+- [x] 416 tests pasando (25 archivos)
