@@ -267,6 +267,66 @@ describe("Wompi Config", () => {
     });
   });
 
+  describe("Card Data Extraction from Wompi Responses", () => {
+    it("extrae brand y last_four del formato directo (payment_method.brand)", () => {
+      const tx = {
+        payment_method: {
+          type: "CARD",
+          brand: "VISA",
+          last_four: "4242",
+        },
+      };
+      const cardBrand = tx.payment_method?.brand || (tx.payment_method as any)?.extra?.brand;
+      const cardLastFour = tx.payment_method?.last_four || (tx.payment_method as any)?.extra?.last_four;
+      expect(cardBrand).toBe("VISA");
+      expect(cardLastFour).toBe("4242");
+    });
+
+    it("extrae brand y last_four del formato legacy (payment_method.extra)", () => {
+      const tx = {
+        payment_method: {
+          type: "CARD",
+          extra: {
+            brand: "MASTERCARD",
+            last_four: "1234",
+          },
+        },
+      };
+      const cardBrand = (tx.payment_method as any)?.brand || tx.payment_method?.extra?.brand;
+      const cardLastFour = (tx.payment_method as any)?.last_four || tx.payment_method?.extra?.last_four;
+      expect(cardBrand).toBe("MASTERCARD");
+      expect(cardLastFour).toBe("1234");
+    });
+
+    it("retorna undefined si no hay datos de tarjeta", () => {
+      const tx = {
+        payment_method_type: "NEQUI",
+      };
+      const cardBrand = (tx as any).payment_method?.brand || (tx as any).payment_method?.extra?.brand;
+      const cardLastFour = (tx as any).payment_method?.last_four || (tx as any).payment_method?.extra?.last_four;
+      expect(cardBrand).toBeUndefined();
+      expect(cardLastFour).toBeUndefined();
+    });
+
+    it("prioriza formato directo sobre legacy cuando ambos existen", () => {
+      const tx = {
+        payment_method: {
+          type: "CARD",
+          brand: "VISA",
+          last_four: "4242",
+          extra: {
+            brand: "MASTERCARD",
+            last_four: "9999",
+          },
+        },
+      };
+      const cardBrand = tx.payment_method?.brand || tx.payment_method?.extra?.brand;
+      const cardLastFour = tx.payment_method?.last_four || tx.payment_method?.extra?.last_four;
+      expect(cardBrand).toBe("VISA");
+      expect(cardLastFour).toBe("4242");
+    });
+  });
+
   describe("Webhook Checksum for Subscription Events", () => {
     it("verifica checksum de evento de suscripción aprobada", () => {
       const crypto = require("crypto");

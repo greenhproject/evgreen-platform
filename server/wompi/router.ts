@@ -356,6 +356,23 @@ export const wompiRouter = router({
             await db.updateWalletBalance(ctx.user.id, newBalance.toString());
           }
 
+          // Guardar datos de tarjeta si es pago con CARD
+          if (tx.payment_method_type === "CARD") {
+            const cardBrand = tx.payment_method?.brand || tx.payment_method?.extra?.brand;
+            const cardLastFour = tx.payment_method?.last_four || tx.payment_method?.extra?.last_four;
+            if (cardBrand && cardLastFour) {
+              try {
+                await db.updateUserSubscription(ctx.user.id, {
+                  cardBrand,
+                  cardLastFour,
+                });
+                console.log(`[Wompi] Tarjeta guardada desde verify: ${cardBrand} ****${cardLastFour}`);
+              } catch (cardErr) {
+                console.warn("[Wompi] Error guardando tarjeta desde verify:", cardErr);
+              }
+            }
+          }
+
           return {
             success: true,
             status: tx.status,
@@ -531,8 +548,8 @@ export const wompiRouter = router({
           monthlyAmountCents: (PLAN_PRICES[input.planId] || 0) * 100,
           lastPaymentDate: new Date(),
           lastPaymentReference: input.reference,
-          cardBrand: tx.payment_method?.extra?.brand,
-          cardLastFour: tx.payment_method?.extra?.last_four,
+          cardBrand: tx.payment_method?.brand || tx.payment_method?.extra?.brand,
+          cardLastFour: tx.payment_method?.last_four || tx.payment_method?.extra?.last_four,
         });
 
         // Crear notificación in-app
