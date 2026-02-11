@@ -53,6 +53,8 @@ export default function UserWallet() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showAddCard, setShowAddCard] = useState(false);
   const [showOtherMethods, setShowOtherMethods] = useState(false);
+  const [showRemoveCard, setShowRemoveCard] = useState(false);
+  const [isQuickRecharging, setIsQuickRecharging] = useState(false);
   const [location] = useLocation();
 
   // Verificar si Wompi está configurado
@@ -86,6 +88,38 @@ export default function UserWallet() {
     onError: (error) => {
       toast.error(error.message || "Error al procesar el pago");
       setIsProcessing(false);
+    },
+  });
+
+  // Mutation para recarga rápida con tarjeta inscrita
+  const quickRecharge = trpc.wompi.quickRecharge.useMutation({
+    onSuccess: (data) => {
+      setIsQuickRecharging(false);
+      if (data.success && data.status === "APPROVED") {
+        toast.success(data.message);
+        refetchWallet();
+        refetchTransactions();
+      } else if (data.status === "PENDING") {
+        toast.info(data.message);
+      } else {
+        toast.error(data.message);
+      }
+    },
+    onError: (error) => {
+      setIsQuickRecharging(false);
+      toast.error(error.message || "Error en la recarga rápida");
+    },
+  });
+
+  // Mutation para eliminar tarjeta
+  const removeCard = trpc.wompi.removeCard.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      refetchSubscription();
+      setShowRemoveCard(false);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error eliminando la tarjeta");
     },
   });
 
@@ -156,6 +190,8 @@ export default function UserWallet() {
     }
   }, [location]);
 
+  const hasPaymentSource = !!subscription?.wompiPaymentSourceId;
+
   const handleRecharge = () => {
     const amount = customAmount ? parseInt(customAmount) : selectedAmount;
     if (!amount || amount < 10000) {
@@ -172,8 +208,14 @@ export default function UserWallet() {
       return;
     }
 
-    setIsProcessing(true);
-    createWompiRecharge.mutate({ amount });
+    // Si tiene tarjeta inscrita con payment source, usar recarga rápida
+    if (hasSavedCard && hasPaymentSource) {
+      setIsQuickRecharging(true);
+      quickRecharge.mutate({ amount });
+    } else {
+      setIsProcessing(true);
+      createWompiRecharge.mutate({ amount });
+    }
   };
 
   const formatCurrency = (amount: string | number) => {
@@ -240,14 +282,25 @@ export default function UserWallet() {
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-sm">Mi tarjeta</h3>
             {hasSavedCard && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs text-muted-foreground h-7 px-2"
-                onClick={() => setShowAddCard(true)}
-              >
-                Cambiar
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground h-7 px-2"
+                  onClick={() => setShowAddCard(true)}
+                >
+                  Cambiar
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 h-7 px-2"
+                  onClick={() => setShowRemoveCard(true)}
+                >
+                  <Trash2 className="w-3 h-3 mr-1" />
+                  Eliminar
+                </Button>
+              </div>
             )}
           </div>
 
@@ -412,12 +465,17 @@ export default function UserWallet() {
               size="lg"
               className="w-full h-14 text-base gradient-primary text-white rounded-xl"
               onClick={handleRecharge}
-              disabled={isProcessing || !hasPaymentMethod}
+              disabled={isProcessing || isQuickRecharging || !hasPaymentMethod}
             >
-              {isProcessing ? (
+              {isProcessing || isQuickRecharging ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Procesando...
+                  {isQuickRecharging ? "Cobrando..." : "Procesando..."}
+                </>
+              ) : hasSavedCard && hasPaymentSource ? (
+                <>
+                  <Zap className="w-5 h-5 mr-2" />
+                  Recarga rápida con ····{subscription?.cardLastFour}
                 </>
               ) : hasSavedCard ? (
                 <>
@@ -431,6 +489,14 @@ export default function UserWallet() {
                 </>
               )}
             </Button>
+
+            {/* Indicador de recarga instantánea */}
+            {hasSavedCard && hasPaymentSource && (
+              <p className="text-[10px] text-center text-primary/70 flex items-center justify-center gap-1">
+                <Zap className="w-3 h-3" />
+                Recarga instantánea – sin salir de la app
+              </p>
+            )}
 
             {/* Otros métodos de pago */}
             <button
@@ -570,12 +636,13 @@ export default function UserWallet() {
               <Button
                 className="w-full h-12 gradient-primary text-white"
                 onClick={() => {
-                  // Crear una recarga mínima para inscribir la tarjeta
-                  // Wompi guarda la tarjeta durante el checkout
                   setShowAddCard(false);
                   setSelectedAmount(20000);
                   setCustomAmount("");
-                  handleRecharge();
+                  setTimeout(() => {
+                    setIsProcessing(true);
+                    createWompiRecharge.mutate({ amount: 20000 });
+                  }, 100);
                   toast.info("Al completar la recarga, tu tarjeta quedará inscrita para futuros pagos.");
                 }}
                 disabled={!hasPaymentMethod}
@@ -604,6 +671,66 @@ export default function UserWallet() {
                   </div>
                 </div>
                 <span className="text-[10px] text-muted-foreground">Tarjetas internacionales aceptadas</span>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* ================================================================ */}
+        {/* DIÁLOGO: CONFIRMAR ELIMINACIÓN DE TARJETA */}
+        {/* ================================================================ */}
+        <Dialog open={showRemoveCard} onOpenChange={setShowRemoveCard}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-400">
+                <Trash2 className="w-5 h-5" />
+                Eliminar tarjeta
+              </DialogTitle>
+              <DialogDescription>
+                ¿Estás seguro de que deseas desvincular tu tarjeta
+                {subscription?.cardBrand ? ` ${subscription.cardBrand}` : ""}
+                {subscription?.cardLastFour ? ` ****${subscription.cardLastFour}` : ""}?
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 pt-2">
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/5 border border-red-500/10">
+                <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-red-300">Acción irreversible</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Al eliminar la tarjeta, no podrás hacer recargas rápidas.
+                    Tendrás que inscribir una nueva tarjeta para volver a usar esta función.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setShowRemoveCard(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={() => removeCard.mutate()}
+                  disabled={removeCard.isPending}
+                >
+                  {removeCard.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Eliminando...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Sí, eliminar
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           </DialogContent>

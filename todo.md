@@ -2006,3 +2006,20 @@
 - [x] Corregido: verifyAndActivateSubscription usa formato correcto de payment_method
 - [x] Corregido: isActive por defecto true al crear nuevo registro de suscripción
 - [x] 407 tests pasando (24 archivos)
+
+## Mejoras Tarjeta de Crédito - 10 Febrero 2026 - COMPLETADO
+### 1. Recarga rápida con tarjeta inscrita
+- [x] Investigar API de Wompi para cobros con tarjeta tokenizada (sin checkout)
+- [x] Endpoint backend quickRecharge: cobra con payment_source_id guardado
+- [x] Botón "Recarga rápida con ····1234" en la billetera (con icono Zap)
+- [x] Indicador "Recarga instantánea – sin salir de la app"
+- [x] Procesamiento del pago y actualización de saldo automática
+- [x] Manejo de estados APPROVED/PENDING/DECLINED
+
+### 2. Eliminar/desvincular tarjeta guardada
+- [x] Endpoint backend removeCard: limpia datos de tarjeta de la suscripción
+- [x] Botón "Eliminar" en rojo junto a "Cambiar" en sección "Mi tarjeta"
+- [x] Diálogo de confirmación con advertencia de acción irreversible
+- [x] 407 tests pasando (24 archivos)
+- [x] Confirmación antes de eliminar (diálogo con botón destructivo)
+- [x] Actualización visual después de eliminar (refetchSubscription)
