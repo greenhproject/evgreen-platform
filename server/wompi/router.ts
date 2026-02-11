@@ -833,8 +833,31 @@ export const wompiRouter = router({
           console.warn("[Wompi] Error guardando transacción de recarga rápida:", dbErr);
         }
 
-        // Si fue aprobada inmediatamente, acreditar la billetera
-        if (tx.status === "APPROVED") {
+        // Si la transacción está PENDING, esperar 2s y volver a consultar
+        // Muchas transacciones con payment source se aprueban en <2s
+        let finalStatus = tx.status;
+        let finalTxId = tx.id;
+        if (tx.status === "PENDING" && tx.id) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          try {
+            const recheckResult = await getTransactionStatus(tx.id, keys);
+            if (recheckResult?.data?.status) {
+              finalStatus = recheckResult.data.status;
+              console.log(`[Wompi] Recarga r\u00e1pida - Recheck: ${finalStatus}`);
+              if (finalStatus !== "PENDING") {
+                await db.updateWompiTransactionByReference(reference, {
+                  status: finalStatus,
+                  processedAt: new Date(),
+                });
+              }
+            }
+          } catch (recheckErr) {
+            console.warn("[Wompi] Error en recheck de transacci\u00f3n:", recheckErr);
+          }
+        }
+
+        // Si fue aprobada (inmediatamente o después del recheck), acreditar la billetera
+        if (finalStatus === "APPROVED") {
           const wallet = await db.getUserWallet(ctx.user.id);
           if (wallet) {
             const currentBalance = parseFloat(wallet.balance) || 0;
@@ -875,19 +898,19 @@ export const wompiRouter = router({
             amount: input.amount,
             reference,
           };
-        } else if (tx.status === "PENDING") {
+        } else if (finalStatus === "PENDING") {
           return {
             success: true,
             status: "PENDING",
-            message: "El cobro está siendo procesado. Tu billetera se actualizará en unos momentos.",
+            message: "El cobro est\u00e1 siendo procesado. Tu billetera se actualizar\u00e1 en unos momentos.",
             amount: input.amount,
             reference,
           };
         } else {
           return {
             success: false,
-            status: tx.status,
-            message: `El cobro no fue aprobado (${tx.status}). Intenta de nuevo o usa otro método de pago.`,
+            status: finalStatus,
+            message: `El cobro no fue aprobado (${finalStatus}). Intenta de nuevo o usa otro m\u00e9todo de pago.`,
             reference,
           };
         }
