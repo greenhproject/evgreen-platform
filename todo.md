@@ -1991,3 +1991,18 @@
 - [x] Enviar notificación in-app al usuario cuando admin ajuste su saldo
 - [x] Incluir detalles: tipo de ajuste, monto, nuevo saldo, motivo
 - [x] 403 tests pasando (24 archivos)
+
+## Bug: Notificaciones no se quitan al marcar como leídas - 10 Febrero 2026 - CORREGIDO
+- [x] BUG: Al hacer clic en "Marcar todas como leídas" las notificaciones no se actualizan visualmente
+- [x] Causa: Frontend mapeaba `n.read` pero Drizzle devuelve `n.isRead`
+- [x] Corregido mapeo de isRead y agregada invalidación optimista con refetch
+
+## Bug: Tarjeta de crédito no queda inscrita después de pago - 10 Febrero 2026 - CORREGIDO
+- [x] BUG: Se realizó pago de $50,000 en Wompi pero la tarjeta no quedó guardada
+- [x] Causa 1: Webhook buscaba payment_method.extra.brand pero Wompi usa payment_method.brand
+- [x] Causa 2: isActive se creaba como false cuando no existía suscripción previa
+- [x] Corregido: Webhook consulta API de Wompi (GET /transactions/{id}) si no hay datos en el evento
+- [x] Corregido: verifyAndProcessPayment también guarda datos de tarjeta al verificar recarga
+- [x] Corregido: verifyAndActivateSubscription usa formato correcto de payment_method
+- [x] Corregido: isActive por defecto true al crear nuevo registro de suscripción
+- [x] 407 tests pasando (24 archivos)

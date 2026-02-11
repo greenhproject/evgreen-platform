@@ -1926,7 +1926,7 @@ export async function updateUserSubscription(userId: number, data: {
       nextBillingDate: nextBilling,
       lastPaymentDate: data.lastPaymentDate || new Date(),
       lastPaymentReference: data.lastPaymentReference,
-      isActive: data.status === "active",
+      isActive: data.status ? data.status === "active" : true,
     });
   } else {
     const updateData: any = {};

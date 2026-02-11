@@ -9,6 +9,7 @@ import { Request, Response } from "express";
 import {
   getWompiKeys,
   verifyWebhookChecksum,
+  getTransactionStatus,
   WOMPI_TRANSACTION_STATUS,
 } from "./config";
 import * as db from "../db";
@@ -107,19 +108,42 @@ async function processWalletRecharge(
     await db.addUserWalletBalance(localTx.userId, amount);
 
     // Guardar datos de la tarjeta si es pago con tarjeta (para futuras recargas con un clic)
-    if (paymentMethod === "CARD" && transaction?.payment_method?.extra) {
-      const cardBrand = transaction.payment_method.extra.brand;
-      const cardLastFour = transaction.payment_method.extra.last_four;
-      if (cardBrand && cardLastFour) {
-        try {
+    if (paymentMethod === "CARD") {
+      try {
+        // Intentar obtener datos de tarjeta del webhook primero
+        let cardBrand = transaction?.payment_method?.brand || transaction?.payment_method?.extra?.brand;
+        let cardLastFour = transaction?.payment_method?.last_four || transaction?.payment_method?.extra?.last_four;
+
+        // Si el webhook no incluye los datos, consultar la API de Wompi
+        if (!cardBrand || !cardLastFour) {
+          console.log(`[Wompi] Datos de tarjeta no en webhook, consultando API para tx ${wompiTxId}`);
+          const keys = await getWompiKeys();
+          if (keys) {
+            try {
+              const txDetail = await getTransactionStatus(wompiTxId, keys);
+              const pm = txDetail?.data?.payment_method;
+              if (pm) {
+                cardBrand = pm.brand || pm.extra?.brand;
+                cardLastFour = pm.last_four || pm.extra?.last_four;
+                console.log(`[Wompi] Datos de tarjeta obtenidos de API: ${cardBrand} ****${cardLastFour}`);
+              }
+            } catch (apiErr) {
+              console.warn("[Wompi] Error consultando API para datos de tarjeta:", apiErr);
+            }
+          }
+        }
+
+        if (cardBrand && cardLastFour) {
           await db.updateUserSubscription(localTx.userId, {
             cardBrand,
             cardLastFour,
           });
           console.log(`[Wompi] Datos de tarjeta guardados: ${cardBrand} ****${cardLastFour}`);
-        } catch (cardErr) {
-          console.warn("[Wompi] Error guardando datos de tarjeta:", cardErr);
+        } else {
+          console.warn(`[Wompi] No se pudieron obtener datos de tarjeta para tx ${wompiTxId}`);
         }
+      } catch (cardErr) {
+        console.warn("[Wompi] Error guardando datos de tarjeta:", cardErr);
       }
     }
 
@@ -253,9 +277,26 @@ async function processSubscriptionPayment(
     // Determinar el plan basado en el monto
     const planId = amount >= 33900 ? "premium" : "basic";
 
-    // Extraer datos de la tarjeta si están disponibles
-    const cardBrand = transaction?.payment_method?.extra?.brand;
-    const cardLastFour = transaction?.payment_method?.extra?.last_four;
+    // Extraer datos de la tarjeta - intentar múltiples ubicaciones
+    let cardBrand = transaction?.payment_method?.brand || transaction?.payment_method?.extra?.brand;
+    let cardLastFour = transaction?.payment_method?.last_four || transaction?.payment_method?.extra?.last_four;
+
+    // Si no están en el webhook, consultar la API de Wompi
+    if (!cardBrand || !cardLastFour) {
+      try {
+        const keys = await getWompiKeys();
+        if (keys) {
+          const txDetail = await getTransactionStatus(wompiTxId, keys);
+          const pm = txDetail?.data?.payment_method;
+          if (pm) {
+            cardBrand = pm.brand || pm.extra?.brand;
+            cardLastFour = pm.last_four || pm.extra?.last_four;
+          }
+        }
+      } catch (apiErr) {
+        console.warn("[Wompi] Error consultando API para datos de tarjeta en suscripción:", apiErr);
+      }
+    }
 
     // Activar/actualizar suscripción
     await db.updateUserSubscription(localTx.userId, {
