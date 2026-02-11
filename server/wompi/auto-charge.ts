@@ -10,7 +10,8 @@
  * 5. Luego el flujo normal descuenta el costo total de la billetera
  */
 
-import { getWompiKeys, generatePaymentReference } from "./config";
+import { getWompiKeys, generatePaymentReference, generateIntegritySignature } from "./config";
+import { getAcceptanceToken } from "./recurring-billing";
 import * as db from "../db";
 
 // Monto mínimo de auto-recarga (Wompi requiere mínimo $10,000 COP para transacciones con tarjeta)
@@ -76,6 +77,27 @@ export async function autoChargeIfNeeded(
   console.log(`[AutoCharge] Usuario ${userId}: saldo $${currentBalance}, costo $${requiredAmount}, cobrando $${chargeAmount} a tarjeta ****${subscription.cardLastFour || "????"}`);
 
   try {
+    // Obtener acceptance token (obligatorio según API de Wompi)
+    const acceptanceData = await getAcceptanceToken();
+    if (!acceptanceData?.acceptanceToken) {
+      console.error(`[AutoCharge] No se pudo obtener acceptance token`);
+      return {
+        success: false,
+        amountCharged: 0,
+        newBalance: currentBalance,
+        reference,
+        error: "No se pudo obtener token de aceptación de Wompi",
+      };
+    }
+
+    // Generar firma de integridad (obligatoria según API de Wompi)
+    const signature = generateIntegritySignature(
+      reference,
+      amountInCents,
+      "COP",
+      keys.integritySecret
+    );
+
     // Crear transacción directa con payment source en Wompi
     const response = await fetch(`${keys.apiUrl}/transactions`, {
       method: "POST",
@@ -89,7 +111,10 @@ export async function autoChargeIfNeeded(
         payment_source_id: parseInt(subscription.wompiPaymentSourceId),
         reference,
         customer_email: customerEmail,
+        signature,
+        acceptance_token: acceptanceData.acceptanceToken,
         payment_method: {
+          type: "CARD",
           installments: 1,
         },
       }),

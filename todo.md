@@ -2063,3 +2063,12 @@
 - [x] Corregido backend: tokenizeCard ahora acepta y guarda cardLastFour, cardBrand y cardHolderName
 - [x] Corregido frontend: Wallet.tsx ahora envía los datos de tarjeta (detecta marca por BIN) al llamar tokenizeCard.mutate
 - [x] 416 tests pasando (25 archivos)
+
+## Bug: Recarga rápida falla con "Error procesando el cobro" - 10 Febrero 2026 - COMPLETADO
+- [x] BUG: Tarjeta VISA ****2668 aparece correctamente pero recarga rápida falla
+- [x] Causa raíz: Faltaban campos OBLIGATORIOS en la API de Wompi: acceptance_token y signature
+- [x] Corregido quickRecharge: ahora obtiene acceptance_token y genera signature antes de crear transacción
+- [x] Corregido auto-charge.ts: misma corrección para auto-cobros
+- [x] Corregido recurring-billing.ts: misma corrección para cobros recurrentes de suscripción
+- [x] Mejorado manejo de errores: ahora muestra detalles del error de Wompi al usuario
+- [x] 417 tests pasando (25 archivos)

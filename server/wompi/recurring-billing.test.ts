@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("./config", () => ({
   getWompiKeys: vi.fn(),
   generatePaymentReference: vi.fn(() => "REC-TEST-123"),
+  generateIntegritySignature: vi.fn(() => "test-integrity-signature"),
   WOMPI_TRANSACTION_STATUS: {
     PENDING: "PENDING",
     APPROVED: "APPROVED",
@@ -110,6 +111,18 @@ describe("Recurring Billing Service", () => {
         },
       ]);
 
+      // First call: getAcceptanceToken fetches merchants/{publicKey}
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            data: {
+              presigned_acceptance: { acceptance_token: "acc_test", permalink: "https://wompi.co/terms" },
+              presigned_personal_data_auth: { acceptance_token: "personal_test" },
+            },
+          }),
+      });
+      // Second call: create transaction
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () =>
@@ -152,6 +165,18 @@ describe("Recurring Billing Service", () => {
         },
       ]);
 
+      // First call: getAcceptanceToken
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            data: {
+              presigned_acceptance: { acceptance_token: "acc_test", permalink: "https://wompi.co/terms" },
+              presigned_personal_data_auth: { acceptance_token: "personal_test" },
+            },
+          }),
+      });
+      // Second call: create transaction
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () =>
@@ -183,6 +208,18 @@ describe("Recurring Billing Service", () => {
         },
       ]);
 
+      // First call: getAcceptanceToken
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            data: {
+              presigned_acceptance: { acceptance_token: "acc_test", permalink: "https://wompi.co/terms" },
+              presigned_personal_data_auth: { acceptance_token: "personal_test" },
+            },
+          }),
+      });
+      // Second call: create transaction
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () =>
@@ -246,6 +283,18 @@ describe("Recurring Billing Service", () => {
         },
       ]);
 
+      // First call: getAcceptanceToken
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            data: {
+              presigned_acceptance: { acceptance_token: "acc_test", permalink: "https://wompi.co/terms" },
+              presigned_personal_data_auth: { acceptance_token: "personal_test" },
+            },
+          }),
+      });
+      // Second call: create transaction
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () =>
