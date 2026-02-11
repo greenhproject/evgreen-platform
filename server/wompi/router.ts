@@ -868,8 +868,8 @@ export const wompiRouter = router({
 
     // Limpiar datos de tarjeta de la suscripción
     await db.updateUserSubscription(ctx.user.id, {
-      wompiPaymentSourceId: undefined,
-      wompiCardToken: undefined,
+      wompiPaymentSourceId: null,
+      wompiCardToken: null,
       cardBrand: "",
       cardLastFour: "",
       cardHolderName: "",

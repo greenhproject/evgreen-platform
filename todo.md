@@ -2046,3 +2046,11 @@
 - [x] Notificación al usuario del cobro automático
 - [x] 9 tests unitarios para auto-charge (todos pasando)
 - [x] 416 tests totales pasando (25 archivos)
+
+## Bug: No se puede eliminar ni cambiar tarjeta - 10 Febrero 2026 - COMPLETADO
+- [x] BUG: Al hacer clic en "Sí, eliminar" tarjeta no funciona
+- [x] Error "No values to set" aparece en la parte superior de la billetera
+- [x] Causa raíz: updateUserSubscription usaba `if (data.cardBrand)` que evalúa "" como falsy, resultando en updateData vacío
+- [x] Corregido: Cambiar `if (data.cardBrand)` a `if (data.cardBrand !== undefined)` para los 3 campos de tarjeta
+- [x] Corregido: removeCard ahora pasa `null` en lugar de `undefined` para wompiPaymentSourceId y wompiCardToken
+- [x] 416 tests pasando (25 archivos)
