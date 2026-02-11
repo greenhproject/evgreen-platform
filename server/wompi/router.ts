@@ -16,6 +16,7 @@ import {
   generateIntegritySignature,
   buildCheckoutUrl,
   getTransactionByReference,
+  getTransactionStatus,
   WOMPI_TRANSACTION_STATUS,
 } from "./config";
 import {
@@ -941,6 +942,90 @@ export const wompiRouter = router({
       message: "Tarjeta eliminada exitosamente",
     };
   }),
+
+  // ========================================================================
+  // Consultar estado de recarga rápida PENDING (polling)
+  // ========================================================================
+  checkQuickRechargeStatus: protectedProcedure
+    .input(
+      z.object({
+        reference: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const localTx = await db.getWompiTransactionByReference(input.reference);
+      if (!localTx || localTx.userId !== ctx.user.id) {
+        return { status: "NOT_FOUND", credited: false };
+      }
+
+      // Si ya está aprobada en nuestra BD, verificar si ya se acreditó
+      if (localTx.status === "APPROVED") {
+        return { status: "APPROVED", credited: true };
+      }
+
+      // Si sigue PENDING, consultar Wompi directamente
+      if (localTx.status === "PENDING") {
+        try {
+          const keys = await getWompiKeys();
+          if (keys && localTx.wompiTransactionId) {
+            const txDetail = await getTransactionStatus(localTx.wompiTransactionId, keys);
+            const wompiStatus = txDetail?.data?.status;
+
+            if (wompiStatus === "APPROVED") {
+              // Actualizar en BD
+              await db.updateWompiTransactionByReference(input.reference, {
+                status: "APPROVED",
+                processedAt: new Date(),
+              });
+
+              // Acreditar billetera si aún no se ha hecho
+              const amount = localTx.amountInCents / 100;
+              const recentTxs = await db.getWalletTransactionsByUserId(ctx.user.id, 20);
+              const alreadyCredited = recentTxs.some(t => t.description?.includes(input.reference));
+
+              if (!alreadyCredited) {
+                await db.addUserWalletBalance(ctx.user.id, amount);
+                const wallet = await db.getUserWallet(ctx.user.id);
+                const newBalance = wallet ? parseFloat(wallet.balance) : amount;
+
+                await db.createWalletTransaction({
+                  walletId: wallet?.id || 0,
+                  userId: ctx.user.id,
+                  type: "WOMPI_RECHARGE",
+                  amount: amount.toString(),
+                  balanceBefore: (newBalance - amount).toString(),
+                  balanceAfter: newBalance.toString(),
+                  description: `Recarga rápida con tarjeta: ${input.reference}`,
+                });
+
+                try {
+                  const formatCOP = (n: number) =>
+                    new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(n);
+                  await db.createNotification({
+                    userId: ctx.user.id,
+                    title: "¡Recarga exitosa!",
+                    message: `Tu billetera fue recargada con ${formatCOP(amount)}. Nuevo saldo: ${formatCOP(newBalance)}.`,
+                    type: "PAYMENT",
+                    data: JSON.stringify({ key: `quick-recharge-${input.reference}`, amount, reference: input.reference }),
+                  });
+                } catch (notifErr) {
+                  console.warn("[Wompi] Error creando notificación:", notifErr);
+                }
+              }
+
+              return { status: "APPROVED", credited: true };
+            } else if (wompiStatus === "DECLINED" || wompiStatus === "ERROR" || wompiStatus === "VOIDED") {
+              await db.updateWompiTransactionByReference(input.reference, { status: wompiStatus });
+              return { status: wompiStatus, credited: false };
+            }
+          }
+        } catch (err) {
+          console.warn("[Wompi] Error consultando estado de transacción:", err);
+        }
+      }
+
+      return { status: localTx.status || "PENDING", credited: false };
+    }),
 
   // ========================================================================
   // Ejecutar cobro recurrente manualmente (admin only)
