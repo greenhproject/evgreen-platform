@@ -1,0 +1,20 @@
+{
+  "query": "SELECT id, userId, wompiPaymentSourceId, wompiCardToken, cardBrand, cardLastFour, cardHolderName, isActive FROM subscriptions;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, userId, wompiPaymentSourceId, wompiCardToken, cardBrand, cardLastFour, cardHolderName, isActive FROM subscriptions;",
+  "rows": [
+    {
+      "id": "1",
+      "userId": "45",
+      "wompiPaymentSourceId": "NULL",
+      "wompiCardToken": "NULL",
+      "cardBrand": "MASTERCARD",
+      "cardLastFour": "8299",
+      "cardHolderName": "NULL",
+      "isActive": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\twompiPaymentSourceId\twompiCardToken\tcardBrand\tcardLastFour\tcardHolderName\tisActive\n1\t45\tNULL\tNULL\tMASTERCARD\t8299\tNULL\t1\n",
+  "stderr": "",
+  "execution_time_ms": 50
+}

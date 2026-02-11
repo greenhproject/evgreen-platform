@@ -2023,3 +2023,26 @@
 - [x] 407 tests pasando (24 archivos)
 - [x] Confirmación antes de eliminar (diálogo con botón destructivo)
 - [x] Actualización visual después de eliminar (refetchSubscription)
+
+## Bug: Recarga rápida redirige a checkout - 10 Febrero 2026 - COMPLETADO
+- [x] BUG: Al dar clic en "Recargar con tarjeta ····8299" sigue redirigiendo al checkout de Wompi
+- [x] Causa raíz: Wompi checkout NO tokeniza la tarjeta ni crea payment_source_id
+- [x] Solución: Implementar formulario de tokenización directa en Wallet.tsx
+- [x] Formulario captura: número de tarjeta, CVV, fecha de vencimiento, nombre del titular
+- [x] Frontend llama directamente a Wompi API POST /v1/tokens/cards con llave pública
+- [x] Backend recibe token y crea payment_source vía POST /v1/payment_sources
+- [x] Se guarda wompiPaymentSourceId en la suscripción del usuario
+- [x] Obtención de acceptance_token y personal_auth_token de Wompi para cumplir requisitos
+- [x] Verificar que quickRecharge funcione correctamente con payment_source_id
+
+## Mejora: Cobro automático de tarjeta cuando no hay saldo - 10 Febrero 2026 - COMPLETADO
+- [x] Módulo server/wompi/auto-charge.ts con función autoChargeIfNeeded()
+- [x] Si el usuario completa carga y no tiene saldo suficiente, cobra automáticamente de tarjeta inscrita
+- [x] Integrado en charging-simulator.ts (simulación de carga)
+- [x] Integrado en ocpp/csms.ts (carga real OCPP)
+- [x] Integrado en routers.ts stopChargingSession (detener carga manual)
+- [x] Monto mínimo de auto-cobro: $10,000 COP (requisito Wompi)
+- [x] Margen extra de $5,000 para evitar saldo negativo inmediato
+- [x] Notificación al usuario del cobro automático
+- [x] 9 tests unitarios para auto-charge (todos pasando)
+- [x] 416 tests totales pasando (25 archivos)

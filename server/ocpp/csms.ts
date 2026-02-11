@@ -469,7 +469,25 @@ export class CSMS {
           // Descontar de la billetera del usuario
           const wallet = await db.getWalletByUserId(transaction.userId);
           if (wallet) {
-            const newBalance = parseFloat(wallet.balance) - totalCost;
+            let currentBalance = parseFloat(wallet.balance);
+
+            // Auto-cobro: si el saldo es insuficiente y tiene tarjeta inscrita
+            if (currentBalance < totalCost) {
+              try {
+                const { autoChargeIfNeeded } = await import("../wompi/auto-charge");
+                const autoResult = await autoChargeIfNeeded(transaction.userId, totalCost);
+                if (autoResult?.success) {
+                  currentBalance = autoResult.newBalance;
+                  console.log(`[OCPP] Auto-cobro exitoso: $${autoResult.amountCharged} cobrados a tarjeta`);
+                } else if (autoResult) {
+                  console.log(`[OCPP] Auto-cobro fallido: ${autoResult.error}`);
+                }
+              } catch (autoErr) {
+                console.warn(`[OCPP] Error en auto-cobro:`, autoErr);
+              }
+            }
+
+            const newBalance = Math.max(0, currentBalance - totalCost);
             await db.updateWalletBalance(transaction.userId, newBalance.toString());
 
             await db.createWalletTransaction({
@@ -477,7 +495,7 @@ export class CSMS {
               userId: transaction.userId,
               type: "CHARGE_PAYMENT",
               amount: (-totalCost).toString(),
-              balanceBefore: wallet.balance,
+              balanceBefore: currentBalance.toString(),
               balanceAfter: newBalance.toString(),
               referenceId: transaction.id,
               referenceType: "TRANSACTION",
