@@ -8,6 +8,7 @@ import { getDb } from "../db";
 import { users, notifications } from "../../drizzle/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { sendPushNotificationToMultiple, NotificationType } from "../firebase/fcm";
+import { buildEmailParams } from "../utils/email-helper";
 
 // Inicializar Resend
 const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
@@ -235,11 +236,7 @@ export async function sendProgressNotification(
       
       for (const investor of emailRecipients.slice(0, 50)) { // Limitar a 50 emails
         try {
-          await resend.emails.send({
-            from: "EVGreen <notificaciones@evgreen.lat>",
-            to: investor.email || "",
-            subject: title,
-            html: `
+          const emailHtmlContent = `
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); padding: 30px; text-align: center;">
                   <h1 style="color: white; margin: 0;">🎉 ¡Proyecto Completado!</h1>
@@ -258,8 +255,13 @@ export async function sendProgressNotification(
                   <p style="color: #9ca3af; margin: 0; font-size: 12px;">EVGreen - Energía para el futuro</p>
                 </div>
               </div>
-            `,
-          });
+            `;
+          await resend.emails.send(buildEmailParams({
+            from: "EVGreen <notificaciones@evgreen.lat>",
+            to: investor.email || "",
+            subject: title,
+            html: emailHtmlContent,
+          }));
           result.emailSent++;
         } catch (emailError) {
           console.error(`[CrowdfundingNotify] Email error for ${investor.email}:`, emailError);

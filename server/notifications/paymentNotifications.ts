@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { buildEmailParams } from '../utils/email-helper';
 
 // Inicializar Resend con la API key
 const resend = new Resend(process.env.RESEND_API_KEY || 're_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr');
@@ -293,12 +294,12 @@ const chargingCompleteTemplate = (data: ChargingNotificationData): string => `
 // Enviar notificación de recarga de billetera
 export async function sendWalletRechargeNotification(data: PaymentNotificationData): Promise<boolean> {
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await resend.emails.send(buildEmailParams({
       from: FROM_EMAIL,
       to: data.userEmail,
       subject: `✓ Recarga exitosa de ${formatCurrency(data.amount)} - EVGreen`,
       html: walletRechargeTemplate(data),
-    });
+    }));
 
     if (error) {
       console.error('[PaymentNotification] Error sending wallet recharge email:', error);
@@ -316,12 +317,12 @@ export async function sendWalletRechargeNotification(data: PaymentNotificationDa
 // Enviar notificación de carga completada
 export async function sendChargingCompleteNotification(data: ChargingNotificationData): Promise<boolean> {
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await resend.emails.send(buildEmailParams({
       from: FROM_EMAIL,
       to: data.userEmail,
       subject: `🔋 Carga completada: ${data.energyKwh.toFixed(1)} kWh en ${data.stationName} - EVGreen`,
       html: chargingCompleteTemplate(data),
-    });
+    }));
 
     if (error) {
       console.error('[PaymentNotification] Error sending charging complete email:', error);

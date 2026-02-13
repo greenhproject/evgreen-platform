@@ -2110,3 +2110,9 @@
 - [x] event-router.ts: QR codes ahora se generan internamente con fallback a data URI
 - [x] broadcast-service.ts: logo ahora apunta a CloudFront
 - [x] 417 tests pasando (25 archivos), servidor sin errores
+
+## Mejora: Entregabilidad de emails - 12 Febrero 2026
+- [ ] Verificar configuración SPF/DKIM/DMARC en DNS de evgreen.lat para Resend
+- [x] Agregar versión plain-text automática a todos los emails HTML
+- [x] Implementar mejoras adicionales anti-spam (List-Unsubscribe, headers correctos)
+- [ ] Probar envío de email a Gmail para verificar que no cae en spam
