@@ -2149,3 +2149,4 @@
 - [ ] Generar imagen vertical (9:16) del hero eléctrico para móviles
 - [ ] Implementar responsive image switching (desktop vs mobile)
 - [ ] Agregar efecto parallax sutil al fondo del hero
+- [x] Buscar fuente más parecida al logo EVGreen (geométrica redondeada, EV bold, Green light) y actualizar hero
