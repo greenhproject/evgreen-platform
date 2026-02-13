@@ -2100,3 +2100,13 @@
 - [x] Solución: Backend ahora espera 2s y re-consulta Wompi antes de retornar, capturando aprobaciones rápidas
 - [x] Polling frontend: setInterval cada 3s, máx 20 intentos (60s), con cleanup en unmount
 - [x] 417 tests pasando (25 archivos)
+
+## Bug: Emails van a spam por imágenes de dominios externos - 12 Febrero 2026 - COMPLETADO
+- [x] Resend Insights: "Host images on the sending domain" - imágenes de api.qrserver.com y files.manuscdn.com
+- [x] Identificadas 3 fuentes: api.qrserver.com (QR), files.manuscdn.com (fondo evento), evgreen.lat/logo-white.png
+- [x] Creado server/utils/qr-generator.ts: genera QR codes con librería qrcode y los sube a S3/CloudFront
+- [x] Imagen de fondo del evento subida a S3/CloudFront
+- [x] Logo EVGreen subido a S3/CloudFront para broadcast-service.ts
+- [x] event-router.ts: QR codes ahora se generan internamente con fallback a data URI
+- [x] broadcast-service.ts: logo ahora apunta a CloudFront
+- [x] 417 tests pasando (25 archivos), servidor sin errores

@@ -100,10 +100,11 @@ describe("Event Router - Unit Tests", () => {
       const qrUrl = `https://evgreen.lat/event-checkin/${guest.qrCode}`;
       expect(qrUrl).toBe("https://evgreen.lat/event-checkin/EVG-12345678-ABC");
 
-      // Verify QR image URL generation
-      const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}&bgcolor=0a0a0a&color=22c55e&format=png`;
-      expect(qrImageUrl).toContain("EVG-12345678-ABC");
-      expect(qrImageUrl).toContain("create-qr-code");
+      // Verify QR code is now generated internally via S3 (no external api.qrserver.com)
+      // QR file key uses guest.qrCode for uniqueness
+      const qrFileKey = `evgreen/qr-codes/event-${guest.qrCode}.png`;
+      expect(qrFileKey).toContain("EVG-12345678-ABC");
+      expect(qrFileKey).toContain("evgreen/qr-codes");
     });
 
     it("should include founder slot badge when slot is assigned", () => {
