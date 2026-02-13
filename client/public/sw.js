@@ -1,13 +1,21 @@
-// EVGreen Service Worker v1.0.0
-const CACHE_NAME = 'evgreen-cache-v1';
+// EVGreen Service Worker v2.0.0 - Actualizado con nuevos íconos
+const CACHE_NAME = 'evgreen-cache-v2';
 const OFFLINE_URL = '/offline.html';
 
 // Recursos para cachear en la instalación
 const PRECACHE_ASSETS = [
   '/',
   '/offline.html',
+  '/icons/icon-72x72.png',
+  '/icons/icon-96x96.png',
+  '/icons/icon-128x128.png',
+  '/icons/icon-144x144.png',
+  '/icons/icon-152x152.png',
   '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png'
+  '/icons/icon-384x384.png',
+  '/icons/icon-512x512.png',
+  '/icons/apple-touch-icon.png',
+  '/icons/badge-72x72.png'
 ];
 
 // Instalación del Service Worker
