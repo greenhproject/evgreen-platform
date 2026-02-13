@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import { Link } from "wouter";
-import { motion, useScroll, useTransform } from "framer-motion";
-import { useRef } from "react";
+import { motion, useScroll, useTransform, useInView } from "framer-motion";
+import { useRef, useState } from "react";
 import { 
   Zap, 
   MapPin, 
@@ -436,6 +436,117 @@ export default function Landing() {
               <ChevronRight className="w-5 h-5 ml-2" />
             </Button>
           </motion.div>
+        </div>
+      </section>
+
+      {/* Estaciones del Futuro - Showcase */}
+      <section className="py-16 sm:py-24 px-4 relative overflow-hidden">
+        {/* Fondo sutil */}
+        <div className="absolute inset-0 bg-gradient-to-b from-background via-primary/[0.03] to-background" />
+        
+        <div className="container relative z-10">
+          {/* Encabezado */}
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.7 }}
+            className="text-center mb-12 sm:mb-16"
+          >
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-medium mb-4">
+              <Zap className="w-4 h-4" />
+              Visión del Futuro
+            </div>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-foreground mb-4">
+              Nuestras Estaciones
+            </h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              Así se verán las estaciones de carga EVGreen: tecnología solar, diseño premium y carga ultrarrápida con paneles Huawei.
+            </p>
+          </motion.div>
+
+          {/* Galería día/noche con toggle */}
+          <div className="max-w-5xl mx-auto">
+            {/* Imagen principal con efecto de transición */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true, margin: "-50px" }}
+              transition={{ duration: 0.8 }}
+              className="relative rounded-2xl overflow-hidden group"
+            >
+              {/* Imagen de día */}
+              <div className="relative">
+                <img 
+                  src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/IkjZGHwZzMBroijl.png"
+                  alt="Estación EVGreen - Vista diurna con paneles solares y cargadores Huawei"
+                  className="w-full h-auto object-contain rounded-2xl"
+                />
+                {/* Overlay gradiente inferior */}
+                <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent rounded-b-2xl" />
+                {/* Label */}
+                <div className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6">
+                  <div className="flex items-center gap-2 text-white">
+                    <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                    <span className="text-sm sm:text-base font-medium">Vista Diurna</span>
+                  </div>
+                  <p className="text-white/70 text-xs sm:text-sm mt-1">Paneles solares integrados &middot; Carga ultrarrápida</p>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Imagen de noche */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true, margin: "-50px" }}
+              transition={{ duration: 0.8, delay: 0.15 }}
+              className="relative rounded-2xl overflow-hidden mt-6 sm:mt-8 group"
+            >
+              <div className="relative">
+                <img 
+                  src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/HAGBjIecmTtStdFv.png"
+                  alt="Estación EVGreen - Vista nocturna con iluminación LED verde"
+                  className="w-full h-auto object-contain rounded-2xl"
+                />
+                {/* Overlay gradiente inferior */}
+                <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent rounded-b-2xl" />
+                {/* Efecto glow verde en la noche */}
+                <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-primary/20" />
+                {/* Label */}
+                <div className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6">
+                  <div className="flex items-center gap-2 text-white">
+                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                    <span className="text-sm sm:text-base font-medium">Vista Nocturna</span>
+                  </div>
+                  <p className="text-white/70 text-xs sm:text-sm mt-1">Iluminación LED verde &middot; Operación 24/7</p>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Características destacadas debajo */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 mt-8 sm:mt-12">
+              {[
+                { icon: Zap, label: "Carga DC", desc: "Hasta 360kW" },
+                { icon: Shield, label: "Paneles Solares", desc: "Energía limpia" },
+                { icon: Smartphone, label: "App EVGreen", desc: "Control total" },
+                { icon: Clock, label: "24/7", desc: "Siempre disponible" },
+              ].map((item, i) => (
+                <motion.div
+                  key={item.label}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: i * 0.1 }}
+                  className="text-center p-4 rounded-xl bg-card/50 border border-border/50"
+                >
+                  <item.icon className="w-6 h-6 text-primary mx-auto mb-2" />
+                  <div className="font-semibold text-sm text-foreground">{item.label}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{item.desc}</div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
