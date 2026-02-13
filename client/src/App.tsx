@@ -71,6 +71,7 @@ import AdminPayouts from "./pages/admin/Payouts";
 import AdminCrowdfunding from "./pages/admin/Crowdfunding";
 import AdminOCPPMonitor from "./pages/AdminOCPPMonitor";
 import { AIChatWidget } from "./components/AIChat";
+import { InstallBanner } from "./components/InstallBanner";
 
 // Páginas de Staff (Evento)
 import EventCheckIn from "./pages/staff/EventCheckIn";
@@ -503,6 +504,7 @@ function App() {
             <>
               <Router />
               <AIChatWidget />
+              <InstallBanner />
             </>
           )}
         </TooltipProvider>
