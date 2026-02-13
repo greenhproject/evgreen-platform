@@ -2166,3 +2166,4 @@
 - [x] Generar APK firmado con TWA/Bubblewrap para distribución directa en Android
 - [x] Agregar botón de descarga directa del APK en la landing page
 - [x] Separar botones + y × en el header del EV Assistant para evitar confusión en móvil
+- [x] Corregir botón × duplicado en header del EV Assistant (aparecen 3 botones)
