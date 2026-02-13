@@ -33,6 +33,11 @@ import {
   QrCode,
   Banknote,
   ChevronRight,
+  RefreshCw,
+  BatteryCharging,
+  RotateCcw,
+  Gift,
+  Settings,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -334,8 +339,35 @@ export default function UserWallet() {
     }).format(num);
   };
 
-  const getTransactionIcon = (type: string) => {
-    switch (type) {
+  // Detectar subtipo de transacción basado en la descripción
+  const getTransactionSubtype = (tx: { type: string; description?: string | null }) => {
+    const desc = (tx.description || "").toLowerCase();
+    if (desc.includes("auto-recarga") || desc.includes("auto-cobro") || desc.includes("atc-")) {
+      return "AUTO_CHARGE";
+    }
+    if (desc.includes("recarga r\u00e1pida") || desc.includes("qrc-")) {
+      return "QUICK_RECHARGE";
+    }
+    if (desc.includes("reconciliaci\u00f3n")) {
+      return "RECONCILIATION";
+    }
+    if (desc.includes("ajuste admin") || desc.includes("admin:")) {
+      return "ADMIN_ADJUSTMENT";
+    }
+    return tx.type;
+  };
+
+  const getTransactionIcon = (type: string, description?: string | null) => {
+    const subtype = getTransactionSubtype({ type, description });
+    switch (subtype) {
+      case "AUTO_CHARGE":
+        return <BatteryCharging className="w-4 h-4 text-amber-500" />;
+      case "QUICK_RECHARGE":
+        return <Zap className="w-4 h-4 text-emerald-500" />;
+      case "RECONCILIATION":
+        return <RefreshCw className="w-4 h-4 text-blue-500" />;
+      case "ADMIN_ADJUSTMENT":
+        return <Settings className="w-4 h-4 text-purple-500" />;
       case "RECHARGE":
       case "STRIPE_PAYMENT":
       case "WOMPI_RECHARGE":
@@ -344,9 +376,70 @@ export default function UserWallet() {
       case "CHARGE_PAYMENT":
         return <Zap className="w-4 h-4 text-orange-500" />;
       case "REFUND":
-        return <ArrowUpRight className="w-4 h-4 text-blue-500" />;
+        return <RotateCcw className="w-4 h-4 text-blue-500" />;
       default:
         return <Clock className="w-4 h-4 text-muted-foreground" />;
+    }
+  };
+
+  const getTransactionBgColor = (tx: { type: string; description?: string | null }) => {
+    const subtype = getTransactionSubtype(tx);
+    switch (subtype) {
+      case "AUTO_CHARGE":
+        return "bg-amber-500/10";
+      case "QUICK_RECHARGE":
+        return "bg-emerald-500/10";
+      case "RECONCILIATION":
+        return "bg-blue-500/10";
+      case "ADMIN_ADJUSTMENT":
+        return "bg-purple-500/10";
+      case "RECHARGE":
+      case "STRIPE_PAYMENT":
+      case "WOMPI_RECHARGE":
+        return "bg-primary/10";
+      case "CHARGE":
+      case "CHARGE_PAYMENT":
+        return "bg-orange-500/10";
+      case "REFUND":
+        return "bg-blue-500/10";
+      default:
+        return "bg-muted";
+    }
+  };
+
+  const getTransactionBadge = (tx: { type: string; description?: string | null }) => {
+    const subtype = getTransactionSubtype(tx);
+    switch (subtype) {
+      case "AUTO_CHARGE":
+        return { label: "Auto-cobro", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" };
+      case "QUICK_RECHARGE":
+        return { label: "R\u00e1pida", className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" };
+      case "RECONCILIATION":
+        return { label: "Reconciliada", className: "bg-blue-500/15 text-blue-400 border-blue-500/30" };
+      default:
+        return null;
+    }
+  };
+
+  // Descripción amigable para el usuario
+  const getTransactionLabel = (tx: { type: string; description?: string | null }) => {
+    const subtype = getTransactionSubtype(tx);
+    switch (subtype) {
+      case "AUTO_CHARGE":
+        return "Cobro autom\u00e1tico por saldo insuficiente";
+      case "QUICK_RECHARGE":
+        return "Recarga r\u00e1pida con tarjeta";
+      case "RECONCILIATION":
+        return "Recarga reconciliada";
+      case "ADMIN_ADJUSTMENT":
+        return tx.description || "Ajuste administrativo";
+      case "CHARGE":
+      case "CHARGE_PAYMENT":
+        return "Pago por sesi\u00f3n de carga";
+      case "REFUND":
+        return "Reembolso";
+      default:
+        return tx.description || "Recarga de billetera";
     }
   };
 
@@ -669,34 +762,43 @@ export default function UserWallet() {
                 <p className="text-xs text-muted-foreground mt-1">Tus recargas y pagos aparecerán aquí</p>
               </Card>
             ) : (
-              transactions?.map((tx) => (
-                <Card key={tx.id} className="p-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
-                      ["RECHARGE", "STRIPE_PAYMENT", "WOMPI_RECHARGE"].includes(tx.type) ? "bg-primary/10" : "bg-orange-500/10"
-                    }`}>
-                      {getTransactionIcon(tx.type)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{tx.description}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(tx.createdAt).toLocaleDateString("es-CO", {
-                          day: "numeric",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+              transactions?.map((tx) => {
+                const badge = getTransactionBadge(tx);
+                const isCredit = ["RECHARGE", "STRIPE_PAYMENT", "WOMPI_RECHARGE", "REFUND"].includes(tx.type);
+                return (
+                  <Card key={tx.id} className="p-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center ${getTransactionBgColor(tx)}`}>
+                        {getTransactionIcon(tx.type, tx.description)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium truncate">{getTransactionLabel(tx)}</span>
+                          {badge && (
+                            <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 font-medium border ${badge.className}`}>
+                              {badge.label}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(tx.createdAt).toLocaleDateString("es-CO", {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                      </div>
+                      <div className={`text-sm font-semibold ${
+                        isCredit ? "text-primary" : "text-foreground"
+                      }`}>
+                        {isCredit ? "+" : "-"}
+                        {formatCurrency(tx.amount)}
                       </div>
                     </div>
-                    <div className={`text-sm font-semibold ${
-                      ["RECHARGE", "STRIPE_PAYMENT", "WOMPI_RECHARGE"].includes(tx.type) ? "text-primary" : "text-foreground"
-                    }`}>
-                      {["RECHARGE", "STRIPE_PAYMENT", "WOMPI_RECHARGE"].includes(tx.type) ? "+" : "-"}
-                      {formatCurrency(tx.amount)}
-                    </div>
-                  </div>
-                </Card>
-              ))
+                  </Card>
+                );
+              })
             )}
           </TabsContent>
         </Tabs>

@@ -2116,3 +2116,9 @@
 - [x] Agregar versión plain-text automática a todos los emails HTML
 - [x] Implementar mejoras adicionales anti-spam (List-Unsubscribe, headers correctos)
 - [ ] Probar envío de email a Gmail para verificar que no cae en spam
+
+## Mejoras Post Plain-Text - 12 Febrero 2026
+- [x] Verificar propagación DNS SPF/DKIM/DMARC para evgreen.lat (SPF OK, DKIM OK, DMARC p=none)
+- [x] Agregar diferenciación visual para transacciones auto-cobro (ATC-) en historial de billetera
+- [x] Agregar diferenciación visual para transacciones recarga rápida (QRC-) en historial de billetera
+- [x] Revisar y asegurar flujo completo de pagos (inscripción tarjeta, recarga rápida, auto-cobro)
