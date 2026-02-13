@@ -21,8 +21,10 @@ import {
   LineChart,
   Bot,
   Lightbulb,
-  Target
+  Target,
+  Download
 } from "lucide-react";
+import { InstallButton } from "@/components/InstallBanner";
 
 // Componente de conteo animado
 function AnimatedCounter({ value, suffix = "", prefix = "" }: { value: number; suffix?: string; prefix?: string }) {
@@ -192,6 +194,7 @@ export default function Landing() {
                 Ver estaciones
                 <MapPin className="w-5 h-5 ml-2" />
               </Button>
+              <InstallButton className="px-8 py-6 text-lg" />
             </motion.div>
 
             {/* Stats */}
