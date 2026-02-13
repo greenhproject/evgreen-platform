@@ -2193,3 +2193,15 @@
 - [x] Frontend: Toggle para activar/desactivar alertas de proximidad
 - [x] Frontend: Configurar radio de búsqueda (1-10 km)
 - [x] Tests unitarios para el servicio de proximidad
+
+## Corregir Interfaz de Configuración del Usuario - 13 Febrero 2026
+- [x] Analizar componente Settings.tsx actual y backend asociado
+- [x] Crear columnas en BD para preferencias de usuario (autoLocation, saveHistory, shareUsageData, preferredCurrency)
+- [x] Crear endpoints tRPC para leer/guardar preferencias de configuración
+- [x] Conectar toggles de Ubicación automática con backend
+- [x] Conectar toggles de Privacidad (historial, datos de uso) con backend
+- [x] Conectar selector de moneda con backend
+- [x] Implementar funcionalidad "Limpiar caché" real
+- [x] Implementar funcionalidad "Eliminar todos mis datos" con confirmación
+- [x] Botón "Guardar configuración" debe persistir todos los cambios
+- [x] Tests unitarios para endpoints de configuración
