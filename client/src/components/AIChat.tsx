@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
@@ -525,15 +526,26 @@ export function AIChatWidget() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-3">
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={handleNewChat}
                   title="Nueva conversación"
+                  className="h-9 w-9 rounded-full bg-primary/10 hover:bg-primary/20"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
+                <SheetClose asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Cerrar"
+                    className="h-9 w-9 rounded-full hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </SheetClose>
               </div>
             </div>
           </SheetHeader>
