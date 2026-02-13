@@ -2164,3 +2164,4 @@
 - [x] PWA: Botón de instalación directo en la landing page
 - [x] PWA: Banner de instalación personalizado para Android
 - [x] Generar APK firmado con TWA/Bubblewrap para distribución directa en Android
+- [x] Agregar botón de descarga directa del APK en la landing page
