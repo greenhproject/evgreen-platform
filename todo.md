@@ -984,7 +984,7 @@
 ### Compilación y Distribución
 - [x] Configurar EAS Build para Android
 - [x] Servidor de desarrollo Expo funcionando
-- [ ] Generar APK firmado (requiere cuenta Expo)
+- [x] Generar APK firmado (requiere cuenta Expo)
 - [ ] Crear página de descarga en sitio web
 - [ ] Configurar actualizaciones OTA
 
@@ -2163,3 +2163,4 @@
 - [x] PWA: Service Worker para caché offline y funcionalidad sin conexión
 - [x] PWA: Botón de instalación directo en la landing page
 - [x] PWA: Banner de instalación personalizado para Android
+- [x] Generar APK firmado con TWA/Bubblewrap para distribución directa en Android
