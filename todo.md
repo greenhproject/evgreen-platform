@@ -2150,3 +2150,4 @@
 - [ ] Implementar responsive image switching (desktop vs mobile)
 - [ ] Agregar efecto parallax sutil al fondo del hero
 - [x] Buscar fuente más parecida al logo EVGreen (geométrica redondeada, EV bold, Green light) y actualizar hero
+- [x] Corregir fuente hero EVGreen: cambiar Nunito por fuente italic/cursiva geométrica más fiel al logo original

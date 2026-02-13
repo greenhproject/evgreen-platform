@@ -72,36 +72,24 @@ export default function Landing() {
         <div className="container relative z-10 px-4 pt-24 sm:pt-32">
           <div className="max-w-4xl mx-auto text-center">
 
-            {/* EVGreen branding text over the image */}
+            {/* EVGreen logo image - original branding */}
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8 }}
-              className="mb-6 sm:mb-8"
+              className="mb-6 sm:mb-8 flex flex-col items-center"
             >
-              <div className="flex items-baseline justify-center gap-0" style={{ fontFamily: "'Nunito', sans-serif" }}>
-                <span 
-                  className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl leading-none"
-                  style={{ 
-                    fontWeight: 900,
-                    background: 'linear-gradient(180deg, #4ade80 0%, #16a34a 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    filter: 'drop-shadow(0 0 20px rgba(74, 222, 128, 0.4))',
-                  }}
-                >EV</span>
-                <span 
-                  className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl leading-none"
-                  style={{ 
-                    fontWeight: 300,
-                    color: 'rgba(255,255,255,0.85)',
-                    textShadow: '0 0 30px rgba(255,255,255,0.15)',
-                  }}
-                >Green</span>
-              </div>
+              <img 
+                src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/gekxZzGAUtRrZBzW.png" 
+                alt="EVGreen" 
+                className="h-20 sm:h-28 md:h-36 lg:h-44 w-auto object-contain"
+                style={{ 
+                  filter: 'drop-shadow(0 0 30px rgba(74, 222, 128, 0.35))',
+                }}
+              />
               <div 
-                className="text-xs sm:text-sm md:text-base text-white/70 tracking-[0.25em] uppercase mt-2"
-                style={{ fontFamily: "'Nunito', sans-serif", fontWeight: 400 }}
+                className="text-xs sm:text-sm md:text-base text-white/70 tracking-[0.25em] uppercase mt-3"
+                style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 400 }}
               >
                 by Green House Project
               </div>
