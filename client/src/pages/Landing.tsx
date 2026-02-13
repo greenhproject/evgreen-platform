@@ -27,28 +27,28 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-background overflow-hidden">
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center px-4 py-20">
-        {/* Hero background image */}
-        <div className="absolute inset-0">
-          <img 
-            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/pPtzYHFkfAUbWzxt.png" 
-            alt="" 
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background" />
+      <section className="relative min-h-screen flex flex-col">
+        {/* Dark background */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0a1a0f] via-background to-background" />
+        
+        {/* Hero image as contained banner at top */}
+        <div className="relative z-10 w-full flex justify-center pt-8 sm:pt-12">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8 }}
+            className="w-full max-w-2xl px-4"
+          >
+            <img 
+              src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/pPtzYHFkfAUbWzxt.png" 
+              alt="EVGreen by Green House Project" 
+              className="w-full h-auto object-contain rounded-2xl shadow-[0_0_60px_rgba(34,197,94,0.15)]"
+            />
+          </motion.div>
         </div>
         
-        <div className="container relative z-10">
+        <div className="container relative z-10 flex-1 flex items-start justify-center px-4 pt-8 sm:pt-10 pb-20">
           <div className="max-w-4xl mx-auto text-center">
-            {/* Spacer for hero image logo */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.8 }}
-              className="mb-6"
-            >
-              <div className="h-32 sm:h-40 md:h-48" />
-            </motion.div>
 
             {/* Headline with AI emphasis */}
             <motion.h1
