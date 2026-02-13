@@ -46,7 +46,7 @@ export default function Landing() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 1.2 }}
-            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/seIbCrpzNBjgnEaa.png" 
+            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/UzuNvoZDAYcFYnrV.webp" 
             alt="" 
             className="w-full h-full object-cover object-center"
           />
@@ -60,7 +60,7 @@ export default function Landing() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 1.2 }}
-            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/RXYcnClZZCoTdMMX.png" 
+            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/aBzFRXnbBhAjtyOP.webp" 
             alt="" 
             className="w-full h-full object-cover object-top"
           />
@@ -72,27 +72,41 @@ export default function Landing() {
         <div className="container relative z-10 px-4 pt-24 sm:pt-32">
           <div className="max-w-4xl mx-auto text-center">
 
-            {/* EVGreen logo image - original branding */}
+            {/* EVGreen logo image - original branding with entrance animation */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.8 }}
+              initial={{ opacity: 0, scale: 0.7, y: -20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
               className="mb-6 sm:mb-8 flex flex-col items-center"
             >
-              <img 
+              <motion.img 
                 src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/gekxZzGAUtRrZBzW.png" 
                 alt="EVGreen" 
                 className="h-20 sm:h-28 md:h-36 lg:h-44 w-auto object-contain"
-                style={{ 
-                  filter: 'drop-shadow(0 0 30px rgba(74, 222, 128, 0.35))',
+                animate={{
+                  filter: [
+                    'drop-shadow(0 0 20px rgba(74, 222, 128, 0.25))',
+                    'drop-shadow(0 0 40px rgba(74, 222, 128, 0.5))',
+                    'drop-shadow(0 0 20px rgba(74, 222, 128, 0.25))',
+                  ],
+                }}
+                transition={{
+                  filter: {
+                    duration: 3,
+                    repeat: Infinity,
+                    ease: 'easeInOut',
+                  },
                 }}
               />
-              <div 
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.5 }}
                 className="text-xs sm:text-sm md:text-base text-white/70 tracking-[0.25em] uppercase mt-3"
                 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 400 }}
               >
                 by Green House Project
-              </div>
+              </motion.div>
             </motion.div>
 
             {/* Headline with AI emphasis */}
