@@ -3838,3 +3838,155 @@ export async function getPendingWompiTransactions(): Promise<WompiTransaction[]>
     .orderBy(desc(wompiTransactions.createdAt))
     .limit(100);
 }
+
+
+// ============================================================================
+// USER VEHICLES OPERATIONS
+// ============================================================================
+
+import {
+  userVehicles,
+  UserVehicle,
+  InsertUserVehicle,
+} from "../drizzle/schema";
+
+export async function getUserVehicles(userId: number): Promise<UserVehicle[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(userVehicles)
+    .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, true)))
+    .orderBy(desc(userVehicles.isDefault), desc(userVehicles.createdAt));
+}
+
+export async function getUserVehicleById(id: number, userId: number): Promise<UserVehicle | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(userVehicles)
+    .where(and(eq(userVehicles.id, id), eq(userVehicles.userId, userId)))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createUserVehicle(vehicle: InsertUserVehicle): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Si es el primer vehículo del usuario o se marca como default, asegurar que solo uno sea default
+  if (vehicle.isDefault) {
+    await db
+      .update(userVehicles)
+      .set({ isDefault: false })
+      .where(eq(userVehicles.userId, vehicle.userId));
+  }
+
+  // Si es el primer vehículo, marcarlo como default automáticamente
+  const existingCount = await db
+    .select({ count: count() })
+    .from(userVehicles)
+    .where(and(eq(userVehicles.userId, vehicle.userId), eq(userVehicles.isActive, true)));
+
+  if (existingCount[0].count === 0) {
+    vehicle.isDefault = true;
+  }
+
+  const result = await db.insert(userVehicles).values(vehicle);
+  return Number(result[0].insertId);
+}
+
+export async function updateUserVehicle(
+  id: number,
+  userId: number,
+  data: Partial<InsertUserVehicle>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Si se marca como default, quitar default de los demás
+  if (data.isDefault) {
+    await db
+      .update(userVehicles)
+      .set({ isDefault: false })
+      .where(and(eq(userVehicles.userId, userId), ne(userVehicles.id, id)));
+  }
+
+  await db
+    .update(userVehicles)
+    .set(data)
+    .where(and(eq(userVehicles.id, id), eq(userVehicles.userId, userId)));
+}
+
+export async function deleteUserVehicle(id: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Soft delete
+  await db
+    .update(userVehicles)
+    .set({ isActive: false, isDefault: false })
+    .where(and(eq(userVehicles.id, id), eq(userVehicles.userId, userId)));
+
+  // Si el eliminado era el default, asignar default al siguiente vehículo activo
+  const remaining = await db
+    .select()
+    .from(userVehicles)
+    .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, true)))
+    .orderBy(desc(userVehicles.createdAt))
+    .limit(1);
+
+  if (remaining.length > 0) {
+    const hasDefault = await db
+      .select()
+      .from(userVehicles)
+      .where(
+        and(
+          eq(userVehicles.userId, userId),
+          eq(userVehicles.isActive, true),
+          eq(userVehicles.isDefault, true)
+        )
+      )
+      .limit(1);
+
+    if (hasDefault.length === 0) {
+      await db
+        .update(userVehicles)
+        .set({ isDefault: true })
+        .where(eq(userVehicles.id, remaining[0].id));
+    }
+  }
+}
+
+export async function setDefaultVehicle(id: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  // Quitar default de todos
+  await db
+    .update(userVehicles)
+    .set({ isDefault: false })
+    .where(eq(userVehicles.userId, userId));
+  // Marcar el seleccionado como default
+  await db
+    .update(userVehicles)
+    .set({ isDefault: true })
+    .where(and(eq(userVehicles.id, id), eq(userVehicles.userId, userId)));
+}
+
+export async function getDefaultVehicle(userId: number): Promise<UserVehicle | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(userVehicles)
+    .where(
+      and(
+        eq(userVehicles.userId, userId),
+        eq(userVehicles.isActive, true),
+        eq(userVehicles.isDefault, true)
+      )
+    )
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}

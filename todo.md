@@ -2169,3 +2169,4 @@
 - [x] Corregir botón × duplicado en header del EV Assistant (aparecen 3 botones)
 - [x] Corregir formulario de vehículos: permitir configurar marca/modelo (no siempre Renault Zoe)
 - [x] Agregar conectores GBT (AC) y GBT DC a las opciones de conectores
+- [x] Persistir vehículos en la base de datos (tabla vehicles, tRPC CRUD, conectar frontend)

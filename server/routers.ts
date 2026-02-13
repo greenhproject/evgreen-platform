@@ -2584,6 +2584,133 @@ const favoritesRouter = router({
     }),
 });
 
+// ============================================================================
+// VEHICLES ROUTER - Gestión de vehículos del usuario
+// ============================================================================
+
+const connectorTypeValues = ["TYPE_1", "TYPE_2", "CCS_1", "CCS_2", "CHADEMO", "TESLA", "GBT_AC", "GBT_DC"] as const;
+
+const vehiclesRouter = router({
+  // Obtener todos los vehículos del usuario autenticado
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.getUserVehicles(ctx.user.id);
+  }),
+
+  // Obtener un vehículo específico
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const vehicle = await db.getUserVehicleById(input.id, ctx.user.id);
+      if (!vehicle) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Vehículo no encontrado" });
+      }
+      return vehicle;
+    }),
+
+  // Obtener el vehículo por defecto
+  getDefault: protectedProcedure.query(async ({ ctx }) => {
+    return db.getDefaultVehicle(ctx.user.id);
+  }),
+
+  // Crear un nuevo vehículo
+  create: protectedProcedure
+    .input(
+      z.object({
+        brand: z.string().min(1, "La marca es requerida").max(100),
+        model: z.string().min(1, "El modelo es requerido").max(100),
+        year: z.number().min(1990).max(2030).optional(),
+        licensePlate: z.string().max(20).optional(),
+        batteryCapacityKwh: z.number().min(0).max(999).optional(),
+        rangeKm: z.number().min(0).max(2000).optional(),
+        connectorTypes: z.array(z.enum(connectorTypeValues)).min(1, "Selecciona al menos un tipo de conector"),
+        maxChargePowerKw: z.number().min(0).max(999).optional(),
+        isDefault: z.boolean().optional(),
+        nickname: z.string().max(100).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const id = await db.createUserVehicle({
+        userId: ctx.user.id,
+        brand: input.brand,
+        model: input.model,
+        year: input.year ?? null,
+        licensePlate: input.licensePlate ?? null,
+        batteryCapacityKwh: input.batteryCapacityKwh?.toString() ?? null,
+        rangeKm: input.rangeKm ?? null,
+        connectorTypes: input.connectorTypes,
+        maxChargePowerKw: input.maxChargePowerKw?.toString() ?? null,
+        isDefault: input.isDefault ?? false,
+        nickname: input.nickname ?? null,
+      });
+      return { id, message: "Vehículo registrado exitosamente" };
+    }),
+
+  // Actualizar un vehículo existente
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        brand: z.string().min(1).max(100).optional(),
+        model: z.string().min(1).max(100).optional(),
+        year: z.number().min(1990).max(2030).nullable().optional(),
+        licensePlate: z.string().max(20).nullable().optional(),
+        batteryCapacityKwh: z.number().min(0).max(999).nullable().optional(),
+        rangeKm: z.number().min(0).max(2000).nullable().optional(),
+        connectorTypes: z.array(z.enum(connectorTypeValues)).min(1).optional(),
+        maxChargePowerKw: z.number().min(0).max(999).nullable().optional(),
+        isDefault: z.boolean().optional(),
+        nickname: z.string().max(100).nullable().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      // Verificar que el vehículo existe y pertenece al usuario
+      const existing = await db.getUserVehicleById(id, ctx.user.id);
+      if (!existing) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Vehículo no encontrado" });
+      }
+
+      const updateData: Record<string, unknown> = {};
+      if (data.brand !== undefined) updateData.brand = data.brand;
+      if (data.model !== undefined) updateData.model = data.model;
+      if (data.year !== undefined) updateData.year = data.year;
+      if (data.licensePlate !== undefined) updateData.licensePlate = data.licensePlate;
+      if (data.batteryCapacityKwh !== undefined) updateData.batteryCapacityKwh = data.batteryCapacityKwh?.toString() ?? null;
+      if (data.rangeKm !== undefined) updateData.rangeKm = data.rangeKm;
+      if (data.connectorTypes !== undefined) updateData.connectorTypes = data.connectorTypes;
+      if (data.maxChargePowerKw !== undefined) updateData.maxChargePowerKw = data.maxChargePowerKw?.toString() ?? null;
+      if (data.isDefault !== undefined) updateData.isDefault = data.isDefault;
+      if (data.nickname !== undefined) updateData.nickname = data.nickname;
+
+      await db.updateUserVehicle(id, ctx.user.id, updateData);
+      return { message: "Vehículo actualizado exitosamente" };
+    }),
+
+  // Eliminar un vehículo (soft delete)
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = await db.getUserVehicleById(input.id, ctx.user.id);
+      if (!existing) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Vehículo no encontrado" });
+      }
+      await db.deleteUserVehicle(input.id, ctx.user.id);
+      return { message: "Vehículo eliminado exitosamente" };
+    }),
+
+  // Establecer un vehículo como predeterminado
+  setDefault: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = await db.getUserVehicleById(input.id, ctx.user.id);
+      if (!existing) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Vehículo no encontrado" });
+      }
+      await db.setDefaultVehicle(input.id, ctx.user.id);
+      return { message: "Vehículo establecido como predeterminado" };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -2612,6 +2739,7 @@ export const appRouter = router({
   crowdfunding: crowdfundingRouter,
   event: eventRouter,
   favorites: favoritesRouter,
+  vehicles: vehiclesRouter,
 });
 
 export type AppRouter = typeof appRouter;
