@@ -42,18 +42,13 @@ export default function Landing() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
-              className="mb-8"
+              className="mb-8 flex justify-center"
             >
-              <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-primary/10 border border-primary/20">
-                <div className="h-6 w-6 rounded-md bg-gradient-to-br from-primary to-emerald-400 flex items-center justify-center">
-                  <Zap className="w-3.5 h-3.5 text-white" />
-                </div>
-                <span className="text-sm font-medium">
-                  <span className="text-primary">EV</span>
-                  <span className="text-foreground">Green</span>
-                  <span className="text-muted-foreground"> by Green House Project</span>
-                </span>
-              </div>
+              <img 
+                src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/GGDXOuWzwOqcapbY.png" 
+                alt="EVGreen" 
+                className="h-20 sm:h-24 md:h-28 w-auto object-contain drop-shadow-[0_0_25px_rgba(34,197,94,0.3)]"
+              />
             </motion.div>
 
             {/* Headline with AI emphasis */}
@@ -670,14 +665,12 @@ export default function Landing() {
         <div className="container">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-emerald-400 flex items-center justify-center">
-                <Zap className="w-4 h-4 text-white" />
-              </div>
-              <span className="font-bold text-lg">
-                <span className="text-primary">EV</span>
-                <span className="text-foreground">Green</span>
-              </span>
-              <span className="text-muted-foreground">by Green House Project</span>
+              <img 
+                src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/GGDXOuWzwOqcapbY.png" 
+                alt="EVGreen" 
+                className="h-10 w-auto object-contain"
+              />
+              <span className="text-muted-foreground text-sm">by Green House Project</span>
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
               <a href="#" className="hover:text-foreground transition-colors">Términos</a>
