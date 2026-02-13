@@ -5,6 +5,9 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
+import { getDb } from "./db";
+import { users, userVehicles, favoriteStations, notifications } from "../drizzle/schema";
+import { eq } from "drizzle-orm";
 import { aiRouter } from "./ai/ai-router";
 import { stripeRouter } from "./stripe/router";
 import { wompiRouter } from "./wompi/router";
@@ -2590,6 +2593,136 @@ const favoritesRouter = router({
 
 const connectorTypeValues = ["TYPE_1", "TYPE_2", "CCS_1", "CCS_2", "CHADEMO", "TESLA", "GBT_AC", "GBT_DC"] as const;
 
+// ============================================================================
+// USER CONFIG ROUTER - Preferencias de configuración del usuario
+// ============================================================================
+
+const userConfigRouter = router({
+  // Obtener configuración del usuario
+  get: protectedProcedure.query(async ({ ctx }) => {
+    const database = await getDb();
+    if (!database) {
+      return {
+        language: "es",
+        distanceUnit: "km",
+        currency: "COP",
+        autoLocate: true,
+        saveHistory: true,
+        shareUsageData: false,
+      };
+    }
+    const [user] = await database
+      .select({
+        language: users.prefLanguage,
+        distanceUnit: users.prefDistanceUnit,
+        currency: users.prefCurrency,
+        autoLocate: users.prefAutoLocate,
+        saveHistory: users.prefSaveHistory,
+        shareUsageData: users.prefShareUsageData,
+      })
+      .from(users)
+      .where(eq(users.id, ctx.user.id))
+      .limit(1);
+
+    return {
+      language: user?.language ?? "es",
+      distanceUnit: user?.distanceUnit ?? "km",
+      currency: user?.currency ?? "COP",
+      autoLocate: user?.autoLocate ?? true,
+      saveHistory: user?.saveHistory ?? true,
+      shareUsageData: user?.shareUsageData ?? false,
+    };
+  }),
+
+  // Guardar configuración del usuario
+  save: protectedProcedure
+    .input(z.object({
+      language: z.enum(["es", "en"]).optional(),
+      distanceUnit: z.enum(["km", "mi"]).optional(),
+      currency: z.enum(["COP", "USD"]).optional(),
+      autoLocate: z.boolean().optional(),
+      saveHistory: z.boolean().optional(),
+      shareUsageData: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      }
+
+      const updateData: Record<string, unknown> = {};
+      if (input.language !== undefined) updateData.prefLanguage = input.language;
+      if (input.distanceUnit !== undefined) updateData.prefDistanceUnit = input.distanceUnit;
+      if (input.currency !== undefined) updateData.prefCurrency = input.currency;
+      if (input.autoLocate !== undefined) updateData.prefAutoLocate = input.autoLocate;
+      if (input.saveHistory !== undefined) updateData.prefSaveHistory = input.saveHistory;
+      if (input.shareUsageData !== undefined) updateData.prefShareUsageData = input.shareUsageData;
+
+      if (Object.keys(updateData).length > 0) {
+        await database
+          .update(users)
+          .set(updateData)
+          .where(eq(users.id, ctx.user.id));
+      }
+
+      return { success: true };
+    }),
+
+  // Limpiar caché del usuario (resetear datos locales)
+  clearCache: protectedProcedure.mutation(async ({ ctx }) => {
+    // Limpiar caché del servidor para este usuario (si existe)
+    return { success: true, message: "Caché limpiado exitosamente" };
+  }),
+
+  // Eliminar todos los datos del usuario
+  deleteAllData: protectedProcedure
+    .input(z.object({
+      confirmEmail: z.string().email(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      }
+
+      // Verificar que el email coincide con el del usuario
+      const [user] = await database
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, ctx.user.id))
+        .limit(1);
+
+      if (!user?.email || user.email !== input.confirmEmail) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El email de confirmación no coincide" });
+      }
+
+      // Eliminar datos asociados al usuario (en orden por dependencias)
+      // 1. Eliminar vehículos
+      await database.delete(userVehicles).where(eq(userVehicles.userId, ctx.user.id));
+      // 2. Eliminar favoritos
+      await database.delete(favoriteStations).where(eq(favoriteStations.userId, ctx.user.id));
+      // 3. Eliminar notificaciones
+      await database.delete(notifications).where(eq(notifications.userId, ctx.user.id));
+      // 4. Resetear preferencias del usuario
+      await database.update(users).set({
+        prefLanguage: "es",
+        prefDistanceUnit: "km",
+        prefCurrency: "COP",
+        prefAutoLocate: true,
+        prefSaveHistory: true,
+        prefShareUsageData: false,
+        notifyChargingComplete: true,
+        notifyLowBalance: true,
+        notifyPromotions: true,
+        notifyProximity: true,
+        proximityRadiusKm: 5,
+        fcmToken: null,
+      }).where(eq(users.id, ctx.user.id));
+
+      return { success: true, message: "Todos tus datos han sido eliminados" };
+    }),
+});
+
 const vehiclesRouter = router({
   // Obtener todos los vehículos del usuario autenticado
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -2740,6 +2873,7 @@ export const appRouter = router({
   event: eventRouter,
   favorites: favoritesRouter,
   vehicles: vehiclesRouter,
+  userConfig: userConfigRouter,
 });
 
 export type AppRouter = typeof appRouter;

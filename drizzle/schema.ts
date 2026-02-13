@@ -80,6 +80,13 @@ export const users = mysqlTable("users", {
   notifyChargingComplete: boolean("notifyChargingComplete").default(true),
   notifyLowBalance: boolean("notifyLowBalance").default(true),
   notifyPromotions: boolean("notifyPromotions").default(true),
+  // Preferencias de configuración del usuario
+  prefLanguage: varchar("prefLanguage", { length: 10 }).default("es"),
+  prefDistanceUnit: varchar("prefDistanceUnit", { length: 5 }).default("km"),
+  prefCurrency: varchar("prefCurrency", { length: 5 }).default("COP"),
+  prefAutoLocate: boolean("prefAutoLocate").default(true),
+  prefSaveHistory: boolean("prefSaveHistory").default(true),
+  prefShareUsageData: boolean("prefShareUsageData").default(false),
   // Preferencias de alertas de proximidad
   notifyProximity: boolean("notifyProximity").default(true),
   proximityRadiusKm: int("proximityRadiusKm").default(5), // Radio de búsqueda en km (1-10)
