@@ -25,6 +25,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { NotificationPanel } from "@/components/NotificationPanel";
 import { getLoginUrl } from "@/const";
+import { useProximityAlerts } from "@/hooks/useProximityAlerts";
 
 interface UserLayoutProps {
   children: ReactNode;
@@ -48,6 +49,9 @@ export default function UserLayout({
   const { user, isAuthenticated, logout } = useAuth();
   const [location, setLocation] = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Activar alertas de proximidad en segundo plano
+  useProximityAlerts();
 
   const navItems = [
     { icon: MapPin, label: "Mapa", path: "/map" },
