@@ -27,27 +27,23 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-background overflow-hidden">
       {/* Hero Section */}
-      <section className="relative min-h-screen flex flex-col">
-        {/* Dark background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0a1a0f] via-background to-background" />
-        
-        {/* Hero image as contained banner at top */}
-        <div className="relative z-10 w-full flex justify-center pt-8 sm:pt-12">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
+      <section className="relative min-h-screen flex items-end justify-center pb-12 sm:pb-16">
+        {/* Full-width background image - integrated, no borders */}
+        <div className="absolute inset-0 overflow-hidden">
+          <motion.img 
+            initial={{ opacity: 0, scale: 1.05 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8 }}
-            className="w-full max-w-2xl px-4"
-          >
-            <img 
-              src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/pPtzYHFkfAUbWzxt.png" 
-              alt="EVGreen by Green House Project" 
-              className="w-full h-auto object-contain rounded-2xl shadow-[0_0_60px_rgba(34,197,94,0.15)]"
-            />
-          </motion.div>
+            transition={{ duration: 1.2 }}
+            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/pPtzYHFkfAUbWzxt.png" 
+            alt="" 
+            className="w-full h-full object-cover object-top"
+          />
+          {/* Strong gradient overlay: transparent at top to show logo, dark at bottom for text */}
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/60 to-background" />
+          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-b from-transparent to-background" />
         </div>
         
-        <div className="container relative z-10 flex-1 flex items-start justify-center px-4 pt-8 sm:pt-10 pb-20">
+        <div className="container relative z-10 px-4">
           <div className="max-w-4xl mx-auto text-center">
 
             {/* Headline with AI emphasis */}
