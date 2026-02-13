@@ -291,7 +291,21 @@ Tu nombre es "EV Assistant" y tu objetivo es ayudar a los usuarios con informaci
 `;
     }
 
-    if (context.vehicle) {
+    // Agregar vehículos del usuario desde la plataforma
+    if (platformContext?.user?.defaultVehicle) {
+      const v = platformContext.user.defaultVehicle;
+      prompt += `
+=== VEHÍCULO PREDETERMINADO DEL USUARIO ===
+- ${v.brand} ${v.model}${v.year ? ` (${v.year})` : ''}${v.nickname ? ` "${v.nickname}"` : ''}
+- Capacidad de batería: ${v.batteryCapacityKwh ? `${v.batteryCapacityKwh} kWh` : 'No especificada'}
+- Autonomía: ${v.rangeKm ? `${v.rangeKm} km` : 'No especificada'}
+- Conectores compatibles: ${v.connectorTypes.join(', ') || 'No especificado'}
+- Potencia máxima de carga: ${v.maxChargePowerKw ? `${v.maxChargePowerKw} kW` : 'No especificada'}
+`;
+      if (platformContext.user.vehicles.length > 1) {
+        prompt += `- Otros vehículos registrados: ${platformContext.user.vehicles.filter(vv => vv.id !== v.id).map(vv => `${vv.brand} ${vv.model}${vv.nickname ? ` "${vv.nickname}"` : ''}`).join(', ')}\n`;
+      }
+    } else if (context.vehicle) {
       prompt += `
 === VEHÍCULO REGISTRADO ===
 - ${context.vehicle.brand} ${context.vehicle.model}
@@ -300,15 +314,20 @@ Tu nombre es "EV Assistant" y tu objetivo es ayudar a los usuarios con informaci
 `;
     }
 
-    // Agregar estaciones cercanas con datos reales
+    // Agregar estaciones cercanas con datos reales (priorizando compatibles con el vehículo)
     if (platformContext?.nearbyStations && platformContext.nearbyStations.length > 0) {
+      const userConnectors = platformContext?.user?.defaultVehicle?.connectorTypes || [];
       prompt += `
 === ESTACIONES CERCANAS (DATOS EN TIEMPO REAL) ===
 `;
       for (const station of platformContext.nearbyStations.slice(0, 5)) {
         const distanceText = station.distance ? `${station.distance.toFixed(1)} km` : 'Distancia desconocida';
+        const isCompatible = userConnectors.length > 0
+          ? station.connectorTypes.some(ct => userConnectors.includes(ct))
+          : true;
+        const compatibleTag = userConnectors.length > 0 ? (isCompatible ? ' ✅ COMPATIBLE' : ' ⚠️ NO COMPATIBLE con tu vehículo') : '';
         prompt += `
-⚡ ${station.name}
+⚡ ${station.name}${compatibleTag}
    - Dirección: ${station.address}, ${station.city}
    - Coordenadas GPS: ${station.latitude}, ${station.longitude}
    - Distancia: ${distanceText}
@@ -353,6 +372,9 @@ Tu nombre es "EV Assistant" y tu objetivo es ayudar a los usuarios con informaci
 9. Si no tienes datos de algo, indícalo claramente en lugar de inventar
 10. IMPORTANTE: Cuando el usuario pida navegar, llegar, o ir a una estación, SIEMPRE incluye las coordenadas GPS en tu respuesta usando el formato exacto: [NAV:latitud,longitud|Nombre de la estación]. Ejemplo: [NAV:4.6782,-74.0582|Estación Centro Bogotá]. Esto permite al usuario abrir Google Maps directamente.
 11. Si el usuario dice "llévame", "cómo llego", "navegar a", "ir a" o similar, incluye el tag [NAV:...] para CADA estación que menciones
+12. Si el usuario tiene un vehículo registrado, SIEMPRE prioriza estaciones que tengan conectores compatibles con su vehículo. Indica claramente cuáles son compatibles y cuáles no.
+13. Cuando estimes tiempos de carga, usa la capacidad de batería y potencia máxima del vehículo del usuario para dar estimaciones precisas. Fórmula: tiempo_horas = kWh_necesarios / min(potencia_cargador, potencia_max_vehiculo).
+14. Si el usuario pregunta sobre autonomía o alcance, usa los datos reales de su vehículo registrado.
 
 Capacidades:
 - Recomendar estaciones de carga cercanas con precios actuales
@@ -481,6 +503,22 @@ ${JSON.stringify(stations, null, 2)}`;
       throw new Error("El planificador de viajes está deshabilitado");
     }
 
+    // Obtener vehículo predeterminado del usuario para contexto
+    let vehicleInfo = '';
+    try {
+      const userContext = await getAIContext(request.userId);
+      if (userContext.user?.defaultVehicle) {
+        const v = userContext.user.defaultVehicle;
+        vehicleInfo = `\nVehículo del usuario: ${v.brand} ${v.model}${v.year ? ` (${v.year})` : ''}
+- Capacidad de batería: ${v.batteryCapacityKwh || 'desconocida'} kWh
+- Autonomía nominal: ${v.rangeKm || request.vehicleRange} km
+- Conectores compatibles: ${v.connectorTypes.join(', ') || 'cualquiera'}
+- Potencia máxima de carga: ${v.maxChargePowerKw || 'desconocida'} kW`;
+      }
+    } catch (e) {
+      console.error('[AIService] Error getting vehicle context for trip:', e);
+    }
+
     const systemPrompt = `Eres un experto en planificación de viajes para vehículos eléctricos.
 Planifica la ruta óptima considerando:
 - Autonomía del vehículo
@@ -488,6 +526,8 @@ Planifica la ruta óptima considerando:
 - Estaciones de carga disponibles en la ruta
 - Tiempos de carga estimados
 - Costos de carga
+- IMPORTANTE: Solo recomienda estaciones que tengan conectores compatibles con el vehículo del usuario
+- Calcula tiempos de carga usando: tiempo = kWh_necesarios / min(potencia_cargador, potencia_max_vehiculo)
 
 Responde SOLO con un JSON con el siguiente formato:
 {
@@ -524,6 +564,7 @@ Autonomía del vehículo: ${request.vehicleRange} km
 Batería actual: ${request.currentBatteryLevel}%
 Batería mínima al llegar: ${request.minimumBatteryAtDestination || 20}%
 Conectores preferidos: ${request.preferredConnectorTypes?.join(", ") || "cualquiera"}
+${vehicleInfo}
 
 Estaciones disponibles en la ruta:
 ${JSON.stringify(routeStations, null, 2)}`;

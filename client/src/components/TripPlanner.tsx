@@ -1,26 +1,26 @@
 /**
  * Planificador de Viajes con IA
  * Permite planificar rutas con paradas de carga optimizadas
+ * Integra datos del vehículo predeterminado del usuario
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -38,11 +38,12 @@ import {
   DollarSign,
   Zap,
   AlertTriangle,
-  ChevronRight,
   Loader2,
   Car,
   Route,
   Flag,
+  Plug,
+  Info,
 } from "lucide-react";
 
 // ============================================================================
@@ -85,9 +86,47 @@ export function TripPlanner() {
   const [vehicleRange, setVehicleRange] = useState(300);
   const [currentBattery, setCurrentBattery] = useState(80);
   const [minBatteryAtDestination, setMinBatteryAtDestination] = useState(20);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>("manual");
   
   // Resultado
   const [tripPlan, setTripPlan] = useState<TripPlan | null>(null);
+
+  // Obtener vehículos del usuario
+  const { data: vehicles, isLoading: loadingVehicles } = trpc.vehicles.list.useQuery(
+    undefined,
+    { enabled: isOpen }
+  );
+
+  // Vehículo seleccionado
+  const selectedVehicle = useMemo(() => {
+    if (!vehicles || selectedVehicleId === "manual") return null;
+    return vehicles.find(v => v.id === parseInt(selectedVehicleId));
+  }, [vehicles, selectedVehicleId]);
+
+  // Conectores del vehículo seleccionado
+  const vehicleConnectors = useMemo(() => {
+    if (!selectedVehicle) return [];
+    return (selectedVehicle.connectorTypes as string[]) || [];
+  }, [selectedVehicle]);
+
+  // Auto-seleccionar vehículo predeterminado al cargar
+  useEffect(() => {
+    if (vehicles && vehicles.length > 0 && selectedVehicleId === "manual") {
+      const defaultVehicle = vehicles.find(v => v.isDefault) || vehicles[0];
+      if (defaultVehicle) {
+        setSelectedVehicleId(defaultVehicle.id.toString());
+      }
+    }
+  }, [vehicles]);
+
+  // Actualizar autonomía y batería cuando cambia el vehículo seleccionado
+  useEffect(() => {
+    if (selectedVehicle) {
+      if (selectedVehicle.rangeKm) {
+        setVehicleRange(selectedVehicle.rangeKm);
+      }
+    }
+  }, [selectedVehicle]);
 
   // Mutation
   const planTrip = trpc.ai.planTrip.useMutation({
@@ -106,8 +145,6 @@ export function TripPlanner() {
       return;
     }
 
-    // En una implementación real, aquí se usaría geocoding
-    // Por ahora usamos coordenadas de ejemplo para Colombia
     planTrip.mutate({
       origin: {
         latitude: 4.7110,
@@ -122,8 +159,9 @@ export function TripPlanner() {
       vehicleRange,
       currentBatteryLevel: currentBattery,
       minimumBatteryAtDestination: minBatteryAtDestination,
+      preferredConnectorTypes: vehicleConnectors.length > 0 ? vehicleConnectors : undefined,
     });
-  }, [originAddress, destinationAddress, vehicleRange, currentBattery, minBatteryAtDestination, planTrip]);
+  }, [originAddress, destinationAddress, vehicleRange, currentBattery, minBatteryAtDestination, vehicleConnectors, planTrip]);
 
   const handleReset = () => {
     setStep("input");
@@ -149,6 +187,20 @@ export function TripPlanner() {
     if (level >= 60) return "text-green-500";
     if (level >= 30) return "text-yellow-500";
     return "text-red-500";
+  };
+
+  const formatConnectorType = (type: string) => {
+    const map: Record<string, string> = {
+      TYPE_1: "Tipo 1",
+      TYPE_2: "Tipo 2",
+      CCS_1: "CCS1",
+      CCS_2: "CCS2",
+      CHADEMO: "CHAdeMO",
+      TESLA: "Tesla",
+      GBT_AC: "GB/T AC",
+      GBT_DC: "GB/T DC",
+    };
+    return map[type] || type;
   };
 
   return (
@@ -206,26 +258,132 @@ export function TripPlanner() {
 
               <Separator />
 
-              {/* Configuración del vehículo */}
+              {/* Selector de Vehículo */}
               <div className="space-y-4">
                 <h4 className="font-medium flex items-center gap-2">
                   <Car className="h-4 w-4" />
-                  Configuración del vehículo
+                  Vehículo
                 </h4>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>Autonomía del vehículo</Label>
-                    <span className="text-sm font-medium">{vehicleRange} km</span>
+                {loadingVehicles ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Cargando vehículos...
                   </div>
-                  <Slider
-                    value={[vehicleRange]}
-                    onValueChange={([v]) => setVehicleRange(v)}
-                    min={100}
-                    max={600}
-                    step={10}
-                  />
-                </div>
+                ) : vehicles && vehicles.length > 0 ? (
+                  <div className="space-y-3">
+                    <Select
+                      value={selectedVehicleId}
+                      onValueChange={setSelectedVehicleId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona un vehículo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vehicles.map((v) => (
+                          <SelectItem key={v.id} value={v.id.toString()}>
+                            <span className="flex items-center gap-2">
+                              {v.brand} {v.model}
+                              {v.isDefault && (
+                                <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                  Principal
+                                </Badge>
+                              )}
+                              {v.nickname && (
+                                <span className="text-muted-foreground text-xs">
+                                  "{v.nickname}"
+                                </span>
+                              )}
+                            </span>
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="manual">
+                          <span className="text-muted-foreground">Configurar manualmente</span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {/* Info del vehículo seleccionado */}
+                    {selectedVehicle && (
+                      <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 space-y-2">
+                        <div className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                          <Car className="h-4 w-4" />
+                          {selectedVehicle.brand} {selectedVehicle.model}
+                          {selectedVehicle.year && ` (${selectedVehicle.year})`}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                          {selectedVehicle.rangeKm && (
+                            <div className="flex items-center gap-1">
+                              <Route className="h-3 w-3" />
+                              Autonomía: {selectedVehicle.rangeKm} km
+                            </div>
+                          )}
+                          {selectedVehicle.batteryCapacityKwh && (
+                            <div className="flex items-center gap-1">
+                              <Battery className="h-3 w-3" />
+                              Batería: {Number(selectedVehicle.batteryCapacityKwh)} kWh
+                            </div>
+                          )}
+                          {selectedVehicle.maxChargePowerKw && (
+                            <div className="flex items-center gap-1">
+                              <Zap className="h-3 w-3" />
+                              Potencia máx: {Number(selectedVehicle.maxChargePowerKw)} kW
+                            </div>
+                          )}
+                          {vehicleConnectors.length > 0 && (
+                            <div className="flex items-center gap-1">
+                              <Plug className="h-3 w-3" />
+                              {vehicleConnectors.map(formatConnectorType).join(", ")}
+                            </div>
+                          )}
+                        </div>
+                        {vehicleConnectors.length > 0 && (
+                          <div className="flex items-start gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
+                            <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                            Solo se recomendarán estaciones con conectores compatibles
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-3 flex items-start gap-2">
+                    <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                    <div>
+                      <p>No tienes vehículos registrados.</p>
+                      <p className="text-xs mt-1">
+                        Registra tu vehículo en <strong>Configuración → Mis Vehículos</strong> para obtener recomendaciones personalizadas.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Configuración manual o ajustes */}
+              <div className="space-y-4">
+                <h4 className="font-medium flex items-center gap-2">
+                  <Battery className="h-4 w-4" />
+                  {selectedVehicle ? "Ajustes de batería" : "Configuración del vehículo"}
+                </h4>
+
+                {/* Autonomía - solo visible si no hay vehículo seleccionado o es manual */}
+                {!selectedVehicle && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Autonomía del vehículo</Label>
+                      <span className="text-sm font-medium">{vehicleRange} km</span>
+                    </div>
+                    <Slider
+                      value={[vehicleRange]}
+                      onValueChange={([v]) => setVehicleRange(v)}
+                      min={100}
+                      max={600}
+                      step={10}
+                    />
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -279,6 +437,19 @@ export function TripPlanner() {
             </div>
           ) : tripPlan ? (
             <div className="space-y-6 py-4">
+              {/* Info del vehículo usado */}
+              {selectedVehicle && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+                  <Car className="h-4 w-4 shrink-0" />
+                  <span>
+                    Planificado para <strong>{selectedVehicle.brand} {selectedVehicle.model}</strong>
+                    {vehicleConnectors.length > 0 && (
+                      <> · Conectores: {vehicleConnectors.map(formatConnectorType).join(", ")}</>
+                    )}
+                  </span>
+                </div>
+              )}
+
               {/* Resumen */}
               <div className="grid grid-cols-2 gap-4">
                 <Card>

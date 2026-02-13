@@ -13,7 +13,8 @@ import {
   reservations,
   users,
   wallets,
-  tariffs
+  tariffs,
+  userVehicles
 } from "../../drizzle/schema";
 import { eq, desc, and, gte, sql } from "drizzle-orm";
 import { 
@@ -41,6 +42,19 @@ export interface StationContext {
   distance?: number;
 }
 
+export interface VehicleContext {
+  id: number;
+  brand: string;
+  model: string;
+  year: number | null;
+  batteryCapacityKwh: number | null;
+  rangeKm: number | null;
+  connectorTypes: string[];
+  maxChargePowerKw: number | null;
+  nickname: string | null;
+  isDefault: boolean;
+}
+
 export interface UserContext {
   id: number;
   name: string;
@@ -54,6 +68,8 @@ export interface UserContext {
   favoriteStations: string[];
   preferredChargingTimes: string[];
   lastChargeDate: string | null;
+  defaultVehicle: VehicleContext | null;
+  vehicles: VehicleContext[];
 }
 
 export interface PlatformContext {
@@ -186,6 +202,28 @@ async function getUserContext(userId: number): Promise<UserContext | null> {
     const lastTransaction = completedTransactions
       .sort((a, b) => new Date(b.startTime || 0).getTime() - new Date(a.startTime || 0).getTime())[0];
 
+    // Obtener vehículos del usuario
+    const vehicleRows = await db
+      .select()
+      .from(userVehicles)
+      .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, true)))
+      .orderBy(desc(userVehicles.isDefault));
+
+    const vehicles: VehicleContext[] = vehicleRows.map(v => ({
+      id: v.id,
+      brand: v.brand,
+      model: v.model,
+      year: v.year,
+      batteryCapacityKwh: v.batteryCapacityKwh ? Number(v.batteryCapacityKwh) : null,
+      rangeKm: v.rangeKm,
+      connectorTypes: (v.connectorTypes as string[]) || [],
+      maxChargePowerKw: v.maxChargePowerKw ? Number(v.maxChargePowerKw) : null,
+      nickname: v.nickname,
+      isDefault: v.isDefault,
+    }));
+
+    const defaultVehicle = vehicles.find(v => v.isDefault) || (vehicles.length > 0 ? vehicles[0] : null);
+
     return {
       id: user.id,
       name: user.name || 'Usuario',
@@ -201,6 +239,8 @@ async function getUserContext(userId: number): Promise<UserContext | null> {
       lastChargeDate: lastTransaction?.startTime 
         ? new Date(lastTransaction.startTime).toLocaleDateString('es-CO')
         : null,
+      defaultVehicle,
+      vehicles,
     };
   } catch (error) {
     console.error('Error getting user context:', error);
@@ -438,6 +478,22 @@ ${user.preferredChargingTimes.length > 0 ? `- Horarios preferidos: ${user.prefer
 ${user.lastChargeDate ? `- Última carga: ${user.lastChargeDate}` : ''}
 
 `;
+
+    // Agregar vehículo predeterminado
+    if (user.defaultVehicle) {
+      const v = user.defaultVehicle;
+      systemPrompt += `## Vehículo Predeterminado
+- ${v.brand} ${v.model}${v.year ? ` (${v.year})` : ''}${v.nickname ? ` "${v.nickname}"` : ''}
+- Capacidad de batería: ${v.batteryCapacityKwh ? `${v.batteryCapacityKwh} kWh` : 'No especificada'}
+- Autonomía: ${v.rangeKm ? `${v.rangeKm} km` : 'No especificada'}
+- Conectores compatibles: ${v.connectorTypes.join(', ') || 'No especificado'}
+- Potencia máxima de carga: ${v.maxChargePowerKw ? `${v.maxChargePowerKw} kW` : 'No especificada'}
+
+`;
+    }
+    if (user.vehicles.length > 1) {
+      systemPrompt += `- Otros vehículos: ${user.vehicles.filter(vv => vv.id !== user.defaultVehicle?.id).map(vv => `${vv.brand} ${vv.model}`).join(', ')}\n\n`;
+    }
   }
 
   // Agregar estaciones cercanas

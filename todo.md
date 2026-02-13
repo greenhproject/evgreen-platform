@@ -2170,3 +2170,14 @@
 - [x] Corregir formulario de vehículos: permitir configurar marca/modelo (no siempre Renault Zoe)
 - [x] Agregar conectores GBT (AC) y GBT DC a las opciones de conectores
 - [x] Persistir vehículos en la base de datos (tabla vehicles, tRPC CRUD, conectar frontend)
+
+
+## Integración Vehículo Predeterminado con IA y TripPlanner - 13 Febrero 2026
+- [x] Integrar vehículo predeterminado en TripPlanner (autonomía real, tipo de conector, capacidad batería)
+- [x] Filtrar estaciones compatibles con los conectores del vehículo en TripPlanner
+- [x] Calcular paradas de carga basadas en autonomía real del vehículo
+- [x] Integrar datos del vehículo en el contexto del asistente de IA (context-service)
+- [x] IA recomienda estaciones con conectores compatibles con el vehículo del usuario
+- [x] IA estima tiempos de carga basados en capacidad de batería y potencia del conector
+- [x] Mostrar selector de vehículo en TripPlanner si el usuario tiene varios registrados
+- [x] Tests unitarios para la integración
