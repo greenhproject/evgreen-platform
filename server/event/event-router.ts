@@ -17,6 +17,7 @@ import { eventGuests, eventPayments, users } from "../../drizzle/schema";
 import { eq, desc, sql, and, like } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { Resend } from "resend";
+import { buildEmailParams } from "../utils/email-helper";
 import { generateQRCodeUrl } from "../utils/qr-generator";
 import {
   isWompiConfigured,
@@ -589,12 +590,12 @@ export const eventRouter = router({
       try {
         console.log(`[Event] Enviando invitación a ${guest.email} con API Key: ${resendApiKey.substring(0, 10)}...`);
         
-        const result = await resend.emails.send({
+        const result = await resend.emails.send(buildEmailParams({
           from: "EVGreen <invitaciones@evgreen.lat>",
           to: guest.email,
           subject: "🔋 Invitación Exclusiva | Gran Lanzamiento Red de Carga EVGreen",
           html: emailHtml,
-        });
+        }));
 
         console.log(`[Event] Resultado Resend:`, JSON.stringify(result));
 
@@ -653,12 +654,12 @@ export const eventRouter = router({
           const emailHtml = await generateInvitationEmail(guest, qrUrl);
 
           console.log(`[Event Bulk] Enviando invitación a ${guest.email}...`);
-          const result = await resend.emails.send({
+          const result = await resend.emails.send(buildEmailParams({
             from: "EVGreen <invitaciones@evgreen.lat>",
             to: guest.email,
             subject: "🔋 Invitación Exclusiva | Gran Lanzamiento Red de Carga EVGreen",
             html: emailHtml,
-          });
+          }));
           console.log(`[Event Bulk] Resultado:`, JSON.stringify(result));
 
           if (result.error) {

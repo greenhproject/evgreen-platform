@@ -8,6 +8,7 @@ import { getDb } from "../db";
 import { users, notifications } from "../../drizzle/schema";
 import { eq, and, isNotNull, inArray, sql } from "drizzle-orm";
 import { sendPushNotificationToMultiple, NotificationType } from "../firebase/fcm";
+import { buildEmailParams } from "../utils/email-helper";
 
 // Inicializar Resend con la API key
 const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
@@ -192,12 +193,12 @@ export async function sendBroadcastNotification(
         
         for (const user of batch) {
           try {
-            await resend.emails.send({
+            await resend.emails.send(buildEmailParams({
               from: "EVGreen <notificaciones@evgreen.lat>",
               to: user.email!,
               subject: input.title,
               html: generateEmailTemplate(input, user.name || "Usuario"),
-            });
+            }));
             result.emailSent++;
           } catch (error) {
             console.error("[Broadcast] Email failed for " + user.email + ":", error);
