@@ -17,6 +17,7 @@ import { eventGuests, eventPayments, users } from "../../drizzle/schema";
 import { eq, desc, sql, and, like } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { Resend } from "resend";
+import { generateQRCodeUrl } from "../utils/qr-generator";
 import {
   isWompiConfigured,
   getWompiKeys,
@@ -35,8 +36,8 @@ import {
 const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
 const resend = new Resend(resendApiKey);
 
-// URL de la imagen de fondo del evento (CDN)
-const EVENT_BG_IMAGE = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/wQkcPaQJqYVsUtRV.png";
+// URL de la imagen de fondo del evento (S3/CloudFront - hospedada en nuestro propio storage)
+const EVENT_BG_IMAGE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663169336317/UcUrociZeo4QVAHHN9vAuZ/evgreen/email-assets/event-bg-a8147fd468f251ce.png";
 
 // Email del super staff (vista global de todos los inversionistas)
 const SUPER_STAFF_EMAIL = "evgreen@greenhproject.com";
@@ -583,7 +584,7 @@ export const eventRouter = router({
       const qrUrl = `https://evgreen.lat/event-checkin/${guest.qrCode}`;
 
       // Generar HTML del email de invitación
-      const emailHtml = generateInvitationEmail(guest, qrUrl);
+      const emailHtml = await generateInvitationEmail(guest, qrUrl);
 
       try {
         console.log(`[Event] Enviando invitación a ${guest.email} con API Key: ${resendApiKey.substring(0, 10)}...`);
@@ -649,7 +650,7 @@ export const eventRouter = router({
           if (!guest || guest.invitationSentAt) continue;
 
           const qrUrl = `https://evgreen.lat/event-checkin/${guest.qrCode}`;
-          const emailHtml = generateInvitationEmail(guest, qrUrl);
+          const emailHtml = await generateInvitationEmail(guest, qrUrl);
 
           console.log(`[Event Bulk] Enviando invitación a ${guest.email}...`);
           const result = await resend.emails.send({
@@ -963,7 +964,7 @@ export const eventRouter = router({
 // GENERADOR DE EMAIL DE INVITACIÓN
 // ============================================================================
 
-function generateInvitationEmail(guest: any, qrUrl: string): string {
+async function generateInvitationEmail(guest: any, qrUrl: string): Promise<string> {
   const founderSlotText = guest.founderSlot
     ? `<div style="text-align: center; margin: 20px 0;">
         <span style="display: inline-block; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 8px 24px; border-radius: 20px; font-size: 14px; font-weight: 600; letter-spacing: 1px;">
@@ -984,8 +985,24 @@ function generateInvitationEmail(guest: any, qrUrl: string): string {
       </p>`
     : "";
 
-  // QR code generado como URL para API de QR
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}&bgcolor=0a0a0a&color=22c55e&format=png`;
+  // QR code generado internamente y hospedado en S3 (evita spam por imágenes externas)
+  let qrImageUrl: string;
+  try {
+    const qrFileKey = `evgreen/qr-codes/event-${guest.qrCode}.png`;
+    qrImageUrl = await generateQRCodeUrl(qrUrl, qrFileKey, {
+      width: 300,
+      color: { dark: "#22c55e", light: "#0a0a0a" },
+      margin: 2,
+    });
+  } catch (e) {
+    // Fallback: usar data URI si S3 falla
+    const QRCode = await import("qrcode");
+    qrImageUrl = await QRCode.default.toDataURL(qrUrl, {
+      width: 300,
+      margin: 2,
+      color: { dark: "#22c55e", light: "#0a0a0a" },
+    });
+  }
 
   return `<!DOCTYPE html>
 <html>
