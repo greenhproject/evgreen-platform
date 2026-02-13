@@ -2140,3 +2140,7 @@
 ## Bug: Campos de evento no persisten - 12 Febrero 2026
 - [x] BUG: Datos del evento se guardan pero al recargar quedan en blanco (fix: retorno explícito en settings.get)
 - [x] BUG: Emails de invitación llegan sin los datos del evento (fix: generateInvitationEmail lee de getPlatformSettings)
+
+## Mejora: Logo EVGreen grande en hero de landing - 12 Febrero 2026
+- [x] Subir logo EVGreen blanco a S3
+- [x] Reemplazar logo pequeño del hero por logo grande con más presencia (hero + footer)
