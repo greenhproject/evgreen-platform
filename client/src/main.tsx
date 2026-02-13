@@ -59,3 +59,13 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </trpc.Provider>
 );
+
+// Eliminar splash screen con fade-out suave
+requestAnimationFrame(() => {
+  const splash = document.getElementById("splash-screen");
+  if (splash) {
+    splash.style.transition = "opacity 0.4s ease-out";
+    splash.style.opacity = "0";
+    setTimeout(() => splash.remove(), 400);
+  }
+});

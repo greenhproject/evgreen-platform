@@ -17,13 +17,16 @@
     <meta property="og:title" content="EVGreen - Carga tu Vehículo Eléctrico en Colombia" />
     <meta property="og:description" content="Encuentra estaciones de carga para vehículos eléctricos cerca de ti. Carga rápida DC y AC, pagos seguros y monitoreo en tiempo real." />
     <meta property="og:site_name" content="EVGreen" />
-    <meta property="og:image" content="/icons/icon-512x512.png" />
+    <meta property="og:image" content="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/gkJWlGFoHSJpRAdZ.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:url" content="https://evgreen.lat/" />
     
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="EVGreen - Carga tu Vehículo Eléctrico en Colombia" />
     <meta name="twitter:description" content="Encuentra estaciones de carga para vehículos eléctricos cerca de ti. La red de carga EV más grande de Colombia." />
-    <meta name="twitter:image" content="/icons/icon-512x512.png" />
+    <meta name="twitter:image" content="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/gkJWlGFoHSJpRAdZ.png" />
     
     <!-- Additional SEO -->
     <meta name="robots" content="index, follow" />
@@ -66,7 +69,48 @@
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Splash Screen - se elimina automáticamente cuando React monta -->
+      <div id="splash-screen" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#021a0a 0%,#0a3d1f 40%,#052e14 100%);">
+        <style>
+          @keyframes splash-pulse {
+            0%, 100% { filter: drop-shadow(0 0 15px rgba(74,222,128,0.3)); transform: scale(1); }
+            50% { filter: drop-shadow(0 0 40px rgba(74,222,128,0.6)) drop-shadow(0 0 80px rgba(34,197,94,0.3)); transform: scale(1.05); }
+          }
+          @keyframes splash-fade-in {
+            from { opacity: 0; transform: scale(0.8) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+          }
+          @keyframes splash-dots {
+            0%, 20% { opacity: 0; }
+            50% { opacity: 1; }
+            100% { opacity: 0; }
+          }
+          #splash-screen img {
+            width: 120px; height: 120px; object-fit: contain;
+            animation: splash-pulse 2.5s ease-in-out infinite, splash-fade-in 0.8s ease-out;
+          }
+          #splash-screen .splash-text {
+            margin-top: 24px; color: rgba(255,255,255,0.7);
+            font-family: 'Montserrat', sans-serif; font-size: 12px;
+            letter-spacing: 0.3em; text-transform: uppercase;
+            animation: splash-fade-in 0.8s ease-out 0.3s both;
+          }
+          #splash-screen .splash-dots span {
+            display: inline-block; width: 6px; height: 6px;
+            margin: 0 4px; border-radius: 50%; background: #22c55e;
+            animation: splash-dots 1.4s ease-in-out infinite;
+          }
+          #splash-screen .splash-dots span:nth-child(2) { animation-delay: 0.2s; }
+          #splash-screen .splash-dots span:nth-child(3) { animation-delay: 0.4s; }
+        </style>
+        <img src="/icons/icon-192x192.png" alt="EVGreen" />
+        <div class="splash-text">EVGreen</div>
+        <div class="splash-dots" style="margin-top:20px;">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
     <script
       defer
