@@ -2155,3 +2155,5 @@
 - [x] Optimizar imágenes hero (desktop, mobile) y logo a formato WebP para carga más rápida
 - [x] Agregar sección showcase de estaciones EVGreen (día/noche) en la landing page
 - [x] Cambiar favicon/ícono de app por isotipo EVGreen (rayo con hojas) en múltiples tamaños
+- [x] Splash screen animado con isotipo EVGreen (glow pulse) durante carga
+- [x] Imagen Open Graph (1200x630) para preview en WhatsApp/redes sociales
