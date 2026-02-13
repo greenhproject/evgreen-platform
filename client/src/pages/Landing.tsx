@@ -79,10 +79,30 @@ export default function Landing() {
               transition={{ duration: 0.8 }}
               className="mb-6 sm:mb-8"
             >
-              <div className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-                <span className="text-green-500">EV</span><span className="text-white">Green</span>
+              <div className="flex items-baseline justify-center gap-0" style={{ fontFamily: "'Nunito', sans-serif" }}>
+                <span 
+                  className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl leading-none"
+                  style={{ 
+                    fontWeight: 900,
+                    background: 'linear-gradient(180deg, #4ade80 0%, #16a34a 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    filter: 'drop-shadow(0 0 20px rgba(74, 222, 128, 0.4))',
+                  }}
+                >EV</span>
+                <span 
+                  className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl leading-none"
+                  style={{ 
+                    fontWeight: 300,
+                    color: 'rgba(255,255,255,0.85)',
+                    textShadow: '0 0 30px rgba(255,255,255,0.15)',
+                  }}
+                >Green</span>
               </div>
-              <div className="text-sm sm:text-base md:text-lg text-white/80 tracking-[0.2em] mt-1" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+              <div 
+                className="text-xs sm:text-sm md:text-base text-white/70 tracking-[0.25em] uppercase mt-2"
+                style={{ fontFamily: "'Nunito', sans-serif", fontWeight: 400 }}
+              >
                 by Green House Project
               </div>
             </motion.div>
