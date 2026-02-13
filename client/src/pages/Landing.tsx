@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import { Link } from "wouter";
 import { motion, useScroll, useTransform, useInView } from "framer-motion";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { 
   Zap, 
   MapPin, 
@@ -23,6 +23,41 @@ import {
   Lightbulb,
   Target
 } from "lucide-react";
+
+// Componente de conteo animado
+function AnimatedCounter({ value, suffix = "", prefix = "" }: { value: number; suffix?: string; prefix?: string }) {
+  const [count, setCount] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const isInView = useInView(ref, { once: true, margin: "-50px" });
+  const hasAnimated = useRef(false);
+
+  useEffect(() => {
+    if (!isInView || hasAnimated.current) return;
+    hasAnimated.current = true;
+    const duration = 2000;
+    const steps = 60;
+    const increment = value / steps;
+    let current = 0;
+    const timer = setInterval(() => {
+      current += increment;
+      if (current >= value) {
+        setCount(value);
+        clearInterval(timer);
+      } else {
+        setCount(Math.floor(current));
+      }
+    }, duration / steps);
+    return () => clearInterval(timer);
+  }, [isInView, value]);
+
+  const displayValue = value >= 1000 ? `${(count / 1000).toFixed(count >= value ? 0 : 1)}K` : `${count}`;
+
+  return (
+    <div ref={ref} className="text-2xl sm:text-3xl font-bold text-primary tabular-nums">
+      {prefix}{value >= 1000 ? displayValue : count}{suffix}
+    </div>
+  );
+}
 
 export default function Landing() {
   const heroRef = useRef<HTMLElement>(null);
@@ -167,15 +202,15 @@ export default function Landing() {
               className="mt-12 sm:mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-8 max-w-2xl mx-auto"
             >
               <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-bold text-primary">30%</div>
+                <AnimatedCounter value={30} suffix="%" />
                 <div className="text-xs sm:text-sm text-muted-foreground">Ahorro con IA</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-bold text-primary">50+</div>
+                <AnimatedCounter value={50} suffix="+" />
                 <div className="text-xs sm:text-sm text-muted-foreground">Estaciones</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-bold text-primary">10K+</div>
+                <AnimatedCounter value={10000} suffix="+" />
                 <div className="text-xs sm:text-sm text-muted-foreground">Usuarios</div>
               </div>
               <div className="text-center">
