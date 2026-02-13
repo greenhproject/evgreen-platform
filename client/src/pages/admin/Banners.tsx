@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +36,12 @@ import {
   Pencil, 
   Trash2,
   ExternalLink,
-  BarChart3
+  BarChart3,
+  Upload,
+  Link,
+  Loader2,
+  Info,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -48,6 +53,15 @@ const BANNER_TYPES = [
   { value: "PROMOTIONAL", label: "Promocional" },
   { value: "INFORMATIONAL", label: "Informativo" },
 ];
+
+// Tamaños recomendados por tipo de banner
+const RECOMMENDED_SIZES: Record<string, { width: number; height: number; ratio: string; note: string }> = {
+  SPLASH: { width: 1080, height: 1920, ratio: "9:16", note: "Pantalla completa vertical" },
+  CHARGING: { width: 1080, height: 600, ratio: "9:5", note: "Banner horizontal durante carga" },
+  MAP: { width: 1080, height: 400, ratio: "27:10", note: "Banner compacto sobre el mapa" },
+  PROMOTIONAL: { width: 1080, height: 600, ratio: "9:5", note: "Banner promocional estándar" },
+  INFORMATIONAL: { width: 1080, height: 600, ratio: "9:5", note: "Banner informativo estándar" },
+};
 
 interface Banner {
   id: number;
@@ -72,6 +86,10 @@ interface Banner {
 export default function AdminBanners() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
+  const [imageMode, setImageMode] = useState<"url" | "upload">("upload");
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
     title: "",
@@ -90,6 +108,13 @@ export default function AdminBanners() {
 
   const { data: banners, isLoading, refetch } = trpc.banners.list.useQuery();
   
+  const uploadImageMutation = trpc.banners.uploadImage.useMutation({
+    onError: (error: any) => {
+      toast.error(`Error subiendo imagen: ${error.message}`);
+      setIsUploading(false);
+    },
+  });
+
   const createMutation = trpc.banners.create.useMutation({
     onSuccess: () => {
       toast.success("Banner creado exitosamente");
@@ -146,6 +171,61 @@ export default function AdminBanners() {
       advertiserName: "",
       advertiserContact: "",
     });
+    setUploadedFileName("");
+    setImageMode("upload");
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validar tipo
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Solo se permiten imágenes (JPEG, PNG, WebP, GIF, SVG)");
+      return;
+    }
+
+    // Validar tamaño (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("La imagen no puede superar 5MB");
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadedFileName(file.name);
+
+    try {
+      // Convertir a base64
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remover el prefijo data:image/xxx;base64,
+          const base64Data = result.split(",")[1];
+          resolve(base64Data);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const result = await uploadImageMutation.mutateAsync({
+        fileName: file.name,
+        fileBase64: base64,
+        contentType: file.type,
+      });
+
+      setFormData(prev => ({ ...prev, imageUrl: result.url }));
+      toast.success("Imagen subida exitosamente");
+    } catch {
+      setUploadedFileName("");
+    } finally {
+      setIsUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
   };
 
   const handleCreate = async () => {
@@ -186,6 +266,8 @@ export default function AdminBanners() {
       advertiserName: banner.advertiserName || "",
       advertiserContact: "",
     });
+    setImageMode("url"); // Al editar, mostrar la URL existente
+    setUploadedFileName("");
     setShowCreateDialog(true);
   };
 
@@ -240,6 +322,8 @@ export default function AdminBanners() {
         return <Badge variant="outline">{status}</Badge>;
     }
   };
+
+  const recommendedSize = RECOMMENDED_SIZES[formData.type] || RECOMMENDED_SIZES.PROMOTIONAL;
 
   return (
     <div className="space-y-6">
@@ -318,13 +402,138 @@ export default function AdminBanners() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>URL de la imagen *</Label>
-                <Input 
-                  placeholder="https://ejemplo.com/imagen.jpg" 
-                  value={formData.imageUrl}
-                  onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
-                />
+              {/* ============================================================ */}
+              {/* SECCIÓN DE IMAGEN: Upload directo o URL */}
+              {/* ============================================================ */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Imagen del banner *</Label>
+                  <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setImageMode("upload")}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        imageMode === "upload"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      Subir archivo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageMode("url")}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        imageMode === "url"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Link className="w-3.5 h-3.5" />
+                      Pegar URL
+                    </button>
+                  </div>
+                </div>
+
+                {imageMode === "upload" ? (
+                  <div className="space-y-2">
+                    {/* Zona de drag & drop / click para subir */}
+                    <div
+                      onClick={() => !isUploading && fileInputRef.current?.click()}
+                      className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
+                        isUploading
+                          ? "border-primary/50 bg-primary/5 cursor-wait"
+                          : formData.imageUrl && uploadedFileName
+                          ? "border-green-500/50 bg-green-500/5"
+                          : "border-muted-foreground/25 hover:border-primary/50 hover:bg-primary/5"
+                      }`}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                      />
+                      
+                      {isUploading ? (
+                        <div className="flex flex-col items-center gap-2">
+                          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                          <p className="text-sm text-muted-foreground">Subiendo {uploadedFileName}...</p>
+                        </div>
+                      ) : formData.imageUrl && uploadedFileName ? (
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                            <ImageIcon className="w-5 h-5 text-green-500" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-green-600">{uploadedFileName}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Haz clic para cambiar la imagen
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="absolute top-2 right-2 h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFormData(prev => ({ ...prev, imageUrl: "" }));
+                              setUploadedFileName("");
+                            }}
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                            <Upload className="w-5 h-5 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">
+                              Haz clic para seleccionar una imagen
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              JPEG, PNG, WebP, GIF o SVG (máx. 5MB)
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <Input 
+                    placeholder="https://ejemplo.com/imagen.jpg" 
+                    value={formData.imageUrl}
+                    onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                  />
+                )}
+
+                {/* Nota de tamaños recomendados */}
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/15">
+                  <Info className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs space-y-1">
+                    <p className="font-medium text-blue-300">Tamaños recomendados para app móvil</p>
+                    <div className="text-blue-400/70 space-y-0.5">
+                      <p>
+                        <span className="font-medium text-blue-400">{formData.type === "SPLASH" ? "Splash:" : "Este tipo:"}</span>{" "}
+                        {recommendedSize.width} x {recommendedSize.height}px ({recommendedSize.ratio}) — {recommendedSize.note}
+                      </p>
+                      {formData.type !== "SPLASH" && (
+                        <p>
+                          <span className="font-medium text-blue-400">Splash:</span>{" "}
+                          1080 x 1920px (9:16) — Pantalla completa vertical
+                        </p>
+                      )}
+                      <p className="pt-1 text-blue-400/50">
+                        Usa imágenes de alta resolución (mín. 1080px de ancho) para que se vean nítidas en todos los dispositivos.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -420,9 +629,14 @@ export default function AdminBanners() {
               </Button>
               <Button 
                 onClick={editingBanner ? handleUpdate : handleCreate}
-                disabled={createMutation.isPending || updateMutation.isPending}
+                disabled={createMutation.isPending || updateMutation.isPending || isUploading}
               >
-                {editingBanner ? "Guardar cambios" : "Crear banner"}
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Subiendo...
+                  </>
+                ) : editingBanner ? "Guardar cambios" : "Crear banner"}
               </Button>
             </div>
           </DialogContent>

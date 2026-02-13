@@ -1730,6 +1730,41 @@ const bannersRouter = router({
       return { success: true };
     }),
   
+  // Upload de imagen de banner a S3
+  uploadImage: adminProcedure
+    .input(z.object({
+      fileName: z.string(),
+      fileBase64: z.string(), // Base64-encoded file data
+      contentType: z.string().refine(
+        (ct) => ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"].includes(ct),
+        { message: "Solo se permiten im\u00e1genes (JPEG, PNG, WebP, GIF, SVG)" }
+      ),
+    }))
+    .mutation(async ({ input }) => {
+      const { storagePut } = await import("./storage");
+      
+      // Generar nombre único para evitar colisiones
+      const ext = input.fileName.split(".").pop() || "jpg";
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const fileKey = `banners/${timestamp}-${randomSuffix}.${ext}`;
+      
+      // Decodificar base64 a buffer
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      
+      // Validar tama\u00f1o (m\u00e1x 5MB)
+      if (buffer.length > 5 * 1024 * 1024) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "La imagen no puede superar 5MB",
+        });
+      }
+      
+      const { url } = await storagePut(fileKey, buffer, input.contentType);
+      
+      return { url, fileKey };
+    }),
+
   recordImpression: publicProcedure
     .input(z.object({ bannerId: z.number(), context: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
