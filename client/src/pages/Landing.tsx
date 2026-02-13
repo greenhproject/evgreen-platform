@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import { Link } from "wouter";
-import { motion } from "framer-motion";
+import { motion, useScroll, useTransform } from "framer-motion";
+import { useRef } from "react";
 import { 
   Zap, 
   MapPin, 
@@ -24,34 +25,74 @@ import {
 } from "lucide-react";
 
 export default function Landing() {
+  const heroRef = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: heroRef,
+    offset: ["start start", "end start"]
+  });
+  const bgY = useTransform(scrollYProgress, [0, 1], ["0%", "30%"]);
+  const bgScale = useTransform(scrollYProgress, [0, 1], [1, 1.1]);
+
   return (
     <div className="min-h-screen bg-background overflow-hidden">
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-end justify-center pb-12 sm:pb-16">
-        {/* Full-width background image - integrated, no borders */}
-        <div className="absolute inset-0 overflow-hidden">
+      <section ref={heroRef} className="relative min-h-screen flex flex-col justify-center">
+        {/* Full-width background image with parallax - desktop version */}
+        <motion.div 
+          className="absolute inset-0 overflow-hidden hidden sm:block"
+          style={{ y: bgY, scale: bgScale }}
+        >
           <motion.img 
-            initial={{ opacity: 0, scale: 1.05 }}
-            animate={{ opacity: 1, scale: 1 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={{ duration: 1.2 }}
-            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/pPtzYHFkfAUbWzxt.png" 
+            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/seIbCrpzNBjgnEaa.png" 
+            alt="" 
+            className="w-full h-full object-cover object-center"
+          />
+        </motion.div>
+        {/* Mobile version - vertical image optimized for phones */}
+        <motion.div 
+          className="absolute inset-0 overflow-hidden sm:hidden"
+          style={{ y: bgY, scale: bgScale }}
+        >
+          <motion.img 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1.2 }}
+            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/RXYcnClZZCoTdMMX.png" 
             alt="" 
             className="w-full h-full object-cover object-top"
           />
-          {/* Strong gradient overlay: transparent at top to show logo, dark at bottom for text */}
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/60 to-background" />
-          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-b from-transparent to-background" />
-        </div>
+        </motion.div>
+        {/* Gradient overlays for text legibility */}
+        <div className="absolute inset-0 z-[1] bg-gradient-to-b from-black/30 via-background/70 to-background" />
+        <div className="absolute inset-x-0 bottom-0 h-1/3 z-[1] bg-gradient-to-b from-transparent to-background" />
         
-        <div className="container relative z-10 px-4">
+        <div className="container relative z-10 px-4 pt-24 sm:pt-32">
           <div className="max-w-4xl mx-auto text-center">
+
+            {/* EVGreen branding text over the image */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.8 }}
+              className="mb-6 sm:mb-8"
+            >
+              <div className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                <span className="text-green-500">EV</span><span className="text-white">Green</span>
+              </div>
+              <div className="text-sm sm:text-base md:text-lg text-white/80 tracking-[0.2em] mt-1" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                by Green House Project
+              </div>
+            </motion.div>
 
             {/* Headline with AI emphasis */}
             <motion.h1
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-4xl sm:text-5xl md:text-6xl font-bold text-foreground mb-6"
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="text-3xl sm:text-4xl md:text-5xl font-bold text-foreground mb-6"
             >
               La primera red de carga{" "}
               <span className="text-gradient">potenciada por IA</span>
@@ -61,7 +102,7 @@ export default function Landing() {
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
+              transition={{ duration: 0.6, delay: 0.3 }}
               className="text-lg sm:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto"
             >
               Nuestro asistente de IA te ayuda a encontrar el mejor momento y lugar para cargar, 
@@ -73,7 +114,7 @@ export default function Landing() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.3 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
               className="flex flex-col sm:flex-row gap-4 justify-center"
             >
               <Button
@@ -100,7 +141,7 @@ export default function Landing() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
+              transition={{ duration: 0.6, delay: 0.5 }}
               className="mt-12 sm:mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-8 max-w-2xl mx-auto"
             >
               <div className="text-center">
