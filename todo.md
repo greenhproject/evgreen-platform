@@ -2181,3 +2181,15 @@
 - [x] IA estima tiempos de carga basados en capacidad de batería y potencia del conector
 - [x] Mostrar selector de vehículo en TripPlanner si el usuario tiene varios registrados
 - [x] Tests unitarios para la integración
+
+## Notificaciones Push por Proximidad a Estaciones Compatibles - 13 Febrero 2026
+- [x] Backend: Endpoint para verificar proximidad con estaciones compatibles y precio bajo
+- [x] Backend: Lógica de detección de estaciones cercanas compatibles con el vehículo del usuario
+- [x] Backend: Filtrar por precio dinámico bajo (demanda LOW/NORMAL)
+- [x] Backend: Enviar push notification via FCM cuando se detecte estación cercana compatible
+- [x] Backend: Cooldown para evitar spam de notificaciones (máx 1 cada 30 min por estación)
+- [x] Frontend: Envío periódico de ubicación del usuario (cada 5 min cuando app activa)
+- [x] Frontend: Configuración de alertas de proximidad en settings del usuario
+- [x] Frontend: Toggle para activar/desactivar alertas de proximidad
+- [x] Frontend: Configurar radio de búsqueda (1-10 km)
+- [x] Tests unitarios para el servicio de proximidad

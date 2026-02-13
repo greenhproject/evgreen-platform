@@ -13,6 +13,7 @@ import {
   unsubscribeFromTopic,
   sendPushNotification 
 } from "../firebase/fcm";
+import { checkProximityAndNotify } from "../proximity/proximity-alert-service";
 
 export const pushRouter = router({
   /**
@@ -179,6 +180,81 @@ export const pushRouter = router({
           .update(users)
           .set(updateData)
           .where(eq(users.id, userId));
+      }
+
+      return { success: true };
+    }),
+
+  /**
+   * Verificar proximidad con estaciones compatibles y precio bajo
+   */
+  checkProximity: protectedProcedure
+    .input(z.object({
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await checkProximityAndNotify({
+        userId: ctx.user.id,
+        latitude: input.latitude,
+        longitude: input.longitude,
+      });
+      return result;
+    }),
+
+  /**
+   * Obtener preferencias de proximidad
+   */
+  getProximityPreferences: protectedProcedure
+    .query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) {
+        return {
+          enabled: true,
+          radiusKm: 5,
+        };
+      }
+
+      const [user] = await db
+        .select({
+          notifyProximity: users.notifyProximity,
+          proximityRadiusKm: users.proximityRadiusKm,
+        })
+        .from(users)
+        .where(eq(users.id, ctx.user.id))
+        .limit(1);
+
+      return {
+        enabled: user?.notifyProximity ?? true,
+        radiusKm: user?.proximityRadiusKm ?? 5,
+      };
+    }),
+
+  /**
+   * Actualizar preferencias de proximidad
+   */
+  updateProximityPreferences: protectedProcedure
+    .input(z.object({
+      enabled: z.boolean().optional(),
+      radiusKm: z.number().min(1).max(10).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return { success: false, error: "Database not available" };
+
+      const updateData: Record<string, unknown> = {};
+      if (input.enabled !== undefined) {
+        updateData.notifyProximity = input.enabled;
+      }
+      if (input.radiusKm !== undefined) {
+        updateData.proximityRadiusKm = input.radiusKm;
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await db
+          .update(users)
+          .set(updateData)
+          .where(eq(users.id, ctx.user.id));
       }
 
       return { success: true };

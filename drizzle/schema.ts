@@ -80,6 +80,11 @@ export const users = mysqlTable("users", {
   notifyChargingComplete: boolean("notifyChargingComplete").default(true),
   notifyLowBalance: boolean("notifyLowBalance").default(true),
   notifyPromotions: boolean("notifyPromotions").default(true),
+  // Preferencias de alertas de proximidad
+  notifyProximity: boolean("notifyProximity").default(true),
+  proximityRadiusKm: int("proximityRadiusKm").default(5), // Radio de búsqueda en km (1-10)
+  lastProximityAlertAt: timestamp("lastProximityAlertAt"), // Cooldown de alertas
+  lastProximityStationId: int("lastProximityStationId"), // Última estación notificada
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
