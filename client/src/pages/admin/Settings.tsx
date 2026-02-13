@@ -169,20 +169,20 @@ export default function AdminSettings() {
       });
 
       setEventForm({
-        eventName: (settings as any).eventName || "Gran Lanzamiento Red de Carga EVGreen",
-        eventDate: (settings as any).eventDate || "Por confirmar",
-        eventTime: (settings as any).eventTime || "Por confirmar",
-        eventVenueName: (settings as any).eventVenueName || "Por confirmar",
-        eventAddress: (settings as any).eventAddress || "Bogotá, Colombia",
-        eventCity: (settings as any).eventCity || "Bogotá",
-        eventContactPhone: (settings as any).eventContactPhone || "",
-        eventContactEmail: (settings as any).eventContactEmail || "evgreen@greenhproject.com",
-        eventGoogleMapsUrl: (settings as any).eventGoogleMapsUrl || "",
-        eventWazeUrl: (settings as any).eventWazeUrl || "",
-        eventDressCode: (settings as any).eventDressCode || "Business Casual",
-        eventDescription: (settings as any).eventDescription || "",
-        eventMaxGuests: (settings as any).eventMaxGuests || 30,
-        eventBgImageUrl: (settings as any).eventBgImageUrl || "",
+        eventName: settings.eventName || "Gran Lanzamiento Red de Carga EVGreen",
+        eventDate: settings.eventDate || "Por confirmar",
+        eventTime: settings.eventTime || "Por confirmar",
+        eventVenueName: settings.eventVenueName || "Por confirmar",
+        eventAddress: settings.eventAddress || "Bogotá, Colombia",
+        eventCity: settings.eventCity || "Bogotá",
+        eventContactPhone: settings.eventContactPhone || "",
+        eventContactEmail: settings.eventContactEmail || "evgreen@greenhproject.com",
+        eventGoogleMapsUrl: settings.eventGoogleMapsUrl || "",
+        eventWazeUrl: settings.eventWazeUrl || "",
+        eventDressCode: settings.eventDressCode || "Business Casual",
+        eventDescription: settings.eventDescription || "",
+        eventMaxGuests: settings.eventMaxGuests || 30,
+        eventBgImageUrl: settings.eventBgImageUrl || "",
       });
     }
   }, [settings]);
@@ -228,7 +228,7 @@ export default function AdminSettings() {
   };
 
   const handleSaveEvent = () => {
-    updateMutation.mutate(eventForm as any);
+    updateMutation.mutate(eventForm);
   };
 
   if (isLoading) {

@@ -2136,3 +2136,7 @@
 - [x] Incluir links de Google Maps y Waze clickeables en el email de invitación
 - [x] Incluir teléfono de contacto y email en el email de invitación
 - [x] Vista previa de datos del evento en panel admin
+
+## Bug: Campos de evento no persisten - 12 Febrero 2026
+- [x] BUG: Datos del evento se guardan pero al recargar quedan en blanco (fix: retorno explícito en settings.get)
+- [x] BUG: Emails de invitación llegan sin los datos del evento (fix: generateInvitationEmail lee de getPlatformSettings)
