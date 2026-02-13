@@ -22,10 +22,14 @@ interface Vehicle {
 }
 
 const connectorTypes = [
+  { value: "TYPE_1", label: "Tipo 1 (AC)" },
   { value: "TYPE_2", label: "Tipo 2 (AC)" },
+  { value: "CCS_1", label: "CCS1 (DC)" },
   { value: "CCS_2", label: "CCS2 (DC)" },
   { value: "CHADEMO", label: "CHAdeMO (DC)" },
-  { value: "TYPE_1", label: "Tipo 1 (AC)" },
+  { value: "TESLA", label: "Tesla (NACS)" },
+  { value: "GBT_AC", label: "GB/T (AC)" },
+  { value: "GBT_DC", label: "GB/T (DC)" },
 ];
 
 const evBrands = [
@@ -35,18 +39,7 @@ const evBrands = [
 
 export default function Vehicles() {
   const [, setLocation] = useLocation();
-  const [vehicles, setVehicles] = useState<Vehicle[]>([
-    {
-      id: 1,
-      brand: "Renault",
-      model: "Zoe",
-      year: "2023",
-      batteryCapacity: "52",
-      connectorType: "TYPE_2",
-      licensePlate: "ABC123",
-      isDefault: true,
-    }
-  ]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [formData, setFormData] = useState({
