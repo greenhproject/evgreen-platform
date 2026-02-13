@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw } from "lucide-react";
+import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw, CalendarDays, MapPin, Phone, Mail, Navigation, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
@@ -86,6 +86,23 @@ export default function AdminSettings() {
     precioVentaMax: 2200,
   });
 
+  const [eventForm, setEventForm] = useState({
+    eventName: "Gran Lanzamiento Red de Carga EVGreen",
+    eventDate: "Por confirmar",
+    eventTime: "Por confirmar",
+    eventVenueName: "Por confirmar",
+    eventAddress: "Bogotá, Colombia",
+    eventCity: "Bogotá",
+    eventContactPhone: "",
+    eventContactEmail: "evgreen@greenhproject.com",
+    eventGoogleMapsUrl: "",
+    eventWazeUrl: "",
+    eventDressCode: "Business Casual",
+    eventDescription: "",
+    eventMaxGuests: 30,
+    eventBgImageUrl: "",
+  });
+
   // Cargar datos cuando llegan del servidor
   useEffect(() => {
     if (settings) {
@@ -150,6 +167,23 @@ export default function AdminSettings() {
         precioVentaMin: settings.precioVentaMin ?? 1400,
         precioVentaMax: settings.precioVentaMax ?? 2200,
       });
+
+      setEventForm({
+        eventName: (settings as any).eventName || "Gran Lanzamiento Red de Carga EVGreen",
+        eventDate: (settings as any).eventDate || "Por confirmar",
+        eventTime: (settings as any).eventTime || "Por confirmar",
+        eventVenueName: (settings as any).eventVenueName || "Por confirmar",
+        eventAddress: (settings as any).eventAddress || "Bogotá, Colombia",
+        eventCity: (settings as any).eventCity || "Bogotá",
+        eventContactPhone: (settings as any).eventContactPhone || "",
+        eventContactEmail: (settings as any).eventContactEmail || "evgreen@greenhproject.com",
+        eventGoogleMapsUrl: (settings as any).eventGoogleMapsUrl || "",
+        eventWazeUrl: (settings as any).eventWazeUrl || "",
+        eventDressCode: (settings as any).eventDressCode || "Business Casual",
+        eventDescription: (settings as any).eventDescription || "",
+        eventMaxGuests: (settings as any).eventMaxGuests || 30,
+        eventBgImageUrl: (settings as any).eventBgImageUrl || "",
+      });
     }
   }, [settings]);
 
@@ -193,6 +227,10 @@ export default function AdminSettings() {
     updateMutation.mutate(calculatorForm);
   };
 
+  const handleSaveEvent = () => {
+    updateMutation.mutate(eventForm as any);
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
@@ -231,6 +269,10 @@ export default function AdminSettings() {
           <TabsTrigger value="calculator">
             <Calculator className="w-4 h-4 mr-2" />
             Calculadora
+          </TabsTrigger>
+          <TabsTrigger value="event">
+            <CalendarDays className="w-4 h-4 mr-2" />
+            Evento
           </TabsTrigger>
         </TabsList>
 
@@ -787,6 +829,243 @@ export default function AdminSettings() {
                 </>
               ) : (
                 "Guardar cambios"
+              )}
+            </Button>
+          </Card>
+        </TabsContent>
+        <TabsContent value="event">
+          <Card className="p-6 space-y-6">
+            <div>
+              <h3 className="font-semibold mb-2 flex items-center gap-2">
+                <CalendarDays className="w-5 h-5 text-green-500" />
+                Configuración del Evento de Lanzamiento
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Estos datos se usan en las invitaciones enviadas por email. Cualquier cambio se refleja en las próximas invitaciones que se envíen.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Información General</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2 col-span-2">
+                  <Label>Nombre del evento</Label>
+                  <Input
+                    value={eventForm.eventName}
+                    onChange={(e) => setEventForm({ ...eventForm, eventName: e.target.value })}
+                    placeholder="Gran Lanzamiento Red de Carga EVGreen"
+                  />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label>Descripción del evento</Label>
+                  <textarea
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    value={eventForm.eventDescription}
+                    onChange={(e) => setEventForm({ ...eventForm, eventDescription: e.target.value })}
+                    placeholder="Descripción opcional que aparecerá en la invitación..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Máximo de invitados</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={eventForm.eventMaxGuests}
+                    onChange={(e) => setEventForm({ ...eventForm, eventMaxGuests: parseInt(e.target.value) || 30 })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>URL imagen de fondo (email)</Label>
+                  <Input
+                    value={eventForm.eventBgImageUrl}
+                    onChange={(e) => setEventForm({ ...eventForm, eventBgImageUrl: e.target.value })}
+                    placeholder="https://... (dejar vacío para usar la imagen por defecto)"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4 flex items-center gap-2">
+                <CalendarDays className="w-4 h-4" />
+                Fecha y Hora
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Fecha del evento</Label>
+                  <Input
+                    value={eventForm.eventDate}
+                    onChange={(e) => setEventForm({ ...eventForm, eventDate: e.target.value })}
+                    placeholder="Ej: Sábado 15 de Marzo, 2026"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Escribe la fecha como quieres que aparezca en la invitación
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Hora del evento</Label>
+                  <Input
+                    value={eventForm.eventTime}
+                    onChange={(e) => setEventForm({ ...eventForm, eventTime: e.target.value })}
+                    placeholder="Ej: 6:00 PM - 10:00 PM"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Dress Code</Label>
+                  <Input
+                    value={eventForm.eventDressCode}
+                    onChange={(e) => setEventForm({ ...eventForm, eventDressCode: e.target.value })}
+                    placeholder="Business Casual"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4 flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                Ubicación del Evento
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Nombre del salón / lugar</Label>
+                  <Input
+                    value={eventForm.eventVenueName}
+                    onChange={(e) => setEventForm({ ...eventForm, eventVenueName: e.target.value })}
+                    placeholder="Ej: Salón Imperial - Hotel Hilton"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Ciudad</Label>
+                  <Input
+                    value={eventForm.eventCity}
+                    onChange={(e) => setEventForm({ ...eventForm, eventCity: e.target.value })}
+                    placeholder="Bogotá"
+                  />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label>Dirección completa</Label>
+                  <Input
+                    value={eventForm.eventAddress}
+                    onChange={(e) => setEventForm({ ...eventForm, eventAddress: e.target.value })}
+                    placeholder="Cra 7 #72-41, Bogotá, Colombia"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <Navigation className="w-3.5 h-3.5 text-blue-400" />
+                    Link Google Maps
+                  </Label>
+                  <Input
+                    value={eventForm.eventGoogleMapsUrl}
+                    onChange={(e) => setEventForm({ ...eventForm, eventGoogleMapsUrl: e.target.value })}
+                    placeholder="https://maps.google.com/..."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Abre Google Maps, busca el lugar, y copia el link de compartir
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
+                    Link Waze
+                  </Label>
+                  <Input
+                    value={eventForm.eventWazeUrl}
+                    onChange={(e) => setEventForm({ ...eventForm, eventWazeUrl: e.target.value })}
+                    placeholder="https://waze.com/ul/..."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Abre Waze, busca el lugar, y copia el link de compartir
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4 flex items-center gap-2">
+                <Phone className="w-4 h-4" />
+                Contacto del Evento
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Teléfono de contacto</Label>
+                  <Input
+                    value={eventForm.eventContactPhone}
+                    onChange={(e) => setEventForm({ ...eventForm, eventContactPhone: e.target.value })}
+                    placeholder="+57 300 123 4567"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email de contacto</Label>
+                  <Input
+                    value={eventForm.eventContactEmail}
+                    onChange={(e) => setEventForm({ ...eventForm, eventContactEmail: e.target.value })}
+                    placeholder="evgreen@greenhproject.com"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Vista previa de datos */}
+            {(eventForm.eventDate !== "Por confirmar" || eventForm.eventVenueName !== "Por confirmar") && (
+              <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4">
+                <h4 className="text-sm font-semibold text-green-400 mb-3">Vista previa (datos de la invitación)</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-start gap-2">
+                    <span className="text-green-500">\ud83d\udcc5</span>
+                    <div>
+                      <p className="font-medium">{eventForm.eventDate}</p>
+                      {eventForm.eventTime && eventForm.eventTime !== "Por confirmar" && (
+                        <p className="text-muted-foreground">{eventForm.eventTime}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-green-500">\ud83d\udccd</span>
+                    <div>
+                      <p className="font-medium">{eventForm.eventVenueName}</p>
+                      <p className="text-muted-foreground">{eventForm.eventAddress}</p>
+                      {(eventForm.eventGoogleMapsUrl || eventForm.eventWazeUrl) && (
+                        <div className="flex gap-3 mt-1">
+                          {eventForm.eventGoogleMapsUrl && (
+                            <a href={eventForm.eventGoogleMapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline text-xs">
+                              Abrir en Google Maps \u2197
+                            </a>
+                          )}
+                          {eventForm.eventWazeUrl && (
+                            <a href={eventForm.eventWazeUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline text-xs">
+                              Abrir en Waze \u2197
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {eventForm.eventDressCode && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-green-500">\ud83d\udc54</span>
+                      <p className="font-medium">{eventForm.eventDressCode}</p>
+                    </div>
+                  )}
+                  {eventForm.eventContactPhone && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-green-500">\ud83d\udcde</span>
+                      <p>{eventForm.eventContactPhone}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <Button onClick={handleSaveEvent} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Guardando...
+                </>
+              ) : (
+                "Guardar configuración del evento"
               )}
             </Button>
           </Card>

@@ -12,7 +12,7 @@
 import { z } from "zod";
 import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
+import { getDb, getPlatformSettings } from "../db";
 import { eventGuests, eventPayments, users } from "../../drizzle/schema";
 import { eq, desc, sql, and, like } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
@@ -584,8 +584,12 @@ export const eventRouter = router({
       // Generar URL del QR
       const qrUrl = `https://evgreen.lat/event-checkin/${guest.qrCode}`;
 
+      // Obtener configuración del evento
+      const eventConfig = await getPlatformSettings();
+
       // Generar HTML del email de invitación
-      const emailHtml = await generateInvitationEmail(guest, qrUrl);
+      const emailHtml = await generateInvitationEmail(guest, qrUrl, eventConfig);
+      const eventName = eventConfig?.eventName || "Gran Lanzamiento Red de Carga EVGreen";
 
       try {
         console.log(`[Event] Enviando invitación a ${guest.email} con API Key: ${resendApiKey.substring(0, 10)}...`);
@@ -593,7 +597,7 @@ export const eventRouter = router({
         const result = await resend.emails.send(buildEmailParams({
           from: "EVGreen <invitaciones@evgreen.lat>",
           to: guest.email,
-          subject: "🔋 Invitación Exclusiva | Gran Lanzamiento Red de Carga EVGreen",
+          subject: `🔋 Invitación Exclusiva | ${eventName}`,
           html: emailHtml,
         }));
 
@@ -641,6 +645,10 @@ export const eventRouter = router({
       let sent = 0;
       let failed = 0;
 
+      // Obtener configuración del evento una sola vez para todo el batch
+      const eventCfg = await getPlatformSettings();
+      const evtName = eventCfg?.eventName || "Gran Lanzamiento Red de Carga EVGreen";
+
       for (const guestId of input.guestIds) {
         try {
           const [guest] = await db
@@ -651,13 +659,13 @@ export const eventRouter = router({
           if (!guest || guest.invitationSentAt) continue;
 
           const qrUrl = `https://evgreen.lat/event-checkin/${guest.qrCode}`;
-          const emailHtml = await generateInvitationEmail(guest, qrUrl);
+          const emailHtml = await generateInvitationEmail(guest, qrUrl, eventCfg);
 
           console.log(`[Event Bulk] Enviando invitación a ${guest.email}...`);
           const result = await resend.emails.send(buildEmailParams({
             from: "EVGreen <invitaciones@evgreen.lat>",
             to: guest.email,
-            subject: "🔋 Invitación Exclusiva | Gran Lanzamiento Red de Carga EVGreen",
+            subject: `🔋 Invitación Exclusiva | ${evtName}`,
             html: emailHtml,
           }));
           console.log(`[Event Bulk] Resultado:`, JSON.stringify(result));
@@ -965,11 +973,29 @@ export const eventRouter = router({
 // GENERADOR DE EMAIL DE INVITACIÓN
 // ============================================================================
 
-async function generateInvitationEmail(guest: any, qrUrl: string): Promise<string> {
+async function generateInvitationEmail(guest: any, qrUrl: string, eventConfig?: any): Promise<string> {
+  // Datos del evento desde configuración admin (o valores por defecto)
+  const evt = {
+    name: eventConfig?.eventName || "Gran Lanzamiento Red de Carga EVGreen",
+    date: eventConfig?.eventDate || "Por confirmar - Se notificará próximamente",
+    time: eventConfig?.eventTime || "",
+    venueName: eventConfig?.eventVenueName || "Por confirmar",
+    address: eventConfig?.eventAddress || "Bogotá, Colombia",
+    city: eventConfig?.eventCity || "Bogotá",
+    contactPhone: eventConfig?.eventContactPhone || "",
+    contactEmail: eventConfig?.eventContactEmail || "evgreen@greenhproject.com",
+    googleMapsUrl: eventConfig?.eventGoogleMapsUrl || "",
+    wazeUrl: eventConfig?.eventWazeUrl || "",
+    dressCode: eventConfig?.eventDressCode || "Business Casual",
+    description: eventConfig?.eventDescription || "",
+    maxGuests: eventConfig?.eventMaxGuests || 30,
+    bgImageUrl: eventConfig?.eventBgImageUrl || EVENT_BG_IMAGE,
+  };
+
   const founderSlotText = guest.founderSlot
     ? `<div style="text-align: center; margin: 20px 0;">
         <span style="display: inline-block; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 8px 24px; border-radius: 20px; font-size: 14px; font-weight: 600; letter-spacing: 1px;">
-          CUPO FUNDADOR #${guest.founderSlot} DE 30
+          CUPO FUNDADOR #${guest.founderSlot} DE ${evt.maxGuests}
         </span>
       </div>`
     : "";
@@ -1020,9 +1046,9 @@ async function generateInvitationEmail(guest: any, qrUrl: string): Promise<strin
           
           <!-- Header con imagen de fondo -->
           <tr>
-            <td style="background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(10,10,10,1) 100%), url('${EVENT_BG_IMAGE}'); background-size: cover; background-position: center top; height: 300px; text-align: center; vertical-align: bottom; padding: 30px;">
+            <td style="background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(10,10,10,1) 100%), url('${evt.bgImageUrl}'); background-size: cover; background-position: center top; height: 300px; text-align: center; vertical-align: bottom; padding: 30px;">
               <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 800; text-shadow: 0 2px 10px rgba(0,0,0,0.8);">
-                GRAN LANZAMIENTO
+                ${evt.name.toUpperCase()}
               </h1>
               <p style="color: #22c55e; margin: 5px 0 0 0; font-size: 16px; font-weight: 600; text-shadow: 0 2px 10px rgba(0,0,0,0.8);">
                 Red de Carga Eléctrica EVGreen
@@ -1045,7 +1071,7 @@ async function generateInvitationEmail(guest: any, qrUrl: string): Promise<strin
               </p>
 
               <p style="color: #a0a0a0; font-size: 15px; line-height: 1.7; margin: 0 0 20px 0;">
-                Tiene el honor de ser invitado/a al <strong style="color: #22c55e;">Gran Lanzamiento de la Red de Carga EVGreen</strong>, donde presentaremos la primera red de electrolineras inteligentes de Colombia con tecnología Huawei FusionCharge.
+                Tiene el honor de ser invitado/a al <strong style="color: #22c55e;">${evt.name}</strong>${evt.description ? `, ${evt.description}` : ', donde presentaremos la primera red de electrolineras inteligentes de Colombia con tecnología Huawei FusionCharge'}.
               </p>
 
               <p style="color: #a0a0a0; font-size: 15px; line-height: 1.7; margin: 0 0 20px 0;">
@@ -1067,7 +1093,7 @@ async function generateInvitationEmail(guest: any, qrUrl: string): Promise<strin
                         <td style="color: #22c55e; font-size: 20px; padding-right: 12px; vertical-align: top;">📅</td>
                         <td>
                           <p style="color: #ffffff; font-size: 14px; font-weight: 600; margin: 0;">Fecha del Evento</p>
-                          <p style="color: #a0a0a0; font-size: 13px; margin: 4px 0 0 0;">Por confirmar - Se notificará próximamente</p>
+                          <p style="color: #a0a0a0; font-size: 13px; margin: 4px 0 0 0;">${evt.date}${evt.time && evt.time !== 'Por confirmar' ? ` - ${evt.time}` : ''}</p>
                         </td>
                       </tr>
                     </table>
@@ -1079,26 +1105,44 @@ async function generateInvitationEmail(guest: any, qrUrl: string): Promise<strin
                       <tr>
                         <td style="color: #22c55e; font-size: 20px; padding-right: 12px; vertical-align: top;">📍</td>
                         <td>
-                          <p style="color: #ffffff; font-size: 14px; font-weight: 600; margin: 0;">Lugar</p>
-                          <p style="color: #a0a0a0; font-size: 13px; margin: 4px 0 0 0;">Por confirmar - Bogotá, Colombia</p>
+                          <p style="color: #ffffff; font-size: 14px; font-weight: 600; margin: 0;">${evt.venueName}</p>
+                          <p style="color: #a0a0a0; font-size: 13px; margin: 4px 0 0 0;">${evt.address}</p>
+                          ${evt.googleMapsUrl || evt.wazeUrl ? `
+                          <p style="margin: 8px 0 0 0;">
+                            ${evt.googleMapsUrl ? `<a href="${evt.googleMapsUrl}" style="color: #22c55e; text-decoration: none; font-size: 12px; margin-right: 15px;">🗺️ Abrir en Google Maps</a>` : ''}
+                            ${evt.wazeUrl ? `<a href="${evt.wazeUrl}" style="color: #22c55e; text-decoration: none; font-size: 12px;">🚗 Abrir en Waze</a>` : ''}
+                          </p>` : ''}
                         </td>
                       </tr>
                     </table>
                   </td>
                 </tr>
-                <tr>
+                ${evt.dressCode ? `<tr>
                   <td style="padding: 10px 0;">
                     <table cellpadding="0" cellspacing="0">
                       <tr>
                         <td style="color: #22c55e; font-size: 20px; padding-right: 12px; vertical-align: top;">👔</td>
                         <td>
                           <p style="color: #ffffff; font-size: 14px; font-weight: 600; margin: 0;">Dress Code</p>
-                          <p style="color: #a0a0a0; font-size: 13px; margin: 4px 0 0 0;">Business Casual</p>
+                          <p style="color: #a0a0a0; font-size: 13px; margin: 4px 0 0 0;">${evt.dressCode}</p>
                         </td>
                       </tr>
                     </table>
                   </td>
-                </tr>
+                </tr>` : ''}
+                ${evt.contactPhone ? `<tr>
+                  <td style="padding: 10px 0;">
+                    <table cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="color: #22c55e; font-size: 20px; padding-right: 12px; vertical-align: top;">📞</td>
+                        <td>
+                          <p style="color: #ffffff; font-size: 14px; font-weight: 600; margin: 0;">Contacto</p>
+                          <p style="color: #a0a0a0; font-size: 13px; margin: 4px 0 0 0;">${evt.contactPhone}${evt.contactEmail ? ` | ${evt.contactEmail}` : ''}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>` : ''}
               </table>
 
               <!-- Separador -->
@@ -1144,7 +1188,7 @@ async function generateInvitationEmail(guest: any, qrUrl: string): Promise<strin
                 </tr>
               </table>
               <p style="color: #444; font-size: 11px; margin: 15px 0 0 0; text-align: center;">
-                Solo 30 cupos disponibles para Inversionistas Fundadores. Esta invitación es personal e intransferible.
+                Solo ${evt.maxGuests} cupos disponibles para Inversionistas Fundadores. Esta invitación es personal e intransferible.
               </p>
             </td>
           </tr>

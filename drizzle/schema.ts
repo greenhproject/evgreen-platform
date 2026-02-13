@@ -1075,6 +1075,25 @@ export const platformSettings = mysqlTable("platform_settings", {
   precioVentaMin: int("precioVentaMin").default(1400).notNull(),
   precioVentaMax: int("precioVentaMax").default(2200).notNull(),
 
+  // ============================================================================
+  // Configuración del Evento de Lanzamiento (invitaciones)
+  // ============================================================================
+  
+  eventName: varchar("eventName", { length: 255 }).default("Gran Lanzamiento Red de Carga EVGreen"),
+  eventDate: varchar("eventDate", { length: 100 }).default("Por confirmar"),
+  eventTime: varchar("eventTime", { length: 100 }).default("Por confirmar"),
+  eventVenueName: varchar("eventVenueName", { length: 255 }).default("Por confirmar"),
+  eventAddress: varchar("eventAddress", { length: 500 }).default("Bogotá, Colombia"),
+  eventCity: varchar("eventCity", { length: 100 }).default("Bogotá"),
+  eventContactPhone: varchar("eventContactPhone", { length: 50 }),
+  eventContactEmail: varchar("eventContactEmail", { length: 255 }).default("evgreen@greenhproject.com"),
+  eventGoogleMapsUrl: text("eventGoogleMapsUrl"),
+  eventWazeUrl: text("eventWazeUrl"),
+  eventDressCode: varchar("eventDressCode", { length: 100 }).default("Business Casual"),
+  eventDescription: text("eventDescription"),
+  eventMaxGuests: int("eventMaxGuests").default(30),
+  eventBgImageUrl: text("eventBgImageUrl"),
+
   // Metadata
   updatedBy: int("updatedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
