@@ -28,27 +28,26 @@ export default function Landing() {
     <div className="min-h-screen bg-background overflow-hidden">
       {/* Hero Section */}
       <section className="relative min-h-screen flex items-center justify-center px-4 py-20">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-secondary/5" />
-        
-        {/* Animated circles */}
-        <div className="absolute top-20 left-10 w-48 sm:w-72 h-48 sm:h-72 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-20 right-10 w-64 sm:w-96 h-64 sm:h-96 bg-secondary/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+        {/* Hero background image */}
+        <div className="absolute inset-0">
+          <img 
+            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/pPtzYHFkfAUbWzxt.png" 
+            alt="" 
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background" />
+        </div>
         
         <div className="container relative z-10">
           <div className="max-w-4xl mx-auto text-center">
-            {/* Logo */}
+            {/* Spacer for hero image logo */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              className="mb-8 flex justify-center"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.8 }}
+              className="mb-6"
             >
-              <img 
-                src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/GGDXOuWzwOqcapbY.png" 
-                alt="EVGreen" 
-                className="h-20 sm:h-24 md:h-28 w-auto object-contain drop-shadow-[0_0_25px_rgba(34,197,94,0.3)]"
-              />
+              <div className="h-32 sm:h-40 md:h-48" />
             </motion.div>
 
             {/* Headline with AI emphasis */}
