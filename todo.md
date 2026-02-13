@@ -2127,3 +2127,12 @@
 - [x] Agregar endpoint backend para subir imagen de banner a S3
 - [x] Modificar formulario de banners para permitir subir archivo de imagen directamente
 - [x] Agregar nota con tamaños recomendados para app móvil en el formulario de banners
+
+## Mejora: Invitaciones Staff - Configuración de evento desde admin - 12 Febrero 2026
+- [x] Agregar campos de evento a platform_settings (dirección, teléfono, links, salón, etc.)
+- [x] Crear endpoints backend para CRUD de configuración de eventos (settings.update con campos event*)
+- [x] Crear tab "Evento" en Settings admin para configurar datos del evento
+- [x] Actualizar generateInvitationEmail para usar datos dinámicos del evento
+- [x] Incluir links de Google Maps y Waze clickeables en el email de invitación
+- [x] Incluir teléfono de contacto y email en el email de invitación
+- [x] Vista previa de datos del evento en panel admin

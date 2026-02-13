@@ -1867,6 +1867,21 @@ const settingsRouter = router({
         precioVentaDefault: 1800,
         precioVentaMin: 1400,
         precioVentaMax: 2200,
+        // Evento
+        eventName: "Gran Lanzamiento Red de Carga EVGreen",
+        eventDate: "Por confirmar",
+        eventTime: "Por confirmar",
+        eventVenueName: "Por confirmar",
+        eventAddress: "Bogotá, Colombia",
+        eventCity: "Bogotá",
+        eventContactPhone: "",
+        eventContactEmail: "evgreen@greenhproject.com",
+        eventGoogleMapsUrl: "",
+        eventWazeUrl: "",
+        eventDressCode: "Business Casual",
+        eventDescription: "",
+        eventMaxGuests: 30,
+        eventBgImageUrl: "",
       };
     }
     // Ocultar claves secretas parcialmente
@@ -1915,6 +1930,21 @@ const settingsRouter = router({
       precioVentaDefault: z.number().min(0).optional(),
       precioVentaMin: z.number().min(0).optional(),
       precioVentaMax: z.number().min(0).optional(),
+      // Configuración del evento de lanzamiento
+      eventName: z.string().optional(),
+      eventDate: z.string().optional(),
+      eventTime: z.string().optional(),
+      eventVenueName: z.string().optional(),
+      eventAddress: z.string().optional(),
+      eventCity: z.string().optional(),
+      eventContactPhone: z.string().optional(),
+      eventContactEmail: z.string().optional(),
+      eventGoogleMapsUrl: z.string().optional(),
+      eventWazeUrl: z.string().optional(),
+      eventDressCode: z.string().optional(),
+      eventDescription: z.string().optional(),
+      eventMaxGuests: z.number().min(1).optional(),
+      eventBgImageUrl: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Filtrar campos vacíos o con valores de máscara
