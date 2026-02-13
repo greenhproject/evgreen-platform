@@ -1485,3 +1485,58 @@ export const wompiTransactionsRelations = relations(wompiTransactions, ({ one })
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// USER VEHICLES TABLE - Vehículos registrados por usuarios
+// ============================================================================
+
+export const userVehicles = mysqlTable("user_vehicles", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK a users
+
+  // Datos del vehículo
+  brand: varchar("brand", { length: 100 }).notNull(), // Marca (Tesla, BYD, Renault, etc.)
+  model: varchar("model", { length: 100 }).notNull(), // Modelo (Model 3, Dolphin, Zoe, etc.)
+  year: int("year"), // Año del vehículo
+  licensePlate: varchar("licensePlate", { length: 20 }), // Placa del vehículo
+
+  // Especificaciones de batería
+  batteryCapacityKwh: decimal("batteryCapacityKwh", { precision: 6, scale: 2 }), // Capacidad de batería en kWh
+  rangeKm: int("rangeKm"), // Autonomía en km
+
+  // Conectores compatibles (JSON array de tipos de conector)
+  // Valores: TYPE_1, TYPE_2, CCS_1, CCS_2, CHADEMO, TESLA, GBT_AC, GBT_DC
+  connectorTypes: json("connectorTypes").$type<string[]>().notNull(),
+
+  // Velocidad máxima de carga
+  maxChargePowerKw: decimal("maxChargePowerKw", { precision: 6, scale: 2 }), // kW máximos que acepta
+
+  // Estado
+  isDefault: boolean("isDefault").default(false).notNull(), // Vehículo principal del usuario
+  isActive: boolean("isActive").default(true).notNull(),
+
+  // Imagen del vehículo (opcional)
+  imageUrl: text("imageUrl"),
+
+  // Notas del usuario
+  nickname: varchar("nickname", { length: 100 }), // Apodo del vehículo (ej: "Mi Tesla")
+
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserVehicle = typeof userVehicles.$inferSelect;
+export type InsertUserVehicle = typeof userVehicles.$inferInsert;
+
+// ============================================================================
+// USER VEHICLES RELATIONS
+// ============================================================================
+
+export const userVehiclesRelations = relations(userVehicles, ({ one }) => ({
+  user: one(users, {
+    fields: [userVehicles.userId],
+    references: [users.id],
+  }),
+}));

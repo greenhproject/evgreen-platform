@@ -5,21 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, Car, Plus, Trash2, Battery, Zap, Edit } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ArrowLeft, Car, Plus, Trash2, Battery, Zap, Edit, Star, Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
-
-interface Vehicle {
-  id: number;
-  brand: string;
-  model: string;
-  year: string;
-  batteryCapacity: string;
-  connectorType: string;
-  licensePlate: string;
-  isDefault: boolean;
-}
+import { trpc } from "@/lib/trpc";
 
 const connectorTypes = [
   { value: "TYPE_1", label: "Tipo 1 (AC)" },
@@ -30,90 +21,156 @@ const connectorTypes = [
   { value: "TESLA", label: "Tesla (NACS)" },
   { value: "GBT_AC", label: "GB/T (AC)" },
   { value: "GBT_DC", label: "GB/T (DC)" },
-];
+] as const;
+
+type ConnectorTypeValue = typeof connectorTypes[number]["value"];
 
 const evBrands = [
-  "Tesla", "BYD", "Renault", "Nissan", "Chevrolet", "BMW", "Mercedes-Benz", 
+  "Tesla", "BYD", "Renault", "Nissan", "Chevrolet", "BMW", "Mercedes-Benz",
   "Audi", "Volkswagen", "Hyundai", "Kia", "Ford", "Volvo", "Porsche", "Otro"
 ];
 
+interface FormData {
+  brand: string;
+  model: string;
+  year: string;
+  batteryCapacity: string;
+  connectorTypes: ConnectorTypeValue[];
+  licensePlate: string;
+  nickname: string;
+}
+
+const emptyForm: FormData = {
+  brand: "",
+  model: "",
+  year: "",
+  batteryCapacity: "",
+  connectorTypes: [],
+  licensePlate: "",
+  nickname: "",
+};
+
 export default function Vehicles() {
   const [, setLocation] = useLocation();
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
-  const [formData, setFormData] = useState({
-    brand: "",
-    model: "",
-    year: "",
-    batteryCapacity: "",
-    connectorType: "",
-    licensePlate: "",
+  const [editingVehicleId, setEditingVehicleId] = useState<number | null>(null);
+  const [formData, setFormData] = useState<FormData>({ ...emptyForm });
+
+  const utils = trpc.useUtils();
+
+  // Queries
+  const { data: vehicles = [], isLoading } = trpc.vehicles.list.useQuery();
+
+  // Mutations
+  const createMutation = trpc.vehicles.create.useMutation({
+    onSuccess: () => {
+      utils.vehicles.list.invalidate();
+      toast.success("Vehículo registrado exitosamente");
+      resetForm();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Error al registrar el vehículo");
+    },
   });
 
-  const handleChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
+  const updateMutation = trpc.vehicles.update.useMutation({
+    onSuccess: () => {
+      utils.vehicles.list.invalidate();
+      toast.success("Vehículo actualizado exitosamente");
+      resetForm();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Error al actualizar el vehículo");
+    },
+  });
 
-  const handleSave = () => {
-    if (!formData.brand || !formData.model || !formData.connectorType) {
-      toast.error("Por favor completa los campos requeridos");
-      return;
-    }
+  const deleteMutation = trpc.vehicles.delete.useMutation({
+    onSuccess: () => {
+      utils.vehicles.list.invalidate();
+      toast.success("Vehículo eliminado");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Error al eliminar el vehículo");
+    },
+  });
 
-    if (editingVehicle) {
-      setVehicles(prev => prev.map(v => 
-        v.id === editingVehicle.id 
-          ? { ...v, ...formData }
-          : v
-      ));
-      toast.success("Vehículo actualizado");
-    } else {
-      const newVehicle: Vehicle = {
-        id: Date.now(),
-        ...formData,
-        isDefault: vehicles.length === 0,
-      };
-      setVehicles(prev => [...prev, newVehicle]);
-      toast.success("Vehículo agregado");
-    }
+  const setDefaultMutation = trpc.vehicles.setDefault.useMutation({
+    onSuccess: () => {
+      utils.vehicles.list.invalidate();
+      toast.success("Vehículo predeterminado actualizado");
+    },
+    onError: (err) => {
+      toast.error(err.message || "Error al actualizar");
+    },
+  });
 
-    setFormData({
-      brand: "",
-      model: "",
-      year: "",
-      batteryCapacity: "",
-      connectorType: "",
-      licensePlate: "",
-    });
-    setEditingVehicle(null);
+  const isMutating = createMutation.isPending || updateMutation.isPending;
+
+  const resetForm = () => {
+    setFormData({ ...emptyForm });
+    setEditingVehicleId(null);
     setIsDialogOpen(false);
   };
 
-  const handleEdit = (vehicle: Vehicle) => {
-    setEditingVehicle(vehicle);
+  const handleChange = (name: keyof FormData, value: string) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const toggleConnector = (connValue: ConnectorTypeValue) => {
+    setFormData(prev => {
+      const current = prev.connectorTypes;
+      if (current.includes(connValue)) {
+        return { ...prev, connectorTypes: current.filter(c => c !== connValue) };
+      } else {
+        return { ...prev, connectorTypes: [...current, connValue] };
+      }
+    });
+  };
+
+  const handleSave = () => {
+    if (!formData.brand || !formData.model || formData.connectorTypes.length === 0) {
+      toast.error("Por favor completa los campos requeridos (marca, modelo y al menos un conector)");
+      return;
+    }
+
+    const payload = {
+      brand: formData.brand,
+      model: formData.model,
+      year: formData.year ? parseInt(formData.year) : undefined,
+      batteryCapacityKwh: formData.batteryCapacity ? parseFloat(formData.batteryCapacity) : undefined,
+      connectorTypes: formData.connectorTypes,
+      licensePlate: formData.licensePlate || undefined,
+      nickname: formData.nickname || undefined,
+    };
+
+    if (editingVehicleId) {
+      updateMutation.mutate({ id: editingVehicleId, ...payload });
+    } else {
+      createMutation.mutate(payload);
+    }
+  };
+
+  const handleEdit = (vehicle: typeof vehicles[number]) => {
+    setEditingVehicleId(vehicle.id);
+    const vehicleConnectors = (vehicle.connectorTypes as string[]) || [];
     setFormData({
       brand: vehicle.brand,
       model: vehicle.model,
-      year: vehicle.year,
-      batteryCapacity: vehicle.batteryCapacity,
-      connectorType: vehicle.connectorType,
-      licensePlate: vehicle.licensePlate,
+      year: vehicle.year?.toString() || "",
+      batteryCapacity: vehicle.batteryCapacityKwh?.toString() || "",
+      connectorTypes: vehicleConnectors as ConnectorTypeValue[],
+      licensePlate: vehicle.licensePlate || "",
+      nickname: vehicle.nickname || "",
     });
     setIsDialogOpen(true);
   };
 
   const handleDelete = (id: number) => {
-    setVehicles(prev => prev.filter(v => v.id !== id));
-    toast.success("Vehículo eliminado");
+    deleteMutation.mutate({ id });
   };
 
   const handleSetDefault = (id: number) => {
-    setVehicles(prev => prev.map(v => ({
-      ...v,
-      isDefault: v.id === id,
-    })));
-    toast.success("Vehículo predeterminado actualizado");
+    setDefaultMutation.mutate({ id });
   };
 
   return (
@@ -133,17 +190,20 @@ export default function Vehicles() {
               </Button>
               <h1 className="text-lg font-semibold">Mis Vehículos</h1>
             </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog open={isDialogOpen} onOpenChange={(open) => {
+              setIsDialogOpen(open);
+              if (!open) resetForm();
+            }}>
               <DialogTrigger asChild>
                 <Button size="sm" className="gradient-primary">
                   <Plus className="w-4 h-4 mr-1" />
                   Agregar
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-md">
+              <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>
-                    {editingVehicle ? "Editar vehículo" : "Agregar vehículo"}
+                    {editingVehicleId ? "Editar vehículo" : "Agregar vehículo"}
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 mt-4">
@@ -168,6 +228,14 @@ export default function Vehicles() {
                       placeholder="Ej: Model 3, Zoe, Leaf"
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label>Apodo (opcional)</Label>
+                    <Input
+                      value={formData.nickname}
+                      onChange={(e) => handleChange("nickname", e.target.value)}
+                      placeholder="Ej: Mi Tesla, El Eléctrico"
+                    />
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Año</Label>
@@ -175,6 +243,7 @@ export default function Vehicles() {
                         value={formData.year}
                         onChange={(e) => handleChange("year", e.target.value)}
                         placeholder="2024"
+                        type="number"
                       />
                     </div>
                     <div className="space-y-2">
@@ -183,21 +252,31 @@ export default function Vehicles() {
                         value={formData.batteryCapacity}
                         onChange={(e) => handleChange("batteryCapacity", e.target.value)}
                         placeholder="52"
+                        type="number"
                       />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Tipo de conector *</Label>
-                    <Select value={formData.connectorType} onValueChange={(v) => handleChange("connectorType", v)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecciona conector" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {connectorTypes.map(type => (
-                          <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label>Tipos de conector compatibles *</Label>
+                    <p className="text-xs text-muted-foreground">Selecciona todos los conectores que acepta tu vehículo</p>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      {connectorTypes.map(type => (
+                        <label
+                          key={type.value}
+                          className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                            formData.connectorTypes.includes(type.value)
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border hover:border-primary/50"
+                          }`}
+                        >
+                          <Checkbox
+                            checked={formData.connectorTypes.includes(type.value)}
+                            onCheckedChange={() => toggleConnector(type.value)}
+                          />
+                          <span className="text-sm">{type.label}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label>Placa</Label>
@@ -207,8 +286,13 @@ export default function Vehicles() {
                       placeholder="ABC123"
                     />
                   </div>
-                  <Button className="w-full gradient-primary" onClick={handleSave}>
-                    {editingVehicle ? "Guardar cambios" : "Agregar vehículo"}
+                  <Button
+                    className="w-full gradient-primary"
+                    onClick={handleSave}
+                    disabled={isMutating}
+                  >
+                    {isMutating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    {editingVehicleId ? "Guardar cambios" : "Agregar vehículo"}
                   </Button>
                 </div>
               </DialogContent>
@@ -217,7 +301,12 @@ export default function Vehicles() {
         </div>
 
         <div className="p-4 space-y-4">
-          {vehicles.length === 0 ? (
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-16">
+              <Loader2 className="w-8 h-8 animate-spin text-primary mb-4" />
+              <p className="text-sm text-muted-foreground">Cargando vehículos...</p>
+            </div>
+          ) : vehicles.length === 0 ? (
             <Card className="p-8">
               <div className="flex flex-col items-center text-center">
                 <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
@@ -234,71 +323,88 @@ export default function Vehicles() {
               </div>
             </Card>
           ) : (
-            vehicles.map(vehicle => (
-              <Card key={vehicle.id} className={vehicle.isDefault ? "border-primary" : ""}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <Car className="w-6 h-6 text-primary" />
+            vehicles.map(vehicle => {
+              const vehicleConnectors = (vehicle.connectorTypes as string[]) || [];
+              return (
+                <Card key={vehicle.id} className={vehicle.isDefault ? "border-primary" : ""}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                          <Car className="w-6 h-6 text-primary" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">
+                            {vehicle.nickname || `${vehicle.brand} ${vehicle.model}`}
+                          </CardTitle>
+                          <CardDescription>
+                            {vehicle.brand} {vehicle.model}
+                            {vehicle.year ? ` • ${vehicle.year}` : ""}
+                            {vehicle.licensePlate ? ` • ${vehicle.licensePlate}` : ""}
+                          </CardDescription>
+                        </div>
                       </div>
-                      <div>
-                        <CardTitle className="text-base">
-                          {vehicle.brand} {vehicle.model}
-                        </CardTitle>
-                        <CardDescription>
-                          {vehicle.year} • {vehicle.licensePlate}
-                        </CardDescription>
+                      {vehicle.isDefault && (
+                        <span className="text-xs bg-primary/20 text-primary px-2 py-1 rounded-full flex items-center gap-1">
+                          <Star className="w-3 h-3" />
+                          Predeterminado
+                        </span>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mb-4">
+                      {vehicle.batteryCapacityKwh && (
+                        <div className="flex items-center gap-1">
+                          <Battery className="w-4 h-4" />
+                          {vehicle.batteryCapacityKwh} kWh
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <Zap className="w-4 h-4 shrink-0" />
+                        {vehicleConnectors.map((ct, i) => {
+                          const label = connectorTypes.find(t => t.value === ct)?.label || ct;
+                          return (
+                            <span key={ct} className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                              {label}
+                            </span>
+                          );
+                        })}
                       </div>
                     </div>
-                    {vehicle.isDefault && (
-                      <span className="text-xs bg-primary/20 text-primary px-2 py-1 rounded-full">
-                        Predeterminado
-                      </span>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
-                    <div className="flex items-center gap-1">
-                      <Battery className="w-4 h-4" />
-                      {vehicle.batteryCapacity} kWh
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Zap className="w-4 h-4" />
-                      {connectorTypes.find(t => t.value === vehicle.connectorType)?.label || vehicle.connectorType}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    {!vehicle.isDefault && (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex-1"
-                        onClick={() => handleSetDefault(vehicle.id)}
+                    <div className="flex gap-2">
+                      {!vehicle.isDefault && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => handleSetDefault(vehicle.id)}
+                          disabled={setDefaultMutation.isPending}
+                        >
+                          Usar por defecto
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEdit(vehicle)}
                       >
-                        Usar por defecto
+                        <Edit className="w-4 h-4" />
                       </Button>
-                    )}
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleEdit(vehicle)}
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(vehicle.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => handleDelete(vehicle.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
           )}
         </div>
       </div>
