@@ -2144,3 +2144,8 @@
 ## Mejora: Logo EVGreen grande en hero de landing - 12 Febrero 2026
 - [x] Subir logo EVGreen blanco a S3
 - [x] Reemplazar logo pequeño del hero por logo grande con más presencia (hero + footer)
+
+## Mejora: Hero mobile optimizado + parallax - 13 Febrero 2026
+- [ ] Generar imagen vertical (9:16) del hero eléctrico para móviles
+- [ ] Implementar responsive image switching (desktop vs mobile)
+- [ ] Agregar efecto parallax sutil al fondo del hero
