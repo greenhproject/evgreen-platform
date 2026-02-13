@@ -2122,3 +2122,8 @@
 - [x] Agregar diferenciación visual para transacciones auto-cobro (ATC-) en historial de billetera
 - [x] Agregar diferenciación visual para transacciones recarga rápida (QRC-) en historial de billetera
 - [x] Revisar y asegurar flujo completo de pagos (inscripción tarjeta, recarga rápida, auto-cobro)
+
+## Mejora: Banners - Upload de imagen directo - 12 Febrero 2026
+- [x] Agregar endpoint backend para subir imagen de banner a S3
+- [x] Modificar formulario de banners para permitir subir archivo de imagen directamente
+- [x] Agregar nota con tamaños recomendados para app móvil en el formulario de banners
