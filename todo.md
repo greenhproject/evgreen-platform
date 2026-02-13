@@ -2167,3 +2167,5 @@
 - [x] Agregar botón de descarga directa del APK en la landing page
 - [x] Separar botones + y × en el header del EV Assistant para evitar confusión en móvil
 - [x] Corregir botón × duplicado en header del EV Assistant (aparecen 3 botones)
+- [x] Corregir formulario de vehículos: permitir configurar marca/modelo (no siempre Renault Zoe)
+- [x] Agregar conectores GBT (AC) y GBT DC a las opciones de conectores
