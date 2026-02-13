@@ -2151,3 +2151,5 @@
 - [ ] Agregar efecto parallax sutil al fondo del hero
 - [x] Buscar fuente más parecida al logo EVGreen (geométrica redondeada, EV bold, Green light) y actualizar hero
 - [x] Corregir fuente hero EVGreen: cambiar Nunito por fuente italic/cursiva geométrica más fiel al logo original
+- [x] Agregar animación de entrada fade-in con escala al logo EVGreen en el hero
+- [x] Optimizar imágenes hero (desktop, mobile) y logo a formato WebP para carga más rápida
