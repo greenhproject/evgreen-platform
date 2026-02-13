@@ -2157,3 +2157,5 @@
 - [x] Cambiar favicon/ícono de app por isotipo EVGreen (rayo con hojas) en múltiples tamaños
 - [x] Splash screen animado con isotipo EVGreen (glow pulse) durante carga
 - [x] Imagen Open Graph (1200x630) para preview en WhatsApp/redes sociales
+- [x] Banner publicitario/informativo en el splash screen para marcas aliadas
+- [x] Animación de conteo en las stats del hero (30%, 50+, 10K+, 24/7)
