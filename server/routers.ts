@@ -1454,9 +1454,17 @@ const maintenanceRouter = router({
       const id = await db.createMaintenanceTicket({
         ...input,
         reportedById: ctx.user.id,
+        technicianId: ctx.user.id, // Auto-assign to the creating technician
         status: "PENDING",
       });
       return { id };
+    }),
+
+  // Get a single ticket by ID
+  getById: technicianProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getMaintenanceTicketById(input.id);
     }),
   
   update: technicianProcedure
