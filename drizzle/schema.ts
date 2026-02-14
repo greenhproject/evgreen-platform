@@ -99,6 +99,10 @@ export const users = mysqlTable("users", {
   prefAutoLocate: boolean("prefAutoLocate").default(true),
   prefSaveHistory: boolean("prefSaveHistory").default(true),
   prefShareUsageData: boolean("prefShareUsageData").default(false),
+  // Seguridad - 2FA
+  twoFactorEnabled: boolean("twoFactorEnabled").default(false),
+  twoFactorSecret: varchar("twoFactorSecret", { length: 255 }), // TOTP secret (encrypted)
+  twoFactorVerifiedAt: timestamp("twoFactorVerifiedAt"),
   // Preferencias de alertas de proximidad
   notifyProximity: boolean("notifyProximity").default(true),
   proximityRadiusKm: int("proximityRadiusKm").default(5), // Radio de búsqueda en km (1-10)
@@ -1596,6 +1600,46 @@ export const firmwareUpdatesRelations = relations(firmwareUpdates, ({ one }) => 
   }),
   initiator: one(users, {
     fields: [firmwareUpdates.initiatedBy],
+    references: [users.id],
+  }),
+}));
+
+
+// ============================================================================
+// USER LOGIN SESSIONS - Historial de sesiones de inicio de sesión
+// ============================================================================
+
+export const userLoginSessions = mysqlTable("user_login_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK a users
+  
+  // Información del dispositivo/navegador
+  userAgent: text("userAgent"),
+  ipAddress: varchar("ipAddress", { length: 45 }), // IPv4 o IPv6
+  
+  // Información parseada del user-agent
+  deviceType: varchar("deviceType", { length: 20 }), // desktop, mobile, tablet
+  browser: varchar("browser", { length: 100 }),
+  os: varchar("os", { length: 100 }),
+  
+  // Ubicación aproximada (basada en IP)
+  location: varchar("location", { length: 255 }),
+  
+  // Estado de la sesión
+  isActive: boolean("isActive").default(true).notNull(),
+  
+  // Timestamps
+  loginAt: timestamp("loginAt").defaultNow().notNull(),
+  lastActivityAt: timestamp("lastActivityAt").defaultNow().notNull(),
+  logoutAt: timestamp("logoutAt"),
+});
+
+export type UserLoginSession = typeof userLoginSessions.$inferSelect;
+export type InsertUserLoginSession = typeof userLoginSessions.$inferInsert;
+
+export const userLoginSessionsRelations = relations(userLoginSessions, ({ one }) => ({
+  user: one(users, {
+    fields: [userLoginSessions.userId],
     references: [users.id],
   }),
 }));

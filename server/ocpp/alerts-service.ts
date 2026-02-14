@@ -1,10 +1,19 @@
 /**
  * Servicio de Alertas OCPP
  * Detecta y notifica eventos críticos de los cargadores
+ * 
+ * Flujo de notificación:
+ * 1. Evento OCPP detectado (desconexión, error, falla, boot rechazado)
+ * 2. Alerta guardada en BD (tabla ocpp_alerts)
+ * 3. Notificación al owner de la plataforma
+ * 4. Notificación a técnicos activos (FCM push + email + in-app)
+ *    - Respeta preferencias individuales de cada técnico
+ *    - Respeta horario laboral y disponibilidad para emergencias
  */
 
 import { notifyOwner } from "../_core/notification";
 import * as db from "../db";
+import { notifyTechniciansOfAlert } from "../notifications/technician-notification-service";
 
 // Tipos de alertas
 export type OcppAlertType = 
@@ -75,6 +84,24 @@ function determineSeverity(alertType: OcppAlertType, payload?: Record<string, un
       return "warning";
     default:
       return "info";
+  }
+}
+
+/**
+ * Busca el nombre de la estación por su ocppIdentity
+ */
+async function getStationName(ocppIdentity: string, stationId?: number | null): Promise<string | undefined> {
+  try {
+    if (stationId) {
+      const station = await db.getChargingStationById(stationId);
+      return station?.name;
+    }
+    // Intentar buscar por ocppIdentity
+    const stations = await db.getAllChargingStations();
+    const station = stations.find(s => s.ocppIdentity === ocppIdentity);
+    return station?.name;
+  } catch {
+    return undefined;
   }
 }
 
@@ -165,12 +192,15 @@ export async function handleBootRejected(
 }
 
 /**
- * Guarda la alerta en BD y envía notificación
+ * Guarda la alerta en BD y envía notificaciones a owner + técnicos
  */
 async function saveAndNotifyAlert(alert: OcppAlert): Promise<void> {
   try {
     // Guardar en BD
     await db.createOcppAlert(alert);
+    
+    // Obtener nombre de la estación para las notificaciones
+    const stationName = await getStationName(alert.ocppIdentity, alert.stationId);
     
     // Enviar notificación al owner solo para alertas críticas o warnings
     if (alert.severity === "critical" || alert.severity === "warning") {
@@ -179,6 +209,23 @@ async function saveAndNotifyAlert(alert: OcppAlert): Promise<void> {
         title: `${emoji} ${alert.title}`,
         content: `${alert.message}\n\nFecha: ${alert.createdAt.toLocaleString()}\nIdentificador: ${alert.ocppIdentity}`,
       });
+    }
+    
+    // Notificar a técnicos activos (FCM push + email + in-app)
+    // Solo para alertas critical y warning
+    if (alert.severity === "critical" || alert.severity === "warning") {
+      const techResult = await notifyTechniciansOfAlert({
+        alertType: alert.alertType,
+        severity: alert.severity,
+        title: alert.title,
+        message: alert.message,
+        ocppIdentity: alert.ocppIdentity,
+        stationId: alert.stationId,
+        stationName: stationName || alert.ocppIdentity,
+        payload: alert.payload,
+      });
+      
+      console.log(`[OCPP Alert] Tech notifications: ${techResult.pushSent} push, ${techResult.emailSent} email, ${techResult.inAppCreated} in-app`);
     }
     
     console.log(`[OCPP Alert] ${alert.severity.toUpperCase()}: ${alert.title}`);

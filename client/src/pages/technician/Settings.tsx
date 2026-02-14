@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -11,6 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Bell, 
   User, 
@@ -20,11 +29,375 @@ import {
   Clock,
   Wrench,
   Save,
-  Loader2
+  Loader2,
+  ShieldCheck,
+  ShieldOff,
+  Monitor,
+  Tablet,
+  LogOut,
+  Copy,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+
+// ============================================================================
+// Componente de configuración 2FA
+// ============================================================================
+
+function TwoFactorSetup() {
+  const [showSetupDialog, setShowSetupDialog] = useState(false);
+  const [showDisableDialog, setShowDisableDialog] = useState(false);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [disableCode, setDisableCode] = useState("");
+  const [copiedSecret, setCopiedSecret] = useState(false);
+
+  const utils = trpc.useUtils();
+  const { data: status, isLoading: statusLoading } = trpc.security.get2FAStatus.useQuery();
+  
+  const setupMutation = trpc.security.setup2FA.useMutation({
+    onError: (err) => toast.error("Error al configurar 2FA: " + err.message),
+  });
+
+  const verifyMutation = trpc.security.verify2FA.useMutation({
+    onSuccess: () => {
+      toast.success("Autenticación de dos factores activada");
+      setShowSetupDialog(false);
+      setVerifyCode("");
+      utils.security.get2FAStatus.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const disableMutation = trpc.security.disable2FA.useMutation({
+    onSuccess: () => {
+      toast.success("2FA desactivado");
+      setShowDisableDialog(false);
+      setDisableCode("");
+      utils.security.get2FAStatus.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleStartSetup = async () => {
+    setShowSetupDialog(true);
+    setupMutation.mutate();
+  };
+
+  const handleCopySecret = () => {
+    if (setupMutation.data?.secret) {
+      navigator.clipboard.writeText(setupMutation.data.secret);
+      setCopiedSecret(true);
+      setTimeout(() => setCopiedSecret(false), 2000);
+      toast.success("Secreto copiado al portapapeles");
+    }
+  };
+
+  if (statusLoading) {
+    return <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />;
+  }
+
+  return (
+    <>
+      <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
+        <div className="flex items-center gap-3">
+          {status?.enabled ? (
+            <ShieldCheck className="w-5 h-5 text-emerald-500" />
+          ) : (
+            <ShieldOff className="w-5 h-5 text-muted-foreground" />
+          )}
+          <div>
+            <p className="font-medium">Autenticación de dos factores (2FA)</p>
+            <p className="text-sm text-muted-foreground">
+              {status?.enabled 
+                ? `Activado desde ${status.verifiedAt ? new Date(status.verifiedAt).toLocaleDateString("es-CO") : "N/A"}`
+                : "Agrega una capa extra de seguridad a tu cuenta"
+              }
+            </p>
+          </div>
+        </div>
+        {status?.enabled ? (
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="text-destructive border-destructive/30 hover:bg-destructive/10"
+            onClick={() => setShowDisableDialog(true)}
+          >
+            Desactivar
+          </Button>
+        ) : (
+          <Button size="sm" className="gradient-primary" onClick={handleStartSetup}>
+            Activar 2FA
+          </Button>
+        )}
+      </div>
+
+      {/* Dialog de configuración 2FA */}
+      <Dialog open={showSetupDialog} onOpenChange={setShowSetupDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-emerald-500" />
+              Configurar 2FA
+            </DialogTitle>
+            <DialogDescription>
+              Escanea el código QR con tu app de autenticación (Google Authenticator, Authy, etc.)
+            </DialogDescription>
+          </DialogHeader>
+
+          {setupMutation.isPending ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+            </div>
+          ) : setupMutation.data ? (
+            <div className="space-y-4">
+              {/* QR Code */}
+              <div className="flex justify-center">
+                <div className="p-4 bg-white rounded-lg border">
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(setupMutation.data.otpauthUrl)}`}
+                    alt="QR Code 2FA"
+                    className="w-48 h-48"
+                  />
+                </div>
+              </div>
+
+              {/* Secreto manual */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">
+                  Si no puedes escanear el QR, ingresa este código manualmente:
+                </Label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 p-2 bg-muted rounded text-xs font-mono break-all">
+                    {setupMutation.data.secret}
+                  </code>
+                  <Button variant="outline" size="icon" onClick={handleCopySecret}>
+                    {copiedSecret ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Verificación */}
+              <div className="space-y-2">
+                <Label>Ingresa el código de 6 dígitos de tu app:</Label>
+                <Input
+                  value={verifyCode}
+                  onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  className="text-center text-lg tracking-widest font-mono"
+                  maxLength={6}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSetupDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              className="gradient-primary"
+              disabled={verifyCode.length !== 6 || verifyMutation.isPending}
+              onClick={() => verifyMutation.mutate({ token: verifyCode })}
+            >
+              {verifyMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : null}
+              Verificar y activar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de desactivación 2FA */}
+      <Dialog open={showDisableDialog} onOpenChange={setShowDisableDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Desactivar 2FA
+            </DialogTitle>
+            <DialogDescription>
+              Ingresa un código de tu app de autenticación para confirmar la desactivación.
+              Tu cuenta será menos segura sin 2FA.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label>Código de verificación:</Label>
+            <Input
+              value={disableCode}
+              onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="000000"
+              className="text-center text-lg tracking-widest font-mono"
+              maxLength={6}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDisableDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={disableCode.length !== 6 || disableMutation.isPending}
+              onClick={() => disableMutation.mutate({ token: disableCode })}
+            >
+              {disableMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : null}
+              Desactivar 2FA
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ============================================================================
+// Componente de historial de sesiones
+// ============================================================================
+
+function SessionHistory() {
+  const [showAll, setShowAll] = useState(false);
+  const utils = trpc.useUtils();
+  
+  const { data: sessions, isLoading } = trpc.security.getSessions.useQuery(
+    { limit: showAll ? 50 : 10 }
+  );
+
+  const terminateMutation = trpc.security.terminateSession.useMutation({
+    onSuccess: () => {
+      toast.success("Sesión cerrada");
+      utils.security.getSessions.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const terminateAllMutation = trpc.security.terminateAllOtherSessions.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.terminated} sesiones cerradas`);
+      utils.security.getSessions.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const getDeviceIcon = (deviceType: string | null) => {
+    switch (deviceType) {
+      case "mobile": return <Smartphone className="w-4 h-4" />;
+      case "tablet": return <Tablet className="w-4 h-4" />;
+      default: return <Monitor className="w-4 h-4" />;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!sessions || sessions.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <Monitor className="w-8 h-8 mx-auto mb-2 opacity-50" />
+        <p className="text-sm">No hay sesiones registradas aún</p>
+      </div>
+    );
+  }
+
+  const activeSessions = sessions.filter(s => s.isActive);
+
+  return (
+    <div className="space-y-3">
+      {/* Resumen */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {activeSessions.length} sesión(es) activa(s) de {sessions.length} total
+        </p>
+        {activeSessions.length > 1 && (
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="text-destructive border-destructive/30 hover:bg-destructive/10"
+            onClick={() => terminateAllMutation.mutate()}
+            disabled={terminateAllMutation.isPending}
+          >
+            {terminateAllMutation.isPending ? (
+              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+            ) : (
+              <LogOut className="w-3 h-3 mr-1" />
+            )}
+            Cerrar todas las demás
+          </Button>
+        )}
+      </div>
+
+      {/* Lista de sesiones */}
+      <div className="space-y-2">
+        {sessions.map((session) => (
+          <div
+            key={session.id}
+            className={`flex items-center justify-between p-3 rounded-lg border ${
+              session.isActive ? "bg-card border-emerald-500/20" : "bg-muted/50"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${session.isActive ? "bg-emerald-500/10 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
+                {getDeviceIcon(session.deviceType)}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium">
+                    {session.browser || "Navegador desconocido"} - {session.os || "SO desconocido"}
+                  </p>
+                  {session.isActive && (
+                    <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 text-[10px] px-1.5 py-0">
+                      Activa
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {session.ipAddress && `IP: ${session.ipAddress} · `}
+                  {new Date(session.loginAt).toLocaleString("es-CO", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                </p>
+              </div>
+            </div>
+            {session.isActive && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => terminateMutation.mutate({ sessionId: session.id })}
+                disabled={terminateMutation.isPending}
+              >
+                <XCircle className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {sessions.length >= 10 && !showAll && (
+        <Button variant="ghost" size="sm" className="w-full" onClick={() => setShowAll(true)}>
+          Ver más sesiones
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Componente principal
+// ============================================================================
 
 export default function TechnicianSettings() {
   const { user } = useAuth();
@@ -56,6 +429,21 @@ export default function TechnicianSettings() {
     },
     onError: (err) => toast.error("Error al guardar: " + err.message),
   });
+
+  // Registrar sesión al cargar la página
+  const recordSessionMutation = trpc.security.recordSession.useMutation();
+  const [sessionRecorded] = useState(() => {
+    // Solo registrar una vez
+    return false;
+  });
+  
+  useEffect(() => {
+    if (user && !sessionRecorded) {
+      recordSessionMutation.mutate({
+        userAgent: navigator.userAgent,
+      });
+    }
+  }, [user?.id]);
 
   // Cargar datos del backend cuando estén disponibles
   useEffect(() => {
@@ -341,19 +729,25 @@ export default function TechnicianSettings() {
             Seguridad
           </CardTitle>
           <CardDescription>
-            Opciones de seguridad de tu cuenta
+            Protege tu cuenta con autenticación de dos factores y gestiona tus sesiones activas
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Button variant="outline" className="w-full justify-start" onClick={() => toast.info("Funcionalidad próximamente")}>
-            Cambiar contraseña
-          </Button>
-          <Button variant="outline" className="w-full justify-start" onClick={() => toast.info("Funcionalidad próximamente")}>
-            Configurar autenticación de dos factores
-          </Button>
-          <Button variant="outline" className="w-full justify-start" onClick={() => toast.info("Funcionalidad próximamente")}>
-            Ver historial de sesiones
-          </Button>
+        <CardContent className="space-y-6">
+          {/* 2FA */}
+          <div>
+            <h4 className="font-medium mb-3 text-sm text-muted-foreground uppercase tracking-wider">
+              Autenticación de dos factores
+            </h4>
+            <TwoFactorSetup />
+          </div>
+
+          {/* Sesiones */}
+          <div className="border-t pt-6">
+            <h4 className="font-medium mb-3 text-sm text-muted-foreground uppercase tracking-wider">
+              Historial de sesiones
+            </h4>
+            <SessionHistory />
+          </div>
         </CardContent>
       </Card>
     </div>

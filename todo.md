@@ -658,3 +658,19 @@
 - [x] Verificar que el botón "Guardar cambios" envía todos los datos y muestra feedback (corregido: siempre habilitado, invalida cache)
 - [x] Verificar que los toggles de notificaciones persisten al recargar
 - [x] Verificar horario laboral, disponibilidad y vista por defecto funcionan
+
+## Notificaciones Técnico + Seguridad - 14 Febrero 2026
+- [x] Implementar servicio de notificaciones a técnicos (technician-notification-service.ts)
+- [x] Integrar notificaciones a técnicos en alerts-service.ts (FCM push + email + in-app)
+- [x] Respetar toggles de configuración del técnico (notifyByPush, notifyByEmail, criticalAlerts, etc.)
+- [x] Respetar horario laboral y disponibilidad para emergencias
+- [x] Enviar emails de alerta con template HTML profesional vía Resend
+- [x] Enviar push notifications FCM con datos de la alerta
+- [x] Crear notificaciones in-app en tabla notifications
+- [x] Implementar sección Seguridad funcional: 2FA con TOTP (speakeasy)
+- [x] Implementar sección Seguridad funcional: historial de sesiones (tabla user_login_sessions)
+- [x] Implementar gestión de sesiones activas (cerrar individual / cerrar todas)
+- [x] Crear security router con endpoints: get2FAStatus, setup2FA, verify2FA, disable2FA, getSessions, terminateSession, terminateAllOtherSessions, recordSession
+- [x] Eliminar placeholders "próximamente" de la sección de seguridad
+- [x] Tests unitarios para parseUserAgent y security router (11 tests)
+- [ ] Implementar cambio de contraseña (requiere migración a Auth0 para contraseñas locales)
