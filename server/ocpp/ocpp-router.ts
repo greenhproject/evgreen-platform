@@ -8,6 +8,8 @@ import { TRPCError } from "@trpc/server";
 import * as ocppManager from "./connection-manager";
 import * as db from "../db";
 import { nanoid } from "nanoid";
+import { dualCSMS } from "./csms-dual";
+import { storagePut } from "../storage";
 
 // Procedimiento para admin y técnicos
 const ocppProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -504,5 +506,95 @@ export const ocppRouter = router({
     }))
     .query(async ({ input }) => {
       return db.getTransactionMetrics(input.startDate, input.endDate, input.granularity);
+    }),
+
+  // ============================================================================
+  // FIRMWARE MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Upload firmware file and start update on a charger
+   */
+  uploadAndStartFirmware: ocppProcedure
+    .input(z.object({
+      stationId: z.number(),
+      ocppIdentity: z.string(),
+      fileName: z.string(),
+      fileBase64: z.string(),
+      fileSize: z.number(),
+      version: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // Upload firmware to S3
+      const fileBuffer = Buffer.from(input.fileBase64, "base64");
+      const fileKey = `firmware/${Date.now()}-${input.fileName}`;
+      const { url: fileUrl } = await storagePut(fileKey, fileBuffer, "application/octet-stream");
+
+      // Create firmware update record
+      const id = await db.createFirmwareUpdate({
+        stationId: input.stationId,
+        ocppIdentity: input.ocppIdentity,
+        fileName: input.fileName,
+        fileSize: input.fileSize,
+        fileUrl,
+        version: input.version,
+        initiatedBy: ctx.user.id,
+        notes: input.notes,
+      });
+
+      // Send OCPP UpdateFirmware command
+      try {
+        await dualCSMS.updateFirmware(input.ocppIdentity, fileUrl);
+        await db.updateFirmwareStatus(id, "DOWNLOADING", 10);
+      } catch (error: any) {
+        await db.updateFirmwareStatus(id, "FAILED", 0, error.message);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `No se pudo enviar el firmware: ${error.message}`,
+        });
+      }
+
+      return { id, status: "DOWNLOADING" };
+    }),
+
+  /**
+   * Get firmware update history
+   */
+  getFirmwareHistory: ocppProcedure
+    .input(z.object({
+      stationId: z.number().optional(),
+      limit: z.number().default(50),
+    }))
+    .query(async ({ input }) => {
+      if (input.stationId) {
+        return db.getFirmwareUpdatesByStation(input.stationId, input.limit);
+      }
+      return db.getAllFirmwareUpdates(input.limit);
+    }),
+
+  /**
+   * Get active firmware updates (in progress)
+   */
+  getActiveFirmwareUpdates: ocppProcedure.query(async () => {
+    return db.getActiveFirmwareUpdates();
+  }),
+
+  /**
+   * Cancel a firmware update
+   */
+  cancelFirmwareUpdate: ocppProcedure
+    .input(z.object({
+      id: z.number(),
+      reason: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateFirmwareStatus(
+        input.id,
+        "CANCELLED",
+        0,
+        input.reason || "Cancelado por el técnico"
+      );
+      return { success: true };
     }),
 });
