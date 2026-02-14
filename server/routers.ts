@@ -1441,6 +1441,59 @@ const maintenanceRouter = router({
       return db.getMaintenanceTicketsByStation(input.stationId);
     }),
   
+  // Upload photo for a ticket
+  uploadPhoto: technicianProcedure
+    .input(z.object({
+      ticketId: z.number(),
+      fileName: z.string(),
+      fileBase64: z.string(),
+      contentType: z.string().refine(
+        (ct) => ["image/jpeg", "image/png", "image/webp"].includes(ct),
+        { message: "Solo se permiten im\u00e1genes (JPEG, PNG, WebP)" }
+      ),
+      photoType: z.enum(["before", "after", "evidence"]).default("evidence"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { storagePut } = await import("./storage");
+      const ext = input.fileName.split(".").pop() || "jpg";
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const fileKey = `maintenance/ticket-${input.ticketId}/${input.photoType}-${timestamp}-${randomSuffix}.${ext}`;
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      if (buffer.length > 10 * 1024 * 1024) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La imagen no puede superar 10MB" });
+      }
+      const { url } = await storagePut(fileKey, buffer, input.contentType);
+      const ticket = await db.getMaintenanceTicketById(input.ticketId);
+      const existingAttachments = (ticket?.attachments as any[]) || [];
+      const newAttachment = {
+        url,
+        fileKey,
+        type: input.photoType,
+        fileName: input.fileName,
+        uploadedBy: ctx.user.name || ctx.user.email,
+        uploadedAt: new Date().toISOString(),
+      };
+      await db.updateMaintenanceTicket(input.ticketId, {
+        attachments: [...existingAttachments, newAttachment],
+      });
+      return { url, fileKey, attachment: newAttachment };
+    }),
+
+  // Delete a photo from a ticket
+  deletePhoto: technicianProcedure
+    .input(z.object({
+      ticketId: z.number(),
+      fileKey: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const ticket = await db.getMaintenanceTicketById(input.ticketId);
+      const existingAttachments = (ticket?.attachments as any[]) || [];
+      const filtered = existingAttachments.filter((a: any) => a.fileKey !== input.fileKey);
+      await db.updateMaintenanceTicket(input.ticketId, { attachments: filtered });
+      return { success: true };
+    }),
+
   create: technicianProcedure
     .input(z.object({
       stationId: z.number(),
@@ -1454,9 +1507,23 @@ const maintenanceRouter = router({
       const id = await db.createMaintenanceTicket({
         ...input,
         reportedById: ctx.user.id,
-        technicianId: ctx.user.id, // Auto-assign to the creating technician
+        technicianId: ctx.user.id,
         status: "PENDING",
       });
+      // Notify admin if critical priority
+      if (input.priority === "CRITICAL") {
+        try {
+          const { sendTicketEmailToAdmin } = await import("./notifications/ticket-email-service");
+          await sendTicketEmailToAdmin({
+            type: "critical_created",
+            ticketId: id,
+            title: input.title,
+            priority: "CRITICAL",
+            stationId: input.stationId,
+            technicianName: ctx.user.name || ctx.user.email || "T\u00e9cnico",
+          });
+        } catch (e) { console.error("[Ticket] Error sending admin email:", e); }
+      }
       return { id };
     }),
 
@@ -1478,7 +1545,7 @@ const maintenanceRouter = router({
         totalCost: z.string().optional(),
       }),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const updateData: any = { ...input.data };
       if (input.data.status === "IN_PROGRESS" && !updateData.startedAt) {
         updateData.startedAt = new Date();
@@ -1487,6 +1554,24 @@ const maintenanceRouter = router({
         updateData.completedAt = new Date();
       }
       await db.updateMaintenanceTicket(input.id, updateData);
+      // Send admin email notifications on resolve/cancel
+      if (input.data.status === "COMPLETED" || input.data.status === "CANCELLED") {
+        try {
+          const ticket = await db.getMaintenanceTicketById(input.id);
+          const { sendTicketEmailToAdmin } = await import("./notifications/ticket-email-service");
+          await sendTicketEmailToAdmin({
+            type: input.data.status === "COMPLETED" ? "resolved" : "cancelled",
+            ticketId: input.id,
+            title: ticket?.title || "Ticket",
+            priority: ticket?.priority || "MEDIUM",
+            stationId: ticket?.stationId || 0,
+            stationName: ticket?.stationName || undefined,
+            technicianName: ctx.user.name || ctx.user.email || "T\u00e9cnico",
+            resolution: input.data.resolution,
+            laborCost: input.data.laborCost,
+          });
+        } catch (e) { console.error("[Ticket] Error sending admin email:", e); }
+      }
       return { success: true };
     }),
   
