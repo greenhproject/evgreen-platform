@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE users \n  ADD COLUMN techNotifyNewTickets BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techNotifyCriticalAlerts BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techNotifyMaintenanceReminders BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techNotifyByEmail BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techNotifyByPush BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techDefaultView VARCHAR(20) DEFAULT 'dashboard',\n  ADD COLUMN techAutoRefreshLogs BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techRefreshInterval INT DEFAULT 30,\n  ADD COLUMN techAvailableForEmergencies BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techWorkingHoursStart VARCHAR(5) DEFAULT '08:00',\n  ADD COLUMN techWorkingHoursEnd VARCHAR(5) DEFAULT '18:00';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute ALTER TABLE users \n  ADD COLUMN techNotifyNewTickets BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techNotifyCriticalAlerts BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techNotifyMaintenanceReminders BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techNotifyByEmail BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techNotifyByPush BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techDefaultView VARCHAR(20) DEFAULT 'dashboard',\n  ADD COLUMN techAutoRefreshLogs BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techRefreshInterval INT DEFAULT 30,\n  ADD COLUMN techAvailableForEmergencies BOOLEAN DEFAULT TRUE,\n  ADD COLUMN techWorkingHoursStart VARCHAR(5) DEFAULT '08:00',\n  ADD COLUMN techWorkingHoursEnd VARCHAR(5) DEFAULT '18:00';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 3515
+}

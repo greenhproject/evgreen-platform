@@ -2205,3 +2205,13 @@
 - [x] Implementar funcionalidad "Eliminar todos mis datos" con confirmación
 - [x] Botón "Guardar configuración" debe persistir todos los cambios
 - [x] Tests unitarios para endpoints de configuración
+
+## Implementar Módulos del Técnico - 13 Febrero 2026
+- [x] Conectar Maintenance.tsx con tRPC (reemplazar datos mock por datos reales de BD)
+- [x] Conectar Alerts.tsx con tRPC (reemplazar datos mock por alertas OCPP reales)
+- [x] Conectar Diagnostics.tsx con datos reales de estaciones
+- [x] Conectar Settings.tsx con backend para persistir configuración del técnico
+- [x] Implementar crear/editar tickets desde Maintenance con formulario funcional
+- [x] Implementar cambio de estado de tickets (iniciar, completar, agregar resolución)
+- [x] Implementar reconocer/resolver alertas OCPP desde Alerts.tsx
+- [x] Tests unitarios para módulos del técnico

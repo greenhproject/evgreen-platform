@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,106 +21,100 @@ import {
 } from "@/components/ui/select";
 import { 
   Wrench, 
-  Calendar, 
   Clock, 
   CheckCircle, 
-  AlertTriangle,
   Plus,
   ClipboardList,
   Timer,
-  User
+  AlertTriangle,
+  Loader2
 } from "lucide-react";
 import { toast } from "sonner";
-
-interface MaintenanceTask {
-  id: number;
-  title: string;
-  description: string;
-  stationId: number;
-  stationName: string;
-  type: "preventive" | "corrective" | "inspection";
-  priority: "low" | "medium" | "high";
-  status: "pending" | "in_progress" | "completed";
-  scheduledDate: Date;
-  completedDate?: Date;
-  assignedTo: string;
-  notes?: string;
-}
-
-// Datos de ejemplo
-const mockTasks: MaintenanceTask[] = [
-  {
-    id: 1,
-    title: "Inspección mensual de conectores",
-    description: "Verificar estado físico de conectores y cables",
-    stationId: 1,
-    stationName: "Green EV Mosquera",
-    type: "inspection",
-    priority: "medium",
-    status: "pending",
-    scheduledDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2),
-    assignedTo: "Técnico 1",
-  },
-  {
-    id: 2,
-    title: "Limpieza de filtros de ventilación",
-    description: "Mantenimiento preventivo del sistema de enfriamiento",
-    stationId: 1,
-    stationName: "Green EV Mosquera",
-    type: "preventive",
-    priority: "low",
-    status: "in_progress",
-    scheduledDate: new Date(Date.now() - 1000 * 60 * 60 * 24),
-    assignedTo: "Técnico 1",
-  },
-  {
-    id: 3,
-    title: "Reparación de pantalla táctil",
-    description: "La pantalla no responde correctamente al tacto",
-    stationId: 1,
-    stationName: "Green EV Mosquera",
-    type: "corrective",
-    priority: "high",
-    status: "completed",
-    scheduledDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3),
-    completedDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
-    assignedTo: "Técnico 1",
-    notes: "Se reemplazó el panel táctil completo",
-  },
-];
+import { trpc } from "@/lib/trpc";
 
 export default function TechnicianMaintenance() {
-  const [tasks, setTasks] = useState<MaintenanceTask[]>(mockTasks);
   const [statusFilter, setStatusFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [detailTicket, setDetailTicket] = useState<any>(null);
+  const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [resolution, setResolution] = useState("");
 
-  const getTypeBadge = (type: string) => {
-    const styles: Record<string, { bg: string; label: string }> = {
-      preventive: { bg: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", label: "Preventivo" },
-      corrective: { bg: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400", label: "Correctivo" },
-      inspection: { bg: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", label: "Inspección" },
-    };
-    const style = styles[type];
-    return <Badge className={style.bg}>{style.label}</Badge>;
+  // Formulario de nueva tarea
+  const [newTask, setNewTask] = useState({
+    title: "",
+    description: "",
+    stationId: "",
+    priority: "MEDIUM" as string,
+    category: "HARDWARE" as string,
+  });
+
+  // Datos reales
+  const { data: tickets, isLoading, refetch } = trpc.maintenance.myTickets.useQuery();
+  const { data: stations } = trpc.stations.listAll.useQuery();
+
+  const createMutation = trpc.maintenance.create.useMutation({
+    onSuccess: () => {
+      toast.success("Ticket de mantenimiento creado");
+      setIsDialogOpen(false);
+      setNewTask({ title: "", description: "", stationId: "", priority: "MEDIUM", category: "HARDWARE" });
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const updateMutation = trpc.maintenance.update.useMutation({
+    onSuccess: () => {
+      toast.success("Ticket actualizado");
+      refetch();
+      setShowDetailDialog(false);
+      setResolution("");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleCreate = () => {
+    if (!newTask.title.trim()) return toast.error("El título es requerido");
+    if (!newTask.stationId) return toast.error("Selecciona una estación");
+    createMutation.mutate({
+      title: newTask.title,
+      description: newTask.description || undefined,
+      stationId: parseInt(newTask.stationId),
+      priority: newTask.priority as any,
+      category: newTask.category,
+    });
+  };
+
+  const handleStartTask = (id: number) => {
+    updateMutation.mutate({ id, data: { status: "IN_PROGRESS" } });
+  };
+
+  const handleCompleteTask = (id: number) => {
+    updateMutation.mutate({ id, data: { status: "COMPLETED", resolution: resolution || undefined } });
+  };
+
+  const handleCancelTask = (id: number) => {
+    updateMutation.mutate({ id, data: { status: "CANCELLED" } });
   };
 
   const getPriorityBadge = (priority: string) => {
     const styles: Record<string, { bg: string; label: string }> = {
-      low: { bg: "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400", label: "Baja" },
-      medium: { bg: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400", label: "Media" },
-      high: { bg: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", label: "Alta" },
+      LOW: { bg: "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400", label: "Baja" },
+      MEDIUM: { bg: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400", label: "Media" },
+      HIGH: { bg: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400", label: "Alta" },
+      CRITICAL: { bg: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", label: "Crítica" },
     };
-    const style = styles[priority];
+    const style = styles[priority] || styles.MEDIUM;
     return <Badge className={style.bg}>{style.label}</Badge>;
   };
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, { bg: string; label: string; icon: any }> = {
-      pending: { bg: "bg-gray-100 text-gray-700 dark:bg-gray-900/30", label: "Pendiente", icon: Clock },
-      in_progress: { bg: "bg-blue-100 text-blue-700 dark:bg-blue-900/30", label: "En progreso", icon: Timer },
-      completed: { bg: "bg-green-100 text-green-700 dark:bg-green-900/30", label: "Completado", icon: CheckCircle },
+      PENDING: { bg: "bg-gray-100 text-gray-700 dark:bg-gray-900/30", label: "Pendiente", icon: Clock },
+      IN_PROGRESS: { bg: "bg-blue-100 text-blue-700 dark:bg-blue-900/30", label: "En progreso", icon: Timer },
+      COMPLETED: { bg: "bg-green-100 text-green-700 dark:bg-green-900/30", label: "Completado", icon: CheckCircle },
+      CANCELLED: { bg: "bg-red-100 text-red-700 dark:bg-red-900/30", label: "Cancelado", icon: AlertTriangle },
     };
-    const style = styles[status];
+    const style = styles[status] || styles.PENDING;
     const Icon = style.icon;
     return (
       <Badge className={style.bg}>
@@ -130,29 +124,16 @@ export default function TechnicianMaintenance() {
     );
   };
 
-  const handleStartTask = (id: number) => {
-    setTasks(prev => prev.map(t => 
-      t.id === id ? { ...t, status: "in_progress" as const } : t
-    ));
-    toast.success("Tarea iniciada");
-  };
-
-  const handleCompleteTask = (id: number) => {
-    setTasks(prev => prev.map(t => 
-      t.id === id ? { ...t, status: "completed" as const, completedDate: new Date() } : t
-    ));
-    toast.success("Tarea completada");
-  };
-
-  const filteredTasks = tasks.filter(task => {
-    if (statusFilter !== "all" && task.status !== statusFilter) return false;
+  const filteredTickets = (tickets || []).filter((ticket: any) => {
+    if (statusFilter !== "all" && ticket.status !== statusFilter) return false;
     return true;
   });
 
-  const pendingCount = tasks.filter(t => t.status === "pending").length;
-  const inProgressCount = tasks.filter(t => t.status === "in_progress").length;
-  const completedCount = tasks.filter(t => t.status === "completed").length;
-  const completionRate = tasks.length > 0 ? (completedCount / tasks.length) * 100 : 0;
+  const pendingCount = (tickets || []).filter((t: any) => t.status === "PENDING").length;
+  const inProgressCount = (tickets || []).filter((t: any) => t.status === "IN_PROGRESS").length;
+  const completedCount = (tickets || []).filter((t: any) => t.status === "COMPLETED").length;
+  const totalCount = (tickets || []).length;
+  const completionRate = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -160,47 +141,87 @@ export default function TechnicianMaintenance() {
         <div>
           <h1 className="text-2xl font-bold">Mantenimiento</h1>
           <p className="text-muted-foreground">
-            Gestiona las tareas de mantenimiento programadas
+            Gestiona las tareas de mantenimiento
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button className="gradient-primary">
               <Plus className="w-4 h-4 mr-2" />
-              Nueva tarea
+              Nuevo ticket
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Programar mantenimiento</DialogTitle>
+              <DialogTitle>Crear ticket de mantenimiento</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Título</label>
-                <Input placeholder="Descripción breve de la tarea" />
+                <label className="text-sm font-medium">Título *</label>
+                <Input 
+                  placeholder="Descripción breve del problema" 
+                  value={newTask.title}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))}
+                />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Tipo</label>
-                <Select>
+                <label className="text-sm font-medium">Estación *</label>
+                <Select value={newTask.stationId} onValueChange={(v) => setNewTask(prev => ({ ...prev, stationId: v }))}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar tipo" />
+                    <SelectValue placeholder="Seleccionar estación" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="preventive">Preventivo</SelectItem>
-                    <SelectItem value="corrective">Correctivo</SelectItem>
-                    <SelectItem value="inspection">Inspección</SelectItem>
+                    {stations?.map((s: any) => (
+                      <SelectItem key={s.id} value={s.id.toString()}>{s.name} - {s.city}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Prioridad</label>
+                  <Select value={newTask.priority} onValueChange={(v) => setNewTask(prev => ({ ...prev, priority: v }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="LOW">Baja</SelectItem>
+                      <SelectItem value="MEDIUM">Media</SelectItem>
+                      <SelectItem value="HIGH">Alta</SelectItem>
+                      <SelectItem value="CRITICAL">Crítica</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Categoría</label>
+                  <Select value={newTask.category} onValueChange={(v) => setNewTask(prev => ({ ...prev, category: v }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="HARDWARE">Hardware</SelectItem>
+                      <SelectItem value="SOFTWARE">Software</SelectItem>
+                      <SelectItem value="CONNECTIVITY">Conectividad</SelectItem>
+                      <SelectItem value="VANDALISM">Vandalismo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Descripción</label>
-                <Textarea placeholder="Detalles de la tarea..." />
+                <Textarea 
+                  placeholder="Detalles del problema..." 
+                  value={newTask.description}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, description: e.target.value }))}
+                />
               </div>
-              <Button className="w-full" onClick={() => {
-                toast.success("Tarea programada");
-                setIsDialogOpen(false);
-              }}>
-                Programar tarea
+              <Button 
+                className="w-full" 
+                onClick={handleCreate}
+                disabled={createMutation.isPending}
+              >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Crear ticket
               </Button>
             </div>
           </DialogContent>
@@ -270,96 +291,155 @@ export default function TechnicianMaintenance() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="pending">Pendientes</SelectItem>
-              <SelectItem value="in_progress">En progreso</SelectItem>
-              <SelectItem value="completed">Completadas</SelectItem>
+              <SelectItem value="PENDING">Pendientes</SelectItem>
+              <SelectItem value="IN_PROGRESS">En progreso</SelectItem>
+              <SelectItem value="COMPLETED">Completadas</SelectItem>
+              <SelectItem value="CANCELLED">Canceladas</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </Card>
 
-      {/* Lista de tareas */}
+      {/* Lista de tickets */}
       <div className="space-y-4">
-        {filteredTasks.length === 0 ? (
+        {isLoading ? (
+          <Card className="p-8">
+            <div className="flex flex-col items-center text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mb-4" />
+              <p className="text-sm text-muted-foreground">Cargando tickets...</p>
+            </div>
+          </Card>
+        ) : filteredTickets.length === 0 ? (
           <Card className="p-8">
             <div className="flex flex-col items-center text-center">
               <ClipboardList className="w-12 h-12 text-muted-foreground mb-4" />
-              <h3 className="font-semibold">Sin tareas</h3>
+              <h3 className="font-semibold">Sin tickets</h3>
               <p className="text-sm text-muted-foreground">
-                No hay tareas de mantenimiento programadas
+                No hay tickets de mantenimiento
               </p>
             </div>
           </Card>
         ) : (
-          filteredTasks.map(task => (
-            <Card key={task.id}>
+          filteredTickets.map((ticket: any) => (
+            <Card key={ticket.id}>
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    task.type === "corrective" ? "bg-orange-100 dark:bg-orange-900/30" :
-                    task.type === "preventive" ? "bg-blue-100 dark:bg-blue-900/30" :
-                    "bg-purple-100 dark:bg-purple-900/30"
+                    ticket.priority === "CRITICAL" ? "bg-red-100 dark:bg-red-900/30" :
+                    ticket.priority === "HIGH" ? "bg-orange-100 dark:bg-orange-900/30" :
+                    "bg-blue-100 dark:bg-blue-900/30"
                   }`}>
                     <Wrench className={`w-5 h-5 ${
-                      task.type === "corrective" ? "text-orange-500" :
-                      task.type === "preventive" ? "text-blue-500" :
-                      "text-purple-500"
+                      ticket.priority === "CRITICAL" ? "text-red-500" :
+                      ticket.priority === "HIGH" ? "text-orange-500" :
+                      "text-blue-500"
                     }`} />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <h3 className="font-semibold">{task.title}</h3>
-                      {getTypeBadge(task.type)}
-                      {getPriorityBadge(task.priority)}
-                      {getStatusBadge(task.status)}
+                      <h3 className="font-semibold">{ticket.title}</h3>
+                      {getPriorityBadge(ticket.priority)}
+                      {getStatusBadge(ticket.status)}
+                      {ticket.category && (
+                        <Badge variant="outline" className="text-xs">{ticket.category}</Badge>
+                      )}
                     </div>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      {task.description}
-                    </p>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span>{task.stationName}</span>
+                    {ticket.description && (
+                      <p className="text-sm text-muted-foreground mb-2">{ticket.description}</p>
+                    )}
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                      <span>{ticket.station?.name || `Estación #${ticket.stationId}`}</span>
                       <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(task.scheduledDate).toLocaleDateString("es-CO")}
+                        <Clock className="w-3 h-3" />
+                        {new Date(ticket.createdAt).toLocaleDateString("es-CO")}
                       </span>
-                      <span className="flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {task.assignedTo}
-                      </span>
+                      {ticket.startedAt && (
+                        <span>Iniciado: {new Date(ticket.startedAt).toLocaleDateString("es-CO")}</span>
+                      )}
+                      {ticket.completedAt && (
+                        <span>Completado: {new Date(ticket.completedAt).toLocaleDateString("es-CO")}</span>
+                      )}
                     </div>
-                    {task.notes && (
-                      <p className="text-sm mt-2 p-2 bg-muted/50 rounded">
-                        <strong>Notas:</strong> {task.notes}
-                      </p>
+                    {ticket.resolution && (
+                      <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded text-sm">
+                        <span className="font-medium">Resolución:</span> {ticket.resolution}
+                      </div>
                     )}
                   </div>
-                  {task.status !== "completed" && (
-                    <div className="flex gap-2">
-                      {task.status === "pending" && (
+                  <div className="flex gap-2 flex-shrink-0">
+                    {ticket.status === "PENDING" && (
+                      <>
                         <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleStartTask(task.id)}
+                          size="sm" 
+                          onClick={() => handleStartTask(ticket.id)}
+                          disabled={updateMutation.isPending}
                         >
                           Iniciar
                         </Button>
-                      )}
-                      {task.status === "in_progress" && (
                         <Button 
+                          variant="outline" 
                           size="sm"
-                          onClick={() => handleCompleteTask(task.id)}
+                          onClick={() => handleCancelTask(ticket.id)}
+                          disabled={updateMutation.isPending}
                         >
-                          Completar
+                          Cancelar
                         </Button>
-                      )}
-                    </div>
-                  )}
+                      </>
+                    )}
+                    {ticket.status === "IN_PROGRESS" && (
+                      <Button 
+                        size="sm"
+                        onClick={() => {
+                          setDetailTicket(ticket);
+                          setShowDetailDialog(true);
+                        }}
+                      >
+                        Completar
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
           ))
         )}
       </div>
+
+      {/* Dialog para completar ticket con resolución */}
+      <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Completar ticket: {detailTicket?.title}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Resolución / Notas</label>
+              <Textarea 
+                placeholder="Describe qué se hizo para resolver el problema..."
+                value={resolution}
+                onChange={(e) => setResolution(e.target.value)}
+                rows={4}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                className="flex-1"
+                onClick={() => detailTicket && handleCompleteTask(detailTicket.id)}
+                disabled={updateMutation.isPending}
+              >
+                {updateMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Marcar como completado
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={() => setShowDetailDialog(false)}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

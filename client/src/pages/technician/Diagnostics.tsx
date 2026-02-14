@@ -13,8 +13,6 @@ import {
 import { 
   Activity, 
   Cpu, 
-  HardDrive, 
-  Thermometer, 
   Wifi, 
   Zap,
   RefreshCw,
@@ -22,9 +20,11 @@ import {
   XCircle,
   AlertTriangle,
   Clock,
-  Server
+  Server,
+  Loader2
 } from "lucide-react";
 import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
 
 interface DiagnosticResult {
   name: string;
@@ -34,42 +34,97 @@ interface DiagnosticResult {
 }
 
 export default function TechnicianDiagnostics() {
-  const [selectedStation, setSelectedStation] = useState("1");
+  const [selectedStation, setSelectedStation] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<DiagnosticResult[]>([]);
 
+  const { data: stations } = trpc.stations.listAll.useQuery();
+  const { data: ocppConnections } = trpc.ocpp.getActiveConnections.useQuery(undefined, {
+    refetchInterval: 10000,
+  });
+
+  const getStationOCPPInfo = (stationId: number) => {
+    if (!ocppConnections) return null;
+    return ocppConnections.find((c: any) => c.stationId === stationId);
+  };
+
   const runDiagnostics = async () => {
+    if (!selectedStation) {
+      toast.error("Selecciona una estación");
+      return;
+    }
+
     setIsRunning(true);
     setProgress(0);
     setResults([]);
 
+    const stationId = parseInt(selectedStation);
+    const station = stations?.find((s: any) => s.id === stationId);
+    const ocppInfo = getStationOCPPInfo(stationId);
+
     const tests = [
-      { name: "Conexión de red", delay: 500 },
-      { name: "Estado del servidor OCPP", delay: 800 },
-      { name: "Temperatura del sistema", delay: 600 },
-      { name: "Memoria disponible", delay: 400 },
-      { name: "Estado de conectores", delay: 700 },
-      { name: "Firmware", delay: 500 },
-      { name: "Medidor de energía", delay: 600 },
-      { name: "Sistema de pago", delay: 800 },
+      { 
+        name: "Estado de la estación", 
+        delay: 500,
+        check: () => {
+          if (!station?.isActive) return { status: "error" as const, value: "Inactiva", details: "La estación está desactivada en el sistema" };
+          return { status: "ok" as const, value: "Activa", details: "La estación está habilitada" };
+        }
+      },
+      { 
+        name: "Conexión OCPP", 
+        delay: 800,
+        check: () => {
+          if (!ocppInfo) return { status: "error" as const, value: "Desconectado", details: "No hay conexión WebSocket activa con el cargador" };
+          return { status: "ok" as const, value: `Conectado (OCPP ${ocppInfo.ocppVersion || "1.6"})`, details: `Vendor: ${ocppInfo.vendor || "N/A"}, Model: ${ocppInfo.model || "N/A"}` };
+        }
+      },
+      { 
+        name: "Último heartbeat", 
+        delay: 600,
+        check: () => {
+          if (!ocppInfo?.lastHeartbeat) return { status: "warning" as const, value: "Sin datos", details: "No se ha recibido heartbeat" };
+          const diff = Date.now() - new Date(ocppInfo.lastHeartbeat).getTime();
+          const minutes = Math.floor(diff / 60000);
+          if (minutes > 5) return { status: "warning" as const, value: `Hace ${minutes} min`, details: "El heartbeat es antiguo, posible problema de conexión" };
+          return { status: "ok" as const, value: `Hace ${minutes} min`, details: `Último: ${new Date(ocppInfo.lastHeartbeat).toLocaleString("es-CO")}` };
+        }
+      },
+      { 
+        name: "Conectores disponibles", 
+        delay: 400,
+        check: () => {
+          const evseCount = station?.evses?.length || 0;
+          if (evseCount === 0) return { status: "error" as const, value: "0 conectores", details: "No hay conectores configurados" };
+          const availableCount = station?.evses?.filter((e: any) => e.status === "AVAILABLE").length || 0;
+          if (availableCount === 0) return { status: "warning" as const, value: `0/${evseCount} disponibles`, details: "Ningún conector disponible actualmente" };
+          return { status: "ok" as const, value: `${availableCount}/${evseCount} disponibles`, details: `${evseCount} conectores configurados` };
+        }
+      },
+      { 
+        name: "Firmware", 
+        delay: 500,
+        check: () => {
+          if (!ocppInfo) return { status: "warning" as const, value: "Sin datos", details: "No se puede verificar sin conexión OCPP" };
+          return { status: "ok" as const, value: ocppInfo.firmwareVersion || "Versión actual", details: `Serial: ${ocppInfo.serialNumber || "N/A"}` };
+        }
+      },
+      { 
+        name: "Configuración de red", 
+        delay: 700,
+        check: () => {
+          if (!ocppInfo) return { status: "error" as const, value: "Sin conexión", details: "El cargador no está conectado al servidor OCPP" };
+          return { status: "ok" as const, value: "Conectado", details: `ChargePoint ID: ${ocppInfo.chargePointId}` };
+        }
+      },
     ];
 
     for (let i = 0; i < tests.length; i++) {
       await new Promise(resolve => setTimeout(resolve, tests[i].delay));
+      const result = tests[i].check();
+      setResults(prev => [...prev, { name: tests[i].name, ...result }]);
       setProgress(((i + 1) / tests.length) * 100);
-      
-      // Simular resultados aleatorios
-      const statuses: ("ok" | "warning" | "error")[] = ["ok", "ok", "ok", "warning"];
-      const status = statuses[Math.floor(Math.random() * statuses.length)];
-      
-      setResults(prev => [...prev, {
-        name: tests[i].name,
-        status,
-        value: status === "ok" ? "Funcionando correctamente" : 
-               status === "warning" ? "Requiere atención" : "Error detectado",
-        details: status === "warning" ? "Se recomienda revisión preventiva" : undefined,
-      }]);
     }
 
     setIsRunning(false);
@@ -90,221 +145,162 @@ export default function TechnicianDiagnostics() {
   };
 
   const getStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      ok: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-      warning: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-      error: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-    };
-    const labels: Record<string, string> = {
-      ok: "OK",
-      warning: "Advertencia",
-      error: "Error",
-    };
-    return <Badge className={styles[status]}>{labels[status]}</Badge>;
+    switch (status) {
+      case "ok":
+        return <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">OK</Badge>;
+      case "warning":
+        return <Badge className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Advertencia</Badge>;
+      case "error":
+        return <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Error</Badge>;
+      default:
+        return null;
+    }
   };
+
+  const okCount = results.filter(r => r.status === "ok").length;
+  const warningCount = results.filter(r => r.status === "warning").length;
+  const errorCount = results.filter(r => r.status === "error").length;
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Diagnóstico de Estaciones</h1>
-          <p className="text-muted-foreground">
-            Ejecuta pruebas de diagnóstico en las estaciones
-          </p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold">Diagnósticos</h1>
+        <p className="text-muted-foreground">
+          Ejecuta diagnósticos en las estaciones de carga
+        </p>
       </div>
 
-      {/* Selector de estación */}
-      <Card className="p-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex-1 min-w-[200px]">
-            <label className="text-sm font-medium mb-2 block">Seleccionar estación</label>
+      {/* Selector de estación y botón */}
+      <Card className="p-6">
+        <div className="flex items-end gap-4">
+          <div className="flex-1 space-y-2">
+            <label className="text-sm font-medium">Estación a diagnosticar</label>
             <Select value={selectedStation} onValueChange={setSelectedStation}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecciona una estación" />
+                <SelectValue placeholder="Seleccionar estación" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">Green EV Mosquera - Sede Principal</SelectItem>
+                {stations?.map((s: any) => (
+                  <SelectItem key={s.id} value={s.id.toString()}>
+                    {s.name} - {s.city}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           <Button 
             onClick={runDiagnostics} 
-            disabled={isRunning}
+            disabled={isRunning || !selectedStation}
             className="gradient-primary"
           >
             {isRunning ? (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                Ejecutando...
-              </>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
-              <>
-                <Activity className="w-4 h-4 mr-2" />
-                Iniciar diagnóstico
-              </>
+              <RefreshCw className="w-4 h-4 mr-2" />
             )}
+            {isRunning ? "Ejecutando..." : "Ejecutar diagnóstico"}
           </Button>
         </div>
-      </Card>
 
-      {/* Progreso */}
-      {isRunning && (
-        <Card className="p-4">
-          <div className="space-y-2">
+        {isRunning && (
+          <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span>Ejecutando diagnóstico...</span>
+              <span>Progreso del diagnóstico</span>
               <span>{Math.round(progress)}%</span>
             </div>
             <Progress value={progress} />
           </div>
-        </Card>
+        )}
+      </Card>
+
+      {/* Resumen de resultados */}
+      {results.length > 0 && (
+        <div className="grid grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                  <CheckCircle className="w-6 h-6 text-green-500" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{okCount}</p>
+                  <p className="text-sm text-muted-foreground">Correctos</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-yellow-500" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{warningCount}</p>
+                  <p className="text-sm text-muted-foreground">Advertencias</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <XCircle className="w-6 h-6 text-red-500" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{errorCount}</p>
+                  <p className="text-sm text-muted-foreground">Errores</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
-      {/* Métricas en tiempo real */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                <Wifi className="w-6 h-6 text-green-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Conexión</p>
-                <p className="text-lg font-bold text-green-500">En línea</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                <Thermometer className="w-6 h-6 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Temperatura</p>
-                <p className="text-lg font-bold">42°C</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                <Cpu className="w-6 h-6 text-purple-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">CPU</p>
-                <p className="text-lg font-bold">23%</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
-                <HardDrive className="w-6 h-6 text-orange-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Almacenamiento</p>
-                <p className="text-lg font-bold">67%</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Resultados */}
+      {/* Resultados detallados */}
       {results.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Server className="w-5 h-5" />
+              <Activity className="w-5 h-5" />
               Resultados del diagnóstico
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <div className="space-y-4">
               {results.map((result, index) => (
-                <div 
-                  key={index}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                >
-                  <div className="flex items-center gap-3">
-                    {getStatusIcon(result.status)}
-                    <div>
-                      <p className="font-medium">{result.name}</p>
-                      {result.details && (
-                        <p className="text-sm text-muted-foreground">{result.details}</p>
-                      )}
+                <div key={index} className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+                  {getStatusIcon(result.status)}
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{result.name}</span>
+                      {getStatusBadge(result.status)}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">{result.value}</span>
-                    {getStatusBadge(result.status)}
+                    <div className="text-sm text-muted-foreground">{result.value}</div>
+                    {result.details && (
+                      <div className="text-xs text-muted-foreground mt-1">{result.details}</div>
+                    )}
                   </div>
                 </div>
               ))}
-            </div>
-            
-            {/* Resumen */}
-            <div className="mt-6 p-4 rounded-lg bg-muted/30 border">
-              <h4 className="font-semibold mb-2">Resumen</h4>
-              <div className="flex items-center gap-6 text-sm">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
-                  <span>{results.filter(r => r.status === "ok").length} OK</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-yellow-500" />
-                  <span>{results.filter(r => r.status === "warning").length} Advertencias</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <XCircle className="w-4 h-4 text-red-500" />
-                  <span>{results.filter(r => r.status === "error").length} Errores</span>
-                </div>
-              </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Historial de diagnósticos */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="w-5 h-5" />
-            Historial de diagnósticos
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-              <div className="flex items-center gap-3">
-                <CheckCircle className="w-5 h-5 text-green-500" />
-                <div>
-                  <p className="font-medium">Diagnóstico completo</p>
-                  <p className="text-sm text-muted-foreground">Hace 2 días</p>
-                </div>
-              </div>
-              <Badge className="bg-green-100 text-green-700">8/8 OK</Badge>
-            </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-yellow-500" />
-                <div>
-                  <p className="font-medium">Diagnóstico completo</p>
-                  <p className="text-sm text-muted-foreground">Hace 1 semana</p>
-                </div>
-              </div>
-              <Badge className="bg-yellow-100 text-yellow-700">7/8 OK, 1 Advertencia</Badge>
-            </div>
+      {/* Estado vacío */}
+      {results.length === 0 && !isRunning && (
+        <Card className="p-8">
+          <div className="flex flex-col items-center text-center">
+            <Server className="w-12 h-12 text-muted-foreground mb-4" />
+            <h3 className="font-semibold">Sin diagnósticos</h3>
+            <p className="text-sm text-muted-foreground">
+              Selecciona una estación y ejecuta un diagnóstico para ver los resultados
+            </p>
           </div>
-        </CardContent>
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }

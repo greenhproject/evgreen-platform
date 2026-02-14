@@ -80,6 +80,18 @@ export const users = mysqlTable("users", {
   notifyChargingComplete: boolean("notifyChargingComplete").default(true),
   notifyLowBalance: boolean("notifyLowBalance").default(true),
   notifyPromotions: boolean("notifyPromotions").default(true),
+  // Preferencias de configuración del técnico
+  techNotifyNewTickets: boolean("techNotifyNewTickets").default(true),
+  techNotifyCriticalAlerts: boolean("techNotifyCriticalAlerts").default(true),
+  techNotifyMaintenanceReminders: boolean("techNotifyMaintenanceReminders").default(true),
+  techNotifyByEmail: boolean("techNotifyByEmail").default(true),
+  techNotifyByPush: boolean("techNotifyByPush").default(true),
+  techDefaultView: varchar("techDefaultView", { length: 20 }).default("dashboard"),
+  techAutoRefreshLogs: boolean("techAutoRefreshLogs").default(true),
+  techRefreshInterval: int("techRefreshInterval").default(30),
+  techAvailableForEmergencies: boolean("techAvailableForEmergencies").default(true),
+  techWorkingHoursStart: varchar("techWorkingHoursStart", { length: 5 }).default("08:00"),
+  techWorkingHoursEnd: varchar("techWorkingHoursEnd", { length: 5 }).default("18:00"),
   // Preferencias de configuración del usuario
   prefLanguage: varchar("prefLanguage", { length: 10 }).default("es"),
   prefDistanceUnit: varchar("prefDistanceUnit", { length: 5 }).default("km"),
