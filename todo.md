@@ -691,3 +691,18 @@
 - [x] Endpoint getById con joins a estación y técnico
 - [x] Crear ticket desde la vista de Tickets (no solo desde Mantenimiento)
 - [x] Búsqueda por título y filtro por estado funcional
+
+## Fotos en Tickets + Notificaciones Email Admin - 14 Febrero 2026
+- [x] Backend: endpoint uploadPhoto para subir fotos a S3 asociadas a un ticket
+- [x] Backend: endpoint deletePhoto para eliminar fotos de un ticket
+- [x] Backend: guardar URLs de fotos en campo attachments del ticket (JSON array)
+- [x] Frontend: UI para adjuntar fotos con 3 tipos (Antes, Después, Evidencia)
+- [x] Frontend: UI para adjuntar fotos al resolver ticket (botón "Agregar foto del resultado")
+- [x] Frontend: galería de fotos en detalle del ticket con badges de tipo
+- [x] Frontend: lightbox para ver fotos en tamaño completo
+- [x] Frontend: botón de eliminar foto (hover sobre la imagen)
+- [x] Email: notificar al admin cuando un ticket se resuelve o cancela
+- [x] Email: notificar al admin cuando un ticket CRITICAL se crea
+- [x] Email: template HTML profesional con detalles del ticket (ticket-email-service.ts)
+- [x] Email: copia a admin@greenhproject.com para trazabilidad
+- [x] Tests unitarios (12 tests en ticket-email.test.ts)

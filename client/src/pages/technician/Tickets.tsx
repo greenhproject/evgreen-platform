@@ -1,54 +1,35 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Search,
-  Plus,
-  AlertTriangle,
-  Clock,
-  CheckCircle,
-  Wrench,
-  MapPin,
-  User,
-  Calendar,
-  ArrowRight,
-  Play,
-  XCircle,
-  Loader2,
-  FileText,
-  DollarSign,
-  Package,
-  Timer,
-  ChevronRight,
+  Search, Plus, Clock, CheckCircle, Wrench, MapPin, User, Calendar,
+  Play, XCircle, Loader2, FileText, DollarSign, Package, Timer,
+  ChevronRight, Camera, Image, Trash2, X, Upload, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
+
+interface PhotoAttachment {
+  url: string;
+  fileKey: string;
+  type: "before" | "after" | "evidence";
+  fileName: string;
+  uploadedBy: string;
+  uploadedAt: string;
+}
 
 export default function TechnicianTickets() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -60,17 +41,17 @@ export default function TechnicianTickets() {
   const [partsUsed, setPartsUsed] = useState("");
   const [laborCost, setLaborCost] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingPhotoType, setPendingPhotoType] = useState<"before" | "after" | "evidence">("evidence");
   const [newTask, setNewTask] = useState({
-    title: "",
-    description: "",
-    stationId: "",
-    priority: "MEDIUM" as string,
-    category: "HARDWARE" as string,
+    title: "", description: "", stationId: "", priority: "MEDIUM" as string, category: "HARDWARE" as string,
   });
 
   const { data: tickets, isLoading, refetch } = trpc.maintenance.myTickets.useQuery();
   const { data: stations } = trpc.stations.listAll.useQuery();
-  const { data: ticketDetail, isLoading: isLoadingDetail } = trpc.maintenance.getById.useQuery(
+  const { data: ticketDetail, isLoading: isLoadingDetail, refetch: refetchDetail } = trpc.maintenance.getById.useQuery(
     { id: selectedTicketId! },
     { enabled: !!selectedTicketId && showDetailDialog }
   );
@@ -89,6 +70,27 @@ export default function TechnicianTickets() {
     onSuccess: () => {
       toast.success("Ticket actualizado");
       refetch();
+      refetchDetail();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const uploadPhotoMutation = trpc.maintenance.uploadPhoto.useMutation({
+    onSuccess: () => {
+      toast.success("Foto subida exitosamente");
+      refetchDetail();
+      setUploadingPhoto(false);
+    },
+    onError: (err) => {
+      toast.error(err.message || "Error al subir la foto");
+      setUploadingPhoto(false);
+    },
+  });
+
+  const deletePhotoMutation = trpc.maintenance.deletePhoto.useMutation({
+    onSuccess: () => {
+      toast.success("Foto eliminada");
+      refetchDetail();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -106,10 +108,7 @@ export default function TechnicianTickets() {
   };
 
   const handleStartTicket = (id: number) => {
-    updateMutation.mutate(
-      { id, data: { status: "IN_PROGRESS" } },
-      { onSuccess: () => { refetch(); } }
-    );
+    updateMutation.mutate({ id, data: { status: "IN_PROGRESS" } });
   };
 
   const handleResolveTicket = () => {
@@ -143,6 +142,46 @@ export default function TechnicianTickets() {
       { id, data: { status: "CANCELLED" } },
       { onSuccess: () => { setShowDetailDialog(false); refetch(); } }
     );
+  };
+
+  const handlePhotoUpload = (type: "before" | "after" | "evidence") => {
+    setPendingPhotoType(type);
+    fileInputRef.current?.click();
+  };
+
+  const onFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedTicketId) return;
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Solo se permiten imágenes JPEG, PNG o WebP");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("La imagen no puede superar 10MB");
+      return;
+    }
+
+    setUploadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      uploadPhotoMutation.mutate({
+        ticketId: selectedTicketId,
+        fileName: file.name,
+        fileBase64: base64,
+        contentType: file.type,
+        photoType: pendingPhotoType,
+      });
+    };
+    reader.readAsDataURL(file);
+    // Reset input so same file can be selected again
+    e.target.value = "";
+  };
+
+  const handleDeletePhoto = (fileKey: string) => {
+    if (!selectedTicketId) return;
+    deletePhotoMutation.mutate({ ticketId: selectedTicketId, fileKey });
   };
 
   const openDetail = (ticketId: number) => {
@@ -180,12 +219,18 @@ export default function TechnicianTickets() {
 
   const getCategoryLabel = (category: string) => {
     const labels: Record<string, string> = {
-      HARDWARE: "Hardware",
-      SOFTWARE: "Software",
-      CONNECTIVITY: "Conectividad",
-      VANDALISM: "Vandalismo",
+      HARDWARE: "Hardware", SOFTWARE: "Software", CONNECTIVITY: "Conectividad", VANDALISM: "Vandalismo",
     };
     return labels[category] || category;
+  };
+
+  const getPhotoTypeLabel = (type: string) => {
+    const labels: Record<string, { label: string; color: string }> = {
+      before: { label: "Antes", color: "bg-orange-500/20 text-orange-400" },
+      after: { label: "Después", color: "bg-green-500/20 text-green-400" },
+      evidence: { label: "Evidencia", color: "bg-blue-500/20 text-blue-400" },
+    };
+    return labels[type] || labels.evidence;
   };
 
   const filteredTickets = (tickets || []).filter((ticket: any) => {
@@ -200,61 +245,36 @@ export default function TechnicianTickets() {
   const formatDate = (date: string | Date | null) => {
     if (!date) return "—";
     return new Date(date).toLocaleString("es-CO", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
+      day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
     });
   };
 
   const getTimeline = (ticket: any) => {
     const events = [];
-    events.push({
-      label: "Ticket creado",
-      date: ticket.createdAt,
-      icon: FileText,
-      color: "text-gray-400",
-      bgColor: "bg-gray-500/20",
-    });
+    events.push({ label: "Ticket creado", date: ticket.createdAt, icon: FileText, color: "text-gray-400", bgColor: "bg-gray-500/20" });
     if (ticket.startedAt) {
-      events.push({
-        label: "Trabajo iniciado",
-        date: ticket.startedAt,
-        icon: Play,
-        color: "text-blue-400",
-        bgColor: "bg-blue-500/20",
-      });
+      events.push({ label: "Trabajo iniciado", date: ticket.startedAt, icon: Play, color: "text-blue-400", bgColor: "bg-blue-500/20" });
     }
     if (ticket.completedAt) {
-      events.push({
-        label: "Ticket completado",
-        date: ticket.completedAt,
-        icon: CheckCircle,
-        color: "text-green-400",
-        bgColor: "bg-green-500/20",
-      });
+      events.push({ label: "Ticket completado", date: ticket.completedAt, icon: CheckCircle, color: "text-green-400", bgColor: "bg-green-500/20" });
     }
     if (ticket.status === "CANCELLED") {
-      events.push({
-        label: "Ticket cancelado",
-        date: ticket.updatedAt,
-        icon: XCircle,
-        color: "text-red-400",
-        bgColor: "bg-red-500/20",
-      });
+      events.push({ label: "Ticket cancelado", date: ticket.updatedAt, icon: XCircle, color: "text-red-400", bgColor: "bg-red-500/20" });
     }
     return events;
   };
 
+  const attachments: PhotoAttachment[] = (ticketDetail?.attachments as any[]) || [];
+
   return (
     <div className="p-6 space-y-6">
+      {/* Hidden file input */}
+      <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={onFileSelected} />
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold">Tickets de Mantenimiento</h1>
-          <p className="text-muted-foreground">
-            Gestiona los tickets asignados
-          </p>
+          <p className="text-muted-foreground">Gestiona los tickets asignados</p>
         </div>
         <Button className="gradient-primary" onClick={() => setIsCreateOpen(true)}>
           <Plus className="w-4 h-4 mr-2" />
@@ -267,17 +287,10 @@ export default function TechnicianTickets() {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por título o estación..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+            <Input placeholder="Buscar por título o estación..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
+            <SelectTrigger className="w-48"><SelectValue placeholder="Estado" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="PENDING">Pendientes</SelectItem>
@@ -324,9 +337,7 @@ export default function TechnicianTickets() {
                   <TableCell className="font-mono text-sm">#{ticket.id}</TableCell>
                   <TableCell>
                     <div className="font-medium">{ticket.title}</div>
-                    {ticket.category && (
-                      <span className="text-xs text-muted-foreground">{getCategoryLabel(ticket.category)}</span>
-                    )}
+                    {ticket.category && <span className="text-xs text-muted-foreground">{getCategoryLabel(ticket.category)}</span>}
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <span className="text-sm">{ticket.station?.name || `Est. #${ticket.stationId}`}</span>
@@ -338,8 +349,7 @@ export default function TechnicianTickets() {
                   </TableCell>
                   <TableCell>
                     <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openDetail(ticket.id); }}>
-                      Ver detalles
-                      <ChevronRight className="w-4 h-4 ml-1" />
+                      Ver detalles <ChevronRight className="w-4 h-4 ml-1" />
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -352,24 +362,16 @@ export default function TechnicianTickets() {
       {/* Dialog: Crear Ticket */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Crear ticket de mantenimiento</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Crear ticket de mantenimiento</DialogTitle></DialogHeader>
           <div className="space-y-4 mt-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Título *</label>
-              <Input
-                placeholder="Descripción breve del problema"
-                value={newTask.title}
-                onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))}
-              />
+              <Input placeholder="Descripción breve del problema" value={newTask.title} onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))} />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Estación *</label>
               <Select value={newTask.stationId} onValueChange={(v) => setNewTask(prev => ({ ...prev, stationId: v }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar estación" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Seleccionar estación" /></SelectTrigger>
                 <SelectContent>
                   {stations?.map((s: any) => (
                     <SelectItem key={s.id} value={s.id.toString()}>{s.name} - {s.city}</SelectItem>
@@ -405,11 +407,7 @@ export default function TechnicianTickets() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Descripción</label>
-              <Textarea
-                placeholder="Detalles del problema..."
-                value={newTask.description}
-                onChange={(e) => setNewTask(prev => ({ ...prev, description: e.target.value }))}
-              />
+              <Textarea placeholder="Detalles del problema..." value={newTask.description} onChange={(e) => setNewTask(prev => ({ ...prev, description: e.target.value }))} />
             </div>
             <Button className="w-full" onClick={handleCreate} disabled={createMutation.isPending}>
               {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
@@ -441,9 +439,7 @@ export default function TechnicianTickets() {
                 {/* Título y descripción */}
                 <div>
                   <h3 className="text-lg font-semibold mb-1">{ticketDetail.title}</h3>
-                  {ticketDetail.description && (
-                    <p className="text-muted-foreground">{ticketDetail.description}</p>
-                  )}
+                  {ticketDetail.description && <p className="text-muted-foreground">{ticketDetail.description}</p>}
                 </div>
 
                 <Separator />
@@ -454,47 +450,106 @@ export default function TechnicianTickets() {
                     <MapPin className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
                     <div>
                       <p className="text-sm font-medium">Estación</p>
-                      <p className="text-sm text-muted-foreground">
-                        {ticketDetail.stationName || `Estación #${ticketDetail.stationId}`}
-                      </p>
-                      {ticketDetail.stationCity && (
-                        <p className="text-xs text-muted-foreground">{ticketDetail.stationAddress}, {ticketDetail.stationCity}</p>
-                      )}
+                      <p className="text-sm text-muted-foreground">{ticketDetail.stationName || `Estación #${ticketDetail.stationId}`}</p>
+                      {ticketDetail.stationCity && <p className="text-xs text-muted-foreground">{ticketDetail.stationAddress}, {ticketDetail.stationCity}</p>}
                     </div>
                   </div>
-
                   <div className="flex items-start gap-3">
                     <User className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
                     <div>
                       <p className="text-sm font-medium">Técnico asignado</p>
-                      <p className="text-sm text-muted-foreground">
-                        {ticketDetail.technicianName || "Sin asignar"}
-                      </p>
-                      {ticketDetail.technicianEmail && (
-                        <p className="text-xs text-muted-foreground">{ticketDetail.technicianEmail}</p>
-                      )}
+                      <p className="text-sm text-muted-foreground">{ticketDetail.technicianName || "Sin asignar"}</p>
+                      {ticketDetail.technicianEmail && <p className="text-xs text-muted-foreground">{ticketDetail.technicianEmail}</p>}
                     </div>
                   </div>
-
                   <div className="flex items-start gap-3">
                     <Wrench className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
                     <div>
                       <p className="text-sm font-medium">Categoría</p>
-                      <p className="text-sm text-muted-foreground">
-                        {ticketDetail.category ? getCategoryLabel(ticketDetail.category) : "Sin categoría"}
-                      </p>
+                      <p className="text-sm text-muted-foreground">{ticketDetail.category ? getCategoryLabel(ticketDetail.category) : "Sin categoría"}</p>
                     </div>
                   </div>
-
                   <div className="flex items-start gap-3">
                     <Calendar className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
                     <div>
                       <p className="text-sm font-medium">Fecha programada</p>
-                      <p className="text-sm text-muted-foreground">
-                        {ticketDetail.scheduledDate ? formatDate(ticketDetail.scheduledDate) : "Sin programar"}
-                      </p>
+                      <p className="text-sm text-muted-foreground">{ticketDetail.scheduledDate ? formatDate(ticketDetail.scheduledDate) : "Sin programar"}</p>
                     </div>
                   </div>
+                </div>
+
+                <Separator />
+
+                {/* Galería de Fotos */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold flex items-center gap-2">
+                      <Camera className="w-4 h-4" />
+                      Fotos ({attachments.length})
+                    </h4>
+                    {ticketDetail.status !== "COMPLETED" && ticketDetail.status !== "CANCELLED" && (
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handlePhotoUpload("before")} disabled={uploadingPhoto}>
+                          <Upload className="w-3 h-3 mr-1" /> Antes
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handlePhotoUpload("after")} disabled={uploadingPhoto}>
+                          <Upload className="w-3 h-3 mr-1" /> Después
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handlePhotoUpload("evidence")} disabled={uploadingPhoto}>
+                          <Upload className="w-3 h-3 mr-1" /> Evidencia
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {uploadingPhoto && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Subiendo foto...
+                    </div>
+                  )}
+
+                  {attachments.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {attachments.map((photo, idx) => {
+                        const typeInfo = getPhotoTypeLabel(photo.type);
+                        return (
+                          <div key={idx} className="relative group rounded-lg overflow-hidden border border-border">
+                            <img
+                              src={photo.url}
+                              alt={photo.fileName}
+                              className="w-full h-32 object-cover cursor-pointer"
+                              onClick={() => setLightboxUrl(photo.url)}
+                            />
+                            <div className="absolute top-2 left-2">
+                              <Badge className={`${typeInfo.color} text-xs`}>{typeInfo.label}</Badge>
+                            </div>
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => setLightboxUrl(photo.url)}>
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              {ticketDetail.status !== "COMPLETED" && ticketDetail.status !== "CANCELLED" && (
+                                <Button variant="ghost" size="sm" className="text-red-400 hover:bg-red-500/20" onClick={() => handleDeletePhoto(photo.fileKey)}>
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                            <div className="p-2 text-xs text-muted-foreground truncate">
+                              {photo.uploadedBy} · {new Date(photo.uploadedAt).toLocaleDateString("es-CO")}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="border border-dashed border-border rounded-lg p-6 text-center text-muted-foreground">
+                      <Image className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No hay fotos adjuntas</p>
+                      {ticketDetail.status !== "COMPLETED" && ticketDetail.status !== "CANCELLED" && (
+                        <p className="text-xs mt-1">Usa los botones de arriba para agregar fotos</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <Separator />
@@ -564,44 +619,22 @@ export default function TechnicianTickets() {
                 <div className="flex gap-3 flex-wrap">
                   {ticketDetail.status === "PENDING" && (
                     <>
-                      <Button
-                        onClick={() => handleStartTicket(ticketDetail.id)}
-                        disabled={updateMutation.isPending}
-                        className="flex-1"
-                      >
-                        {updateMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <Play className="w-4 h-4 mr-2" />
-                        )}
+                      <Button onClick={() => handleStartTicket(ticketDetail.id)} disabled={updateMutation.isPending} className="flex-1">
+                        {updateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                         Iniciar trabajo
                       </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={() => handleCancelTicket(ticketDetail.id)}
-                        disabled={updateMutation.isPending}
-                      >
-                        <XCircle className="w-4 h-4 mr-2" />
-                        Cancelar
+                      <Button variant="destructive" onClick={() => handleCancelTicket(ticketDetail.id)} disabled={updateMutation.isPending}>
+                        <XCircle className="w-4 h-4 mr-2" /> Cancelar
                       </Button>
                     </>
                   )}
                   {ticketDetail.status === "IN_PROGRESS" && (
                     <>
-                      <Button
-                        onClick={() => setShowResolveDialog(true)}
-                        className="flex-1 bg-green-600 hover:bg-green-700"
-                      >
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        Resolver ticket
+                      <Button onClick={() => setShowResolveDialog(true)} className="flex-1 bg-green-600 hover:bg-green-700">
+                        <CheckCircle className="w-4 h-4 mr-2" /> Resolver ticket
                       </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={() => handleCancelTicket(ticketDetail.id)}
-                        disabled={updateMutation.isPending}
-                      >
-                        <XCircle className="w-4 h-4 mr-2" />
-                        Cancelar
+                      <Button variant="destructive" onClick={() => handleCancelTicket(ticketDetail.id)} disabled={updateMutation.isPending}>
+                        <XCircle className="w-4 h-4 mr-2" /> Cancelar
                       </Button>
                     </>
                   )}
@@ -614,9 +647,7 @@ export default function TechnicianTickets() {
               </div>
             </>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No se encontró el ticket
-            </div>
+            <div className="text-center py-8 text-muted-foreground">No se encontró el ticket</div>
           )}
         </DialogContent>
       </Dialog>
@@ -633,55 +664,48 @@ export default function TechnicianTickets() {
           <div className="space-y-4 mt-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Descripción de la resolución *</label>
-              <Textarea
-                placeholder="Describe qué se hizo para resolver el problema..."
-                value={resolution}
-                onChange={(e) => setResolution(e.target.value)}
-                rows={4}
-              />
+              <Textarea placeholder="Describe qué se hizo para resolver el problema..." value={resolution} onChange={(e) => setResolution(e.target.value)} rows={4} />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Piezas utilizadas</label>
-              <Input
-                placeholder="Ej: Conector tipo 2, Cable 5m, Fusible 30A (separar con comas)"
-                value={partsUsed}
-                onChange={(e) => setPartsUsed(e.target.value)}
-              />
+              <Input placeholder="Ej: Conector tipo 2, Cable 5m, Fusible 30A (separar con comas)" value={partsUsed} onChange={(e) => setPartsUsed(e.target.value)} />
               <p className="text-xs text-muted-foreground">Separa las piezas con comas</p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Costo de mano de obra (COP)</label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  type="number"
-                  placeholder="0"
-                  value={laborCost}
-                  onChange={(e) => setLaborCost(e.target.value)}
-                  className="pl-10"
-                />
+                <Input type="number" placeholder="0" value={laborCost} onChange={(e) => setLaborCost(e.target.value)} className="pl-10" />
               </div>
+            </div>
+            {/* Quick photo upload in resolve dialog */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Agregar foto del resultado</label>
+              <Button variant="outline" size="sm" className="w-full" onClick={() => handlePhotoUpload("after")} disabled={uploadingPhoto}>
+                {uploadingPhoto ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Camera className="w-4 h-4 mr-2" />}
+                {uploadingPhoto ? "Subiendo..." : "Adjuntar foto (después)"}
+              </Button>
             </div>
           </div>
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setShowResolveDialog(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleResolveTicket}
-              disabled={updateMutation.isPending}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              {updateMutation.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <CheckCircle className="w-4 h-4 mr-2" />
-              )}
+            <Button variant="outline" onClick={() => setShowResolveDialog(false)}>Cancelar</Button>
+            <Button onClick={handleResolveTicket} disabled={updateMutation.isPending} className="bg-green-600 hover:bg-green-700">
+              {updateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
               Confirmar resolución
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4" onClick={() => setLightboxUrl(null)}>
+          <Button variant="ghost" size="icon" className="absolute top-4 right-4 text-white hover:bg-white/20 z-10" onClick={() => setLightboxUrl(null)}>
+            <X className="w-6 h-6" />
+          </Button>
+          <img src={lightboxUrl} alt="Foto ampliada" className="max-w-full max-h-full object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   );
 }
