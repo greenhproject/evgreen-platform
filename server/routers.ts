@@ -2972,6 +2972,102 @@ const vehiclesRouter = router({
     }),
 });
 
+// ============================================================================
+// SECURITY ROUTER - 2FA, sesiones, seguridad de cuenta
+// ============================================================================
+
+import {
+  generate2FASecret,
+  verify2FAToken,
+  disable2FA,
+  get2FAStatus,
+  getUserSessions,
+  terminateSession,
+  terminateAllOtherSessions,
+  recordLoginSession,
+} from "./security/security-service";
+
+const securityRouter = router({
+  // Obtener estado de 2FA
+  get2FAStatus: protectedProcedure.query(async ({ ctx }) => {
+    return get2FAStatus(ctx.user.id);
+  }),
+
+  // Generar secreto 2FA (paso 1: mostrar QR)
+  setup2FA: protectedProcedure.mutation(async ({ ctx }) => {
+    const email = ctx.user.email || `user-${ctx.user.id}@evgreen.lat`;
+    const result = await generate2FASecret(ctx.user.id, email);
+    return {
+      otpauthUrl: result.otpauthUrl,
+      secret: result.secret, // Para entrada manual si no pueden escanear QR
+    };
+  }),
+
+  // Verificar código 2FA (paso 2: confirmar y activar)
+  verify2FA: protectedProcedure
+    .input(z.object({ token: z.string().length(6) }))
+    .mutation(async ({ ctx, input }) => {
+      const isValid = await verify2FAToken(ctx.user.id, input.token);
+      if (!isValid) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Código inválido. Verifica e intenta de nuevo.",
+        });
+      }
+      return { success: true, message: "2FA activado correctamente" };
+    }),
+
+  // Desactivar 2FA (requiere código válido)
+  disable2FA: protectedProcedure
+    .input(z.object({ token: z.string().length(6) }))
+    .mutation(async ({ ctx, input }) => {
+      const success = await disable2FA(ctx.user.id, input.token);
+      if (!success) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Código inválido. No se pudo desactivar 2FA.",
+        });
+      }
+      return { success: true, message: "2FA desactivado" };
+    }),
+
+  // Obtener historial de sesiones
+  getSessions: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(50).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      return getUserSessions(ctx.user.id, input?.limit || 20);
+    }),
+
+  // Cerrar una sesión específica
+  terminateSession: protectedProcedure
+    .input(z.object({ sessionId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const success = await terminateSession(ctx.user.id, input.sessionId);
+      return { success };
+    }),
+
+  // Cerrar todas las demás sesiones
+  terminateAllOtherSessions: protectedProcedure.mutation(async ({ ctx }) => {
+    const terminated = await terminateAllOtherSessions(ctx.user.id);
+    return { terminated, message: `${terminated} sesiones cerradas` };
+  }),
+
+  // Registrar sesión actual (llamado al login)
+  recordSession: protectedProcedure
+    .input(z.object({
+      userAgent: z.string().optional(),
+      ipAddress: z.string().optional(),
+    }).optional())
+    .mutation(async ({ ctx, input }) => {
+      const sessionId = await recordLoginSession(
+        ctx.user.id,
+        input?.userAgent,
+        input?.ipAddress
+      );
+      return { sessionId };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -3003,6 +3099,7 @@ export const appRouter = router({
   vehicles: vehiclesRouter,
   userConfig: userConfigRouter,
   techConfig: techConfigRouter,
+  security: securityRouter,
 });
 
 export type AppRouter = typeof appRouter;
