@@ -724,3 +724,18 @@
 - [x] Layout del ingeniero con color azul diferenciado y badge "Ingeniería"
 - [x] Cambio de prioridad de tickets (updatePriority endpoint + dialog)
 - [x] Tests unitarios para rol de ingeniero (25 tests en engineer-role.test.ts)
+
+## Bug: Alertas no muestran estaciones desconectadas - 14 Febrero 2026
+- [x] Causa raíz: rol engineer no tenía acceso a ocppProcedure (403 Forbidden)
+- [x] Agregar rol engineer a ocppProcedure, permisos de estaciones, tarifas y conectores
+- [x] Implementar station-health-monitor.ts para detección automática de estaciones offline
+- [x] Endpoint getStationHealth: clasificación healthy/warning/critical según tiempo offline
+- [x] Endpoint generateOfflineAlerts: generar alertas para estaciones offline sin alerta reciente
+- [x] Generar alertas críticas para estaciones que nunca se han conectado o están offline >24h
+- [x] Corregir spinner infinito "Cargando alertas..." (fix permisos de rol engineer)
+- [x] Dashboard del ingeniero con estado de estaciones en tiempo real (online/offline/critical)
+- [x] Botón "Generar alertas" para crear alertas manuales de estaciones offline
+- [x] Sección de alertas OCPP con contadores por severidad en dashboard
+- [x] Notificación a técnicos y owner cuando se genera alerta de estación offline
+- [x] Tests unitarios (12 tests en station-health.test.ts)
+- [x] 585 tests pasando, 0 errores TypeScript
