@@ -405,7 +405,7 @@ export class DualCSMS {
       case "DiagnosticsStatusNotification":
         return {};
       case "FirmwareStatusNotification":
-        return {};
+        return this.handleFirmwareStatusNotification(conn, payload);
       default:
         console.warn(`[CSMS-DUAL] Unknown OCPP 1.6 action: ${action}`);
         return {};
@@ -436,7 +436,7 @@ export class DualCSMS {
       case "LogStatusNotification":
         return {};
       case "FirmwareStatusNotification":
-        return {};
+        return this.handleFirmwareStatusNotification(conn, payload);
       case "SecurityEventNotification":
         return {};
       default:
@@ -1104,6 +1104,82 @@ export class DualCSMS {
   getStationOCPPVersion(ocppIdentity: string): OCPPVersion | null {
     const conn = this.connections.get(ocppIdentity);
     return conn?.ocppVersion || null;
+  }
+
+  // ============================================================================
+  // FIRMWARE UPDATE
+  // ============================================================================
+
+  private async handleFirmwareStatusNotification(conn: ChargingStationConnection, payload: any): Promise<any> {
+    const ocppStatus = payload.status || payload.firmwareStatus;
+    console.log(`[CSMS-DUAL] FirmwareStatusNotification from ${conn.ocppIdentity}: ${ocppStatus}`);
+
+    const statusMap: Record<string, string> = {
+      Downloading: "DOWNLOADING",
+      Downloaded: "DOWNLOADED",
+      Installing: "INSTALLING",
+      Installed: "INSTALLED",
+      InstallationFailed: "INSTALLATION_FAILED",
+      DownloadFailed: "DOWNLOAD_FAILED",
+      Idle: "IDLE",
+      DownloadScheduled: "PENDING",
+      DownloadPaused: "DOWNLOADING",
+      SignatureVerified: "DOWNLOADED",
+      InvalidSignature: "DOWNLOAD_FAILED",
+    };
+
+    const progressMap: Record<string, number> = {
+      PENDING: 0, DOWNLOADING: 25, DOWNLOADED: 50,
+      INSTALLING: 75, INSTALLED: 100,
+      INSTALLATION_FAILED: 0, DOWNLOAD_FAILED: 0, IDLE: 0,
+    };
+
+    const dbStatus = statusMap[ocppStatus] || "PENDING";
+    const progress = progressMap[dbStatus] ?? 0;
+    const errorStatuses = ["INSTALLATION_FAILED", "DOWNLOAD_FAILED"];
+    const errorMsg = errorStatuses.includes(dbStatus) ? `Firmware update failed: ${ocppStatus}` : undefined;
+
+    try {
+      await db.updateFirmwareStatusByIdentity(conn.ocppIdentity, dbStatus, progress, errorMsg);
+      await db.createOcppLog({
+        stationId: conn.stationId || 0,
+        ocppIdentity: conn.ocppIdentity,
+        direction: "IN",
+        messageType: "FirmwareStatusNotification",
+        payload: payload,
+      });
+    } catch (error) {
+      console.error(`[CSMS-DUAL] Error updating firmware status:`, error);
+    }
+
+    return {};
+  }
+
+  async updateFirmware(ocppIdentity: string, firmwareUrl: string, retrieveDate?: Date): Promise<{ status: string }> {
+    const conn = this.connections.get(ocppIdentity);
+    if (!conn) {
+      throw new Error(`Charger ${ocppIdentity} is not connected`);
+    }
+
+    const retrieve = retrieveDate || new Date();
+    let response: any;
+
+    if (conn.ocppVersion === "1.6") {
+      response = await this.sendCall(conn, "UpdateFirmware", {
+        location: firmwareUrl,
+        retrieveDate: retrieve.toISOString(),
+      });
+    } else {
+      response = await this.sendCall(conn, "UpdateFirmware", {
+        requestId: Date.now(),
+        firmware: {
+          location: firmwareUrl,
+          retrieveDateTime: retrieve.toISOString(),
+        },
+      });
+    }
+
+    return { status: response?.status || "Accepted" };
   }
 }
 

@@ -56,6 +56,7 @@ import {
   wompiTransactions,
   WompiTransaction,
   InsertWompiTransaction,
+  firmwareUpdates,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -3989,4 +3990,114 @@ export async function getDefaultVehicle(userId: number): Promise<UserVehicle | u
     )
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+
+// ============================================================================
+// FIRMWARE UPDATES
+// ============================================================================
+
+export async function createFirmwareUpdate(params: {
+  stationId: number;
+  ocppIdentity: string;
+  fileName: string;
+  fileSize: number;
+  fileUrl: string;
+  version?: string;
+  initiatedBy?: number;
+  notes?: string;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(firmwareUpdates).values({
+    stationId: params.stationId,
+    ocppIdentity: params.ocppIdentity,
+    fileName: params.fileName,
+    fileSize: params.fileSize,
+    fileUrl: params.fileUrl,
+    version: params.version || null,
+    initiatedBy: params.initiatedBy || null,
+    notes: params.notes || null,
+    status: "PENDING",
+    progress: 0,
+  });
+  return result[0].insertId;
+}
+
+export async function updateFirmwareStatus(
+  id: number,
+  status: string,
+  progress: number,
+  errorMessage?: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const updates: any = { status, progress, updatedAt: new Date() };
+  if (errorMessage) updates.errorMessage = errorMessage;
+  if (status === "DOWNLOADING" || status === "INSTALLING") {
+    updates.startedAt = new Date();
+  }
+  if (status === "INSTALLED" || status === "FAILED" || status === "INSTALLATION_FAILED" || status === "DOWNLOAD_FAILED") {
+    updates.completedAt = new Date();
+  }
+  await db.update(firmwareUpdates).set(updates).where(eq(firmwareUpdates.id, id));
+}
+
+export async function updateFirmwareStatusByIdentity(
+  ocppIdentity: string,
+  status: string,
+  progress: number,
+  errorMessage?: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  // Update the latest active firmware update for this charger
+  const active = await db
+    .select()
+    .from(firmwareUpdates)
+    .where(
+      and(
+        eq(firmwareUpdates.ocppIdentity, ocppIdentity),
+        inArray(firmwareUpdates.status, ["PENDING", "DOWNLOADING", "DOWNLOADED", "INSTALLING"])
+      )
+    )
+    .orderBy(desc(firmwareUpdates.createdAt))
+    .limit(1);
+
+  if (active.length > 0) {
+    await updateFirmwareStatus(active[0].id, status, progress, errorMessage);
+  }
+}
+
+export async function getFirmwareUpdatesByStation(stationId: number, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(firmwareUpdates)
+    .where(eq(firmwareUpdates.stationId, stationId))
+    .orderBy(desc(firmwareUpdates.createdAt))
+    .limit(limit);
+}
+
+export async function getAllFirmwareUpdates(limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(firmwareUpdates)
+    .orderBy(desc(firmwareUpdates.createdAt))
+    .limit(limit);
+}
+
+export async function getActiveFirmwareUpdates() {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(firmwareUpdates)
+    .where(
+      inArray(firmwareUpdates.status, ["PENDING", "DOWNLOADING", "DOWNLOADED", "INSTALLING"])
+    )
+    .orderBy(desc(firmwareUpdates.createdAt));
 }

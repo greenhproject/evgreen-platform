@@ -55,6 +55,7 @@ import TechnicianOCPPLogs from "./pages/technician/OCPPLogs";
 import TechnicianOCPPMonitor from "./pages/technician/OCPPMonitor";
 import TechnicianMaintenance from "./pages/technician/Maintenance";
 import TechnicianSettings from "./pages/technician/Settings";
+import TechnicianFirmware from "./pages/technician/Firmware";
 
 // Páginas de administración
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -341,6 +342,13 @@ function Router() {
         <ProtectedRoute allowedRoles={["technician", "admin"]}>
           <TechnicianLayout>
             <TechnicianSettings />
+          </TechnicianLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/technician/firmware">
+        <ProtectedRoute allowedRoles={["technician", "admin"]}>
+          <TechnicianLayout>
+            <TechnicianFirmware />
           </TechnicianLayout>
         </ProtectedRoute>
       </Route>

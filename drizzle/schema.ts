@@ -1564,3 +1564,38 @@ export const userVehiclesRelations = relations(userVehicles, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// FIRMWARE UPDATES
+// ============================================================================
+
+export const firmwareUpdates = mysqlTable("firmware_updates", {
+  id: int("id").primaryKey().autoincrement(),
+  stationId: int("station_id").notNull(),
+  ocppIdentity: varchar("ocpp_identity", { length: 255 }).notNull(),
+  fileName: varchar("file_name", { length: 500 }).notNull(),
+  fileSize: int("file_size").notNull(),
+  fileUrl: text("file_url").notNull(),
+  version: varchar("version", { length: 100 }),
+  status: varchar("status", { length: 50 }).notNull().default("PENDING"),
+  progress: int("progress").notNull().default(0),
+  errorMessage: text("error_message"),
+  notes: text("notes"),
+  initiatedBy: int("initiated_by"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const firmwareUpdatesRelations = relations(firmwareUpdates, ({ one }) => ({
+  station: one(chargingStations, {
+    fields: [firmwareUpdates.stationId],
+    references: [chargingStations.id],
+  }),
+  initiator: one(users, {
+    fields: [firmwareUpdates.initiatedBy],
+    references: [users.id],
+  }),
+}));

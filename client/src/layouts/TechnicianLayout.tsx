@@ -34,7 +34,8 @@ import {
   Zap,
   ClipboardList,
   Activity,
-  Terminal
+  Terminal,
+  Cpu
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -50,6 +51,7 @@ const technicianMenuItems = [
   { icon: Terminal, label: "Monitor OCPP", path: "/technician/ocpp-monitor" },
   { icon: FileText, label: "Logs OCPP", path: "/technician/ocpp-logs" },
   { icon: Wrench, label: "Mantenimiento", path: "/technician/maintenance" },
+  { icon: Cpu, label: "Firmware", path: "/technician/firmware" },
   { icon: Settings, label: "Configuración", path: "/technician/settings" },
 ];
 
