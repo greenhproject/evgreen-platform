@@ -643,3 +643,10 @@
 - [x] Agregar exclusiones adicionales al .gitignore
 - [x] Optimizar imports de lucide-react (ya usan named imports - tree-shaking OK)
 
+
+## Corregir Estaciones del Técnico - 14 Febrero 2026
+- [x] Backend: Permitir al técnico acceder a todas las estaciones (mismos datos que admin)
+- [x] Backend: Permitir al técnico crear/editar/eliminar estaciones como admin
+- [x] Frontend: Stations.tsx del técnico muestra estaciones reales de la BD
+- [x] Frontend: Formulario de crear/editar estación completo en el técnico (sin precios)
+- [x] Frontend: Gestión de conectores por estación en el técnico
