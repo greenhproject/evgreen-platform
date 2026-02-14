@@ -1,0 +1,106 @@
+{
+  "query": "SHOW COLUMNS FROM users WHERE Field LIKE 'tech%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SHOW COLUMNS FROM users WHERE Field LIKE 'tech%';",
+  "rows": [
+    {
+      "Field": "technicianLicense",
+      "Type": "varchar(100)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "techNotifyNewTickets",
+      "Type": "tinyint(1)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "techNotifyCriticalAlerts",
+      "Type": "tinyint(1)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "techNotifyMaintenanceReminders",
+      "Type": "tinyint(1)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "techNotifyByEmail",
+      "Type": "tinyint(1)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "techNotifyByPush",
+      "Type": "tinyint(1)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "techDefaultView",
+      "Type": "varchar(20)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "dashboard",
+      "Extra": ""
+    },
+    {
+      "Field": "techAutoRefreshLogs",
+      "Type": "tinyint(1)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "techRefreshInterval",
+      "Type": "int(11)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "30",
+      "Extra": ""
+    },
+    {
+      "Field": "techAvailableForEmergencies",
+      "Type": "tinyint(1)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "techWorkingHoursStart",
+      "Type": "varchar(5)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "08:00",
+      "Extra": ""
+    },
+    {
+      "Field": "techWorkingHoursEnd",
+      "Type": "varchar(5)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "18:00",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\ntechnicianLicense\tvarchar(100)\tYES\t\tNULL\t\ntechNotifyNewTickets\ttinyint(1)\tYES\t\t1\t\ntechNotifyCriticalAlerts\ttinyint(1)\tYES\t\t1\t\ntechNotifyMaintenanceReminders\ttinyint(1)\tYES\t\t1\t\ntechNotifyByEmail\ttinyint(1)\tYES\t\t1\t\ntechNotifyByPush\ttinyint(1)\tYES\t\t1\t\ntechDefaultView\tvarchar(20)\tYES\t\tdashboard\t\ntechAutoRefreshLogs\ttinyint(1)\tYES\t\t1\t\ntechRefreshInterval\tint(11)\tYES\t\t30\t\ntechAvailableForEmergencies\ttinyint(1)\tYES\t\t1\t\ntechWorkingHoursStart\tvarchar(5)\tYES\t\t08:00\t\ntechWorkingHoursEnd\tvarchar(5)\tYES\t\t18:00\t\n",
+  "stderr": "",
+  "execution_time_ms": 414
+}
