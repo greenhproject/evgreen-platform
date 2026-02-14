@@ -823,7 +823,38 @@ export async function createMaintenanceTicket(ticket: InsertMaintenanceTicket) {
 export async function getMaintenanceTicketById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(maintenanceTickets).where(eq(maintenanceTickets.id, id)).limit(1);
+  const result = await db.select({
+    id: maintenanceTickets.id,
+    stationId: maintenanceTickets.stationId,
+    evseId: maintenanceTickets.evseId,
+    technicianId: maintenanceTickets.technicianId,
+    reportedById: maintenanceTickets.reportedById,
+    title: maintenanceTickets.title,
+    description: maintenanceTickets.description,
+    priority: maintenanceTickets.priority,
+    category: maintenanceTickets.category,
+    status: maintenanceTickets.status,
+    scheduledDate: maintenanceTickets.scheduledDate,
+    startedAt: maintenanceTickets.startedAt,
+    completedAt: maintenanceTickets.completedAt,
+    resolution: maintenanceTickets.resolution,
+    partsUsed: maintenanceTickets.partsUsed,
+    laborCost: maintenanceTickets.laborCost,
+    totalCost: maintenanceTickets.totalCost,
+    attachments: maintenanceTickets.attachments,
+    createdAt: maintenanceTickets.createdAt,
+    updatedAt: maintenanceTickets.updatedAt,
+    stationName: chargingStations.name,
+    stationCity: chargingStations.city,
+    stationAddress: chargingStations.address,
+    technicianName: users.name,
+    technicianEmail: users.email,
+  })
+    .from(maintenanceTickets)
+    .leftJoin(chargingStations, eq(maintenanceTickets.stationId, chargingStations.id))
+    .leftJoin(users, eq(maintenanceTickets.technicianId, users.id))
+    .where(eq(maintenanceTickets.id, id))
+    .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 

@@ -680,3 +680,14 @@
   - Causa raíz: myTickets filtraba solo por technicianId, pero el ticket se crea con reportedById
 - [x] Corregir el bug de guardado de tickets (getMaintenanceTicketsByTechnician ahora usa OR: technicianId o reportedById)
 - [x] Verificar que los contadores de Pendientes/En progreso/Completadas funcionen
+
+## Vista de Detalles de Ticket de Mantenimiento - 14 Febrero 2026
+- [x] Implementar dialog/página de detalles completa al hacer clic en "Ver detalles"
+- [x] Mostrar toda la info del ticket: título, descripción, estación, prioridad, categoría, fechas
+- [x] Flujo de estados: Pendiente → En progreso → Completado/Cancelado
+- [x] Formulario de resolución: notas, piezas usadas, costo de mano de obra
+- [x] Timeline/historial de cambios de estado del ticket
+- [x] Auto-asignar técnico al crear ticket
+- [x] Endpoint getById con joins a estación y técnico
+- [x] Crear ticket desde la vista de Tickets (no solo desde Mantenimiento)
+- [x] Búsqueda por título y filtro por estado funcional
