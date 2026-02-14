@@ -34,9 +34,20 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
-// Procedimiento para técnicos
+// Procedimiento para ingeniero jefe (control total del área técnica)
+const engineerProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== "engineer" && ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Acceso denegado. Se requiere rol de ingeniero o administrador.",
+    });
+  }
+  return next({ ctx });
+});
+
+// Procedimiento para técnicos (incluye engineer que puede hacer todo lo del técnico)
 const technicianProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== "technician" && ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+  if (ctx.user.role !== "technician" && ctx.user.role !== "engineer" && ctx.user.role !== "admin" && ctx.user.role !== "staff") {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Acceso denegado. Se requiere rol de técnico.",
@@ -92,7 +103,7 @@ const authRouter = router({
 const usersRouter = router({
   list: adminProcedure
     .input(z.object({
-      role: z.enum(["staff", "technician", "investor", "user", "admin"]).optional(),
+      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer"]).optional(),
     }).optional())
     .query(async ({ input }) => {
       return db.getAllUsers(input?.role);
@@ -107,7 +118,7 @@ const usersRouter = router({
   updateRole: adminProcedure
     .input(z.object({
       userId: z.number(),
-      role: z.enum(["staff", "technician", "investor", "user", "admin"]),
+      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer"]),
     }))
     .mutation(async ({ input, ctx }) => {
       // Proteger la cuenta maestra
@@ -286,7 +297,7 @@ const usersRouter = router({
         name: z.string().optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
-        role: z.enum(["staff", "technician", "investor", "user", "admin"]).optional(),
+        role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer"]).optional(),
         isActive: z.boolean().optional(),
         companyName: z.string().optional(),
         taxId: z.string().optional(),
@@ -1427,8 +1438,8 @@ const maintenanceRouter = router({
     return db.getMaintenanceTicketsByTechnician(ctx.user.id);
   }),
   
-  // Admin: todos los tickets
-  listAll: adminProcedure
+  // Ingeniero/Admin: todos los tickets
+  listAll: engineerProcedure
     .input(z.object({ status: z.string().optional() }).optional())
     .query(async ({ input }) => {
       return db.getAllMaintenanceTickets(input?.status);
@@ -1575,17 +1586,109 @@ const maintenanceRouter = router({
       return { success: true };
     }),
   
-  assignTechnician: adminProcedure
+  // Ingeniero/Admin: asignar técnico a un ticket
+  assignTechnician: engineerProcedure
     .input(z.object({
       ticketId: z.number(),
       technicianId: z.number(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      const technician = await db.getUserById(input.technicianId);
+      if (!technician || (technician.role !== "technician" && technician.role !== "engineer")) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El usuario seleccionado no es un técnico válido." });
+      }
       await db.updateMaintenanceTicket(input.ticketId, {
         technicianId: input.technicianId,
       });
+      // Notificar al técnico asignado
+      try {
+        const ticket = await db.getMaintenanceTicketById(input.ticketId);
+        await db.createNotification({
+          userId: input.technicianId,
+          title: "\ud83d\udcdd Ticket asignado",
+          message: `El Ing. ${ctx.user.name || "Jefe"} te asign\u00f3 el ticket #${input.ticketId}: ${ticket?.title || "Sin t\u00edtulo"}`,
+          type: "SYSTEM",
+          isRead: false,
+        });
+      } catch (e) { console.error("[Ticket] Error notifying technician:", e); }
       return { success: true };
     }),
+
+  // Ingeniero/Admin: cambiar prioridad de un ticket
+  updatePriority: engineerProcedure
+    .input(z.object({
+      ticketId: z.number(),
+      priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateMaintenanceTicket(input.ticketId, {
+        priority: input.priority,
+      });
+      return { success: true };
+    }),
+
+  // Ingeniero/Admin: listar técnicos disponibles para asignación
+  listTechnicians: engineerProcedure.query(async () => {
+    const allUsers = await db.getAllUsers();
+    return allUsers.filter((u: any) => u.role === "technician" || u.role === "engineer").map((u: any) => ({
+      id: u.id,
+      name: u.name || u.email,
+      email: u.email,
+      role: u.role,
+      assignedRegion: u.assignedRegion,
+      isActive: u.isActive,
+    }));
+  }),
+
+  // Ingeniero/Admin: estadísticas de operaciones
+  operationsStats: engineerProcedure.query(async () => {
+    const allTickets = await db.getAllMaintenanceTickets();
+    const pending = allTickets.filter((t: any) => t.status === "PENDING").length;
+    const inProgress = allTickets.filter((t: any) => t.status === "IN_PROGRESS").length;
+    const completed = allTickets.filter((t: any) => t.status === "COMPLETED").length;
+    const cancelled = allTickets.filter((t: any) => t.status === "CANCELLED").length;
+    const critical = allTickets.filter((t: any) => t.priority === "CRITICAL" && t.status !== "COMPLETED" && t.status !== "CANCELLED").length;
+    const high = allTickets.filter((t: any) => t.priority === "HIGH" && t.status !== "COMPLETED" && t.status !== "CANCELLED").length;
+    
+    // Calcular tiempo promedio de resolución
+    const resolvedTickets = allTickets.filter((t: any) => t.status === "COMPLETED" && t.completedAt && t.createdAt);
+    let avgResolutionHours = 0;
+    if (resolvedTickets.length > 0) {
+      const totalHours = resolvedTickets.reduce((sum: number, t: any) => {
+        const created = new Date(t.createdAt).getTime();
+        const completed = new Date(t.completedAt).getTime();
+        return sum + (completed - created) / (1000 * 60 * 60);
+      }, 0);
+      avgResolutionHours = Math.round(totalHours / resolvedTickets.length * 10) / 10;
+    }
+
+    // Tickets por técnico
+    const technicianMap = new Map<number, { name: string; count: number; completed: number; pending: number }>();
+    for (const t of allTickets) {
+      if (t.technicianId) {
+        if (!technicianMap.has(t.technicianId)) {
+          technicianMap.set(t.technicianId, { name: (t as any).technicianName || `Técnico #${t.technicianId}`, count: 0, completed: 0, pending: 0 });
+        }
+        const entry = technicianMap.get(t.technicianId)!;
+        entry.count++;
+        if (t.status === "COMPLETED") entry.completed++;
+        if (t.status === "PENDING" || t.status === "IN_PROGRESS") entry.pending++;
+      }
+    }
+
+    return {
+      total: allTickets.length,
+      pending,
+      inProgress,
+      completed,
+      cancelled,
+      critical,
+      high,
+      avgResolutionHours,
+      completionRate: allTickets.length > 0 ? Math.round((completed / allTickets.length) * 100) : 0,
+      byTechnician: Array.from(technicianMap.entries()).map(([id, data]) => ({ id, ...data })),
+    };
+  }),
 });
 
 // ============================================================================

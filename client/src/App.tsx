@@ -75,6 +75,11 @@ const TechnicianMaintenance = lazy(() => import("./pages/technician/Maintenance"
 const TechnicianSettings = lazy(() => import("./pages/technician/Settings"));
 const TechnicianFirmware = lazy(() => import("./pages/technician/Firmware"));
 
+// Páginas de ingeniero (jefe técnico)
+const EngineerDashboard = lazy(() => import("./pages/engineer/Dashboard"));
+const EngineerTickets = lazy(() => import("./pages/engineer/Tickets"));
+const EngineerTechnicians = lazy(() => import("./pages/engineer/Technicians"));
+
 // Páginas de administración
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const AdminStations = lazy(() => import("./pages/admin/Stations"));
@@ -101,6 +106,7 @@ const StaffEventStats = lazy(() => import("./pages/staff/EventStats"));
 import AdminLayout from "./layouts/AdminLayout";
 import InvestorLayout from "./layouts/InvestorLayout";
 import TechnicianLayout from "./layouts/TechnicianLayout";
+import EngineerLayout from "./layouts/EngineerLayout";
 import StaffLayout from "./layouts/StaffLayout";
 
 // Widgets (carga diferida)
@@ -118,6 +124,8 @@ function getHomeRouteByRole(role: string | undefined): string {
       return "/investor";
     case "technician":
       return "/technician";
+    case "engineer":
+      return "/engineer";
     case "user":
     default:
       return "/map";
@@ -274,6 +282,90 @@ function Router() {
         {/* ============================================
             RUTAS DE TÉCNICO (con layout)
             ============================================ */}
+        {/* ============================================
+            RUTAS DE INGENIERO JEFE (con layout propio)
+            ============================================ */}
+        <Route path="/engineer">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <EngineerDashboard />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/tickets">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <EngineerTickets />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/technicians">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <EngineerTechnicians />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/stations">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <TechnicianStations />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/alerts">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <TechnicianAlerts />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/diagnostics">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <TechnicianDiagnostics />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/ocpp-monitor">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <TechnicianOCPPMonitor />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/ocpp-logs">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <TechnicianOCPPLogs />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/maintenance">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <TechnicianMaintenance />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/firmware">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <TechnicianFirmware />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/settings">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <TechnicianSettings />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* ============================================
+            RUTAS DE TÉCNICO (con layout - solo ejecución)
+            ============================================ */}
         <Route path="/technician">
           <ProtectedRoute allowedRoles={["technician", "admin"]}>
             <TechnicianLayout>
@@ -295,38 +387,10 @@ function Router() {
             </TechnicianLayout>
           </ProtectedRoute>
         </Route>
-        <Route path="/technician/logs">
-          <ProtectedRoute allowedRoles={["technician", "admin"]}>
-            <TechnicianLayout>
-              <TechnicianLogs />
-            </TechnicianLayout>
-          </ProtectedRoute>
-        </Route>
         <Route path="/technician/alerts">
           <ProtectedRoute allowedRoles={["technician", "admin"]}>
             <TechnicianLayout>
               <TechnicianAlerts />
-            </TechnicianLayout>
-          </ProtectedRoute>
-        </Route>
-        <Route path="/technician/diagnostics">
-          <ProtectedRoute allowedRoles={["technician", "admin"]}>
-            <TechnicianLayout>
-              <TechnicianDiagnostics />
-            </TechnicianLayout>
-          </ProtectedRoute>
-        </Route>
-        <Route path="/technician/ocpp-logs">
-          <ProtectedRoute allowedRoles={["technician", "admin"]}>
-            <TechnicianLayout>
-              <TechnicianOCPPLogs />
-            </TechnicianLayout>
-          </ProtectedRoute>
-        </Route>
-        <Route path="/technician/ocpp-monitor">
-          <ProtectedRoute allowedRoles={["technician", "admin"]}>
-            <TechnicianLayout>
-              <TechnicianOCPPMonitor />
             </TechnicianLayout>
           </ProtectedRoute>
         </Route>
@@ -341,13 +405,6 @@ function Router() {
           <ProtectedRoute allowedRoles={["technician", "admin"]}>
             <TechnicianLayout>
               <TechnicianSettings />
-            </TechnicianLayout>
-          </ProtectedRoute>
-        </Route>
-        <Route path="/technician/firmware">
-          <ProtectedRoute allowedRoles={["technician", "admin"]}>
-            <TechnicianLayout>
-              <TechnicianFirmware />
             </TechnicianLayout>
           </ProtectedRoute>
         </Route>

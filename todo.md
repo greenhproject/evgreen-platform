@@ -706,3 +706,21 @@
 - [x] Email: template HTML profesional con detalles del ticket (ticket-email-service.ts)
 - [x] Email: copia a admin@greenhproject.com para trazabilidad
 - [x] Tests unitarios (12 tests en ticket-email.test.ts)
+
+## Rol Ingeniero Jefe (Administrador Área Técnica) - 14 Febrero 2026
+- [x] Agregar rol 'engineer' al enum de roles en schema (ALTER TABLE + drizzle)
+- [x] Asignar soporte@greenhproject.com como ingeniero principal (UPDATE users SET role='engineer')
+- [x] Crear engineerProcedure para proteger endpoints del ingeniero
+- [x] Dashboard de operaciones del ingeniero: Centro de Operaciones con KPIs
+- [x] Asignación de técnicos a tickets desde el panel del ingeniero (dialog con select)
+- [x] Reasignación de tickets entre técnicos (mismo dialog de asignación)
+- [x] Vista de todos los técnicos con sus cargas de trabajo (página Equipo Técnico)
+- [x] Filtros avanzados: por título/ID, prioridad, estado en Gestión de Tickets
+- [x] Estadísticas de operaciones: operationsStats endpoint con pending/inProgress/completed/avgResolutionHours/byTechnician
+- [x] Limitar perfil técnico: menú reducido (Mi Panel, Mis Tickets, Estaciones, Alertas, Mantenimiento, Config)
+- [x] Navegación diferenciada: EngineerLayout (11 items, 3 secciones) vs TechnicianLayout (6 items)
+- [x] El ingeniero puede crear, editar, cancelar, reasignar y cambiar prioridad de cualquier ticket
+- [x] El técnico solo puede ver sus tickets asignados/reportados y actualizar estado/resolución
+- [x] Layout del ingeniero con color azul diferenciado y badge "Ingeniería"
+- [x] Cambio de prioridad de tickets (updatePriority endpoint + dialog)
+- [x] Tests unitarios para rol de ingeniero (25 tests en engineer-role.test.ts)
