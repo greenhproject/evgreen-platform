@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,119 +16,86 @@ import {
   CheckCircle, 
   Clock, 
   Search, 
-  Filter,
-  Zap,
-  Thermometer,
-  Wifi,
-  BatteryWarning,
-  XCircle
+  Loader2,
+  RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
-
-interface Alert {
-  id: number;
-  type: "critical" | "warning" | "info";
-  title: string;
-  description: string;
-  stationId: number;
-  stationName: string;
-  connectorId?: number;
-  timestamp: Date;
-  acknowledged: boolean;
-  resolvedAt?: Date;
-}
-
-// Datos de ejemplo
-const mockAlerts: Alert[] = [
-  {
-    id: 1,
-    type: "critical",
-    title: "Sobrecalentamiento detectado",
-    description: "Temperatura del conector superior a 80°C",
-    stationId: 1,
-    stationName: "Green EV Mosquera",
-    connectorId: 1,
-    timestamp: new Date(Date.now() - 1000 * 60 * 5),
-    acknowledged: false,
-  },
-  {
-    id: 2,
-    type: "warning",
-    title: "Conexión intermitente",
-    description: "La estación ha perdido conexión 3 veces en la última hora",
-    stationId: 1,
-    stationName: "Green EV Mosquera",
-    timestamp: new Date(Date.now() - 1000 * 60 * 30),
-    acknowledged: true,
-  },
-  {
-    id: 3,
-    type: "info",
-    title: "Actualización de firmware disponible",
-    description: "Nueva versión v2.1.0 disponible para instalación",
-    stationId: 1,
-    stationName: "Green EV Mosquera",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
-    acknowledged: true,
-    resolvedAt: new Date(Date.now() - 1000 * 60 * 60),
-  },
-];
+import { trpc } from "@/lib/trpc";
 
 export default function TechnicianAlerts() {
-  const [alerts, setAlerts] = useState<Alert[]>(mockAlerts);
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const getAlertIcon = (type: string) => {
-    switch (type) {
-      case "critical":
+  // Datos reales de alertas OCPP
+  const { data: alertsData, isLoading, refetch } = trpc.ocpp.getAlerts.useQuery({
+    limit: 100,
+    offset: 0,
+  });
+
+  const { data: alertStats } = trpc.ocpp.getAlertStats.useQuery();
+
+  const acknowledgeMutation = trpc.ocpp.acknowledgeAlert.useMutation({
+    onSuccess: () => {
+      toast.success("Alerta reconocida");
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const alerts = alertsData || [];
+
+  const getAlertIcon = (severity: string) => {
+    switch (severity) {
+      case "CRITICAL":
+      case "HIGH":
         return <AlertTriangle className="w-5 h-5 text-red-500" />;
-      case "warning":
+      case "MEDIUM":
         return <Bell className="w-5 h-5 text-yellow-500" />;
       default:
         return <Bell className="w-5 h-5 text-blue-500" />;
     }
   };
 
-  const getAlertBadge = (type: string) => {
+  const getAlertBadge = (severity: string) => {
     const styles: Record<string, string> = {
-      critical: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-      warning: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-      info: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+      CRITICAL: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+      HIGH: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+      MEDIUM: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+      LOW: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
     };
     const labels: Record<string, string> = {
-      critical: "Crítica",
-      warning: "Advertencia",
-      info: "Información",
+      CRITICAL: "Crítica",
+      HIGH: "Alta",
+      MEDIUM: "Media",
+      LOW: "Baja",
     };
-    return <Badge className={styles[type]}>{labels[type]}</Badge>;
+    return <Badge className={styles[severity] || styles.LOW}>{labels[severity] || severity}</Badge>;
   };
 
-  const handleAcknowledge = (id: number) => {
-    setAlerts(prev => prev.map(a => 
-      a.id === id ? { ...a, acknowledged: true } : a
-    ));
-    toast.success("Alerta reconocida");
+  const handleAcknowledge = (alertId: number) => {
+    acknowledgeMutation.mutate({ alertId });
   };
 
-  const handleResolve = (id: number) => {
-    setAlerts(prev => prev.map(a => 
-      a.id === id ? { ...a, resolvedAt: new Date() } : a
-    ));
-    toast.success("Alerta resuelta");
-  };
-
-  const filteredAlerts = alerts.filter(alert => {
-    if (typeFilter !== "all" && alert.type !== typeFilter) return false;
-    if (statusFilter === "active" && alert.resolvedAt) return false;
-    if (statusFilter === "resolved" && !alert.resolvedAt) return false;
-    if (searchQuery && !alert.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+  const filteredAlerts = alerts.filter((alert: any) => {
+    if (typeFilter !== "all") {
+      const severity = alert.severity || alert.type || "";
+      if (severity !== typeFilter) return false;
+    }
+    if (statusFilter === "active" && alert.acknowledgedAt) return false;
+    if (statusFilter === "acknowledged" && !alert.acknowledgedAt) return false;
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesTitle = (alert.title || alert.alertType || "").toLowerCase().includes(query);
+      const matchesDesc = (alert.description || alert.message || "").toLowerCase().includes(query);
+      const matchesStation = (alert.stationName || alert.ocppIdentity || "").toLowerCase().includes(query);
+      if (!matchesTitle && !matchesDesc && !matchesStation) return false;
+    }
     return true;
   });
 
-  const activeCount = alerts.filter(a => !a.resolvedAt).length;
-  const criticalCount = alerts.filter(a => a.type === "critical" && !a.resolvedAt).length;
+  const activeCount = alerts.filter((a: any) => !a.acknowledgedAt).length;
+  const criticalCount = alerts.filter((a: any) => (a.severity === "CRITICAL" || a.severity === "HIGH") && !a.acknowledgedAt).length;
 
   return (
     <div className="p-6 space-y-6">
@@ -140,6 +107,10 @@ export default function TechnicianAlerts() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="w-4 h-4 mr-1" />
+            Actualizar
+          </Button>
           {criticalCount > 0 && (
             <Badge className="bg-red-500 text-white animate-pulse">
               {criticalCount} crítica{criticalCount > 1 ? "s" : ""}
@@ -158,7 +129,7 @@ export default function TechnicianAlerts() {
                 <AlertTriangle className="w-6 h-6 text-red-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{alerts.filter(a => a.type === "critical").length}</p>
+                <p className="text-2xl font-bold">{alertStats?.bySeverity?.CRITICAL || 0}</p>
                 <p className="text-sm text-muted-foreground">Críticas</p>
               </div>
             </div>
@@ -171,7 +142,7 @@ export default function TechnicianAlerts() {
                 <Bell className="w-6 h-6 text-yellow-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{alerts.filter(a => a.type === "warning").length}</p>
+                <p className="text-2xl font-bold">{alertStats?.bySeverity?.MEDIUM || 0}</p>
                 <p className="text-sm text-muted-foreground">Advertencias</p>
               </div>
             </div>
@@ -184,7 +155,7 @@ export default function TechnicianAlerts() {
                 <Bell className="w-6 h-6 text-blue-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{alerts.filter(a => a.type === "info").length}</p>
+                <p className="text-2xl font-bold">{alertStats?.bySeverity?.LOW || 0}</p>
                 <p className="text-sm text-muted-foreground">Informativas</p>
               </div>
             </div>
@@ -197,8 +168,8 @@ export default function TechnicianAlerts() {
                 <CheckCircle className="w-6 h-6 text-green-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{alerts.filter(a => a.resolvedAt).length}</p>
-                <p className="text-sm text-muted-foreground">Resueltas</p>
+                <p className="text-2xl font-bold">{(alertStats?.total || 0) - (alertStats?.unacknowledged || 0)}</p>
+                <p className="text-sm text-muted-foreground">Reconocidas</p>
               </div>
             </div>
           </CardContent>
@@ -219,13 +190,14 @@ export default function TechnicianAlerts() {
           </div>
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="Tipo" />
+              <SelectValue placeholder="Severidad" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos los tipos</SelectItem>
-              <SelectItem value="critical">Críticas</SelectItem>
-              <SelectItem value="warning">Advertencias</SelectItem>
-              <SelectItem value="info">Informativas</SelectItem>
+              <SelectItem value="all">Todas</SelectItem>
+              <SelectItem value="CRITICAL">Críticas</SelectItem>
+              <SelectItem value="HIGH">Altas</SelectItem>
+              <SelectItem value="MEDIUM">Medias</SelectItem>
+              <SelectItem value="LOW">Bajas</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -235,7 +207,7 @@ export default function TechnicianAlerts() {
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="active">Activas</SelectItem>
-              <SelectItem value="resolved">Resueltas</SelectItem>
+              <SelectItem value="acknowledged">Reconocidas</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -243,7 +215,14 @@ export default function TechnicianAlerts() {
 
       {/* Lista de alertas */}
       <div className="space-y-4">
-        {filteredAlerts.length === 0 ? (
+        {isLoading ? (
+          <Card className="p-8">
+            <div className="flex flex-col items-center text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mb-4" />
+              <p className="text-sm text-muted-foreground">Cargando alertas...</p>
+            </div>
+          </Card>
+        ) : filteredAlerts.length === 0 ? (
           <Card className="p-8">
             <div className="flex flex-col items-center text-center">
               <CheckCircle className="w-12 h-12 text-green-500 mb-4" />
@@ -254,63 +233,62 @@ export default function TechnicianAlerts() {
             </div>
           </Card>
         ) : (
-          filteredAlerts.map(alert => (
-            <Card key={alert.id} className={`${alert.type === "critical" && !alert.resolvedAt ? "border-red-500" : ""}`}>
-              <CardContent className="p-4">
-                <div className="flex items-start gap-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    alert.type === "critical" ? "bg-red-100 dark:bg-red-900/30" :
-                    alert.type === "warning" ? "bg-yellow-100 dark:bg-yellow-900/30" :
-                    "bg-blue-100 dark:bg-blue-900/30"
-                  }`}>
-                    {getAlertIcon(alert.type)}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold">{alert.title}</h3>
-                      {getAlertBadge(alert.type)}
-                      {alert.resolvedAt && (
-                        <Badge variant="outline" className="text-green-600">
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          Resuelta
-                        </Badge>
-                      )}
+          filteredAlerts.map((alert: any) => {
+            const severity = alert.severity || "LOW";
+            return (
+              <Card key={alert.id} className={`${severity === "CRITICAL" && !alert.acknowledgedAt ? "border-red-500" : ""}`}>
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-4">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      severity === "CRITICAL" || severity === "HIGH" ? "bg-red-100 dark:bg-red-900/30" :
+                      severity === "MEDIUM" ? "bg-yellow-100 dark:bg-yellow-900/30" :
+                      "bg-blue-100 dark:bg-blue-900/30"
+                    }`}>
+                      {getAlertIcon(severity)}
                     </div>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      {alert.description}
-                    </p>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span>{alert.stationName}</span>
-                      {alert.connectorId && <span>Conector #{alert.connectorId}</span>}
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {new Date(alert.timestamp).toLocaleString("es-CO")}
-                      </span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <h3 className="font-semibold">{alert.title || alert.alertType || "Alerta"}</h3>
+                        {getAlertBadge(severity)}
+                        {alert.acknowledgedAt && (
+                          <Badge variant="outline" className="text-green-600">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Reconocida
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        {alert.description || alert.message || "Sin descripción"}
+                      </p>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                        <span>{alert.stationName || alert.ocppIdentity || `Estación #${alert.stationId}`}</span>
+                        {alert.connectorId && <span>Conector #{alert.connectorId}</span>}
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {new Date(alert.createdAt).toLocaleString("es-CO")}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  {!alert.resolvedAt && (
-                    <div className="flex gap-2">
-                      {!alert.acknowledged && (
+                    {!alert.acknowledgedAt && (
+                      <div className="flex gap-2 flex-shrink-0">
                         <Button 
-                          variant="outline" 
                           size="sm"
                           onClick={() => handleAcknowledge(alert.id)}
+                          disabled={acknowledgeMutation.isPending}
                         >
-                          Reconocer
+                          {acknowledgeMutation.isPending ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            "Reconocer"
+                          )}
                         </Button>
-                      )}
-                      <Button 
-                        size="sm"
-                        onClick={() => handleResolve(alert.id)}
-                      >
-                        Resolver
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
         )}
       </div>
     </div>

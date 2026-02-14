@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,44 +19,94 @@ import {
   Mail,
   Clock,
   Wrench,
-  Save
+  Save,
+  Loader2
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 
 export default function TechnicianSettings() {
   const { user } = useAuth();
+  const [hasChanges, setHasChanges] = useState(false);
   
   const [settings, setSettings] = useState({
-    // Notificaciones
     notifyNewTickets: true,
     notifyCriticalAlerts: true,
     notifyMaintenanceReminders: true,
     notifyByEmail: true,
     notifyByPush: true,
-    
-    // Preferencias de trabajo
     defaultView: "dashboard",
     autoRefreshLogs: true,
     refreshInterval: "30",
-    
-    // Disponibilidad
     availableForEmergencies: true,
     workingHoursStart: "08:00",
     workingHoursEnd: "18:00",
   });
 
+  // Cargar configuración del backend
+  const { data: savedConfig, isLoading } = trpc.techConfig.get.useQuery();
+
+  const saveMutation = trpc.techConfig.save.useMutation({
+    onSuccess: () => {
+      toast.success("Configuración guardada correctamente");
+      setHasChanges(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Cargar datos del backend cuando estén disponibles
+  useEffect(() => {
+    if (savedConfig) {
+      setSettings({
+        notifyNewTickets: savedConfig.notifyNewTickets ?? true,
+        notifyCriticalAlerts: savedConfig.notifyCriticalAlerts ?? true,
+        notifyMaintenanceReminders: savedConfig.notifyMaintenanceReminders ?? true,
+        notifyByEmail: savedConfig.notifyByEmail ?? true,
+        notifyByPush: savedConfig.notifyByPush ?? true,
+        defaultView: savedConfig.defaultView || "dashboard",
+        autoRefreshLogs: savedConfig.autoRefreshLogs ?? true,
+        refreshInterval: String(savedConfig.refreshInterval || 30),
+        availableForEmergencies: savedConfig.availableForEmergencies ?? true,
+        workingHoursStart: savedConfig.workingHoursStart || "08:00",
+        workingHoursEnd: savedConfig.workingHoursEnd || "18:00",
+      });
+    }
+  }, [savedConfig]);
+
   const handleToggle = (key: keyof typeof settings) => {
     setSettings(prev => ({ ...prev, [key]: !prev[key] }));
+    setHasChanges(true);
   };
 
   const handleChange = (key: keyof typeof settings, value: string) => {
     setSettings(prev => ({ ...prev, [key]: value }));
+    setHasChanges(true);
   };
 
   const handleSave = () => {
-    toast.success("Configuración guardada correctamente");
+    saveMutation.mutate({
+      notifyNewTickets: settings.notifyNewTickets,
+      notifyCriticalAlerts: settings.notifyCriticalAlerts,
+      notifyMaintenanceReminders: settings.notifyMaintenanceReminders,
+      notifyByEmail: settings.notifyByEmail,
+      notifyByPush: settings.notifyByPush,
+      defaultView: settings.defaultView as any,
+      autoRefreshLogs: settings.autoRefreshLogs,
+      refreshInterval: parseInt(settings.refreshInterval),
+      availableForEmergencies: settings.availableForEmergencies,
+      workingHoursStart: settings.workingHoursStart,
+      workingHoursEnd: settings.workingHoursEnd,
+    });
   };
+
+  if (isLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -67,9 +117,17 @@ export default function TechnicianSettings() {
             Personaliza tu experiencia como técnico
           </p>
         </div>
-        <Button onClick={handleSave} className="gradient-primary">
-          <Save className="w-4 h-4 mr-2" />
-          Guardar cambios
+        <Button 
+          onClick={handleSave} 
+          className="gradient-primary"
+          disabled={!hasChanges || saveMutation.isPending}
+        >
+          {saveMutation.isPending ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4 mr-2" />
+          )}
+          {hasChanges ? "Guardar cambios" : "Sin cambios"}
         </Button>
       </div>
 
@@ -284,13 +342,13 @@ export default function TechnicianSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Button variant="outline" className="w-full justify-start">
+          <Button variant="outline" className="w-full justify-start" onClick={() => toast.info("Funcionalidad próximamente")}>
             Cambiar contraseña
           </Button>
-          <Button variant="outline" className="w-full justify-start">
+          <Button variant="outline" className="w-full justify-start" onClick={() => toast.info("Funcionalidad próximamente")}>
             Configurar autenticación de dos factores
           </Button>
-          <Button variant="outline" className="w-full justify-start">
+          <Button variant="outline" className="w-full justify-start" onClick={() => toast.info("Funcionalidad próximamente")}>
             Ver historial de sesiones
           </Button>
         </CardContent>

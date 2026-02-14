@@ -2594,6 +2594,137 @@ const favoritesRouter = router({
 const connectorTypeValues = ["TYPE_1", "TYPE_2", "CCS_1", "CCS_2", "CHADEMO", "TESLA", "GBT_AC", "GBT_DC"] as const;
 
 // ============================================================================
+// TECHNICIAN CONFIG ROUTER - Preferencias de configuración del técnico
+// ============================================================================
+
+const techConfigRouter = router({
+  // Obtener configuración del técnico
+  get: technicianProcedure.query(async ({ ctx }) => {
+    const database = await getDb();
+    if (!database) {
+      return {
+        notifyNewTickets: true,
+        notifyCriticalAlerts: true,
+        notifyMaintenanceReminders: true,
+        notifyByEmail: true,
+        notifyByPush: true,
+        defaultView: "dashboard",
+        autoRefreshLogs: true,
+        refreshInterval: 30,
+        availableForEmergencies: true,
+        workingHoursStart: "08:00",
+        workingHoursEnd: "18:00",
+      };
+    }
+    const [user] = await database
+      .select({
+        notifyNewTickets: users.techNotifyNewTickets,
+        notifyCriticalAlerts: users.techNotifyCriticalAlerts,
+        notifyMaintenanceReminders: users.techNotifyMaintenanceReminders,
+        notifyByEmail: users.techNotifyByEmail,
+        notifyByPush: users.techNotifyByPush,
+        defaultView: users.techDefaultView,
+        autoRefreshLogs: users.techAutoRefreshLogs,
+        refreshInterval: users.techRefreshInterval,
+        availableForEmergencies: users.techAvailableForEmergencies,
+        workingHoursStart: users.techWorkingHoursStart,
+        workingHoursEnd: users.techWorkingHoursEnd,
+      })
+      .from(users)
+      .where(eq(users.id, ctx.user.id))
+      .limit(1);
+
+    return {
+      notifyNewTickets: user?.notifyNewTickets ?? true,
+      notifyCriticalAlerts: user?.notifyCriticalAlerts ?? true,
+      notifyMaintenanceReminders: user?.notifyMaintenanceReminders ?? true,
+      notifyByEmail: user?.notifyByEmail ?? true,
+      notifyByPush: user?.notifyByPush ?? true,
+      defaultView: user?.defaultView ?? "dashboard",
+      autoRefreshLogs: user?.autoRefreshLogs ?? true,
+      refreshInterval: user?.refreshInterval ?? 30,
+      availableForEmergencies: user?.availableForEmergencies ?? true,
+      workingHoursStart: user?.workingHoursStart ?? "08:00",
+      workingHoursEnd: user?.workingHoursEnd ?? "18:00",
+    };
+  }),
+
+  // Guardar configuración del técnico
+  save: technicianProcedure
+    .input(z.object({
+      notifyNewTickets: z.boolean().optional(),
+      notifyCriticalAlerts: z.boolean().optional(),
+      notifyMaintenanceReminders: z.boolean().optional(),
+      notifyByEmail: z.boolean().optional(),
+      notifyByPush: z.boolean().optional(),
+      defaultView: z.enum(["dashboard", "tickets", "alerts", "stations"]).optional(),
+      autoRefreshLogs: z.boolean().optional(),
+      refreshInterval: z.number().min(10).max(300).optional(),
+      availableForEmergencies: z.boolean().optional(),
+      workingHoursStart: z.string().optional(),
+      workingHoursEnd: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      }
+
+      const updateData: Record<string, unknown> = {};
+      if (input.notifyNewTickets !== undefined) updateData.techNotifyNewTickets = input.notifyNewTickets;
+      if (input.notifyCriticalAlerts !== undefined) updateData.techNotifyCriticalAlerts = input.notifyCriticalAlerts;
+      if (input.notifyMaintenanceReminders !== undefined) updateData.techNotifyMaintenanceReminders = input.notifyMaintenanceReminders;
+      if (input.notifyByEmail !== undefined) updateData.techNotifyByEmail = input.notifyByEmail;
+      if (input.notifyByPush !== undefined) updateData.techNotifyByPush = input.notifyByPush;
+      if (input.defaultView !== undefined) updateData.techDefaultView = input.defaultView;
+      if (input.autoRefreshLogs !== undefined) updateData.techAutoRefreshLogs = input.autoRefreshLogs;
+      if (input.refreshInterval !== undefined) updateData.techRefreshInterval = input.refreshInterval;
+      if (input.availableForEmergencies !== undefined) updateData.techAvailableForEmergencies = input.availableForEmergencies;
+      if (input.workingHoursStart !== undefined) updateData.techWorkingHoursStart = input.workingHoursStart;
+      if (input.workingHoursEnd !== undefined) updateData.techWorkingHoursEnd = input.workingHoursEnd;
+
+      if (Object.keys(updateData).length > 0) {
+        await database.update(users).set(updateData).where(eq(users.id, ctx.user.id));
+      }
+
+      return { success: true };
+    }),
+
+  // Obtener estadísticas del técnico
+  getStats: technicianProcedure.query(async ({ ctx }) => {
+    const tickets = await db.getMaintenanceTicketsByTechnician(ctx.user.id);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const pending = tickets.filter((t: any) => t.status === "PENDING").length;
+    const inProgress = tickets.filter((t: any) => t.status === "IN_PROGRESS").length;
+    const completedTotal = tickets.filter((t: any) => t.status === "COMPLETED").length;
+    const completedToday = tickets.filter((t: any) => {
+      if (t.status !== "COMPLETED" || !t.completedAt) return false;
+      return new Date(t.completedAt) >= today;
+    }).length;
+    const critical = tickets.filter((t: any) => t.priority === "CRITICAL" && t.status !== "COMPLETED" && t.status !== "CANCELLED").length;
+    const avgResolutionTime = tickets
+      .filter((t: any) => t.status === "COMPLETED" && t.startedAt && t.completedAt)
+      .reduce((acc: number, t: any, _: number, arr: any[]) => {
+        const start = new Date(t.startedAt).getTime();
+        const end = new Date(t.completedAt).getTime();
+        return acc + (end - start) / arr.length;
+      }, 0);
+
+    return {
+      pending,
+      inProgress,
+      completedTotal,
+      completedToday,
+      critical,
+      totalTickets: tickets.length,
+      avgResolutionTimeMs: avgResolutionTime,
+    };
+  }),
+});
+
+// ============================================================================
 // USER CONFIG ROUTER - Preferencias de configuración del usuario
 // ============================================================================
 
@@ -2874,6 +3005,7 @@ export const appRouter = router({
   favorites: favoritesRouter,
   vehicles: vehiclesRouter,
   userConfig: userConfigRouter,
+  techConfig: techConfigRouter,
 });
 
 export type AppRouter = typeof appRouter;
