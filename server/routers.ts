@@ -356,8 +356,8 @@ const stationsRouter = router({
       return stationsWithData;
     }),
   
-  // Admin: listar todas las estaciones
-  listAll: adminProcedure.query(async () => {
+  // Admin/Técnico: listar todas las estaciones
+  listAll: technicianProcedure.query(async () => {
     const stations = await db.getAllChargingStations();
     // Agregar evses a cada estación
     const stationsWithEvses = await Promise.all(
@@ -416,7 +416,7 @@ const stationsRouter = router({
       return station;
     }),
   
-  create: adminProcedure
+  create: technicianProcedure
     .input(z.object({
       ownerId: z.number(),
       name: z.string(),
@@ -460,8 +460,8 @@ const stationsRouter = router({
       if (!station) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
       }
-      // Solo admin o el dueño pueden actualizar
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && station.ownerId !== ctx.user.id) {
+      // Admin, staff, técnico o el dueño pueden actualizar
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "technician" && station.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para modificar esta estación" });
       }
       await db.updateChargingStation(input.id, input.data);
@@ -475,8 +475,8 @@ const stationsRouter = router({
       return db.getEvsesByStationId(input.stationId);
     }),
   
-  // Eliminar estación (solo admin)
-  delete: adminProcedure
+  // Eliminar estación (admin/técnico)
+  delete: technicianProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteChargingStation(input.id);
@@ -489,7 +489,7 @@ const stationsRouter = router({
 // ============================================================================
 
 const evseRouter = router({
-  create: adminProcedure
+  create: technicianProcedure
     .input(z.object({
       stationId: z.number(),
       evseIdLocal: z.number(),
@@ -505,7 +505,7 @@ const evseRouter = router({
       return { id };
     }),
   
-  update: adminProcedure
+  update: technicianProcedure
     .input(z.object({
       id: z.number(),
       data: z.object({
@@ -523,7 +523,7 @@ const evseRouter = router({
       return { success: true };
     }),
   
-  delete: adminProcedure
+  delete: technicianProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteEvse(input.id);
