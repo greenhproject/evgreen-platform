@@ -739,3 +739,16 @@
 - [x] Notificación a técnicos y owner cuando se genera alerta de estación offline
 - [x] Tests unitarios (12 tests en station-health.test.ts)
 - [x] 585 tests pasando, 0 errores TypeScript
+
+## Mapa de Estaciones en Dashboard del Ingeniero - 14 Febrero 2026
+- [x] Crear componente StationHealthMap.tsx con marcadores de colores por estado
+- [x] Integrar componente Map.tsx en el dashboard del ingeniero
+- [x] Marcadores de colores según estado de salud (verde=online, amarillo=warning, rojo pulsante=critical)
+- [x] InfoWindow con detalles de la estación al hacer clic en un marcador (nombre, OCPP ID, dirección, estado, issue)
+- [x] Leyenda del mapa con significado de cada color
+- [x] Centrar mapa automáticamente en las estaciones existentes (fitBounds)
+- [x] Filtros para mostrar/ocultar estaciones por estado (Todas, Online, Warning, Critical)
+- [x] Botón expandir/reducir mapa (400px ↔ 600px)
+- [x] Agregar coordenadas (lat/lng, address, city) al StationHealthStatus interface
+- [x] Tests unitarios (9 tests en station-health-map.test.ts)
+- [x] 594 tests pasando, 0 errores TypeScript

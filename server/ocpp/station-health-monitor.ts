@@ -20,6 +20,10 @@ export interface StationHealthStatus {
   lastBootNotification: Date | null;
   healthStatus: "healthy" | "warning" | "critical" | "offline";
   issue?: string;
+  latitude: number | null;
+  longitude: number | null;
+  address?: string;
+  city?: string;
 }
 
 /**
@@ -50,6 +54,10 @@ export async function checkStationHealth(): Promise<{
       isActive: station.isActive,
       lastBootNotification: station.lastBootNotification || null,
       healthStatus: "healthy",
+      latitude: station.latitude ? parseFloat(String(station.latitude)) : null,
+      longitude: station.longitude ? parseFloat(String(station.longitude)) : null,
+      address: (station as any).address || undefined,
+      city: (station as any).city || undefined,
     };
 
     if (!station.isOnline) {

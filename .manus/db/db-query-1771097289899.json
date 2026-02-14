@@ -1,0 +1,28 @@
+{
+  "query": "SELECT id, name, latitude, longitude, address, city, isOnline FROM charging_stations WHERE isActive = 1 LIMIT 10",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, name, latitude, longitude, address, city, isOnline FROM charging_stations WHERE isActive = 1 LIMIT 10",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Green EV Mosquera - Sede Principal",
+      "latitude": "4.70770000",
+      "longitude": "-74.23110000",
+      "address": "Cra 1 Este No 2-26",
+      "city": "Mosquera",
+      "isOnline": "1"
+    },
+    {
+      "id": "90001",
+      "name": "Test charging",
+      "latitude": "4.71100000",
+      "longitude": "-74.07210000",
+      "address": "Calle 85",
+      "city": "Bogota",
+      "isOnline": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tlatitude\tlongitude\taddress\tcity\tisOnline\n1\tGreen EV Mosquera - Sede Principal\t4.70770000\t-74.23110000\tCra 1 Este No 2-26\tMosquera\t1\n90001\tTest charging\t4.71100000\t-74.07210000\tCalle 85\tBogota\t0\n",
+  "stderr": "",
+  "execution_time_ms": 90
+}
