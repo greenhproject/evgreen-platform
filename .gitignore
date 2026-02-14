@@ -101,6 +101,12 @@ jspm_packages/
 tmp/
 temp/
 
+# Migration scripts (temporary)
+run-*.mjs
+
+# Vitest cache
+.vitest/
+
 # Database
 *.db
 *.sqlite
