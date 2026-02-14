@@ -21,6 +21,7 @@ import {
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { useState } from "react";
+import { StationHealthMap } from "@/components/StationHealthMap";
 
 export default function EngineerDashboard() {
   const { user } = useAuth();
@@ -321,6 +322,11 @@ export default function EngineerDashboard() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Mapa de Estaciones */}
+      {stationHealth && stationHealth.stations.length > 0 && (
+        <StationHealthMap stations={stationHealth.stations} />
       )}
 
       {/* Alertas OCPP + Tickets recientes */}
