@@ -10,13 +10,14 @@ import * as db from "../db";
 import { nanoid } from "nanoid";
 import { dualCSMS } from "./csms-dual";
 import { storagePut } from "../storage";
+import { checkStationHealth, generateOfflineAlerts } from "./station-health-monitor";
 
 // Procedimiento para admin y técnicos
 const ocppProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "technician") {
+  if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "technician" && ctx.user.role !== "engineer") {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: "Acceso denegado. Se requiere rol de administrador o técnico.",
+      message: "Acceso denegado. Se requiere rol de administrador, ingeniero o técnico.",
     });
   }
   return next({ ctx });
@@ -597,4 +598,25 @@ export const ocppRouter = router({
       );
       return { success: true };
     }),
+
+  // ============================================================================
+  // STATION HEALTH MONITORING
+  // ============================================================================
+
+  /**
+   * Obtener estado de salud de todas las estaciones
+   * Detecta estaciones offline sin depender de conexión OCPP previa
+   */
+  getStationHealth: ocppProcedure.query(async () => {
+    return checkStationHealth();
+  }),
+
+  /**
+   * Generar alertas para estaciones offline
+   * Se puede llamar manualmente o periódicamente
+   */
+  generateOfflineAlerts: ocppProcedure.mutation(async () => {
+    const count = await generateOfflineAlerts();
+    return { alertsGenerated: count };
+  }),
 });

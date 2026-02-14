@@ -1,0 +1,26 @@
+{
+  "query": "SELECT id, name, isOnline, isActive, ocppIdentity, lastBootNotification FROM charging_stations LIMIT 20",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, name, isOnline, isActive, ocppIdentity, lastBootNotification FROM charging_stations LIMIT 20",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Green EV Mosquera - Sede Principal",
+      "isOnline": "1",
+      "isActive": "1",
+      "ocppIdentity": "GEV-MOSQUERA-001",
+      "lastBootNotification": "NULL"
+    },
+    {
+      "id": "90001",
+      "name": "Test charging",
+      "isOnline": "0",
+      "isActive": "1",
+      "ocppIdentity": "Cp001cp001",
+      "lastBootNotification": "2026-02-11 02:39:31"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tisOnline\tisActive\tocppIdentity\tlastBootNotification\n1\tGreen EV Mosquera - Sede Principal\t1\t1\tGEV-MOSQUERA-001\tNULL\n90001\tTest charging\t0\t1\tCp001cp001\t2026-02-11 02:39:31\n",
+  "stderr": "",
+  "execution_time_ms": 211
+}

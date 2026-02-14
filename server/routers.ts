@@ -472,7 +472,7 @@ const stationsRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
       }
       // Admin, staff, técnico o el dueño pueden actualizar
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "technician" && station.ownerId !== ctx.user.id) {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "technician" && ctx.user.role !== "engineer" && station.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para modificar esta estación" });
       }
       await db.updateChargingStation(input.id, input.data);
@@ -601,7 +601,7 @@ const tariffsRouter = router({
       if (!station) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
       }
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && station.ownerId !== ctx.user.id) {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "engineer" && station.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para crear tarifas en esta estación" });
       }
       
@@ -639,7 +639,7 @@ const tariffsRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Tarifa no encontrada" });
       }
       const station = await db.getChargingStationById(tariff.stationId);
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && station?.ownerId !== ctx.user.id) {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "engineer" && station?.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para modificar esta tarifa" });
       }
       await db.updateTariff(input.id, input.data);
@@ -661,7 +661,7 @@ const tariffsRouter = router({
       if (!station) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
       }
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && station.ownerId !== ctx.user.id) {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "engineer" && station.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para modificar esta estación" });
       }
       
