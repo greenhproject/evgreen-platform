@@ -5,87 +5,107 @@ import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Onboarding, useOnboarding } from "@/components/Onboarding";
 
-// Páginas públicas
+// Páginas públicas (carga inmediata - landing)
 import Landing from "./pages/Landing";
-import Investors from "./pages/Investors";
+
+// Lazy loading spinner
+function LazySpinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-muted-foreground">Cargando...</p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// LAZY IMPORTS - Solo se cargan cuando se necesitan
+// ============================================
+
+// Páginas públicas secundarias
+const Investors = lazy(() => import("./pages/Investors"));
 
 // Páginas de usuario
-import UserMap from "./pages/user/Map";
-import UserWallet from "./pages/user/Wallet";
-import UserHistory from "./pages/user/History";
-import UserProfile from "./pages/user/Profile";
-import UserReservations from "./pages/user/Reservations";
-import UserSupport from "./pages/user/Support";
-import StationDetail from "./pages/user/StationDetail";
-import ChargingSession from "./pages/user/ChargingSession";
-import AIAssistant from "./pages/user/AIAssistant";
-import ScanPage from "./pages/user/Scan";
-import StartCharge from "./pages/user/StartCharge";
-import QRRedirect from "./pages/QRRedirect";
-import ChargingMonitor from "./pages/user/ChargingMonitor";
-import ChargingSummary from "./pages/user/ChargingSummary";
-import ChargingWaiting from "./pages/user/ChargingWaiting";
-import UserSettingsNotifications from "./pages/user/settings/Notifications";
-import UserSettingsPersonalInfo from "./pages/user/settings/PersonalInfo";
-import UserSettingsVehicles from "./pages/user/settings/Vehicles";
-import UserSettingsPaymentMethods from "./pages/user/settings/PaymentMethods";
-import UserSettingsConfig from "./pages/user/settings/Config";
-import UserSubscription from "./pages/user/Subscription";
+const UserMap = lazy(() => import("./pages/user/Map"));
+const UserWallet = lazy(() => import("./pages/user/Wallet"));
+const UserHistory = lazy(() => import("./pages/user/History"));
+const UserProfile = lazy(() => import("./pages/user/Profile"));
+const UserReservations = lazy(() => import("./pages/user/Reservations"));
+const UserSupport = lazy(() => import("./pages/user/Support"));
+const StationDetail = lazy(() => import("./pages/user/StationDetail"));
+const ChargingSession = lazy(() => import("./pages/user/ChargingSession"));
+const AIAssistant = lazy(() => import("./pages/user/AIAssistant"));
+const ScanPage = lazy(() => import("./pages/user/Scan"));
+const StartCharge = lazy(() => import("./pages/user/StartCharge"));
+const QRRedirect = lazy(() => import("./pages/QRRedirect"));
+const ChargingMonitor = lazy(() => import("./pages/user/ChargingMonitor"));
+const ChargingSummary = lazy(() => import("./pages/user/ChargingSummary"));
+const ChargingWaiting = lazy(() => import("./pages/user/ChargingWaiting"));
+const UserSettingsNotifications = lazy(() => import("./pages/user/settings/Notifications"));
+const UserSettingsPersonalInfo = lazy(() => import("./pages/user/settings/PersonalInfo"));
+const UserSettingsVehicles = lazy(() => import("./pages/user/settings/Vehicles"));
+const UserSettingsPaymentMethods = lazy(() => import("./pages/user/settings/PaymentMethods"));
+const UserSettingsConfig = lazy(() => import("./pages/user/settings/Config"));
+const UserSubscription = lazy(() => import("./pages/user/Subscription"));
 
 // Páginas de inversionista
-import InvestorDashboard from "./pages/investor/Dashboard";
-import InvestorStations from "./pages/investor/Stations";
-import InvestorTransactions from "./pages/investor/Transactions";
-import InvestorReports from "./pages/investor/Reports";
-import InvestorSettings from "./pages/investor/Settings";
-import InvestorEarnings from "./pages/investor/Earnings";
-import InvestorSettlements from "./pages/investor/Settlements";
+const InvestorDashboard = lazy(() => import("./pages/investor/Dashboard"));
+const InvestorStations = lazy(() => import("./pages/investor/Stations"));
+const InvestorTransactions = lazy(() => import("./pages/investor/Transactions"));
+const InvestorReports = lazy(() => import("./pages/investor/Reports"));
+const InvestorSettings = lazy(() => import("./pages/investor/Settings"));
+const InvestorEarnings = lazy(() => import("./pages/investor/Earnings"));
+const InvestorSettlements = lazy(() => import("./pages/investor/Settlements"));
 
 // Páginas de técnico
-import TechnicianDashboard from "./pages/technician/Dashboard";
-import TechnicianTickets from "./pages/technician/Tickets";
-import TechnicianStations from "./pages/technician/Stations";
-import TechnicianLogs from "./pages/technician/Logs";
-import TechnicianAlerts from "./pages/technician/Alerts";
-import TechnicianDiagnostics from "./pages/technician/Diagnostics";
-import TechnicianOCPPLogs from "./pages/technician/OCPPLogs";
-import TechnicianOCPPMonitor from "./pages/technician/OCPPMonitor";
-import TechnicianMaintenance from "./pages/technician/Maintenance";
-import TechnicianSettings from "./pages/technician/Settings";
-import TechnicianFirmware from "./pages/technician/Firmware";
+const TechnicianDashboard = lazy(() => import("./pages/technician/Dashboard"));
+const TechnicianTickets = lazy(() => import("./pages/technician/Tickets"));
+const TechnicianStations = lazy(() => import("./pages/technician/Stations"));
+const TechnicianLogs = lazy(() => import("./pages/technician/Logs"));
+const TechnicianAlerts = lazy(() => import("./pages/technician/Alerts"));
+const TechnicianDiagnostics = lazy(() => import("./pages/technician/Diagnostics"));
+const TechnicianOCPPLogs = lazy(() => import("./pages/technician/OCPPLogs"));
+const TechnicianOCPPMonitor = lazy(() => import("./pages/technician/OCPPMonitor"));
+const TechnicianMaintenance = lazy(() => import("./pages/technician/Maintenance"));
+const TechnicianSettings = lazy(() => import("./pages/technician/Settings"));
+const TechnicianFirmware = lazy(() => import("./pages/technician/Firmware"));
 
 // Páginas de administración
-import AdminDashboard from "./pages/admin/Dashboard";
-import AdminStations from "./pages/admin/Stations";
-import AdminUsers from "./pages/admin/Users";
-import AdminTransactions from "./pages/admin/Transactions";
-import AdminTariffs from "./pages/admin/Tariffs";
-import AdminReports from "./pages/admin/Reports";
-import AdminSettings from "./pages/admin/Settings";
-import AdminBanners from "./pages/admin/Banners";
-import AdminNotifications from "./pages/admin/Notifications";
-import AdminAISettings from "./pages/admin/AISettings";
-import AdminPayouts from "./pages/admin/Payouts";
-import AdminCrowdfunding from "./pages/admin/Crowdfunding";
-import AdminOCPPMonitor from "./pages/AdminOCPPMonitor";
-import { AIChatWidget } from "./components/AIChat";
-import { InstallBanner } from "./components/InstallBanner";
+const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
+const AdminStations = lazy(() => import("./pages/admin/Stations"));
+const AdminUsers = lazy(() => import("./pages/admin/Users"));
+const AdminTransactions = lazy(() => import("./pages/admin/Transactions"));
+const AdminTariffs = lazy(() => import("./pages/admin/Tariffs"));
+const AdminReports = lazy(() => import("./pages/admin/Reports"));
+const AdminSettings = lazy(() => import("./pages/admin/Settings"));
+const AdminBanners = lazy(() => import("./pages/admin/Banners"));
+const AdminNotifications = lazy(() => import("./pages/admin/Notifications"));
+const AdminAISettings = lazy(() => import("./pages/admin/AISettings"));
+const AdminPayouts = lazy(() => import("./pages/admin/Payouts"));
+const AdminCrowdfunding = lazy(() => import("./pages/admin/Crowdfunding"));
+const AdminOCPPMonitor = lazy(() => import("./pages/AdminOCPPMonitor"));
 
 // Páginas de Staff (Evento)
-import EventCheckIn from "./pages/staff/EventCheckIn";
-import StaffGuests from "./pages/staff/Guests";
-import StaffPayments from "./pages/staff/Payments";
-import StaffInvitations from "./pages/staff/Invitations";
-import StaffEventStats from "./pages/staff/EventStats";
+const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
+const StaffGuests = lazy(() => import("./pages/staff/Guests"));
+const StaffPayments = lazy(() => import("./pages/staff/Payments"));
+const StaffInvitations = lazy(() => import("./pages/staff/Invitations"));
+const StaffEventStats = lazy(() => import("./pages/staff/EventStats"));
 
-// Layouts
+// Layouts (carga inmediata - necesarios para estructura)
 import AdminLayout from "./layouts/AdminLayout";
 import InvestorLayout from "./layouts/InvestorLayout";
 import TechnicianLayout from "./layouts/TechnicianLayout";
 import StaffLayout from "./layouts/StaffLayout";
+
+// Widgets (carga diferida)
+const AIChatWidget = lazy(() => import("./components/AIChat").then(m => ({ default: m.AIChatWidget })));
+const InstallBanner = lazy(() => import("./components/InstallBanner").then(m => ({ default: m.InstallBanner })));
 
 // Función para obtener la ruta de inicio según el rol
 function getHomeRouteByRole(role: string | undefined): string {
@@ -120,15 +140,7 @@ function RoleBasedRedirect() {
     return <Landing />;
   }
 
-  // Mostrar loading mientras redirige
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-        <p className="text-muted-foreground">Redirigiendo...</p>
-      </div>
-    </div>
-  );
+  return <LazySpinner />;
 }
 
 // Componente de protección de rutas por rol
@@ -143,11 +155,7 @@ function ProtectedRoute({
   const [, setLocation] = useLocation();
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <LazySpinner />;
   }
 
   if (!isAuthenticated) {
@@ -155,7 +163,6 @@ function ProtectedRoute({
   }
 
   if (!allowedRoles.includes(user?.role || "user")) {
-    // Redirigir a la página correcta según su rol
     const targetRoute = getHomeRouteByRole(user?.role);
     setLocation(targetRoute);
     return null;
@@ -167,330 +174,323 @@ function ProtectedRoute({
 function Router() {
   const { loading } = useAuth();
 
-  // Mientras carga, mostrar loading
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-muted-foreground">Cargando EVGreen...</p>
-        </div>
-      </div>
-    );
+    return <LazySpinner />;
   }
 
   return (
-    <Switch>
-      {/* Página de inicio - Redirige según rol */}
-      <Route path="/">
-        <RoleBasedRedirect />
-      </Route>
+    <Suspense fallback={<LazySpinner />}>
+      <Switch>
+        {/* Página de inicio - Redirige según rol */}
+        <Route path="/">
+          <RoleBasedRedirect />
+        </Route>
 
-      {/* Rutas públicas */}
-      <Route path="/landing" component={Landing} />
-      <Route path="/investors" component={Investors} />
-      
-      {/* Ruta para códigos QR - Redirige a StartCharge */}
-      <Route path="/c/:code" component={QRRedirect} />
+        {/* Rutas públicas */}
+        <Route path="/landing" component={Landing} />
+        <Route path="/investors" component={Investors} />
+        
+        {/* Ruta para códigos QR - Redirige a StartCharge */}
+        <Route path="/c/:code" component={QRRedirect} />
 
-      {/* ============================================
-          RUTAS DE USUARIO (App móvil principal)
-          Accesible para todos los roles autenticados
-          ============================================ */}
-      <Route path="/map" component={UserMap} />
-      <Route path="/station/:id" component={StationDetail} />
-      <Route path="/charging/:id" component={ChargingSession} />
-      <Route path="/wallet" component={UserWallet} />
-      <Route path="/history" component={UserHistory} />
-      <Route path="/reservations" component={UserReservations} />
-      <Route path="/profile" component={UserProfile} />
-      <Route path="/support" component={UserSupport} />
-      <Route path="/assistant" component={AIAssistant} />
-      <Route path="/settings/notifications" component={UserSettingsNotifications} />
-      <Route path="/settings/personal" component={UserSettingsPersonalInfo} />
-      <Route path="/settings/vehicles" component={UserSettingsVehicles} />
-      <Route path="/scan" component={ScanPage} />
-      <Route path="/start-charge" component={StartCharge} />
-      <Route path="/charging-waiting" component={ChargingWaiting} />
-      <Route path="/charging-monitor" component={ChargingMonitor} />
-      <Route path="/charging-summary/:transactionId" component={ChargingSummary} />
-      <Route path="/vehicles" component={UserSettingsVehicles} />
-      <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
-      <Route path="/settings/config" component={UserSettingsConfig} />
-      <Route path="/subscription" component={UserSubscription} />
+        {/* ============================================
+            RUTAS DE USUARIO (App móvil principal)
+            ============================================ */}
+        <Route path="/map" component={UserMap} />
+        <Route path="/station/:id" component={StationDetail} />
+        <Route path="/charging/:id" component={ChargingSession} />
+        <Route path="/wallet" component={UserWallet} />
+        <Route path="/history" component={UserHistory} />
+        <Route path="/reservations" component={UserReservations} />
+        <Route path="/profile" component={UserProfile} />
+        <Route path="/support" component={UserSupport} />
+        <Route path="/assistant" component={AIAssistant} />
+        <Route path="/settings/notifications" component={UserSettingsNotifications} />
+        <Route path="/settings/personal" component={UserSettingsPersonalInfo} />
+        <Route path="/settings/vehicles" component={UserSettingsVehicles} />
+        <Route path="/scan" component={ScanPage} />
+        <Route path="/start-charge" component={StartCharge} />
+        <Route path="/charging-waiting" component={ChargingWaiting} />
+        <Route path="/charging-monitor" component={ChargingMonitor} />
+        <Route path="/charging-summary/:transactionId" component={ChargingSummary} />
+        <Route path="/vehicles" component={UserSettingsVehicles} />
+        <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
+        <Route path="/settings/config" component={UserSettingsConfig} />
+        <Route path="/subscription" component={UserSubscription} />
 
-      {/* ============================================
-          RUTAS DE INVERSIONISTA (con layout)
-          ============================================ */}
-      <Route path="/investor">
-        <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorLayout>
-            <InvestorDashboard />
-          </InvestorLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/investor/stations">
-        <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorLayout>
-            <InvestorStations />
-          </InvestorLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/investor/transactions">
-        <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorLayout>
-            <InvestorTransactions />
-          </InvestorLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/investor/reports">
-        <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorLayout>
-            <InvestorReports />
-          </InvestorLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/investor/settings">
-        <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorLayout>
-            <InvestorSettings />
-          </InvestorLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/investor/earnings">
-        <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorLayout>
-            <InvestorEarnings />
-          </InvestorLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/investor/settlements">
-        <ProtectedRoute allowedRoles={["investor", "admin"]}>
-          <InvestorLayout>
-            <InvestorSettlements />
-          </InvestorLayout>
-        </ProtectedRoute>
-      </Route>
+        {/* ============================================
+            RUTAS DE INVERSIONISTA (con layout)
+            ============================================ */}
+        <Route path="/investor">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorLayout>
+              <InvestorDashboard />
+            </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/investor/stations">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorLayout>
+              <InvestorStations />
+            </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/investor/transactions">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorLayout>
+              <InvestorTransactions />
+            </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/investor/reports">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorLayout>
+              <InvestorReports />
+            </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/investor/settings">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorLayout>
+              <InvestorSettings />
+            </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/investor/earnings">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorLayout>
+              <InvestorEarnings />
+            </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/investor/settlements">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorLayout>
+              <InvestorSettlements />
+            </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
 
-      {/* ============================================
-          RUTAS DE TÉCNICO (con layout)
-          ============================================ */}
-      <Route path="/technician">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianDashboard />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/tickets">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianTickets />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/stations">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianStations />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/logs">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianLogs />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/alerts">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianAlerts />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/diagnostics">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianDiagnostics />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/ocpp-logs">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianOCPPLogs />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/ocpp-monitor">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianOCPPMonitor />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/maintenance">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianMaintenance />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/settings">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianSettings />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/technician/firmware">
-        <ProtectedRoute allowedRoles={["technician", "admin"]}>
-          <TechnicianLayout>
-            <TechnicianFirmware />
-          </TechnicianLayout>
-        </ProtectedRoute>
-      </Route>
+        {/* ============================================
+            RUTAS DE TÉCNICO (con layout)
+            ============================================ */}
+        <Route path="/technician">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianDashboard />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/tickets">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianTickets />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/stations">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianStations />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/logs">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianLogs />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/alerts">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianAlerts />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/diagnostics">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianDiagnostics />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/ocpp-logs">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianOCPPLogs />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/ocpp-monitor">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianOCPPMonitor />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/maintenance">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianMaintenance />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/settings">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianSettings />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/firmware">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianFirmware />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
 
-      {/* ============================================
-          RUTAS DE ADMINISTRACIÓN (con layout)
-          ============================================ */}
-      <Route path="/admin">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminDashboard />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/stations">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminStations />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/users">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminUsers />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/transactions">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminTransactions />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/tariffs">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminTariffs />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/reports">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminReports />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/settings">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminSettings />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/ai-settings">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminAISettings />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/banners">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminBanners />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/notifications">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminNotifications />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/ocpp-monitor">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminOCPPMonitor />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/payouts">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminPayouts />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/crowdfunding">
-        <ProtectedRoute allowedRoles={["admin"]}>
-          <AdminLayout>
-            <AdminCrowdfunding />
-          </AdminLayout>
-        </ProtectedRoute>
-      </Route>
+        {/* ============================================
+            RUTAS DE ADMINISTRACIÓN (con layout)
+            ============================================ */}
+        <Route path="/admin">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminDashboard />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/stations">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminStations />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/users">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminUsers />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/transactions">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminTransactions />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/tariffs">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminTariffs />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/reports">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminReports />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/settings">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminSettings />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/ai-settings">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminAISettings />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/banners">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminBanners />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/notifications">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminNotifications />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/ocpp-monitor">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminOCPPMonitor />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/payouts">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminPayouts />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/crowdfunding">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminCrowdfunding />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
 
-      {/* ============================================
-          RUTAS DE STAFF (Gestión de Evento)
-          ============================================ */}
-      <Route path="/staff/event">
-        <ProtectedRoute allowedRoles={["staff", "admin"]}>
-          <StaffLayout>
-            <EventCheckIn />
-          </StaffLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/staff/guests">
-        <ProtectedRoute allowedRoles={["staff", "admin"]}>
-          <StaffLayout>
-            <StaffGuests />
-          </StaffLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/staff/payments">
-        <ProtectedRoute allowedRoles={["staff", "admin"]}>
-          <StaffLayout>
-            <StaffPayments />
-          </StaffLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/staff/invitations">
-        <ProtectedRoute allowedRoles={["staff", "admin"]}>
-          <StaffLayout>
-            <StaffInvitations />
-          </StaffLayout>
-        </ProtectedRoute>
-      </Route>
-      <Route path="/staff/stats">
-        <ProtectedRoute allowedRoles={["staff", "admin"]}>
-          <StaffLayout>
-            <StaffEventStats />
-          </StaffLayout>
-        </ProtectedRoute>
-      </Route>
+        {/* ============================================
+            RUTAS DE STAFF (Gestión de Evento)
+            ============================================ */}
+        <Route path="/staff/event">
+          <ProtectedRoute allowedRoles={["staff", "admin"]}>
+            <StaffLayout>
+              <EventCheckIn />
+            </StaffLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/staff/guests">
+          <ProtectedRoute allowedRoles={["staff", "admin"]}>
+            <StaffLayout>
+              <StaffGuests />
+            </StaffLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/staff/payments">
+          <ProtectedRoute allowedRoles={["staff", "admin"]}>
+            <StaffLayout>
+              <StaffPayments />
+            </StaffLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/staff/invitations">
+          <ProtectedRoute allowedRoles={["staff", "admin"]}>
+            <StaffLayout>
+              <StaffInvitations />
+            </StaffLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/staff/stats">
+          <ProtectedRoute allowedRoles={["staff", "admin"]}>
+            <StaffLayout>
+              <StaffEventStats />
+            </StaffLayout>
+          </ProtectedRoute>
+        </Route>
 
-      {/* 404 */}
-      <Route path="/404" component={NotFound} />
-      <Route component={NotFound} />
-    </Switch>
+        {/* 404 */}
+        <Route path="/404" component={NotFound} />
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 
@@ -498,7 +498,6 @@ function App() {
   const { showOnboarding, isLoading: onboardingLoading, completeOnboarding } = useOnboarding();
   const { isAuthenticated, loading: authLoading } = useAuth();
 
-  // Mostrar onboarding solo para usuarios autenticados que no lo han completado
   const shouldShowOnboarding = !onboardingLoading && !authLoading && isAuthenticated && showOnboarding;
 
   return (
@@ -511,8 +510,10 @@ function App() {
           ) : (
             <>
               <Router />
-              <AIChatWidget />
-              <InstallBanner />
+              <Suspense fallback={null}>
+                <AIChatWidget />
+                <InstallBanner />
+              </Suspense>
             </>
           )}
         </TooltipProvider>
