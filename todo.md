@@ -674,3 +674,9 @@
 - [x] Eliminar placeholders "próximamente" de la sección de seguridad
 - [x] Tests unitarios para parseUserAgent y security router (11 tests)
 - [ ] Implementar cambio de contraseña (requiere migración a Auth0 para contraseñas locales)
+
+## Bug: Tickets de Mantenimiento no se guardan - 14 Febrero 2026
+- [x] Diagnosticar por qué los tickets se crean "exitosamente" pero no aparecen en la BD
+  - Causa raíz: myTickets filtraba solo por technicianId, pero el ticket se crea con reportedById
+- [x] Corregir el bug de guardado de tickets (getMaintenanceTicketsByTechnician ahora usa OR: technicianId o reportedById)
+- [x] Verificar que los contadores de Pendientes/En progreso/Completadas funcionen

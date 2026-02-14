@@ -1,0 +1,19 @@
+{
+  "query": "SELECT id, stationId, technicianId, reportedById, title, maintenance_status, priority FROM maintenance_tickets;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, stationId, technicianId, reportedById, title, maintenance_status, priority FROM maintenance_tickets;",
+  "rows": [
+    {
+      "id": "1",
+      "stationId": "90001",
+      "technicianId": "NULL",
+      "reportedById": "66",
+      "title": "Ticket de prueba",
+      "maintenance_status": "PENDING",
+      "priority": "HIGH"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstationId\ttechnicianId\treportedById\ttitle\tmaintenance_status\tpriority\n1\t90001\tNULL\t66\tTicket de prueba\tPENDING\tHIGH\n",
+  "stderr": "",
+  "execution_time_ms": 350
+}

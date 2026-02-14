@@ -830,7 +830,13 @@ export async function getMaintenanceTicketById(id: number) {
 export async function getMaintenanceTicketsByTechnician(technicianId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(maintenanceTickets).where(eq(maintenanceTickets.technicianId, technicianId)).orderBy(desc(maintenanceTickets.createdAt));
+  // Show tickets assigned to this technician OR reported by them
+  return db.select().from(maintenanceTickets).where(
+    or(
+      eq(maintenanceTickets.technicianId, technicianId),
+      eq(maintenanceTickets.reportedById, technicianId)
+    )
+  ).orderBy(desc(maintenanceTickets.createdAt));
 }
 
 export async function getMaintenanceTicketsByStation(stationId: number) {

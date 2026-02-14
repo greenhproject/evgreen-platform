@@ -1,0 +1,110 @@
+{
+  "query": "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'maintenance_tickets' AND TABLE_SCHEMA = DATABASE() ORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'maintenance_tickets' AND TABLE_SCHEMA = DATABASE() ORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id",
+      "DATA_TYPE": "int",
+      "COLUMN_TYPE": "int(11)"
+    },
+    {
+      "COLUMN_NAME": "stationId",
+      "DATA_TYPE": "int",
+      "COLUMN_TYPE": "int(11)"
+    },
+    {
+      "COLUMN_NAME": "evseId",
+      "DATA_TYPE": "int",
+      "COLUMN_TYPE": "int(11)"
+    },
+    {
+      "COLUMN_NAME": "technicianId",
+      "DATA_TYPE": "int",
+      "COLUMN_TYPE": "int(11)"
+    },
+    {
+      "COLUMN_NAME": "reportedById",
+      "DATA_TYPE": "int",
+      "COLUMN_TYPE": "int(11)"
+    },
+    {
+      "COLUMN_NAME": "title",
+      "DATA_TYPE": "varchar",
+      "COLUMN_TYPE": "varchar(255)"
+    },
+    {
+      "COLUMN_NAME": "description",
+      "DATA_TYPE": "text",
+      "COLUMN_TYPE": "text"
+    },
+    {
+      "COLUMN_NAME": "priority",
+      "DATA_TYPE": "varchar",
+      "COLUMN_TYPE": "varchar(20)"
+    },
+    {
+      "COLUMN_NAME": "category",
+      "DATA_TYPE": "varchar",
+      "COLUMN_TYPE": "varchar(50)"
+    },
+    {
+      "COLUMN_NAME": "maintenance_status",
+      "DATA_TYPE": "enum",
+      "COLUMN_TYPE": "enum('PENDING','IN_PROGRESS','COMPLETED','CANCELLED')"
+    },
+    {
+      "COLUMN_NAME": "scheduledDate",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_TYPE": "timestamp"
+    },
+    {
+      "COLUMN_NAME": "startedAt",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_TYPE": "timestamp"
+    },
+    {
+      "COLUMN_NAME": "completedAt",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_TYPE": "timestamp"
+    },
+    {
+      "COLUMN_NAME": "resolution",
+      "DATA_TYPE": "text",
+      "COLUMN_TYPE": "text"
+    },
+    {
+      "COLUMN_NAME": "partsUsed",
+      "DATA_TYPE": "json",
+      "COLUMN_TYPE": "json"
+    },
+    {
+      "COLUMN_NAME": "laborCost",
+      "DATA_TYPE": "decimal",
+      "COLUMN_TYPE": "decimal(12,2)"
+    },
+    {
+      "COLUMN_NAME": "totalCost",
+      "DATA_TYPE": "decimal",
+      "COLUMN_TYPE": "decimal(12,2)"
+    },
+    {
+      "COLUMN_NAME": "attachments",
+      "DATA_TYPE": "json",
+      "COLUMN_TYPE": "json"
+    },
+    {
+      "COLUMN_NAME": "createdAt",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_TYPE": "timestamp"
+    },
+    {
+      "COLUMN_NAME": "updatedAt",
+      "DATA_TYPE": "timestamp",
+      "COLUMN_TYPE": "timestamp"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\tDATA_TYPE\tCOLUMN_TYPE\nid\tint\tint(11)\nstationId\tint\tint(11)\nevseId\tint\tint(11)\ntechnicianId\tint\tint(11)\nreportedById\tint\tint(11)\ntitle\tvarchar\tvarchar(255)\ndescription\ttext\ttext\npriority\tvarchar\tvarchar(20)\ncategory\tvarchar\tvarchar(50)\nmaintenance_status\tenum\tenum('PENDING','IN_PROGRESS','COMPLETED','CANCELLED')\nscheduledDate\ttimestamp\ttimestamp\nstartedAt\ttimestamp\ttimestamp\ncompletedAt\ttimestamp\ttimestamp\nresolution\ttext\ttext\npartsUsed\tjson\tjson\nlaborCost\tdecimal\tdecimal(12,2)\ntotalCost\tdecimal\tdecimal(12,2)\nattachments\tjson\tjson\ncreatedAt\ttimestamp\ttimestamp\nupdatedAt\ttimestamp\ttimestamp\n",
+  "stderr": "",
+  "execution_time_ms": 362
+}

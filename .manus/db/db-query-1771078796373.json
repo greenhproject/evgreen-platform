@@ -1,0 +1,19 @@
+{
+  "query": "SELECT id, stationId, technicianId, reportedById, title, priority, createdAt FROM maintenance_tickets ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, stationId, technicianId, reportedById, title, priority, createdAt FROM maintenance_tickets ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "1",
+      "stationId": "90001",
+      "technicianId": "NULL",
+      "reportedById": "66",
+      "title": "Ticket de prueba",
+      "priority": "HIGH",
+      "createdAt": "2026-02-14 14:17:05"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstationId\ttechnicianId\treportedById\ttitle\tpriority\tcreatedAt\n1\t90001\tNULL\t66\tTicket de prueba\tHIGH\t2026-02-14 14:17:05\n",
+  "stderr": "",
+  "execution_time_ms": 356
+}
