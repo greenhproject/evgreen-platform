@@ -650,3 +650,11 @@
 - [x] Frontend: Stations.tsx del técnico muestra estaciones reales de la BD
 - [x] Frontend: Formulario de crear/editar estación completo en el técnico (sin precios)
 - [x] Frontend: Gestión de conectores por estación en el técnico
+
+## Verificar Settings del Técnico 100% Funcional - 14 Febrero 2026
+- [x] Verificar que el backend techConfig.get carga datos reales de la BD
+- [x] Verificar que el backend techConfig.save persiste todos los campos correctamente (corregido: usa columnas Drizzle directas)
+- [x] Verificar que el frontend carga los valores guardados al abrir la página
+- [x] Verificar que el botón "Guardar cambios" envía todos los datos y muestra feedback (corregido: siempre habilitado, invalida cache)
+- [x] Verificar que los toggles de notificaciones persisten al recargar
+- [x] Verificar horario laboral, disponibilidad y vista por defecto funcionan

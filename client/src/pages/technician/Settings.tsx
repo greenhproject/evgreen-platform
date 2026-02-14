@@ -47,12 +47,14 @@ export default function TechnicianSettings() {
   // Cargar configuración del backend
   const { data: savedConfig, isLoading } = trpc.techConfig.get.useQuery();
 
+  const utils = trpc.useUtils();
   const saveMutation = trpc.techConfig.save.useMutation({
     onSuccess: () => {
       toast.success("Configuración guardada correctamente");
       setHasChanges(false);
+      utils.techConfig.get.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error("Error al guardar: " + err.message),
   });
 
   // Cargar datos del backend cuando estén disponibles
@@ -85,19 +87,20 @@ export default function TechnicianSettings() {
   };
 
   const handleSave = () => {
-    saveMutation.mutate({
-      notifyNewTickets: settings.notifyNewTickets,
-      notifyCriticalAlerts: settings.notifyCriticalAlerts,
-      notifyMaintenanceReminders: settings.notifyMaintenanceReminders,
-      notifyByEmail: settings.notifyByEmail,
-      notifyByPush: settings.notifyByPush,
-      defaultView: settings.defaultView as any,
-      autoRefreshLogs: settings.autoRefreshLogs,
-      refreshInterval: parseInt(settings.refreshInterval),
-      availableForEmergencies: settings.availableForEmergencies,
-      workingHoursStart: settings.workingHoursStart,
-      workingHoursEnd: settings.workingHoursEnd,
-    });
+    const payload = {
+      notifyNewTickets: Boolean(settings.notifyNewTickets),
+      notifyCriticalAlerts: Boolean(settings.notifyCriticalAlerts),
+      notifyMaintenanceReminders: Boolean(settings.notifyMaintenanceReminders),
+      notifyByEmail: Boolean(settings.notifyByEmail),
+      notifyByPush: Boolean(settings.notifyByPush),
+      defaultView: settings.defaultView as "dashboard" | "tickets" | "alerts" | "stations",
+      autoRefreshLogs: Boolean(settings.autoRefreshLogs),
+      refreshInterval: parseInt(settings.refreshInterval) || 30,
+      availableForEmergencies: Boolean(settings.availableForEmergencies),
+      workingHoursStart: settings.workingHoursStart || "08:00",
+      workingHoursEnd: settings.workingHoursEnd || "18:00",
+    };
+    saveMutation.mutate(payload);
   };
 
   if (isLoading) {
@@ -120,14 +123,14 @@ export default function TechnicianSettings() {
         <Button 
           onClick={handleSave} 
           className="gradient-primary"
-          disabled={!hasChanges || saveMutation.isPending}
+          disabled={saveMutation.isPending}
         >
           {saveMutation.isPending ? (
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
           ) : (
             <Save className="w-4 h-4 mr-2" />
           )}
-          {hasChanges ? "Guardar cambios" : "Sin cambios"}
+          Guardar cambios
         </Button>
       </div>
 

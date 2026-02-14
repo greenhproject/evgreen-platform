@@ -2670,22 +2670,19 @@ const techConfigRouter = router({
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
       }
 
-      const updateData: Record<string, unknown> = {};
-      if (input.notifyNewTickets !== undefined) updateData.techNotifyNewTickets = input.notifyNewTickets;
-      if (input.notifyCriticalAlerts !== undefined) updateData.techNotifyCriticalAlerts = input.notifyCriticalAlerts;
-      if (input.notifyMaintenanceReminders !== undefined) updateData.techNotifyMaintenanceReminders = input.notifyMaintenanceReminders;
-      if (input.notifyByEmail !== undefined) updateData.techNotifyByEmail = input.notifyByEmail;
-      if (input.notifyByPush !== undefined) updateData.techNotifyByPush = input.notifyByPush;
-      if (input.defaultView !== undefined) updateData.techDefaultView = input.defaultView;
-      if (input.autoRefreshLogs !== undefined) updateData.techAutoRefreshLogs = input.autoRefreshLogs;
-      if (input.refreshInterval !== undefined) updateData.techRefreshInterval = input.refreshInterval;
-      if (input.availableForEmergencies !== undefined) updateData.techAvailableForEmergencies = input.availableForEmergencies;
-      if (input.workingHoursStart !== undefined) updateData.techWorkingHoursStart = input.workingHoursStart;
-      if (input.workingHoursEnd !== undefined) updateData.techWorkingHoursEnd = input.workingHoursEnd;
-
-      if (Object.keys(updateData).length > 0) {
-        await database.update(users).set(updateData).where(eq(users.id, ctx.user.id));
-      }
+      await database.update(users).set({
+        techNotifyNewTickets: input.notifyNewTickets ?? undefined,
+        techNotifyCriticalAlerts: input.notifyCriticalAlerts ?? undefined,
+        techNotifyMaintenanceReminders: input.notifyMaintenanceReminders ?? undefined,
+        techNotifyByEmail: input.notifyByEmail ?? undefined,
+        techNotifyByPush: input.notifyByPush ?? undefined,
+        techDefaultView: input.defaultView ?? undefined,
+        techAutoRefreshLogs: input.autoRefreshLogs ?? undefined,
+        techRefreshInterval: input.refreshInterval ?? undefined,
+        techAvailableForEmergencies: input.availableForEmergencies ?? undefined,
+        techWorkingHoursStart: input.workingHoursStart ?? undefined,
+        techWorkingHoursEnd: input.workingHoursEnd ?? undefined,
+      }).where(eq(users.id, ctx.user.id));
 
       return { success: true };
     }),
