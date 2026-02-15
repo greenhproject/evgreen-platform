@@ -763,3 +763,12 @@
 - [x] OCPP Logs: Mostrar payload completo (filas expandibles al hacer clic)
 - [x] OCPP Logs: Agregar botón de descarga/exportación de logs en formato texto/JSON
 - [x] OCPP Logs: Aplicar mejoras tanto en vista admin como en vista técnico
+
+## Bug: Monitor OCPP no muestra cargadores conectados - 15 Febrero 2026
+
+- [x] Investigar por qué el botón Actualizar no refresca las conexiones activas
+- [x] Investigar por qué muestra 0 conectados cuando hay logs de comunicación activa
+- [x] Corregir la lógica de tracking de conexiones OCPP (dualCSMS como fuente principal)
+- [x] Corregir bug en getActiveConnectionsFromLogs: reconexiones después de desconexión
+- [x] Actualizar todos los comandos OCPP para usar dualCSMS como canal principal
+- [x] Tests unitarios para dualCSMS integration (603 tests pasando)

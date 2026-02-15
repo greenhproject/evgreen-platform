@@ -29,23 +29,40 @@ export const ocppRouter = router({
    * Combina conexiones en memoria con conexiones inferidas de logs de BD
    */
   getActiveConnections: ocppProcedure.query(async () => {
-    // Obtener conexiones en memoria (tiempo real)
-    const memoryConnections = ocppManager.getAllConnections();
+    // Fuente principal: conexiones WebSocket activas en dualCSMS (tiempo real)
+    const csmsConnections = dualCSMS.getConnectionsStatus();
     
-    // Obtener conexiones desde logs de BD (persistente)
+    // Fuente secundaria: conexiones del connection-manager legacy
+    const legacyConnections = ocppManager.getAllConnections();
+    
+    // Fuente terciaria: conexiones inferidas de logs de BD (persistente)
     const dbConnections = await db.getActiveConnectionsFromLogs();
     
-    // Combinar: usar memoria como fuente principal, BD como respaldo
+    // Combinar: dualCSMS > legacy > BD
     const connectionMap = new Map<string, any>();
     
-    // Primero agregar conexiones de BD
+    // Primero agregar conexiones de BD (menor prioridad)
     for (const conn of dbConnections) {
       connectionMap.set(conn.ocppIdentity, conn);
     }
     
-    // Luego sobrescribir con conexiones en memoria (más actualizadas)
-    for (const conn of memoryConnections) {
+    // Luego legacy connections
+    for (const conn of legacyConnections) {
       connectionMap.set(conn.ocppIdentity, conn);
+    }
+    
+    // Finalmente dualCSMS (mayor prioridad, fuente real)
+    for (const conn of csmsConnections) {
+      connectionMap.set(conn.ocppIdentity, {
+        ocppIdentity: conn.ocppIdentity,
+        ocppVersion: conn.ocppVersion,
+        stationId: conn.stationId,
+        connectedAt: conn.connectedAt.toISOString(),
+        lastHeartbeat: conn.lastHeartbeat.toISOString(),
+        lastMessage: conn.lastHeartbeat.toISOString(),
+        connectorStatuses: {},
+        isConnected: true, // Si está en dualCSMS, está conectado
+      });
     }
     
     return Array.from(connectionMap.values());
@@ -56,17 +73,26 @@ export const ocppRouter = router({
    * Combina datos de memoria y BD
    */
   getConnectionStats: ocppProcedure.query(async () => {
-    // Obtener conexiones combinadas
-    const memoryConnections = ocppManager.getAllConnections();
+    // Fuente principal: dualCSMS (conexiones WebSocket reales)
+    const csmsConnections = dualCSMS.getConnectionsStatus();
+    const legacyConnections = ocppManager.getAllConnections();
     const dbConnections = await db.getActiveConnectionsFromLogs();
     
-    // Combinar
+    // Combinar: dualCSMS > legacy > BD
     const connectionMap = new Map<string, any>();
     for (const conn of dbConnections) {
-      connectionMap.set(conn.ocppIdentity, conn);
+      connectionMap.set(conn.ocppIdentity, { ...conn, source: 'db' });
     }
-    for (const conn of memoryConnections) {
-      connectionMap.set(conn.ocppIdentity, conn);
+    for (const conn of legacyConnections) {
+      connectionMap.set(conn.ocppIdentity, { ...conn, source: 'legacy' });
+    }
+    for (const conn of csmsConnections) {
+      connectionMap.set(conn.ocppIdentity, {
+        ocppIdentity: conn.ocppIdentity,
+        ocppVersion: conn.ocppVersion,
+        isConnected: true,
+        source: 'csms',
+      });
     }
     
     const allConnections = Array.from(connectionMap.values());
@@ -139,12 +165,21 @@ export const ocppRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const messageId = nanoid(8);
-      const success = ocppManager.sendOcppCommand(
+      // Intentar primero con dualCSMS (fuente real), luego legacy
+      let success = dualCSMS.sendCommandIfConnected(
         input.ocppIdentity,
         messageId,
         "Reset",
         { type: input.type }
       );
+      if (!success) {
+        success = ocppManager.sendOcppCommand(
+          input.ocppIdentity,
+          messageId,
+          "Reset",
+          { type: input.type }
+        );
+      }
 
       // Registrar el comando en logs
       await db.createOcppLog({
@@ -175,12 +210,20 @@ export const ocppRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const messageId = nanoid(8);
-      const success = ocppManager.sendOcppCommand(
+      let success = dualCSMS.sendCommandIfConnected(
         input.ocppIdentity,
         messageId,
         "UnlockConnector",
         { connectorId: input.connectorId }
       );
+      if (!success) {
+        success = ocppManager.sendOcppCommand(
+          input.ocppIdentity,
+          messageId,
+          "UnlockConnector",
+          { connectorId: input.connectorId }
+        );
+      }
 
       await db.createOcppLog({
         ocppIdentity: input.ocppIdentity,
@@ -211,12 +254,20 @@ export const ocppRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const messageId = nanoid(8);
-      const success = ocppManager.sendOcppCommand(
+      let success = dualCSMS.sendCommandIfConnected(
         input.ocppIdentity,
         messageId,
         "RemoteStartTransaction",
         { connectorId: input.connectorId, idTag: input.idTag }
       );
+      if (!success) {
+        success = ocppManager.sendOcppCommand(
+          input.ocppIdentity,
+          messageId,
+          "RemoteStartTransaction",
+          { connectorId: input.connectorId, idTag: input.idTag }
+        );
+      }
 
       await db.createOcppLog({
         ocppIdentity: input.ocppIdentity,
@@ -246,12 +297,20 @@ export const ocppRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const messageId = nanoid(8);
-      const success = ocppManager.sendOcppCommand(
+      let success = dualCSMS.sendCommandIfConnected(
         input.ocppIdentity,
         messageId,
         "RemoteStopTransaction",
         { transactionId: input.transactionId }
       );
+      if (!success) {
+        success = ocppManager.sendOcppCommand(
+          input.ocppIdentity,
+          messageId,
+          "RemoteStopTransaction",
+          { transactionId: input.transactionId }
+        );
+      }
 
       await db.createOcppLog({
         ocppIdentity: input.ocppIdentity,
@@ -282,12 +341,20 @@ export const ocppRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const messageId = nanoid(8);
-      const success = ocppManager.sendOcppCommand(
+      let success = dualCSMS.sendCommandIfConnected(
         input.ocppIdentity,
         messageId,
         "ChangeAvailability",
         { connectorId: input.connectorId, type: input.type }
       );
+      if (!success) {
+        success = ocppManager.sendOcppCommand(
+          input.ocppIdentity,
+          messageId,
+          "ChangeAvailability",
+          { connectorId: input.connectorId, type: input.type }
+        );
+      }
 
       await db.createOcppLog({
         ocppIdentity: input.ocppIdentity,
@@ -318,12 +385,20 @@ export const ocppRouter = router({
     .mutation(async ({ input, ctx }) => {
       const messageId = nanoid(8);
       const payload = input.keys ? { key: input.keys } : {};
-      const success = ocppManager.sendOcppCommand(
+      let success = dualCSMS.sendCommandIfConnected(
         input.ocppIdentity,
         messageId,
         "GetConfiguration",
         payload
       );
+      if (!success) {
+        success = ocppManager.sendOcppCommand(
+          input.ocppIdentity,
+          messageId,
+          "GetConfiguration",
+          payload
+        );
+      }
 
       await db.createOcppLog({
         ocppIdentity: input.ocppIdentity,
@@ -355,12 +430,20 @@ export const ocppRouter = router({
     .mutation(async ({ input, ctx }) => {
       const messageId = nanoid(8);
       const payload = { key: input.key, value: input.value };
-      const success = ocppManager.sendOcppCommand(
+      let success = dualCSMS.sendCommandIfConnected(
         input.ocppIdentity,
         messageId,
         "ChangeConfiguration",
         payload
       );
+      if (!success) {
+        success = ocppManager.sendOcppCommand(
+          input.ocppIdentity,
+          messageId,
+          "ChangeConfiguration",
+          payload
+        );
+      }
 
       await db.createOcppLog({
         ocppIdentity: input.ocppIdentity,
@@ -403,12 +486,20 @@ export const ocppRouter = router({
         payload.connectorId = input.connectorId;
       }
 
-      const success = ocppManager.sendOcppCommand(
+      let success = dualCSMS.sendCommandIfConnected(
         input.ocppIdentity,
         messageId,
         "TriggerMessage",
         payload
       );
+      if (!success) {
+        success = ocppManager.sendOcppCommand(
+          input.ocppIdentity,
+          messageId,
+          "TriggerMessage",
+          payload
+        );
+      }
 
       await db.createOcppLog({
         ocppIdentity: input.ocppIdentity,

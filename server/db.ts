@@ -1251,9 +1251,10 @@ export async function getActiveConnectionsFromLogs() {
       if (disconnection[0].createdAt > lastActivityLog[0].createdAt) {
         continue; // Está desconectado
       }
+      // Si la última actividad es más reciente que la desconexión, se reconectó
+    } else if (disconnection.length > 0 && lastActivityLog.length === 0) {
+      continue; // Hay desconexión sin actividad posterior
     }
-    
-    if (disconnection.length > 0) continue; // Está desconectado
     
     // Obtener el último BootNotification para info del cargador
     const bootInfo = await db.select()
