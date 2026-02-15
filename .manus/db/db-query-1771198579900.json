@@ -1,0 +1,80 @@
+{
+  "query": "SELECT id, name, email, idTag, role FROM users WHERE idTag = 'EV-3PZ3L6' OR idTag LIKE 'EV-%' LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, name, email, idTag, role FROM users WHERE idTag = 'EV-3PZ3L6' OR idTag LIKE 'EV-%' LIMIT 10;",
+  "rows": [
+    {
+      "id": "570001",
+      "name": "luis enrique narvaez",
+      "email": "lenarvaez52@gmail.com",
+      "idTag": "EV-3PZ3L6",
+      "role": "user"
+    },
+    {
+      "id": "1620001",
+      "name": "Exo-Hand Project",
+      "email": "exohandproject@gmail.com",
+      "idTag": "EV-8GXS87",
+      "role": "user"
+    },
+    {
+      "id": "1800001",
+      "name": "Ana Berti",
+      "email": "ana.luiza@voltbras.com.br",
+      "idTag": "EV-5HEYAQ",
+      "role": "user"
+    },
+    {
+      "id": "3150002",
+      "name": "Daniela Maiguel",
+      "email": "daniielamaiguel@gmail.com",
+      "idTag": "EV-82Q2K9",
+      "role": "user"
+    },
+    {
+      "id": "3240001",
+      "name": "Maria Alexandra Hoyos Soto",
+      "email": "f9hr2kpst8@privaterelay.appleid.com",
+      "idTag": "EV-JVMH9M",
+      "role": "user"
+    },
+    {
+      "id": "3300003",
+      "name": "karen heredia",
+      "email": "karenheredia824@gmail.com",
+      "idTag": "EV-3KCDK7",
+      "role": "user"
+    },
+    {
+      "id": "3300005",
+      "name": "Carlos Acosta",
+      "email": "carlosacosta.solar@gmail.com",
+      "idTag": "EV-JHCMMY",
+      "role": "staff"
+    },
+    {
+      "id": "3300008",
+      "name": "Hesynjawer Valencia Otalora",
+      "email": "hesynjawer.valencia@gmail.com",
+      "idTag": "EV-JLT7GA",
+      "role": "staff"
+    },
+    {
+      "id": "3870005",
+      "name": "ILDEBRANDO GOMEZ",
+      "email": "ildebrando.seguros@gmail.com",
+      "idTag": "EV-C2SR6N",
+      "role": "user"
+    },
+    {
+      "id": "5130005",
+      "name": "Wylber Farith Ortiz",
+      "email": "wylbero@gmail.com",
+      "idTag": "EV-GLZUFJ",
+      "role": "user"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tidTag\trole\n570001\tluis enrique narvaez\tlenarvaez52@gmail.com\tEV-3PZ3L6\tuser\n1620001\tExo-Hand Project\texohandproject@gmail.com\tEV-8GXS87\tuser\n1800001\tAna Berti\tana.luiza@voltbras.com.br\tEV-5HEYAQ\tuser\n3150002\tDaniela Maiguel\tdaniielamaiguel@gmail.com\tEV-82Q2K9\tuser\n3240001\tMaria Alexandra Hoyos Soto\tf9hr2kpst8@privaterelay.appleid.com\tEV-JVMH9M\tuser\n3300003\tkaren heredia\tkarenheredia824@gmail.com\tEV-3KCDK7\tuser\n3300005\tCarlos Acosta\tcarlosacosta.solar@gmail.com\tEV-JHCMMY\tstaff\n3300008\tHesynjawer Valencia Otalora\thesynjawer.valencia@gmail.com\tEV-JLT7GA\tstaff\n3870005\tILDEBRANDO GOMEZ\tildebrando.seguros@gmail.com\tEV-C2SR6N\tuser\n5130005\tWylber Farith Ortiz\twylbero@gmail.com\tEV-GLZUFJ\tuser\n",
+  "stderr": "",
+  "execution_time_ms": 97
+}

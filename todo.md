@@ -807,3 +807,10 @@
 - [x] Mejorar matching de sesiones pendientes por stationId+connectorId además de idTag
 - [x] Agregar logs de diagnóstico detallados para depuración en producción
 - [x] Limpieza de transacciones huérfanas IN_PROGRESS en BD
+
+## Fix App Atascada en "Conectando" v3 - 15 Febrero 2026
+- [x] Investigar por qué el idTag "EV-3PZ3L6" no vincula con el usuario correcto (SÍ vincula, userId=570001 correcto)
+- [x] Verificar el formato del idTag que envía startCharge en RemoteStartTransaction (usa ctx.user.idTag)
+- [x] Verificar que getActiveTransactionByUserId funciona correctamente con el userId real (funciona OK)
+- [x] Verificar que la transacción en BD tiene el userId correcto después del fix (confirmado: userId=570001)
+- [x] FIX REAL: ChargingWaiting.tsx esperaba currentKwh > 0 para navegar al monitor, ahora navega cuando status=IN_PROGRESS
