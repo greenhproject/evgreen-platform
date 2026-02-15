@@ -13,7 +13,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import * as db from "../db";
 import { nanoid } from "nanoid";
-import { findPendingSessionByOcppIdentity, removePendingSession, setActiveSession } from "../charging/charging-router";
+import { findPendingSessionByOcppIdentity, removePendingSession, setActiveSession, getActiveSessionById } from "../charging/charging-router";
 
 // ============================================================================
 // TYPES
@@ -653,22 +653,98 @@ export class DualCSMS {
   }
 
   private async handleOCPP16MeterValues(conn: ChargingStationConnection, req: OCPP16MeterValuesRequest): Promise<any> {
+    console.log(`[CSMS-DUAL] OCPP 1.6 MeterValues from ${conn.ocppIdentity}: connectorId=${req.connectorId}, transactionId=${req.transactionId}`);
+    
     if (req.transactionId) {
       const internalTransactionId = this.ocpp16Transactions.get(req.transactionId);
       if (internalTransactionId) {
         const transaction = await db.getTransactionByOcppId(internalTransactionId);
         if (transaction) {
+          // Variables para actualizar la sesión activa en memoria
+          let latestEnergyKwh: number | null = null;
+          let latestPowerKw: number | null = null;
+          let latestSoc: number | null = null;
+          let latestVoltage: number | null = null;
+          let latestCurrent: number | null = null;
+          let latestTemperature: number | null = null;
+          
           for (const mv of req.meterValue) {
             for (const sv of mv.sampledValue) {
-                await db.createMeterValue({
-                  transactionId: transaction.id,
-                  evseId: transaction.evseId,
-                  timestamp: new Date(mv.timestamp),
-                  measurand: sv.measurand || "Energy.Active.Import.Register",
-                  energyKwh: String(sv.value),
-                  context: sv.context,
-                });
+              const measurand = sv.measurand || "Energy.Active.Import.Register";
+              const rawValue = parseFloat(String(sv.value));
+              const unit = (sv.unit || "").toLowerCase();
+              
+              // Determinar valores según el measurand
+              let energyKwh: string | null = null;
+              let powerKw: string | null = null;
+              let voltage: string | null = null;
+              let current: string | null = null;
+              let soc: number | null = null;
+              let temperature: string | null = null;
+              
+              if (measurand.includes("Energy")) {
+                // Convertir Wh a kWh si es necesario
+                const kwhValue = unit === "wh" ? rawValue / 1000 : rawValue;
+                energyKwh = String(kwhValue);
+                latestEnergyKwh = kwhValue;
+              } else if (measurand.includes("Power")) {
+                // Convertir W a kW si es necesario
+                const kwValue = unit === "w" ? rawValue / 1000 : rawValue;
+                powerKw = String(kwValue);
+                latestPowerKw = kwValue;
+              } else if (measurand === "SoC" || measurand.includes("SoC")) {
+                soc = Math.round(rawValue);
+                latestSoc = soc;
+              } else if (measurand.includes("Voltage")) {
+                voltage = String(rawValue);
+                latestVoltage = rawValue;
+              } else if (measurand.includes("Current")) {
+                current = String(rawValue);
+                latestCurrent = rawValue;
+              } else if (measurand.includes("Temperature")) {
+                temperature = String(rawValue);
+                latestTemperature = rawValue;
+              }
+              
+              // Guardar en BD
+              await db.createMeterValue({
+                transactionId: transaction.id,
+                evseId: transaction.evseId,
+                timestamp: new Date(mv.timestamp),
+                measurand,
+                energyKwh: energyKwh || String(sv.value),
+                powerKw: powerKw || undefined,
+                voltage: voltage || undefined,
+                current: current || undefined,
+                soc: soc ?? undefined,
+                temperature: temperature || undefined,
+                context: sv.context,
+              });
             }
+          }
+          
+          // Actualizar sesión activa en memoria con los datos más recientes
+          const activeSession = getActiveSessionById(transaction.id);
+          if (activeSession && latestEnergyKwh !== null) {
+            // Calcular kWh consumidos (valor del medidor - valor inicial)
+            const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
+            const consumedKwh = Math.max(0, latestEnergyKwh - meterStart);
+            const currentCost = consumedKwh * activeSession.pricePerKwh;
+            
+            // Actualizar la sesión en memoria
+            setActiveSession(transaction.id, {
+              ...activeSession,
+              currentKwh: Math.round(consumedKwh * 100) / 100,
+              currentCost: Math.round(currentCost),
+            });
+            
+            // También actualizar kwhConsumed en la transacción de la BD
+            await db.updateTransaction(transaction.id, {
+              kwhConsumed: String(Math.round(consumedKwh * 100) / 100),
+              totalCost: String(Math.round(currentCost)),
+            });
+            
+            console.log(`[CSMS-DUAL] MeterValues updated session ${transaction.id}: ${consumedKwh.toFixed(2)} kWh, $${Math.round(currentCost)} COP, power: ${latestPowerKw?.toFixed(1) || 'N/A'} kW`);
           }
         }
       }

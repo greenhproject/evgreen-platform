@@ -788,3 +788,13 @@
 - [x] Agregar estado CONNECTING para sesiones pendientes en getActiveSession
 - [x] Actualizar charging-router para usar dualCSMS como canal principal
 - [x] Verificar que el endpoint de polling de la app devuelve el estado actualizado
+
+## MeterValues en Tiempo Real - 15 Febrero 2026
+
+- [x] Vincular MeterValues del cargador con la transacción activa del usuario
+- [x] Actualizar activeChargeSessions en memoria con kWh y costo en tiempo real
+- [x] Asegurar que getActiveSession devuelve datos actualizados de MeterValues (prioriza memoria sobre BD)
+- [x] Guardar MeterValues en la BD para historial y reportes (energía, potencia, voltaje, corriente, SoC, temperatura)
+- [x] Actualizar kwhConsumed y totalCost en la transacción de BD con cada MeterValue
+- [x] Parsing inteligente de measurands OCPP (Energy, Power, SoC, Voltage, Current, Temperature)
+- [x] Conversión automática de unidades (Wh→kWh, W→kW)
