@@ -526,35 +526,61 @@ export class DualCSMS {
       return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
     }
 
+    // PROTECCIÓN CONTRA DUPLICADOS: Verificar si ya hay una transacción IN_PROGRESS para este EVSE
+    const existingTransaction = await db.getActiveTransaction(evse.id);
+    if (existingTransaction) {
+      // Ya hay una transacción activa para este conector, devolver el ID existente
+      // Buscar el ocpp16TransactionId mapeado
+      let existingOcpp16Id = 0;
+      const txEntries = Array.from(this.ocpp16Transactions.entries());
+      for (const [ocppId, internalId] of txEntries) {
+        if (internalId === existingTransaction.ocppTransactionId) {
+          existingOcpp16Id = ocppId;
+          break;
+        }
+      }
+      if (existingOcpp16Id === 0) {
+        // Si no hay mapeo, crear uno nuevo
+        existingOcpp16Id = this.transactionIdCounter++;
+        this.ocpp16Transactions.set(existingOcpp16Id, existingTransaction.ocppTransactionId || "");
+      }
+      console.log(`[CSMS-DUAL] StartTransaction: DUPLICATE detected for EVSE ${evse.id}. Returning existing transactionId: ${existingOcpp16Id}`);
+      return {
+        idTagInfo: { status: "Accepted" },
+        transactionId: existingOcpp16Id,
+      };
+    }
+
     // Buscar usuario por idTag
     let userId = 1; // Fallback
     let pendingSessionData: { sessionId: string; session: any } | null = null;
     
-    // Primero intentar buscar por idTag en la base de datos
-    if (req.idTag) {
-      const user = await db.getUserByIdTag(req.idTag);
-      if (user) {
-        userId = user.id;
-        console.log(`[CSMS-DUAL] StartTransaction: Found user ${userId} by idTag ${req.idTag}`);
-      } else {
-        // Si el idTag tiene formato USER-{id}, extraer el userId
-        const userIdMatch = req.idTag.match(/^USER-(\d+)$/);
-        if (userIdMatch) {
-          userId = parseInt(userIdMatch[1], 10);
-          console.log(`[CSMS-DUAL] StartTransaction: Extracted userId ${userId} from idTag ${req.idTag}`);
-        }
-      }
-    }
-    
-    // Buscar sesión pendiente de la app móvil para vincular
+    // Buscar sesión pendiente de la app móvil para vincular (PRIORIDAD MÁXIMA)
     pendingSessionData = findPendingSessionByOcppIdentity(conn.ocppIdentity, req.connectorId);
     if (pendingSessionData && pendingSessionData.session) {
       userId = pendingSessionData.session.userId;
       console.log(`[CSMS-DUAL] StartTransaction: Linked with pending session from user ${userId} (sessionId: ${pendingSessionData.sessionId})`);
+    } else {
+      // Si no hay sesión pendiente, intentar buscar por idTag en la base de datos
+      if (req.idTag) {
+        const user = await db.getUserByIdTag(req.idTag);
+        if (user) {
+          userId = user.id;
+          console.log(`[CSMS-DUAL] StartTransaction: Found user ${userId} by idTag ${req.idTag}`);
+        } else {
+          // Si el idTag tiene formato USER-{id}, extraer el userId
+          const userIdMatch = req.idTag.match(/^USER-(\d+)$/);
+          if (userIdMatch) {
+            userId = parseInt(userIdMatch[1], 10);
+            console.log(`[CSMS-DUAL] StartTransaction: Extracted userId ${userId} from idTag ${req.idTag}`);
+          }
+        }
+      }
     }
 
     // Obtener tarifa activa
     const tariff = await db.getActiveTariffByStationId(conn.stationId);
+    const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 800;
 
     // Generar ID de transacción OCPP 1.6 (entero)
     const ocpp16TransactionId = this.transactionIdCounter++;
@@ -578,10 +604,10 @@ export class DualCSMS {
     // Actualizar estado del EVSE
     await db.updateEvseStatus(evse.id, "CHARGING");
     
-    // Si hay sesión pendiente, activarla y limpiar
+    // Siempre crear sesión activa en memoria (para tracking de MeterValues)
     if (pendingSessionData && pendingSessionData.session) {
+      // Vincular con la sesión pendiente de la app
       const session = pendingSessionData.session;
-      const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 800;
       
       setActiveSession(transactionId, {
         transactionId,
@@ -598,6 +624,21 @@ export class DualCSMS {
       
       removePendingSession(pendingSessionData.sessionId);
       console.log(`[CSMS-DUAL] StartTransaction: Activated session for user ${session.userId}, transactionId: ${transactionId}`);
+    } else {
+      // Crear sesión activa básica incluso sin sesión pendiente (para tracking)
+      setActiveSession(transactionId, {
+        transactionId,
+        userId,
+        stationId: conn.stationId,
+        connectorId: req.connectorId,
+        chargeMode: "full_charge" as const,
+        targetValue: 100,
+        startTime: new Date(),
+        currentKwh: 0,
+        currentCost: 0,
+        pricePerKwh,
+      });
+      console.log(`[CSMS-DUAL] StartTransaction: Created basic active session for userId ${userId}, transactionId: ${transactionId}`);
     }
 
     return {
