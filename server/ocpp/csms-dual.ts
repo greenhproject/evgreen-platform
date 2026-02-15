@@ -1106,6 +1106,50 @@ export class DualCSMS {
     return conn?.ocppVersion || null;
   }
 
+  /**
+   * Envía un comando OCPP genérico a un cargador conectado
+   * Usado por el router para comandos como TriggerMessage, GetConfiguration, etc.
+   */
+  async sendGenericCommand(
+    ocppIdentity: string,
+    action: string,
+    payload: any
+  ): Promise<any> {
+    const conn = this.connections.get(ocppIdentity);
+    if (!conn) {
+      return null; // No conectado en dualCSMS
+    }
+    
+    try {
+      const response = await this.sendCall(conn, action, payload);
+      return response;
+    } catch (error) {
+      console.error(`[CSMS-DUAL] Error sending ${action} to ${ocppIdentity}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Verifica si un cargador está conectado y envía un comando genérico
+   * Retorna true si el comando fue enviado, false si no está conectado
+   */
+  sendCommandIfConnected(
+    ocppIdentity: string,
+    messageId: string,
+    action: string,
+    payload: any
+  ): boolean {
+    const conn = this.connections.get(ocppIdentity);
+    if (!conn || conn.ws.readyState !== 1) { // 1 = OPEN
+      return false;
+    }
+    
+    const message = [2, messageId, action, payload]; // CALL = 2
+    conn.ws.send(JSON.stringify(message));
+    console.log(`[CSMS-DUAL] Sent ${action} to ${ocppIdentity}`);
+    return true;
+  }
+
   // ============================================================================
   // FIRMWARE UPDATE
   // ============================================================================
