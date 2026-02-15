@@ -11,6 +11,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { handleStripeWebhook } from "../stripe/webhook";
 import { handleWompiWebhook } from "../wompi/webhook";
 import { startBillingCronJob } from "../wompi/recurring-billing";
+import { startTransactionCleanupJob } from "../jobs/transaction-cleanup";
 import * as ocppManager from "../ocpp/connection-manager";
 import * as alertsService from "../ocpp/alerts-service";
 
@@ -230,6 +231,9 @@ async function startServer() {
     
     // Iniciar cron job de cobro recurrente de suscripciones
     startBillingCronJob();
+    
+    // Iniciar limpieza periódica de transacciones huérfanas (cada 15 minutos)
+    startTransactionCleanupJob();
   });
 }
 
