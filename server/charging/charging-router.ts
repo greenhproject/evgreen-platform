@@ -350,6 +350,7 @@ export const chargingRouter = router({
         const sessionId = uuidv4();
         
         // Guardar sesión pendiente
+        console.log(`[startCharge] Creating pending session: sessionId=${sessionId}, userId=${ctx.user.id}, stationId=${stationId}, connectorId=${connectorId}, ocppIdentity=${ocppConnection.ocppIdentity}`);
         pendingChargeSessions.set(sessionId, {
           userId: ctx.user.id,
           stationId,
@@ -516,6 +517,8 @@ export const chargingRouter = router({
       
       // Buscar transacción activa del usuario
       const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
+      
+      console.log(`[getActiveSession] userId=${ctx.user.id}, activeTransaction=${activeTransaction ? `id=${activeTransaction.id}, status=${activeTransaction.status}` : 'null'}, pendingSessions=${pendingChargeSessions.size}, activeSessions=${activeChargeSessions.size}`);
       
       if (!activeTransaction) {
         // Verificar si hay una sesión pendiente (esperando que el cargador confirme StartTransaction)
@@ -862,11 +865,15 @@ export function findPendingSessionByStation(stationId: number, connectorId: numb
  */
 export function findPendingSessionByOcppIdentity(ocppIdentity: string, connectorId: number): { sessionId: string; session: ReturnType<typeof getPendingSession> } | null {
   const entries = Array.from(pendingChargeSessions.entries());
+  console.log(`[findPendingSession] Searching for ocppIdentity="${ocppIdentity}", connectorId=${connectorId}. Total pending sessions: ${entries.length}`);
   for (let i = 0; i < entries.length; i++) {
     const [sessionId, session] = entries[i];
+    console.log(`[findPendingSession] Checking session ${sessionId}: ocppIdentity="${session.ocppIdentity}", connectorId=${session.connectorId}, userId=${session.userId}`);
     if (session.ocppIdentity === ocppIdentity && session.connectorId === connectorId) {
+      console.log(`[findPendingSession] MATCH FOUND! sessionId=${sessionId}, userId=${session.userId}`);
       return { sessionId, session };
     }
   }
+  console.log(`[findPendingSession] NO MATCH found for ocppIdentity="${ocppIdentity}", connectorId=${connectorId}`);
   return null;
 }

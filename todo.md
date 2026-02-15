@@ -798,3 +798,12 @@
 - [x] Actualizar kwhConsumed y totalCost en la transacción de BD con cada MeterValue
 - [x] Parsing inteligente de measurands OCPP (Energy, Power, SoC, Voltage, Current, Temperature)
 - [x] Conversión automática de unidades (Wh→kWh, W→kW)
+
+## Fix App Atascada en "Conectando" v2 - 15 Febrero 2026
+
+- [x] Corregir vinculación de StartTransaction con sesión pendiente del usuario
+- [x] Protección contra StartTransaction duplicados (evita transacciones huérfanas)
+- [x] Asegurar que getActiveSession devuelve status correcto cuando hay transacción activa
+- [x] Mejorar matching de sesiones pendientes por stationId+connectorId además de idTag
+- [x] Agregar logs de diagnóstico detallados para depuración en producción
+- [x] Limpieza de transacciones huérfanas IN_PROGRESS en BD
