@@ -605,17 +605,32 @@ export const chargingRouter = router({
       const startTime = new Date(activeTransaction.startTime);
       const elapsedMinutes = Math.floor((Date.now() - startTime.getTime()) / 60000);
       
-      // Obtener último valor de medición
-      const lastMeterValue = await db.getLastMeterValue(activeTransaction.id);
-      const currentKwh = lastMeterValue?.energyKwh 
-        ? parseFloat(lastMeterValue.energyKwh) - (activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0)
-        : 0;
+      // Obtener info de sesión activa en memoria (actualizada en tiempo real por MeterValues)
+      const activeSessionInfo = getActiveSessionById(activeTransaction.id);
       
-      // Obtener tarifa de la estación para calcular costo
-      const tariffs = await db.getTariffsByStationId(activeTransaction.stationId);
-      const tariff = tariffs[0];
-      const pricePerKwh = tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : 800;
-      const currentCost = currentKwh * pricePerKwh;
+      // Priorizar datos en memoria (actualizados por MeterValues en tiempo real)
+      // Si no hay sesión en memoria, usar datos de la BD como fallback
+      let currentKwh: number;
+      let currentCost: number;
+      let pricePerKwh: number;
+      
+      if (activeSessionInfo && activeSessionInfo.currentKwh > 0) {
+        // Datos actualizados en tiempo real desde MeterValues
+        currentKwh = activeSessionInfo.currentKwh;
+        currentCost = activeSessionInfo.currentCost;
+        pricePerKwh = activeSessionInfo.pricePerKwh;
+      } else {
+        // Fallback: leer de la BD
+        const lastMeterValue = await db.getLastMeterValue(activeTransaction.id);
+        currentKwh = lastMeterValue?.energyKwh 
+          ? parseFloat(lastMeterValue.energyKwh) - (activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0)
+          : 0;
+        
+        const tariffs = await db.getTariffsByStationId(activeTransaction.stationId);
+        const tariff = tariffs[0];
+        pricePerKwh = tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : 800;
+        currentCost = currentKwh * pricePerKwh;
+      }
       
       // Obtener el evse para el connectorId
       const evse = await db.getEvseById(activeTransaction.evseId);
@@ -624,19 +639,26 @@ export const chargingRouter = router({
       const connectorType = evse?.connectorType || "TYPE_2";
       const powerKw = evse?.powerKw ? parseFloat(evse.powerKw) : 22;
       
-      // Calcular potencia actual basada en el tiempo y energía
-      const currentPower = elapsedMinutes > 0 ? (currentKwh / (elapsedMinutes / 60)) : powerKw;
+      // Obtener potencia actual desde el último MeterValue de potencia
+      const lastPowerMeter = await db.getLastMeterValue(activeTransaction.id);
+      let currentPower = 0;
+      if (lastPowerMeter?.powerKw) {
+        currentPower = parseFloat(lastPowerMeter.powerKw);
+      } else if (elapsedMinutes > 0 && currentKwh > 0) {
+        // Estimar potencia basada en energía y tiempo
+        currentPower = currentKwh / (elapsedMinutes / 60);
+      } else {
+        currentPower = powerKw; // Usar potencia nominal del conector
+      }
       
       // Estimar tiempo restante basado en la potencia actual
-      // Usar kwhConsumed si está disponible, sino estimar
       const estimatedTotalKwh = activeTransaction.kwhConsumed 
         ? parseFloat(activeTransaction.kwhConsumed)
         : Math.max(currentKwh * 2, 30); // Estimación simple de al menos 30 kWh
       const remainingKwh = Math.max(0, estimatedTotalKwh - currentKwh);
       const estimatedMinutes = currentPower > 0 ? Math.ceil((remainingKwh / currentPower) * 60) : 30;
       
-      // Obtener info de sesión activa en memoria para chargeMode y targetValue
-      const activeSessionInfo = getActiveSessionById(activeTransaction.id);
+      // Obtener SoC si está disponible
       const chargeMode = activeSessionInfo?.chargeMode || "full_charge" as const;
       const targetValue = activeSessionInfo?.targetValue || 0;
       
@@ -645,7 +667,7 @@ export const chargingRouter = router({
       if (chargeMode === "fixed_amount" && targetValue > 0) {
         progress = Math.min(100, Math.round((currentCost / targetValue) * 100));
       } else if (chargeMode === "percentage" && targetValue > 0) {
-        const batteryCapacity = 60;
+        const batteryCapacity = 60; // kWh estimado
         const targetKwh = ((targetValue - 20) / 100) * batteryCapacity;
         progress = targetKwh > 0 ? Math.min(100, Math.round((currentKwh / targetKwh) * 100)) : 0;
       } else {
