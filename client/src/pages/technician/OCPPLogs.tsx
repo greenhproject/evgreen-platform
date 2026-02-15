@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { 
-  Search, 
   Download, 
   RefreshCw,
   ArrowUpRight,
@@ -32,11 +31,16 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  Monitor,
+  Server,
+  Zap,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function TechnicianOCPPLogs() {
   const [expandedLogId, setExpandedLogId] = useState<number | null>(null);
+  const [selectedCp, setSelectedCp] = useState<string | null>(null);
   const [logFilters, setLogFilters] = useState({
     ocppIdentity: "",
     messageType: "",
@@ -54,6 +58,29 @@ export default function TechnicianOCPPLogs() {
   });
 
   const { data: messageTypes } = trpc.ocpp.getMessageTypes.useQuery();
+  const { data: chargePointIds } = trpc.ocpp.getChargePointIds.useQuery(undefined, {
+    refetchInterval: 30000,
+  });
+  const { data: connections } = trpc.ocpp.getActiveConnections.useQuery(undefined, {
+    refetchInterval: 5000,
+  });
+
+  // Determinar cuáles están conectados
+  const connectedIds = useMemo(() => {
+    if (!connections) return new Set<string>();
+    return new Set(connections.map((c: any) => c.chargePointId || c.ocppIdentity));
+  }, [connections]);
+
+  // Seleccionar cargador
+  const handleSelectCp = (cpId: string | null) => {
+    setSelectedCp(cpId);
+    setLogFilters(prev => ({
+      ...prev,
+      ocppIdentity: cpId || "",
+      offset: 0,
+    }));
+    setExpandedLogId(null);
+  };
 
   const handleExport = () => {
     if (!logsData?.logs?.length) {
@@ -69,12 +96,14 @@ export default function TechnicianOCPPLogs() {
       } catch { payloadStr = String(log.payload); }
       return `[${date}] ${dir} | ${log.ocppIdentity} | ${log.messageType}\n${payloadStr}`;
     });
-    const content = `=== EVGreen OCPP Logs (Técnico) ===\nExportado: ${new Date().toLocaleString('es-CO')}\nTotal: ${logsData.logs.length} registros\n${'='.repeat(60)}\n\n${lines.join('\n\n' + '-'.repeat(60) + '\n\n')}`;
+    const cpLabel = selectedCp ? ` - ${selectedCp}` : '';
+    const content = `=== EVGreen OCPP Logs (Técnico)${cpLabel} ===\nExportado: ${new Date().toLocaleString('es-CO')}\nTotal: ${logsData.logs.length} registros\n${'='.repeat(60)}\n\n${lines.join('\n\n' + '-'.repeat(60) + '\n\n')}`;
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ocpp-logs-tecnico-${new Date().toISOString().slice(0,10)}.txt`;
+    const filenameCp = selectedCp ? `-${selectedCp}` : '';
+    a.download = `ocpp-logs-tecnico${filenameCp}-${new Date().toISOString().slice(0,10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success(`${logsData.logs.length} logs exportados correctamente`);
@@ -96,7 +125,7 @@ export default function TechnicianOCPPLogs() {
           </Button>
           <Button variant="outline" onClick={handleExport}>
             <Download className="w-4 h-4 mr-2" />
-            Descargar Logs
+            Descargar
           </Button>
         </div>
       </div>
@@ -148,6 +177,97 @@ export default function TechnicianOCPPLogs() {
         </Card>
       </div>
 
+      {/* Selector de Cargadores */}
+      {chargePointIds && chargePointIds.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Monitor className="h-4 w-4" />
+              Seleccionar Cargador
+            </CardTitle>
+            <CardDescription>
+              Seleccione un cargador para ver sus logs de comunicación
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {/* Chip "Todos" */}
+              <button
+                onClick={() => handleSelectCp(null)}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all border ${
+                  selectedCp === null
+                    ? "bg-primary text-primary-foreground border-primary shadow-md"
+                    : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                <Server className="h-3.5 w-3.5" />
+                Todos
+                {logsData?.total != null && selectedCp === null && (
+                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                    {logsData.total}
+                  </Badge>
+                )}
+              </button>
+
+              {/* Chips por cargador */}
+              {chargePointIds.filter(Boolean).map((cpId) => {
+                const isConnected = connectedIds.has(cpId);
+                const isSelected = selectedCp === cpId;
+                return (
+                  <button
+                    key={cpId}
+                    onClick={() => handleSelectCp(cpId)}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all border ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground border-primary shadow-md"
+                        : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <span className={`h-2 w-2 rounded-full shrink-0 ${
+                      isConnected ? "bg-green-400 animate-pulse" : "bg-gray-400"
+                    }`} />
+                    <Zap className="h-3.5 w-3.5" />
+                    {cpId}
+                    {isSelected && logsData?.total != null && (
+                      <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                        {logsData.total}
+                      </Badge>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Encabezado del cargador seleccionado */}
+      {selectedCp && (
+        <div className="flex items-center justify-between bg-primary/5 border border-primary/20 rounded-lg px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className={`h-3 w-3 rounded-full ${
+              connectedIds.has(selectedCp) ? "bg-green-500 animate-pulse" : "bg-gray-400"
+            }`} />
+            <div>
+              <p className="font-semibold text-sm">Cargador: <span className="font-mono">{selectedCp}</span></p>
+              <p className="text-xs text-muted-foreground">
+                {connectedIds.has(selectedCp) ? "Conectado" : "Desconectado"}
+                {logsData?.total != null && ` · ${logsData.total} registros`}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleSelectCp(null)}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4 mr-1" />
+            Limpiar filtro
+          </Button>
+        </div>
+      )}
+
       {/* Filtros */}
       <Card>
         <CardHeader className="pb-3">
@@ -157,12 +277,14 @@ export default function TechnicianOCPPLogs() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            <Input
-              placeholder="Charge Point ID"
-              value={logFilters.ocppIdentity}
-              onChange={(e) => setLogFilters(prev => ({ ...prev, ocppIdentity: e.target.value, offset: 0 }))}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {!selectedCp && (
+              <Input
+                placeholder="Charge Point ID"
+                value={logFilters.ocppIdentity}
+                onChange={(e) => setLogFilters(prev => ({ ...prev, ocppIdentity: e.target.value, offset: 0 }))}
+              />
+            )}
             <Select
               value={logFilters.messageType || "all"}
               onValueChange={(v) => setLogFilters(prev => ({ ...prev, messageType: v === "all" ? "" : v, offset: 0 }))}
@@ -190,15 +312,6 @@ export default function TechnicianOCPPLogs() {
                 <SelectItem value="OUT">Saliente (OUT)</SelectItem>
               </SelectContent>
             </Select>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Buscar en payload..."
-                className="flex-1"
-                onChange={(e) => {
-                  // Client-side search hint
-                }}
-              />
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -209,6 +322,11 @@ export default function TechnicianOCPPLogs() {
           <CardTitle className="flex items-center gap-2">
             <Terminal className="w-5 h-5" />
             Mensajes OCPP
+            {selectedCp && (
+              <Badge variant="outline" className="ml-2 font-mono">
+                {selectedCp}
+              </Badge>
+            )}
             <span className="text-sm font-normal text-muted-foreground ml-2">
               (Haz clic en una fila para ver el payload completo)
             </span>
@@ -221,7 +339,7 @@ export default function TechnicianOCPPLogs() {
                 <TableRow>
                   <TableHead className="w-[140px]">Fecha/Hora</TableHead>
                   <TableHead className="w-[100px]">Dirección</TableHead>
-                  <TableHead className="w-[120px]">Charge Point</TableHead>
+                  {!selectedCp && <TableHead className="w-[120px]">Charge Point</TableHead>}
                   <TableHead className="w-[150px]">Mensaje</TableHead>
                   <TableHead>Payload</TableHead>
                 </TableRow>
@@ -238,10 +356,10 @@ export default function TechnicianOCPPLogs() {
                       formattedPayload = String(log.payload);
                     }
                     const shortPayload = JSON.stringify(log.payload);
+                    const colSpan = selectedCp ? 4 : 5;
                     return (
-                      <>
+                      <Fragment key={log.id}>
                         <TableRow
-                          key={log.id}
                           className="cursor-pointer hover:bg-muted/50 transition-colors"
                           onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
                         >
@@ -259,13 +377,15 @@ export default function TechnicianOCPPLogs() {
                               {log.direction === "IN" ? "← IN" : "→ OUT"}
                             </Badge>
                           </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {log.ocppIdentity}
-                          </TableCell>
+                          {!selectedCp && (
+                            <TableCell className="font-mono text-sm">
+                              {log.ocppIdentity}
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Badge variant="outline">{log.messageType}</Badge>
                           </TableCell>
-                          <TableCell className="max-w-[400px]">
+                          <TableCell className="max-w-[500px]">
                             <div className="flex items-center gap-2">
                               <pre className="text-xs overflow-hidden text-ellipsis whitespace-nowrap flex-1">
                                 {shortPayload}
@@ -279,8 +399,8 @@ export default function TechnicianOCPPLogs() {
                           </TableCell>
                         </TableRow>
                         {isExpanded && (
-                          <TableRow key={`${log.id}-expanded`}>
-                            <TableCell colSpan={5} className="bg-muted/30 p-0">
+                          <TableRow>
+                            <TableCell colSpan={colSpan} className="bg-muted/30 p-0">
                               <div className="p-4">
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -307,13 +427,15 @@ export default function TechnicianOCPPLogs() {
                             </TableCell>
                           </TableRow>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                      No hay logs que mostrar
+                    <TableCell colSpan={selectedCp ? 4 : 5} className="text-center py-8 text-muted-foreground">
+                      {selectedCp
+                        ? `No hay logs para el cargador ${selectedCp}`
+                        : "No hay logs que mostrar"}
                     </TableCell>
                   </TableRow>
                 )}
