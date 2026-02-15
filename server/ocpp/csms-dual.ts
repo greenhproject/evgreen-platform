@@ -13,6 +13,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import * as db from "../db";
 import { nanoid } from "nanoid";
+import { findPendingSessionByOcppIdentity, removePendingSession, setActiveSession } from "../charging/charging-router";
 
 // ============================================================================
 // TYPES
@@ -525,6 +526,33 @@ export class DualCSMS {
       return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
     }
 
+    // Buscar usuario por idTag
+    let userId = 1; // Fallback
+    let pendingSessionData: { sessionId: string; session: any } | null = null;
+    
+    // Primero intentar buscar por idTag en la base de datos
+    if (req.idTag) {
+      const user = await db.getUserByIdTag(req.idTag);
+      if (user) {
+        userId = user.id;
+        console.log(`[CSMS-DUAL] StartTransaction: Found user ${userId} by idTag ${req.idTag}`);
+      } else {
+        // Si el idTag tiene formato USER-{id}, extraer el userId
+        const userIdMatch = req.idTag.match(/^USER-(\d+)$/);
+        if (userIdMatch) {
+          userId = parseInt(userIdMatch[1], 10);
+          console.log(`[CSMS-DUAL] StartTransaction: Extracted userId ${userId} from idTag ${req.idTag}`);
+        }
+      }
+    }
+    
+    // Buscar sesión pendiente de la app móvil para vincular
+    pendingSessionData = findPendingSessionByOcppIdentity(conn.ocppIdentity, req.connectorId);
+    if (pendingSessionData && pendingSessionData.session) {
+      userId = pendingSessionData.session.userId;
+      console.log(`[CSMS-DUAL] StartTransaction: Linked with pending session from user ${userId} (sessionId: ${pendingSessionData.sessionId})`);
+    }
+
     // Obtener tarifa activa
     const tariff = await db.getActiveTariffByStationId(conn.stationId);
 
@@ -532,10 +560,10 @@ export class DualCSMS {
     const ocpp16TransactionId = this.transactionIdCounter++;
     const internalTransactionId = nanoid();
 
-    // Crear transacción
+    // Crear transacción con el userId correcto
     const transactionId = await db.createTransaction({
       evseId: evse.id,
-      userId: 1, // TODO: Buscar usuario por idTag
+      userId,
       stationId: conn.stationId,
       tariffId: tariff?.id,
       ocppTransactionId: internalTransactionId,
@@ -549,6 +577,28 @@ export class DualCSMS {
 
     // Actualizar estado del EVSE
     await db.updateEvseStatus(evse.id, "CHARGING");
+    
+    // Si hay sesión pendiente, activarla y limpiar
+    if (pendingSessionData && pendingSessionData.session) {
+      const session = pendingSessionData.session;
+      const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 800;
+      
+      setActiveSession(transactionId, {
+        transactionId,
+        userId: session.userId,
+        stationId: conn.stationId,
+        connectorId: req.connectorId,
+        chargeMode: session.chargeMode,
+        targetValue: session.targetValue,
+        startTime: new Date(),
+        currentKwh: 0,
+        currentCost: 0,
+        pricePerKwh,
+      });
+      
+      removePendingSession(pendingSessionData.sessionId);
+      console.log(`[CSMS-DUAL] StartTransaction: Activated session for user ${session.userId}, transactionId: ${transactionId}`);
+    }
 
     return {
       idTagInfo: {
@@ -1130,7 +1180,25 @@ export class DualCSMS {
   }
 
   /**
-   * Verifica si un cargador está conectado y envía un comando genérico
+   * Obtiene la conexión de un cargador por su stationId de la BD
+   */
+  getConnectionByStationId(stationId: number): { ocppIdentity: string; ws: WebSocket; ocppVersion: OCPPVersion } | null {
+    const entries = Array.from(this.connections.entries());
+    for (let i = 0; i < entries.length; i++) {
+      const [identity, conn] = entries[i];
+      if (conn.stationId === stationId && conn.ws.readyState === 1) {
+        return {
+          ocppIdentity: identity,
+          ws: conn.ws,
+          ocppVersion: conn.ocppVersion,
+        };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Envía un comando genérico si el cargador está conectado.
    * Retorna true si el comando fue enviado, false si no está conectado
    */
   sendCommandIfConnected(

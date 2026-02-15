@@ -779,3 +779,12 @@
 - [x] Vista filtrada muestra solo logs del cargador seleccionado con encabezado claro
 - [x] Opción "Todos" para ver logs combinados de todos los cargadores
 - [x] Aplicar mejoras en vista admin (Monitor OCPP > Logs) y vista técnico (Logs OCPP)
+
+## Fix App Pantalla "Conectando" - 15 Febrero 2026
+
+- [x] Investigar flujo de estado de sesión de carga desde OCPP StatusNotification hasta la app
+- [x] Corregir creación de transacción con userId correcto (antes hardcoded userId:1)
+- [x] Vincular sesión pendiente de la app con StartTransaction del cargador via idTag
+- [x] Agregar estado CONNECTING para sesiones pendientes en getActiveSession
+- [x] Actualizar charging-router para usar dualCSMS como canal principal
+- [x] Verificar que el endpoint de polling de la app devuelve el estado actualizado

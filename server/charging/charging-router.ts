@@ -9,12 +9,33 @@ import * as db from "../db";
 import * as dynamicPricing from "../pricing/dynamic-pricing";
 import { 
   getConnection, 
-  getConnectionByStationId, 
-  sendOcppCommand,
+  getConnectionByStationId as legacyGetConnectionByStationId, 
+  sendOcppCommand as legacySendOcppCommand,
   getAllConnections 
 } from "../ocpp/connection-manager";
+import { dualCSMS } from "../ocpp/csms-dual";
 import { v4 as uuidv4 } from "uuid";
 import * as simulator from "./charging-simulator";
+
+// Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
+function getConnectionByStationId(stationId: number) {
+  const dualConn = dualCSMS.getConnectionByStationId(stationId);
+  if (dualConn) {
+    return {
+      ocppIdentity: dualConn.ocppIdentity,
+      ws: dualConn.ws,
+      connectorStatuses: new Map<number, string>(), // dualCSMS no trackea esto directamente
+    };
+  }
+  return legacyGetConnectionByStationId(stationId);
+}
+
+// Helper: enviar comando OCPP por dualCSMS primero, luego fallback a legacy
+function sendOcppCommand(ocppIdentity: string, messageId: string, action: string, payload: any): boolean {
+  const sent = dualCSMS.sendCommandIfConnected(ocppIdentity, messageId, action, payload);
+  if (sent) return true;
+  return legacySendOcppCommand(ocppIdentity, messageId, action, payload);
+}
 
 // Tipos de carga disponibles
 export type ChargeMode = "fixed_amount" | "percentage" | "full_charge";
@@ -497,6 +518,46 @@ export const chargingRouter = router({
       const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
       
       if (!activeTransaction) {
+        // Verificar si hay una sesión pendiente (esperando que el cargador confirme StartTransaction)
+        const entries = Array.from(pendingChargeSessions.entries());
+        for (let i = 0; i < entries.length; i++) {
+          const [sessionId, session] = entries[i];
+          if (session.userId === ctx.user.id) {
+            // Verificar que no haya expirado (máximo 2 minutos)
+            const elapsed = Date.now() - session.createdAt.getTime();
+            if (elapsed > 120000) {
+              pendingChargeSessions.delete(sessionId);
+              continue;
+            }
+            
+            const station = await db.getChargingStationById(session.stationId);
+            return {
+              transactionId: 0,
+              stationId: session.stationId,
+              stationName: station?.name || "Estación",
+              connectorId: session.connectorId,
+              connectorType: "TYPE_2",
+              startTime: session.createdAt.toISOString(),
+              elapsedMinutes: 0,
+              estimatedMinutes: 0,
+              currentKwh: 0,
+              estimatedKwh: 0,
+              currentCost: 0,
+              pricePerKwh: 0,
+              powerKw: 0,
+              currentPower: 0,
+              status: "CONNECTING",
+              chargeMode: session.chargeMode,
+              targetPercentage: session.chargeMode === "percentage" ? session.targetValue : 100,
+              targetAmount: session.chargeMode === "fixed_amount" ? session.targetValue : 0,
+              startPercentage: 20,
+              progress: 0,
+              isSimulation: false,
+              simulationStatus: "connecting",
+            };
+          }
+        }
+        
         // Verificar si hay una transacción recién completada (para redirigir al resumen)
         const lastCompleted = await db.getLastCompletedTransactionByUserId(ctx.user.id);
         if (lastCompleted) {
@@ -529,7 +590,7 @@ export const chargingRouter = router({
               targetAmount: 0,
               startPercentage: 20,
               progress: 100,
-              isSimulation: true,
+              isSimulation: false,
               simulationStatus: "completed",
             };
           }
@@ -574,6 +635,24 @@ export const chargingRouter = router({
       const remainingKwh = Math.max(0, estimatedTotalKwh - currentKwh);
       const estimatedMinutes = currentPower > 0 ? Math.ceil((remainingKwh / currentPower) * 60) : 30;
       
+      // Obtener info de sesión activa en memoria para chargeMode y targetValue
+      const activeSessionInfo = getActiveSessionById(activeTransaction.id);
+      const chargeMode = activeSessionInfo?.chargeMode || "full_charge" as const;
+      const targetValue = activeSessionInfo?.targetValue || 0;
+      
+      // Calcular progreso basado en el modo de carga
+      let progress = 0;
+      if (chargeMode === "fixed_amount" && targetValue > 0) {
+        progress = Math.min(100, Math.round((currentCost / targetValue) * 100));
+      } else if (chargeMode === "percentage" && targetValue > 0) {
+        const batteryCapacity = 60;
+        const targetKwh = ((targetValue - 20) / 100) * batteryCapacity;
+        progress = targetKwh > 0 ? Math.min(100, Math.round((currentKwh / targetKwh) * 100)) : 0;
+      } else {
+        // full_charge: estimar basado en kWh estimados
+        progress = estimatedTotalKwh > 0 ? Math.min(100, Math.round((currentKwh / estimatedTotalKwh) * 100)) : 0;
+      }
+      
       return {
         transactionId: activeTransaction.id,
         stationId: activeTransaction.stationId,
@@ -590,10 +669,12 @@ export const chargingRouter = router({
         powerKw,
         currentPower: Math.round(currentPower * 10) / 10,
         status: activeTransaction.status,
-        chargeMode: "full_charge" as const, // TODO: Obtener del registro de sesión
-        targetPercentage: 100,
-        targetAmount: currentCost * 2,
+        chargeMode,
+        targetPercentage: chargeMode === "percentage" ? targetValue : 100,
+        targetAmount: chargeMode === "fixed_amount" ? targetValue : currentCost * 2,
         startPercentage: 20,
+        progress,
+        isSimulation: false,
       };
     }),
 
@@ -738,4 +819,32 @@ export function getActiveSessionById(transactionId: number) {
 
 export function removeActiveSession(transactionId: number) {
   activeChargeSessions.delete(transactionId);
+}
+
+/**
+ * Buscar sesión pendiente por stationId y connectorId (para vincular con StartTransaction OCPP)
+ */
+export function findPendingSessionByStation(stationId: number, connectorId: number): { sessionId: string; session: ReturnType<typeof getPendingSession> } | null {
+  const entries = Array.from(pendingChargeSessions.entries());
+  for (let i = 0; i < entries.length; i++) {
+    const [sessionId, session] = entries[i];
+    if (session.stationId === stationId && session.connectorId === connectorId) {
+      return { sessionId, session };
+    }
+  }
+  return null;
+}
+
+/**
+ * Buscar sesión pendiente por ocppIdentity y connectorId
+ */
+export function findPendingSessionByOcppIdentity(ocppIdentity: string, connectorId: number): { sessionId: string; session: ReturnType<typeof getPendingSession> } | null {
+  const entries = Array.from(pendingChargeSessions.entries());
+  for (let i = 0; i < entries.length; i++) {
+    const [sessionId, session] = entries[i];
+    if (session.ocppIdentity === ocppIdentity && session.connectorId === connectorId) {
+      return { sessionId, session };
+    }
+  }
+  return null;
 }
