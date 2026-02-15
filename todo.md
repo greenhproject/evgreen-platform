@@ -772,3 +772,10 @@
 - [x] Corregir bug en getActiveConnectionsFromLogs: reconexiones después de desconexión
 - [x] Actualizar todos los comandos OCPP para usar dualCSMS como canal principal
 - [x] Tests unitarios para dualCSMS integration (603 tests pasando)
+
+## Mejora Visual Logs OCPP - 15 Febrero 2026
+
+- [x] Agregar selector visual de cargadores (tarjetas/chips) para filtrar logs por cargador específico
+- [x] Vista filtrada muestra solo logs del cargador seleccionado con encabezado claro
+- [x] Opción "Todos" para ver logs combinados de todos los cargadores
+- [x] Aplicar mejoras en vista admin (Monitor OCPP > Logs) y vista técnico (Logs OCPP)

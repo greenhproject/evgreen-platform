@@ -1177,6 +1177,17 @@ export async function getOcppLogs(filters: {
   };
 }
 
+export async function getOcppChargePointIds() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.selectDistinct({ ocppIdentity: ocppLogs.ocppIdentity })
+    .from(ocppLogs)
+    .orderBy(ocppLogs.ocppIdentity);
+  
+  return result.map(r => r.ocppIdentity).filter(Boolean);
+}
+
 export async function getOcppMessageTypes() {
   const db = await getDb();
   if (!db) return [];

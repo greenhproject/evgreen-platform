@@ -156,6 +156,13 @@ export const ocppRouter = router({
   }),
 
   /**
+   * Obtener lista única de Charge Point IDs desde los logs
+   */
+  getChargePointIds: ocppProcedure.query(async () => {
+    return db.getOcppChargePointIds();
+  }),
+
+  /**
    * Enviar comando Reset a un cargador
    */
   sendReset: ocppProcedure
