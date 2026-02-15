@@ -1077,6 +1077,19 @@ const transactionsRouter = router({
       };
     }),
   
+  // Admin: Limpiar transacciones huérfanas manualmente
+  cleanupOrphaned: adminProcedure
+    .mutation(async () => {
+      const orphanedCount = await db.cleanupOrphanedTransactions(60);
+      const corruptedCount = await db.cleanupCorruptedTransactions();
+      return {
+        orphanedCleaned: orphanedCount,
+        corruptedCleaned: corruptedCount,
+        totalCleaned: orphanedCount + corruptedCount,
+        message: `Limpieza completada: ${orphanedCount} huérfanas y ${corruptedCount} corruptas cerradas`,
+      };
+    }),
+
   // Detener sesión de carga y calcular costo final
   stopChargingSession: protectedProcedure
     .input(z.object({

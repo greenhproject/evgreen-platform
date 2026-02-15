@@ -814,3 +814,11 @@
 - [x] Verificar que getActiveTransactionByUserId funciona correctamente con el userId real (funciona OK)
 - [x] Verificar que la transacción en BD tiene el userId correcto después del fix (confirmado: userId=570001)
 - [x] FIX REAL: ChargingWaiting.tsx esperaba currentKwh > 0 para navegar al monitor, ahora navega cuando status=IN_PROGRESS
+
+## Limpieza Automática de Transacciones Huérfanas - 15 Febrero 2026
+- [x] Crear función cleanupOrphanedTransactions en db.ts (cerrar IN_PROGRESS sin actividad > 1 hora)
+- [x] Crear función cleanupCorruptedTransactions en db.ts (cerrar transacciones con datos negativos)
+- [x] Implementar job periódico en el servidor que ejecute la limpieza cada 15 minutos
+- [x] Agregar endpoint admin transactions.cleanupOrphaned para limpieza manual
+- [x] Agregar logs de auditoría cuando se cierren transacciones automáticamente
+- [x] Limpieza automática inicial 30 segundos después del arranque del servidor

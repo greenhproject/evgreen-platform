@@ -1,0 +1,82 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'transactions' ORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'transactions' ORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id"
+    },
+    {
+      "COLUMN_NAME": "evseId"
+    },
+    {
+      "COLUMN_NAME": "userId"
+    },
+    {
+      "COLUMN_NAME": "stationId"
+    },
+    {
+      "COLUMN_NAME": "tariffId"
+    },
+    {
+      "COLUMN_NAME": "ocppTransactionId"
+    },
+    {
+      "COLUMN_NAME": "startTime"
+    },
+    {
+      "COLUMN_NAME": "endTime"
+    },
+    {
+      "COLUMN_NAME": "kwhConsumed"
+    },
+    {
+      "COLUMN_NAME": "meterStart"
+    },
+    {
+      "COLUMN_NAME": "meterEnd"
+    },
+    {
+      "COLUMN_NAME": "energyCost"
+    },
+    {
+      "COLUMN_NAME": "timeCost"
+    },
+    {
+      "COLUMN_NAME": "sessionCost"
+    },
+    {
+      "COLUMN_NAME": "overstayCost"
+    },
+    {
+      "COLUMN_NAME": "totalCost"
+    },
+    {
+      "COLUMN_NAME": "investorShare"
+    },
+    {
+      "COLUMN_NAME": "platformFee"
+    },
+    {
+      "COLUMN_NAME": "transaction_status"
+    },
+    {
+      "COLUMN_NAME": "startMethod"
+    },
+    {
+      "COLUMN_NAME": "stopReason"
+    },
+    {
+      "COLUMN_NAME": "reservationId"
+    },
+    {
+      "COLUMN_NAME": "createdAt"
+    },
+    {
+      "COLUMN_NAME": "updatedAt"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\nid\nevseId\nuserId\nstationId\ntariffId\nocppTransactionId\nstartTime\nendTime\nkwhConsumed\nmeterStart\nmeterEnd\nenergyCost\ntimeCost\nsessionCost\noverstayCost\ntotalCost\ninvestorShare\nplatformFee\ntransaction_status\nstartMethod\nstopReason\nreservationId\ncreatedAt\nupdatedAt\n",
+  "stderr": "",
+  "execution_time_ms": 66
+}

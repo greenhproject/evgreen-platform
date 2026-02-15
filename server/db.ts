@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
+import { eq, and, desc, gte, lte, lt, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -2875,6 +2875,91 @@ export async function getActiveTransactionByUserId(userId: number) {
     .limit(1);
   
   return result[0] || null;
+}
+
+/**
+ * Limpiar transacciones huérfanas IN_PROGRESS sin actividad por más de un tiempo determinado.
+ * Marca las transacciones como CANCELLED con stopReason indicando limpieza automática.
+ * @param maxAgeMinutes - Tiempo máximo de inactividad en minutos (default: 60)
+ * @returns Número de transacciones limpiadas
+ */
+export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  
+  const cutoffTime = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+  
+  // Encontrar transacciones IN_PROGRESS cuya última actualización sea anterior al cutoff
+  const orphaned = await db.select({ id: transactions.id, userId: transactions.userId, stationId: transactions.stationId, startTime: transactions.startTime, updatedAt: transactions.updatedAt })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "IN_PROGRESS"),
+        lte(transactions.updatedAt, cutoffTime)
+      )
+    );
+  
+  if (orphaned.length === 0) return 0;
+  
+  const orphanedIds = orphaned.map(t => t.id);
+  
+  // Marcar como CANCELLED
+  await db.update(transactions)
+    .set({
+      status: "CANCELLED",
+      endTime: new Date(),
+      stopReason: `AUTO_CLEANUP: Sin actividad por más de ${maxAgeMinutes} minutos`,
+    })
+    .where(inArray(transactions.id, orphanedIds));
+  
+  // Log de auditoría
+  for (const t of orphaned) {
+    console.log(`[Cleanup] Transacción huérfana cerrada: id=${t.id}, userId=${t.userId}, stationId=${t.stationId}, startTime=${t.startTime?.toISOString()}, lastUpdate=${t.updatedAt?.toISOString()}`);
+  }
+  
+  return orphaned.length;
+}
+
+/**
+ * Limpiar transacciones con datos corruptos (kWh negativo, costos negativos)
+ * @returns Número de transacciones limpiadas
+ */
+export async function cleanupCorruptedTransactions(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  
+  // Encontrar transacciones IN_PROGRESS con kWh negativo o costo negativo
+  const corrupted = await db.select({ id: transactions.id, userId: transactions.userId, kwhConsumed: transactions.kwhConsumed, totalCost: transactions.totalCost })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "IN_PROGRESS"),
+        or(
+          lt(transactions.kwhConsumed, sql`0`),
+          lt(transactions.totalCost, sql`0`)
+        )
+      )
+    );
+  
+  if (corrupted.length === 0) return 0;
+  
+  const corruptedIds = corrupted.map(t => t.id);
+  
+  await db.update(transactions)
+    .set({
+      status: "CANCELLED",
+      endTime: new Date(),
+      kwhConsumed: "0",
+      totalCost: "0",
+      stopReason: "AUTO_CLEANUP: Datos corruptos (valores negativos)",
+    })
+    .where(inArray(transactions.id, corruptedIds));
+  
+  for (const t of corrupted) {
+    console.log(`[Cleanup] Transacción corrupta cerrada: id=${t.id}, userId=${t.userId}, kWh=${t.kwhConsumed}, cost=${t.totalCost}`);
+  }
+  
+  return corrupted.length;
 }
 
 /**

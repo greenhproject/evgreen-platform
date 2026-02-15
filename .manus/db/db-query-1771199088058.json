@@ -1,0 +1,43 @@
+{
+  "query": "SELECT id, userId, stationId, startTime, kwhConsumed, totalCost, transaction_status, createdAt, updatedAt FROM transactions WHERE transaction_status = 'IN_PROGRESS' ORDER BY createdAt DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, userId, stationId, startTime, kwhConsumed, totalCost, transaction_status, createdAt, updatedAt FROM transactions WHERE transaction_status = 'IN_PROGRESS' ORDER BY createdAt DESC LIMIT 20;",
+  "rows": [
+    {
+      "id": "330013",
+      "userId": "570001",
+      "stationId": "120001",
+      "startTime": "2026-02-15 23:28:43",
+      "kwhConsumed": "8.0000",
+      "totalCost": "14400.00",
+      "transaction_status": "IN_PROGRESS",
+      "createdAt": "2026-02-15 23:28:43",
+      "updatedAt": "2026-02-15 23:30:34"
+    },
+    {
+      "id": "330011",
+      "userId": "45",
+      "stationId": "120001",
+      "startTime": "2026-02-15 23:14:55",
+      "kwhConsumed": "0.0000",
+      "totalCost": "0.00",
+      "transaction_status": "IN_PROGRESS",
+      "createdAt": "2026-02-15 23:14:55",
+      "updatedAt": "2026-02-15 23:15:26"
+    },
+    {
+      "id": "330010",
+      "userId": "45",
+      "stationId": "120001",
+      "startTime": "2026-02-15 23:14:21",
+      "kwhConsumed": "-5.0000",
+      "totalCost": "-9000.00",
+      "transaction_status": "IN_PROGRESS",
+      "createdAt": "2026-02-15 23:14:21",
+      "updatedAt": "2026-02-15 23:14:32"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tstationId\tstartTime\tkwhConsumed\ttotalCost\ttransaction_status\tcreatedAt\tupdatedAt\n330013\t570001\t120001\t2026-02-15 23:28:43\t8.0000\t14400.00\tIN_PROGRESS\t2026-02-15 23:28:43\t2026-02-15 23:30:34\n330011\t45\t120001\t2026-02-15 23:14:55\t0.0000\t0.00\tIN_PROGRESS\t2026-02-15 23:14:55\t2026-02-15 23:15:26\n330010\t45\t120001\t2026-02-15 23:14:21\t-5.0000\t-9000.00\tIN_PROGRESS\t2026-02-15 23:14:21\t2026-02-15 23:14:32\n",
+  "stderr": "",
+  "execution_time_ms": 160
+}
