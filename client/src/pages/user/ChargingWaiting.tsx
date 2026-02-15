@@ -153,15 +153,38 @@ export default function ChargingWaiting() {
   // Detectar cambio de estado
   useEffect(() => {
     if (session) {
-      // Si hay energía consumida, el vehículo está conectado y cargando
-      if (session.currentKwh > 0) {
+      // Si la sesión está completada, ir al resumen
+      if (session.status === "COMPLETED" && session.transactionId) {
         setStatus("connected");
         setShowParticles(true);
-        // Esperar un momento y navegar al monitor
         setTimeout(() => {
-          navigate("/charging-monitor");
-        }, 2000);
-      } else if (session.status === "IN_PROGRESS") {
+          navigate(`/charging-summary/${session.transactionId}`);
+        }, 1500);
+        return;
+      }
+      
+      // Si hay energía consumida o la transacción está IN_PROGRESS, el cargador ya respondió
+      if (session.status === "IN_PROGRESS") {
+        if (session.currentKwh > 0) {
+          // Ya hay consumo real, navegar inmediatamente
+          setStatus("connected");
+          setShowParticles(true);
+          setTimeout(() => {
+            navigate("/charging-monitor");
+          }, 1500);
+        } else {
+          // Transacción creada pero aún sin MeterValues, mostrar "conectado" y navegar
+          setStatus("connected");
+          setShowParticles(true);
+          setTimeout(() => {
+            navigate("/charging-monitor");
+          }, 2500);
+        }
+        return;
+      }
+      
+      // Si está en CONNECTING (sesión pendiente, esperando StartTransaction del cargador)
+      if (session.status === "CONNECTING") {
         setStatus("connecting");
       }
     }
