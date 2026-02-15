@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,11 @@ import {
   CheckCircle2,
   BarChart3,
   TrendingUp,
-  Calendar
+  Calendar,
+  Download,
+  ChevronDown,
+  ChevronUp,
+  Eye
 } from "lucide-react";
 import {
   Chart as ChartJS,
@@ -63,6 +67,7 @@ ChartJS.register(
 
 export default function AdminOCPPMonitor() {
   const [selectedCharger, setSelectedCharger] = useState<string | null>(null);
+  const [expandedLogId, setExpandedLogId] = useState<number | null>(null);
   const [logFilters, setLogFilters] = useState({
     ocppIdentity: "",
     messageType: "",
@@ -566,6 +571,36 @@ export default function AdminOCPPMonitor() {
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Actualizar
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!logsData?.logs?.length) {
+                      toast.error("No hay logs para exportar");
+                      return;
+                    }
+                    const lines = logsData.logs.map((log: any) => {
+                      const date = new Date(log.createdAt).toLocaleString('es-CO');
+                      const dir = log.direction === 'IN' ? '← IN ' : '→ OUT';
+                      let payloadStr = '';
+                      try {
+                        payloadStr = typeof log.payload === 'string' ? log.payload : JSON.stringify(log.payload, null, 2);
+                      } catch { payloadStr = String(log.payload); }
+                      return `[${date}] ${dir} | ${log.ocppIdentity} | ${log.messageType}\n${payloadStr}`;
+                    });
+                    const content = `=== EVGreen OCPP Logs ===\nExportado: ${new Date().toLocaleString('es-CO')}\nTotal: ${logsData.logs.length} registros\n${'='.repeat(60)}\n\n${lines.join('\n\n' + '-'.repeat(60) + '\n\n')}`;
+                    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ocpp-logs-${new Date().toISOString().slice(0,10)}.txt`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    toast.success(`${logsData.logs.length} logs exportados correctamente`);
+                  }}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Descargar
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -586,35 +621,86 @@ export default function AdminOCPPMonitor() {
                   </TableHeader>
                   <TableBody>
                     {logsData?.logs && logsData.logs.length > 0 ? (
-                      logsData.logs.map((log: any) => (
-                        <TableRow key={log.id}>
-                          <TableCell className="text-xs font-mono">
-                            {new Date(log.createdAt).toLocaleString('es-CO', {
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                            })}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={log.direction === "IN" ? "default" : "secondary"}>
-                              {log.direction === "IN" ? "← IN" : "→ OUT"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {log.ocppIdentity}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{log.messageType}</Badge>
-                          </TableCell>
-                          <TableCell className="max-w-[300px]">
-                            <pre className="text-xs overflow-hidden text-ellipsis whitespace-nowrap">
-                              {JSON.stringify(log.payload)}
-                            </pre>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      logsData.logs.map((log: any) => {
+                        const isExpanded = expandedLogId === log.id;
+                        let formattedPayload = '';
+                        try {
+                          const parsed = typeof log.payload === 'string' ? JSON.parse(log.payload) : log.payload;
+                          formattedPayload = JSON.stringify(parsed, null, 2);
+                        } catch {
+                          formattedPayload = String(log.payload);
+                        }
+                        const shortPayload = JSON.stringify(log.payload);
+                        return (
+                          <>
+                            <TableRow
+                              key={log.id}
+                              className="cursor-pointer hover:bg-muted/50 transition-colors"
+                              onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                            >
+                              <TableCell className="text-xs font-mono">
+                                {new Date(log.createdAt).toLocaleString('es-CO', {
+                                  month: '2-digit',
+                                  day: '2-digit',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                })}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={log.direction === "IN" ? "default" : "secondary"}>
+                                  {log.direction === "IN" ? "← IN" : "→ OUT"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-mono text-sm">
+                                {log.ocppIdentity}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{log.messageType}</Badge>
+                              </TableCell>
+                              <TableCell className="max-w-[400px]">
+                                <div className="flex items-center gap-2">
+                                  <pre className="text-xs overflow-hidden text-ellipsis whitespace-nowrap flex-1">
+                                    {shortPayload}
+                                  </pre>
+                                  {shortPayload.length > 40 && (
+                                    isExpanded
+                                      ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+                                      : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && (
+                              <TableRow key={`${log.id}-expanded`}>
+                                <TableCell colSpan={5} className="bg-muted/30 p-0">
+                                  <div className="p-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Payload completo</span>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 text-xs"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigator.clipboard.writeText(formattedPayload);
+                                          toast.success("Payload copiado al portapapeles");
+                                        }}
+                                      >
+                                        <Copy className="h-3 w-3 mr-1" />
+                                        Copiar
+                                      </Button>
+                                    </div>
+                                    <pre className="text-xs font-mono bg-background rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all border">
+                                      {formattedPayload}
+                                    </pre>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </>
+                        );
+                      })
                     ) : (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
