@@ -752,3 +752,14 @@
 - [x] Agregar coordenadas (lat/lng, address, city) al StationHealthStatus interface
 - [x] Tests unitarios (9 tests en station-health-map.test.ts)
 - [x] 594 tests pasando, 0 errores TypeScript
+
+## Generación APK para Google Play - 14 Febrero 2026
+- [ ] Configurar proyecto TWA con Bubblewrap
+- [ ] Generar APK/AAB firmado
+- [ ] Subir APK/AAB a Google Play Console (prueba interna)
+
+## Mejoras de Logs OCPP - 15 Febrero 2026
+
+- [x] OCPP Logs: Mostrar payload completo (filas expandibles al hacer clic)
+- [x] OCPP Logs: Agregar botón de descarga/exportación de logs en formato texto/JSON
+- [x] OCPP Logs: Aplicar mejoras tanto en vista admin como en vista técnico
