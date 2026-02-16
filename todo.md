@@ -870,3 +870,15 @@
 - [x] Solo centra el mapa en la primera ubicación obtenida (no interrumpe navegación del usuario)
 - [x] zIndex 9999 para que el marcador del usuario siempre esté visible
 - [x] 637 tests pasando, 0 errores TypeScript
+
+## Fix: Emails de invitación de staff - 16 Febrero 2026
+- [x] Diagnosticar: emails SÍ se envían y Resend marca "delivered" - el problema es que caen en Spam/Promociones
+- [x] Quitar emoji del subject line (trigger de spam) - ahora: "Invitacion Exclusiva - {evento}"
+- [x] Agregar reply-to: evgreen@greenhproject.com para mejor entregabilidad
+- [x] Agregar tags de Resend para tracking (category: invitation, guest_id)
+- [x] Nuevo endpoint checkEmailStatus: consulta Resend API para ver estado real (sent/delivered/opened/clicked/bounced/spam)
+- [x] Nuevo endpoint resendInvitation: permite re-enviar invitación a un invitado
+- [x] UI: botón "Ver estado" en cada invitación enviada con badge de estado en tiempo real
+- [x] UI: botón "Re-enviar" en cada invitación enviada con confirmación
+- [x] UI: nota informativa sobre revisar Spam/Promociones
+- [x] 637 tests pasando, 0 errores TypeScript
