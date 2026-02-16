@@ -861,3 +861,12 @@
 - [x] Default center cambiado de San Francisco a Bogotá (4.7110, -74.0721) en componente Map.tsx base
 - [x] Centrado inmediato al obtener GPS: panTo + zoom 14 apenas llega la ubicación
 - [x] Mejorar botones de refrescar/ubicar con fondo verde esmeralda sólido (bg-emerald-600) y sombra verde
+
+## Mejoras Mapa v2 - 16 Febrero 2026
+- [x] Marcador de "Mi ubicación" con punto azul pulsante sobre el mapa (estilo Google Maps)
+- [x] watchPosition en tiempo real para actualizar ubicación del usuario mientras se mueve
+- [x] Limpiar watchPosition al desmontar componente (clearWatch) para evitar memory leaks
+- [x] Marcador se actualiza en tiempo real sin recrearse (reutiliza instancia existente)
+- [x] Solo centra el mapa en la primera ubicación obtenida (no interrumpe navegación del usuario)
+- [x] zIndex 9999 para que el marcador del usuario siempre esté visible
+- [x] 637 tests pasando, 0 errores TypeScript
