@@ -29,11 +29,72 @@ import {
   Eye,
   Users,
   Zap,
+  RefreshCw,
+  AlertCircle,
+  MailCheck,
+  MailX,
+  MailOpen,
+  MousePointerClick,
 } from "lucide-react";
+
+// Mapeo de estados de email a iconos y colores
+const EMAIL_STATUS_CONFIG: Record<string, { icon: any; color: string; label: string }> = {
+  not_sent: { icon: Clock, color: "text-yellow-400", label: "No enviada" },
+  sent: { icon: Mail, color: "text-blue-400", label: "Enviado" },
+  delivered: { icon: MailCheck, color: "text-green-400", label: "Entregado" },
+  delivery_delayed: { icon: AlertCircle, color: "text-yellow-400", label: "Retrasado" },
+  complained: { icon: MailX, color: "text-red-400", label: "Spam" },
+  bounced: { icon: MailX, color: "text-red-400", label: "Rebotado" },
+  opened: { icon: MailOpen, color: "text-emerald-400", label: "Abierto" },
+  clicked: { icon: MousePointerClick, color: "text-emerald-400", label: "Clic" },
+  unknown: { icon: AlertCircle, color: "text-gray-400", label: "Desconocido" },
+  error: { icon: AlertCircle, color: "text-red-400", label: "Error" },
+};
+
+function EmailStatusBadge({ guestId }: { guestId: number }) {
+  const statusQuery = trpc.event.checkEmailStatus.useQuery(
+    { guestId },
+    { enabled: false }
+  );
+  const [checked, setChecked] = useState(false);
+
+  const handleCheck = () => {
+    setChecked(true);
+    statusQuery.refetch();
+  };
+
+  if (!checked) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={handleCheck}
+        className="text-xs text-muted-foreground hover:text-foreground"
+      >
+        <Eye className="h-3 w-3 mr-1" />
+        Ver estado
+      </Button>
+    );
+  }
+
+  if (statusQuery.isLoading) {
+    return <span className="text-xs text-muted-foreground animate-pulse">Verificando...</span>;
+  }
+
+  const status = statusQuery.data?.status || "unknown";
+  const config = EMAIL_STATUS_CONFIG[status] || EMAIL_STATUS_CONFIG.unknown;
+  const StatusIcon = config.icon;
+
+  return (
+    <Badge variant="outline" className={`${config.color} border-current/30`}>
+      <StatusIcon className="h-3 w-3 mr-1" />
+      {config.label}
+    </Badge>
+  );
+}
 
 export default function Invitations() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [previewGuest, setPreviewGuest] = useState<any>(null);
   const [newGuest, setNewGuest] = useState({
     fullName: "",
     email: "",
@@ -60,7 +121,15 @@ export default function Invitations() {
 
   const sendInvitationMutation = trpc.event.sendInvitation.useMutation({
     onSuccess: () => {
-      toast.success("Invitación enviada exitosamente");
+      toast.success("Invitación enviada exitosamente. Revisa la bandeja de entrada y la carpeta de spam del destinatario.");
+      utils.event.listGuests.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const resendMutation = trpc.event.resendInvitation.useMutation({
+    onSuccess: () => {
+      toast.success("Invitación re-enviada exitosamente");
       utils.event.listGuests.invalidate();
     },
     onError: (error) => toast.error(error.message),
@@ -69,6 +138,9 @@ export default function Invitations() {
   const sendBulkMutation = trpc.event.sendBulkInvitations.useMutation({
     onSuccess: (data) => {
       toast.success(`${data.sent} invitaciones enviadas`);
+      if (data.failed > 0) {
+        toast.error(`${data.failed} invitaciones fallaron`);
+      }
       utils.event.listGuests.invalidate();
     },
     onError: (error) => toast.error(error.message),
@@ -191,6 +263,19 @@ export default function Invitations() {
         </CardContent>
       </Card>
 
+      {/* Nota sobre entregabilidad */}
+      <Card className="border-blue-500/20 bg-blue-500/5">
+        <CardContent className="p-3">
+          <p className="text-xs text-blue-300 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>
+              Si el invitado no recibe el email, pídele que revise su carpeta de <strong>Spam</strong> o <strong>Promociones</strong>.
+              Puedes usar "Ver estado" para verificar si fue entregado, y "Re-enviar" si es necesario.
+            </span>
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Pendientes de envío */}
       {pendingInvitations.length > 0 && (
         <div>
@@ -239,23 +324,36 @@ export default function Invitations() {
           <div className="space-y-2">
             {sentInvitations.map((guest) => (
               <Card key={guest.id} className="border-green-500/10">
-                <CardContent className="p-3 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{guest.fullName}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {guest.email} • Enviada: {guest.invitationSentAt ? new Date(guest.invitationSentAt).toLocaleDateString("es-CO") : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {guest.founderSlot && (
-                      <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                        #{guest.founderSlot}
-                      </Badge>
-                    )}
-                    <Badge variant="outline" className="text-green-400">
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      Enviada
-                    </Badge>
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{guest.fullName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {guest.email} • {guest.invitationSentAt ? new Date(guest.invitationSentAt).toLocaleDateString("es-CO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {guest.founderSlot && (
+                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                          #{guest.founderSlot}
+                        </Badge>
+                      )}
+                      <EmailStatusBadge guestId={guest.id} />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          if (confirm(`¿Re-enviar invitación a ${guest.fullName} (${guest.email})?`)) {
+                            resendMutation.mutate({ guestId: guest.id });
+                          }
+                        }}
+                        disabled={resendMutation.isPending}
+                        className="text-xs"
+                      >
+                        <RefreshCw className={`h-3 w-3 mr-1 ${resendMutation.isPending ? "animate-spin" : ""}`} />
+                        Re-enviar
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

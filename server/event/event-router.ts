@@ -594,12 +594,19 @@ export const eventRouter = router({
       try {
         console.log(`[Event] Enviando invitación a ${guest.email} con API Key: ${resendApiKey.substring(0, 10)}...`);
         
-        const result = await resend.emails.send(buildEmailParams({
-          from: "EVGreen <invitaciones@evgreen.lat>",
-          to: guest.email,
-          subject: `🔋 Invitación Exclusiva | ${eventName}`,
-          html: emailHtml,
-        }));
+        const result = await resend.emails.send({
+          ...buildEmailParams({
+            from: "EVGreen <invitaciones@evgreen.lat>",
+            to: guest.email,
+            subject: `Invitacion Exclusiva - ${eventName}`,
+            html: emailHtml,
+            replyTo: "evgreen@greenhproject.com",
+          }),
+          tags: [
+            { name: "category", value: "invitation" },
+            { name: "guest_id", value: String(input.guestId) },
+          ],
+        });
 
         console.log(`[Event] Resultado Resend:`, JSON.stringify(result));
 
@@ -662,12 +669,19 @@ export const eventRouter = router({
           const emailHtml = await generateInvitationEmail(guest, qrUrl, eventCfg);
 
           console.log(`[Event Bulk] Enviando invitación a ${guest.email}...`);
-          const result = await resend.emails.send(buildEmailParams({
-            from: "EVGreen <invitaciones@evgreen.lat>",
-            to: guest.email,
-            subject: `🔋 Invitación Exclusiva | ${evtName}`,
-            html: emailHtml,
-          }));
+          const result = await resend.emails.send({
+            ...buildEmailParams({
+              from: "EVGreen <invitaciones@evgreen.lat>",
+              to: guest.email,
+              subject: `Invitacion Exclusiva - ${evtName}`,
+              html: emailHtml,
+              replyTo: "evgreen@greenhproject.com",
+            }),
+            tags: [
+              { name: "category", value: "invitation" },
+              { name: "guest_id", value: String(guestId) },
+            ],
+          });
           console.log(`[Event Bulk] Resultado:`, JSON.stringify(result));
 
           if (result.error) {
@@ -698,8 +712,122 @@ export const eventRouter = router({
       return { sent, failed, total: input.guestIds.length };
     }),
 
+  // Verificar estado de entrega del email
+  checkEmailStatus: staffProcedure
+    .input(z.object({ guestId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+      const [guest] = await db
+        .select()
+        .from(eventGuests)
+        .where(eq(eventGuests.id, input.guestId));
+
+      if (!guest) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Invitado no encontrado" });
+      }
+
+      if (!guest.invitationEmailId) {
+        return { status: "not_sent", message: "La invitaci\u00f3n a\u00fan no ha sido enviada" };
+      }
+
+      try {
+        const emailDetail = await resend.emails.get(guest.invitationEmailId);
+        if (emailDetail.error) {
+          return { status: "unknown", message: "No se pudo verificar el estado del email" };
+        }
+        const lastEvent = emailDetail.data?.last_event || "unknown";
+        const statusMessages: Record<string, string> = {
+          sent: "Email enviado, pendiente de entrega",
+          delivered: "Email entregado al servidor de correo del destinatario",
+          delivery_delayed: "Entrega retrasada, reintentando...",
+          complained: "El destinatario marc\u00f3 el email como spam",
+          bounced: "El email rebot\u00f3 (direcci\u00f3n inv\u00e1lida o buz\u00f3n lleno)",
+          opened: "El destinatario abri\u00f3 el email",
+          clicked: "El destinatario hizo clic en un enlace del email",
+        };
+        return {
+          status: lastEvent,
+          message: statusMessages[lastEvent] || `Estado: ${lastEvent}`,
+          emailId: guest.invitationEmailId,
+          sentAt: guest.invitationSentAt,
+        };
+      } catch (error: any) {
+        console.error("[Event] Error verificando estado email:", error?.message);
+        return { status: "error", message: "Error al consultar Resend API" };
+      }
+    }),
+
+  // Re-enviar invitaci\u00f3n (forzar reenv\u00edo aunque ya se haya enviado)
+  resendInvitation: staffProcedure
+    .input(z.object({ guestId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+      const [guest] = await db
+        .select()
+        .from(eventGuests)
+        .where(eq(eventGuests.id, input.guestId));
+
+      if (!guest) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Invitado no encontrado" });
+      }
+
+      if (!guest.email) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El invitado no tiene email registrado" });
+      }
+
+      const qrUrl = `https://evgreen.lat/event-checkin/${guest.qrCode}`;
+      const eventConfig = await getPlatformSettings();
+      const emailHtml = await generateInvitationEmail(guest, qrUrl, eventConfig);
+      const eventName = eventConfig?.eventName || "Gran Lanzamiento Red de Carga EVGreen";
+
+      try {
+        console.log(`[Event] Re-enviando invitaci\u00f3n a ${guest.email}...`);
+        const result = await resend.emails.send({
+          ...buildEmailParams({
+            from: "EVGreen <invitaciones@evgreen.lat>",
+            to: guest.email,
+            subject: `Invitacion Exclusiva - ${eventName}`,
+            html: emailHtml,
+            replyTo: "evgreen@greenhproject.com",
+          }),
+          tags: [
+            { name: "category", value: "invitation-resend" },
+            { name: "guest_id", value: String(input.guestId) },
+          ],
+        });
+
+        if (result.error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `Error de Resend: ${result.error.message || JSON.stringify(result.error)}`,
+          });
+        }
+
+        await db
+          .update(eventGuests)
+          .set({
+            invitationSentAt: new Date(),
+            invitationEmailId: result.data?.id || null,
+          })
+          .where(eq(eventGuests.id, input.guestId));
+
+        return { success: true, emailId: result.data?.id };
+      } catch (error: any) {
+        console.error("[Event] Error re-enviando invitaci\u00f3n:", error?.message || error);
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Error re-enviando la invitaci\u00f3n: ${error?.message || 'Error desconocido'}`,
+        });
+      }
+    }),
+
   // ============================================================================
-  // ESTADÍSTICAS DEL EVENTO
+  // ESTAD\u00cdSTICAS DEL EVENTO
   // ============================================================================
 
   // ============================================================================
