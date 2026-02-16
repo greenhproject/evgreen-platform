@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
-import { Bell, Zap, Calendar, AlertTriangle, Gift, Info, CheckCircle, X, Loader2, BellOff } from "lucide-react";
+import { Bell, Zap, Calendar, AlertTriangle, Gift, Info, CheckCircle, X, Loader2, BellOff, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,6 +10,7 @@ import { es } from "date-fns/locale";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useNotifications } from "@/hooks/useNotifications";
 import { onForegroundMessage } from "@/lib/firebase";
+import { openExternalUrl, isExternalUrl } from "@/lib/openExternal";
 
 interface Notification {
   id: number;
@@ -112,7 +113,13 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
       handleMarkAsRead(notification.id);
     }
     if (notification.actionUrl) {
-      setLocation(notification.actionUrl);
+      if (isExternalUrl(notification.actionUrl)) {
+        // URLs externas se abren en el navegador del sistema
+        openExternalUrl(notification.actionUrl);
+      } else {
+        // URLs internas usan navegación de la app
+        setLocation(notification.actionUrl);
+      }
       setOpen(false);
     }
   };
@@ -229,9 +236,14 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
                       <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
                         {notification.message}
                       </p>
-                      <p className="text-[10px] text-muted-foreground/70 mt-1">
-                        {formatDistanceToNow(notification.createdAt, { addSuffix: true, locale: es })}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-[10px] text-muted-foreground/70">
+                          {formatDistanceToNow(notification.createdAt, { addSuffix: true, locale: es })}
+                        </p>
+                        {notification.actionUrl && isExternalUrl(notification.actionUrl) && (
+                          <ExternalLink className="w-2.5 h-2.5 text-muted-foreground/50" />
+                        )}
+                      </div>
                     </div>
                     <Button
                       variant="ghost"

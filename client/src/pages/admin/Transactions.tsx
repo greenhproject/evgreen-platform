@@ -20,11 +20,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Download, Filter, Zap, DollarSign, Clock, Battery, Loader2 } from "lucide-react";
+import { Search, Download, Filter, Zap, DollarSign, Clock, Battery, Loader2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 export default function AdminTransactions() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  const utils = trpc.useUtils();
 
   // Obtener métricas del dashboard para las estadísticas
   const { data: metrics, isLoading: metricsLoading } = trpc.dashboard.adminMetrics.useQuery(undefined, {
@@ -91,6 +94,19 @@ export default function AdminTransactions() {
     return matchesStatus && matchesSearch;
   }) || [];
 
+  // Mutation para limpiar transacciones huérfanas
+  const cleanupMutation = trpc.transactions.cleanupOrphaned.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      // Refrescar datos
+      utils.transactions.listAll.invalidate();
+      utils.dashboard.adminMetrics.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al limpiar transacciones");
+    },
+  });
+
   const isLoading = metricsLoading || transactionsLoading;
 
   return (
@@ -102,10 +118,26 @@ export default function AdminTransactions() {
             Gestiona todas las transacciones de carga de la plataforma
           </p>
         </div>
-        <Button variant="outline">
-          <Download className="w-4 h-4 mr-2" />
-          Exportar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => cleanupMutation.mutate()}
+            disabled={cleanupMutation.isPending}
+            className="text-orange-600 border-orange-200 hover:bg-orange-50 dark:border-orange-800 dark:hover:bg-orange-950"
+          >
+            {cleanupMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4 mr-2" />
+            )}
+            Limpiar huérfanas
+          </Button>
+          <Button variant="outline">
+            <Download className="w-4 h-4 mr-2" />
+            Exportar
+          </Button>
+        </div>
       </div>
 
       {/* Estadísticas rápidas */}
