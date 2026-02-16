@@ -833,3 +833,25 @@
 - [x] Indicador visual ExternalLink icon en botones CTA y notificaciones con URL externa
 - [x] Tests unitarios para isExternalUrl (18 tests: URLs internas, externas, mailto, tel, sms, malformadas)
 - [x] Botón "Limpiar huérfanas" en panel admin de Transacciones con toast de confirmación
+
+## Diagnóstico Servidor Bloqueado y Flujo de Carga - 15 Febrero 2026
+- [x] Verificar conexión del simulador OCPP al servidor de producción
+- [x] Probar flujo completo: BootNotification → Authorize → StartTransaction → MeterValues → StopTransaction
+- [x] Diagnosticar por qué el servidor se queda bloqueado
+- [x] Corregir cualquier bug encontrado en el flujo de carga
+
+## Bug: App se bloquea al seleccionar monto durante carga - 16 Febrero 2026
+- [x] Diagnosticar por qué la app se queda bloqueada al seleccionar monto (ej. $10,000) durante carga activa
+- [x] Revisar lógica de RemoteStartTransaction y manejo de MeterValues en tiempo real
+- [x] Revisar lógica de StopTransaction por monto/energía límite alcanzado
+- [x] Verificar que el polling de getActiveSession no se bloquea
+- [x] Corregir el bloqueo del servidor/app
+- [x] Auto-stop en MeterValues: cuando costo >= targetValue (fixed_amount), enviar RemoteStopTransaction
+- [x] Auto-stop en MeterValues: cuando kWh >= targetKwh (percentage), enviar RemoteStopTransaction
+- [x] Estimación de energía desde potencia cuando el cargador no envía Energy measurand
+- [x] StopTransaction OCPP 1.6: descuento de billetera, auto-cobro, distribución ingresos, notificación BD, push FCM
+- [x] StopTransaction OCPP 2.0.1: mismas correcciones que 1.6
+- [x] Limpieza de sesión activa en memoria al completar StopTransaction
+- [x] Para fixed_amount: limitar costo al monto objetivo (no cobrar más de lo pedido)
+- [x] Fallback: usar energía de sesión activa si meterStop da 0
+- [x] 16 tests unitarios para lógica de auto-stop, cálculo de costos y deducción de billetera
