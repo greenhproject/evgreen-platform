@@ -882,3 +882,11 @@
 - [x] UI: botón "Re-enviar" en cada invitación enviada con confirmación
 - [x] UI: nota informativa sobre revisar Spam/Promociones
 - [x] 637 tests pasando, 0 errores TypeScript
+
+## Fix: Mapa - Ubicación y botones - 16 Febrero 2026
+- [x] Punto azul de ubicación: cambiado a useRef para referencia estable, fallback a Circle si AdvancedMarker falla
+- [x] Botones: ahora con fondo sólido verde esmeralda (Actualizar) y azul (Ubicarme), borde grueso, sombra de color
+- [x] Labels visibles debajo de cada botón: "Actualizar" y "Ubicarme" con badge de texto
+- [x] Removido Tooltip (no funciona en móvil, requiere hover) - reemplazado por labels permanentes
+- [x] Botones reposicionados al centro-derecha del mapa para no solaparse con widget de IA
+- [x] Marcador azul más grande (28px) con sombra más visible y pulso más amplio

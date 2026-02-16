@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+// Tooltip removed - not intuitive on mobile (requires hover)
 import {
   Search,
   Filter,
@@ -137,7 +137,6 @@ export default function UserMap() {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [userMarker, setUserMarker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
   const [isFirstLocation, setIsFirstLocation] = useState(true);
   const [filters, setFilters] = useState({
     connectorType: "all",
@@ -188,35 +187,18 @@ export default function UserMap() {
     };
   }, [mapInstance, isFirstLocation]);
 
+  // Referencia estable para el marcador del usuario (evita re-creación)
+  const userMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+
   // Marcador de ubicación del usuario (punto azul pulsante)
   useEffect(() => {
     if (!mapInstance || !userLocation) return;
 
-    if (userMarker) {
-      // Actualizar posición del marcador existente
-      userMarker.position = userLocation;
+    // Si ya existe el marcador, solo actualizar posición
+    if (userMarkerRef.current) {
+      userMarkerRef.current.position = userLocation;
       return;
     }
-
-    // Crear el marcador con punto azul pulsante
-    const markerEl = document.createElement('div');
-    markerEl.innerHTML = `
-      <div style="position: relative; width: 24px; height: 24px;">
-        <div style="
-          position: absolute; inset: -8px;
-          border-radius: 50%;
-          background: rgba(59, 130, 246, 0.2);
-          animation: userPulse 2s ease-in-out infinite;
-        "></div>
-        <div style="
-          position: absolute; inset: 0;
-          border-radius: 50%;
-          background: #3b82f6;
-          border: 3px solid white;
-          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.5), 0 0 0 1px rgba(0,0,0,0.1);
-        "></div>
-      </div>
-    `;
 
     // Inyectar CSS de animación si no existe
     if (!document.getElementById('user-pulse-css')) {
@@ -225,26 +207,50 @@ export default function UserMap() {
       style.textContent = `
         @keyframes userPulse {
           0% { transform: scale(1); opacity: 0.7; }
-          50% { transform: scale(2.2); opacity: 0; }
+          50% { transform: scale(2.5); opacity: 0; }
           100% { transform: scale(1); opacity: 0; }
         }
       `;
       document.head.appendChild(style);
     }
 
-    const marker = new google.maps.marker.AdvancedMarkerElement({
-      map: mapInstance,
-      position: userLocation,
-      title: 'Mi ubicación',
-      content: markerEl,
-      zIndex: 9999,
-    });
+    // Crear el marcador con punto azul pulsante
+    const markerEl = document.createElement('div');
+    markerEl.style.cssText = 'position:relative;width:28px;height:28px;cursor:pointer;';
+    markerEl.innerHTML = `
+      <div style="position:absolute;inset:-12px;border-radius:50%;background:rgba(59,130,246,0.25);animation:userPulse 2s ease-in-out infinite;"></div>
+      <div style="position:absolute;inset:0;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 2px 10px rgba(59,130,246,0.6),0 0 0 1px rgba(0,0,0,0.15);"></div>
+    `;
 
-    setUserMarker(marker);
+    try {
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        map: mapInstance,
+        position: userLocation,
+        title: 'Mi ubicación',
+        content: markerEl,
+        zIndex: 9999,
+      });
+      userMarkerRef.current = marker;
+    } catch (err) {
+      console.warn('[Map] AdvancedMarkerElement failed, using fallback:', err);
+      // Fallback: usar un Circle como indicador de ubicación
+      new google.maps.Circle({
+        map: mapInstance,
+        center: userLocation,
+        radius: 30,
+        fillColor: '#3b82f6',
+        fillOpacity: 0.4,
+        strokeColor: '#3b82f6',
+        strokeWeight: 2,
+        zIndex: 9999,
+      });
+    }
 
     return () => {
-      marker.map = null;
-      setUserMarker(null);
+      if (userMarkerRef.current) {
+        userMarkerRef.current.map = null;
+        userMarkerRef.current = null;
+      }
     };
   }, [mapInstance, userLocation]);
 
@@ -564,41 +570,29 @@ export default function UserMap() {
           />
         </div>
 
-        {/* Botones flotantes */}
-        <TooltipProvider delayDuration={300}>
-          <div className="absolute right-4 top-24 flex flex-col gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-11 w-11 rounded-full bg-emerald-600 backdrop-blur-md shadow-xl shadow-emerald-600/30 border border-emerald-500 text-white hover:bg-emerald-500"
-                  onClick={() => refetch()}
-                >
-                  <RefreshCw className="w-5 h-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left" className="bg-gray-900 text-white border-gray-700">
-                Actualizar estaciones
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-11 w-11 rounded-full bg-emerald-600 backdrop-blur-md shadow-xl shadow-emerald-600/30 border border-emerald-500 text-white hover:bg-emerald-500"
-                  onClick={centerOnUser}
-                >
-                  <Navigation className="w-5 h-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left" className="bg-gray-900 text-white border-gray-700">
-                Mi ubicación
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </TooltipProvider>
+        {/* Botones flotantes - posicionados a la derecha del mapa, debajo de los controles nativos */}
+        <div className="absolute right-3 flex flex-col gap-3" style={{ top: 'calc(50% - 80px)' }}>
+          <button
+            onClick={() => refetch()}
+            className="flex flex-col items-center gap-1 group"
+            aria-label="Actualizar estaciones"
+          >
+            <div className="h-12 w-12 rounded-full bg-emerald-600 shadow-lg shadow-emerald-600/40 border-2 border-emerald-400 flex items-center justify-center text-white active:scale-95 transition-transform">
+              <RefreshCw className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] font-bold text-white bg-emerald-700/90 px-2 py-0.5 rounded-full shadow-md">Actualizar</span>
+          </button>
+          <button
+            onClick={centerOnUser}
+            className="flex flex-col items-center gap-1 group"
+            aria-label="Mi ubicación"
+          >
+            <div className="h-12 w-12 rounded-full bg-blue-600 shadow-lg shadow-blue-600/40 border-2 border-blue-400 flex items-center justify-center text-white active:scale-95 transition-transform">
+              <Navigation className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] font-bold text-white bg-blue-700/90 px-2 py-0.5 rounded-full shadow-md">Ubicarme</span>
+          </button>
+        </div>
 
         {/* Lista de estaciones (bottom sheet) */}
         <Sheet>
