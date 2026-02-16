@@ -154,19 +154,31 @@ export default function UserMap() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setUserLocation({
+          const loc = {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
-          });
+          };
+          setUserLocation(loc);
+          // Centrar el mapa inmediatamente si ya está listo
+          if (mapInstance) {
+            mapInstance.panTo(loc);
+            mapInstance.setZoom(14);
+          }
         },
         (error) => {
           console.error("Error getting location:", error);
-          // Default: Bogotá
-          setUserLocation({ lat: 4.7110, lng: -74.0721 });
-        }
+          // Default: Bogotá, Colombia
+          const defaultLoc = { lat: 4.7110, lng: -74.0721 };
+          setUserLocation(defaultLoc);
+          if (mapInstance) {
+            mapInstance.panTo(defaultLoc);
+            mapInstance.setZoom(12);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
       );
     }
-  }, []);
+  }, [mapInstance]);
 
   // Centrar mapa en ubicación del usuario
   const centerOnUser = () => {
@@ -408,6 +420,8 @@ export default function UserMap() {
         {/* Mapa */}
         <div className="absolute inset-0">
           <MapView
+            initialCenter={userLocation || { lat: 4.7110, lng: -74.0721 }}
+            initialZoom={userLocation ? 14 : 12}
             onMapReady={(map) => {
               setMapInstance(map);
               if (userLocation) {
@@ -490,7 +504,7 @@ export default function UserMap() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="h-11 w-11 rounded-full bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60 text-white hover:bg-gray-800/95"
+                  className="h-11 w-11 rounded-full bg-emerald-600 backdrop-blur-md shadow-xl shadow-emerald-600/30 border border-emerald-500 text-white hover:bg-emerald-500"
                   onClick={() => refetch()}
                 >
                   <RefreshCw className="w-5 h-5" />
@@ -505,7 +519,7 @@ export default function UserMap() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="h-11 w-11 rounded-full bg-emerald-600/90 backdrop-blur-md shadow-xl border border-emerald-500/60 text-white hover:bg-emerald-500/95"
+                  className="h-11 w-11 rounded-full bg-emerald-600 backdrop-blur-md shadow-xl shadow-emerald-600/30 border border-emerald-500 text-white hover:bg-emerald-500"
                   onClick={centerOnUser}
                 >
                   <Navigation className="w-5 h-5" />

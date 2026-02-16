@@ -855,3 +855,9 @@
 - [x] Para fixed_amount: limitar costo al monto objetivo (no cobrar más de lo pedido)
 - [x] Fallback: usar energía de sesión activa si meterStop da 0
 - [x] 16 tests unitarios para lógica de auto-stop, cálculo de costos y deducción de billetera
+
+## Mejoras Mapa - 16 Febrero 2026
+- [x] Centrar mapa en ubicación GPS del usuario en vez de San Francisco (geolocation API con enableHighAccuracy)
+- [x] Default center cambiado de San Francisco a Bogotá (4.7110, -74.0721) en componente Map.tsx base
+- [x] Centrado inmediato al obtener GPS: panTo + zoom 14 apenas llega la ubicación
+- [x] Mejorar botones de refrescar/ubicar con fondo verde esmeralda sólido (bg-emerald-600) y sombra verde
