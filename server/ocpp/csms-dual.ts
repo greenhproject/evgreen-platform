@@ -13,7 +13,8 @@
 import { WebSocketServer, WebSocket } from "ws";
 import * as db from "../db";
 import { nanoid } from "nanoid";
-import { findPendingSessionByOcppIdentity, removePendingSession, setActiveSession, getActiveSessionById } from "../charging/charging-router";
+import { findPendingSessionByOcppIdentity, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
+import { sendChargingCompleteNotification } from "../firebase/fcm";
 
 // ============================================================================
 // TYPES
@@ -663,19 +664,44 @@ export class DualCSMS {
     }
 
     const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
-    const energyDelivered = (req.meterStop - meterStart) / 1000; // Wh a kWh
+    let energyDelivered = (req.meterStop - meterStart) / 1000; // Wh a kWh
+    
+    // Si la energía entregada es 0 o negativa, intentar usar los datos de la sesión activa
+    const activeSession = getActiveSessionById(transaction.id);
+    if (energyDelivered <= 0 && activeSession && activeSession.currentKwh > 0) {
+      energyDelivered = activeSession.currentKwh;
+      console.log(`[CSMS-DUAL] StopTransaction: Using session energy ${energyDelivered} kWh (meterStop gave 0)`);
+    }
 
     // Calcular costo - obtener tarifa
     const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
     const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
-    const totalCost = energyDelivered * pricePerKwh;
+    
+    // Para modo fixed_amount, usar el monto objetivo si la energía entregada lo cubre
+    let totalCost = energyDelivered * pricePerKwh;
+    if (activeSession?.chargeMode === "fixed_amount" && activeSession.targetValue > 0) {
+      // Cobrar el menor entre el costo calculado y el monto objetivo
+      totalCost = Math.min(totalCost, activeSession.targetValue);
+    }
+
+    // Calcular distribución de ingresos según configuración del admin
+    const revenueConfig = await db.getRevenueShareConfig();
+    const investorShare = totalCost * (revenueConfig.investorPercent / 100);
+    const platformFee = totalCost * (revenueConfig.platformPercent / 100);
+
+    // Calcular duración
+    const endTime = new Date(req.timestamp);
+    const startTime = transaction.startTime ? new Date(transaction.startTime) : new Date();
+    const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
 
     // Actualizar transacción
     await db.updateTransaction(transaction.id, {
-      endTime: new Date(req.timestamp),
+      endTime,
       meterEnd: String(req.meterStop),
       kwhConsumed: energyDelivered.toString(),
       totalCost: totalCost.toString(),
+      investorShare: investorShare.toString(),
+      platformFee: platformFee.toString(),
       status: "COMPLETED",
       stopReason: req.reason,
     });
@@ -683,8 +709,87 @@ export class DualCSMS {
     // Actualizar estado del EVSE
     await db.updateEvseStatus(transaction.evseId, "AVAILABLE");
 
-    // Limpiar mapeo
+    // Descontar de la billetera del usuario
+    try {
+      const wallet = await db.getWalletByUserId(transaction.userId);
+      if (wallet) {
+        let currentBalance = parseFloat(wallet.balance);
+
+        // Auto-cobro: si el saldo es insuficiente y tiene tarjeta inscrita
+        if (currentBalance < totalCost) {
+          try {
+            const { autoChargeIfNeeded } = await import("../wompi/auto-charge");
+            const autoResult = await autoChargeIfNeeded(transaction.userId, totalCost);
+            if (autoResult?.success) {
+              currentBalance = autoResult.newBalance;
+              console.log(`[CSMS-DUAL] Auto-cobro exitoso: $${autoResult.amountCharged} cobrados a tarjeta`);
+            } else if (autoResult) {
+              console.log(`[CSMS-DUAL] Auto-cobro fallido: ${autoResult.error}`);
+            }
+          } catch (autoErr) {
+            console.warn(`[CSMS-DUAL] Error en auto-cobro:`, autoErr);
+          }
+        }
+
+        const newBalance = Math.max(0, currentBalance - totalCost);
+        await db.updateWalletBalance(transaction.userId, newBalance.toString());
+
+        await db.createWalletTransaction({
+          walletId: wallet.id,
+          userId: transaction.userId,
+          type: "CHARGE_PAYMENT",
+          amount: (-totalCost).toString(),
+          balanceBefore: currentBalance.toString(),
+          balanceAfter: newBalance.toString(),
+          referenceId: transaction.id,
+          referenceType: "TRANSACTION",
+          status: "COMPLETED",
+          description: `Pago por carga de ${energyDelivered.toFixed(2)} kWh`,
+        });
+        
+        console.log(`[CSMS-DUAL] Wallet deducted: $${Math.round(totalCost)} from user ${transaction.userId}. Balance: $${currentBalance} -> $${newBalance}`);
+      }
+    } catch (walletError) {
+      console.error(`[CSMS-DUAL] Error deducting wallet for user ${transaction.userId}:`, walletError);
+    }
+
+    // Crear notificación en BD
+    try {
+      await db.createNotification({
+        userId: transaction.userId,
+        title: "Carga completada",
+        message: `Tu carga ha finalizado. Consumo: ${energyDelivered.toFixed(2)} kWh. Total: $${Math.round(totalCost).toLocaleString()} COP`,
+        type: "CHARGING",
+        referenceId: transaction.id,
+      });
+    } catch (notifError) {
+      console.error(`[CSMS-DUAL] Error creating notification:`, notifError);
+    }
+
+    // Enviar notificación push FCM
+    try {
+      const user = await db.getUserById(transaction.userId);
+      if (user?.fcmToken) {
+        const station = conn.stationId ? await db.getChargingStationById(conn.stationId) : null;
+        await sendChargingCompleteNotification(user.fcmToken, {
+          stationName: station?.name || "Estación EVGreen",
+          energyDelivered,
+          totalCost: Math.round(totalCost),
+          duration,
+        });
+        console.log(`[CSMS-DUAL] Push notification sent to user ${transaction.userId}`);
+      }
+    } catch (pushError) {
+      console.error(`[CSMS-DUAL] Error sending push notification:`, pushError);
+    }
+
+    // Limpiar sesión activa en memoria
+    removeActiveSession(transaction.id);
+
+    // Limpiar mapeo OCPP 1.6
     this.ocpp16Transactions.delete(req.transactionId);
+    
+    console.log(`[CSMS-DUAL] StopTransaction completed: tx=${transaction.id}, user=${transaction.userId}, ${energyDelivered.toFixed(2)} kWh, $${Math.round(totalCost)} COP`);
 
     return {
       idTagInfo: {
@@ -766,10 +871,24 @@ export class DualCSMS {
           
           // Actualizar sesión activa en memoria con los datos más recientes
           const activeSession = getActiveSessionById(transaction.id);
-          if (activeSession && latestEnergyKwh !== null) {
-            // Calcular kWh consumidos (valor del medidor - valor inicial)
+          if (activeSession) {
             const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
-            const consumedKwh = Math.max(0, latestEnergyKwh - meterStart);
+            let consumedKwh: number;
+            
+            if (latestEnergyKwh !== null) {
+              // Cálculo directo desde el medidor de energía
+              consumedKwh = Math.max(0, latestEnergyKwh - meterStart);
+            } else if (latestPowerKw !== null && latestPowerKw > 0) {
+              // Estimación basada en potencia: si el cargador solo envía Power sin Energy,
+              // estimar la energía acumulada usando potencia * tiempo transcurrido
+              const elapsedHours = (Date.now() - activeSession.startTime.getTime()) / (1000 * 3600);
+              consumedKwh = Math.max(0, latestPowerKw * elapsedHours);
+              console.log(`[CSMS-DUAL] Energy estimated from power: ${latestPowerKw.toFixed(1)} kW * ${elapsedHours.toFixed(3)} h = ${consumedKwh.toFixed(3)} kWh`);
+            } else {
+              // Sin datos de energía ni potencia, mantener el valor actual
+              consumedKwh = activeSession.currentKwh;
+            }
+            
             const currentCost = consumedKwh * activeSession.pricePerKwh;
             
             // Actualizar la sesión en memoria
@@ -786,6 +905,65 @@ export class DualCSMS {
             });
             
             console.log(`[CSMS-DUAL] MeterValues updated session ${transaction.id}: ${consumedKwh.toFixed(2)} kWh, $${Math.round(currentCost)} COP, power: ${latestPowerKw?.toFixed(1) || 'N/A'} kW`);
+            
+            // ============================================================
+            // AUTO-STOP: Verificar si se alcanzó el límite de carga
+            // ============================================================
+            let shouldAutoStop = false;
+            let autoStopReason = "";
+            
+            if (activeSession.chargeMode === "fixed_amount" && activeSession.targetValue > 0) {
+              // Modo monto fijo: detener cuando el costo alcanza el monto objetivo
+              if (currentCost >= activeSession.targetValue) {
+                shouldAutoStop = true;
+                autoStopReason = `Monto objetivo alcanzado: $${Math.round(currentCost)} >= $${activeSession.targetValue}`;
+              }
+            } else if (activeSession.chargeMode === "percentage" && activeSession.targetValue > 0) {
+              // Modo porcentaje: estimar kWh necesarios (batería 60 kWh por defecto)
+              const batteryCapacity = 60; // kWh
+              const startPercentage = 20; // Asumimos 20% de inicio
+              const targetKwh = ((activeSession.targetValue - startPercentage) / 100) * batteryCapacity;
+              if (consumedKwh >= targetKwh && targetKwh > 0) {
+                shouldAutoStop = true;
+                autoStopReason = `Porcentaje objetivo alcanzado: ${consumedKwh.toFixed(2)} kWh >= ${targetKwh.toFixed(2)} kWh (${activeSession.targetValue}%)`;
+              }
+            }
+            // full_charge: no auto-stop, el cargador decide cuándo parar
+            
+            if (shouldAutoStop) {
+              console.log(`[CSMS-DUAL] AUTO-STOP triggered for transaction ${transaction.id}: ${autoStopReason}`);
+              
+              // Buscar el OCPP transactionId numérico para enviar RemoteStopTransaction
+              let ocpp16TxId: number | null = null;
+              const txEntries = Array.from(this.ocpp16Transactions.entries());
+              for (const [ocppId, internalId] of txEntries) {
+                if (internalId === transaction.ocppTransactionId) {
+                  ocpp16TxId = ocppId;
+                  break;
+                }
+              }
+              
+              if (ocpp16TxId !== null) {
+                try {
+                  console.log(`[CSMS-DUAL] Sending RemoteStopTransaction for OCPP txId ${ocpp16TxId}`);
+                  await this.sendCall(conn, "RemoteStopTransaction", {
+                    transactionId: ocpp16TxId,
+                  });
+                  
+                  await db.createOcppLog({
+                    ocppIdentity: conn.ocppIdentity,
+                    stationId: conn.stationId,
+                    direction: "OUT",
+                    messageType: "RemoteStopTransaction",
+                    payload: { transactionId: ocpp16TxId, reason: autoStopReason },
+                  });
+                } catch (stopError) {
+                  console.error(`[CSMS-DUAL] Error sending auto-stop RemoteStopTransaction:`, stopError);
+                }
+              } else {
+                console.warn(`[CSMS-DUAL] Could not find OCPP 1.6 transactionId for internal ${transaction.ocppTransactionId}`);
+              }
+            }
           }
         }
       }
@@ -911,20 +1089,111 @@ export class DualCSMS {
               energyDelivered = energyValue.value / 1000;
             }
           }
+          
+          // Fallback: usar datos de la sesión activa si no hay energía del medidor
+          const activeSession201 = getActiveSessionById(transaction.id);
+          if (energyDelivered <= 0 && activeSession201 && activeSession201.currentKwh > 0) {
+            energyDelivered = activeSession201.currentKwh;
+          }
 
           const tariff201 = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
           const pricePerKwh = tariff201 ? parseFloat(tariff201.pricePerKwh) : 1800;
-          const totalCost = energyDelivered * pricePerKwh;
+          let totalCost = energyDelivered * pricePerKwh;
+          
+          // Para modo fixed_amount, limitar al monto objetivo
+          if (activeSession201?.chargeMode === "fixed_amount" && activeSession201.targetValue > 0) {
+            totalCost = Math.min(totalCost, activeSession201.targetValue);
+          }
+
+          // Calcular distribución de ingresos
+          const revenueConfig201 = await db.getRevenueShareConfig();
+          const investorShare201 = totalCost * (revenueConfig201.investorPercent / 100);
+          const platformFee201 = totalCost * (revenueConfig201.platformPercent / 100);
+
+          const endTime201 = new Date(req.timestamp);
+          const startTime201 = transaction.startTime ? new Date(transaction.startTime) : new Date();
+          const duration201 = Math.floor((endTime201.getTime() - startTime201.getTime()) / 1000);
 
           await db.updateTransaction(transaction.id, {
-            endTime: new Date(req.timestamp),
+            endTime: endTime201,
             kwhConsumed: energyDelivered.toString(),
             totalCost: totalCost.toString(),
+            investorShare: investorShare201.toString(),
+            platformFee: platformFee201.toString(),
             status: "COMPLETED",
             stopReason: req.transactionInfo.stoppedReason,
           });
 
           await db.updateEvseStatus(evse.id, "AVAILABLE");
+
+          // Descontar de la billetera del usuario
+          try {
+            const wallet201 = await db.getWalletByUserId(transaction.userId);
+            if (wallet201) {
+              let currentBalance201 = parseFloat(wallet201.balance);
+              if (currentBalance201 < totalCost) {
+                try {
+                  const { autoChargeIfNeeded } = await import("../wompi/auto-charge");
+                  const autoResult201 = await autoChargeIfNeeded(transaction.userId, totalCost);
+                  if (autoResult201?.success) {
+                    currentBalance201 = autoResult201.newBalance;
+                  }
+                } catch (autoErr201) {
+                  console.warn(`[CSMS-DUAL] 2.0.1 Error en auto-cobro:`, autoErr201);
+                }
+              }
+              const newBalance201 = Math.max(0, currentBalance201 - totalCost);
+              await db.updateWalletBalance(transaction.userId, newBalance201.toString());
+              await db.createWalletTransaction({
+                walletId: wallet201.id,
+                userId: transaction.userId,
+                type: "CHARGE_PAYMENT",
+                amount: (-totalCost).toString(),
+                balanceBefore: currentBalance201.toString(),
+                balanceAfter: newBalance201.toString(),
+                referenceId: transaction.id,
+                referenceType: "TRANSACTION",
+                status: "COMPLETED",
+                description: `Pago por carga de ${energyDelivered.toFixed(2)} kWh`,
+              });
+              console.log(`[CSMS-DUAL] 2.0.1 Wallet deducted: $${Math.round(totalCost)} from user ${transaction.userId}`);
+            }
+          } catch (walletErr201) {
+            console.error(`[CSMS-DUAL] 2.0.1 Error deducting wallet:`, walletErr201);
+          }
+
+          // Crear notificación en BD
+          try {
+            await db.createNotification({
+              userId: transaction.userId,
+              title: "Carga completada",
+              message: `Tu carga ha finalizado. Consumo: ${energyDelivered.toFixed(2)} kWh. Total: $${Math.round(totalCost).toLocaleString()} COP`,
+              type: "CHARGING",
+              referenceId: transaction.id,
+            });
+          } catch (notifErr201) {
+            console.error(`[CSMS-DUAL] 2.0.1 Error creating notification:`, notifErr201);
+          }
+
+          // Enviar notificación push FCM
+          try {
+            const user201 = await db.getUserById(transaction.userId);
+            if (user201?.fcmToken) {
+              const station201 = conn.stationId ? await db.getChargingStationById(conn.stationId) : null;
+              await sendChargingCompleteNotification(user201.fcmToken, {
+                stationName: station201?.name || "Estación EVGreen",
+                energyDelivered,
+                totalCost: Math.round(totalCost),
+                duration: duration201,
+              });
+            }
+          } catch (pushErr201) {
+            console.error(`[CSMS-DUAL] 2.0.1 Error sending push:`, pushErr201);
+          }
+
+          // Limpiar sesión activa
+          removeActiveSession(transaction.id);
+          console.log(`[CSMS-DUAL] 2.0.1 StopTransaction completed: tx=${transaction.id}, ${energyDelivered.toFixed(2)} kWh, $${Math.round(totalCost)} COP`);
         }
         break;
       }
