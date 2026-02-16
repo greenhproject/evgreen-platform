@@ -137,6 +137,8 @@ export default function UserMap() {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [userMarker, setUserMarker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const [isFirstLocation, setIsFirstLocation] = useState(true);
   const [filters, setFilters] = useState({
     connectorType: "all",
     chargeType: "all",
@@ -149,36 +151,102 @@ export default function UserMap() {
   // Obtener billetera del usuario
   const { data: wallet } = trpc.wallet.getMyWallet.useQuery();
 
-  // Obtener ubicación del usuario
+  // Tracking GPS en tiempo real con watchPosition
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const loc = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          };
-          setUserLocation(loc);
-          // Centrar el mapa inmediatamente si ya está listo
-          if (mapInstance) {
-            mapInstance.panTo(loc);
-            mapInstance.setZoom(14);
-          }
-        },
-        (error) => {
-          console.error("Error getting location:", error);
-          // Default: Bogotá, Colombia
-          const defaultLoc = { lat: 4.7110, lng: -74.0721 };
-          setUserLocation(defaultLoc);
-          if (mapInstance) {
-            mapInstance.panTo(defaultLoc);
-            mapInstance.setZoom(12);
-          }
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-      );
+    if (!navigator.geolocation) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const loc = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        setUserLocation(loc);
+        // Solo centrar en la primera ubicación obtenida
+        if (isFirstLocation && mapInstance) {
+          mapInstance.panTo(loc);
+          mapInstance.setZoom(14);
+          setIsFirstLocation(false);
+        }
+      },
+      (error) => {
+        console.error("Error getting location:", error);
+        // Default: Bogotá, Colombia
+        const defaultLoc = { lat: 4.7110, lng: -74.0721 };
+        setUserLocation(defaultLoc);
+        if (isFirstLocation && mapInstance) {
+          mapInstance.panTo(defaultLoc);
+          mapInstance.setZoom(12);
+          setIsFirstLocation(false);
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [mapInstance, isFirstLocation]);
+
+  // Marcador de ubicación del usuario (punto azul pulsante)
+  useEffect(() => {
+    if (!mapInstance || !userLocation) return;
+
+    if (userMarker) {
+      // Actualizar posición del marcador existente
+      userMarker.position = userLocation;
+      return;
     }
-  }, [mapInstance]);
+
+    // Crear el marcador con punto azul pulsante
+    const markerEl = document.createElement('div');
+    markerEl.innerHTML = `
+      <div style="position: relative; width: 24px; height: 24px;">
+        <div style="
+          position: absolute; inset: -8px;
+          border-radius: 50%;
+          background: rgba(59, 130, 246, 0.2);
+          animation: userPulse 2s ease-in-out infinite;
+        "></div>
+        <div style="
+          position: absolute; inset: 0;
+          border-radius: 50%;
+          background: #3b82f6;
+          border: 3px solid white;
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.5), 0 0 0 1px rgba(0,0,0,0.1);
+        "></div>
+      </div>
+    `;
+
+    // Inyectar CSS de animación si no existe
+    if (!document.getElementById('user-pulse-css')) {
+      const style = document.createElement('style');
+      style.id = 'user-pulse-css';
+      style.textContent = `
+        @keyframes userPulse {
+          0% { transform: scale(1); opacity: 0.7; }
+          50% { transform: scale(2.2); opacity: 0; }
+          100% { transform: scale(1); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const marker = new google.maps.marker.AdvancedMarkerElement({
+      map: mapInstance,
+      position: userLocation,
+      title: 'Mi ubicación',
+      content: markerEl,
+      zIndex: 9999,
+    });
+
+    setUserMarker(marker);
+
+    return () => {
+      marker.map = null;
+      setUserMarker(null);
+    };
+  }, [mapInstance, userLocation]);
 
   // Centrar mapa en ubicación del usuario
   const centerOnUser = () => {
