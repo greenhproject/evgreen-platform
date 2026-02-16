@@ -148,7 +148,7 @@ function isDarkTheme(): boolean {
 
 export function MapView({
   className,
-  initialCenter = { lat: 37.7749, lng: -122.4194 },
+  initialCenter = { lat: 4.7110, lng: -74.0721 },
   initialZoom = 12,
   onMapReady,
 }: MapViewProps) {
