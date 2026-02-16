@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { openExternalUrl } from "@/lib/openExternal";
 
 interface BannerItem {
   id: number;
@@ -11,6 +12,7 @@ interface BannerItem {
   textColor?: string;
   ctaText?: string;
   ctaUrl?: string;
+  linkUrl?: string;
   type: "INFO" | "PROMO" | "AD";
 }
 
@@ -61,6 +63,13 @@ export function Banner({
 
   const currentBanner = banners[currentIndex];
 
+  const handleBannerClick = () => {
+    const url = currentBanner.ctaUrl || currentBanner.linkUrl;
+    if (url) {
+      openExternalUrl(url);
+    }
+  };
+
   return (
     <div className={`relative overflow-hidden rounded-xl ${className}`}>
       <AnimatePresence mode="wait">
@@ -70,7 +79,8 @@ export function Banner({
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -20 }}
           transition={{ duration: 0.3 }}
-          className="relative"
+          className={`relative ${(currentBanner.ctaUrl || currentBanner.linkUrl) ? "cursor-pointer" : ""}`}
+          onClick={handleBannerClick}
           style={{
             backgroundColor: currentBanner.backgroundColor || "hsl(var(--primary))",
           }}
@@ -89,9 +99,10 @@ export function Banner({
                   {currentBanner.description && (
                     <p className="text-sm opacity-90 mt-1">{currentBanner.description}</p>
                   )}
-                  {currentBanner.ctaText && (
-                    <button className="mt-2 px-4 py-1.5 bg-white/20 backdrop-blur-sm rounded-full text-sm font-medium hover:bg-white/30 transition-colors">
+                  {currentBanner.ctaText && (currentBanner.ctaUrl || currentBanner.linkUrl) && (
+                    <button className="mt-2 px-4 py-1.5 bg-white/20 backdrop-blur-sm rounded-full text-sm font-medium hover:bg-white/30 transition-colors inline-flex items-center gap-1">
                       {currentBanner.ctaText}
+                      <ExternalLink className="w-3 h-3" />
                     </button>
                   )}
                 </div>
@@ -108,9 +119,10 @@ export function Banner({
                   <p className="text-sm opacity-90">{currentBanner.description}</p>
                 )}
               </div>
-              {currentBanner.ctaText && (
-                <button className="px-4 py-1.5 bg-white/20 backdrop-blur-sm rounded-full text-sm font-medium hover:bg-white/30 transition-colors">
+              {currentBanner.ctaText && (currentBanner.ctaUrl || currentBanner.linkUrl) && (
+                <button className="px-4 py-1.5 bg-white/20 backdrop-blur-sm rounded-full text-sm font-medium hover:bg-white/30 transition-colors inline-flex items-center gap-1">
                   {currentBanner.ctaText}
+                  <ExternalLink className="w-3 h-3" />
                 </button>
               )}
             </div>
@@ -275,6 +287,13 @@ export function ChargingBanner({
 
   const currentBanner = banners[currentIndex];
 
+  const handleBannerClick = () => {
+    const url = currentBanner.ctaUrl || currentBanner.linkUrl;
+    if (url) {
+      openExternalUrl(url);
+    }
+  };
+
   return (
     <div className={`rounded-xl overflow-hidden ${className}`}>
       <AnimatePresence mode="wait">
@@ -284,7 +303,8 @@ export function ChargingBanner({
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.98 }}
           transition={{ duration: 0.5 }}
-          className="relative"
+          className={`relative ${(currentBanner.ctaUrl || currentBanner.linkUrl) ? "cursor-pointer" : ""}`}
+          onClick={handleBannerClick}
         >
           {currentBanner.imageUrl ? (
             <div className="relative h-40">
@@ -299,9 +319,10 @@ export function ChargingBanner({
                   Publicidad
                 </span>
                 <h3 className="font-bold text-white mt-1">{currentBanner.title}</h3>
-                {currentBanner.ctaText && (
-                  <button className="mt-2 px-3 py-1 bg-primary text-primary-foreground rounded-full text-sm font-medium">
+                {currentBanner.ctaText && (currentBanner.ctaUrl || currentBanner.linkUrl) && (
+                  <button className="mt-2 px-3 py-1 bg-primary text-primary-foreground rounded-full text-sm font-medium inline-flex items-center gap-1">
                     {currentBanner.ctaText}
+                    <ExternalLink className="w-3 h-3" />
                   </button>
                 )}
               </div>

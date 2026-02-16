@@ -822,3 +822,14 @@
 - [x] Agregar endpoint admin transactions.cleanupOrphaned para limpieza manual
 - [x] Agregar logs de auditoría cuando se cierren transacciones automáticamente
 - [x] Limpieza automática inicial 30 segundos después del arranque del servidor
+
+## Fix PWA Enlaces Externos - 15 Febrero 2026
+- [x] Crear utilidad openExternalUrl() con estrategia robusta para PWA standalone (crea <a> temporal con target="_blank")
+- [x] Crear utilidad isExternalUrl() para detectar URLs externas vs internas
+- [x] Crear utilidad isPWAStandalone() para detectar modo PWA
+- [x] Banners publicitarios (Banner.tsx): onClick handler abre ctaUrl/linkUrl en navegador externo
+- [x] Banners de carga (ChargingBanner en Banner.tsx): mismo fix con openExternalUrl
+- [x] NotificationPanel.tsx: detecta URLs externas y usa openExternalUrl en vez de navegación interna
+- [x] Indicador visual ExternalLink icon en botones CTA y notificaciones con URL externa
+- [x] Tests unitarios para isExternalUrl (18 tests: URLs internas, externas, mailto, tel, sms, malformadas)
+- [x] Botón "Limpiar huérfanas" en panel admin de Transacciones con toast de confirmación
