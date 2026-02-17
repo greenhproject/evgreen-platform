@@ -774,6 +774,7 @@ const tariffsRouter = router({
       minPrice: z.number().min(100).max(5000),
       maxPrice: z.number().min(100).max(10000),
       enableDynamicPricing: z.boolean(),
+      defaultBasePricePerKwh: z.number().min(100).max(10000).optional(),
       defaultReservationFee: z.number().min(0).max(100000).optional(),
       defaultOverstayPenaltyPerMin: z.number().min(0).max(10000).optional(),
       defaultConnectionFee: z.number().min(0).max(50000).optional(),
@@ -785,15 +786,24 @@ const tariffsRouter = router({
       if (input.minPrice >= input.maxPrice) {
         throw new TRPCError({ 
           code: "BAD_REQUEST", 
-          message: "El precio mínimo debe ser menor al máximo" 
+          message: "El precio m\u00ednimo debe ser menor al m\u00e1ximo" 
         });
       }
-      // Validar que AC sea menor que DC si precios diferenciados están habilitados
+      // Validar que el precio base est\u00e9 dentro del rango global
+      if (input.defaultBasePricePerKwh !== undefined) {
+        if (input.defaultBasePricePerKwh < input.minPrice || input.defaultBasePricePerKwh > input.maxPrice) {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: `El precio base ($${input.defaultBasePricePerKwh}) debe estar dentro del rango global ($${input.minPrice} - $${input.maxPrice})` 
+          });
+        }
+      }
+      // Validar que AC sea menor que DC si precios diferenciados est\u00e1n habilitados
       if (input.enableDifferentiatedPricing && input.defaultPricePerKwhAC && input.defaultPricePerKwhDC) {
         if (input.defaultPricePerKwhAC > input.defaultPricePerKwhDC) {
           throw new TRPCError({ 
             code: "BAD_REQUEST", 
-            message: "El precio AC (carga lenta) debe ser menor o igual al precio DC (carga rápida)" 
+            message: "El precio AC (carga lenta) debe ser menor o igual al precio DC (carga r\u00e1pida)" 
           });
         }
       }
@@ -807,7 +817,8 @@ const tariffsRouter = router({
         input.defaultConnectionFee,
         input.defaultPricePerKwhAC,
         input.defaultPricePerKwhDC,
-        input.enableDifferentiatedPricing
+        input.enableDifferentiatedPricing,
+        input.defaultBasePricePerKwh
       );
       return { success: true };
     }),

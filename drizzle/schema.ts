@@ -1066,6 +1066,7 @@ export const platformSettings = mysqlTable("platform_settings", {
   minPricePerKwh: decimal("minPricePerKwh", { precision: 10, scale: 2 }).default("400").notNull(), // Mínimo $400 COP/kWh
   maxPricePerKwh: decimal("maxPricePerKwh", { precision: 10, scale: 2 }).default("2500").notNull(), // Máximo $2,500 COP/kWh
   enableDynamicPricing: boolean("enableDynamicPricing").default(true).notNull(), // Habilitar precios dinámicos globalmente
+  defaultBasePricePerKwh: decimal("defaultBasePricePerKwh", { precision: 10, scale: 2 }).default("1200").notNull(), // Precio base por kWh (editable por admin)
   
   // Tarifas globales por defecto (configurables por admin)
   defaultReservationFee: decimal("defaultReservationFee", { precision: 10, scale: 2 }).default("5000").notNull(), // Fee de reserva por defecto
