@@ -890,3 +890,14 @@
 - [x] Removido Tooltip (no funciona en móvil, requiere hover) - reemplazado por labels permanentes
 - [x] Botones reposicionados al centro-derecha del mapa para no solaparse con widget de IA
 - [x] Marcador azul más grande (28px) con sombra más visible y pulso más amplio
+
+## Fix: Tarifas - Precio base ahora editable y validado - 16 Febrero 2026
+- [x] Nuevo campo defaultBasePricePerKwh en BD (platformSettings) con default 1200
+- [x] Precio base ahora es editable con input numérico igual que los demás campos
+- [x] Sincronización automática del precio base con datos del servidor al cargar
+- [x] Validación frontend: borde rojo si el precio está fuera del rango global
+- [x] Validación frontend: mensaje de error al intentar guardar fuera de rango
+- [x] Validación backend: tRPC rechaza si precio base < mín o > máx del rango global
+- [x] El precio base se envía al guardar tarifas globales y se persiste en BD
+- [x] Sincronización con dynamicConfig.basePrice para cálculos de precio dinámico
+- [x] 637 tests pasando, 0 errores TypeScript

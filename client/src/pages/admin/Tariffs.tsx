@@ -107,6 +107,7 @@ export default function AdminTariffs() {
   const [localPriceRanges, setLocalPriceRanges] = useState({ 
     minPrice: 400, 
     maxPrice: 3000,
+    defaultBasePricePerKwh: 1200,
     defaultReservationFee: 5000,
     defaultOverstayPenaltyPerMin: 500,
     defaultConnectionFee: 2000,
@@ -138,6 +139,7 @@ export default function AdminTariffs() {
       setLocalPriceRanges({
         minPrice: priceRanges.minPrice,
         maxPrice: priceRanges.maxPrice,
+        defaultBasePricePerKwh: priceRanges.defaultBasePricePerKwh,
         defaultReservationFee: priceRanges.defaultReservationFee,
         defaultOverstayPenaltyPerMin: priceRanges.defaultOverstayPenaltyPerMin,
         defaultConnectionFee: priceRanges.defaultConnectionFee,
@@ -145,6 +147,8 @@ export default function AdminTariffs() {
         defaultPricePerKwhDC: priceRanges.defaultPricePerKwhDC,
         enableDifferentiatedPricing: priceRanges.enableDifferentiatedPricing,
       });
+      // Sincronizar el precio base con la config dinámica
+      setDynamicConfig(prev => ({ ...prev, basePrice: priceRanges.defaultBasePricePerKwh }));
     }
   }, [priceRanges]);
 
@@ -157,6 +161,11 @@ export default function AdminTariffs() {
       toast.error("El precio mínimo debe ser al menos $100 COP");
       return;
     }
+    // Validar que el precio base esté dentro del rango global
+    if (localPriceRanges.defaultBasePricePerKwh < localPriceRanges.minPrice || localPriceRanges.defaultBasePricePerKwh > localPriceRanges.maxPrice) {
+      toast.error(`El precio base ($${localPriceRanges.defaultBasePricePerKwh.toLocaleString()}) debe estar dentro del rango global ($${localPriceRanges.minPrice.toLocaleString()} - $${localPriceRanges.maxPrice.toLocaleString()})`);
+      return;
+    }
     // Validar que AC sea menor que DC si precios diferenciados están habilitados
     if (localPriceRanges.enableDifferentiatedPricing && localPriceRanges.defaultPricePerKwhAC > localPriceRanges.defaultPricePerKwhDC) {
       toast.error("El precio AC (carga lenta) debe ser menor o igual al precio DC (carga rápida)");
@@ -167,6 +176,7 @@ export default function AdminTariffs() {
       minPrice: localPriceRanges.minPrice,
       maxPrice: localPriceRanges.maxPrice,
       enableDynamicPricing: dynamicConfig.enabled,
+      defaultBasePricePerKwh: localPriceRanges.defaultBasePricePerKwh,
       defaultReservationFee: localPriceRanges.defaultReservationFee,
       defaultOverstayPenaltyPerMin: localPriceRanges.defaultOverstayPenaltyPerMin,
       defaultConnectionFee: localPriceRanges.defaultConnectionFee,
@@ -670,16 +680,41 @@ export default function AdminTariffs() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {/* Precio base/kWh - Solo lectura */}
+            {/* Precio base/kWh - Editable */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
                 <DollarSign className="w-4 h-4 text-primary" />
                 Precio base/kWh
               </Label>
               <div className="flex items-center gap-2">
-                <div className="text-2xl font-bold text-primary">{formatCurrency(dynamicConfig.basePrice)}</div>
+                <span className="text-muted-foreground">$</span>
+                <Input
+                  type="number"
+                  value={localPriceRanges.defaultBasePricePerKwh}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 0;
+                    setLocalPriceRanges(prev => ({ ...prev, defaultBasePricePerKwh: val }));
+                    setDynamicConfig(prev => ({ ...prev, basePrice: val }));
+                  }}
+                  className={`w-28 ${
+                    localPriceRanges.defaultBasePricePerKwh < localPriceRanges.minPrice || 
+                    localPriceRanges.defaultBasePricePerKwh > localPriceRanges.maxPrice 
+                      ? 'border-red-500 focus:ring-red-500' 
+                      : ''
+                  }`}
+                  min={localPriceRanges.minPrice}
+                  max={localPriceRanges.maxPrice}
+                />
+                <span className="text-muted-foreground">COP</span>
               </div>
-              <p className="text-xs text-muted-foreground">Controlado por precios dinámicos</p>
+              {(localPriceRanges.defaultBasePricePerKwh < localPriceRanges.minPrice || 
+                localPriceRanges.defaultBasePricePerKwh > localPriceRanges.maxPrice) ? (
+                <p className="text-xs text-red-500 font-medium">
+                  Debe estar entre ${localPriceRanges.minPrice.toLocaleString()} y ${localPriceRanges.maxPrice.toLocaleString()} COP
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Precio base para todas las estaciones</p>
+              )}
             </div>
             
             {/* Fee de reserva - Editable */}
