@@ -285,9 +285,9 @@ export async function calculateDynamicPrice(
   estimatedDurationMinutes: number = 60,
   config: DynamicPricingConfig = DEFAULT_PRICING_CONFIG
 ): Promise<DynamicPrice> {
-  // Obtener tarifa base de la estación
-  const tariff = await db.getActiveTariffByStationId(stationId);
-  const basePricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "800");
+  // Obtener tarifa base de la estación (usa precios globales si no tiene tarifa propia)
+  const effectivePrice = await db.getEffectiveStationPrice(stationId);
+  const basePricePerKwh = effectivePrice.pricePerKwh;
   
   // Obtener EVSE para conocer la potencia
   const evse = await db.getEvseById(evseId);
@@ -372,9 +372,9 @@ export async function calculateDynamicKwhPrice(
   evseId?: number,
   config: DynamicPricingConfig = DEFAULT_PRICING_CONFIG
 ): Promise<DynamicKwhPrice> {
-  // Obtener tarifa base de la estación
-  const tariff = await db.getActiveTariffByStationId(stationId);
-  const basePricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "800");
+  // Obtener tarifa base de la estación (usa precios globales si no tiene tarifa propia)
+  const effectivePrice = await db.getEffectiveStationPrice(stationId);
+  const basePricePerKwh = effectivePrice.pricePerKwh;
   
   // Obtener ocupación de la estación
   const occupancy = await getZoneOccupancy(stationId);

@@ -3303,6 +3303,46 @@ export async function getRevenueShareConfig(): Promise<{ investorPercent: number
 // PRICING BY CONNECTOR TYPE (AC/DC)
 // ============================================================================
 
+/**
+ * Obtiene el precio efectivo para una estación.
+ * Primero busca la tarifa activa de la estación.
+ * Si no existe, usa los precios globales de platform_settings.
+ * NUNCA usa un valor hardcodeado de fallback.
+ */
+export async function getEffectiveStationPrice(stationId: number): Promise<{
+  pricePerKwh: number;
+  reservationFee: number;
+  overstayPenaltyPerMin: number;
+  connectionFee: number;
+  tariffId: number | null;
+  autoPricing: boolean;
+  source: 'station' | 'global';
+}> {
+  const tariff = await getActiveTariffByStationId(stationId);
+  if (tariff) {
+    return {
+      pricePerKwh: parseFloat(tariff.pricePerKwh?.toString() || "1200"),
+      reservationFee: parseFloat(tariff.reservationFee?.toString() || "5000"),
+      overstayPenaltyPerMin: parseFloat(tariff.overstayPenaltyPerMinute?.toString() || "500"),
+      connectionFee: parseFloat(tariff.pricePerSession?.toString() || "2000"),
+      tariffId: tariff.id,
+      autoPricing: tariff.autoPricing || false,
+      source: 'station',
+    };
+  }
+  // Fallback: usar precios globales de platform_settings
+  const priceRanges = await getPriceRanges();
+  return {
+    pricePerKwh: priceRanges.defaultBasePricePerKwh,
+    reservationFee: priceRanges.defaultReservationFee,
+    overstayPenaltyPerMin: priceRanges.defaultOverstayPenaltyPerMin,
+    connectionFee: priceRanges.defaultConnectionFee,
+    tariffId: null,
+    autoPricing: false,
+    source: 'global',
+  };
+}
+
 export async function getPriceByConnectorType(
   evseId: number,
   basePrice: number

@@ -4,7 +4,7 @@
  * y envía notificaciones push cuando hay precios bajos.
  */
 
-import { getDb } from "../db";
+import { getDb, getEffectiveStationPrice } from "../db";
 import { users, chargingStations, evses, userVehicles, tariffs } from "../../drizzle/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { sendPushNotification, type NotificationType } from "../firebase/fcm";
@@ -202,7 +202,8 @@ export async function checkProximityAndNotify(
     if (availableConnectors === 0) continue;
 
     // Calcular precio dinámico
-    let pricePerKwh = 800; // Precio base por defecto
+    const effectivePriceDefault = await getEffectiveStationPrice(station.id);
+    let pricePerKwh = effectivePriceDefault.pricePerKwh; // Precio efectivo (estación o global)
     let demandLevel = "NORMAL";
 
     try {
