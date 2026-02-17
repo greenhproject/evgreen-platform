@@ -901,3 +901,17 @@
 - [x] El precio base se envía al guardar tarifas globales y se persiste en BD
 - [x] Sincronización con dynamicConfig.basePrice para cálculos de precio dinámico
 - [x] 637 tests pasando, 0 errores TypeScript
+
+## Fix: Service Worker cachea assets viejos - 16 Febrero 2026
+- [x] SW v3.0.0: Network First para assets con hash (/assets/*.js, /assets/*.css)
+- [x] SW: isHashedAsset() detecta archivos Vite con hash y los sirve desde red primero
+- [x] SW: Solo cachea JS/CSS si content-type es correcto (no cachea HTML fallback)
+- [x] SW: Bump de versión (v2 → v3) fuerza limpieza de caches viejos al activar
+- [x] SW: Escucha mensajes SKIP_WAITING y CLEAR_CACHE desde la app
+- [x] ErrorBoundary: detecta isDynamicImportError y auto-recarga con limpieza de cache
+- [x] ErrorBoundary: protege contra loop infinito (sessionStorage con cooldown 10s)
+- [x] ErrorBoundary: UI amigable "Actualización disponible" en vez de error técnico
+- [x] main.tsx: handler global unhandledrejection para dynamic imports fuera del ErrorBoundary
+- [x] main.tsx: detecta updatefound del SW y recarga automáticamente
+- [x] main.tsx: verifica actualizaciones del SW cada 5 minutos
+- [x] 637 tests pasando, 0 errores TypeScript
