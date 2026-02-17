@@ -960,3 +960,9 @@
 - [x] Corregir para que use estado OCPP real + BD + conectores disponibles (3 condiciones OR)
 - [x] Corregir getAvailableConnectors para usar estado de BD cuando dualCSMS no tiene datos en memoria
 - [x] 10 tests unitarios para lógica de disponibilidad de estación
+
+## Bug: Error SQL en station_reviews - 17 Febrero 2026 [CORREGIDO]
+- [x] BUG: Query falla al consultar station_reviews - columnas del schema no coinciden con tabla en BD
+- [x] Verificar estructura de tabla en BD vs schema de Drizzle (columnas renombradas de camelCase a snake_case)
+- [x] Corregir columnas faltantes: ownerResponseAt, isApproved (tinyint), isVisible (tinyint) agregadas al schema Drizzle
+- [x] 684 tests pasando, 0 errores TypeScript

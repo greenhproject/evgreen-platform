@@ -9,6 +9,7 @@ import {
   boolean,
   json,
   bigint,
+  tinyint,
 } from "drizzle-orm/mysql-core";
 import { relations } from "drizzle-orm";
 
@@ -1657,6 +1658,9 @@ export const stationReviews = mysqlTable("station_reviews", {
   rating: int("rating").notNull(), // 1-5
   comment: text("comment"),
   ownerResponse: text("owner_response"),
+  ownerResponseAt: timestamp("owner_response_at"),
+  isApproved: tinyint("is_approved").notNull().default(1),
+  isVisible: tinyint("is_visible").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
