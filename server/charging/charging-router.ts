@@ -16,6 +16,23 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import * as simulator from "./charging-simulator";
 
+// Helper: buscar conexión OCPP por stationId o por ocppIdentity como fallback
+function findOcppConnection(stationId: number, ocppIdentity?: string | null) {
+  // Primero intentar por stationId
+  const connByStationId = getConnectionByStationId(stationId);
+  if (connByStationId && connByStationId.ws.readyState === 1) {
+    return connByStationId;
+  }
+  // Fallback: buscar por ocppIdentity directamente
+  if (ocppIdentity) {
+    const connByIdentity = getConnection(ocppIdentity);
+    if (connByIdentity && connByIdentity.ws.readyState === 1) {
+      return connByIdentity;
+    }
+  }
+  return undefined;
+}
+
 // Tipos de carga disponibles
 export type ChargeMode = "fixed_amount" | "percentage" | "full_charge";
 
@@ -75,23 +92,26 @@ export const chargingRouter = router({
       const connectors = await db.getEvsesByStationId(station.id);
       
       // Verificar si la estación está conectada al servidor OCPP
-      const ocppConnection = getConnectionByStationId(station.id);
-      const isOnline = !!ocppConnection && ocppConnection.ws.readyState === 1;
+      // Buscar por stationId primero, luego por ocppIdentity como fallback
+      const ocppConnection = findOcppConnection(station.id, station.ocppIdentity);
+      const isOcppConnected = !!ocppConnection && ocppConnection.ws.readyState === 1;
       
-      // Obtener estados de conectores desde OCPP si está conectado
-      let connectorStatuses: Record<number, string> = {};
-      if (ocppConnection) {
-        connectorStatuses = Object.fromEntries(ocppConnection.connectorStatuses);
-      }
+      // La estación está online si:
+      // 1. Tiene conexión OCPP activa (WebSocket abierto), O
+      // 2. Está marcada como online en la BD (puede estar en grace period de reconexión), O
+      // 3. La estación está activa Y tiene al menos un conector disponible en la BD
+      const hasAvailableConnector = connectors.some((c: any) => c.status === 'AVAILABLE');
+      const isOnline = isOcppConnected || station.isOnline || (station.isActive && hasAvailableConnector);
       
+      // Obtener estados de conectores: usar BD directamente si no hay datos OCPP
       return {
         station,
         connectors: connectors.map(c => ({
           ...c,
-          ocppStatus: connectorStatuses[c.connectorId] || c.status,
+          ocppStatus: (ocppConnection?.connectorStatuses?.get(c.connectorId)) || c.status,
         })),
         isOnline,
-        ocppIdentity: ocppConnection?.ocppIdentity,
+        ocppIdentity: ocppConnection?.ocppIdentity || station.ocppIdentity,
       };
     }),
 
@@ -106,12 +126,14 @@ export const chargingRouter = router({
       const { stationId } = input;
       
       const connectors = await db.getEvsesByStationId(stationId);
-      const ocppConnection = getConnectionByStationId(stationId);
+      // Buscar conexión OCPP por stationId o por ocppIdentity
+      const stationData = await db.getChargingStationById(stationId);
+      const ocppConnection = findOcppConnection(stationId, stationData?.ocppIdentity);
       
       // Combinar estado de BD con estado OCPP en tiempo real
       return connectors.map(c => {
         let realTimeStatus = c.status;
-        if (ocppConnection) {
+        if (ocppConnection && ocppConnection.connectorStatuses.size > 0) {
           // Usar evseIdLocal para buscar el estado OCPP (el cargador reporta por connectorId que es evseIdLocal)
           const ocppStatus = ocppConnection.connectorStatuses.get(c.evseIdLocal);
           if (ocppStatus) {
@@ -308,20 +330,59 @@ export const chargingRouter = router({
       const ocppConnection = getConnectionByStationId(stationId);
       
       if (!isTestUser) {
-        // Flujo normal: requiere cargador conectado
-        if (!ocppConnection || ocppConnection.ws.readyState !== 1) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "La estación no está disponible en este momento. Intenta de nuevo.",
-          });
+        // Obtener datos de la estación para fallback
+        const stationData = await db.getChargingStationById(stationId);
+        
+        // Buscar conexión OCPP: primero por stationId, luego por ocppIdentity
+        const effectiveConnection = findOcppConnection(stationId, stationData?.ocppIdentity);
+        const hasOcppConnection = !!effectiveConnection;
+        
+        // Si no hay conexión OCPP activa, verificar estado en BD como fallback
+        // (la BD mantiene isOnline=true durante el grace period de reconexión)
+        if (!hasOcppConnection) {
+          const stationOnlineInDb = !!stationData?.isOnline;
+          if (!stationOnlineInDb) {
+            console.log(`[startCharge] Station ${stationId} not available: no OCPP connection and not online in DB`);
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "La estación no está disponible en este momento. Intenta de nuevo.",
+            });
+          }
+          console.log(`[startCharge] Station ${stationId}: no OCPP connection in memory, but isOnline=true in DB. Proceeding with BD fallback...`);
         }
         
         // Verificar que el conector está disponible
-        const connectorStatus = ocppConnection.connectorStatuses.get(connectorId);
-        if (connectorStatus && connectorStatus !== "Available" && connectorStatus !== "AVAILABLE" && connectorStatus !== "Preparing" && connectorStatus !== "PREPARING") {
+        if (hasOcppConnection) {
+          // Usar estado OCPP en memoria
+          const connectorStatus = effectiveConnection!.connectorStatuses.get(connectorId);
+          if (connectorStatus && connectorStatus !== "Available" && connectorStatus !== "AVAILABLE" && connectorStatus !== "Preparing" && connectorStatus !== "PREPARING") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `El conector no está disponible. Estado actual: ${connectorStatus}`,
+            });
+          }
+        } else {
+          // Verificar estado del conector en la BD
+          const connectors = await db.getEvsesByStationId(stationId);
+          const connector = connectors.find((c: any) => c.connectorId === connectorId || c.evseIdLocal === connectorId);
+          if (connector) {
+            const dbStatus = (connector.status || '').toUpperCase();
+            if (dbStatus && dbStatus !== 'AVAILABLE' && dbStatus !== 'PREPARING') {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: `El conector no está disponible. Estado actual: ${dbStatus}`,
+              });
+            }
+          }
+        }
+        
+        // Determinar la identidad OCPP a usar para enviar el comando
+        const effectiveOcppIdentity = effectiveConnection?.ocppIdentity || stationData?.ocppIdentity || '';
+        
+        if (!effectiveOcppIdentity) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `El conector no está disponible. Estado actual: ${connectorStatus}`,
+            message: "No se pudo determinar la identidad OCPP de la estación.",
           });
         }
         
@@ -329,6 +390,7 @@ export const chargingRouter = router({
         const sessionId = uuidv4();
         
         // Guardar sesión pendiente
+        console.log(`[startCharge] Creating pending session: sessionId=${sessionId}, userId=${ctx.user.id}, stationId=${stationId}, connectorId=${connectorId}, ocppIdentity=${effectiveOcppIdentity}`);
         pendingChargeSessions.set(sessionId, {
           userId: ctx.user.id,
           stationId,
@@ -337,7 +399,7 @@ export const chargingRouter = router({
           targetValue,
           estimatedCost,
           createdAt: new Date(),
-          ocppIdentity: ocppConnection.ocppIdentity,
+          ocppIdentity: effectiveOcppIdentity,
         });
         
         // Enviar RemoteStartTransaction al cargador
@@ -350,7 +412,7 @@ export const chargingRouter = router({
         };
         
         const sent = sendOcppCommand(
-          ocppConnection.ocppIdentity,
+          effectiveOcppIdentity,
           messageId,
           "RemoteStartTransaction",
           payload
@@ -358,6 +420,13 @@ export const chargingRouter = router({
         
         if (!sent) {
           pendingChargeSessions.delete(sessionId);
+          // Si no se pudo enviar pero la estación está online en BD, informar reconexión
+          if (stationData?.isOnline && !hasOcppConnection) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "El cargador está reconectándose. Espera unos segundos e intenta de nuevo.",
+            });
+          }
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
             message: "No se pudo enviar el comando al cargador. Intenta de nuevo.",
