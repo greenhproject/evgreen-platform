@@ -12,6 +12,8 @@ import { aiRouter } from "./ai/ai-router";
 import { stripeRouter } from "./stripe/router";
 import { wompiRouter } from "./wompi/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
+import { dualCSMS } from "./ocpp/csms-dual";
+import * as ocppManager from "./ocpp/connection-manager";
 import { chargingRouter } from "./charging/charging-router";
 import { pushRouter } from "./push/push-router";
 import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
@@ -386,14 +388,40 @@ const stationsRouter = router({
   listOwned: investorProcedure.query(async ({ ctx }) => {
     const stations = await db.getAllChargingStations({ ownerId: ctx.user.id });
     
-    // Enriquecer con tarifas y EVSEs
+    // Obtener conexiones OCPP activas para estado en tiempo real
+    const csmsConnections = dualCSMS.getConnectionsStatus();
+    const legacyConnections = ocppManager.getAllConnections();
+    
+    // Enriquecer con tarifas, EVSEs y estado real de conexión
     const enrichedStations = await Promise.all(
       stations.map(async (station) => {
         const tariff = await db.getActiveTariffByStationId(station.id);
         const evses = await db.getEvsesByStationId(station.id);
         
+        // Verificar estado real de conexión OCPP
+        const ocppId = station.ocppIdentity || station.id?.toString();
+        const isConnectedOCPP = csmsConnections.some(c => 
+          c.ocppIdentity === ocppId || c.stationId === station.id
+        ) || legacyConnections.some((c: any) => 
+          c.ocppIdentity === ocppId || c.stationId === station.id
+        );
+        
+        // Obtener estados de conectores desde OCPP si está conectado
+        const ocppConn = csmsConnections.find(c => 
+          c.ocppIdentity === ocppId || c.stationId === station.id
+        );
+        
         return {
           ...station,
+          // Usar estado real de OCPP en lugar de solo isOnline de BD
+          isOnline: isConnectedOCPP || station.isOnline,
+          isConnectedOCPP,
+          ocppConnection: ocppConn ? {
+            ocppVersion: ocppConn.ocppVersion,
+            connectedAt: ocppConn.connectedAt instanceof Date ? ocppConn.connectedAt.toISOString() : String(ocppConn.connectedAt),
+            lastHeartbeat: ocppConn.lastHeartbeat instanceof Date ? ocppConn.lastHeartbeat.toISOString() : String(ocppConn.lastHeartbeat),
+            connectorStatuses: (ocppConn as any).connectorStatuses || {},
+          } : null,
           tariff: tariff ? {
             pricePerKwh: tariff.pricePerKwh?.toString() || "1200",
             reservationFee: tariff.reservationFee?.toString() || "5000",

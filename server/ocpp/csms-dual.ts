@@ -201,6 +201,10 @@ export class DualCSMS {
   private isRunning: boolean = false;
   private transactionIdCounter: number = 1;
   private ocpp16Transactions: Map<number, string> = new Map(); // OCPP 1.6 transactionId -> internal transactionId
+  private reconnectionGrace: Map<string, NodeJS.Timeout> = new Map(); // Grace period para reconexión
+  private pingIntervals: Map<string, NodeJS.Timeout> = new Map(); // Ping keepalive intervals
+  private static GRACE_PERIOD_MS = 120000; // 2 minutos de gracia para reconexión
+  private static PING_INTERVAL_MS = 30000; // Ping cada 30 segundos
 
   constructor() {
     // Initialize
@@ -241,6 +245,21 @@ export class DualCSMS {
 
       console.log(`[CSMS-DUAL] New ${ocppVersion} connection from: ${ocppIdentity}`);
 
+      // Si hay un grace period activo para este cargador, cancelarlo (reconexión exitosa)
+      const existingGrace = this.reconnectionGrace.get(ocppIdentity);
+      if (existingGrace) {
+        clearTimeout(existingGrace);
+        this.reconnectionGrace.delete(ocppIdentity);
+        console.log(`[CSMS-DUAL] Reconnection within grace period for: ${ocppIdentity}`);
+      }
+
+      // Limpiar ping interval anterior si existe
+      const existingPing = this.pingIntervals.get(ocppIdentity);
+      if (existingPing) {
+        clearInterval(existingPing);
+        this.pingIntervals.delete(ocppIdentity);
+      }
+
       // Registrar la conexión
       const connection: ChargingStationConnection = {
         ws,
@@ -253,6 +272,25 @@ export class DualCSMS {
         pendingCalls: new Map(),
       };
       this.connections.set(ocppIdentity, connection);
+
+      // Configurar ping keepalive para mantener la conexión activa
+      const pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.ping();
+        } else {
+          clearInterval(pingInterval);
+          this.pingIntervals.delete(ocppIdentity);
+        }
+      }, DualCSMS.PING_INTERVAL_MS);
+      this.pingIntervals.set(ocppIdentity, pingInterval);
+
+      // Configurar pong handler para actualizar lastHeartbeat
+      ws.on("pong", () => {
+        const conn = this.connections.get(ocppIdentity);
+        if (conn) {
+          conn.lastHeartbeat = new Date();
+        }
+      });
 
       // Manejar mensajes
       ws.on("message", async (data) => {
@@ -1272,8 +1310,12 @@ export class DualCSMS {
 
   private async handleDisconnection(ocppIdentity: string): Promise<void> {
     const conn = this.connections.get(ocppIdentity);
-    if (conn?.stationId) {
-      await db.updateStationOnlineStatus(ocppIdentity, false);
+    
+    // Limpiar ping interval
+    const pingInterval = this.pingIntervals.get(ocppIdentity);
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      this.pingIntervals.delete(ocppIdentity);
     }
     
     // Limpiar pending calls
@@ -1284,6 +1326,7 @@ export class DualCSMS {
       });
     }
     
+    // Eliminar la conexión del mapa inmediatamente
     this.connections.delete(ocppIdentity);
 
     await db.createOcppLog({
@@ -1293,6 +1336,37 @@ export class DualCSMS {
       messageType: "DISCONNECTION",
       payload: {},
     });
+
+    // En lugar de marcar offline inmediatamente, usar grace period
+    // Esto permite que el cargador se reconecte sin parpadeo de estado
+    if (conn?.stationId) {
+      console.log(`[CSMS-DUAL] Starting ${DualCSMS.GRACE_PERIOD_MS / 1000}s grace period for: ${ocppIdentity}`);
+      
+      const graceTimeout = setTimeout(async () => {
+        // Verificar si el cargador se reconectó durante el grace period
+        const currentConn = this.connections.get(ocppIdentity);
+        if (!currentConn) {
+          // No se reconectó, ahora sí marcar como offline
+          console.log(`[CSMS-DUAL] Grace period expired, marking offline: ${ocppIdentity}`);
+          await db.updateStationOnlineStatus(ocppIdentity, false);
+          
+          // Actualizar estado de conectores a UNAVAILABLE
+          try {
+            const evses = await db.getEvsesByStationId(conn.stationId!);
+            for (const evse of evses) {
+              await db.updateEvseStatus(evse.id, "UNAVAILABLE");
+            }
+          } catch (err) {
+            console.error(`[CSMS-DUAL] Error updating EVSE status on disconnect:`, err);
+          }
+        } else {
+          console.log(`[CSMS-DUAL] Charger reconnected during grace period: ${ocppIdentity}`);
+        }
+        this.reconnectionGrace.delete(ocppIdentity);
+      }, DualCSMS.GRACE_PERIOD_MS);
+      
+      this.reconnectionGrace.set(ocppIdentity, graceTimeout);
+    }
   }
 
   // ============================================================================
