@@ -1644,3 +1644,33 @@ export const userLoginSessionsRelations = relations(userLoginSessions, ({ one })
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// STATION REVIEWS / CALIFICACIONES
+// ============================================================================
+
+export const stationReviews = mysqlTable("station_reviews", {
+  id: int("id").primaryKey().autoincrement(),
+  stationId: int("station_id").notNull(),
+  userId: int("user_id").notNull(),
+  rating: int("rating").notNull(), // 1-5
+  comment: text("comment"),
+  ownerResponse: text("owner_response"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type StationReview = typeof stationReviews.$inferSelect;
+export type InsertStationReview = typeof stationReviews.$inferInsert;
+
+export const stationReviewsRelations = relations(stationReviews, ({ one }) => ({
+  station: one(chargingStations, {
+    fields: [stationReviews.stationId],
+    references: [chargingStations.id],
+  }),
+  user: one(users, {
+    fields: [stationReviews.userId],
+    references: [users.id],
+  }),
+}));

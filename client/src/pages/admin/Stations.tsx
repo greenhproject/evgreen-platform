@@ -42,7 +42,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign } from "lucide-react";
+import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { StationQRCode } from "@/components/StationQRCode";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -86,6 +86,7 @@ interface StationFormData {
   isActive: boolean;
   isPublic: boolean;
   premiumZone: string;
+  operatingHours: Record<string, { open: string; close: string; closed?: boolean }>;
 }
 
 const initialFormData: StationFormData = {
@@ -101,6 +102,15 @@ const initialFormData: StationFormData = {
   isActive: true,
   isPublic: true,
   premiumZone: "C",
+  operatingHours: {
+    monday: { open: "06:00", close: "22:00" },
+    tuesday: { open: "06:00", close: "22:00" },
+    wednesday: { open: "06:00", close: "22:00" },
+    thursday: { open: "06:00", close: "22:00" },
+    friday: { open: "06:00", close: "22:00" },
+    saturday: { open: "07:00", close: "20:00" },
+    sunday: { open: "08:00", close: "18:00" },
+  },
 };
 
 export default function AdminStations() {
@@ -237,6 +247,9 @@ export default function AdminStations() {
       isActive: station.isActive ?? true,
       isPublic: station.isPublic ?? true,
       premiumZone: station.premiumZone || "C",
+      operatingHours: station.operatingHours && typeof station.operatingHours === 'object' 
+        ? station.operatingHours as any 
+        : initialFormData.operatingHours,
     });
     
     // Cargar conectores existentes
@@ -318,6 +331,7 @@ export default function AdminStations() {
         latitude: formData.latitude,
         longitude: formData.longitude,
         ocppIdentity: formData.ocppIdentity || `GEV-${Date.now()}`,
+        operatingHours: formData.operatingHours as any,
       });
       
       if (stationResult.id) {
@@ -364,6 +378,7 @@ export default function AdminStations() {
           longitude: formData.longitude,
           isActive: formData.isActive,
           isPublic: formData.isPublic,
+          operatingHours: formData.operatingHours as any,
         },
       });
 
@@ -627,6 +642,97 @@ export default function AdminStations() {
           </div>
         </div>
       )}
+
+      {/* Horario de Operación */}
+      <div className="space-y-4">
+        <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+          <Clock className="w-4 h-4" />
+          Horario de Operación
+        </h3>
+        <div className="space-y-2">
+          {[
+            { key: 'monday', label: 'Lunes' },
+            { key: 'tuesday', label: 'Martes' },
+            { key: 'wednesday', label: 'Miércoles' },
+            { key: 'thursday', label: 'Jueves' },
+            { key: 'friday', label: 'Viernes' },
+            { key: 'saturday', label: 'Sábado' },
+            { key: 'sunday', label: 'Domingo' },
+          ].map(({ key, label }) => {
+            const dayData = formData.operatingHours[key] || { open: '06:00', close: '22:00' };
+            const isClosed = dayData.closed || false;
+            return (
+              <div key={key} className="flex items-center gap-3 p-2 bg-muted/30 rounded-lg">
+                <span className="w-24 text-sm font-medium">{label}</span>
+                <Switch
+                  checked={!isClosed}
+                  onCheckedChange={(checked) => {
+                    setFormData({
+                      ...formData,
+                      operatingHours: {
+                        ...formData.operatingHours,
+                        [key]: checked
+                          ? { open: dayData.open || '06:00', close: dayData.close || '22:00' }
+                          : { open: '00:00', close: '00:00', closed: true },
+                      },
+                    });
+                  }}
+                />
+                {!isClosed ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <Input
+                      type="time"
+                      value={dayData.open}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        operatingHours: {
+                          ...formData.operatingHours,
+                          [key]: { ...dayData, open: e.target.value },
+                        },
+                      })}
+                      className="w-28 h-8 text-xs"
+                    />
+                    <span className="text-muted-foreground">a</span>
+                    <Input
+                      type="time"
+                      value={dayData.close}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        operatingHours: {
+                          ...formData.operatingHours,
+                          [key]: { ...dayData, close: e.target.value },
+                        },
+                      })}
+                      className="w-28 h-8 text-xs"
+                    />
+                  </div>
+                ) : (
+                  <span className="text-sm text-muted-foreground italic">Cerrado</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            const allDay = {
+              monday: { open: '00:00', close: '23:59' },
+              tuesday: { open: '00:00', close: '23:59' },
+              wednesday: { open: '00:00', close: '23:59' },
+              thursday: { open: '00:00', close: '23:59' },
+              friday: { open: '00:00', close: '23:59' },
+              saturday: { open: '00:00', close: '23:59' },
+              sunday: { open: '00:00', close: '23:59' },
+            };
+            setFormData({ ...formData, operatingHours: allDay });
+          }}
+        >
+          Configurar como 24/7
+        </Button>
+      </div>
 
       {/* Conectores (solo en creación) */}
       {!isEdit && (

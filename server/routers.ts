@@ -3290,6 +3290,89 @@ const securityRouter = router({
     }),
 });
 
+// ============================================================================
+// REVIEWS / CALIFICACIONES ROUTER
+// ============================================================================
+
+const reviewsRouter = router({
+  getByStation: publicProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ input }) => {
+      const reviews = await db.getReviewsByStationId(input.stationId);
+      const stats = await db.getStationAverageRating(input.stationId);
+      return {
+        reviews,
+        averageRating: stats.averageRating ? Number(stats.averageRating) : null,
+        totalReviews: stats.totalReviews,
+      };
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      stationId: z.number(),
+      rating: z.number().min(1).max(5),
+      comment: z.string().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Verificar si ya existe una review del usuario
+      const existing = await db.getUserReviewForStation(ctx.user.id, input.stationId);
+      if (existing) {
+        // Actualizar review existente
+        await db.updateStationReview(existing.id, {
+          rating: input.rating,
+          comment: input.comment,
+        });
+        return { id: existing.id, updated: true };
+      }
+      const id = await db.createStationReview({
+        stationId: input.stationId,
+        userId: ctx.user.id,
+        rating: input.rating,
+        comment: input.comment,
+      });
+      return { id, updated: false };
+    }),
+
+  getMyReview: protectedProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return await db.getUserReviewForStation(ctx.user.id, input.stationId);
+    }),
+
+  respondAsOwner: protectedProcedure
+    .input(z.object({
+      reviewId: z.number(),
+      response: z.string().max(1000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo administradores pueden responder' });
+      }
+      await db.updateStationReview(input.reviewId, {
+        ownerResponse: input.response,
+      });
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ reviewId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      // Admin can delete any, user can delete own
+      if (ctx.user.role !== 'admin') {
+        const database = await getDb();
+        if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        const { stationReviews: sr } = await import('../drizzle/schema');
+        const { eq: eqOp } = await import('drizzle-orm');
+        const [r] = await database.select().from(sr).where(eqOp(sr.id, input.reviewId)).limit(1);
+        if (!r || r.userId !== ctx.user.id) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes eliminar esta calificación' });
+        }
+      }
+      await db.deleteStationReview(input.reviewId);
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -3322,6 +3405,7 @@ export const appRouter = router({
   userConfig: userConfigRouter,
   techConfig: techConfigRouter,
   security: securityRouter,
+  reviews: reviewsRouter,
 });
 
 export type AppRouter = typeof appRouter;

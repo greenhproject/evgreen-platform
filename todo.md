@@ -937,3 +937,14 @@
 - [x] Corregido: server/ocpp/csms-dual.ts (StartTransaction handler)
 - [x] Corregido: server/proximity/proximity-alert-service.ts (precio base por defecto)
 - [x] Tests: 8 tests unitarios para validar la lógica de precios efectivos
+
+## Bugs y Mejoras - 17 Febrero 2026 (Lote 2)
+- [x] BUG: Responsive del módulo de reservas se sale de la pantalla en móvil - overflow y padding corregidos
+- [x] BUG: Datos ficticios 24/7 y calificación 4.8 hardcodeados - reemplazados por datos reales
+- [x] FEATURE: Horario de operación configurable por estación en admin (selector por día con Switch)
+- [x] FEATURE: Sistema completo de calificaciones y opiniones de estaciones
+- [x] FEATURE: Tabla station_reviews creada en BD
+- [x] FEATURE: Endpoints CRUD para reviews (crear, leer, actualizar, eliminar, responder como admin)
+- [x] FEATURE: UI de calificaciones con estrellas, formulario y lista de opiniones en detalle de estación
+- [x] FEATURE: Calificación promedio real mostrada en detalle de estación
+- [x] Tests: 16 tests unitarios para reviews y horario de operación
