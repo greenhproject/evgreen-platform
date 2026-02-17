@@ -45,6 +45,13 @@ interface Station {
   isActive: boolean;
   isPublic: boolean;
   description?: string | null;
+  isConnectedOCPP?: boolean;
+  ocppConnection?: {
+    ocppVersion: string;
+    connectedAt: string;
+    lastHeartbeat: string;
+    connectorStatuses?: Record<number, string>;
+  } | null;
   evses?: Array<{
     id: number;
     connectorId: number;
@@ -74,7 +81,9 @@ export default function InvestorStations() {
   const [connectionFee, setConnectionFee] = useState("");
   const [autoPricing, setAutoPricing] = useState(false);
 
-  const { data: stations, isLoading } = trpc.stations.listOwned.useQuery();
+  const { data: stations, isLoading } = trpc.stations.listOwned.useQuery(undefined, {
+    refetchInterval: 10000, // Actualizar cada 10 segundos para estado en tiempo real
+  });
   
   // Query para obtener historial de precios de la estación seleccionada
   const { data: priceHistory } = trpc.tariffs.getPriceHistory.useQuery(

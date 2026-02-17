@@ -948,3 +948,8 @@
 - [x] FEATURE: UI de calificaciones con estrellas, formulario y lista de opiniones en detalle de estación
 - [x] FEATURE: Calificación promedio real mostrada en detalle de estación
 - [x] Tests: 16 tests unitarios para reviews y horario de operación
+
+## Bugs Reportados - 17 Febrero 2026 (Lote 3)
+- [x] BUG: Sección de horario de operación en admin (ya estaba implementada, requiere scroll + publicar)
+- [x] BUG: Estado inconsistente admin vs inversionista - listOwned ahora usa conexiones OCPP en tiempo real
+- [x] BUG: Conexión OCPP - grace period 2min, ping/pong keepalive 30s, actualización de EVSEs a UNAVAILABLE
