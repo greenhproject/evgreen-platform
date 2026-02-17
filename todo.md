@@ -966,3 +966,11 @@
 - [x] Verificar estructura de tabla en BD vs schema de Drizzle (columnas renombradas de camelCase a snake_case)
 - [x] Corregir columnas faltantes: ownerResponseAt, isApproved (tinyint), isVisible (tinyint) agregadas al schema Drizzle
 - [x] 684 tests pasando, 0 errores TypeScript
+
+## Bug: "La estación no está disponible" al iniciar carga - 17 Febrero 2026 [CORREGIDO]
+- [x] BUG: Al presionar "Iniciar Carga" muestra "La estación no está disponible en este momento" pero en admin la estación está disponible
+- [x] Causa raíz: startCharge solo verificaba conexión OCPP en memoria (getConnectionByStationId), que puede retornar null si stationId no fue asignado aún en la conexión
+- [x] Solución: Fallback a BD (isOnline) + verificación por ocppIdentity directa + verificación de conector en BD
+- [x] Corregir la lógica para que sea consistente con el estado mostrado en admin
+- [x] 19 tests unitarios para la lógica de disponibilidad mejorada
+- [x] 703 tests pasando, 0 errores TypeScript
