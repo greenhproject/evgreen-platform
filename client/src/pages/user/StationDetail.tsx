@@ -158,6 +158,9 @@ export default function StationDetail() {
   const [reservationDate, setReservationDate] = useState("");
   const [reservationTime, setReservationTime] = useState("");
   const [estimatedDuration, setEstimatedDuration] = useState("60");
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [newRating, setNewRating] = useState(0);
+  const [newComment, setNewComment] = useState("");
 
   const stationId = parseInt(id || "0");
 
@@ -170,6 +173,15 @@ export default function StationDetail() {
     { stationId },
     { enabled: !!station }
   );
+
+  // Obtener calificaciones reales de la estación
+  const { data: reviewsData } = trpc.reviews.getByStation.useQuery(
+    { stationId },
+    { enabled: !!station }
+  );
+
+  const stationRating = reviewsData?.averageRating ?? null;
+  const totalReviews = reviewsData?.totalReviews ?? 0;
 
   // Obtener tarifa dinámica
   const requestedDate = useMemo(() => {
@@ -200,6 +212,33 @@ export default function StationDetail() {
     { stationId },
     { enabled: !!station }
   );
+
+  // Mutación para crear review
+  const utils = trpc.useUtils();
+  const submitReview = trpc.reviews.create.useMutation({
+    onSuccess: () => {
+      toast.success("¡Gracias por tu calificación!");
+      setShowReviewForm(false);
+      setNewRating(0);
+      setNewComment("");
+      utils.reviews.getByStation.invalidate({ stationId });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Error al enviar calificación");
+    },
+  });
+
+  const handleSubmitReview = () => {
+    if (newRating === 0) {
+      toast.error("Selecciona una calificación");
+      return;
+    }
+    submitReview.mutate({
+      stationId,
+      rating: newRating,
+      comment: newComment || undefined,
+    });
+  };
 
   // Mutación para crear reserva
   const createReservation = trpc.reservations.create.useMutation({
@@ -331,15 +370,28 @@ export default function StationDetail() {
                 <div className="flex items-center gap-1">
                   <Clock className="w-4 h-4 text-muted-foreground" />
                   <span>
-                    {typeof (station as any).operatingHours === 'object' 
-                      ? '24/7' 
-                      : ((station as any).operatingHours || '24/7')}
+                    {(() => {
+                      const oh = (station as any).operatingHours;
+                      if (!oh || (typeof oh === 'object' && Object.keys(oh).length === 0)) return 'Horario no configurado';
+                      if (typeof oh === 'string') return oh;
+                      const days = Object.values(oh) as any[];
+                      const is24_7 = days.length === 7 && days.every((d: any) => d?.open === '00:00' && d?.close === '23:59');
+                      if (is24_7) return '24/7';
+                      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                      const today = dayNames[new Date().getDay()];
+                      const todayHours = (oh as any)[today];
+                      if (todayHours?.closed) return 'Cerrado hoy';
+                      return todayHours ? `Hoy: ${todayHours.open} - ${todayHours.close}` : 'Horario no configurado';
+                    })()}
                   </span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Star className="w-4 h-4 text-yellow-500" />
-                  <span>4.8</span>
-                </div>
+                {stationRating !== null && (
+                  <div className="flex items-center gap-1">
+                    <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                    <span>{stationRating.toFixed(1)}</span>
+                    <span className="text-muted-foreground">({totalReviews})</span>
+                  </div>
+                )}
               </div>
             </Card>
           </motion.div>
@@ -481,9 +533,134 @@ export default function StationDetail() {
               <div className="flex items-start gap-3">
                 <Info className="w-5 h-5 text-muted-foreground mt-0.5" />
                 <div className="text-sm text-muted-foreground">
-                  {station.description || "Estación de carga operada por EVGreen. Disponible las 24 horas del día, los 7 días de la semana."}
+                  {station.description || "Estación de carga operada por EVGreen."}
                 </div>
               </div>
+            </Card>
+          </motion.div>
+
+          {/* Calificaciones y Opiniones */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+          >
+            <Card className="p-4 bg-card/50 backdrop-blur border-border/50 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Star className="w-4 h-4 text-yellow-500" />
+                  Calificaciones y Opiniones
+                </h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => setShowReviewForm(!showReviewForm)}
+                >
+                  {showReviewForm ? "Cancelar" : "Calificar"}
+                </Button>
+              </div>
+
+              {/* Resumen de calificación */}
+              <div className="flex items-center gap-4">
+                <div className="text-center">
+                  <div className="text-3xl font-bold">{stationRating !== null ? stationRating.toFixed(1) : "--"}</div>
+                  <div className="flex gap-0.5 mt-1">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star
+                        key={s}
+                        className={`w-3 h-3 ${stationRating !== null && s <= Math.round(stationRating) ? "text-yellow-500 fill-yellow-500" : "text-muted-foreground/30"}`}
+                      />
+                    ))}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">{totalReviews} opini{totalReviews === 1 ? "ón" : "ones"}</div>
+                </div>
+              </div>
+
+              {/* Formulario de nueva calificación */}
+              {showReviewForm && (
+                <div className="space-y-3 p-3 bg-muted/30 rounded-lg">
+                  <div>
+                    <Label className="text-sm">Tu calificación</Label>
+                    <div className="flex gap-1 mt-1">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => setNewRating(s)}
+                          className="p-0.5"
+                        >
+                          <Star
+                            className={`w-7 h-7 transition-colors ${s <= newRating ? "text-yellow-500 fill-yellow-500" : "text-muted-foreground/30 hover:text-yellow-500/50"}`}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-sm">Comentario (opcional)</Label>
+                    <textarea
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="Comparte tu experiencia..."
+                      className="w-full mt-1 p-2 bg-background border border-border rounded-md text-sm resize-none h-20"
+                      maxLength={1000}
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full gradient-primary text-white"
+                    onClick={handleSubmitReview}
+                    disabled={submitReview.isPending || newRating === 0}
+                  >
+                    {submitReview.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    ) : null}
+                    Enviar calificación
+                  </Button>
+                </div>
+              )}
+
+              {/* Lista de opiniones */}
+              {reviewsData?.reviews && reviewsData.reviews.length > 0 ? (
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {reviewsData.reviews.slice(0, 5).map((review: any) => (
+                    <div key={review.id} className="p-3 bg-muted/20 rounded-lg space-y-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold">
+                            {(review.userName || "U").charAt(0).toUpperCase()}
+                          </div>
+                          <span className="text-sm font-medium">{review.userName || "Usuario"}</span>
+                        </div>
+                        <div className="flex gap-0.5">
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Star
+                              key={s}
+                              className={`w-3 h-3 ${s <= review.rating ? "text-yellow-500 fill-yellow-500" : "text-muted-foreground/30"}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      {review.comment && (
+                        <p className="text-sm text-muted-foreground">{review.comment}</p>
+                      )}
+                      <div className="text-xs text-muted-foreground/60">
+                        {new Date(review.createdAt).toLocaleDateString("es-CO", { year: "numeric", month: "short", day: "numeric" })}
+                      </div>
+                      {review.ownerResponse && (
+                        <div className="mt-2 pl-3 border-l-2 border-primary/50">
+                          <span className="text-xs font-medium text-primary">Respuesta del operador:</span>
+                          <p className="text-xs text-muted-foreground">{review.ownerResponse}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  Aún no hay opiniones. ¡Sé el primero en calificar!
+                </p>
+              )}
             </Card>
           </motion.div>
 
@@ -508,7 +685,7 @@ export default function StationDetail() {
 
       {/* Modal de Reserva con Tarifa Dinámica */}
       <Dialog open={showReservationModal} onOpenChange={setShowReservationModal}>
-        <DialogContent className="w-[95vw] max-w-md mx-auto bg-background/95 backdrop-blur border-border/50">
+        <DialogContent className="w-[95vw] max-w-md mx-auto bg-background/95 backdrop-blur border-border/50 max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Calendar className="w-5 h-5 text-primary" />

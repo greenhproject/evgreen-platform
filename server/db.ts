@@ -57,6 +57,9 @@ import {
   WompiTransaction,
   InsertWompiTransaction,
   firmwareUpdates,
+  stationReviews,
+  InsertStationReview,
+  StationReview,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -4280,4 +4283,94 @@ export async function getActiveFirmwareUpdates() {
       inArray(firmwareUpdates.status, ["PENDING", "DOWNLOADING", "DOWNLOADED", "INSTALLING"])
     )
     .orderBy(desc(firmwareUpdates.createdAt));
+}
+
+
+// ============================================================================
+// STATION REVIEWS / CALIFICACIONES
+// ============================================================================
+
+export async function getReviewsByStationId(stationId: number) {
+  const database = await getDb();
+  if (!database) return [];
+  const result = await database
+    .select({
+      id: stationReviews.id,
+      stationId: stationReviews.stationId,
+      userId: stationReviews.userId,
+      rating: stationReviews.rating,
+      comment: stationReviews.comment,
+      ownerResponse: stationReviews.ownerResponse,
+      createdAt: stationReviews.createdAt,
+      userName: users.name,
+    })
+    .from(stationReviews)
+    .leftJoin(users, eq(stationReviews.userId, users.id))
+    .where(eq(stationReviews.stationId, stationId))
+    .orderBy(desc(stationReviews.createdAt));
+  return result;
+}
+
+export async function getStationAverageRating(stationId: number) {
+  const database = await getDb();
+  if (!database) return { averageRating: null, totalReviews: 0 };
+  const result = await database
+    .select({
+      averageRating: sql<number>`AVG(${stationReviews.rating})`,
+      totalReviews: sql<number>`COUNT(*)`,
+    })
+    .from(stationReviews)
+    .where(eq(stationReviews.stationId, stationId));
+  return {
+    averageRating: result[0]?.averageRating || null,
+    totalReviews: Number(result[0]?.totalReviews) || 0,
+  };
+}
+
+export async function createStationReview(data: {
+  stationId: number;
+  userId: number;
+  rating: number;
+  comment?: string;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const result = await database.insert(stationReviews).values({
+    stationId: data.stationId,
+    userId: data.userId,
+    rating: data.rating,
+    comment: data.comment || null,
+  });
+  return Number(result[0].insertId);
+}
+
+export async function getUserReviewForStation(userId: number, stationId: number) {
+  const database = await getDb();
+  if (!database) return null;
+  const result = await database
+    .select()
+    .from(stationReviews)
+    .where(and(eq(stationReviews.userId, userId), eq(stationReviews.stationId, stationId)))
+    .limit(1);
+  return result[0] || null;
+}
+
+export async function updateStationReview(id: number, data: {
+  rating?: number;
+  comment?: string;
+  ownerResponse?: string;
+}) {
+  const database = await getDb();
+  if (!database) return;
+  const updateData: any = { updatedAt: new Date() };
+  if (data.rating !== undefined) updateData.rating = data.rating;
+  if (data.comment !== undefined) updateData.comment = data.comment;
+  if (data.ownerResponse !== undefined) updateData.ownerResponse = data.ownerResponse;
+  await database.update(stationReviews).set(updateData).where(eq(stationReviews.id, id));
+}
+
+export async function deleteStationReview(id: number) {
+  const database = await getDb();
+  if (!database) return;
+  await database.delete(stationReviews).where(eq(stationReviews.id, id));
 }
