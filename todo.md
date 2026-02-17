@@ -953,3 +953,10 @@
 - [x] BUG: Sección de horario de operación en admin (ya estaba implementada, requiere scroll + publicar)
 - [x] BUG: Estado inconsistente admin vs inversionista - listOwned ahora usa conexiones OCPP en tiempo real
 - [x] BUG: Conexión OCPP - grace period 2min, ping/pong keepalive 30s, actualización de EVSEs a UNAVAILABLE
+
+## Bug: Escaneo QR muestra "Estación desconectada" - 17 Febrero 2026
+- [x] BUG: Al escanear QR con EVG001, la app muestra "Estación desconectada" aunque está conectada y disponible
+- [x] Investigar endpoint getStationByCode y lógica de disponibilidad
+- [x] Corregir para que use estado OCPP real + BD + conectores disponibles (3 condiciones OR)
+- [x] Corregir getAvailableConnectors para usar estado de BD cuando dualCSMS no tiene datos en memoria
+- [x] 10 tests unitarios para lógica de disponibilidad de estación
