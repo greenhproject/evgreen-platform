@@ -97,22 +97,25 @@ export const chargingRouter = router({
       
       // Verificar si la estación está conectada al servidor OCPP
       const ocppConnection = getConnectionByStationId(station.id);
-      const isOnline = !!ocppConnection && ocppConnection.ws.readyState === 1;
+      const isOcppConnected = !!ocppConnection && ocppConnection.ws.readyState === 1;
       
-      // Obtener estados de conectores desde OCPP si está conectado
-      let connectorStatuses: Record<number, string> = {};
-      if (ocppConnection) {
-        connectorStatuses = Object.fromEntries(ocppConnection.connectorStatuses);
-      }
+      // La estación está online si:
+      // 1. Tiene conexión OCPP activa (WebSocket abierto), O
+      // 2. Está marcada como online en la BD (puede estar en grace period de reconexión), O
+      // 3. La estación está activa Y tiene al menos un conector disponible en la BD
+      const hasAvailableConnector = connectors.some(c => c.status === 'AVAILABLE');
+      const isOnline = isOcppConnected || station.isOnline || (station.isActive && hasAvailableConnector);
       
+      // Obtener estados de conectores: usar BD directamente (dualCSMS actualiza la BD en StatusNotification)
+      // No depender del mapa en memoria que puede estar vacío
       return {
         station,
         connectors: connectors.map(c => ({
           ...c,
-          ocppStatus: connectorStatuses[c.connectorId] || c.status,
+          ocppStatus: c.status, // Usar estado de BD que es actualizado por OCPP StatusNotification
         })),
         isOnline,
-        ocppIdentity: ocppConnection?.ocppIdentity,
+        ocppIdentity: ocppConnection?.ocppIdentity || station.ocppIdentity,
       };
     }),
 
@@ -130,10 +133,11 @@ export const chargingRouter = router({
       const ocppConnection = getConnectionByStationId(stationId);
       
       // Combinar estado de BD con estado OCPP en tiempo real
+      // dualCSMS actualiza la BD directamente en StatusNotification, así que c.status ya es el estado real
       return connectors.map(c => {
         let realTimeStatus = c.status;
-        if (ocppConnection) {
-          // Usar evseIdLocal para buscar el estado OCPP (el cargador reporta por connectorId que es evseIdLocal)
+        if (ocppConnection && ocppConnection.connectorStatuses.size > 0) {
+          // Solo usar mapa en memoria si tiene datos (legacy connection-manager)
           const ocppStatus = ocppConnection.connectorStatuses.get(c.evseIdLocal);
           if (ocppStatus) {
             realTimeStatus = ocppStatus as typeof c.status;
