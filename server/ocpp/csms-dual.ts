@@ -579,9 +579,10 @@ export class DualCSMS {
       }
     }
 
-    // Obtener tarifa activa
+    // Obtener tarifa activa (usa precios globales si no tiene tarifa propia)
+    const effectivePrice = await db.getEffectiveStationPrice(conn.stationId);
     const tariff = await db.getActiveTariffByStationId(conn.stationId);
-    const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 800;
+    const pricePerKwh = effectivePrice.pricePerKwh;
 
     // Generar ID de transacción OCPP 1.6 (entero)
     const ocpp16TransactionId = this.transactionIdCounter++;

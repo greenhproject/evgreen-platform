@@ -1,0 +1,25 @@
+{
+  "query": "SELECT id, name, city FROM charging_stations;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, name, city FROM charging_stations;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Green EV Mosquera - Sede Principal",
+      "city": "Mosquera"
+    },
+    {
+      "id": "120001",
+      "name": "estacion simulada",
+      "city": "bogota"
+    },
+    {
+      "id": "150001",
+      "name": "EVG diamante oriental",
+      "city": "Mosquera"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tcity\n1\tGreen EV Mosquera - Sede Principal\tMosquera\n120001\testacion simulada\tbogota\n150001\tEVG diamante oriental\tMosquera\n",
+  "stderr": "",
+  "execution_time_ms": 55
+}

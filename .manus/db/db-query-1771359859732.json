@@ -1,0 +1,9 @@
+{
+  "query": "SELECT t.id, t.stationId, t.name, t.pricePerKwh, t.reservationFee, t.overstayPenaltyPerMinute, t.pricePerSession, t.isActive, t.autoPricing, t.createdAt, t.updatedAt, s.name as stationName FROM tariffs t JOIN charging_stations s ON t.stationId = s.id WHERE s.name LIKE '%diamante%' OR s.name LIKE '%EVG%' ORDER BY t.stationId, t.isActive DESC, t.createdAt DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT t.id, t.stationId, t.name, t.pricePerKwh, t.reservationFee, t.overstayPenaltyPerMinute, t.pricePerSession, t.isActive, t.autoPricing, t.createdAt, t.updatedAt, s.name as stationName FROM tariffs t JOIN charging_stations s ON t.stationId = s.id WHERE s.name LIKE '%diamante%' OR s.name LIKE '%EVG%' ORDER BY t.stationId, t.isActive DESC, t.createdAt DESC;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 84
+}

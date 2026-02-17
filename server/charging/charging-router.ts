@@ -188,9 +188,14 @@ export const chargingRouter = router({
       // Obtener primer EVSE para calcular precio dinámico
       const evsesForPrice = await db.getEvsesByStationId(stationId);
       const firstEvse = evsesForPrice[0];
-      const dynamicPrice = firstEvse 
-        ? await dynamicPricing.calculateDynamicPrice(stationId, firstEvse.id)
-        : { finalPrice: 800, factors: { finalMultiplier: 1 } } as dynamicPricing.DynamicPrice;
+      let dynamicPrice: dynamicPricing.DynamicPrice;
+      if (firstEvse) {
+        dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, firstEvse.id);
+      } else {
+        // Sin EVSE, usar precio efectivo de la estación (global si no tiene tarifa propia)
+        const effectivePrice = await db.getEffectiveStationPrice(stationId);
+        dynamicPrice = { finalPrice: effectivePrice.pricePerKwh, factors: { finalMultiplier: 1 } } as dynamicPricing.DynamicPrice;
+      }
       const pricePerKwh = dynamicPrice.finalPrice;
       
       // Calcular estimación según modo de carga
@@ -286,7 +291,9 @@ export const chargingRouter = router({
       } else {
         // Usar precio fijo configurado por el inversionista
         // Pero aplicar diferenciación AC/DC si está habilitada
-        const basePrice = parseFloat(tariff?.pricePerKwh?.toString() || "800");
+        // Usar precio efectivo (tarifa de estación o global)
+        const effectivePriceData = await db.getEffectiveStationPrice(stationId);
+        const basePrice = effectivePriceData.pricePerKwh;
         if (evseId) {
           const priceByType = await db.getPriceByConnectorType(evseId, basePrice);
           pricePerKwh = priceByType.price;
@@ -584,7 +591,7 @@ export const chargingRouter = router({
               currentKwh: lastCompleted.kwhConsumed ? parseFloat(lastCompleted.kwhConsumed) : 0,
               estimatedKwh: lastCompleted.kwhConsumed ? parseFloat(lastCompleted.kwhConsumed) : 0,
               currentCost: lastCompleted.totalCost ? parseFloat(lastCompleted.totalCost) : 0,
-              pricePerKwh: 800,
+              pricePerKwh: (await db.getEffectiveStationPrice(lastCompleted.stationId)).pricePerKwh,
               powerKw: 7,
               currentPower: 0,
               status: "COMPLETED",
@@ -631,7 +638,13 @@ export const chargingRouter = router({
         
         const tariffs = await db.getTariffsByStationId(activeTransaction.stationId);
         const tariff = tariffs[0];
-        pricePerKwh = tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : 800;
+        if (tariff?.pricePerKwh) {
+          pricePerKwh = parseFloat(tariff.pricePerKwh);
+        } else {
+          // Sin tarifa de estación, usar precio global
+          const effectivePriceData = await db.getEffectiveStationPrice(activeTransaction.stationId);
+          pricePerKwh = effectivePriceData.pricePerKwh;
+        }
         currentCost = currentKwh * pricePerKwh;
       }
       

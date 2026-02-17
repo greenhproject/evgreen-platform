@@ -915,3 +915,25 @@
 - [x] main.tsx: detecta updatefound del SW y recarga automáticamente
 - [x] main.tsx: verifica actualizaciones del SW cada 5 minutos
 - [x] 637 tests pasando, 0 errores TypeScript
+
+
+## Bug: Tarifas en app de usuario no coinciden con admin - 17 Febrero 2026
+
+- [ ] BUG: App de usuario muestra precio base $800/$736 COP para EVG diamante oriental, pero admin tiene $1.200 COP (estación) y $1.500 AC / $1.800 DC
+- [ ] Investigar endpoint que sirve tarifas al frontend del usuario
+- [ ] Verificar lógica de cálculo de tarifa dinámica
+- [ ] Corregir para que las tarifas coincidan con las configuradas en admin
+
+
+## Bug Fix: Tarifas incorrectas en app de usuario - 17 Febrero 2026
+
+- [x] BUG: App de usuario muestra $800/$736 en vez de precios configurados en admin ($1.200/$1.500)
+- [x] Causa raíz: Estación "EVG diamante oriental" (ID: 150001) no tiene tarifa propia en tabla tariffs
+- [x] Causa raíz: Fallback hardcodeado de $800 en 9+ archivos del servidor
+- [x] Solución: Crear función getEffectiveStationPrice en db.ts que usa precios globales de platform_settings como fallback
+- [x] Corregido: server/pricing/dynamic-pricing.ts (calculateDynamicPrice, calculateDynamicKwhPrice)
+- [x] Corregido: server/charging/charging-router.ts (validateAndEstimate, startCharge, getActiveSession, completedSession)
+- [x] Corregido: server/routers.ts (listPublic, getTransaction, stopCharging)
+- [x] Corregido: server/ocpp/csms-dual.ts (StartTransaction handler)
+- [x] Corregido: server/proximity/proximity-alert-service.ts (precio base por defecto)
+- [x] Tests: 8 tests unitarios para validar la lógica de precios efectivos

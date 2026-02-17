@@ -352,14 +352,16 @@ const stationsRouter = router({
         stations.map(async (station: any) => {
           const tariff = await db.getActiveTariffByStationId(station.id);
           const evses = await db.getEvsesByStationId(station.id);
+          // Usar precio efectivo (tarifa de estación o precios globales)
+          const effectivePrice = await db.getEffectiveStationPrice(station.id);
           return {
             ...station,
             evses,
-            pricePerKwh: tariff?.pricePerKwh || "1200",
-            reservationFee: tariff?.reservationFee || "5000",
-            overstayPenaltyPerMin: tariff?.overstayPenaltyPerMinute || "500",
-            connectionFee: tariff?.pricePerSession || "2000",
-            tariffId: tariff?.id,
+            pricePerKwh: tariff?.pricePerKwh || effectivePrice.pricePerKwh.toString(),
+            reservationFee: tariff?.reservationFee || effectivePrice.reservationFee.toString(),
+            overstayPenaltyPerMin: tariff?.overstayPenaltyPerMinute || effectivePrice.overstayPenaltyPerMin.toString(),
+            connectionFee: tariff?.pricePerSession || effectivePrice.connectionFee.toString(),
+            tariffId: tariff?.id || null,
           };
         })
       );
@@ -877,7 +879,7 @@ const transactionsRouter = router({
         endTime: transaction.endTime?.toISOString() || null,
         durationMinutes,
         kwhConsumed: transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed).toFixed(2) : "0.00",
-        pricePerKwh: tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : 800,
+        pricePerKwh: tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : (await db.getEffectiveStationPrice(transaction.stationId)).pricePerKwh,
         totalCost: transaction.totalCost ? parseFloat(transaction.totalCost) : 0,
         status: transaction.status,
         paymentMethod: "wallet", // Por defecto wallet
@@ -1123,9 +1125,9 @@ const transactionsRouter = router({
       
       // Calcular energía consumida y costo
       const kwhConsumed = parseFloat(transaction.kwhConsumed?.toString() || "0");
-      // Obtener tarifa de la estación
-      const tariff = await db.getActiveTariffByStationId(transaction.stationId);
-      const pricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "800");
+      // Obtener tarifa de la estación (usa precios globales si no tiene tarifa propia)
+      const effectivePriceForStop = await db.getEffectiveStationPrice(transaction.stationId);
+      const pricePerKwh = effectivePriceForStop.pricePerKwh;
       const totalCost = Math.round(kwhConsumed * pricePerKwh);
       
       // Calcular distribución según configuración del admin

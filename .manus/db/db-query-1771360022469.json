@@ -1,0 +1,19 @@
+{
+  "query": "SELECT minPricePerKwh, maxPricePerKwh, defaultBasePricePerKwh, defaultPricePerKwhAC, defaultPricePerKwhDC, enableDifferentiatedPricing, enableDynamicPricing FROM platform_settings LIMIT 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT minPricePerKwh, maxPricePerKwh, defaultBasePricePerKwh, defaultPricePerKwhAC, defaultPricePerKwhDC, enableDifferentiatedPricing, enableDynamicPricing FROM platform_settings LIMIT 1;",
+  "rows": [
+    {
+      "minPricePerKwh": "1300.00",
+      "maxPricePerKwh": "2500.00",
+      "defaultBasePricePerKwh": "1300.00",
+      "defaultPricePerKwhAC": "1500.00",
+      "defaultPricePerKwhDC": "1800.00",
+      "enableDifferentiatedPricing": "1",
+      "enableDynamicPricing": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "minPricePerKwh\tmaxPricePerKwh\tdefaultBasePricePerKwh\tdefaultPricePerKwhAC\tdefaultPricePerKwhDC\tenableDifferentiatedPricing\tenableDynamicPricing\n1300.00\t2500.00\t1300.00\t1500.00\t1800.00\t1\t1\n",
+  "stderr": "",
+  "execution_time_ms": 58
+}
