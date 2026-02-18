@@ -1196,3 +1196,12 @@
 - [x] FIX: Pre-resolver stationId INMEDIATAMENTE en conexión WebSocket (no esperar a handleCall)
 - [x] FIX: Logging exhaustivo en auto-resolución para diagnosticar fallos futuros
 - [x] 834 tests pasando, 0 errores TypeScript
+
+## Bugs Reportados - 18 Feb 2026 (post-deploy 953269a7)
+- [x] EVSE sigue mostrando "Disponible": CAUSA RAÍZ = stationId null porque deploy anterior no tenía fix
+- [x] App no envía RemoteStartTransaction: CAUSA = el botón "Iniciar carga" navega a /start-charge que sí envía RemoteStart. Logs muestran que sí se envía pero StartTransaction falla por stationId null
+- [x] App no pide QR: COMPORTAMIENTO ESPERADO cuando vienes desde StationDetail con ?code=EVG001
+- [x] App queda en "conectando": CAUSA = sesión queda en CONNECTING porque StartTransaction devuelve Invalid (stationId null)
+- [x] Verificar deploy: CONFIRMADO que deploy anterior no tenía los fixes. Agregado BUILD_VERSION v2026.02.18.B
+- [x] Agregado fallback SQL directo (mysql2) si Drizzle falla en auto-resolución
+- [x] 834 tests pasando, 0 errores TypeScript

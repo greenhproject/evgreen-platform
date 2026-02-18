@@ -15,6 +15,41 @@ import * as db from "../db";
 import { nanoid } from "nanoid";
 import { findPendingSessionByOcppIdentity, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
 import { sendChargingCompleteNotification } from "../firebase/fcm";
+import mysql from "mysql2/promise";
+
+// BUILD VERSION para diagnóstico de deploys
+const BUILD_VERSION = "v2026.02.18.B";
+console.log(`[CSMS-DUAL] Module loaded, BUILD_VERSION=${BUILD_VERSION}`);
+
+/**
+ * Fallback: resolver stationId usando SQL directo (sin Drizzle)
+ * Esto es un safety net en caso de que Drizzle/getDb falle silenciosamente
+ */
+async function resolveStationIdDirectSQL(ocppIdentity: string): Promise<{id: number; name: string} | null> {
+  if (!process.env.DATABASE_URL) {
+    console.error(`[CSMS-DUAL] resolveStationIdDirectSQL: DATABASE_URL not set`);
+    return null;
+  }
+  let conn: mysql.Connection | null = null;
+  try {
+    conn = await mysql.createConnection(process.env.DATABASE_URL);
+    const [rows] = await conn.query(
+      'SELECT id, name FROM charging_stations WHERE ocppIdentity = ? LIMIT 1',
+      [ocppIdentity]
+    ) as any;
+    if (rows && rows.length > 0) {
+      return { id: rows[0].id, name: rows[0].name };
+    }
+    return null;
+  } catch (err) {
+    console.error(`[CSMS-DUAL] resolveStationIdDirectSQL FAILED for "${ocppIdentity}":`, err);
+    return null;
+  } finally {
+    if (conn) {
+      try { await conn.end(); } catch (e) { /* ignore */ }
+    }
+  }
+}
 
 // ============================================================================
 // TYPES
@@ -262,19 +297,39 @@ export class DualCSMS {
 
       // PRE-RESOLVER stationId INMEDIATAMENTE en la conexión
       // Esto es CRÍTICO: si esperamos a handleCall, puede fallar silenciosamente
+      console.log(`[CSMS-DUAL][${BUILD_VERSION}] Pre-resolving stationId for "${ocppIdentity}"...`);
       let preResolvedStationId: number | null = null;
+      
+      // INTENTO 1: Drizzle ORM
       try {
         const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
         if (station) {
           preResolvedStationId = station.id;
-          console.log(`[CSMS-DUAL] Pre-resolved stationId=${station.id} for ${ocppIdentity} at connection time`);
-          // Marcar como online inmediatamente
+          console.log(`[CSMS-DUAL] Pre-resolved via Drizzle: stationId=${station.id} for ${ocppIdentity}`);
           await db.updateChargingStation(station.id, { isOnline: true });
         } else {
-          console.warn(`[CSMS-DUAL] Station not found in DB for ocppIdentity="${ocppIdentity}" at connection time`);
+          console.warn(`[CSMS-DUAL] Drizzle returned null for ocppIdentity="${ocppIdentity}"`);
         }
       } catch (err) {
-        console.error(`[CSMS-DUAL] CRITICAL: Failed to pre-resolve stationId for ${ocppIdentity}:`, err);
+        console.error(`[CSMS-DUAL] Drizzle pre-resolve FAILED for ${ocppIdentity}:`, err);
+      }
+      
+      // INTENTO 2: SQL directo (fallback si Drizzle falló)
+      if (!preResolvedStationId) {
+        console.log(`[CSMS-DUAL] Trying direct SQL fallback for "${ocppIdentity}"...`);
+        const directResult = await resolveStationIdDirectSQL(ocppIdentity);
+        if (directResult) {
+          preResolvedStationId = directResult.id;
+          console.log(`[CSMS-DUAL] Pre-resolved via direct SQL: stationId=${directResult.id} (${directResult.name}) for ${ocppIdentity}`);
+          // Intentar marcar online también
+          try {
+            await db.updateChargingStation(directResult.id, { isOnline: true });
+          } catch (e) {
+            console.warn(`[CSMS-DUAL] Could not mark station online via Drizzle, but stationId is resolved`);
+          }
+        } else {
+          console.error(`[CSMS-DUAL] BOTH Drizzle AND direct SQL failed to resolve stationId for "${ocppIdentity}"`);
+        }
       }
 
       // Registrar la conexión con stationId ya resuelto
@@ -410,20 +465,35 @@ export class DualCSMS {
 
     try {
       // AUTO-RESOLUCIÓN REDUNDANTE: Si conn.stationId sigue null (no se resolvió en conexión),
-      // intentar de nuevo. Esto cubre el caso donde la BD no estaba lista en el momento de la conexión.
+      // intentar de nuevo con Drizzle + fallback SQL directo.
       if (!conn.stationId && action !== "BootNotification") {
-        console.log(`[CSMS-DUAL] stationId is null for ${conn.ocppIdentity} on action=${action}, attempting auto-resolve...`);
+        console.log(`[CSMS-DUAL][${BUILD_VERSION}] stationId is null for ${conn.ocppIdentity} on action=${action}, attempting auto-resolve...`);
+        
+        // Intento 1: Drizzle
         try {
           const station = await db.getChargingStationByOcppIdentity(conn.ocppIdentity);
           if (station) {
             conn.stationId = station.id;
-            console.log(`[CSMS-DUAL] Auto-resolved stationId=${station.id} for ${conn.ocppIdentity} (fallback in handleCall)`);
+            console.log(`[CSMS-DUAL] handleCall auto-resolved via Drizzle: stationId=${station.id} for ${conn.ocppIdentity}`);
             await db.updateChargingStation(station.id, { isOnline: true });
           } else {
-            console.warn(`[CSMS-DUAL] Cannot resolve stationId for "${conn.ocppIdentity}": station not found in DB`);
+            console.warn(`[CSMS-DUAL] handleCall Drizzle returned null for "${conn.ocppIdentity}"`);
           }
         } catch (resolveErr) {
-          console.error(`[CSMS-DUAL] CRITICAL: Auto-resolve failed for ${conn.ocppIdentity}:`, resolveErr);
+          console.error(`[CSMS-DUAL] handleCall Drizzle auto-resolve failed:`, resolveErr);
+        }
+        
+        // Intento 2: SQL directo
+        if (!conn.stationId) {
+          console.log(`[CSMS-DUAL] handleCall trying direct SQL fallback for "${conn.ocppIdentity}"...`);
+          const directResult = await resolveStationIdDirectSQL(conn.ocppIdentity);
+          if (directResult) {
+            conn.stationId = directResult.id;
+            console.log(`[CSMS-DUAL] handleCall auto-resolved via direct SQL: stationId=${directResult.id} for ${conn.ocppIdentity}`);
+            try { await db.updateChargingStation(directResult.id, { isOnline: true }); } catch (e) { /* ignore */ }
+          } else {
+            console.error(`[CSMS-DUAL] handleCall BOTH methods failed for "${conn.ocppIdentity}" on action=${action}`);
+          }
         }
       }
 
