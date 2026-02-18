@@ -993,3 +993,16 @@
 ## Mejoras: Timeout amigable y corrección isOnline - 18 Febrero 2026
 - [x] Timeout amigable en ChargingWaiting: si la sesión pendiente expira (>2 min) mostrar mensaje claro al usuario con opciones de reintentar o cancelar
 - [x] Corregir isOnline=0 en BD para EVG001 (stationId=150001): actualizar a true (isOnline=1)
+
+
+## Fix Crítico: RemoteStartTransaction no se envía al cargador - 17 Feb 2026
+
+- [x] Diagnosticar por qué RemoteStartTransaction no aparece en logs OCPP
+- [x] Identificar que startCharge usaba sendCommandIfConnected (fire-and-forget, sin logs) en vez de requestStartTransaction (async, con respuesta y logs)
+- [x] Cambiar startCharge para usar requestStartTransaction con retry (3 intentos, backoff 2s/4s)
+- [x] Agregar fallback a sendCommandIfConnected si requestStartTransaction falla
+- [x] Implementar deferred retry: si no hay conexión OCPP, reintentar cada 5s durante 60s
+- [x] Agregar logging detallado en sendCommandIfConnected y requestStartTransaction
+- [x] Verificar que el cargador responde Accepted/Rejected y manejar ambos casos
+- [x] 27 tests unitarios para lógica de retry, fallback, y deferred retry
+- [x] 721 tests totales pasando, 0 errores TypeScript

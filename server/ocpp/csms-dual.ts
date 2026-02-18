@@ -1540,8 +1540,15 @@ export class DualCSMS {
   ): Promise<{ status: string }> {
     const conn = this.connections.get(ocppIdentity);
     if (!conn) {
-      throw new Error("Charging station not connected");
+      console.log(`[CSMS-DUAL] requestStartTransaction: No connection for ${ocppIdentity}. Active connections: [${Array.from(this.connections.keys()).join(', ')}]`);
+      throw new Error(`Charging station ${ocppIdentity} not connected. Active: [${Array.from(this.connections.keys()).join(', ')}]`);
     }
+    if (conn.ws.readyState !== 1) {
+      console.log(`[CSMS-DUAL] requestStartTransaction: Connection for ${ocppIdentity} exists but WebSocket readyState=${conn.ws.readyState} (not OPEN)`);
+      throw new Error(`Charging station ${ocppIdentity} WebSocket not OPEN (readyState=${conn.ws.readyState})`);
+    }
+    console.log(`[CSMS-DUAL] requestStartTransaction: Sending to ${ocppIdentity} (stationId=${conn.stationId}, ocppVersion=${conn.ocppVersion}, connectorId=${connectorId}, idTag=${idTag})`);
+    
 
     let response: any;
     if (conn.ocppVersion === "1.6") {
@@ -1826,14 +1833,24 @@ export class DualCSMS {
     payload: any
   ): boolean {
     const conn = this.connections.get(ocppIdentity);
-    if (!conn || conn.ws.readyState !== 1) { // 1 = OPEN
+    if (!conn) {
+      console.log(`[CSMS-DUAL] sendCommandIfConnected: No connection found for ${ocppIdentity}. Active connections: [${Array.from(this.connections.keys()).join(', ')}]`);
+      return false;
+    }
+    if (conn.ws.readyState !== 1) { // 1 = OPEN
+      console.log(`[CSMS-DUAL] sendCommandIfConnected: Connection for ${ocppIdentity} exists but WebSocket readyState=${conn.ws.readyState} (not OPEN). stationId=${conn.stationId}`);
       return false;
     }
     
     const message = [2, messageId, action, payload]; // CALL = 2
-    conn.ws.send(JSON.stringify(message));
-    console.log(`[CSMS-DUAL] Sent ${action} to ${ocppIdentity}`);
-    return true;
+    try {
+      conn.ws.send(JSON.stringify(message));
+      console.log(`[CSMS-DUAL] sendCommandIfConnected: Sent ${action} to ${ocppIdentity} (stationId=${conn.stationId})`);
+      return true;
+    } catch (error: any) {
+      console.error(`[CSMS-DUAL] sendCommandIfConnected: Error sending ${action} to ${ocppIdentity}: ${error.message}`);
+      return false;
+    }
   }
 
   // ============================================================================
