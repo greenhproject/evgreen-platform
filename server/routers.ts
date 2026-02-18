@@ -1480,6 +1480,74 @@ const walletRouter = router({
       
       return { success: true, newBalance };
     }),
+
+  // ========================================================================
+  // Auto-recarga durante carga activa
+  // ========================================================================
+  getAutoRechargeSettings: protectedProcedure.query(async ({ ctx }) => {
+    const subscription = await db.getUserSubscription(ctx.user.id);
+    return {
+      enabled: subscription?.autoRechargeEnabled ?? false,
+      threshold: subscription?.autoRechargeThreshold ?? 10000,
+      amount: subscription?.autoRechargeAmount ?? 20000,
+      hasPaymentMethod: !!subscription?.wompiPaymentSourceId,
+      cardLastFour: subscription?.cardLastFour || null,
+      cardBrand: subscription?.cardBrand || null,
+      lastAutoRechargeAt: subscription?.lastAutoRechargeAt || null,
+      failCount: subscription?.autoRechargeFailCount ?? 0,
+    };
+  }),
+
+  updateAutoRechargeSettings: protectedProcedure
+    .input(z.object({
+      enabled: z.boolean(),
+      threshold: z.number().min(5000).max(100000).optional(),
+      amount: z.number().min(10000).max(500000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const subscription = await db.getUserSubscription(ctx.user.id);
+      
+      // Si quiere activar, verificar que tenga tarjeta inscrita
+      if (input.enabled && !subscription?.wompiPaymentSourceId) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Debes tener una tarjeta inscrita para activar la recarga autom\u00e1tica. Realiza una recarga por Wompi primero.",
+        });
+      }
+
+      const dbInstance = await db.getDb();
+      if (!dbInstance) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "BD no disponible" });
+
+      const { subscriptions: subsTable } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+
+      if (subscription) {
+        await dbInstance.update(subsTable).set({
+          autoRechargeEnabled: input.enabled,
+          ...(input.threshold !== undefined && { autoRechargeThreshold: input.threshold }),
+          ...(input.amount !== undefined && { autoRechargeAmount: input.amount }),
+          ...(input.enabled && { autoRechargeFailCount: 0 }), // Reset fail count on re-enable
+        }).where(eq(subsTable.userId, ctx.user.id));
+      } else {
+        // Crear suscripci\u00f3n b\u00e1sica con auto-recarga
+        await dbInstance.insert(subsTable).values({
+          userId: ctx.user.id,
+          tier: "FREE" as any,
+          autoRechargeEnabled: input.enabled,
+          autoRechargeThreshold: input.threshold ?? 10000,
+          autoRechargeAmount: input.amount ?? 20000,
+          startDate: new Date(),
+          isActive: true,
+        });
+      }
+
+      return {
+        success: true,
+        enabled: input.enabled,
+        threshold: input.threshold ?? subscription?.autoRechargeThreshold ?? 10000,
+        amount: input.amount ?? subscription?.autoRechargeAmount ?? 20000,
+      };
+    }),
 });
 
 // ============================================================================
