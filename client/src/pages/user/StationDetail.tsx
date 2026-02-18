@@ -283,11 +283,11 @@ export default function StationDetail() {
   const getConnectorStatus = (status: string) => {
     const styles: Record<string, { bg: string; text: string; label: string }> = {
       AVAILABLE: { bg: "bg-green-500/20", text: "text-green-400", label: "Disponible" },
-      CHARGING: { bg: "bg-blue-500/20", text: "text-blue-400", label: "Cargando" },
-      PREPARING: { bg: "bg-yellow-500/20", text: "text-yellow-400", label: "Preparando" },
-      SUSPENDED_EV: { bg: "bg-orange-500/20", text: "text-orange-400", label: "Suspendido (EV)" },
-      SUSPENDED_EVSE: { bg: "bg-orange-500/20", text: "text-orange-400", label: "Suspendido (EVSE)" },
-      FINISHING: { bg: "bg-cyan-500/20", text: "text-cyan-400", label: "Finalizando" },
+      CHARGING: { bg: "bg-red-500/20", text: "text-red-400", label: "Ocupado" },
+      PREPARING: { bg: "bg-red-500/20", text: "text-red-400", label: "Ocupado" },
+      SUSPENDED_EV: { bg: "bg-red-500/20", text: "text-red-400", label: "Ocupado" },
+      SUSPENDED_EVSE: { bg: "bg-red-500/20", text: "text-red-400", label: "Ocupado" },
+      FINISHING: { bg: "bg-red-500/20", text: "text-red-400", label: "Ocupado" },
       RESERVED: { bg: "bg-purple-500/20", text: "text-purple-400", label: "Reservado" },
       FAULTED: { bg: "bg-red-500/20", text: "text-red-400", label: "Falla" },
       UNAVAILABLE: { bg: "bg-gray-500/20", text: "text-gray-400", label: "No disponible" },
