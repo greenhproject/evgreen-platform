@@ -974,3 +974,12 @@
 - [x] Corregir la lógica para que sea consistente con el estado mostrado en admin
 - [x] 19 tests unitarios para la lógica de disponibilidad mejorada
 - [x] 703 tests pasando, 0 errores TypeScript
+
+## Bug: "La estación no está disponible" con cargador REAL EVG001 - 17 Febrero 2026 [CORREGIDO]
+- [x] BUG: startCharge falla con cargador real EVG001 aunque admin muestra "Conectado"
+- [x] Causa raíz: isOnline=0 en BD, startCharge no verificaba conector AVAILABLE en BD
+- [x] Solución: startCharge usa MISMA lógica que getStationByCode (4 condiciones OR):
+  isAvailable = hasOcppConnection || isConnectedByIdentity || stationOnlineInDb || (stationIsActive && hasAvailableConnector)
+- [x] Auto-corrección de isOnline en BD cuando hay conector AVAILABLE
+- [x] Fix aplicado en Manus y GitHub (producción)
+- [x] 10 tests pasando, 0 errores TypeScript
