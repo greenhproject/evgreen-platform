@@ -857,6 +857,146 @@ export class DualCSMS {
   private async handleOCPP16MeterValues(conn: ChargingStationConnection, req: OCPP16MeterValuesRequest): Promise<any> {
     console.log(`[CSMS-DUAL] OCPP 1.6 MeterValues from ${conn.ocppIdentity}: connectorId=${req.connectorId}, transactionId=${req.transactionId}`);
     
+    // RECUPERACIÓN DE TRANSACCIONES HUÉRFANAS:
+    // Cuando transactionId=0 (cargador ignoró respuesta Invalid y cargó de todos modos),
+    // intentar crear/recuperar la transacción automáticamente.
+    if (!req.transactionId && req.transactionId !== undefined && conn.stationId) {
+      console.log(`[CSMS-DUAL] MeterValues with transactionId=0 detected for ${conn.ocppIdentity}. Attempting orphan recovery...`);
+      
+      const evses = await db.getEvsesByStationId(conn.stationId);
+      const evse = evses.find(e => e.evseIdLocal === req.connectorId);
+      
+      if (evse) {
+        // Verificar si ya hay una transacción activa para este EVSE
+        const existingTx = await db.getActiveTransaction(evse.id);
+        if (existingTx) {
+          // Ya hay transacción, vincular los MeterValues
+          console.log(`[CSMS-DUAL] Orphan recovery: Found existing transaction ${existingTx.id} for EVSE ${evse.id}`);
+          req.transactionId = undefined; // Forzar procesamiento directo
+          
+          // Procesar MeterValues directamente para esta transacción
+          for (const mv of req.meterValue) {
+            for (const sv of mv.sampledValue) {
+              const measurand = sv.measurand || "Energy.Active.Import.Register";
+              const rawValue = parseFloat(String(sv.value));
+              const unit = (sv.unit || "").toLowerCase();
+              let energyKwh: string | null = null;
+              let powerKw: string | null = null;
+              
+              if (measurand.includes("Energy")) {
+                const kwhValue = unit === "wh" ? rawValue / 1000 : rawValue;
+                energyKwh = String(kwhValue);
+              } else if (measurand.includes("Power")) {
+                const kwValue = unit === "w" ? rawValue / 1000 : rawValue;
+                powerKw = String(kwValue);
+              }
+              
+              await db.createMeterValue({
+                transactionId: existingTx.id,
+                evseId: existingTx.evseId,
+                timestamp: new Date(mv.timestamp),
+                measurand,
+                energyKwh: energyKwh || String(sv.value),
+                powerKw: powerKw || undefined,
+                context: sv.context,
+              });
+            }
+          }
+          
+          // Actualizar sesión activa si existe
+          const activeSession = getActiveSessionById(existingTx.id);
+          if (activeSession && req.meterValue.length > 0) {
+            const meterStart = existingTx.meterStart ? parseFloat(existingTx.meterStart) : 0;
+            for (const mv of req.meterValue) {
+              for (const sv of mv.sampledValue) {
+                if ((sv.measurand || "Energy.Active.Import.Register").includes("Energy")) {
+                  const rawVal = parseFloat(String(sv.value));
+                  const unit = (sv.unit || "").toLowerCase();
+                  const kwhVal = unit === "wh" ? rawVal / 1000 : rawVal;
+                  const consumed = Math.max(0, kwhVal - meterStart);
+                  const cost = consumed * activeSession.pricePerKwh;
+                  setActiveSession(existingTx.id, {
+                    ...activeSession,
+                    currentKwh: Math.round(consumed * 100) / 100,
+                    currentCost: Math.round(cost),
+                  });
+                  await db.updateTransaction(existingTx.id, {
+                    kwhConsumed: String(Math.round(consumed * 100) / 100),
+                    totalCost: String(Math.round(cost)),
+                  });
+                  console.log(`[CSMS-DUAL] Orphan recovery: Updated session ${existingTx.id}: ${consumed.toFixed(2)} kWh, $${Math.round(cost)} COP`);
+                }
+              }
+            }
+          }
+          return {};
+        } else {
+          // No hay transacción activa - crear una nueva (transacción huérfana)
+          console.log(`[CSMS-DUAL] Orphan recovery: No active transaction for EVSE ${evse.id}. Creating orphan transaction...`);
+          
+          // Buscar sesión pendiente
+          const pendingSession = findPendingSessionByOcppIdentity(conn.ocppIdentity, req.connectorId);
+          let userId = 1;
+          if (pendingSession?.session) {
+            userId = pendingSession.session.userId;
+          }
+          
+          const effectivePrice = await db.getEffectiveStationPrice(conn.stationId);
+          const tariff = await db.getActiveTariffByStationId(conn.stationId);
+          const pricePerKwh = effectivePrice.pricePerKwh;
+          
+          // Obtener meterStart del primer MeterValue
+          let meterStart = 0;
+          for (const mv of req.meterValue) {
+            for (const sv of mv.sampledValue) {
+              if ((sv.measurand || "Energy.Active.Import.Register").includes("Energy")) {
+                const rawVal = parseFloat(String(sv.value));
+                const unit = (sv.unit || "").toLowerCase();
+                meterStart = unit === "wh" ? rawVal / 1000 : rawVal;
+              }
+            }
+          }
+          
+          const internalTxId = nanoid();
+          const ocpp16TxId = this.transactionIdCounter++;
+          
+          const txId = await db.createTransaction({
+            evseId: evse.id,
+            userId,
+            stationId: conn.stationId,
+            tariffId: tariff?.id,
+            ocppTransactionId: internalTxId,
+            startTime: new Date(),
+            status: "IN_PROGRESS",
+            meterStart: String(meterStart),
+          });
+          
+          this.ocpp16Transactions.set(ocpp16TxId, internalTxId);
+          await db.updateEvseStatus(evse.id, "CHARGING");
+          
+          setActiveSession(txId, {
+            transactionId: txId,
+            userId,
+            stationId: conn.stationId,
+            connectorId: req.connectorId,
+            chargeMode: pendingSession?.session?.chargeMode || "full_charge" as const,
+            targetValue: pendingSession?.session?.targetValue || 100,
+            startTime: new Date(),
+            currentKwh: 0,
+            currentCost: 0,
+            pricePerKwh,
+          });
+          
+          if (pendingSession) {
+            removePendingSession(pendingSession.sessionId);
+          }
+          
+          console.log(`[CSMS-DUAL] Orphan recovery: Created transaction ${txId} for EVSE ${evse.id}, userId=${userId}`);
+          return {};
+        }
+      }
+    }
+    
     if (req.transactionId) {
       const internalTransactionId = this.ocpp16Transactions.get(req.transactionId);
       if (internalTransactionId) {
