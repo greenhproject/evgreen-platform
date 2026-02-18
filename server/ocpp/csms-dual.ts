@@ -936,16 +936,91 @@ export class DualCSMS {
   }
 
   private async handleOCPP16StopTransaction(conn: ChargingStationConnection, req: OCPP16StopTransactionRequest): Promise<any> {
-    console.log(`[CSMS-DUAL] OCPP 1.6 StopTransaction from ${conn.ocppIdentity}:`, req);
+    console.log(`[CSMS-DUAL] OCPP 1.6 StopTransaction from ${conn.ocppIdentity}:`, JSON.stringify(req));
 
+    // =========================================================================
+    // PASO 1: Resolver la transacción - Múltiples estrategias
+    // =========================================================================
+    let transaction: any = null;
+
+    // 1a. Buscar por mapeo en memoria (flujo normal)
     const internalTransactionId = this.ocpp16Transactions.get(req.transactionId);
-    if (!internalTransactionId) {
-      return { idTagInfo: { status: "Invalid" } };
+    if (internalTransactionId) {
+      transaction = await db.getTransactionByOcppId(internalTransactionId);
+      if (transaction) {
+        console.log(`[CSMS-DUAL] StopTransaction: Found transaction via ocpp16Transactions map: tx=${transaction.id}, ocppTxId=${internalTransactionId}`);
+      }
     }
 
-    const transaction = await db.getTransactionByOcppId(internalTransactionId);
+    // 1b. Si transactionId=0 o no se encontró en el mapa, buscar transacción activa por estación
+    if (!transaction && conn.stationId) {
+      console.warn(`[CSMS-DUAL] StopTransaction: transactionId=${req.transactionId} not in memory map. Searching active transactions for station ${conn.stationId}...`);
+      const evseList = await db.getEvsesByStationId(conn.stationId);
+      for (const evse of evseList) {
+        const activeTx = await db.getActiveTransaction(evse.id);
+        if (activeTx) {
+          transaction = activeTx;
+          console.log(`[CSMS-DUAL] StopTransaction: Found active transaction via EVSE search: tx=${transaction.id}, evse=${evse.id}`);
+          break;
+        }
+      }
+    }
+
+    // 1c. Si aún no se encontró, buscar por idTag del request
+    if (!transaction && req.idTag && conn.stationId) {
+      console.warn(`[CSMS-DUAL] StopTransaction: Trying to find transaction by idTag "${req.idTag}"...`);
+      try {
+        const resolved = await db.resolveUserByIdTag(req.idTag);
+        if (resolved.user) {
+          const userActiveTx = await db.getActiveTransactionByUserId(resolved.user.id);
+          if (userActiveTx) {
+            transaction = userActiveTx;
+            console.log(`[CSMS-DUAL] StopTransaction: Found active transaction via idTag: tx=${transaction.id}, userId=${resolved.user.id}`);
+          }
+        }
+      } catch (e: any) {
+        console.error(`[CSMS-DUAL] StopTransaction: Error resolving by idTag:`, e.message);
+      }
+    }
+
+    // 1d. Auto-resolución de stationId si falta
+    if (!transaction && !conn.stationId) {
+      try {
+        const station = await db.getChargingStationByOcppIdentity(conn.ocppIdentity);
+        if (station) {
+          conn.stationId = station.id;
+          console.log(`[CSMS-DUAL] StopTransaction: Auto-resolved stationId=${station.id} for ${conn.ocppIdentity}`);
+          const evseList = await db.getEvsesByStationId(station.id);
+          for (const evse of evseList) {
+            const activeTx = await db.getActiveTransaction(evse.id);
+            if (activeTx) {
+              transaction = activeTx;
+              console.log(`[CSMS-DUAL] StopTransaction: Found active transaction after auto-resolve: tx=${transaction.id}`);
+              break;
+            }
+          }
+        }
+      } catch (e: any) {
+        console.error(`[CSMS-DUAL] StopTransaction: Error auto-resolving stationId:`, e.message);
+      }
+    }
+
     if (!transaction) {
-      return { idTagInfo: { status: "Invalid" } };
+      console.error(`[CSMS-DUAL] StopTransaction: CRITICAL - No transaction found for transactionId=${req.transactionId}, station=${conn.ocppIdentity}. Accepting anyway to not confuse charger.`);
+      // Aceptar de todas formas para no confundir al cargador
+      // También marcar todos los EVSEs de esta estación como AVAILABLE
+      if (conn.stationId) {
+        try {
+          const evseList = await db.getEvsesByStationId(conn.stationId);
+          for (const evse of evseList) {
+            if (evse.status !== "AVAILABLE") {
+              await db.updateEvseStatus(evse.id, "AVAILABLE");
+              console.log(`[CSMS-DUAL] StopTransaction: Reset EVSE ${evse.id} to AVAILABLE (orphan cleanup)`);
+            }
+          }
+        } catch (e) { /* no-op */ }
+      }
+      return { idTagInfo: { status: "Accepted" } };
     }
 
     const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
