@@ -1052,3 +1052,19 @@
 - [x] Transición automática de pantalla "Conectando" a "Cargando" al detectar IN_PROGRESS
 - [x] 12 tests unitarios para diagnóstico y notificaciones
 - [x] 733 tests totales pasando, 0 errores TypeScript
+
+
+## Fix Monitor OCPP: Datos incorrectos y escalabilidad - 18 Feb 2026 [COMPLETADO]
+
+- [x] BUG: Monitor mostraba cargadores de prueba (TEST001, CP001, etc.) - corregido: solo muestra estaciones de BD
+- [x] Causa: getChargePointIds leía de ocpp_logs - reemplazado por getRegisteredChargers que usa charging_stations
+- [x] Nuevo endpoint getRegisteredChargers: BD como fuente principal, enriquecido con estado OCPP en tiempo real
+- [x] Priorizar cargadores conectados (mostrarlos primero, ordenamiento por estado)
+- [x] Barra de búsqueda por nombre, OCPP ID o dirección (con debounce 300ms)
+- [x] Filtros por estado: Todos, Conectados, Desconectados (clickeables en stats cards)
+- [x] Ordenamiento: por estado, última actividad, nombre A-Z
+- [x] Diseño escalable para 100+ cargadores: lista compacta horizontal en vez de grid de tarjetas
+- [x] BUG FIX: EVG001 mostraba "Sin conexión WebSocket activa" - corregido con estado híbrido
+- [x] Estado híbrido: dualCSMS (memoria) + último log reciente en BD (< 5 min) como fallback
+- [x] Indicador visual de fuente de conexión: WebSocket (verde), Log reciente (amarillo), Desconectado (gris)
+- [x] 745 tests pasando (24 nuevos para diagnóstico, búsqueda, filtros y estado híbrido), 0 errores TypeScript
