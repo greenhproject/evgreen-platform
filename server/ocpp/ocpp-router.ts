@@ -717,9 +717,9 @@ export const ocppRouter = router({
   getChargerDetail: ocppProcedure
     .input(z.object({ ocppIdentity: z.string() }))
     .query(async ({ input }) => {
-      // Datos de conexión en tiempo real
-      const allDiagnostics = dualCSMS.getDetailedDiagnostics();
-      const liveDiag = allDiagnostics.find(d => d.ocppIdentity === input.ocppIdentity);
+      // Datos de conexión en tiempo real del connection-manager (fuente real de datos OCPP)
+      const liveConn = ocppManager.getConnection(input.ocppIdentity);
+      const liveConnInfo = ocppManager.getAllConnections().find(c => c.ocppIdentity === input.ocppIdentity);
       
       // Datos de BD
       const station = await db.getChargingStationByOcppIdentity(input.ocppIdentity);
@@ -732,11 +732,27 @@ export const ocppRouter = router({
         offset: 0,
       });
       
+      // Calcular campos derivados para el frontend
+      const wsReadyState = liveConn ? liveConn.ws.readyState : 3;
+      const wsReadyStateLabels: Record<number, string> = { 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED' };
+      const now = Date.now();
+      const connectedAtMs = liveConnInfo ? new Date(liveConnInfo.connectedAt).getTime() : 0;
+      const lastHeartbeatMs = liveConnInfo ? new Date(liveConnInfo.lastHeartbeat).getTime() : 0;
+      
+      const enrichedConnection = liveConnInfo ? {
+        ...liveConnInfo,
+        wsReadyState,
+        wsReadyStateLabel: wsReadyStateLabels[wsReadyState] || 'UNKNOWN',
+        uptimeSeconds: Math.floor((now - connectedAtMs) / 1000),
+        heartbeatAgeSeconds: lastHeartbeatMs > 0 ? Math.floor((now - lastHeartbeatMs) / 1000) : -1,
+        pendingCallsCount: 0, // El connection-manager no trackea pending calls
+      } : null;
+      
       return {
         ocppIdentity: input.ocppIdentity,
-        isConnected: !!liveDiag,
-        // Datos de conexión en tiempo real
-        connection: liveDiag || null,
+        isConnected: !!liveConn && liveConn.ws.readyState === 1,
+        // Datos de conexión en tiempo real con campos calculados
+        connection: enrichedConnection,
         // Datos de BD
         station: station ? {
           id: station.id,
@@ -751,13 +767,18 @@ export const ocppRouter = router({
           isActive: station.isActive,
           lastBootNotification: station.lastBootNotification,
         } : null,
-        connectors: evses.map(e => ({
-          id: e.id,
-          connectorId: e.evseIdLocal,
-          status: e.status,
-          connectorType: e.connectorType,
-          powerKw: e.powerKw,
-        })),
+        connectors: evses.map(e => {
+          // Priorizar estado OCPP en tiempo real del connection-manager sobre la BD
+          const liveStatus = liveConnInfo?.connectorStatuses?.[e.evseIdLocal];
+          return {
+            id: e.id,
+            connectorId: e.evseIdLocal,
+            status: liveStatus || e.status, // OCPP en tiempo real > BD
+            dbStatus: e.status, // Siempre incluir estado de BD para referencia
+            connectorType: e.connectorType,
+            powerKw: e.powerKw,
+          };
+        }),
         recentLogs: recentLogs.logs || [],
         totalLogs: recentLogs.total || 0,
       };

@@ -257,6 +257,21 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
   // Registrar conexión
   let stationId: number | null = null;
 
+  // PRE-RESOLVER stationId inmediatamente al conectarse (no esperar a BootNotification)
+  try {
+    const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+    if (station) {
+      stationId = station.id;
+      console.log(`[OCPP] Pre-resolved stationId=${stationId} for ${ocppIdentity} at connection time`);
+      // Marcar como online
+      await db.updateStationOnlineStatus(ocppIdentity, true);
+    } else {
+      console.warn(`[OCPP] Could not pre-resolve stationId for ${ocppIdentity} - station not found in DB`);
+    }
+  } catch (err) {
+    console.error(`[OCPP] Error pre-resolving stationId for ${ocppIdentity}:`, err);
+  }
+
   // Registrar el event listener PRIMERO, antes de cualquier operación async
   ws.on("message", async (data) => {
       // Actualizar timestamp de último mensaje
@@ -278,6 +293,19 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
           });
 
           let response: any = {};
+
+          // AUTO-RESOLUCIÓN: Si stationId sigue null, intentar resolverlo antes de procesar
+          if (!stationId && action !== "BootNotification") {
+            try {
+              const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+              if (station) {
+                stationId = station.id;
+                console.log(`[OCPP] Auto-resolved stationId=${stationId} for ${ocppIdentity} in handleMessage`);
+              }
+            } catch (err) {
+              console.error(`[OCPP] Error auto-resolving stationId:`, err);
+            }
+          }
 
           // Manejar mensajes según versión
           if (ocppVersion === "1.6") {
@@ -425,100 +453,178 @@ async function handleOCPP16Message(
       return { currentTime: new Date().toISOString() };
     }
     case "StatusNotification": {
-      if (stationId && payload.connectorId > 0) {
-        const evses = await db.getEvsesByStationId(stationId);
+      // Auto-resolver stationId si es null
+      let resolvedStationId = stationId;
+      if (!resolvedStationId && ocppIdentity) {
+        try {
+          const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+          if (station) resolvedStationId = station.id;
+        } catch (err) {
+          console.error(`[OCPP] StatusNotification auto-resolve error:`, err);
+        }
+      }
+      if (resolvedStationId && payload.connectorId > 0) {
+        const evses = await db.getEvsesByStationId(resolvedStationId);
         const evse = evses.find((e: any) => e.evseIdLocal === payload.connectorId);
         if (evse) {
           const statusMap: Record<string, string> = {
             Available: "AVAILABLE",
-            Preparing: "AVAILABLE",
+            Preparing: "PREPARING",
             Charging: "CHARGING",
-            SuspendedEV: "CHARGING",
-            SuspendedEVSE: "CHARGING",
-            Finishing: "CHARGING",
+            SuspendedEV: "SUSPENDED_EV",
+            SuspendedEVSE: "SUSPENDED_EVSE",
+            Finishing: "FINISHING",
             Reserved: "RESERVED",
             Unavailable: "UNAVAILABLE",
             Faulted: "FAULTED",
           };
-          await db.updateEvseStatus(evse.id, statusMap[payload.status] || "UNAVAILABLE");
+          const newStatus = statusMap[payload.status] || "UNAVAILABLE";
+          await db.updateEvseStatus(evse.id, newStatus);
+          console.log(`[OCPP] StatusNotification - Updated EVSE ${evse.id} to ${newStatus} (OCPP: ${payload.status})`);
         }
+      } else if (payload.connectorId === 0 && resolvedStationId) {
+        // connectorId=0 es la estación completa, actualizar isOnline
+        await db.updateStationOnlineStatus(ocppIdentity, payload.status !== "Unavailable" && payload.status !== "Faulted");
       }
       return {};
     }
     case "Authorize": {
-      // Validar idTag contra la base de datos de usuarios
-      const idTag = payload.idTag;
-      if (idTag) {
-        const user = await db.getUserByIdTag(idTag);
-        if (user && user.isActive) {
-          console.log(`[OCPP] Authorize - User ${user.name || user.email} (ID: ${user.id}) authorized with idTag: ${idTag}`);
-          return {
-            idTagInfo: {
-              status: "Accepted",
-              expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-              parentIdTag: user.id.toString(),
-            },
-          };
-        } else if (user && !user.isActive) {
-          console.log(`[OCPP] Authorize - User with idTag ${idTag} is blocked`);
-          return {
-            idTagInfo: {
-              status: "Blocked",
-            },
-          };
-        } else {
-          console.log(`[OCPP] Authorize - Unknown idTag: ${idTag}`);
-          return {
-            idTagInfo: {
-              status: "Invalid",
-            },
-          };
+      // Validar idTag - MODO PERMISIVO: siempre aceptar para no bloquear cargas
+      const authIdTag = payload.idTag;
+      if (authIdTag) {
+        // 1. Buscar en tabla id_tags (APP, RFID, NFC)
+        try {
+          const tagResult = await db.getUserByIdTagFromTable(authIdTag);
+          if (tagResult) {
+            const tagUser = await db.getUserById(tagResult.userId);
+            if (tagUser && tagUser.isActive) {
+              console.log(`[OCPP] Authorize - User ${tagUser.name || tagUser.email} (ID: ${tagUser.id}) authorized via id_tags`);
+              return {
+                idTagInfo: {
+                  status: "Accepted",
+                  expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                  parentIdTag: tagUser.id.toString(),
+                },
+              };
+            } else if (tagUser && !tagUser.isActive) {
+              console.log(`[OCPP] Authorize - User ${tagUser.id} is blocked, but accepting in permissive mode`);
+            }
+          }
+        } catch (err) {
+          console.error(`[OCPP] Authorize id_tags lookup error:`, err);
         }
+        
+        // 2. Buscar en tabla users (legacy)
+        try {
+          const user = await db.getUserByIdTag(authIdTag);
+          if (user && user.isActive) {
+            console.log(`[OCPP] Authorize - User ${user.name || user.email} (ID: ${user.id}) authorized via users table`);
+            return {
+              idTagInfo: {
+                status: "Accepted",
+                expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                parentIdTag: user.id.toString(),
+              },
+            };
+          }
+        } catch (err) {
+          console.error(`[OCPP] Authorize users lookup error:`, err);
+        }
+        
+        // 3. MODO PERMISIVO: aceptar idTags desconocidos para no bloquear cargas físicas
+        console.log(`[OCPP] Authorize - Unknown idTag: ${authIdTag}, accepting in permissive mode`);
+      } else {
+        console.log(`[OCPP] Authorize - No idTag provided, accepting in permissive mode`);
       }
-      // Si no hay idTag, rechazar
       return {
         idTagInfo: {
-          status: "Invalid",
+          status: "Accepted",
+          expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         },
       };
     }
     case "StartTransaction": {
-      if (!stationId) {
+      // AUTO-RESOLUCIÓN de stationId
+      let resolvedStId = stationId;
+      if (!resolvedStId) {
+        try {
+          const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+          if (station) {
+            resolvedStId = station.id;
+            console.log(`[OCPP] StartTransaction - Auto-resolved stationId=${resolvedStId} for ${ocppIdentity}`);
+          }
+        } catch (err) {
+          console.error(`[OCPP] StartTransaction auto-resolve error:`, err);
+        }
+      }
+      if (!resolvedStId) {
+        console.error(`[OCPP] StartTransaction - Cannot resolve station for ${ocppIdentity}, rejecting`);
         return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
       }
-      const evses = await db.getEvsesByStationId(stationId);
-      const evse = evses.find((e: any) => e.evseIdLocal === payload.connectorId);
+      const evses = await db.getEvsesByStationId(resolvedStId);
+      let evse = evses.find((e: any) => e.evseIdLocal === payload.connectorId);
+      // Fallback: si no encuentra el conector exacto, usar el primero disponible
+      if (!evse && evses.length > 0) {
+        evse = evses[0];
+        console.log(`[OCPP] StartTransaction - Connector ${payload.connectorId} not found, using first EVSE ${evse.id}`);
+      }
       if (!evse) {
+        console.error(`[OCPP] StartTransaction - No EVSEs found for station ${resolvedStId}`);
         return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
       }
       
-      // Buscar usuario por idTag
+      // Buscar usuario por idTag - primero en id_tags, luego en users
       const idTag = payload.idTag;
       let userId: number | null = null;
       let userName = "Usuario";
       
       if (idTag) {
-        const user = await db.getUserByIdTag(idTag);
-        if (user && user.isActive) {
-          userId = user.id;
-          userName = user.name || user.email || "Usuario";
-          console.log(`[OCPP] StartTransaction - User ${userName} (ID: ${userId}) starting charge with idTag: ${idTag}`);
-        } else if (user && !user.isActive) {
-          console.log(`[OCPP] StartTransaction - User with idTag ${idTag} is blocked`);
-          return { idTagInfo: { status: "Blocked" }, transactionId: 0 };
-        } else {
-          console.log(`[OCPP] StartTransaction - Unknown idTag: ${idTag}, transaction will be anonymous`);
+        // Buscar en tabla id_tags (soporta APP, RFID, NFC)
+        try {
+          const tagResult = await db.getUserByIdTagFromTable(idTag);
+          if (tagResult) {
+            userId = tagResult.userId;
+            const user = await db.getUserById(tagResult.userId);
+            userName = user?.name || user?.email || "Usuario";
+            console.log(`[OCPP] StartTransaction - User ${userName} (ID: ${userId}) found via id_tags table`);
+          }
+        } catch (err) {
+          console.error(`[OCPP] StartTransaction id_tags lookup error:`, err);
+        }
+        
+        // Fallback: buscar en tabla users (legacy)
+        if (!userId) {
+          const user = await db.getUserByIdTag(idTag);
+          if (user && user.isActive) {
+            userId = user.id;
+            userName = user.name || user.email || "Usuario";
+            console.log(`[OCPP] StartTransaction - User ${userName} (ID: ${userId}) found via users table (legacy)`);
+          } else if (user && !user.isActive) {
+            console.log(`[OCPP] StartTransaction - User with idTag ${idTag} is blocked`);
+            // NO rechazar, aceptar pero sin userId
+          } else {
+            console.log(`[OCPP] StartTransaction - Unknown idTag: ${idTag}, transaction will be anonymous`);
+          }
+        }
+        
+        // Fallback: formato USER-{id}
+        if (!userId && idTag.startsWith("USER-")) {
+          const uid = parseInt(idTag.replace("USER-", ""), 10);
+          if (!isNaN(uid)) {
+            userId = uid;
+            console.log(`[OCPP] StartTransaction - Resolved userId=${uid} from USER- format idTag`);
+          }
         }
       }
       
-      const tariff = await db.getActiveTariffByStationId(stationId);
+      const tariff = await db.getActiveTariffByStationId(resolvedStId);
       const { nanoid } = await import("nanoid");
       const internalTransactionId = nanoid();
       
       await db.createTransaction({
         evseId: evse.id,
         userId: userId || 1, // Usar usuario encontrado o fallback a 1 (admin)
-        stationId,
+        stationId: resolvedStId,
         tariffId: tariff?.id,
         ocppTransactionId: internalTransactionId,
         startTime: new Date(payload.timestamp),
@@ -532,10 +638,10 @@ async function handleOCPP16Message(
       // Enviar notificación al usuario cuando inicia la carga
       if (userId) {
         try {
-          const station = await db.getChargingStationById(stationId);
+          const station = await db.getChargingStationById(resolvedStId);
           const stationName = station?.name || "Estación";
           // Usar precio efectivo dinámico en vez del precio base de la tarifa
-          const effectivePrice = await db.getEffectiveStationPrice(stationId);
+          const effectivePrice = await db.getEffectiveStationPrice(resolvedStId);
           const effectivePricePerKwh = effectivePrice.pricePerKwh;
           const formattedPrice = Math.round(effectivePricePerKwh).toLocaleString("es-CO");
           await db.createNotification({
@@ -557,13 +663,81 @@ async function handleOCPP16Message(
       };
     }
     case "StopTransaction": {
-      const internalTransactionId = ocpp16Transactions.get(payload.transactionId);
-      if (!internalTransactionId) {
-        return { idTagInfo: { status: "Invalid" } };
+      // Búsqueda multi-estrategia de la transacción
+      let internalTransactionId = ocpp16Transactions.get(payload.transactionId);
+      let transaction: any = null;
+      
+      // Estrategia 1: Buscar por mapa en memoria
+      if (internalTransactionId) {
+        transaction = await db.getTransactionByOcppId(internalTransactionId);
+        if (transaction) {
+          console.log(`[OCPP] StopTransaction - Found via memory map: txId=${payload.transactionId}`);
+        }
       }
-      const transaction = await db.getTransactionByOcppId(internalTransactionId);
+      
+      // Estrategia 2: Buscar transacción activa por EVSE de la estación
       if (!transaction) {
-        return { idTagInfo: { status: "Invalid" } };
+        let resolvedStopStId = stationId;
+        if (!resolvedStopStId) {
+          try {
+            const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+            if (station) resolvedStopStId = station.id;
+          } catch (err) {
+            console.error(`[OCPP] StopTransaction auto-resolve error:`, err);
+          }
+        }
+        if (resolvedStopStId) {
+          try {
+            const activeTransactions = await db.getActiveTransactionsByStationId(resolvedStopStId);
+            if (activeTransactions && activeTransactions.length > 0) {
+              transaction = activeTransactions[0];
+              console.log(`[OCPP] StopTransaction - Found via active EVSE: txId=${transaction.id}`);
+            }
+          } catch (err) {
+            console.error(`[OCPP] StopTransaction EVSE lookup error:`, err);
+          }
+        }
+      }
+      
+      // Estrategia 3: Buscar por idTag del usuario
+      if (!transaction && payload.idTag) {
+        try {
+          const tagResult = await db.getUserByIdTagFromTable(payload.idTag);
+          const userId = tagResult?.userId;
+          if (userId) {
+            const userTx = await db.getActiveTransactionByUserId(userId);
+            if (userTx) {
+              transaction = userTx;
+              console.log(`[OCPP] StopTransaction - Found via idTag user: txId=${transaction.id}`);
+            }
+          }
+        } catch (err) {
+          console.error(`[OCPP] StopTransaction idTag lookup error:`, err);
+        }
+      }
+      
+      // Si no se encontró transacción, aceptar y limpiar EVSEs
+      if (!transaction) {
+        console.warn(`[OCPP] StopTransaction - No transaction found for txId=${payload.transactionId}, idTag=${payload.idTag}. Accepting and cleaning up.`);
+        // Limpiar EVSEs de la estación a AVAILABLE
+        let cleanupStId = stationId;
+        if (!cleanupStId) {
+          try {
+            const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+            if (station) cleanupStId = station.id;
+          } catch (err) { /* ignore */ }
+        }
+        if (cleanupStId) {
+          try {
+            const evses = await db.getEvsesByStationId(cleanupStId);
+            for (const e of evses) {
+              if (e.status !== "AVAILABLE") {
+                await db.updateEvseStatus(e.id, "AVAILABLE");
+              }
+            }
+          } catch (err) { /* ignore */ }
+        }
+        return { idTagInfo: { status: "Accepted" } };
       }
       const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
       const energyDelivered = (payload.meterStop - meterStart) / 1000;
