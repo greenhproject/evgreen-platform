@@ -399,6 +399,12 @@ export const subscriptions = mysqlTable("subscriptions", {
   lastPaymentDate: timestamp("lastPaymentDate"),
   lastPaymentReference: varchar("lastPaymentReference", { length: 255 }),
   failedPaymentCount: int("failedPaymentCount").default(0),
+  // Auto-recarga durante carga activa
+  autoRechargeEnabled: boolean("autoRechargeEnabled").default(false).notNull(),
+  autoRechargeThreshold: int("autoRechargeThreshold").default(10000), // Saldo mínimo en COP para trigger
+  autoRechargeAmount: int("autoRechargeAmount").default(20000), // Monto a recargar en COP
+  lastAutoRechargeAt: timestamp("lastAutoRechargeAt"),
+  autoRechargeFailCount: int("autoRechargeFailCount").default(0),
   // Fechas
   startDate: timestamp("startDate").notNull(),
   endDate: timestamp("endDate"),

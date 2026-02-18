@@ -1097,3 +1097,29 @@
 - [x] Notificación CHARGING_STARTED (csms-dual): usa precio dinámico con formato correcto
 - [x] 30 tests unitarios para pipeline fixes (statusMap, isAvailable, notificaciones, race condition)
 - [x] 775 tests totales pasando, 0 errores TypeScript
+
+
+## Auto-Recarga y Auto-Stop por Saldo Agotado - 18 Feb 2026 [COMPLETADO]
+
+### Configuración de Recarga Automática (Usuario)
+- [x] Columnas BD en subscriptions: autoRechargeEnabled, autoRechargeThreshold (default 10000), autoRechargeAmount (default 20000), autoRechargeFailCount
+- [x] Endpoints getAutoRechargeSettings y updateAutoRechargeSettings en walletRouter
+- [x] UI en billetera: sección expandible "Recarga automática" con toggle, umbrales y montos configurables
+- [x] Validación: requiere tarjeta inscrita (wompiPaymentSourceId) para activar
+
+### Monitor de Saldo Durante Carga Activa
+- [x] Servicio balance-monitor.ts con intervalo de 30s que verifica saldo de usuarios con cargas activas
+- [x] Cuando saldo < threshold: intenta recarga automática vía Wompi quickRecharge con tarjeta tokenizada
+- [x] Notificación AUTO_RECHARGE_SUCCESS al usuario cuando recarga automática es exitosa
+- [x] Notificación AUTO_RECHARGE_FAILED al usuario cuando recarga falla (con conteo de fallos)
+- [x] Desactiva auto-recarga automáticamente después de 3 fallos consecutivos
+
+### Auto-Stop por Saldo Insuficiente
+- [x] Si recarga falla o no está configurada y saldo ≤ $0: envía RemoteStopTransaction vía dualCSMS
+- [x] Notificación CHARGING_STOPPED_LOW_BALANCE al usuario explicando la parada
+- [x] Set de usuarios auto-stopped para evitar enviar RemoteStop repetido
+- [x] Log OCPP registrado para cada RemoteStopTransaction enviado
+
+### Tests
+- [x] 24 tests unitarios para lógica de monitor de saldo, thresholds, auto-stop, Wompi integration
+- [x] 799 tests totales pasando, 0 errores TypeScript

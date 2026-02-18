@@ -52,6 +52,200 @@ const CARD_BRAND_COLORS: Record<string, { bg: string; accent: string }> = {
   DEFAULT: { bg: "from-emerald-600 to-emerald-800", accent: "text-emerald-200" },
 };
 
+// ============================================================================
+// COMPONENTE: Auto-Recarga durante carga activa
+// ============================================================================
+function AutoRechargeSection({ hasSavedCard }: { hasSavedCard: boolean }) {
+  const { data: settings, isLoading } = trpc.wallet.getAutoRechargeSettings.useQuery();
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [threshold, setThreshold] = useState(10000);
+  const [amount, setAmount] = useState(20000);
+  const utils = trpc.useUtils();
+
+  // Sync local state when data loads
+  useEffect(() => {
+    if (settings) {
+      setThreshold(settings.threshold);
+      setAmount(settings.amount);
+    }
+  }, [settings]);
+
+  const updateSettings = trpc.wallet.updateAutoRechargeSettings.useMutation({
+    onSuccess: (data) => {
+      utils.wallet.getAutoRechargeSettings.invalidate();
+      toast.success(
+        data.enabled
+          ? `Recarga autom\u00e1tica activada: $${data.amount.toLocaleString()} COP cuando tu saldo baje de $${data.threshold.toLocaleString()} COP`
+          : "Recarga autom\u00e1tica desactivada"
+      );
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al actualizar configuraci\u00f3n");
+    },
+  });
+
+  const handleToggle = () => {
+    const newEnabled = !settings?.enabled;
+    updateSettings.mutate({
+      enabled: newEnabled,
+      threshold,
+      amount,
+    });
+  };
+
+  const handleSaveSettings = () => {
+    updateSettings.mutate({
+      enabled: true,
+      threshold,
+      amount,
+    });
+  };
+
+  const THRESHOLD_OPTIONS = [5000, 10000, 20000, 50000];
+  const AMOUNT_OPTIONS = [10000, 20000, 50000, 100000];
+
+  if (isLoading) return null;
+
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between py-2"
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+            <RefreshCw className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-medium">Recarga autom\u00e1tica</p>
+            <p className="text-[10px] text-muted-foreground">
+              {settings?.enabled
+                ? `Activa \u2022 Recarga $${(settings.amount || 20000).toLocaleString()} cuando saldo < $${(settings.threshold || 10000).toLocaleString()}`
+                : "Desactivada \u2022 Protege tu carga de interrupciones"}
+            </p>
+          </div>
+        </div>
+        <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+      </button>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <Card className="p-4 space-y-4">
+              {/* Explicaci\u00f3n */}
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                <BatteryCharging className="w-5 h-5 text-emerald-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs font-medium text-emerald-300">\u00bfC\u00f3mo funciona?</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Cuando tu saldo baje del umbral durante una carga activa, se intentar\u00e1 recargar autom\u00e1ticamente desde tu tarjeta inscrita. Si la recarga falla, la carga se detendr\u00e1 para evitar deudas.
+                  </p>
+                </div>
+              </div>
+
+              {/* Toggle principal */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Activar recarga autom\u00e1tica</span>
+                <button
+                  onClick={handleToggle}
+                  disabled={updateSettings.isPending}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    settings?.enabled ? "bg-emerald-500" : "bg-muted"
+                  } ${updateSettings.isPending ? "opacity-50" : ""}`}
+                >
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
+                    settings?.enabled ? "translate-x-6" : "translate-x-0.5"
+                  }`} />
+                </button>
+              </div>
+
+              {!hasSavedCard && (
+                <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-500/5 border border-amber-500/10">
+                  <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-[10px] text-amber-300">
+                    Necesitas inscribir una tarjeta primero para activar la recarga autom\u00e1tica.
+                  </p>
+                </div>
+              )}
+
+              {/* Configuraci\u00f3n de umbral */}
+              <div className="space-y-2">
+                <label className="text-xs text-muted-foreground">Recargar cuando el saldo baje de:</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {THRESHOLD_OPTIONS.map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => setThreshold(opt)}
+                      className={`p-2 rounded-lg text-xs font-medium transition-all ${
+                        threshold === opt
+                          ? "bg-primary/10 border-primary border text-primary"
+                          : "bg-muted/50 border border-transparent hover:border-primary/30"
+                      }`}
+                    >
+                      ${opt.toLocaleString()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Monto de recarga */}
+              <div className="space-y-2">
+                <label className="text-xs text-muted-foreground">Monto a recargar:</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {AMOUNT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => setAmount(opt)}
+                      className={`p-2 rounded-lg text-xs font-medium transition-all ${
+                        amount === opt
+                          ? "bg-primary/10 border-primary border text-primary"
+                          : "bg-muted/50 border border-transparent hover:border-primary/30"
+                      }`}
+                    >
+                      ${opt.toLocaleString()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Bot\u00f3n guardar si cambi\u00f3 algo */}
+              {settings?.enabled && (threshold !== settings.threshold || amount !== settings.amount) && (
+                <Button
+                  size="sm"
+                  className="w-full gradient-primary text-white"
+                  onClick={handleSaveSettings}
+                  disabled={updateSettings.isPending}
+                >
+                  {updateSettings.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Guardando...</>
+                  ) : (
+                    <><Settings className="w-4 h-4 mr-2" /> Guardar cambios</>
+                  )}
+                </Button>
+              )}
+
+              {/* Estado de fallos */}
+              {settings?.enabled && (settings.failCount ?? 0) > 0 && (
+                <div className="flex items-start gap-2 p-2 rounded-lg bg-red-500/5 border border-red-500/10">
+                  <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-[10px] text-red-300">
+                    La recarga autom\u00e1tica ha fallado {settings.failCount} vez(es). Verifica que tu tarjeta tenga fondos suficientes.
+                  </p>
+                </div>
+              )}
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export default function UserWallet() {
   const [selectedAmount, setSelectedAmount] = useState<number | null>(50000);
   const [customAmount, setCustomAmount] = useState("");
@@ -802,6 +996,11 @@ export default function UserWallet() {
             )}
           </TabsContent>
         </Tabs>
+
+        {/* ================================================================ */}
+        {/* SECCIÓN: AUTO-RECARGA DURANTE CARGA ACTIVA */}
+        {/* ================================================================ */}
+        <AutoRechargeSection hasSavedCard={!!hasSavedCard} />
 
         {/* Información de prueba */}
         {wompiConfig?.configured && wompiConfig?.testMode && (
