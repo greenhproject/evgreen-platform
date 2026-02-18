@@ -20,6 +20,7 @@ import { generateExcelReport, generatePDFReport } from "./reports/export-transac
 import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } from "./notifications/broadcast-service";
 import { checkAndNotifyMilestones } from "./crowdfunding/progress-notifications";
 import { eventRouter } from "./event/event-router";
+import { idTagRouter } from "./idtags/idtag-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -3502,6 +3503,7 @@ export const appRouter = router({
   techConfig: techConfigRouter,
   security: securityRouter,
   reviews: reviewsRouter,
+  idTags: idTagRouter,
 });
 
 export type AppRouter = typeof appRouter;

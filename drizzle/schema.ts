@@ -1684,3 +1684,51 @@ export const stationReviewsRelations = relations(stationReviews, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+// ============================================================================
+// ID TAGS TABLE (RFID / NFC / APP)
+// ============================================================================
+
+export const idTagTypeEnum = mysqlEnum("id_tag_type", ["APP", "RFID", "NFC", "REMOTE"]);
+export const idTagStatusEnum = mysqlEnum("id_tag_status", ["ACTIVE", "BLOCKED", "EXPIRED", "LOST"]);
+
+export const idTags = mysqlTable("id_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  // El idTag tal como lo envía el cargador en Authorize/StartTransaction
+  idTag: varchar("id_tag", { length: 50 }).notNull().unique(),
+  // Usuario propietario de este idTag (puede ser null para tags no asignados)
+  userId: int("user_id"),
+  // Tipo de tag
+  type: idTagTypeEnum.notNull().default("APP"),
+  // Estado del tag
+  status: idTagStatusEnum.notNull().default("ACTIVE"),
+  // Etiqueta descriptiva (ej: "Tarjeta principal", "Tag oficina")
+  label: varchar("label", { length: 100 }),
+  // Para RFID/NFC: número de serie del tag físico
+  serialNumber: varchar("serial_number", { length: 100 }),
+  // Fecha de expiración (null = no expira)
+  expiresAt: timestamp("expires_at"),
+  // Grupo de tags (para empresas que manejan flotas)
+  parentIdTag: varchar("parent_id_tag", { length: 50 }),
+  // Límites de uso
+  maxActiveTransactions: int("max_active_transactions").default(1),
+  // Auditoría
+  lastUsedAt: timestamp("last_used_at"),
+  lastUsedStationId: int("last_used_station_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type IdTag = typeof idTags.$inferSelect;
+export type InsertIdTag = typeof idTags.$inferInsert;
+
+export const idTagsRelations = relations(idTags, ({ one }) => ({
+  user: one(users, {
+    fields: [idTags.userId],
+    references: [users.id],
+  }),
+  lastUsedStation: one(chargingStations, {
+    fields: [idTags.lastUsedStationId],
+    references: [chargingStations.id],
+  }),
+}));
