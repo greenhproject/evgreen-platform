@@ -531,27 +531,90 @@ export class DualCSMS {
   }
 
   private async handleOCPP16StatusNotification(conn: ChargingStationConnection, req: OCPP16StatusNotificationRequest): Promise<any> {
-    console.log(`[CSMS-DUAL] OCPP 1.6 StatusNotification from ${conn.ocppIdentity}:`, req);
+    console.log(`[CSMS-DUAL] OCPP 1.6 StatusNotification from ${conn.ocppIdentity}: connector=${req.connectorId}, status=${req.status}, errorCode=${req.errorCode}`);
 
-    if (conn.stationId && req.connectorId > 0) {
-      const evses = await db.getEvsesByStationId(conn.stationId);
-      const evse = evses.find(e => e.evseIdLocal === req.connectorId);
+    // Resolver stationId si no está asignado aún
+    let stationId = conn.stationId;
+    if (!stationId && conn.ocppIdentity) {
+      try {
+        const station = await db.getChargingStationByOcppIdentity(conn.ocppIdentity);
+        if (station) {
+          stationId = station.id;
+          conn.stationId = station.id;
+          console.log(`[CSMS-DUAL] StatusNotification: Resolved stationId=${stationId} from ocppIdentity=${conn.ocppIdentity}`);
+        }
+      } catch (err) {
+        console.error(`[CSMS-DUAL] StatusNotification: Failed to resolve stationId for ${conn.ocppIdentity}:`, err);
+      }
+    }
+
+    if (stationId && req.connectorId > 0) {
+      const evses = await db.getEvsesByStationId(stationId);
+      const evse = evses.find((e: any) => e.evseIdLocal === req.connectorId);
 
       if (evse) {
-        const statusMap: Record<string, any> = {
+        // Mapeo CORRECTO: cada estado OCPP 1.6 se mapea a su equivalente exacto en BD
+        const statusMap: Record<string, string> = {
           Available: "AVAILABLE",
-          Preparing: "AVAILABLE",
-          Charging: "CHARGING",
-          SuspendedEV: "CHARGING",
-          SuspendedEVSE: "CHARGING",
-          Finishing: "CHARGING",
+          Preparing: "PREPARING",       // Cable conectado, esperando autorización
+          Charging: "CHARGING",         // Cargando activamente
+          SuspendedEV: "SUSPENDED_EV",  // Suspendido por el vehículo
+          SuspendedEVSE: "SUSPENDED_EVSE", // Suspendido por el cargador
+          Finishing: "FINISHING",        // Carga terminada, cable aún conectado
           Reserved: "RESERVED",
           Unavailable: "UNAVAILABLE",
           Faulted: "FAULTED",
         };
-        const status = statusMap[req.status] || "UNAVAILABLE";
-        await db.updateEvseStatus(evse.id, status);
+        const newStatus = (statusMap[req.status] || "UNAVAILABLE") as "AVAILABLE" | "PREPARING" | "CHARGING" | "SUSPENDED_EVSE" | "SUSPENDED_EV" | "FINISHING" | "RESERVED" | "UNAVAILABLE" | "FAULTED";
+        const oldStatus = evse.status;
+        
+        await db.updateEvseStatus(evse.id, newStatus);
+        console.log(`[CSMS-DUAL] StatusNotification: EVSE ${evse.id} (connector ${req.connectorId}) status changed: ${oldStatus} → ${newStatus}`);
+
+        // Si el conector pasa a Preparing, actualizar también isOnline de la estación
+        if (req.status === "Preparing" || req.status === "Charging") {
+          try {
+            await db.updateChargingStation(stationId, { isOnline: true });
+          } catch (e) {
+            // No es crítico
+          }
+        }
+
+        // Si hay una sesión pendiente y el cargador reporta Preparing o Charging,
+        // esto confirma que el vehículo se conectó correctamente
+        if (req.status === "Charging" || req.status === "SuspendedEV" || req.status === "SuspendedEVSE") {
+          // Verificar si hay una transacción activa para este EVSE y actualizar su estado
+          try {
+            const activeTx = await db.getActiveTransaction(evse.id);
+            if (activeTx && activeTx.status === "PENDING") {
+              await db.updateTransaction(activeTx.id, { status: "IN_PROGRESS" });
+              console.log(`[CSMS-DUAL] StatusNotification: Transaction ${activeTx.id} promoted from PENDING to IN_PROGRESS (charger is ${req.status})`);
+            }
+          } catch (e) {
+            console.error(`[CSMS-DUAL] StatusNotification: Error updating transaction status:`, e);
+          }
+        }
+
+        // Generar alerta si hay error
+        if (req.errorCode && req.errorCode !== "NoError") {
+          console.warn(`[CSMS-DUAL] StatusNotification: Error reported by ${conn.ocppIdentity} connector ${req.connectorId}: ${req.errorCode} - ${req.info || ''}`);
+        }
+      } else {
+        console.warn(`[CSMS-DUAL] StatusNotification: EVSE not found for stationId=${stationId}, connectorId=${req.connectorId}`);
       }
+    } else if (req.connectorId === 0) {
+      // ConnectorId 0 = estado general del cargador (no de un conector específico)
+      console.log(`[CSMS-DUAL] StatusNotification: General station status for ${conn.ocppIdentity}: ${req.status}`);
+      if (stationId) {
+        try {
+          const isOnline = req.status !== "Unavailable" && req.status !== "Faulted";
+          await db.updateChargingStation(stationId, { isOnline });
+        } catch (e) {
+          // No es crítico
+        }
+      }
+    } else {
+      console.warn(`[CSMS-DUAL] StatusNotification: Cannot process - stationId=${stationId}, connectorId=${req.connectorId}`);
     }
 
     return {};
@@ -702,15 +765,17 @@ export class DualCSMS {
     try {
       const station = await db.getChargingStationById(conn.stationId);
       const stationName = station?.name || conn.ocppIdentity;
+      // Usar precio dinámico efectivo para la notificación
+      const formattedPrice = Math.round(pricePerKwh).toLocaleString("es-CO");
       await db.createNotification({
         userId,
         title: "Carga iniciada",
-        message: `Tu sesión de carga ha comenzado en ${stationName} (conector #${req.connectorId}). Puedes monitorear el progreso en tiempo real.`,
+        message: `Tu sesión de carga ha comenzado en ${stationName} (conector #${req.connectorId}). Tarifa: $${formattedPrice} COP/kWh. Puedes monitorear el progreso en tiempo real.`,
         type: "CHARGING_STARTED",
         referenceId: transactionId,
         referenceType: "transaction",
       });
-      console.log(`[CSMS-DUAL] StartTransaction: Notification sent to user ${userId} for charging started`);
+      console.log(`[CSMS-DUAL] StartTransaction: Notification sent to user ${userId} for charging started at $${formattedPrice}/kWh`);
     } catch (notifError: any) {
       console.error(`[CSMS-DUAL] StartTransaction: Failed to send notification to user ${userId}:`, notifError.message);
     }

@@ -1068,3 +1068,32 @@
 - [x] Estado híbrido: dualCSMS (memoria) + último log reciente en BD (< 5 min) como fallback
 - [x] Indicador visual de fuente de conexión: WebSocket (verde), Log reciente (amarillo), Desconectado (gris)
 - [x] 745 tests pasando (24 nuevos para diagnóstico, búsqueda, filtros y estado híbrido), 0 errores TypeScript
+
+
+## Auditoría Profunda: Pipeline OCPP no sincroniza estado real del cargador - 18 Feb 2026 [COMPLETADO]
+
+### Problemas Corregidos
+- [x] BUG 1: StatusNotification mapeaba Preparing→AVAILABLE - corregido: Preparing→PREPARING, Charging→CHARGING, etc.
+- [x] BUG 2: App se quedaba en "Conectando" por race condition - corregido: getActiveSession prioriza transacción activa en BD sobre sesión pendiente
+- [x] BUG 3: Conector mostraba "Disponible" con Preparing - corregido: isAvailable solo acepta AVAILABLE, no PREPARING
+- [x] BUG 4: kWh en notificaciones usaba precio base - corregido: usa getEffectiveStationPrice (precio dinámico)
+- [x] BUG 5: Eventos OCPP sí se procesaban pero el statusMap era incorrecto - corregido
+
+### Investigación Completada
+- [x] Auditar handleOCPP16StatusNotification: SÍ actualiza BD pero statusMap era incorrecto (Preparing→AVAILABLE)
+- [x] Auditar handleOCPP16StartTransaction: SÍ transiciona a IN_PROGRESS y crea sesión activa
+- [x] Auditar handleOCPP16MeterValues: SÍ actualiza kWh en sesión activa en memoria
+- [x] Auditar handleOCPP16StopTransaction: SÍ finaliza sesión y calcula costo
+- [x] Trazar flujo completo: evento OCPP → handler → DB update → API query → frontend display
+- [x] Verificar que getActiveSession devuelve datos actualizados al frontend
+
+### Correcciones Aplicadas
+- [x] StatusNotification: statusMap corregido con los 9 estados OCPP 1.6 correctos
+- [x] isAvailable: solo AVAILABLE es disponible (antes incluía PREPARING)
+- [x] Frontend: agregados estilos para SUSPENDED_EV, SUSPENDED_EVSE, FINISHING
+- [x] getActiveSession: prioriza transacción activa en BD sobre sesión pendiente (fix race condition)
+- [x] Notificación startCharge: usa precio dinámico formateado con toLocaleString("es-CO")
+- [x] Notificación startCharge: mensaje correcto "Se ha enviado la orden de carga..." en vez de "Conecta tu vehículo"
+- [x] Notificación CHARGING_STARTED (csms-dual): usa precio dinámico con formato correcto
+- [x] 30 tests unitarios para pipeline fixes (statusMap, isAvailable, notificaciones, race condition)
+- [x] 775 tests totales pasando, 0 errores TypeScript

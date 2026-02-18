@@ -529,11 +529,14 @@ async function handleOCPP16Message(
         try {
           const station = await db.getChargingStationById(stationId);
           const stationName = station?.name || "Estación";
-          const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+          // Usar precio efectivo dinámico en vez del precio base de la tarifa
+          const effectivePrice = await db.getEffectiveStationPrice(stationId);
+          const effectivePricePerKwh = effectivePrice.pricePerKwh;
+          const formattedPrice = Math.round(effectivePricePerKwh).toLocaleString("es-CO");
           await db.createNotification({
             userId: userId,
-            title: "🔌 Carga iniciada",
-            message: `Hola ${userName}, tu carga ha comenzado en ${stationName}. Tarifa actual: $${pricePerKwh.toLocaleString()} COP/kWh. Te notificaremos cuando finalice.`,
+            title: "Carga iniciada",
+            message: `Hola ${userName}, tu carga ha comenzado en ${stationName}. Tarifa: $${formattedPrice} COP/kWh. Te notificaremos cuando finalice.`,
             type: "CHARGE_START",
             referenceId: null,
             referenceType: "transaction",
