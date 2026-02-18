@@ -1305,3 +1305,12 @@
 - [x] Actualizar startPercentage con el valor manual ingresado por el usuario
 - [x] Badge editable para cambiar SoC manual después de ingresarlo
 - [x] 868 tests pasando (52 archivos)
+
+
+## Fix: Transacción no encontrada al detener carga - 18 Feb 2026
+- [x] Fix: "Transacción no encontrada" - stopCharge no devolvía transactionId en el return
+- [x] Fix: Frontend ahora usa transactionId del return, con fallback a session.transactionId
+- [x] Fix: ChargingSummary con retry automático (5 intentos) y refetch cada 3s si transacción en progreso
+- [x] Fix: Pantalla de espera "Finalizando carga..." mientras el cargador confirma StopTransaction
+- [x] Fix: Confetti solo se lanza cuando la transacción está completada
+- [x] 868 tests pasando (52 archivos)

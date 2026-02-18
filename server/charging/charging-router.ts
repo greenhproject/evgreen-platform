@@ -1168,6 +1168,7 @@ export const chargingRouter = router({
         status: "stopping",
         message: "Deteniendo la carga...",
         isSimulation: false,
+        transactionId: transactionId,
       };
     }),
 

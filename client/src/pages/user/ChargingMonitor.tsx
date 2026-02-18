@@ -167,7 +167,16 @@ export default function ChargingMonitor() {
   const stopChargeMutation = trpc.charging.stopCharge.useMutation({
     onSuccess: (data) => {
       toast.success("Carga detenida exitosamente");
-      setLocation(`/charging-summary/${(data as { transactionId?: number }).transactionId || 0}`);
+      const txId = (data as { transactionId?: number }).transactionId;
+      if (txId) {
+        setLocation(`/charging-summary/${txId}`);
+      } else if (session?.transactionId) {
+        // Fallback: usar el transactionId de la sesión activa
+        setLocation(`/charging-summary/${session.transactionId}`);
+      } else {
+        toast.info("Redirigiendo al historial...");
+        setLocation("/charging-history");
+      }
     },
     onError: (error) => {
       toast.error(`Error al detener la carga: ${error.message}`);

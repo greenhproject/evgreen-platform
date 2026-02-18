@@ -143,18 +143,30 @@ export default function ChargingSummary() {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   
-  // Obtener detalles de la transacción
+  const parsedTxId = parseInt(transactionId || "0");
+  
+  // Obtener detalles de la transacción con retry automático
   const { data: transaction, isLoading, error } = trpc.transactions.getById.useQuery(
-    { id: parseInt(transactionId || "0") },
-    { enabled: !!transactionId && !!user }
+    { id: parsedTxId },
+    { 
+      enabled: !!transactionId && parsedTxId > 0 && !!user,
+      retry: 5,
+      retryDelay: (attemptIndex) => Math.min(1000 * (attemptIndex + 1), 5000),
+      refetchInterval: (query) => {
+        // Si la transacción está en progreso, refetch cada 3 segundos hasta que se complete
+        const data = query.state.data as { status?: string } | undefined;
+        if (data?.status === "IN_PROGRESS") return 3000;
+        return false;
+      },
+    }
   );
   
   // Estado para controlar la animación de confetti
   const [showConfetti, setShowConfetti] = useState(false);
   
-  // Efecto para lanzar confetti cuando se carga la transacción
+  // Efecto para lanzar confetti cuando se carga la transacción completada
   useEffect(() => {
-    if (transaction && !showConfetti) {
+    if (transaction && transaction.status !== "IN_PROGRESS" && !showConfetti) {
       setShowConfetti(true);
       
       // Lanzar confetti de celebración
@@ -456,6 +468,21 @@ export default function ChargingSummary() {
     );
   }
   
+  // Si la transacción está en progreso, mostrar pantalla de espera
+  if (transaction?.status === "IN_PROGRESS") {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-emerald-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Finalizando carga...</h2>
+          <p className="text-muted-foreground mb-4">
+            Esperando confirmación del cargador. Esto puede tomar unos segundos.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  
   if (error || !transaction) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -466,10 +493,16 @@ export default function ChargingSummary() {
             <p className="text-muted-foreground mb-4">
               No pudimos encontrar los detalles de esta transacción.
             </p>
-            <Button onClick={() => setLocation("/map")}>
-              <Home className="w-4 h-4 mr-2" />
-              Ir al mapa
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button onClick={() => setLocation("/map")}>
+                <Home className="w-4 h-4 mr-2" />
+                Ir al mapa
+              </Button>
+              <Button variant="outline" onClick={() => setLocation("/charging-history")}>
+                <FileText className="w-4 h-4 mr-2" />
+                Ver historial de cargas
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
