@@ -1185,3 +1185,14 @@
   - Mapa en memoria → EVSE activo por estación → idTag → auto-resolve stationId
 - [x] Si no encuentra transacción: Accepted + limpiar EVSEs a AVAILABLE
 - [x] Nunca devolver "Invalid" para no confundir al cargador
+
+## Bug: EVSE aparece Disponible en app cuando cargador reporta Preparing - 18 Feb 2026
+- [x] Diagnosticar por qué StatusNotification Preparing no actualiza el estado del EVSE en la BD o el frontend no lo refleja
+  - CAUSA RAÍZ: stationId era null tras reconexión WebSocket porque no se resolvía en la conexión
+- [x] Verificar handler StatusNotification: ¿actualiza la BD correctamente? (Sí, pero solo si stationId != null)
+- [x] Verificar endpoint getEvses: ¿devuelve el status actualizado? (Sí, devuelve connector_status)
+- [x] Verificar frontend: mapeo correcto PREPARING→Preparando en amarillo
+- [x] Verificar si connectorId=0 sobreescribe: No, connectorId=0 solo actualiza isOnline
+- [x] FIX: Pre-resolver stationId INMEDIATAMENTE en conexión WebSocket (no esperar a handleCall)
+- [x] FIX: Logging exhaustivo en auto-resolución para diagnosticar fallos futuros
+- [x] 834 tests pasando, 0 errores TypeScript
