@@ -358,22 +358,28 @@ export default function ChargingMonitor() {
       </div>
       
       {/* Indicador de fuente de datos */}
-      {realSoc !== null && realSoc !== undefined && (
+      {realSoc !== null && realSoc !== undefined ? (
         <div className="flex justify-center mt-1">
           <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300">
             <Battery className="w-3 h-3 mr-1" />
             SoC real del vehículo
           </Badge>
         </div>
-      )}
-      {!hasRealData && !isSimulation && (
+      ) : hasRealData ? (
+        <div className="flex justify-center mt-1">
+          <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">
+            <Zap className="w-3 h-3 mr-1" />
+            Datos del cargador (SoC estimado)
+          </Badge>
+        </div>
+      ) : !isSimulation ? (
         <div className="flex justify-center mt-1">
           <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
             <Loader2 className="w-3 h-3 mr-1 animate-spin" />
             Esperando datos del cargador...
           </Badge>
         </div>
-      )}
+      ) : null}
       
       {/* Métricas en tiempo real */}
       <div className="px-4 mt-6">
