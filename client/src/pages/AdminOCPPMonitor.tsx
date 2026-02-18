@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -92,53 +92,37 @@ export default function AdminOCPPMonitor() {
 }
 
 // ============================================================================
-// CHARGER GRID VIEW - Vista principal con tarjetas de cargadores
+// CHARGER GRID VIEW - Vista principal con cargadores registrados en BD
 // ============================================================================
 
 function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) => void }) {
-  const { data: diagnostics, refetch: refetchDiag } = trpc.ocpp.getDiagnostics.useQuery(undefined, {
-    refetchInterval: 5000,
-  });
-  const { data: stats } = trpc.ocpp.getConnectionStats.useQuery(undefined, {
-    refetchInterval: 5000,
-  });
-  const { data: allStations } = trpc.ocpp.getChargePointIds.useQuery(undefined, {
-    refetchInterval: 30000,
-  });
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "connected" | "disconnected">("all");
+  const [sortBy, setSortBy] = useState<"name" | "status" | "lastActivity">("status");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Combinar cargadores conectados + registrados en BD
-  const chargers = useMemo(() => {
-    const map = new Map<string, any>();
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-    // Primero: cargadores registrados en BD (pueden estar offline)
-    if (allStations) {
-      for (const cpId of allStations) {
-        if (cpId) {
-          map.set(cpId, {
-            ocppIdentity: cpId,
-            isConnected: false,
-            stationName: cpId,
-            connectors: [],
-          });
-        }
-      }
-    }
+  const { data, refetch, isLoading } = trpc.ocpp.getRegisteredChargers.useQuery(
+    { search: debouncedSearch || undefined, status: statusFilter, sortBy },
+    { refetchInterval: 5000 }
+  );
 
-    // Luego: sobrescribir con datos de diagnóstico en tiempo real
-    if (diagnostics) {
-      for (const diag of diagnostics) {
-        map.set(diag.ocppIdentity, {
-          ...diag,
-          isConnected: true,
-        });
-      }
-    }
+  const chargers = data?.chargers || [];
+  const stats = data?.stats || { total: 0, connected: 0, disconnected: 0, healthy: 0 };
 
-    return Array.from(map.values());
-  }, [diagnostics, allStations]);
-
-  const connectedCount = chargers.filter(c => c.isConnected).length;
-  const offlineCount = chargers.filter(c => !c.isConnected).length;
+  const formatTimeAgo = (isoDate: string | null) => {
+    if (!isoDate) return "Sin actividad";
+    const diff = Math.floor((Date.now() - new Date(isoDate).getTime()) / 1000);
+    if (diff < 60) return `hace ${diff}s`;
+    if (diff < 3600) return `hace ${Math.floor(diff / 60)}m`;
+    if (diff < 86400) return `hace ${Math.floor(diff / 3600)}h`;
+    return `hace ${Math.floor(diff / 86400)}d`;
+  };
 
   const formatUptime = (seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
@@ -148,15 +132,14 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
     return `${h}h ${m}m`;
   };
 
-  const getConnectorStatusColor = (status: string) => {
-    switch (status?.toUpperCase()) {
-      case "AVAILABLE": return "bg-green-500";
-      case "CHARGING": return "bg-blue-500";
-      case "RESERVED": return "bg-cyan-500";
-      case "UNAVAILABLE": return "bg-gray-500";
-      case "FAULTED": return "bg-red-500";
-      default: return "bg-gray-400";
+  const getConnectionBadge = (charger: any) => {
+    if (charger.connectionSource === "websocket") {
+      return <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0 h-4">WebSocket</Badge>;
     }
+    if (charger.connectionSource === "recent_log") {
+      return <Badge className="bg-yellow-500 text-white text-[10px] px-1.5 py-0 h-4">Log reciente</Badge>;
+    }
+    return <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">Desconectado</Badge>;
   };
 
   return (
@@ -169,10 +152,10 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
             Monitor OCPP
           </h1>
           <p className="text-muted-foreground">
-            Seleccione un cargador para ver su detalle y opciones de control
+            Cargadores registrados en la plataforma con estado en tiempo real
           </p>
         </div>
-        <Button variant="outline" onClick={() => refetchDiag()}>
+        <Button variant="outline" onClick={() => refetch()}>
           <RefreshCw className="h-4 w-4 mr-2" />
           Actualizar
         </Button>
@@ -219,30 +202,34 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total</p>
-                <p className="text-2xl font-bold">{chargers.length}</p>
+                <p className="text-sm text-muted-foreground">Registrados</p>
+                <p className="text-2xl font-bold">{stats.total}</p>
               </div>
               <Server className="h-8 w-8 text-blue-500" />
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className={statusFilter === "connected" ? "ring-2 ring-green-500" : ""}
+              onClick={() => setStatusFilter(statusFilter === "connected" ? "all" : "connected")}
+              style={{ cursor: "pointer" }}>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Conectados</p>
-                <p className="text-2xl font-bold text-green-600">{connectedCount}</p>
+                <p className="text-2xl font-bold text-green-600">{stats.connected}</p>
               </div>
               <Wifi className="h-8 w-8 text-green-500" />
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className={statusFilter === "disconnected" ? "ring-2 ring-gray-500" : ""}
+              onClick={() => setStatusFilter(statusFilter === "disconnected" ? "all" : "disconnected")}
+              style={{ cursor: "pointer" }}>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Desconectados</p>
-                <p className="text-2xl font-bold text-gray-600">{offlineCount}</p>
+                <p className="text-2xl font-bold text-gray-600">{stats.disconnected}</p>
               </div>
               <WifiOff className="h-8 w-8 text-gray-400" />
             </div>
@@ -253,9 +240,7 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Saludables</p>
-                <p className="text-2xl font-bold text-emerald-600">
-                  {diagnostics?.filter(d => d.isHealthy).length || 0}
-                </p>
+                <p className="text-2xl font-bold text-emerald-600">{stats.healthy}</p>
               </div>
               <Heart className="h-8 w-8 text-emerald-500" />
             </div>
@@ -263,119 +248,122 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
         </Card>
       </div>
 
-      {/* Charger Cards Grid */}
-      {chargers.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {chargers
-            .sort((a, b) => (b.isConnected ? 1 : 0) - (a.isConnected ? 1 : 0))
-            .map((charger) => (
+      {/* Search and Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nombre, OCPP ID o dirección..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Ordenar por" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="status">Estado (conectados primero)</SelectItem>
+            <SelectItem value="lastActivity">Última actividad</SelectItem>
+            <SelectItem value="name">Nombre A-Z</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Charger List */}
+      {isLoading ? (
+        <div className="text-center py-12">
+          <RefreshCw className="h-8 w-8 mx-auto text-muted-foreground animate-spin mb-4" />
+          <p className="text-muted-foreground">Cargando estaciones...</p>
+        </div>
+      ) : chargers.length > 0 ? (
+        <div className="space-y-2">
+          {chargers.map((charger: any) => (
             <Card
               key={charger.ocppIdentity}
-              className={`cursor-pointer transition-all hover:shadow-lg hover:scale-[1.01] ${
+              className={`cursor-pointer transition-all hover:shadow-md ${
                 charger.isConnected
-                  ? charger.isHealthy
-                    ? 'border-green-500/50 hover:border-green-500'
-                    : 'border-yellow-500/50 hover:border-yellow-500'
-                  : 'border-gray-300 hover:border-gray-400'
+                  ? charger.connectionSource === "websocket"
+                    ? 'border-l-4 border-l-green-500 hover:border-l-green-600'
+                    : 'border-l-4 border-l-yellow-500 hover:border-l-yellow-600'
+                  : 'border-l-4 border-l-gray-300 hover:border-l-gray-400'
               }`}
               onClick={() => onSelectCharger(charger.ocppIdentity)}
             >
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-4">
+                  {/* Status indicator */}
+                  <div className="shrink-0">
                     {charger.isConnected ? (
-                      charger.isHealthy ? (
+                      charger.connectionSource === "websocket" ? (
                         <span className="relative flex h-3 w-3">
                           <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping" />
                           <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
                         </span>
                       ) : (
-                        <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                        <span className="relative flex h-3 w-3">
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500" />
+                        </span>
                       )
                     ) : (
-                      <span className="h-3 w-3 rounded-full bg-gray-400" />
+                      <span className="h-3 w-3 rounded-full bg-gray-400 block" />
                     )}
-                    <Zap className="h-4 w-4 text-primary" />
-                    {charger.ocppIdentity}
-                  </CardTitle>
-                  {charger.isConnected && (
-                    <Badge variant="outline" className="text-xs">
-                      OCPP {charger.ocppVersion || '1.6'}
-                    </Badge>
-                  )}
-                </div>
-                {charger.stationName && charger.stationName !== charger.ocppIdentity && (
-                  <CardDescription className="text-xs truncate">
-                    {charger.stationName}
-                  </CardDescription>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {/* Manufacturer/Model */}
-                {charger.manufacturer && (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Cpu className="h-3 w-3" />
-                    {charger.manufacturer} {charger.model || ''}
                   </div>
-                )}
 
-                {/* Address */}
-                {charger.address && (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
-                    <MapPin className="h-3 w-3 shrink-0" />
-                    {charger.address}
-                  </div>
-                )}
-
-                {/* Connection info */}
-                {charger.isConnected ? (
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      Uptime: {formatUptime(charger.uptimeSeconds || 0)}
+                  {/* Main info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold text-sm">{charger.name}</h3>
+                      <Badge variant="outline" className="text-[10px] font-mono">{charger.ocppIdentity}</Badge>
+                      {getConnectionBadge(charger)}
+                      {charger.ocppVersion && (
+                        <Badge variant="outline" className="text-[10px]">OCPP {charger.ocppVersion}</Badge>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <Activity className="h-3 w-3" />
-                      HB: {charger.heartbeatAgeSeconds != null ? `${charger.heartbeatAgeSeconds}s` : '-'}
-                    </div>
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <Monitor className="h-3 w-3" />
-                      WS: <Badge variant={charger.wsReadyState === 1 ? "default" : "destructive"} className="text-[10px] px-1 py-0 h-4">
-                        {charger.wsReadyStateLabel || 'UNKNOWN'}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <Send className="h-3 w-3" />
-                      Pending: {charger.pendingCallsCount || 0}
+                    <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                      {charger.address && (
+                        <span className="flex items-center gap-1 truncate">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          {charger.address}, {charger.city}
+                        </span>
+                      )}
+                      {charger.manufacturer && (
+                        <span className="flex items-center gap-1 shrink-0">
+                          <Cpu className="h-3 w-3" />
+                          {charger.manufacturer} {charger.model || ''}
+                        </span>
+                      )}
                     </div>
                   </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <WifiOff className="h-3 w-3" />
-                    Sin conexión WebSocket activa
-                  </div>
-                )}
 
-                {/* Connectors */}
-                {charger.connectors && charger.connectors.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {charger.connectors.map((conn: any) => (
-                      <Badge
-                        key={conn.connectorId}
-                        variant="outline"
-                        className={`text-[10px] ${getConnectorStatusColor(conn.status)} text-white border-0`}
-                      >
-                        <Plug className="h-2.5 w-2.5 mr-0.5" />
-                        #{conn.connectorId} {conn.status} {conn.powerKw ? `(${conn.powerKw}kW)` : ''}
-                      </Badge>
-                    ))}
+                  {/* Right side: connection details */}
+                  <div className="hidden md:flex items-center gap-6 shrink-0 text-xs text-muted-foreground">
+                    {charger.isConnected && charger.connectionSource === "websocket" ? (
+                      <>
+                        <div className="text-center">
+                          <p className="text-[10px] uppercase tracking-wider">Uptime</p>
+                          <p className="font-medium text-foreground">{formatUptime(charger.uptimeSeconds || 0)}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[10px] uppercase tracking-wider">Heartbeat</p>
+                          <p className="font-medium text-foreground">{charger.lastHeartbeat ? formatTimeAgo(charger.lastHeartbeat) : '-'}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[10px] uppercase tracking-wider">Pending</p>
+                          <p className="font-medium text-foreground">{charger.pendingCallsCount}</p>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center">
+                        <p className="text-[10px] uppercase tracking-wider">Última actividad</p>
+                        <p className="font-medium text-foreground">{formatTimeAgo(charger.lastActivity)}</p>
+                      </div>
+                    )}
                   </div>
-                )}
 
-                {/* Click hint */}
-                <div className="flex items-center justify-end text-xs text-muted-foreground pt-1">
-                  <Eye className="h-3 w-3 mr-1" />
-                  Ver detalle
+                  {/* Arrow */}
+                  <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
                 </div>
               </CardContent>
             </Card>
@@ -385,10 +373,19 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
         <Card>
           <CardContent className="py-12 text-center">
             <WifiOff className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium">No hay cargadores registrados</h3>
+            <h3 className="text-lg font-medium">
+              {search || statusFilter !== "all" ? "No se encontraron cargadores" : "No hay cargadores registrados"}
+            </h3>
             <p className="text-muted-foreground">
-              Los cargadores aparecerán aquí cuando se conecten al servidor OCPP o se registren en la plataforma
+              {search || statusFilter !== "all"
+                ? "Intente con otros filtros o términos de búsqueda"
+                : "Los cargadores aparecerán aquí cuando se registren en la plataforma"}
             </p>
+            {(search || statusFilter !== "all") && (
+              <Button variant="outline" className="mt-4" onClick={() => { setSearch(""); setStatusFilter("all"); }}>
+                Limpiar filtros
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}

@@ -156,11 +156,157 @@ export const ocppRouter = router({
   }),
 
   /**
-   * Obtener lista única de Charge Point IDs desde los logs
+   * Obtener lista única de Charge Point IDs desde los logs (legacy)
    */
   getChargePointIds: ocppProcedure.query(async () => {
     return db.getOcppChargePointIds();
   }),
+
+  /**
+   * Obtener cargadores registrados en BD con estado OCPP en tiempo real
+   * Fuente principal: tabla charging_stations (solo cargadores reales)
+   * Enriquecido con: conexión WebSocket activa + último log reciente
+   */
+  getRegisteredChargers: ocppProcedure
+    .input(z.object({
+      search: z.string().optional(),
+      status: z.enum(["all", "connected", "disconnected"]).default("all"),
+      sortBy: z.enum(["name", "status", "lastActivity"]).default("status"),
+    }).optional())
+    .query(async ({ input }) => {
+      const filters = input || { status: "all", sortBy: "status" };
+      
+      // 1. Obtener TODAS las estaciones registradas en BD
+      const stations = await db.getAllChargingStations();
+      
+      // 2. Obtener conexiones WebSocket activas de dualCSMS
+      const csmsConnections = dualCSMS.getConnectionsStatus();
+      const csmsDiagnostics = dualCSMS.getDetailedDiagnostics();
+      const csmsMap = new Map<string, any>();
+      for (const conn of csmsConnections) {
+        csmsMap.set(conn.ocppIdentity, conn);
+      }
+      const diagMap = new Map<string, any>();
+      for (const diag of csmsDiagnostics) {
+        diagMap.set(diag.ocppIdentity, diag);
+      }
+      
+      // 3. Obtener última actividad de logs para cada estación (fallback si no hay WS)
+      const recentActivityMap = new Map<string, { lastLogAt: Date; lastAction: string }>();
+      for (const station of stations) {
+        if (station.ocppIdentity) {
+          try {
+            const logs = await db.getOcppLogs({
+              ocppIdentity: station.ocppIdentity,
+              limit: 1,
+              offset: 0,
+            });
+            if (logs.logs && logs.logs.length > 0) {
+              const lastLog = logs.logs[0];
+              recentActivityMap.set(station.ocppIdentity, {
+                lastLogAt: new Date(lastLog.createdAt),
+                lastAction: lastLog.messageType || "unknown",
+              });
+            }
+          } catch (e) {
+            // Ignore errors for individual stations
+          }
+        }
+      }
+      
+      // 4. Construir lista enriquecida
+      let chargers = stations
+        .filter((s: any) => s.ocppIdentity) // Solo estaciones con OCPP identity
+        .map((station: any) => {
+          const ocppId = station.ocppIdentity!;
+          const wsConn = csmsMap.get(ocppId);
+          const diag = diagMap.get(ocppId);
+          const recentActivity = recentActivityMap.get(ocppId);
+          
+          // Determinar estado de conexión:
+          // 1. WebSocket activo en dualCSMS = conectado (fuente principal)
+          // 2. Log reciente < 5 minutos = probablemente conectado (fallback)
+          // 3. isOnline en BD = último estado conocido
+          const hasActiveWs = !!wsConn;
+          const hasRecentLog = recentActivity 
+            ? (Date.now() - recentActivity.lastLogAt.getTime()) < 5 * 60 * 1000 
+            : false;
+          const isConnected = hasActiveWs || hasRecentLog;
+          
+          return {
+            id: station.id,
+            name: station.name,
+            ocppIdentity: ocppId,
+            address: station.address,
+            city: station.city,
+            manufacturer: station.manufacturer,
+            model: station.model,
+            isActive: station.isActive,
+            isOnline: station.isOnline,
+            // Estado de conexión
+            isConnected,
+            connectionSource: hasActiveWs ? "websocket" : hasRecentLog ? "recent_log" : "none",
+            // Datos de WebSocket (si hay conexión activa)
+            ocppVersion: wsConn?.ocppVersion || null,
+            connectedAt: wsConn?.connectedAt?.toISOString() || null,
+            lastHeartbeat: wsConn?.lastHeartbeat?.toISOString() || null,
+            // Datos de diagnóstico
+            wsReadyState: diag?.wsReadyState ?? null,
+            uptimeSeconds: diag?.uptimeSeconds ?? null,
+            pendingCallsCount: diag?.pendingCallsCount ?? 0,
+            isHealthy: diag?.isHealthy ?? false,
+            // Última actividad de logs
+            lastActivity: recentActivity?.lastLogAt?.toISOString() || station.lastBootNotification?.toISOString() || null,
+            lastAction: recentActivity?.lastAction || null,
+          };
+        });
+      
+      // 5. Filtrar por búsqueda
+      if (filters.search) {
+        const q = filters.search.toLowerCase();
+        chargers = chargers.filter((c: any) => 
+          c.name.toLowerCase().includes(q) || 
+          c.ocppIdentity.toLowerCase().includes(q) ||
+          (c.address && c.address.toLowerCase().includes(q))
+        );
+      }
+      
+      // 6. Filtrar por estado
+      if (filters.status === "connected") {
+        chargers = chargers.filter((c: any) => c.isConnected);
+      } else if (filters.status === "disconnected") {
+        chargers = chargers.filter((c: any) => !c.isConnected);
+      }
+      
+      // 7. Ordenar
+      chargers.sort((a: any, b: any) => {
+        if (filters.sortBy === "status") {
+          // Conectados primero, luego por nombre
+          if (a.isConnected !== b.isConnected) return a.isConnected ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        } else if (filters.sortBy === "lastActivity") {
+          const aTime = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+          const bTime = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
+          return bTime - aTime; // Más reciente primero
+        } else {
+          return a.name.localeCompare(b.name);
+        }
+      });
+      
+      // 8. Stats
+      const allChargers = stations.filter((s: any) => s.ocppIdentity);
+      const connectedCount = chargers.filter((c: any) => c.isConnected).length;
+      
+      return {
+        chargers,
+        stats: {
+          total: allChargers.length,
+          connected: connectedCount,
+          disconnected: allChargers.length - connectedCount,
+          healthy: chargers.filter((c: any) => c.isHealthy).length,
+        },
+      };
+    }),
 
   /**
    * Enviar comando Reset a un cargador
