@@ -3,11 +3,11 @@ import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
-import { Plug, Car, Zap, X, Loader2, CheckCircle2, AlertCircle, Battery, BatteryCharging } from "lucide-react";
+import { Plug, Car, Zap, X, Loader2, CheckCircle2, AlertCircle, Battery, BatteryCharging, RefreshCw, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { ChargingBanner } from "@/components/ChargingBanner";
 
-type ConnectionStatus = "waiting" | "connecting" | "connected" | "error";
+type ConnectionStatus = "waiting" | "connecting" | "connected" | "error" | "timeout";
 
 export default function ChargingWaiting() {
   const [, navigate] = useLocation();
@@ -18,9 +18,12 @@ export default function ChargingWaiting() {
   const [showParticles, setShowParticles] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const startTimeRef = useRef(Date.now());
+  
   // Obtener sesión activa
   const { data: session, refetch } = trpc.charging.getActiveSession.useQuery(undefined, {
-    refetchInterval: 2000, // Verificar cada 2 segundos
+    refetchInterval: status === "timeout" ? false : 2000, // Dejar de hacer polling si expiró
   });
   
   // Cancelar carga
@@ -33,6 +36,18 @@ export default function ChargingWaiting() {
       toast.error(error.message);
     },
   });
+  
+  // Timer de timeout (2 minutos)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      setElapsedSeconds(elapsed);
+      if (elapsed >= 120 && status !== "connected" && status !== "error") {
+        setStatus("timeout");
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [status]);
   
   // Animación de puntos suspensivos
   useEffect(() => {
@@ -153,16 +168,41 @@ export default function ChargingWaiting() {
   // Detectar cambio de estado
   useEffect(() => {
     if (session) {
-      // Si hay energía consumida, el vehículo está conectado y cargando
-      if (session.currentKwh > 0) {
+      // Si la sesión está completada, ir al resumen
+      if (session.status === "COMPLETED" && session.transactionId) {
         setStatus("connected");
         setShowParticles(true);
-        // Esperar un momento y navegar al monitor
         setTimeout(() => {
-          navigate("/charging-monitor");
-        }, 2000);
-      } else if (session.status === "IN_PROGRESS") {
-        setStatus("connecting");
+          navigate(`/charging-summary/${session.transactionId}`);
+        }, 1500);
+        return;
+      }
+      
+      // Si hay energía consumida o la transacción está IN_PROGRESS, el cargador ya respondió
+      if (session.status === "IN_PROGRESS") {
+        if (session.currentKwh > 0) {
+          // Ya hay consumo real, navegar inmediatamente
+          setStatus("connected");
+          setShowParticles(true);
+          setTimeout(() => {
+            navigate("/charging-monitor");
+          }, 1500);
+        } else {
+          // Transacción creada pero aún sin MeterValues, mostrar "conectado" y navegar
+          setStatus("connected");
+          setShowParticles(true);
+          setTimeout(() => {
+            navigate("/charging-monitor");
+          }, 2500);
+        }
+        return;
+      }
+      
+      // Si está en CONNECTING (sesión pendiente, esperando StartTransaction del cargador)
+      if (session.status === "CONNECTING") {
+        if (status !== "timeout") {
+          setStatus("connecting");
+        }
       }
     }
   }, [session, navigate]);
@@ -175,6 +215,14 @@ export default function ChargingWaiting() {
     }
   };
   
+  const handleRetry = () => {
+    startTimeRef.current = Date.now();
+    setElapsedSeconds(0);
+    setStatus("waiting");
+    refetch();
+    toast.info("Reintentando conexión...");
+  };
+  
   const getStatusMessage = () => {
     switch (status) {
       case "waiting":
@@ -185,6 +233,8 @@ export default function ChargingWaiting() {
         return "¡Conectado!";
       case "error":
         return "Error de conexión";
+      case "timeout":
+        return "Tiempo de espera agotado";
       default:
         return "Esperando";
     }
@@ -200,9 +250,17 @@ export default function ChargingWaiting() {
         return "Iniciando sesión de carga...";
       case "error":
         return "No se pudo establecer conexión. Intenta de nuevo.";
+      case "timeout":
+        return "El cargador no respondió en 2 minutos. Verifica que el cable esté bien conectado y que el cargador esté encendido.";
       default:
         return "";
     }
+  };
+  
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
   return (
@@ -347,6 +405,13 @@ export default function ChargingWaiting() {
                 <span className="text-xs text-red-400 mt-1">Error</span>
               </div>
             )}
+            
+            {status === "timeout" && (
+              <div className="flex flex-col items-center">
+                <Clock className="w-12 h-12 text-amber-400" />
+                <span className="text-xs text-amber-400 mt-1">Expirado</span>
+              </div>
+            )}
           </div>
         </div>
         
@@ -441,19 +506,64 @@ export default function ChargingWaiting() {
           </Card>
         )}
         
-        {/* Botón cancelar */}
-        <div className="mt-6 z-10">
-          <Button
-            variant="outline"
-            onClick={handleCancel}
-            disabled={cancelMutation.isPending}
-            className="border-gray-600 text-gray-300 hover:bg-gray-800 px-8"
-          >
-            {cancelMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : null}
-            Cancelar
-          </Button>
+        {/* Timer visible */}
+        {status !== "connected" && status !== "timeout" && (
+          <div className="text-center mb-2 z-10">
+            <span className="text-xs text-gray-500">
+              Esperando respuesta del cargador... {formatTime(elapsedSeconds)}
+            </span>
+          </div>
+        )}
+        
+        {/* Botones según estado */}
+        <div className="mt-4 z-10 flex flex-col items-center gap-3">
+          {status === "timeout" ? (
+            <>
+              {/* Card de timeout con mensaje amigable */}
+              <Card className="w-full max-w-sm bg-amber-950/30 border-amber-700/50 mb-2">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-amber-200 text-sm font-medium mb-1">El cargador no respondió</p>
+                      <p className="text-amber-200/70 text-xs leading-relaxed">
+                        Esto puede ocurrir si el cable no está bien conectado, el cargador está reiniciándose, o hay un problema de comunicación. Verifica la conexión física e intenta de nuevo.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleRetry}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-6"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Reintentar
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleCancel}
+                  disabled={cancelMutation.isPending}
+                  className="border-gray-600 text-gray-300 hover:bg-gray-800 px-6"
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={handleCancel}
+              disabled={cancelMutation.isPending}
+              className="border-gray-600 text-gray-300 hover:bg-gray-800 px-8"
+            >
+              {cancelMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : null}
+              Cancelar
+            </Button>
+          )}
         </div>
       </div>
       
