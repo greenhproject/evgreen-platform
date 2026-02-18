@@ -1,10 +1,11 @@
 /**
  * ChargingMonitor - Pantalla de monitoreo de carga en tiempo real
  * 
- * Muestra:
- * - Indicador gauge circular con porcentaje
- * - kWh consumidos
- * - Costo acumulado
+ * Muestra datos REALES del cargador vía MeterValues OCPP:
+ * - SoC (State of Charge) real del vehículo
+ * - Potencia real de carga (kW)
+ * - kWh consumidos en tiempo real
+ * - Costo acumulado (energía + tiempo + tarifa de conexión)
  * - Tiempo transcurrido
  * - Botón para detener carga
  * - Banner publicitario
@@ -27,7 +28,9 @@ import {
   StopCircle,
   AlertTriangle,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Gauge,
+  Plug
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
@@ -55,13 +58,12 @@ function ChargingBanner() {
     
     const interval = setInterval(() => {
       setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
-    }, 10000); // Rotar cada 10 segundos
+    }, 10000);
     
     return () => clearInterval(interval);
   }, [banners]);
   
   if (!banners || banners.length === 0) {
-    // Banner por defecto si no hay banners configurados
     return (
       <div className="w-full rounded-xl overflow-hidden shadow-lg mb-4 bg-gradient-to-r from-emerald-500 to-teal-600 p-4">
         <div className="text-center text-white">
@@ -129,11 +131,11 @@ export default function ChargingMonitor() {
   const [showStopDialog, setShowStopDialog] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   
-  // Obtener sesión activa
+  // Obtener sesión activa - polling cada 3 segundos para datos más frescos
   const { data: session, isLoading, refetch } = trpc.charging.getActiveSession.useQuery(
     undefined,
     { 
-      refetchInterval: 5000, // Actualizar cada 5 segundos
+      refetchInterval: 3000, // Actualizar cada 3 segundos (era 5s)
       enabled: !!user,
     }
   );
@@ -142,7 +144,6 @@ export default function ChargingMonitor() {
   const stopChargeMutation = trpc.charging.stopCharge.useMutation({
     onSuccess: (data) => {
       toast.success("Carga detenida exitosamente");
-      // Redirigir al resumen
       setLocation(`/charging-summary/${(data as { transactionId?: number }).transactionId || 0}`);
     },
     onError: (error) => {
@@ -168,14 +169,14 @@ export default function ChargingMonitor() {
     return () => clearInterval(interval);
   }, [session?.startTime]);
   
-  // Estado para controlar la redirección y evitar múltiples redirecciones
+  // Estado para controlar la redirección
   const [redirecting, setRedirecting] = useState(false);
   const [completedTransactionId, setCompletedTransactionId] = useState<number | null>(null);
   
   // Hook para sonidos de notificación
   const { playChargingCompleteSound } = useNotificationSound();
   
-  // Detectar cuando la simulación se completa
+  // Detectar cuando la carga se completa
   useEffect(() => {
     if (redirecting) return;
     
@@ -185,7 +186,6 @@ export default function ChargingMonitor() {
       const isSimulation = (session as any).isSimulation;
       const status = session.status;
       
-      // Verificar si la carga terminó por cualquier razón
       const isCompleted = 
         status === "COMPLETED" ||
         simStatus === "completed" || 
@@ -193,15 +193,10 @@ export default function ChargingMonitor() {
         (isSimulation && progress >= 100);
       
       if (isCompleted && session.transactionId > 0) {
-        console.log(`[ChargingMonitor] Charge completed! Status: ${status}, SimStatus: ${simStatus}, Progress: ${progress}%, TransactionId: ${session.transactionId}`);
         setRedirecting(true);
         setCompletedTransactionId(session.transactionId);
-        
-        // Reproducir sonido de carga completa
         playChargingCompleteSound();
-        
         toast.success("¡Carga completada!");
-        // Pequeño delay para asegurar que la transacción se guardó y mostrar el toast
         setTimeout(() => {
           setLocation(`/charging-summary/${session.transactionId}`);
         }, 800);
@@ -209,9 +204,8 @@ export default function ChargingMonitor() {
     }
   }, [session, redirecting, setLocation, playChargingCompleteSound]);
   
-  // Si no hay sesión activa y no estamos redirigiendo, ir al mapa
+  // Si no hay sesión activa, ir al mapa
   useEffect(() => {
-    // Solo redirigir al mapa si no hay sesión, no estamos cargando, y no estamos en proceso de redirección
     if (!isLoading && !session && !redirecting && !completedTransactionId) {
       toast.info("No hay una carga activa");
       setLocation("/map");
@@ -242,49 +236,58 @@ export default function ChargingMonitor() {
     return null;
   }
   
-  // Calcular porcentaje de progreso
+  // === CALCULAR PORCENTAJE PARA EL GAUGE ===
   const chargeMode = session.chargeMode as string;
-  
-  // El progreso de la simulación (0-100%) representa cuánto del objetivo se ha completado
+  const isSimulation = (session as any).isSimulation;
   const simulationProgress = (session as any).progress;
+  const realSoc = (session as any).soc; // SoC real del vehículo desde el cargador
+  const hasRealData = (session as any).hasRealMeterData;
+  
   let progressPercentage = 0;
   
-  // Para el gauge, necesitamos mostrar el porcentaje de batería, no el progreso de la simulación
-  // La batería empieza en 20% (startPercentage)
-  const startBattery = session.startPercentage || 20;
-  
-  if (chargeMode === "percentage") {
-    // Modo porcentaje: el gauge muestra el nivel de batería actual
-    const targetBattery = session.targetPercentage || 100;
-    const batteryRange = targetBattery - startBattery;
-    const simProgress = typeof simulationProgress === 'number' ? simulationProgress / 100 : 0;
-    progressPercentage = startBattery + (batteryRange * simProgress);
-  } else if (chargeMode === "full_charge") {
-    // Carga completa: de 20% a 100%
-    const batteryRange = 100 - startBattery;
-    const simProgress = typeof simulationProgress === 'number' ? simulationProgress / 100 : 0;
-    progressPercentage = startBattery + (batteryRange * simProgress);
-  } else if (chargeMode === "fixed_amount") {
-    // Monto fijo: calcular el porcentaje de batería basado en kWh entregados
-    const batteryCapacity = 60;
+  if (realSoc !== null && realSoc !== undefined) {
+    // PRIORIDAD: Usar SoC real del vehículo reportado por el cargador
+    progressPercentage = realSoc;
+  } else if (isSimulation && typeof simulationProgress === 'number') {
+    // Simulación: usar progreso del simulador
+    const startBattery = session.startPercentage || 20;
+    if (chargeMode === "percentage") {
+      const targetBattery = session.targetPercentage || 100;
+      const batteryRange = targetBattery - startBattery;
+      progressPercentage = startBattery + (batteryRange * (simulationProgress / 100));
+    } else if (chargeMode === "full_charge") {
+      const batteryRange = 100 - startBattery;
+      progressPercentage = startBattery + (batteryRange * (simulationProgress / 100));
+    } else if (chargeMode === "fixed_amount") {
+      const batteryCapacity = 60;
+      const kwhDelivered = session.currentKwh || 0;
+      const percentAdded = (kwhDelivered / batteryCapacity) * 100;
+      progressPercentage = startBattery + percentAdded;
+    } else {
+      progressPercentage = simulationProgress;
+    }
+  } else {
+    // Sin SoC real y sin simulación: estimar basado en kWh
+    const startBattery = session.startPercentage || 20;
+    const batteryCapacity = 60; // kWh estimado
     const kwhDelivered = session.currentKwh || 0;
     const percentAdded = (kwhDelivered / batteryCapacity) * 100;
     progressPercentage = startBattery + percentAdded;
-  } else {
-    // Fallback
-    if (typeof simulationProgress === 'number' && !isNaN(simulationProgress)) {
-      progressPercentage = simulationProgress;
-    } else if (session.estimatedKwh > 0) {
-      const kwhProgress = (session.currentKwh / session.estimatedKwh) * 100;
-      progressPercentage = Math.min(100, Math.max(0, kwhProgress));
-    }
   }
   
-  // Asegurar que nunca sea NaN y esté en rango válido
-  if (isNaN(progressPercentage)) {
-    progressPercentage = startBattery;
-  }
+  // Asegurar rango válido
+  if (isNaN(progressPercentage)) progressPercentage = 0;
   progressPercentage = Math.min(100, Math.max(0, progressPercentage));
+  
+  // Costo total incluyendo tarifa de conexión
+  const connectionFee = (session as any).connectionFee || 0;
+  const displayCost = session.currentCost || 0;
+  
+  // Potencia real vs nominal
+  const realPower = session.currentPower || 0;
+  const nominalPower = session.powerKw || 7;
+  const displayPower = realPower > 0 ? realPower : 0;
+  const hasPowerData = realPower > 0;
   
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 pb-24">
@@ -299,7 +302,7 @@ export default function ChargingMonitor() {
             {chargeMode === "fixed_amount" 
               ? `$${session.targetAmount?.toLocaleString() || 0}` 
               : chargeMode === "percentage" 
-                ? `Hasta ${session.targetPercentage}%` 
+                ? `${session.targetPercentage}%`
                 : "Carga completa"}
           </Badge>
         </div>
@@ -332,6 +335,24 @@ export default function ChargingMonitor() {
         </div>
       </div>
       
+      {/* Indicador de fuente de datos */}
+      {realSoc !== null && realSoc !== undefined && (
+        <div className="flex justify-center mt-1">
+          <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300">
+            <Battery className="w-3 h-3 mr-1" />
+            SoC real del vehículo
+          </Badge>
+        </div>
+      )}
+      {!hasRealData && !isSimulation && (
+        <div className="flex justify-center mt-1">
+          <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+            Esperando datos del cargador...
+          </Badge>
+        </div>
+      )}
+      
       {/* Métricas en tiempo real */}
       <div className="px-4 mt-6">
         <div className="grid grid-cols-2 gap-3">
@@ -342,12 +363,14 @@ export default function ChargingMonitor() {
                 <Battery className="w-4 h-4" />
                 <span className="text-xs font-medium">Energía</span>
               </div>
-              <p className="text-2xl font-bold text-foreground">
+              <p className="text-2xl font-bold text-foreground tabular-nums">
                 {session.currentKwh.toFixed(2)}
                 <span className="text-sm font-normal text-muted-foreground ml-1">kWh</span>
               </p>
               <p className="text-xs text-muted-foreground">
-                de {session.estimatedKwh.toFixed(1)} kWh estimados
+                {session.estimatedKwh > 0 
+                  ? `de ${session.estimatedKwh.toFixed(1)} kWh estimados`
+                  : "Acumulando..."}
               </p>
             </CardContent>
           </Card>
@@ -359,11 +382,14 @@ export default function ChargingMonitor() {
                 <DollarSign className="w-4 h-4" />
                 <span className="text-xs font-medium">Costo</span>
               </div>
-              <p className="text-2xl font-bold text-foreground">
-                {formatCurrency(session.currentCost)}
+              <p className="text-2xl font-bold text-foreground tabular-nums">
+                {formatCurrency(displayCost)}
               </p>
               <p className="text-xs text-muted-foreground">
                 Tarifa: {formatCurrency(session.pricePerKwh)}/kWh
+                {connectionFee > 0 && (
+                  <span className="block">+ {formatCurrency(connectionFee)} conexión</span>
+                )}
               </p>
             </CardContent>
           </Card>
@@ -390,17 +416,60 @@ export default function ChargingMonitor() {
               <div className="flex items-center gap-2 text-amber-600 mb-1">
                 <Zap className="w-4 h-4" />
                 <span className="text-xs font-medium">Potencia</span>
+                {hasPowerData && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                )}
               </div>
-              <p className="text-2xl font-bold text-foreground">
-                {session.currentPower?.toFixed(1) || session.powerKw}
-                <span className="text-sm font-normal text-muted-foreground ml-1">kW</span>
+              <p className="text-2xl font-bold text-foreground tabular-nums">
+                {hasPowerData ? displayPower.toFixed(1) : (
+                  <span className="text-muted-foreground text-lg">---</span>
+                )}
+                {hasPowerData && (
+                  <span className="text-sm font-normal text-muted-foreground ml-1">kW</span>
+                )}
               </p>
               <p className="text-xs text-muted-foreground">
-                Máx: {session.powerKw} kW
+                {hasPowerData 
+                  ? `Máx: ${nominalPower} kW`
+                  : `Nominal: ${nominalPower} kW`}
               </p>
             </CardContent>
           </Card>
         </div>
+        
+        {/* Datos técnicos adicionales (voltaje, corriente) si están disponibles */}
+        {((session as any).voltage || (session as any).currentAmp) && (
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            {(session as any).voltage && (
+              <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 text-cyan-600 mb-1">
+                    <Gauge className="w-3 h-3" />
+                    <span className="text-xs font-medium">Voltaje</span>
+                  </div>
+                  <p className="text-lg font-bold text-foreground tabular-nums">
+                    {(session as any).voltage.toFixed(0)}
+                    <span className="text-xs font-normal text-muted-foreground ml-1">V</span>
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+            {(session as any).currentAmp && (
+              <Card className="bg-gradient-to-br from-rose-500/10 to-rose-600/5 border-rose-500/20">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 text-rose-600 mb-1">
+                    <Plug className="w-3 h-3" />
+                    <span className="text-xs font-medium">Corriente</span>
+                  </div>
+                  <p className="text-lg font-bold text-foreground tabular-nums">
+                    {(session as any).currentAmp.toFixed(1)}
+                    <span className="text-xs font-normal text-muted-foreground ml-1">A</span>
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
         
         {/* Banner publicitario */}
         <div className="mt-6">
@@ -454,12 +523,32 @@ export default function ChargingMonitor() {
               <AlertTriangle className="w-5 h-5 text-amber-500" />
               ¿Detener la carga?
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              Se detendrá la carga y se te cobrará por la energía consumida hasta el momento:
-              <br />
-              <span className="font-semibold text-foreground">
-                {session.currentKwh.toFixed(2)} kWh = {formatCurrency(session.currentCost)}
-              </span>
+            <AlertDialogDescription asChild>
+              <div>
+                <p>Se detendrá la carga y se te cobrará:</p>
+                <div className="mt-2 space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Energía ({session.currentKwh.toFixed(2)} kWh):</span>
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(session.currentKwh * session.pricePerKwh)}
+                    </span>
+                  </div>
+                  {connectionFee > 0 && (
+                    <div className="flex justify-between">
+                      <span>Tarifa de conexión:</span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(connectionFee)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t pt-1 mt-1">
+                    <span className="font-bold">Total:</span>
+                    <span className="font-bold text-foreground">
+                      {formatCurrency(displayCost)}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

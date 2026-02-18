@@ -64,6 +64,12 @@ const activeChargeSessions = new Map<number, {
   currentKwh: number;
   currentCost: number;
   pricePerKwh: number;
+  // Datos en tiempo real del cargador (MeterValues)
+  soc: number | null; // State of Charge del vehículo (%)
+  currentPower: number; // Potencia actual de carga (kW)
+  voltage: number | null; // Voltaje (V)
+  current: number | null; // Corriente (A)
+  lastMeterUpdate: Date | null; // Timestamp del último MeterValues
 }>();
 
 /**
@@ -806,78 +812,113 @@ export const chargingRouter = router({
       // Obtener info de sesión activa en memoria (actualizada en tiempo real por MeterValues)
       const activeSessionInfo = getActiveSessionById(activeTransaction.id);
       
+      // Obtener el evse para el connectorId
+      const evse = await db.getEvseById(activeTransaction.evseId);
+      
+      // Obtener información del conector para la potencia nominal
+      const connectorType = evse?.connectorType || "TYPE_2";
+      const nominalPowerKw = evse?.powerKw ? parseFloat(evse.powerKw) : 22;
+      
+      // Obtener tarifa para calcular costos
+      const effectivePriceData = await db.getEffectiveStationPrice(activeTransaction.stationId);
+      let pricePerKwh = effectivePriceData.pricePerKwh;
+      const connectionFee = effectivePriceData.connectionFee || 0;
+      
       // Priorizar datos en memoria (actualizados por MeterValues en tiempo real)
       // Si no hay sesión en memoria, usar datos de la BD como fallback
       let currentKwh: number;
       let currentCost: number;
-      let pricePerKwh: number;
+      let soc: number | null = null;
+      let currentPower: number = 0;
+      let voltage: number | null = null;
+      let currentAmp: number | null = null;
       
-      if (activeSessionInfo && activeSessionInfo.currentKwh > 0) {
+      if (activeSessionInfo) {
         // Datos actualizados en tiempo real desde MeterValues
         currentKwh = activeSessionInfo.currentKwh;
         currentCost = activeSessionInfo.currentCost;
-        pricePerKwh = activeSessionInfo.pricePerKwh;
+        pricePerKwh = activeSessionInfo.pricePerKwh || pricePerKwh;
+        soc = activeSessionInfo.soc;
+        currentPower = activeSessionInfo.currentPower || 0;
+        voltage = activeSessionInfo.voltage;
+        currentAmp = activeSessionInfo.current;
       } else {
-        // Fallback: leer de la BD
+        // Fallback: leer de la BD (tabla meter_values)
         const lastMeterValue = await db.getLastMeterValue(activeTransaction.id);
-        currentKwh = lastMeterValue?.energyKwh 
-          ? parseFloat(lastMeterValue.energyKwh) - (activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0)
-          : 0;
-        
-        const tariffs = await db.getTariffsByStationId(activeTransaction.stationId);
-        const tariff = tariffs[0];
-        if (tariff?.pricePerKwh) {
-          pricePerKwh = parseFloat(tariff.pricePerKwh);
+        if (lastMeterValue) {
+          const meterStart = activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0;
+          currentKwh = lastMeterValue.energyKwh 
+            ? Math.max(0, parseFloat(lastMeterValue.energyKwh) - meterStart / 1000)
+            : 0;
+          soc = lastMeterValue.soc;
+          currentPower = lastMeterValue.powerKw ? parseFloat(lastMeterValue.powerKw) : 0;
+          voltage = lastMeterValue.voltage ? parseFloat(lastMeterValue.voltage) : null;
+          currentAmp = lastMeterValue.current ? parseFloat(lastMeterValue.current) : null;
         } else {
-          // Sin tarifa de estación, usar precio global
-          const effectivePriceData = await db.getEffectiveStationPrice(activeTransaction.stationId);
-          pricePerKwh = effectivePriceData.pricePerKwh;
+          // Sin datos de MeterValues aún - usar datos de la transacción
+          currentKwh = activeTransaction.kwhConsumed ? parseFloat(activeTransaction.kwhConsumed) : 0;
         }
-        currentCost = currentKwh * pricePerKwh;
+        
+        // Calcular costo: energía + tiempo + tarifa de conexión
+        const durationMinutes = (Date.now() - startTime.getTime()) / (1000 * 60);
+        const tariff = activeTransaction.tariffId ? await db.getTariffById(activeTransaction.tariffId) : null;
+        if (tariff?.pricePerKwh) pricePerKwh = parseFloat(tariff.pricePerKwh);
+        const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
+        const sessionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : connectionFee;
+        
+        const energyCost = currentKwh * pricePerKwh;
+        const timeCost = durationMinutes * pricePerMinute;
+        currentCost = energyCost + timeCost + sessionFee;
       }
       
-      // Obtener el evse para el connectorId
-      const evse = await db.getEvseById(activeTransaction.evseId);
-      
-      // Obtener información del conector para la potencia
-      const connectorType = evse?.connectorType || "TYPE_2";
-      const powerKw = evse?.powerKw ? parseFloat(evse.powerKw) : 22;
-      
-      // Obtener potencia actual desde el último MeterValue de potencia
-      const lastPowerMeter = await db.getLastMeterValue(activeTransaction.id);
-      let currentPower = 0;
-      if (lastPowerMeter?.powerKw) {
-        currentPower = parseFloat(lastPowerMeter.powerKw);
-      } else if (elapsedMinutes > 0 && currentKwh > 0) {
-        // Estimar potencia basada en energía y tiempo
+      // Si no hay potencia real del cargador, estimar basada en energía y tiempo
+      if (currentPower <= 0 && elapsedMinutes > 0 && currentKwh > 0) {
         currentPower = currentKwh / (elapsedMinutes / 60);
-      } else {
-        currentPower = powerKw; // Usar potencia nominal del conector
       }
+      // Si aún no hay datos, NO usar potencia nominal (mostrar 0 hasta que lleguen datos reales)
       
       // Estimar tiempo restante basado en la potencia actual
-      const estimatedTotalKwh = activeTransaction.kwhConsumed 
-        ? parseFloat(activeTransaction.kwhConsumed)
-        : Math.max(currentKwh * 2, 30); // Estimación simple de al menos 30 kWh
-      const remainingKwh = Math.max(0, estimatedTotalKwh - currentKwh);
-      const estimatedMinutes = currentPower > 0 ? Math.ceil((remainingKwh / currentPower) * 60) : 30;
-      
-      // Obtener SoC si está disponible
       const chargeMode = activeSessionInfo?.chargeMode || "full_charge" as const;
       const targetValue = activeSessionInfo?.targetValue || 0;
+      
+      // Calcular kWh estimados según modo de carga
+      let estimatedTotalKwh = 0;
+      if (chargeMode === "fixed_amount" && targetValue > 0) {
+        estimatedTotalKwh = targetValue / pricePerKwh;
+      } else if (chargeMode === "percentage" && targetValue > 0) {
+        const batteryCapacity = 60; // kWh estimado
+        const startSoc = soc !== null ? Math.max(0, soc - (currentKwh / batteryCapacity * 100)) : 20;
+        estimatedTotalKwh = ((targetValue - startSoc) / 100) * batteryCapacity;
+      } else {
+        // full_charge: estimar según potencia y batería
+        estimatedTotalKwh = Math.max(currentKwh * 1.5, 30);
+      }
+      
+      const remainingKwh = Math.max(0, estimatedTotalKwh - currentKwh);
+      const estimatedMinutes = currentPower > 0 ? Math.ceil((remainingKwh / currentPower) * 60) : 30;
       
       // Calcular progreso basado en el modo de carga
       let progress = 0;
       if (chargeMode === "fixed_amount" && targetValue > 0) {
         progress = Math.min(100, Math.round((currentCost / targetValue) * 100));
+      } else if (chargeMode === "percentage" && targetValue > 0 && soc !== null) {
+        // Si tenemos SoC real, usarlo directamente
+        progress = Math.min(100, Math.round((soc / targetValue) * 100));
       } else if (chargeMode === "percentage" && targetValue > 0) {
-        const batteryCapacity = 60; // kWh estimado
+        const batteryCapacity = 60;
         const targetKwh = ((targetValue - 20) / 100) * batteryCapacity;
         progress = targetKwh > 0 ? Math.min(100, Math.round((currentKwh / targetKwh) * 100)) : 0;
       } else {
-        // full_charge: estimar basado en kWh estimados
-        progress = estimatedTotalKwh > 0 ? Math.min(100, Math.round((currentKwh / estimatedTotalKwh) * 100)) : 0;
+        // full_charge: usar SoC si está disponible
+        if (soc !== null) {
+          progress = Math.round(soc);
+        } else {
+          progress = estimatedTotalKwh > 0 ? Math.min(100, Math.round((currentKwh / estimatedTotalKwh) * 100)) : 0;
+        }
       }
+      
+      // SoC para el gauge: usar valor real del cargador si está disponible
+      const displaySoc = soc !== null ? soc : null;
       
       return {
         transactionId: activeTransaction.id,
@@ -892,15 +933,20 @@ export const chargingRouter = router({
         estimatedKwh: Math.round(estimatedTotalKwh * 100) / 100,
         currentCost: Math.round(currentCost),
         pricePerKwh,
-        powerKw,
+        connectionFee,
+        powerKw: nominalPowerKw,
         currentPower: Math.round(currentPower * 10) / 10,
         status: activeTransaction.status,
         chargeMode,
         targetPercentage: chargeMode === "percentage" ? targetValue : 100,
         targetAmount: chargeMode === "fixed_amount" ? targetValue : currentCost * 2,
-        startPercentage: 20,
+        startPercentage: displaySoc !== null ? null : 20, // null si tenemos SoC real
+        soc: displaySoc, // SoC real del vehículo desde el cargador
+        voltage: voltage,
+        currentAmp: currentAmp,
         progress,
         isSimulation: false,
+        hasRealMeterData: activeSessionInfo?.lastMeterUpdate !== null && activeSessionInfo?.lastMeterUpdate !== undefined,
       };
     }),
 
@@ -1045,6 +1091,32 @@ export function getActiveSessionById(transactionId: number) {
 
 export function removeActiveSession(transactionId: number) {
   activeChargeSessions.delete(transactionId);
+}
+
+/**
+ * Actualizar datos de MeterValues en la sesión activa en memoria
+ * Llamado desde el handler OCPP real en _core/index.ts
+ */
+export function updateActiveSessionMeterData(transactionId: number, data: {
+  currentKwh?: number;
+  currentCost?: number;
+  soc?: number | null;
+  currentPower?: number;
+  voltage?: number | null;
+  current?: number | null;
+}) {
+  const session = activeChargeSessions.get(transactionId);
+  if (!session) return false;
+  
+  if (data.currentKwh !== undefined) session.currentKwh = data.currentKwh;
+  if (data.currentCost !== undefined) session.currentCost = data.currentCost;
+  if (data.soc !== undefined) session.soc = data.soc;
+  if (data.currentPower !== undefined) session.currentPower = data.currentPower;
+  if (data.voltage !== undefined) session.voltage = data.voltage;
+  if (data.current !== undefined) session.current = data.current;
+  session.lastMeterUpdate = new Date();
+  
+  return true;
 }
 
 /**
