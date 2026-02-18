@@ -1228,3 +1228,15 @@
 - [x] Cambiar label "Preparando" a "Ocupado" en la app de usuario para mayor claridad
 - [x] Agrupar PREPARING, CHARGING, SUSPENDED_EV, SUSPENDED_EVSE, FINISHING como "Ocupado" en rojo para el usuario
 - [x] Corregido en StationDetail.tsx y StartCharge.tsx
+
+
+## Fix Monitor de Carga en Tiempo Real - 18 Feb 2026
+
+- [x] Fix: SoC (estado de batería) muestra 20% estático en vez del valor real del vehículo
+- [x] Fix: Potencia muestra 7.0 kW estático en vez de la potencia real de carga
+- [x] Fix: Energía muestra 0.00 kWh - no acumula kWh entregados en tiempo real
+- [x] Fix: Costo muestra $0 - no calcula precio en tiempo real durante la carga
+- [x] Fix: Al cancelar transacción no se suma la tarifa de conexión
+- [x] Implementar lectura real de MeterValues del cargador OCPP (SoC, Power, Energy)
+- [x] Actualizar frontend del monitor de carga para mostrar datos reales del cargador
+- [x] Tests unitarios para updateActiveSessionMeterData (9 tests)

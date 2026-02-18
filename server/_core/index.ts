@@ -754,8 +754,8 @@ async function handleOCPP16Message(
       const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
       const timeCost = durationMinutes * pricePerMinute;
       
-      // Costo de sesión fijo (si aplica)
-      const sessionFee = tariff ? parseFloat(tariff.sessionFee || "0") : 0;
+      // Costo de sesión/conexión fijo (pricePerSession en tarifa)
+      const sessionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : 0;
       
       // Total
       const totalCost = energyCost + timeCost + sessionFee;
@@ -821,85 +821,229 @@ async function handleOCPP16Message(
       return { idTagInfo: { status: "Accepted" } };
     }
     case "MeterValues": {
-      // Procesar valores de medición en tiempo real
+      // Procesar TODOS los valores de medición en tiempo real
       const transactionId = payload.transactionId;
+      
+      // Importar updateActiveSessionMeterData para actualizar sesión en memoria
+      const { updateActiveSessionMeterData } = await import("../charging/charging-router");
+      
       if (transactionId) {
         const internalTransactionId = ocpp16Transactions.get(transactionId);
+        let transaction: any = null;
+        
         if (internalTransactionId) {
-          const transaction = await db.getTransactionByOcppId(internalTransactionId);
-          if (transaction && payload.meterValue && payload.meterValue.length > 0) {
-            // Buscar el valor de energía activa importada
-            for (const mv of payload.meterValue) {
-              for (const sv of mv.sampledValue || []) {
-                if (sv.measurand === "Energy.Active.Import.Register" || !sv.measurand) {
-                  const currentMeter = parseFloat(sv.value);
-                  const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
-                  const kwhConsumed = (currentMeter - meterStart) / 1000;
-                  
-                  // Calcular costo parcial
-                  const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
-                  const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
-                  const currentCost = kwhConsumed * pricePerKwh;
-                  
-                  // Actualizar transacción con valores parciales
-                  await db.updateTransaction(transaction.id, {
-                    kwhConsumed: kwhConsumed.toFixed(4),
-                    energyCost: currentCost.toFixed(2),
-                    totalCost: currentCost.toFixed(2),
+          transaction = await db.getTransactionByOcppId(internalTransactionId);
+        }
+        
+        // Fallback: buscar transacción activa por estación si no se encuentra por mapa
+        if (!transaction && stationId) {
+          try {
+            const activeTransactions = await db.getActiveTransactionsByStationId(stationId);
+            if (activeTransactions && activeTransactions.length > 0) {
+              transaction = activeTransactions[0];
+              console.log(`[OCPP] MeterValues - Found transaction via station fallback: txId=${transaction.id}`);
+            }
+          } catch (err) {
+            console.error(`[OCPP] MeterValues station fallback error:`, err);
+          }
+        }
+        
+        if (transaction && payload.meterValue && payload.meterValue.length > 0) {
+          // Extraer TODOS los measurands de los sampledValues
+          let energyWh: number | null = null;
+          let powerW: number | null = null;
+          let soc: number | null = null;
+          let voltage: number | null = null;
+          let currentA: number | null = null;
+          let temperature: number | null = null;
+          
+          for (const mv of payload.meterValue) {
+            for (const sv of mv.sampledValue || []) {
+              const measurand = sv.measurand || "Energy.Active.Import.Register";
+              const value = parseFloat(sv.value);
+              const unit = (sv.unit || "").toLowerCase();
+              
+              if (isNaN(value)) continue;
+              
+              // Energy.Active.Import.Register (Wh o kWh)
+              if (measurand.includes("Energy.Active.Import") || measurand === "Energy.Active.Import.Register") {
+                energyWh = unit === "kwh" ? value * 1000 : value; // Normalizar a Wh
+              }
+              // Power.Active.Import (W o kW)
+              else if (measurand.includes("Power.Active.Import") || measurand === "Power.Active.Import") {
+                powerW = unit === "kw" ? value * 1000 : value; // Normalizar a W
+              }
+              // SoC (State of Charge) - porcentaje de batería del vehículo
+              else if (measurand === "SoC" || measurand.includes("SoC")) {
+                soc = value; // Ya es porcentaje
+              }
+              // Voltage
+              else if (measurand.includes("Voltage")) {
+                voltage = value;
+              }
+              // Current.Import
+              else if (measurand.includes("Current.Import")) {
+                currentA = value;
+              }
+              // Temperature
+              else if (measurand.includes("Temperature")) {
+                temperature = value;
+              }
+              // Si no tiene measurand, asumir que es energía (OCPP 1.6 default)
+              else if (!sv.measurand) {
+                energyWh = unit === "kwh" ? value * 1000 : value;
+              }
+            }
+          }
+          
+          console.log(`[OCPP] MeterValues raw - txId=${transactionId}: energy=${energyWh}Wh, power=${powerW}W, soc=${soc}%, voltage=${voltage}V, current=${currentA}A`);
+          
+          // Calcular kWh consumidos
+          const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
+          let kwhConsumed = 0;
+          if (energyWh !== null) {
+            kwhConsumed = (energyWh - meterStart) / 1000;
+            if (kwhConsumed < 0) kwhConsumed = 0; // Protección contra valores negativos
+          }
+          
+          // Potencia en kW
+          const powerKw = powerW !== null ? powerW / 1000 : null;
+          
+          // Calcular costo parcial (energía + tiempo + sesión)
+          const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
+          const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+          const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
+          const sessionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : 0;
+          
+          const startTime = new Date(transaction.startTime);
+          const durationMinutes = (Date.now() - startTime.getTime()) / (1000 * 60);
+          
+          const energyCost = kwhConsumed * pricePerKwh;
+          const timeCost = durationMinutes * pricePerMinute;
+          const currentTotalCost = energyCost + timeCost + sessionFee;
+          
+          // Guardar en tabla meter_values de la BD
+          try {
+            await db.createMeterValue({
+              transactionId: transaction.id,
+              evseId: transaction.evseId,
+              timestamp: new Date(),
+              energyKwh: energyWh !== null ? (energyWh / 1000).toFixed(4) : null,
+              powerKw: powerKw !== null ? powerKw.toFixed(2) : null,
+              voltage: voltage !== null ? voltage.toFixed(2) : null,
+              current: currentA !== null ? currentA.toFixed(2) : null,
+              soc: soc !== null ? Math.round(soc) : null,
+              temperature: temperature !== null ? temperature.toFixed(2) : null,
+              context: "Sample.Periodic",
+              measurand: "Energy.Active.Import.Register",
+            });
+          } catch (mvErr) {
+            console.error(`[OCPP] Error saving MeterValue to DB:`, mvErr);
+          }
+          
+          // Actualizar transacción con valores parciales
+          if (energyWh !== null) {
+            await db.updateTransaction(transaction.id, {
+              kwhConsumed: kwhConsumed.toFixed(4),
+              energyCost: energyCost.toFixed(2),
+              timeCost: timeCost.toFixed(2),
+              sessionCost: sessionFee.toFixed(2),
+              totalCost: currentTotalCost.toFixed(2),
+            });
+          }
+          
+          // Actualizar sesión activa en memoria (para consultas en tiempo real del frontend)
+          updateActiveSessionMeterData(transaction.id, {
+            currentKwh: kwhConsumed,
+            currentCost: currentTotalCost,
+            soc: soc,
+            currentPower: powerKw !== null ? powerKw : 0,
+            voltage: voltage,
+            current: currentA,
+          });
+          
+          console.log(`[OCPP] MeterValues - Transaction ${transactionId}: ${kwhConsumed.toFixed(4)} kWh, $${currentTotalCost.toFixed(0)} COP, SoC=${soc ?? 'N/A'}%, Power=${powerKw?.toFixed(1) ?? 'N/A'}kW`);
+          
+          // Verificar saldo bajo del usuario
+          if (transaction.userId && energyWh !== null) {
+            const user = await db.getUserById(transaction.userId);
+            if (user) {
+              const userBalance = parseFloat(user.walletBalance || "0");
+              const remainingBalance = userBalance - currentTotalCost;
+              
+              // Si el saldo restante es menor al 20% del costo actual, enviar alerta
+              if (remainingBalance < currentTotalCost * 0.2 && remainingBalance > 0) {
+                const notificationKey = `low_balance_${transaction.id}`;
+                const existingNotification = await db.getNotificationByKey(user.id, notificationKey);
+                
+                if (!existingNotification) {
+                  await db.createNotification({
+                    userId: user.id,
+                    type: "low_balance",
+                    title: "⚠️ Saldo bajo durante la carga",
+                    message: `Tu saldo restante es $${remainingBalance.toFixed(0)} COP. Considera recargar para evitar interrupciones.`,
+                    data: JSON.stringify({ 
+                      transactionId: transaction.id,
+                      remainingBalance,
+                      currentCost: currentTotalCost,
+                      key: notificationKey
+                    }),
                   });
+                  console.log(`[OCPP] Low balance alert sent to user ${user.id}: $${remainingBalance.toFixed(0)} remaining`);
+                }
+              }
+              
+              // Si el saldo llega a 0, detener la carga
+              if (remainingBalance <= 0) {
+                console.log(`[OCPP] User ${user.id} balance depleted, stopping charge`);
+                await db.createNotification({
+                  userId: user.id,
+                  type: "balance_depleted",
+                  title: "🛑 Carga detenida - Saldo agotado",
+                  message: `Tu saldo se ha agotado. La carga se detuvo automáticamente. Recarga tu billetera para continuar.`,
+                  data: JSON.stringify({ transactionId: transaction.id }),
+                });
+                // TODO: Enviar RemoteStopTransaction al cargador
+              }
+            }
+          }
+        }
+      } else {
+        // MeterValues sin transactionId - puede ser un reporte periódico del conector
+        // Intentar encontrar transacción activa por estación
+        if (stationId && payload.meterValue && payload.meterValue.length > 0) {
+          try {
+            const activeTransactions = await db.getActiveTransactionsByStationId(stationId);
+            if (activeTransactions && activeTransactions.length > 0) {
+              const transaction = activeTransactions[0];
+              
+              for (const mv of payload.meterValue) {
+                for (const sv of mv.sampledValue || []) {
+                  const measurand = sv.measurand || "";
+                  const value = parseFloat(sv.value);
+                  if (isNaN(value)) continue;
                   
-                  console.log(`[OCPP] MeterValues - Transaction ${transactionId}: ${kwhConsumed.toFixed(4)} kWh, $${currentCost.toFixed(0)} COP`);
+                  const unit = (sv.unit || "").toLowerCase();
+                  let soc: number | null = null;
+                  let powerKw: number | null = null;
                   
-                  // Verificar saldo bajo del usuario
-                  if (transaction.userId) {
-                    const user = await db.getUserById(transaction.userId);
-                    if (user) {
-                      const userBalance = parseFloat(user.walletBalance || "0");
-                      const remainingBalance = userBalance - currentCost;
-                      
-                      // Si el saldo restante es menor al 20% del costo actual, enviar alerta
-                      if (remainingBalance < currentCost * 0.2 && remainingBalance > 0) {
-                        // Verificar si ya enviamos esta notificación (evitar spam)
-                        const notificationKey = `low_balance_${transaction.id}`;
-                        const existingNotification = await db.getNotificationByKey(user.id, notificationKey);
-                        
-                        if (!existingNotification) {
-                          await db.createNotification({
-                            userId: user.id,
-                            type: "low_balance",
-                            title: "⚠️ Saldo bajo durante la carga",
-                            message: `Tu saldo restante es $${remainingBalance.toFixed(0)} COP. Considera recargar para evitar interrupciones.`,
-                            data: JSON.stringify({ 
-                              transactionId: transaction.id,
-                              remainingBalance,
-                              currentCost,
-                              key: notificationKey
-                            }),
-                          });
-                          console.log(`[OCPP] Low balance alert sent to user ${user.id}: $${remainingBalance.toFixed(0)} remaining`);
-                        }
-                      }
-                      
-                      // Si el saldo llega a 0, detener la carga
-                      if (remainingBalance <= 0) {
-                        console.log(`[OCPP] User ${user.id} balance depleted, stopping charge`);
-                        // Enviar notificación de saldo agotado
-                        await db.createNotification({
-                          userId: user.id,
-                          type: "balance_depleted",
-                          title: "🛑 Carga detenida - Saldo agotado",
-                          message: `Tu saldo se ha agotado. La carga se detuvo automáticamente. Recarga tu billetera para continuar.`,
-                          data: JSON.stringify({ transactionId: transaction.id }),
-                        });
-                        // TODO: Enviar RemoteStopTransaction al cargador
-                      }
-                    }
+                  if (measurand === "SoC" || measurand.includes("SoC")) {
+                    soc = value;
+                  } else if (measurand.includes("Power.Active.Import")) {
+                    powerKw = unit === "kw" ? value : value / 1000;
                   }
                   
-                  break;
+                  if (soc !== null || powerKw !== null) {
+                    updateActiveSessionMeterData(transaction.id, {
+                      ...(soc !== null ? { soc } : {}),
+                      ...(powerKw !== null ? { currentPower: powerKw } : {}),
+                    });
+                  }
                 }
               }
             }
+          } catch (err) {
+            console.error(`[OCPP] MeterValues (no txId) station fallback error:`, err);
           }
         }
       }

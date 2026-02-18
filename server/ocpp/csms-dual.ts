@@ -976,6 +976,11 @@ export class DualCSMS {
         currentKwh: 0,
         currentCost: 0,
         pricePerKwh,
+        soc: null,
+        currentPower: 0,
+        voltage: null,
+        current: null,
+        lastMeterUpdate: null,
       });
       
       removePendingSession(pendingSessionData.sessionId);
@@ -993,6 +998,11 @@ export class DualCSMS {
         currentKwh: 0,
         currentCost: 0,
         pricePerKwh,
+        soc: null,
+        currentPower: 0,
+        voltage: null,
+        current: null,
+        lastMeterUpdate: null,
       });
       console.log(`[CSMS-DUAL] StartTransaction: Created basic active session for userId ${userId}, transactionId: ${transactionId}`);
     }
@@ -1125,12 +1135,21 @@ export class DualCSMS {
     // Calcular costo - obtener tarifa
     const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
     const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+    const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
+    const connectionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : 0;
     
-    // Para modo fixed_amount, usar el monto objetivo si la energía entregada lo cubre
-    let totalCost = energyDelivered * pricePerKwh;
+    // Calcular costos desglosados
+    const energyCost = energyDelivered * pricePerKwh;
+    const endTime_calc = new Date(req.timestamp);
+    const startTime_calc = transaction.startTime ? new Date(transaction.startTime) : new Date();
+    const durationMinutes = (endTime_calc.getTime() - startTime_calc.getTime()) / (1000 * 60);
+    const timeCost = durationMinutes * pricePerMinute;
+    
+    // Total = energía + tiempo + tarifa de conexión
+    let totalCost = energyCost + timeCost + connectionFee;
     if (activeSession?.chargeMode === "fixed_amount" && activeSession.targetValue > 0) {
-      // Cobrar el menor entre el costo calculado y el monto objetivo
-      totalCost = Math.min(totalCost, activeSession.targetValue);
+      // Cobrar el menor entre el costo calculado y el monto objetivo (pero siempre incluir connectionFee)
+      totalCost = Math.min(energyCost + timeCost, activeSession.targetValue) + connectionFee;
     }
 
     // Calcular distribución de ingresos según configuración del admin
@@ -1148,6 +1167,9 @@ export class DualCSMS {
       endTime,
       meterEnd: String(req.meterStop),
       kwhConsumed: energyDelivered.toString(),
+      energyCost: energyCost.toFixed(2),
+      timeCost: timeCost.toFixed(2),
+      sessionCost: connectionFee.toFixed(2),
       totalCost: totalCost.toString(),
       investorShare: investorShare.toString(),
       platformFee: platformFee.toString(),
@@ -1312,6 +1334,7 @@ export class DualCSMS {
                     ...activeSession,
                     currentKwh: Math.round(consumed * 100) / 100,
                     currentCost: Math.round(cost),
+                    lastMeterUpdate: new Date(),
                   });
                   await db.updateTransaction(existingTx.id, {
                     kwhConsumed: String(Math.round(consumed * 100) / 100),
@@ -1378,6 +1401,11 @@ export class DualCSMS {
             currentKwh: 0,
             currentCost: 0,
             pricePerKwh,
+            soc: null,
+            currentPower: 0,
+            voltage: null,
+            current: null,
+            lastMeterUpdate: null,
           });
           
           if (pendingSession) {
@@ -1485,6 +1513,7 @@ export class DualCSMS {
               ...activeSession,
               currentKwh: Math.round(consumedKwh * 100) / 100,
               currentCost: Math.round(currentCost),
+              lastMeterUpdate: new Date(),
             });
             
             // También actualizar kwhConsumed en la transacción de la BD
@@ -1686,12 +1715,22 @@ export class DualCSMS {
           }
 
           const tariff201 = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
-          const pricePerKwh = tariff201 ? parseFloat(tariff201.pricePerKwh) : 1800;
-          let totalCost = energyDelivered * pricePerKwh;
+          const pricePerKwh201 = tariff201 ? parseFloat(tariff201.pricePerKwh) : 1800;
+          const pricePerMinute201 = tariff201 ? parseFloat(tariff201.pricePerMinute || "0") : 0;
+          const connectionFee201 = tariff201 ? parseFloat(tariff201.pricePerSession || "0") : 0;
           
-          // Para modo fixed_amount, limitar al monto objetivo
+          const endTime201 = new Date(req.timestamp);
+          const startTime201 = transaction.startTime ? new Date(transaction.startTime) : new Date();
+          const duration201 = Math.floor((endTime201.getTime() - startTime201.getTime()) / 1000);
+          const durationMinutes201 = duration201 / 60;
+          
+          const energyCost201 = energyDelivered * pricePerKwh201;
+          const timeCost201 = durationMinutes201 * pricePerMinute201;
+          let totalCost = energyCost201 + timeCost201 + connectionFee201;
+          
+          // Para modo fixed_amount, limitar al monto objetivo (pero siempre incluir connectionFee)
           if (activeSession201?.chargeMode === "fixed_amount" && activeSession201.targetValue > 0) {
-            totalCost = Math.min(totalCost, activeSession201.targetValue);
+            totalCost = Math.min(energyCost201 + timeCost201, activeSession201.targetValue) + connectionFee201;
           }
 
           // Calcular distribución de ingresos
@@ -1699,13 +1738,12 @@ export class DualCSMS {
           const investorShare201 = totalCost * (revenueConfig201.investorPercent / 100);
           const platformFee201 = totalCost * (revenueConfig201.platformPercent / 100);
 
-          const endTime201 = new Date(req.timestamp);
-          const startTime201 = transaction.startTime ? new Date(transaction.startTime) : new Date();
-          const duration201 = Math.floor((endTime201.getTime() - startTime201.getTime()) / 1000);
-
           await db.updateTransaction(transaction.id, {
             endTime: endTime201,
             kwhConsumed: energyDelivered.toString(),
+            energyCost: energyCost201.toFixed(2),
+            timeCost: timeCost201.toFixed(2),
+            sessionCost: connectionFee201.toFixed(2),
             totalCost: totalCost.toString(),
             investorShare: investorShare201.toString(),
             platformFee: platformFee201.toString(),
