@@ -527,6 +527,97 @@ export const ocppRouter = router({
     }),
 
   // ============================================================================
+  // DIAGNÓSTICO EN TIEMPO REAL
+  // ============================================================================
+
+  /**
+   * Obtener diagnóstico detallado de todas las conexiones WebSocket activas
+   * Incluye readyState, pendingCalls, uptime, heartbeat age
+   */
+  getDiagnostics: ocppProcedure.query(async () => {
+    const diagnostics = dualCSMS.getDetailedDiagnostics();
+    
+    // Enriquecer con datos de BD (nombre, modelo, etc.)
+    const enriched = await Promise.all(
+      diagnostics.map(async (diag) => {
+        const station = diag.stationId
+          ? await db.getChargingStationById(diag.stationId)
+          : await db.getChargingStationByOcppIdentity(diag.ocppIdentity);
+        const evses = station ? await db.getEvsesByStationId(station.id) : [];
+        return {
+          ...diag,
+          stationName: station?.name || diag.ocppIdentity,
+          manufacturer: station?.manufacturer || null,
+          model: station?.model || null,
+          serialNumber: station?.serialNumber || null,
+          firmwareVersion: station?.firmwareVersion || null,
+          address: station?.address || null,
+          connectors: evses.map(e => ({
+            connectorId: e.evseIdLocal,
+            status: e.status,
+            connectorType: e.connectorType,
+            powerKw: e.powerKw,
+          })),
+        };
+      })
+    );
+    return enriched;
+  }),
+
+  /**
+   * Obtener detalle completo de un cargador específico
+   * Combina datos de conexión WebSocket + BD + logs recientes
+   */
+  getChargerDetail: ocppProcedure
+    .input(z.object({ ocppIdentity: z.string() }))
+    .query(async ({ input }) => {
+      // Datos de conexión en tiempo real
+      const allDiagnostics = dualCSMS.getDetailedDiagnostics();
+      const liveDiag = allDiagnostics.find(d => d.ocppIdentity === input.ocppIdentity);
+      
+      // Datos de BD
+      const station = await db.getChargingStationByOcppIdentity(input.ocppIdentity);
+      const evses = station ? await db.getEvsesByStationId(station.id) : [];
+      
+      // Últimos 30 logs de este cargador
+      const recentLogs = await db.getOcppLogs({
+        ocppIdentity: input.ocppIdentity,
+        limit: 30,
+        offset: 0,
+      });
+      
+      return {
+        ocppIdentity: input.ocppIdentity,
+        isConnected: !!liveDiag,
+        // Datos de conexión en tiempo real
+        connection: liveDiag || null,
+        // Datos de BD
+        station: station ? {
+          id: station.id,
+          name: station.name,
+          address: station.address,
+          city: station.city,
+          manufacturer: station.manufacturer,
+          model: station.model,
+          serialNumber: station.serialNumber,
+          firmwareVersion: station.firmwareVersion,
+          isOnline: station.isOnline,
+          isActive: station.isActive,
+          lastBootNotification: station.lastBootNotification,
+        } : null,
+        connectors: evses.map(e => ({
+          id: e.id,
+          connectorId: e.evseIdLocal,
+          status: e.status,
+          connectorType: e.connectorType,
+          powerKw: e.powerKw,
+        })),
+        recentLogs: recentLogs.logs || [],
+        totalLogs: recentLogs.total || 0,
+      };
+    }),
+
+  // ============================================================================
   // ALERTAS OCPP
   // ============================================================================
 
