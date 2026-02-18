@@ -785,6 +785,57 @@ async function handleOCPP16Message(
       // Actualizar estado del EVSE
       await db.updateEvseStatus(transaction.evseId, "AVAILABLE");
       
+      // Descontar saldo del usuario
+      if (totalCost > 0 && transaction.userId) {
+        try {
+          const wallet = await db.getWalletByUserId(transaction.userId);
+          if (wallet) {
+            let currentBalance = parseFloat(wallet.balance);
+            
+            // Auto-cobro: si el saldo es insuficiente y tiene tarjeta inscrita
+            if (currentBalance < totalCost) {
+              try {
+                const { autoChargeIfNeeded } = await import("../wompi/auto-charge");
+                const autoResult = await autoChargeIfNeeded(transaction.userId, totalCost);
+                if (autoResult?.success) {
+                  currentBalance = autoResult.newBalance;
+                  console.log(`[OCPP] StopTransaction - Auto-cobro exitoso: $${autoResult.amountCharged} cobrados a tarjeta`);
+                } else if (autoResult) {
+                  console.log(`[OCPP] StopTransaction - Auto-cobro fallido: ${autoResult.error}`);
+                }
+              } catch (autoErr) {
+                console.warn(`[OCPP] StopTransaction - Error en auto-cobro:`, autoErr);
+              }
+            }
+            
+            const newBalance = Math.max(0, currentBalance - totalCost);
+            await db.updateWalletBalance(transaction.userId, newBalance.toString());
+            
+            await db.createWalletTransaction({
+              walletId: wallet.id,
+              userId: transaction.userId,
+              type: "CHARGE_PAYMENT",
+              amount: (-totalCost).toString(),
+              balanceBefore: currentBalance.toString(),
+              balanceAfter: newBalance.toString(),
+              referenceId: transaction.id,
+              referenceType: "TRANSACTION",
+              status: "COMPLETED",
+              description: `Pago por carga de ${energyDelivered.toFixed(2)} kWh`,
+            });
+            
+            console.log(`[OCPP] StopTransaction - Wallet deducted: $${Math.round(totalCost)} from user ${transaction.userId}. Balance: $${currentBalance} -> $${newBalance}`);
+          }
+        } catch (walletErr: any) {
+          console.error(`[OCPP] Error deducting user wallet:`, walletErr?.message || walletErr);
+          // No lanzar error - la transacción ya se completó
+        }
+      }
+      
+      // Limpiar sesión activa de memoria
+      const { removeActiveSession } = await import("../charging/charging-router");
+      removeActiveSession(transaction.id);
+      
       // Actualizar wallet del inversor (si existe)
       let stationName = "Estación";
       try {
