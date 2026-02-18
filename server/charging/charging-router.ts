@@ -82,6 +82,9 @@ const activeChargeSessions = new Map<number, {
   powerHistory: PowerHistoryPoint[];
   // Control de notificación SoC objetivo
   socTargetNotified: boolean;
+  // SoC manual ingresado por el usuario (cuando el cargador no lo reporta)
+  manualSoc: number | null;
+  manualBatteryCapacityKwh: number | null;
 }>();
 
 /**
@@ -887,24 +890,42 @@ export const chargingRouter = router({
       if (currentPower <= 0 && elapsedMinutes > 0 && currentKwh > 0) {
         currentPower = currentKwh / (elapsedMinutes / 60);
       }
-      // Si aún no hay datos, NO usar potencia nominal (mostrar 0 hasta que lleguen datos reales)
+      
+      // ============================================================
+      // SoC MANUAL: Si el cargador no reporta SoC, usar el valor manual del usuario
+      // ============================================================
+      const manualSoc = activeSessionInfo?.manualSoc ?? null;
+      const manualBatteryCapacity = activeSessionInfo?.manualBatteryCapacityKwh ?? 60;
+      const hasManualSoc = manualSoc !== null;
+      
+      // Calcular SoC estimado basado en manualSoc + kWh consumidos
+      let estimatedSoc: number | null = null;
+      if (soc !== null) {
+        // SoC real del cargador - prioridad máxima
+        estimatedSoc = soc;
+      } else if (hasManualSoc) {
+        // SoC manual del usuario + kWh consumidos para estimar SoC actual
+        const kwhToSocPercent = (currentKwh / manualBatteryCapacity) * 100;
+        estimatedSoc = Math.min(100, Math.round(manualSoc + kwhToSocPercent));
+      }
       
       // Estimar tiempo restante basado en la potencia actual
       const chargeMode = activeSessionInfo?.chargeMode || "full_charge" as const;
       const targetValue = activeSessionInfo?.targetValue || 0;
       
       // Calcular kWh estimados según modo de carga
+      const batteryCapacity = manualBatteryCapacity;
+      const startSocValue = estimatedSoc !== null ? manualSoc ?? estimatedSoc : 20;
       let estimatedTotalKwh = 0;
       if (chargeMode === "fixed_amount" && targetValue > 0) {
         estimatedTotalKwh = targetValue / pricePerKwh;
       } else if (chargeMode === "percentage" && targetValue > 0) {
-        const batteryCapacity = 60; // kWh estimado
-        const startSoc = soc !== null ? Math.max(0, soc - (currentKwh / batteryCapacity * 100)) : 20;
-        estimatedTotalKwh = ((targetValue - startSoc) / 100) * batteryCapacity;
+        estimatedTotalKwh = ((targetValue - startSocValue) / 100) * batteryCapacity;
       } else {
-        // full_charge: estimar según potencia y batería
-        estimatedTotalKwh = Math.max(currentKwh * 1.5, 30);
+        // full_charge: estimar según batería
+        estimatedTotalKwh = ((100 - startSocValue) / 100) * batteryCapacity;
       }
+      estimatedTotalKwh = Math.max(estimatedTotalKwh, currentKwh * 1.1); // Al menos 10% más que lo actual
       
       const remainingKwh = Math.max(0, estimatedTotalKwh - currentKwh);
       const estimatedMinutes = currentPower > 0 ? Math.ceil((remainingKwh / currentPower) * 60) : 30;
@@ -913,24 +934,23 @@ export const chargingRouter = router({
       let progress = 0;
       if (chargeMode === "fixed_amount" && targetValue > 0) {
         progress = Math.min(100, Math.round((currentCost / targetValue) * 100));
-      } else if (chargeMode === "percentage" && targetValue > 0 && soc !== null) {
-        // Si tenemos SoC real, usarlo directamente
-        progress = Math.min(100, Math.round((soc / targetValue) * 100));
+      } else if (chargeMode === "percentage" && targetValue > 0 && estimatedSoc !== null) {
+        progress = Math.min(100, Math.round((estimatedSoc / targetValue) * 100));
       } else if (chargeMode === "percentage" && targetValue > 0) {
-        const batteryCapacity = 60;
         const targetKwh = ((targetValue - 20) / 100) * batteryCapacity;
         progress = targetKwh > 0 ? Math.min(100, Math.round((currentKwh / targetKwh) * 100)) : 0;
       } else {
-        // full_charge: usar SoC si está disponible
-        if (soc !== null) {
-          progress = Math.round(soc);
+        // full_charge: usar SoC estimado si está disponible
+        if (estimatedSoc !== null) {
+          progress = Math.round(estimatedSoc);
         } else {
           progress = estimatedTotalKwh > 0 ? Math.min(100, Math.round((currentKwh / estimatedTotalKwh) * 100)) : 0;
         }
       }
       
-      // SoC para el gauge: usar valor real del cargador si está disponible
-      const displaySoc = soc !== null ? soc : null;
+      // SoC para el gauge: prioridad: real > estimado (manual + kWh) > null
+      const displaySoc = estimatedSoc;
+      const socSource = soc !== null ? "charger" : (hasManualSoc ? "manual" : "none");
       
       return {
         transactionId: activeTransaction.id,
@@ -952,14 +972,17 @@ export const chargingRouter = router({
         chargeMode,
         targetPercentage: chargeMode === "percentage" ? targetValue : 100,
         targetAmount: chargeMode === "fixed_amount" ? targetValue : currentCost * 2,
-        startPercentage: displaySoc !== null ? null : 20, // null si tenemos SoC real
-        soc: displaySoc, // SoC real del vehículo desde el cargador
+        startPercentage: hasManualSoc ? manualSoc : (soc !== null ? null : 20),
+        soc: displaySoc, // SoC del vehículo (real o estimado desde manual)
+        socSource, // "charger" | "manual" | "none"
+        manualSoc: manualSoc, // SoC original ingresado por el usuario
+        manualBatteryCapacityKwh: hasManualSoc ? manualBatteryCapacity : null,
         voltage: voltage,
         currentAmp: currentAmp,
         progress,
         isSimulation: false,
         hasRealMeterData: activeSessionInfo?.lastMeterUpdate !== null && activeSessionInfo?.lastMeterUpdate !== undefined,
-        powerHistory: (activeSessionInfo?.powerHistory || []).slice(-120), // Últimos 120 puntos (~10 min)
+        powerHistory: (activeSessionInfo?.powerHistory || []).slice(-120),
       };
     }),
 
@@ -975,6 +998,38 @@ export const chargingRouter = router({
       return {
         history: session?.powerHistory || [],
       };
+    }),
+
+  /**
+   * Establecer SoC manual del usuario (cuando el cargador no lo reporta)
+   */
+  setManualSoc: protectedProcedure
+    .input(z.object({
+      soc: z.number().min(0).max(100),
+      batteryCapacityKwh: z.number().min(10).max(200).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
+      if (!activeTransaction) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "No hay una sesión de carga activa",
+        });
+      }
+      
+      const session = getActiveSessionById(activeTransaction.id);
+      if (session) {
+        session.manualSoc = input.soc;
+        if (input.batteryCapacityKwh) {
+          session.manualBatteryCapacityKwh = input.batteryCapacityKwh;
+        }
+        console.log(`[setManualSoc] User ${ctx.user.id} set manual SoC=${input.soc}%, batteryCapacity=${input.batteryCapacityKwh || 'default'}kWh for transaction ${activeTransaction.id}`);
+      } else {
+        // Si no hay sesión en memoria, crear una básica con el SoC manual
+        console.log(`[setManualSoc] No active session in memory for transaction ${activeTransaction.id}, storing in DB metadata`);
+      }
+      
+      return { success: true, soc: input.soc };
     }),
 
   /**
