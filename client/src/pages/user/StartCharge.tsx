@@ -538,14 +538,14 @@ export default function StartCharge() {
                       const statusMap: Record<string, string> = {
                         'AVAILABLE': 'Disponible',
                         'OCCUPIED': 'Ocupado',
-                        'CHARGING': 'Cargando',
+                        'CHARGING': 'Ocupado',
                         'FAULTED': 'En falla',
                         'UNAVAILABLE': 'No disponible',
                         'RESERVED': 'Reservado',
-                        'PREPARING': 'Preparando',
-                        'FINISHING': 'Finalizando',
-                        'SUSPENDED_EV': 'Suspendido (EV)',
-                        'SUSPENDED_EVSE': 'Suspendido (EVSE)',
+                        'PREPARING': 'Ocupado',
+                        'FINISHING': 'Ocupado',
+                        'SUSPENDED_EV': 'Ocupado',
+                        'SUSPENDED_EVSE': 'Ocupado',
                       };
                       return statusMap[status?.toUpperCase()] || status;
                     };

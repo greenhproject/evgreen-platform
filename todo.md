@@ -1223,3 +1223,8 @@
 - [x] Monitor OCPP: corregido getChargerDetail para usar connection-manager con campos calculados
 - [x] App de usuario: lee de BD que ahora se actualiza correctamente
 - [x] 834 tests pasando, 0 errores TypeScript
+
+## Mejora UX: Estado "Preparando" → "Ocupado" - 18 Feb 2026
+- [x] Cambiar label "Preparando" a "Ocupado" en la app de usuario para mayor claridad
+- [x] Agrupar PREPARING, CHARGING, SUSPENDED_EV, SUSPENDED_EVSE, FINISHING como "Ocupado" en rojo para el usuario
+- [x] Corregido en StationDetail.tsx y StartCharge.tsx
