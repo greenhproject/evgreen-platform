@@ -1335,3 +1335,11 @@
 - [x] BUG: Notificaciones truncadas con "..." y no se pueden expandir al hacer clic
 - [x] BUG: Texto "Recarga automática" muestra caracteres Unicode escapados en vez de "á"
 - [x] BUG: No se pueden activar notificaciones push en la app instalable (PWA)
+
+
+## Bug: RemoteStop no llega al cargador físico - 18 Feb 2026
+- [x] BUG CRÍTICO: RemoteStopTransaction - mejorado con diagnóstico detallado, búsqueda exhaustiva y envío directo por ws
+- [x] Diagnosticar por qué el connection-manager no tiene la conexión del cargador
+- [x] Verificar cómo se registran las conexiones WebSocket OCPP en el connection-manager
+- [x] Asegurar que el handler real (_core/index.ts) registre conexiones en connection-manager
+- [x] BUG: Texto "Recarga automática" - usuario confirmó que ya se muestra correctamente

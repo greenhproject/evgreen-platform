@@ -1116,7 +1116,6 @@ export const chargingRouter = router({
       }
       
       if (!transactionId) {
-        // Último intento: buscar cualquier transacción activa del usuario
         const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
         if (activeTransaction) {
           transactionId = activeTransaction.id;
@@ -1156,34 +1155,77 @@ export const chargingRouter = router({
       const station = await db.getChargingStationById(transaction.stationId);
       const ocppIdentity = station?.ocppIdentity || '';
       
-      console.log(`[stopCharge] userId=${ctx.user.id}, txId=${transactionId}, stationId=${transaction.stationId}, ocppIdentity=${ocppIdentity}`);
+      // === DIAGNÓSTICO DETALLADO ===
+      const allConns = getAllConnections();
+      console.log(`[stopCharge] ===== STOP CHARGE REQUEST =====`);
+      console.log(`[stopCharge] userId=${ctx.user.id}, txId=${transactionId}, stationId=${transaction.stationId}, ocppIdentity="${ocppIdentity}"`);
+      console.log(`[stopCharge] ocppTransactionId=${transaction.ocppTransactionId}`);
+      console.log(`[stopCharge] Total active connections in connection-manager: ${allConns.length}`);
+      allConns.forEach((c, i) => {
+        console.log(`[stopCharge]   Connection[${i}]: identity="${c.ocppIdentity}", stationId=${c.stationId}, connected=${c.isConnected}, version=${c.ocppVersion}`);
+      });
       
-      // Estrategia 1: Buscar conexión en connection-manager por stationId
+      // === BÚSQUEDA EXHAUSTIVA DE CONEXIÓN ===
       let ocppIdentityForCommand = '';
+      let connectionWs: any = null;
+      
+      // Estrategia 1: Buscar por stationId en connection-manager
       const connByStation = legacyGetConnectionByStationId(transaction.stationId);
       if (connByStation && connByStation.ws.readyState === 1) {
         ocppIdentityForCommand = connByStation.ocppIdentity;
-        console.log(`[stopCharge] Found connection via stationId: ${ocppIdentityForCommand}`);
+        connectionWs = connByStation.ws;
+        console.log(`[stopCharge] ✓ Found connection via stationId: "${ocppIdentityForCommand}", readyState=${connByStation.ws.readyState}`);
+      } else {
+        console.log(`[stopCharge] ✗ No connection found via stationId=${transaction.stationId} (result=${connByStation ? `identity="${connByStation.ocppIdentity}", readyState=${connByStation.ws.readyState}` : 'null'})`);
       }
       
-      // Estrategia 2: Buscar por ocppIdentity directamente en connection-manager
+      // Estrategia 2: Buscar por ocppIdentity directamente
       if (!ocppIdentityForCommand && ocppIdentity) {
         const connByIdentity = getConnection(ocppIdentity);
         if (connByIdentity && connByIdentity.ws.readyState === 1) {
           ocppIdentityForCommand = ocppIdentity;
-          console.log(`[stopCharge] Found connection via ocppIdentity: ${ocppIdentityForCommand}`);
+          connectionWs = connByIdentity.ws;
+          console.log(`[stopCharge] ✓ Found connection via ocppIdentity: "${ocppIdentityForCommand}", readyState=${connByIdentity.ws.readyState}`);
+        } else {
+          console.log(`[stopCharge] ✗ No connection found via ocppIdentity="${ocppIdentity}" (result=${connByIdentity ? `readyState=${connByIdentity.ws.readyState}` : 'null'})`);
         }
       }
       
-      // Estrategia 3: Intentar dualCSMS como último recurso
+      // Estrategia 3: Buscar por variantes del ocppIdentity (case-insensitive, con/sin prefijo)
+      if (!ocppIdentityForCommand && ocppIdentity) {
+        for (const conn of allConns) {
+          const identityLower = conn.ocppIdentity.toLowerCase();
+          const searchLower = ocppIdentity.toLowerCase();
+          if (identityLower === searchLower || 
+              identityLower.includes(searchLower) || 
+              searchLower.includes(identityLower)) {
+            if (conn.isConnected) {
+              const fullConn = getConnection(conn.ocppIdentity);
+              if (fullConn && fullConn.ws.readyState === 1) {
+                ocppIdentityForCommand = conn.ocppIdentity;
+                connectionWs = fullConn.ws;
+                console.log(`[stopCharge] ✓ Found connection via fuzzy match: "${ocppIdentityForCommand}" (searched for "${ocppIdentity}")`);
+                break;
+              }
+            }
+          }
+        }
+        if (!ocppIdentityForCommand) {
+          console.log(`[stopCharge] ✗ No connection found via fuzzy match for "${ocppIdentity}"`);
+        }
+      }
+      
+      // Estrategia 4: dualCSMS como último recurso
       if (!ocppIdentityForCommand && ocppIdentity) {
         if (dualCSMS.isStationConnected(ocppIdentity)) {
           ocppIdentityForCommand = ocppIdentity;
-          console.log(`[stopCharge] Found connection via dualCSMS: ${ocppIdentityForCommand}`);
+          console.log(`[stopCharge] ✓ Found connection via dualCSMS: "${ocppIdentityForCommand}"`);
+        } else {
+          console.log(`[stopCharge] ✗ No connection found via dualCSMS for "${ocppIdentity}"`);
         }
       }
       
-      // Intentar enviar RemoteStopTransaction si hay conexión
+      // === ENVIAR RemoteStopTransaction ===
       let remoteStopSent = false;
       if (ocppIdentityForCommand) {
         const messageId = uuidv4();
@@ -1192,9 +1234,9 @@ export const chargingRouter = router({
           ? parseInt(transaction.ocppTransactionId) 
           : transactionId;
         
-        console.log(`[stopCharge] Sending RemoteStopTransaction to ${ocppIdentityForCommand}, ocppTxId=${ocppTxId}`);
+        console.log(`[stopCharge] Sending RemoteStopTransaction to "${ocppIdentityForCommand}", ocppTxId=${ocppTxId}, messageId=${messageId}`);
         
-        // Intentar enviar por connection-manager (handler real en _core/index.ts)
+        // Intentar enviar por connection-manager
         remoteStopSent = legacySendOcppCommand(
           ocppIdentityForCommand,
           messageId,
@@ -1202,8 +1244,8 @@ export const chargingRouter = router({
           { transactionId: ocppTxId }
         );
         
-        // Si falló, intentar por dualCSMS
         if (!remoteStopSent) {
+          console.log(`[stopCharge] legacySendOcppCommand failed, trying dualCSMS...`);
           remoteStopSent = dualCSMS.sendCommandIfConnected(
             ocppIdentityForCommand,
             messageId,
@@ -1212,8 +1254,20 @@ export const chargingRouter = router({
           );
         }
         
+        // Si aún no se envió y tenemos el ws directo, intentar enviar directamente
+        if (!remoteStopSent && connectionWs && connectionWs.readyState === 1) {
+          try {
+            const directMessage = JSON.stringify([2, messageId, "RemoteStopTransaction", { transactionId: ocppTxId }]);
+            connectionWs.send(directMessage);
+            remoteStopSent = true;
+            console.log(`[stopCharge] ✓ RemoteStopTransaction sent DIRECTLY via ws.send()`);
+          } catch (directErr) {
+            console.error(`[stopCharge] ✗ Direct ws.send() failed:`, directErr);
+          }
+        }
+        
         if (remoteStopSent) {
-          console.log(`[stopCharge] RemoteStopTransaction sent successfully to ${ocppIdentityForCommand}`);
+          console.log(`[stopCharge] ✓✓ RemoteStopTransaction sent successfully to "${ocppIdentityForCommand}"`);
           
           // Registrar log OCPP
           try {
@@ -1228,28 +1282,28 @@ export const chargingRouter = router({
             console.error(`[stopCharge] Error logging OCPP:`, logErr);
           }
         } else {
-          console.warn(`[stopCharge] Failed to send RemoteStopTransaction to ${ocppIdentityForCommand}`);
+          console.warn(`[stopCharge] ✗✗ ALL methods failed to send RemoteStopTransaction to "${ocppIdentityForCommand}"`);
         }
       } else {
-        console.warn(`[stopCharge] No OCPP connection found for station ${transaction.stationId} (${ocppIdentity})`);
+        console.warn(`[stopCharge] ✗✗ NO OCPP CONNECTION FOUND AT ALL for station ${transaction.stationId} (ocppIdentity="${ocppIdentity}")`);
+        console.warn(`[stopCharge] Available connections: ${allConns.map(c => `"${c.ocppIdentity}"(sid=${c.stationId},connected=${c.isConnected})`).join(', ') || 'NONE'}`);
       }
       
-      // IMPORTANTE: Si no se pudo enviar RemoteStopTransaction, completar la transacción
-      // localmente para no dejar al usuario bloqueado en "Finalizando carga..."
+      // === COMPLETAR TRANSACCIÓN ===
       if (!remoteStopSent) {
-        console.log(`[stopCharge] No OCPP connection - completing transaction locally. txId=${transactionId}`);
+        console.log(`[stopCharge] Completing transaction locally (no OCPP connection). txId=${transactionId}`);
         await completeTransactionLocally(transactionId, transaction);
         
         return {
           status: "completed",
-          message: "Carga detenida (sin conexión al cargador)",
+          message: "Carga detenida (sin conexión al cargador). El cargador puede seguir activo - desconecte el cable manualmente.",
           isSimulation: false,
           transactionId: transactionId,
+          warning: "remote_stop_failed",
         };
       }
       
-      // Si se envió RemoteStopTransaction, programar un timeout de seguridad
-      // Si el cargador no responde con StopTransaction en 45 segundos, completar localmente
+      // Si se envió RemoteStopTransaction, programar timeout de seguridad (45s)
       setTimeout(async () => {
         try {
           const txCheck = await db.getTransactionById(transactionId!);
