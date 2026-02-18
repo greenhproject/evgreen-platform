@@ -75,12 +75,12 @@ function AutoRechargeSection({ hasSavedCard }: { hasSavedCard: boolean }) {
       utils.wallet.getAutoRechargeSettings.invalidate();
       toast.success(
         data.enabled
-          ? `Recarga autom\u00e1tica activada: $${data.amount.toLocaleString()} COP cuando tu saldo baje de $${data.threshold.toLocaleString()} COP`
-          : "Recarga autom\u00e1tica desactivada"
+          ? `Recarga automática activada: $${data.amount.toLocaleString()} COP cuando tu saldo baje de $${data.threshold.toLocaleString()} COP`
+          : "Recarga automática desactivada"
       );
     },
     onError: (error) => {
-      toast.error(error.message || "Error al actualizar configuraci\u00f3n");
+      toast.error(error.message || "Error al actualizar configuración");
     },
   });
 
@@ -117,7 +117,7 @@ function AutoRechargeSection({ hasSavedCard }: { hasSavedCard: boolean }) {
             <RefreshCw className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-left">
-            <p className="text-sm font-medium">Recarga autom\u00e1tica</p>
+            <p className="text-sm font-medium">Recarga automática</p>
             <p className="text-[10px] text-muted-foreground">
               {settings?.enabled
                 ? `Activa \u2022 Recarga $${(settings.amount || 20000).toLocaleString()} cuando saldo < $${(settings.threshold || 10000).toLocaleString()}`
@@ -137,20 +137,20 @@ function AutoRechargeSection({ hasSavedCard }: { hasSavedCard: boolean }) {
             className="overflow-hidden"
           >
             <Card className="p-4 space-y-4">
-              {/* Explicaci\u00f3n */}
+              {/* Explicación */}
               <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
                 <BatteryCharging className="w-5 h-5 text-emerald-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="text-xs font-medium text-emerald-300">\u00bfC\u00f3mo funciona?</p>
+                  <p className="text-xs font-medium text-emerald-300">¿Cómo funciona?</p>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    Cuando tu saldo baje del umbral durante una carga activa, se intentar\u00e1 recargar autom\u00e1ticamente desde tu tarjeta inscrita. Si la recarga falla, la carga se detendr\u00e1 para evitar deudas.
+                    Cuando tu saldo baje del umbral durante una carga activa, se intentará recargar automáticamente desde tu tarjeta inscrita. Si la recarga falla, la carga se detendrá para evitar deudas.
                   </p>
                 </div>
               </div>
 
               {/* Toggle principal */}
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Activar recarga autom\u00e1tica</span>
+                <span className="text-sm font-medium">Activar recarga automática</span>
                 <button
                   onClick={handleToggle}
                   disabled={updateSettings.isPending}
@@ -168,12 +168,12 @@ function AutoRechargeSection({ hasSavedCard }: { hasSavedCard: boolean }) {
                 <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-500/5 border border-amber-500/10">
                   <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
                   <p className="text-[10px] text-amber-300">
-                    Necesitas inscribir una tarjeta primero para activar la recarga autom\u00e1tica.
+                    Necesitas inscribir una tarjeta primero para activar la recarga automática.
                   </p>
                 </div>
               )}
 
-              {/* Configuraci\u00f3n de umbral */}
+              {/* Configuración de umbral */}
               <div className="space-y-2">
                 <label className="text-xs text-muted-foreground">Recargar cuando el saldo baje de:</label>
                 <div className="grid grid-cols-4 gap-2">
@@ -213,7 +213,7 @@ function AutoRechargeSection({ hasSavedCard }: { hasSavedCard: boolean }) {
                 </div>
               </div>
 
-              {/* Bot\u00f3n guardar si cambi\u00f3 algo */}
+              {/* Botón guardar si cambió algo */}
               {settings?.enabled && (threshold !== settings.threshold || amount !== settings.amount) && (
                 <Button
                   size="sm"
@@ -234,7 +234,7 @@ function AutoRechargeSection({ hasSavedCard }: { hasSavedCard: boolean }) {
                 <div className="flex items-start gap-2 p-2 rounded-lg bg-red-500/5 border border-red-500/10">
                   <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
                   <p className="text-[10px] text-red-300">
-                    La recarga autom\u00e1tica ha fallado {settings.failCount} vez(es). Verifica que tu tarjeta tenga fondos suficientes.
+                    La recarga automática ha fallado {settings.failCount} vez(es). Verifica que tu tarjeta tenga fondos suficientes.
                   </p>
                 </div>
               )}
@@ -324,7 +324,7 @@ export default function UserWallet() {
         console.log(`[Polling] Resultado:`, result);
 
         if (result.status === "APPROVED" && result.credited) {
-          toast.success("\u00a1Recarga exitosa! Tu billetera ha sido actualizada.");
+          toast.success("¡Recarga exitosa! Tu billetera ha sido actualizada.");
           setPendingReference(null);
           refetchWallet();
           refetchTransactions();
@@ -339,14 +339,14 @@ export default function UserWallet() {
 
         // Timeout después de 20 intentos (60 segundos)
         if (pollingCountRef.current >= 20) {
-          toast.info("El cobro sigue en proceso. Tu billetera se actualizar\u00e1 autom\u00e1ticamente cuando se confirme.");
+          toast.info("El cobro sigue en proceso. Tu billetera se actualizará automáticamente cuando se confirme.");
           setPendingReference(null);
           return;
         }
       } catch (err) {
         console.warn("[Polling] Error consultando estado:", err);
         if (pollingCountRef.current >= 20) {
-          toast.info("No pudimos verificar el estado del cobro. Tu billetera se actualizar\u00e1 cuando se confirme.");
+          toast.info("No pudimos verificar el estado del cobro. Tu billetera se actualizará cuando se confirme.");
           setPendingReference(null);
         }
       }
@@ -539,10 +539,10 @@ export default function UserWallet() {
     if (desc.includes("auto-recarga") || desc.includes("auto-cobro") || desc.includes("atc-")) {
       return "AUTO_CHARGE";
     }
-    if (desc.includes("recarga r\u00e1pida") || desc.includes("qrc-")) {
+    if (desc.includes("recarga rápida") || desc.includes("qrc-")) {
       return "QUICK_RECHARGE";
     }
-    if (desc.includes("reconciliaci\u00f3n")) {
+    if (desc.includes("reconciliación")) {
       return "RECONCILIATION";
     }
     if (desc.includes("ajuste admin") || desc.includes("admin:")) {
@@ -607,7 +607,7 @@ export default function UserWallet() {
       case "AUTO_CHARGE":
         return { label: "Auto-cobro", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" };
       case "QUICK_RECHARGE":
-        return { label: "R\u00e1pida", className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" };
+        return { label: "Rápida", className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" };
       case "RECONCILIATION":
         return { label: "Reconciliada", className: "bg-blue-500/15 text-blue-400 border-blue-500/30" };
       default:
@@ -620,16 +620,16 @@ export default function UserWallet() {
     const subtype = getTransactionSubtype(tx);
     switch (subtype) {
       case "AUTO_CHARGE":
-        return "Cobro autom\u00e1tico por saldo insuficiente";
+        return "Cobro automático por saldo insuficiente";
       case "QUICK_RECHARGE":
-        return "Recarga r\u00e1pida con tarjeta";
+        return "Recarga rápida con tarjeta";
       case "RECONCILIATION":
         return "Recarga reconciliada";
       case "ADMIN_ADJUSTMENT":
         return tx.description || "Ajuste administrativo";
       case "CHARGE":
       case "CHARGE_PAYMENT":
-        return "Pago por sesi\u00f3n de carga";
+        return "Pago por sesión de carga";
       case "REFUND":
         return "Reembolso";
       default:

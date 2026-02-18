@@ -1329,3 +1329,9 @@
 - [x] Diagnosticar flujo stopCharge: frontend → backend → OCPP
 - [x] Corregir el envío de RemoteStopTransaction
 - [x] Asegurar que la transacción se complete y descuente saldo
+
+
+## Bugs UI: Notificaciones y Recarga Automática - 18 Feb 2026
+- [x] BUG: Notificaciones truncadas con "..." y no se pueden expandir al hacer clic
+- [x] BUG: Texto "Recarga automática" muestra caracteres Unicode escapados en vez de "á"
+- [x] BUG: No se pueden activar notificaciones push en la app instalable (PWA)
