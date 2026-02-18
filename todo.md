@@ -989,3 +989,7 @@
 - [ ] BUG 2: Tarifa muestra $0.00/kWh en pantalla de carga
 - [ ] BUG 3: Tipo de conector muestra "TYPE_2" en vez de "GBT AC" (hardcodeado o BD incorrecta)
 - [ ] BUG 4: App se queda en "Conectando" sin avanzar a "Cargando" aunque el cargador ya está en status Charging
+
+## Mejoras: Timeout amigable y corrección isOnline - 18 Febrero 2026
+- [x] Timeout amigable en ChargingWaiting: si la sesión pendiente expira (>2 min) mostrar mensaje claro al usuario con opciones de reintentar o cancelar
+- [x] Corregir isOnline=0 en BD para EVG001 (stationId=150001): actualizar a true (isOnline=1)
