@@ -262,7 +262,9 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
     const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
     if (station) {
       stationId = station.id;
-      console.log(`[OCPP] Pre-resolved stationId=${stationId} for ${ocppIdentity} at connection time`);
+      // CRÍTICO: Actualizar stationId en el connection-manager para que getConnectionByStationId funcione
+      connection.stationId = station.id;
+      console.log(`[OCPP] Pre-resolved stationId=${stationId} for ${ocppIdentity} at connection time (updated in connection-manager)`);
       // Marcar como online
       await db.updateStationOnlineStatus(ocppIdentity, true);
     } else {
@@ -300,7 +302,8 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
               const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
               if (station) {
                 stationId = station.id;
-                console.log(`[OCPP] Auto-resolved stationId=${stationId} for ${ocppIdentity} in handleMessage`);
+                connection.stationId = station.id; // Actualizar en connection-manager
+                console.log(`[OCPP] Auto-resolved stationId=${stationId} for ${ocppIdentity} in handleMessage (updated in connection-manager)`);
               }
             } catch (err) {
               console.error(`[OCPP] Error auto-resolving stationId:`, err);
