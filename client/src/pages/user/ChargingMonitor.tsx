@@ -141,6 +141,12 @@ export default function ChargingMonitor() {
   const [showSocInput, setShowSocInput] = useState(false);
   const [manualSocInput, setManualSocInput] = useState("");
   const [manualCapacityInput, setManualCapacityInput] = useState("60");
+  const [capacityPreloaded, setCapacityPreloaded] = useState(false);
+  
+  // Obtener vehículo por defecto del usuario para precargar capacidad de batería
+  const { data: defaultVehicle } = trpc.vehicles.getDefault.useQuery(undefined, {
+    enabled: !!user,
+  });
   
   // Mutation para enviar SoC manual
   const setManualSocMutation = trpc.charging.setManualSoc.useMutation({
@@ -200,6 +206,28 @@ export default function ChargingMonitor() {
     
     return () => clearInterval(interval);
   }, [session?.startTime]);
+  
+  // Precargar capacidad de batería desde el vehículo del usuario o desde datos del servidor
+  useEffect(() => {
+    if (capacityPreloaded) return;
+    
+    // Prioridad 1: datos del servidor (ya guardados en la sesión activa)
+    const serverCapacity = session ? (session as any).manualBatteryCapacityKwh : null;
+    if (serverCapacity && serverCapacity !== 60) {
+      setManualCapacityInput(String(serverCapacity));
+      setCapacityPreloaded(true);
+      return;
+    }
+    
+    // Prioridad 2: vehículo por defecto del usuario
+    if (defaultVehicle?.batteryCapacityKwh) {
+      const cap = parseFloat(String(defaultVehicle.batteryCapacityKwh));
+      if (cap > 0) {
+        setManualCapacityInput(String(cap));
+        setCapacityPreloaded(true);
+      }
+    }
+  }, [defaultVehicle, session, capacityPreloaded]);
   
   // Estado para controlar la redirección
   const [redirecting, setRedirecting] = useState(false);
@@ -453,6 +481,12 @@ export default function ChargingMonitor() {
               <p className="text-xs text-muted-foreground mb-3">
                 Tu cargador no reporta el SoC. Ingresa el porcentaje actual de tu vehículo para cálculos más precisos.
               </p>
+              {defaultVehicle && (
+                <div className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-300 rounded-md px-2 py-1.5 mb-3 flex items-center gap-1">
+                  <Zap className="w-3 h-3" />
+                  <span>Vehículo: <strong>{defaultVehicle.brand} {defaultVehicle.model}</strong>{defaultVehicle.batteryCapacityKwh ? ` (${defaultVehicle.batteryCapacityKwh} kWh)` : ''}</span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">% Batería actual</label>

@@ -1314,3 +1314,9 @@
 - [x] Fix: Pantalla de espera "Finalizando carga..." mientras el cargador confirma StopTransaction
 - [x] Fix: Confetti solo se lanza cuando la transacción está completada
 - [x] 868 tests pasando (52 archivos)
+
+
+## Fix: SoC Manual no se guarda + Precargar datos del vehículo - 18 Feb 2026
+- [x] Fix: SoC manual no se guarda al ingresarlo, sigue mostrando 20%
+- [x] Precargar capacidad de batería desde "Mi Vehículo" si el usuario tiene vehículo guardado
+- [x] Verificar que el endpoint setManualSoc funciona correctamente
