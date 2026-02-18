@@ -61,6 +61,7 @@ async function startServer() {
     const host = req.headers.host || "localhost:3000";
     res.json({
       status: "online",
+      buildVersion: "v2026.02.18.B",
       message: "OCPP WebSocket server is running",
       endpoints: {
         primary: `wss://${host}/ocpp/{chargePointId}`,
