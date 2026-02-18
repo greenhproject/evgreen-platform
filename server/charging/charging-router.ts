@@ -894,8 +894,28 @@ export const chargingRouter = router({
       // ============================================================
       // SoC MANUAL: Si el cargador no reporta SoC, usar el valor manual del usuario
       // ============================================================
-      const manualSoc = activeSessionInfo?.manualSoc ?? null;
-      const manualBatteryCapacity = activeSessionInfo?.manualBatteryCapacityKwh ?? 60;
+      let manualSoc = activeSessionInfo?.manualSoc ?? null;
+      let manualBatteryCapacity = activeSessionInfo?.manualBatteryCapacityKwh ?? null;
+      
+      // Si no hay capacidad de batería en la sesión, intentar cargar del vehículo del usuario
+      if (manualBatteryCapacity === null) {
+        try {
+          const defaultVehicle = await db.getDefaultVehicle(ctx.user.id);
+          if (defaultVehicle?.batteryCapacityKwh) {
+            manualBatteryCapacity = parseFloat(defaultVehicle.batteryCapacityKwh);
+            // Guardar en la sesión activa para no volver a consultar la BD
+            if (activeSessionInfo) {
+              activeSessionInfo.manualBatteryCapacityKwh = manualBatteryCapacity;
+            }
+          }
+        } catch (e) {
+          // Ignorar errores al cargar vehículo
+        }
+      }
+      
+      // Fallback: 60 kWh si no hay datos del vehículo
+      if (manualBatteryCapacity === null) manualBatteryCapacity = 60;
+      
       const hasManualSoc = manualSoc !== null;
       
       // Calcular SoC estimado basado en manualSoc + kWh consumidos
@@ -976,7 +996,7 @@ export const chargingRouter = router({
         soc: displaySoc, // SoC del vehículo (real o estimado desde manual)
         socSource, // "charger" | "manual" | "none"
         manualSoc: manualSoc, // SoC original ingresado por el usuario
-        manualBatteryCapacityKwh: hasManualSoc ? manualBatteryCapacity : null,
+        manualBatteryCapacityKwh: manualBatteryCapacity,
         voltage: voltage,
         currentAmp: currentAmp,
         progress,
@@ -1017,17 +1037,47 @@ export const chargingRouter = router({
         });
       }
       
-      const session = getActiveSessionById(activeTransaction.id);
-      if (session) {
+      let session = getActiveSessionById(activeTransaction.id);
+      if (!session) {
+        // Si no hay sesión en memoria, crear una básica con el SoC manual
+        // Esto ocurre cuando el cargador inició la transacción por OCPP sin pasar por startCharge del frontend
+        console.log(`[setManualSoc] No active session in memory for transaction ${activeTransaction.id}, creating one now`);
+        const effectivePrice = await db.getEffectiveStationPrice(activeTransaction.stationId);
+        const pricePerKwh = effectivePrice?.pricePerKwh || 1800;
+        const startTime = new Date(activeTransaction.startTime);
+        const currentKwh = activeTransaction.kwhConsumed ? parseFloat(activeTransaction.kwhConsumed) : 0;
+        const currentCost = activeTransaction.totalCost ? parseFloat(activeTransaction.totalCost) : 0;
+        
+        setActiveSession(activeTransaction.id, {
+          transactionId: activeTransaction.id,
+          userId: ctx.user.id,
+          stationId: activeTransaction.stationId,
+          connectorId: activeTransaction.evseId,
+          chargeMode: "full_charge" as const,
+          targetValue: 100,
+          startTime,
+          currentKwh,
+          currentCost,
+          pricePerKwh,
+          soc: null,
+          currentPower: 0,
+          voltage: null,
+          current: null,
+          lastMeterUpdate: null,
+          powerHistory: [],
+          socTargetNotified: false,
+          manualSoc: input.soc,
+          manualBatteryCapacityKwh: input.batteryCapacityKwh || 60,
+        });
+        session = getActiveSessionById(activeTransaction.id);
+      } else {
         session.manualSoc = input.soc;
         if (input.batteryCapacityKwh) {
           session.manualBatteryCapacityKwh = input.batteryCapacityKwh;
         }
-        console.log(`[setManualSoc] User ${ctx.user.id} set manual SoC=${input.soc}%, batteryCapacity=${input.batteryCapacityKwh || 'default'}kWh for transaction ${activeTransaction.id}`);
-      } else {
-        // Si no hay sesión en memoria, crear una básica con el SoC manual
-        console.log(`[setManualSoc] No active session in memory for transaction ${activeTransaction.id}, storing in DB metadata`);
       }
+      
+      console.log(`[setManualSoc] User ${ctx.user.id} set manual SoC=${input.soc}%, batteryCapacity=${input.batteryCapacityKwh || 'default'}kWh for transaction ${activeTransaction.id}`);
       
       return { success: true, soc: input.soc };
     }),

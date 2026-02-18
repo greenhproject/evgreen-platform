@@ -988,6 +988,19 @@ async function handleOCPP16Message(
               const effectivePrice = stationId ? await db.getEffectiveStationPrice(stationId) : null;
               const sessionPricePerKwh = effectivePrice?.pricePerKwh || (tariffData ? parseFloat(tariffData.pricePerKwh) : 1800);
               
+              // Intentar precargar datos del vehículo del usuario para manualSoc
+              let autoManualSoc: number | null = null;
+              let autoBatteryCapacity: number | null = null;
+              try {
+                const defaultVehicle = await db.getDefaultVehicle(transaction.userId);
+                if (defaultVehicle?.batteryCapacityKwh) {
+                  autoBatteryCapacity = parseFloat(defaultVehicle.batteryCapacityKwh);
+                  console.log(`[OCPP] MeterValues - Auto-loaded vehicle battery capacity: ${autoBatteryCapacity} kWh from ${defaultVehicle.brand} ${defaultVehicle.model}`);
+                }
+              } catch (e) {
+                console.error(`[OCPP] MeterValues - Error loading vehicle data:`, e);
+              }
+              
               setActiveSession(transaction.id, {
                 transactionId: transaction.id,
                 userId: transaction.userId,
@@ -1006,8 +1019,8 @@ async function handleOCPP16Message(
                 lastMeterUpdate: null,
                 powerHistory: [],
                 socTargetNotified: false,
-                manualSoc: null,
-                manualBatteryCapacityKwh: null,
+                manualSoc: autoManualSoc,
+                manualBatteryCapacityKwh: autoBatteryCapacity,
               });
             }
           }
@@ -1074,6 +1087,19 @@ async function handleOCPP16Message(
             const effectivePrice = stationId ? await db.getEffectiveStationPrice(stationId) : null;
             const sessionPricePerKwh = effectivePrice?.pricePerKwh || (tariffData ? parseFloat(tariffData.pricePerKwh) : 1800);
             
+            // Intentar precargar datos del vehículo del usuario
+            let autoManualSoc2: number | null = null;
+            let autoBatteryCapacity2: number | null = null;
+            try {
+              const defaultVehicle2 = await db.getDefaultVehicle(transaction.userId);
+              if (defaultVehicle2?.batteryCapacityKwh) {
+                autoBatteryCapacity2 = parseFloat(defaultVehicle2.batteryCapacityKwh);
+                console.log(`[OCPP] MeterValues - Auto-loaded vehicle battery capacity (fallback): ${autoBatteryCapacity2} kWh`);
+              }
+            } catch (e) {
+              console.error(`[OCPP] MeterValues - Error loading vehicle data (fallback):`, e);
+            }
+            
             setActiveSession(transaction.id, {
               transactionId: transaction.id,
               userId: transaction.userId,
@@ -1097,8 +1123,8 @@ async function handleOCPP16Message(
                 soc: soc,
               }],
               socTargetNotified: false,
-              manualSoc: null,
-              manualBatteryCapacityKwh: null,
+              manualSoc: autoManualSoc2,
+              manualBatteryCapacityKwh: autoBatteryCapacity2,
             });
           }
           
