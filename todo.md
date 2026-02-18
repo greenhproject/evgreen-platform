@@ -983,3 +983,9 @@
 - [x] Auto-corrección de isOnline en BD cuando hay conector AVAILABLE
 - [x] Fix aplicado en Manus y GitHub (producción)
 - [x] 10 tests pasando, 0 errores TypeScript
+
+## Bugs: Flujo de carga real con EVG001 - 17 Febrero 2026
+- [ ] BUG 1: StartTransaction responde idTagInfo.status="Invalid" - el servidor rechaza el idTag del usuario
+- [ ] BUG 2: Tarifa muestra $0.00/kWh en pantalla de carga
+- [ ] BUG 3: Tipo de conector muestra "TYPE_2" en vez de "GBT AC" (hardcodeado o BD incorrecta)
+- [ ] BUG 4: App se queda en "Conectando" sin avanzar a "Cargando" aunque el cargador ya está en status Charging

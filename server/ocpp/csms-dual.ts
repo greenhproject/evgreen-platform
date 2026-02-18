@@ -391,6 +391,23 @@ export class DualCSMS {
     let response: any;
 
     try {
+      // AUTO-RESOLUCIÓN: Si conn.stationId es null (cargador reconectó sin BootNotification),
+      // buscar la estación por ocppIdentity en la BD y asignarla automáticamente.
+      // Esto es común en cargadores Wallbox que omiten BootNotification tras reconexión rápida.
+      if (!conn.stationId && action !== "BootNotification") {
+        const station = await db.getChargingStationByOcppIdentity(conn.ocppIdentity);
+        if (station) {
+          conn.stationId = station.id;
+          console.log(`[CSMS-DUAL] Auto-resolved stationId=${station.id} for ${conn.ocppIdentity} (no BootNotification received)`);
+          // También marcar como online
+          await db.updateChargingStation(station.id, {
+            isOnline: true,
+          });
+        } else {
+          console.warn(`[CSMS-DUAL] Cannot resolve stationId for ${conn.ocppIdentity}: station not found in DB`);
+        }
+      }
+
       await db.createOcppLog({
         ocppIdentity: conn.ocppIdentity,
         stationId: conn.stationId,

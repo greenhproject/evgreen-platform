@@ -614,20 +614,25 @@ export const chargingRouter = router({
             }
             
             const station = await db.getChargingStationById(session.stationId);
+            // Obtener tipo de conector real desde la BD
+            const evses = await db.getEvsesByStationId(session.stationId);
+            const evse = evses.find((e: any) => e.evseIdLocal === session.connectorId || e.connectorId === session.connectorId);
+            // Obtener tarifa real de la estación
+            const effectivePrice = await db.getEffectiveStationPrice(session.stationId);
             return {
               transactionId: 0,
               stationId: session.stationId,
               stationName: station?.name || "Estación",
               connectorId: session.connectorId,
-              connectorType: "TYPE_2",
+              connectorType: evse?.connectorType || "GBT_AC",
               startTime: session.createdAt.toISOString(),
               elapsedMinutes: 0,
               estimatedMinutes: 0,
               currentKwh: 0,
               estimatedKwh: 0,
               currentCost: 0,
-              pricePerKwh: 0,
-              powerKw: 0,
+              pricePerKwh: effectivePrice.pricePerKwh,
+              powerKw: evse?.powerKw ? parseFloat(String(evse.powerKw)) : 7,
               currentPower: 0,
               status: "CONNECTING",
               chargeMode: session.chargeMode,
