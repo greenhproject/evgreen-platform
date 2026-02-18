@@ -149,6 +149,7 @@ export const chargingStations = mysqlTable("charging_stations", {
   upmeRegistrationId: varchar("upmeRegistrationId", { length: 100 }),
   cargameId: varchar("cargameId", { length: 100 }),
   // Firmware y modelo
+  chargerBrandId: int("chargerBrandId"), // FK a charger_brands (perfil de marca/modelo)
   manufacturer: varchar("manufacturer", { length: 100 }),
   model: varchar("model", { length: 100 }),
   serialNumber: varchar("serialNumber", { length: 100 }),
@@ -1731,4 +1732,72 @@ export const idTagsRelations = relations(idTags, ({ one }) => ({
     fields: [idTags.lastUsedStationId],
     references: [chargingStations.id],
   }),
+}));
+
+
+// ============================================================================
+// CHARGER BRANDS / PROFILES TABLE
+// ============================================================================
+// Perfiles de configuración por marca/modelo de cargador.
+// Permite autoconfigurar estaciones al seleccionar la marca.
+
+export const chargerBrands = mysqlTable("charger_brands", {
+  id: int("id").autoincrement().primaryKey(),
+  // Identificación de la marca y modelo
+  brand: varchar("brand", { length: 100 }).notNull(), // Ej: "Wallbox"
+  model: varchar("model", { length: 100 }).notNull(), // Ej: "Pulsar Plus"
+  displayName: varchar("displayName", { length: 200 }).notNull(), // Ej: "Wallbox Pulsar Plus"
+  imageUrl: text("imageUrl"), // URL de imagen del cargador
+  // Protocolo OCPP
+  ocppVersion: varchar("ocppVersion", { length: 20 }).notNull().default("1.6"), // "1.6" o "2.0.1"
+  ocppPasswordRequired: boolean("ocppPasswordRequired").default(false).notNull(),
+  // Tipo de carga y potencia
+  chargeType: chargeTypeEnum.notNull(), // AC o DC
+  defaultPowerKw: decimal("defaultPowerKw", { precision: 8, scale: 2 }).notNull(),
+  maxPowerKw: decimal("maxPowerKw", { precision: 8, scale: 2 }),
+  // Corriente configurable
+  minChargingCurrentA: int("minChargingCurrentA"), // Ej: 6A para Wallbox
+  maxChargingCurrentA: int("maxChargingCurrentA"), // Ej: 32A para Wallbox
+  // Voltaje y fases
+  defaultVoltage: int("defaultVoltage"), // Ej: 230V
+  phases: int("phases").default(1), // 1 = monofásico, 3 = trifásico
+  // Conectores soportados (JSON array)
+  supportedConnectors: json("supportedConnectors"), // ["TYPE_2", "GBT_AC"]
+  // MeterValues - Measurands soportados por OCPP (JSON array)
+  supportedMeasurands: json("supportedMeasurands"), // ["Energy.Active.Import.Register", "Current.Import", ...]
+  // Unidad de energía que reporta el cargador
+  energyUnit: varchar("energyUnit", { length: 10 }).default("Wh").notNull(), // "Wh" o "kWh"
+  // Capacidades del cargador
+  supportsSoC: boolean("supportsSoC").default(false).notNull(), // ¿Puede leer SoC del vehículo?
+  supportsPowerMeasurement: boolean("supportsPowerMeasurement").default(false).notNull(), // ¿Envía Power.Active.Import?
+  supportsCurrentMeasurement: boolean("supportsCurrentMeasurement").default(false).notNull(), // ¿Envía Current.Import?
+  supportsVoltageMeasurement: boolean("supportsVoltageMeasurement").default(false).notNull(), // ¿Envía Voltage?
+  supportsRemoteStart: boolean("supportsRemoteStart").default(true).notNull(),
+  supportsRemoteStop: boolean("supportsRemoteStop").default(true).notNull(),
+  supportsReset: boolean("supportsReset").default(true).notNull(),
+  supportsReservation: boolean("supportsReservation").default(false).notNull(),
+  supportsSmartCharging: boolean("supportsSmartCharging").default(false).notNull(),
+  supportsFirmwareUpdate: boolean("supportsFirmwareUpdate").default(false).notNull(),
+  // Configuración OCPP recomendada (JSON)
+  ocppConfig: json("ocppConfig"), // { MeterValueSampleInterval: 30, ... }
+  // Intervalo de MeterValues en segundos
+  meterValueInterval: int("meterValueInterval").default(30),
+  // API Cloud del fabricante (opcional, para datos adicionales como potencia real)
+  cloudApiBaseUrl: varchar("cloudApiBaseUrl", { length: 500 }),
+  cloudApiAuthMethod: varchar("cloudApiAuthMethod", { length: 50 }), // "basic", "bearer", "oauth2"
+  cloudApiDocsUrl: varchar("cloudApiDocsUrl", { length: 500 }),
+  // Notas y particularidades
+  notes: text("notes"), // Notas técnicas sobre el cargador
+  // Estado
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ChargerBrand = typeof chargerBrands.$inferSelect;
+export type InsertChargerBrand = typeof chargerBrands.$inferInsert;
+
+// Relación: charging_stations puede tener un chargerBrandId
+export const chargerBrandsRelations = relations(chargerBrands, ({ many }) => ({
+  stations: many(chargingStations),
 }));

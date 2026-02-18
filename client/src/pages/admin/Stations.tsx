@@ -42,7 +42,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign, Clock } from "lucide-react";
+import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign, Clock, Cpu } from "lucide-react";
 import { toast } from "sonner";
 import { StationQRCode } from "@/components/StationQRCode";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -130,6 +130,9 @@ export default function AdminStations() {
   // Estado del formulario
   const [formData, setFormData] = useState<StationFormData>(initialFormData);
   
+  // Estado de marca/modelo de cargador
+  const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
+  
   // Estado de conectores
   const [connectors, setConnectors] = useState<ConnectorConfig[]>([]);
   const [newConnector, setNewConnector] = useState({
@@ -139,6 +142,9 @@ export default function AdminStations() {
   });
 
   const { data: stations, isLoading, refetch } = trpc.stations.listAll.useQuery();
+  
+  // Obtener perfiles de marca de cargador
+  const { data: chargerBrands } = trpc.chargerBrands.list.useQuery();
   
   // Obtener conexiones OCPP activas para mostrar estado real
   const { data: ocppConnections } = trpc.ocpp.getActiveConnections.useQuery(undefined, {
@@ -229,6 +235,43 @@ export default function AdminStations() {
   const resetForm = () => {
     setFormData(initialFormData);
     setConnectors([]);
+    setSelectedBrandId(null);
+  };
+  
+  // Autoconfigurar estación al seleccionar marca de cargador
+  const handleBrandSelect = (brandId: string) => {
+    if (brandId === "none") {
+      setSelectedBrandId(null);
+      return;
+    }
+    const id = parseInt(brandId);
+    setSelectedBrandId(id);
+    const brand = chargerBrands?.find((b: any) => b.id === id);
+    if (!brand) return;
+    
+    // Autoconfigurar conectores según la marca
+    const supportedConnectors = brand.supportedConnectors ? 
+      (typeof brand.supportedConnectors === 'string' ? JSON.parse(brand.supportedConnectors) : brand.supportedConnectors) : [];
+    const defaultPower = parseFloat(brand.defaultPowerKw || '7');
+    
+    if (supportedConnectors.length > 0) {
+      const autoConnectors: ConnectorConfig[] = supportedConnectors.map((connType: string, idx: number) => ({
+        id: `brand-${idx}-${Date.now()}`,
+        type: connType,
+        powerKw: defaultPower,
+        quantity: 1,
+      }));
+      setConnectors(autoConnectors);
+    }
+    
+    // Actualizar potencia del nuevo conector por defecto
+    setNewConnector(prev => ({
+      ...prev,
+      powerKw: defaultPower,
+      type: supportedConnectors[0] || prev.type,
+    }));
+    
+    toast.success(`Configuración de ${brand.displayName} aplicada: ${brand.chargeType} ${defaultPower} kW`);
   };
 
   // Cargar datos de estación para editar
@@ -332,6 +375,7 @@ export default function AdminStations() {
         longitude: formData.longitude,
         ocppIdentity: formData.ocppIdentity || `GEV-${Date.now()}`,
         operatingHours: formData.operatingHours as any,
+        chargerBrandId: selectedBrandId || undefined,
       });
       
       if (stationResult.id) {
@@ -475,6 +519,82 @@ export default function AdminStations() {
   // Renderizar formulario inline para evitar pérdida de foco
   const renderStationForm = (isEdit: boolean) => (
     <div className="space-y-6">
+      {/* Perfil de Cargador */}
+      {!isEdit && chargerBrands && chargerBrands.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+            <Cpu className="w-4 h-4" />
+            Marca / Modelo del Cargador
+          </h3>
+          <Select
+            value={selectedBrandId?.toString() || "none"}
+            onValueChange={handleBrandSelect}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Selecciona marca y modelo (opcional)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sin perfil específico (Genérico)</SelectItem>
+              {chargerBrands.map((brand: any) => (
+                <SelectItem key={brand.id} value={brand.id.toString()}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{brand.displayName}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {brand.chargeType} · {brand.defaultPowerKw} kW · OCPP {brand.ocppVersion}
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedBrandId && (() => {
+            const brand = chargerBrands.find((b: any) => b.id === selectedBrandId);
+            if (!brand) return null;
+            const measurands = brand.supportedMeasurands ? 
+              (typeof brand.supportedMeasurands === 'string' ? JSON.parse(brand.supportedMeasurands) : brand.supportedMeasurands) : [];
+            return (
+              <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-sm">{brand.displayName}</p>
+                    <p className="text-xs text-muted-foreground">{brand.brand} · {brand.model}</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    OCPP {brand.ocppVersion}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="p-2 bg-background rounded">
+                    <p className="text-muted-foreground">Potencia</p>
+                    <p className="font-medium">{brand.defaultPowerKw} kW {brand.chargeType}</p>
+                  </div>
+                  <div className="p-2 bg-background rounded">
+                    <p className="text-muted-foreground">Fases</p>
+                    <p className="font-medium">{brand.phases || 1} fase(s)</p>
+                  </div>
+                  <div className="p-2 bg-background rounded">
+                    <p className="text-muted-foreground">SoC</p>
+                    <p className="font-medium">{brand.supportsSoC ? '✅ Soportado' : '❌ No soportado'}</p>
+                  </div>
+                  <div className="p-2 bg-background rounded">
+                    <p className="text-muted-foreground">Medición Potencia</p>
+                    <p className="font-medium">{brand.supportsPowerMeasurement ? '✅ Sí' : '❌ Solo energía'}</p>
+                  </div>
+                </div>
+                {measurands.length > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    <span className="font-medium">Measurands:</span> {measurands.join(', ')}
+                  </div>
+                )}
+                {brand.notes && (
+                  <p className="text-xs text-yellow-600 dark:text-yellow-400">⚠️ {brand.notes}</p>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Información básica */}
       <div className="space-y-4">
         <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">

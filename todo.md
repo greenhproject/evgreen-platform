@@ -1261,3 +1261,30 @@
 - [x] Crear sesión activa automáticamente si no existe cuando llegan MeterValues
 - [x] Logging detallado para diagnosticar problemas de MeterValues
 - [x] 17 tests pasando
+
+
+## Sistema de Perfiles de Marca de Cargador - 18 Feb 2026
+
+### Investigación
+- [x] Investigar repositorio Wallbox (SKB-CGN/wallbox) - API, configuración OCPP, particularidades
+- [x] Documentar measurands soportados, intervalos de MeterValues, configuración OCPP
+- [x] Investigar Wallbox Pulsar Max (modelo real del usuario)
+
+### Backend
+- [x] Crear tabla charger_brands con perfiles de configuración OCPP por marca (30+ campos)
+- [x] Seed de datos para Wallbox Pulsar Max, Pulsar Plus, Genérico OCPP 1.6 y 2.0.1
+- [x] Endpoint para listar marcas de cargadores disponibles (chargerBrands.list)
+- [x] Endpoint para obtener perfil de configuración por marca (chargerBrands.getById)
+- [x] Endpoints CRUD admin para crear/actualizar perfiles (chargerBrands.create/update)
+- [x] Al crear estación, permitir seleccionar marca y autoconfigurar manufacturer/model
+- [x] Endpoint para obtener perfil de marca de una estación (stations.getChargerBrand)
+
+### Frontend
+- [x] Selector de marca de cargador al crear estación (admin/Stations.tsx)
+- [x] Autocompletar conectores, potencia y tipo al seleccionar marca
+- [x] Mostrar información de la marca (specs, measurands, notas, SoC/Power support)
+- [x] chargerBrandId se pasa al backend al crear estación
+
+### Tests
+- [x] Tests unitarios para perfiles de marca (17 tests pasando)
+- [x] 868 tests totales pasando (52 archivos)
