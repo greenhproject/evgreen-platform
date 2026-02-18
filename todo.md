@@ -1296,3 +1296,12 @@
 - [x] Propagar stationId al connection-manager en pre-resolución y auto-resolución (_core/index.ts)
 - [x] Agregar 3 niveles de fallback en stopCharge: dualCSMS por ocppIdentity, sesión activa, legacy getConnection
 - [x] 868 tests pasando
+
+
+## SoC Manual del Usuario (cargadores AC sin SoC) - 18 Feb 2026
+- [x] Endpoint backend setManualSoc para recibir y almacenar SoC manual del usuario en sesión activa
+- [x] UI en ChargingMonitor: input manual de SoC con campos de % batería y capacidad kWh
+- [x] Integrar SoC manual en cálculos de estimación de tiempo, gauge y cobros (socSource: charger/manual/none)
+- [x] Actualizar startPercentage con el valor manual ingresado por el usuario
+- [x] Badge editable para cambiar SoC manual después de ingresarlo
+- [x] 868 tests pasando (52 archivos)

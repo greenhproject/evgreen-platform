@@ -30,8 +30,12 @@ import {
   CheckCircle2,
   Loader2,
   Gauge,
-  Plug
+  Plug,
+  Edit3,
+  Check,
+  BatteryCharging
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
 import { PowerChart } from "@/components/PowerChart";
@@ -132,6 +136,23 @@ export default function ChargingMonitor() {
   const [showStopDialog, setShowStopDialog] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [socTargetNotified, setSocTargetNotified] = useState(false);
+  
+  // Estado para SoC manual
+  const [showSocInput, setShowSocInput] = useState(false);
+  const [manualSocInput, setManualSocInput] = useState("");
+  const [manualCapacityInput, setManualCapacityInput] = useState("60");
+  
+  // Mutation para enviar SoC manual
+  const setManualSocMutation = trpc.charging.setManualSoc.useMutation({
+    onSuccess: () => {
+      toast.success("SoC actualizado correctamente");
+      setShowSocInput(false);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(`Error: ${error.message}`);
+    },
+  });
   
   // Obtener sesión activa - polling cada 3 segundos para datos más frescos
   const { data: session, isLoading, refetch } = trpc.charging.getActiveSession.useQuery(
@@ -259,8 +280,11 @@ export default function ChargingMonitor() {
   const chargeMode = session.chargeMode as string;
   const isSimulation = (session as any).isSimulation;
   const simulationProgress = (session as any).progress;
-  const realSoc = (session as any).soc; // SoC real del vehículo desde el cargador
+  const realSoc = (session as any).soc; // SoC del vehículo (real o estimado desde manual)
   const hasRealData = (session as any).hasRealMeterData;
+  const socSource = (session as any).socSource as string | undefined; // "charger" | "manual" | "none"
+  const serverManualSoc = (session as any).manualSoc as number | null;
+  const serverBatteryCapacity = (session as any).manualBatteryCapacityKwh as number | null;
   
   let progressPercentage = 0;
   
@@ -357,29 +381,145 @@ export default function ChargingMonitor() {
         </div>
       </div>
       
-      {/* Indicador de fuente de datos */}
-      {realSoc !== null && realSoc !== undefined ? (
+      {/* Indicador de fuente de datos + Input SoC manual */}
+      {socSource === "charger" ? (
         <div className="flex justify-center mt-1">
           <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300">
             <Battery className="w-3 h-3 mr-1" />
             SoC real del vehículo
           </Badge>
         </div>
-      ) : hasRealData ? (
-        <div className="flex justify-center mt-1">
+      ) : socSource === "manual" ? (
+        <div className="flex justify-center mt-1 gap-2">
           <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">
-            <Zap className="w-3 h-3 mr-1" />
-            Datos del cargador (SoC estimado)
+            <BatteryCharging className="w-3 h-3 mr-1" />
+            SoC manual: {serverManualSoc}% • Batería: {serverBatteryCapacity} kWh
           </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 px-1 text-xs text-blue-600"
+            onClick={() => {
+              setManualSocInput(String(serverManualSoc || ""));
+              setManualCapacityInput(String(serverBatteryCapacity || 60));
+              setShowSocInput(true);
+            }}
+          >
+            <Edit3 className="w-3 h-3" />
+          </Button>
         </div>
-      ) : !isSimulation ? (
+      ) : (
         <div className="flex justify-center mt-1">
-          <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
-            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-            Esperando datos del cargador...
-          </Badge>
+          {hasRealData ? (
+            <Badge 
+              variant="outline" 
+              className="text-xs text-amber-600 border-amber-300 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-900/20"
+              onClick={() => setShowSocInput(true)}
+            >
+              <Edit3 className="w-3 h-3 mr-1" />
+              Ingresar % batería manualmente
+            </Badge>
+          ) : !isSimulation ? (
+            <Badge 
+              variant="outline" 
+              className="text-xs text-amber-600 border-amber-300 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-900/20"
+              onClick={() => setShowSocInput(true)}
+            >
+              <Edit3 className="w-3 h-3 mr-1" />
+              Ingresar % batería manualmente
+            </Badge>
+          ) : null}
         </div>
-      ) : null}
+      )}
+      
+      {/* Formulario de SoC manual */}
+      {showSocInput && (
+        <div className="px-4 mt-3">
+          <Card className="border-blue-500/30 bg-blue-500/5">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <BatteryCharging className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-semibold text-foreground">Ingresa el estado de tu batería</span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                Tu cargador no reporta el SoC. Ingresa el porcentaje actual de tu vehículo para cálculos más precisos.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">% Batería actual</label>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      placeholder="78"
+                      value={manualSocInput}
+                      onChange={(e) => setManualSocInput(e.target.value)}
+                      className="h-10 text-lg font-bold text-center"
+                    />
+                    <span className="text-sm font-medium text-muted-foreground">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Capacidad batería</label>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      min="10"
+                      max="200"
+                      placeholder="60"
+                      value={manualCapacityInput}
+                      onChange={(e) => setManualCapacityInput(e.target.value)}
+                      className="h-10 text-lg font-bold text-center"
+                    />
+                    <span className="text-sm font-medium text-muted-foreground">kWh</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setShowSocInput(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                  disabled={!manualSocInput || setManualSocMutation.isPending}
+                  onClick={() => {
+                    const socVal = parseInt(manualSocInput);
+                    const capVal = parseFloat(manualCapacityInput) || 60;
+                    if (isNaN(socVal) || socVal < 0 || socVal > 100) {
+                      toast.error("Ingresa un porcentaje válido (0-100)");
+                      return;
+                    }
+                    if (capVal < 10 || capVal > 200) {
+                      toast.error("Capacidad debe ser entre 10 y 200 kWh");
+                      return;
+                    }
+                    setManualSocMutation.mutate({
+                      soc: socVal,
+                      batteryCapacityKwh: capVal,
+                    });
+                  }}
+                >
+                  {setManualSocMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 mr-1" />
+                      Confirmar
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       
       {/* Métricas en tiempo real */}
       <div className="px-4 mt-6">

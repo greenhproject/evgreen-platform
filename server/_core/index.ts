@@ -1006,6 +1006,8 @@ async function handleOCPP16Message(
                 lastMeterUpdate: null,
                 powerHistory: [],
                 socTargetNotified: false,
+                manualSoc: null,
+                manualBatteryCapacityKwh: null,
               });
             }
           }
@@ -1095,6 +1097,8 @@ async function handleOCPP16Message(
                 soc: soc,
               }],
               socTargetNotified: false,
+              manualSoc: null,
+              manualBatteryCapacityKwh: null,
             });
           }
           
