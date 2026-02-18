@@ -1230,9 +1230,13 @@ export const chargingRouter = router({
       if (ocppIdentityForCommand) {
         const messageId = uuidv4();
         // OCPP 1.6 requiere transactionId numérico
-        const ocppTxId = transaction.ocppTransactionId 
-          ? parseInt(transaction.ocppTransactionId) 
-          : transactionId;
+        // Prioridad: 1) ocppNumericTxId (guardado al crear tx), 2) transactionId de la BD
+        const ocppTxId = (transaction as any).ocppNumericTxId 
+          || transactionId;
+        
+        if (!(transaction as any).ocppNumericTxId) {
+          console.warn(`[stopCharge] ⚠️ ocppNumericTxId is NULL in DB for txId=${transactionId}. Using DB id=${transactionId} as fallback. This may not match the cargador's transactionId.`);
+        }
         
         console.log(`[stopCharge] Sending RemoteStopTransaction to "${ocppIdentityForCommand}", ocppTxId=${ocppTxId}, messageId=${messageId}`);
         

@@ -242,6 +242,8 @@ export const transactions = mysqlTable("transactions", {
   tariffId: int("tariffId"), // FK a tariffs
   // Identificador OCPP de la transacción
   ocppTransactionId: varchar("ocppTransactionId", { length: 100 }),
+  // ID numérico OCPP 1.6 (el que se devuelve al cargador en StartTransaction.conf)
+  ocppNumericTxId: int("ocppNumericTxId"),
   // Tiempos
   startTime: timestamp("startTime").notNull(),
   endTime: timestamp("endTime"),

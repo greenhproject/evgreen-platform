@@ -1343,3 +1343,11 @@
 - [x] Verificar cómo se registran las conexiones WebSocket OCPP en el connection-manager
 - [x] Asegurar que el handler real (_core/index.ts) registre conexiones en connection-manager
 - [x] BUG: Texto "Recarga automática" - usuario confirmó que ya se muestra correctamente
+
+
+## Bug CRÍTICO: RemoteStopTransaction envía transactionId=null - 18 Feb 2026
+- [x] BUG: RemoteStopTransaction se envía con transactionId=null, cargador lo ignora
+- [x] Diagnosticar por qué ocppTransactionId es null en la BD (era nanoid, no numérico)
+- [x] Guardar el transactionId OCPP numérico (ocppNumericTxId) en la BD al procesar StartTransaction
+- [x] Corregir stopCharge para usar ocppNumericTxId en RemoteStopTransaction
+- [x] Agregar fallback: usar transactionId de la BD si ocppNumericTxId es null
