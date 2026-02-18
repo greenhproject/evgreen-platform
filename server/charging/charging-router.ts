@@ -582,6 +582,53 @@ export const chargingRouter = router({
       const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
       
       if (!activeTransaction) {
+        // Verificar si hay una sesión pendiente (esperando que el cargador confirme StartTransaction)
+        const entries = Array.from(pendingChargeSessions.entries());
+        for (let i = 0; i < entries.length; i++) {
+          const [sessionId, session] = entries[i];
+          if (session.userId === ctx.user.id) {
+            // Verificar que no haya expirado (máximo 2 minutos)
+            const elapsed = Date.now() - session.createdAt.getTime();
+            if (elapsed > 120000) {
+              pendingChargeSessions.delete(sessionId);
+              continue;
+            }
+            
+            const station = await db.getChargingStationById(session.stationId);
+            // Obtener tipo de conector real desde la BD
+            const evses = await db.getEvsesByStationId(session.stationId);
+            const evse = evses.find((e: any) => e.evseIdLocal === session.connectorId || e.connectorId === session.connectorId);
+            // Obtener tarifa real de la estación
+            const tariffs = await db.getTariffsByStationId(session.stationId);
+            const tariff = tariffs[0];
+            const pendingPricePerKwh = tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : 800;
+            return {
+              transactionId: 0,
+              stationId: session.stationId,
+              stationName: station?.name || "Estación",
+              connectorId: session.connectorId,
+              connectorType: evse?.connectorType || "GBT_AC",
+              startTime: session.createdAt.toISOString(),
+              elapsedMinutes: 0,
+              estimatedMinutes: 0,
+              currentKwh: 0,
+              estimatedKwh: 0,
+              currentCost: 0,
+              pricePerKwh: pendingPricePerKwh,
+              powerKw: evse?.powerKw ? parseFloat(String(evse.powerKw)) : 7,
+              currentPower: 0,
+              status: "CONNECTING",
+              chargeMode: session.chargeMode,
+              targetPercentage: session.chargeMode === "percentage" ? session.targetValue : 100,
+              targetAmount: session.chargeMode === "fixed_amount" ? session.targetValue : 0,
+              startPercentage: 20,
+              progress: 0,
+              isSimulation: false,
+              simulationStatus: "connecting",
+            };
+          }
+        }
+        
         // Verificar si hay una transacción recién completada (para redirigir al resumen)
         const lastCompleted = await db.getLastCompletedTransactionByUserId(ctx.user.id);
         if (lastCompleted) {
@@ -592,6 +639,7 @@ export const chargingRouter = router({
             // Transacción recién completada, devolver con estado COMPLETED
             const station = await db.getChargingStationById(lastCompleted.stationId);
             const evse = await db.getEvseById(lastCompleted.evseId);
+            const tariffs_completed = await db.getTariffsByStationId(lastCompleted.stationId);
             
             return {
               transactionId: lastCompleted.id,
@@ -605,7 +653,7 @@ export const chargingRouter = router({
               currentKwh: lastCompleted.kwhConsumed ? parseFloat(lastCompleted.kwhConsumed) : 0,
               estimatedKwh: lastCompleted.kwhConsumed ? parseFloat(lastCompleted.kwhConsumed) : 0,
               currentCost: lastCompleted.totalCost ? parseFloat(lastCompleted.totalCost) : 0,
-              pricePerKwh: 800,
+              pricePerKwh: (() => { const t = tariffs_completed?.[0]; return t?.pricePerKwh ? parseFloat(t.pricePerKwh) : 800; })(),
               powerKw: 7,
               currentPower: 0,
               status: "COMPLETED",
@@ -614,7 +662,7 @@ export const chargingRouter = router({
               targetAmount: 0,
               startPercentage: 20,
               progress: 100,
-              isSimulation: true,
+              isSimulation: false,
               simulationStatus: "completed",
             };
           }

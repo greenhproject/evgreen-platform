@@ -351,6 +351,20 @@ export class DualCSMS {
     let response: any;
 
     try {
+      // Auto-resolve stationId if not set (e.g., charger reconnected without BootNotification)
+      if (!conn.stationId && action !== "BootNotification") {
+        const station = await db.getChargingStationByOcppIdentity(conn.ocppIdentity);
+        if (station) {
+          conn.stationId = station.id;
+          console.log(`[CSMS-DUAL] Auto-resolved stationId=${station.id} for ${conn.ocppIdentity} (no BootNotification received)`);
+          await db.updateChargingStation(station.id, {
+            isOnline: true,
+          });
+        } else {
+          console.warn(`[CSMS-DUAL] Cannot resolve stationId for ${conn.ocppIdentity}: station not found in DB`);
+        }
+      }
+
       await db.createOcppLog({
         ocppIdentity: conn.ocppIdentity,
         stationId: conn.stationId,
