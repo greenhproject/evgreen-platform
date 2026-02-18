@@ -60,6 +60,9 @@ import {
   stationReviews,
   InsertStationReview,
   StationReview,
+  idTags,
+  IdTag,
+  InsertIdTag,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -147,6 +150,18 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     await db.insert(users).values(values).onDuplicateKeyUpdate({
       set: updateSet,
     });
+
+    // Sincronizar idTag con tabla id_tags
+    if (values.idTag) {
+      try {
+        const upsertedUser = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1);
+        if (upsertedUser.length > 0 && upsertedUser[0].idTag) {
+          await syncUserIdTag(upsertedUser[0].id, upsertedUser[0].idTag);
+        }
+      } catch (syncErr) {
+        console.warn("[Database] Failed to sync idTag to id_tags table:", syncErr);
+      }
+    }
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -227,6 +242,12 @@ export async function regenerateUserIdTag(userId: number): Promise<string | null
   if (!db) return null;
   const newIdTag = await generateUniqueIdTag();
   await db.update(users).set({ idTag: newIdTag }).where(eq(users.id, userId));
+  // Sincronizar con tabla id_tags
+  try {
+    await syncUserIdTag(userId, newIdTag);
+  } catch (e) {
+    console.warn("[Database] Failed to sync regenerated idTag:", e);
+  }
   return newIdTag;
 }
 
@@ -243,8 +264,16 @@ export async function createUser(userData: InsertUser): Promise<number> {
     idTag,
   });
   
-  // MySQL retorna insertId
-  return Number(result[0].insertId);
+  const newUserId = Number(result[0].insertId);
+  
+  // Sincronizar con tabla id_tags
+  try {
+    await syncUserIdTag(newUserId, idTag);
+  } catch (e) {
+    console.warn("[Database] Failed to sync new user idTag:", e);
+  }
+  
+  return newUserId;
 }
 
 export async function updateUserRole(userId: number, role: User["role"]) {
@@ -4373,4 +4402,225 @@ export async function deleteStationReview(id: number) {
   const database = await getDb();
   if (!database) return;
   await database.delete(stationReviews).where(eq(stationReviews.id, id));
+}
+
+// ============================================================================
+// ID TAGS / RFID OPERATIONS
+// ============================================================================
+
+/**
+ * Buscar un idTag en la tabla id_tags.
+ * Retorna el registro completo incluyendo userId, tipo, estado, etc.
+ */
+export async function getIdTag(idTag: string): Promise<IdTag | undefined> {
+  const database = await getDb();
+  if (!database) return undefined;
+  const result = await database.select().from(idTags).where(eq(idTags.idTag, idTag)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Buscar usuario por idTag usando la tabla id_tags (soporta APP, RFID, NFC).
+ * Solo retorna si el tag está ACTIVE.
+ */
+export async function getUserByIdTagFromTable(idTag: string): Promise<User | undefined> {
+  const database = await getDb();
+  if (!database) return undefined;
+  
+  const tag = await database.select().from(idTags)
+    .where(and(eq(idTags.idTag, idTag), eq(idTags.status, "ACTIVE")))
+    .limit(1);
+  
+  if (tag.length === 0 || !tag[0].userId) return undefined;
+  
+  const user = await database.select().from(users).where(eq(users.id, tag[0].userId)).limit(1);
+  return user.length > 0 ? user[0] : undefined;
+}
+
+/**
+ * Resolver usuario por idTag con múltiples estrategias:
+ * 1. Buscar en tabla id_tags (nueva, soporta RFID/NFC)
+ * 2. Buscar en tabla users por idTag legacy
+ * 3. Extraer userId del formato USER-{id}
+ * 4. Extraer userId del formato EV-XXXXXX buscando en id_tags
+ */
+export async function resolveUserByIdTag(idTag: string): Promise<{ user: User | undefined; source: string }> {
+  // 1. Buscar en tabla id_tags (prioridad máxima)
+  const userFromTable = await getUserByIdTagFromTable(idTag);
+  if (userFromTable) {
+    return { user: userFromTable, source: "id_tags_table" };
+  }
+  
+  // 2. Buscar en tabla users por idTag legacy
+  const userLegacy = await getUserByIdTag(idTag);
+  if (userLegacy) {
+    return { user: userLegacy, source: "users_legacy" };
+  }
+  
+  // 3. Formato USER-{id}
+  const userIdMatch = idTag.match(/^USER-(\d+)$/);
+  if (userIdMatch) {
+    const user = await getUserById(parseInt(userIdMatch[1], 10));
+    return { user: user || undefined, source: "user_id_format" };
+  }
+  
+  return { user: undefined, source: "not_found" };
+}
+
+/**
+ * Crear un nuevo idTag (para RFID, NFC o APP)
+ */
+export async function createIdTag(data: {
+  idTag: string;
+  userId?: number;
+  type: "APP" | "RFID" | "NFC" | "REMOTE";
+  status?: "ACTIVE" | "BLOCKED" | "EXPIRED" | "LOST";
+  label?: string;
+  serialNumber?: string;
+  expiresAt?: Date;
+  parentIdTag?: string;
+  maxActiveTransactions?: number;
+}): Promise<number> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  
+  const result = await database.insert(idTags).values({
+    idTag: data.idTag,
+    userId: data.userId,
+    type: data.type,
+    status: data.status || "ACTIVE",
+    label: data.label,
+    serialNumber: data.serialNumber,
+    expiresAt: data.expiresAt,
+    parentIdTag: data.parentIdTag,
+    maxActiveTransactions: data.maxActiveTransactions || 1,
+  });
+  
+  return result[0].insertId;
+}
+
+/**
+ * Actualizar un idTag existente
+ */
+export async function updateIdTag(id: number, data: Partial<InsertIdTag>): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  await database.update(idTags).set(data).where(eq(idTags.id, id));
+}
+
+/**
+ * Registrar uso de un idTag (actualizar lastUsedAt y lastUsedStationId)
+ */
+export async function recordIdTagUsage(idTag: string, stationId: number): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  await database.update(idTags)
+    .set({ lastUsedAt: new Date(), lastUsedStationId: stationId })
+    .where(eq(idTags.idTag, idTag));
+}
+
+/**
+ * Obtener todos los idTags de un usuario
+ */
+export async function getIdTagsByUserId(userId: number): Promise<IdTag[]> {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(idTags).where(eq(idTags.userId, userId));
+}
+
+/**
+ * Obtener todos los idTags (admin)
+ */
+export async function getAllIdTags(filters?: { type?: string; status?: string }): Promise<IdTag[]> {
+  const database = await getDb();
+  if (!database) return [];
+  
+  const conditions = [];
+  if (filters?.type) conditions.push(eq(idTags.type, filters.type as any));
+  if (filters?.status) conditions.push(eq(idTags.status, filters.status as any));
+  
+  if (conditions.length > 0) {
+    return database.select().from(idTags).where(and(...conditions));
+  }
+  return database.select().from(idTags);
+}
+
+/**
+ * Bloquear un idTag
+ */
+export async function blockIdTag(idTag: string): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  await database.update(idTags).set({ status: "BLOCKED" }).where(eq(idTags.idTag, idTag));
+}
+
+/**
+ * Verificar si un idTag es válido para iniciar una transacción:
+ * - Existe en la tabla
+ * - Está ACTIVE
+ * - No ha expirado
+ * - Tiene un usuario asignado
+ */
+export async function validateIdTag(idTag: string): Promise<{
+  valid: boolean;
+  reason: string;
+  userId?: number;
+  tagType?: string;
+}> {
+  const tag = await getIdTag(idTag);
+  
+  if (!tag) {
+    return { valid: false, reason: "TAG_NOT_FOUND" };
+  }
+  
+  if (tag.status === "BLOCKED") {
+    return { valid: false, reason: "TAG_BLOCKED" };
+  }
+  
+  if (tag.status === "EXPIRED") {
+    return { valid: false, reason: "TAG_EXPIRED" };
+  }
+  
+  if (tag.status === "LOST") {
+    return { valid: false, reason: "TAG_LOST" };
+  }
+  
+  if (tag.expiresAt && new Date(tag.expiresAt) < new Date()) {
+    // Marcar como expirado
+    await updateIdTag(tag.id, { status: "EXPIRED" });
+    return { valid: false, reason: "TAG_EXPIRED" };
+  }
+  
+  if (!tag.userId) {
+    return { valid: false, reason: "TAG_NOT_ASSIGNED" };
+  }
+  
+  return {
+    valid: true,
+    reason: "OK",
+    userId: tag.userId,
+    tagType: tag.type,
+  };
+}
+
+/**
+ * Sincronizar idTags: cuando se crea un nuevo idTag en users, también crear en id_tags
+ */
+export async function syncUserIdTag(userId: number, idTag: string): Promise<void> {
+  const existing = await getIdTag(idTag);
+  if (existing) {
+    // Actualizar userId si cambió
+    if (existing.userId !== userId) {
+      await updateIdTag(existing.id, { userId });
+    }
+    return;
+  }
+  
+  // Crear nuevo registro en id_tags
+  await createIdTag({
+    idTag,
+    userId,
+    type: "APP",
+    label: "Tag de la app",
+  });
 }

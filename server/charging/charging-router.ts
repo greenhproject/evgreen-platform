@@ -1064,18 +1064,19 @@ export function findPendingSessionByStation(stationId: number, connectorId: numb
 /**
  * Buscar sesión pendiente por ocppIdentity y connectorId
  */
-export function findPendingSessionByOcppIdentity(ocppIdentity: string, connectorId: number): { sessionId: string; session: ReturnType<typeof getPendingSession> } | null {
+export function findPendingSessionByOcppIdentity(ocppIdentity: string, connectorId?: number): { sessionId: string; session: ReturnType<typeof getPendingSession> } | null {
   const entries = Array.from(pendingChargeSessions.entries());
-  console.log(`[findPendingSession] Searching for ocppIdentity="${ocppIdentity}", connectorId=${connectorId}. Total pending sessions: ${entries.length}`);
+  console.log(`[findPendingSession] Searching for ocppIdentity="${ocppIdentity}", connectorId=${connectorId ?? 'ANY'}. Total pending sessions: ${entries.length}`);
   for (let i = 0; i < entries.length; i++) {
     const [sessionId, session] = entries[i];
     console.log(`[findPendingSession] Checking session ${sessionId}: ocppIdentity="${session.ocppIdentity}", connectorId=${session.connectorId}, userId=${session.userId}`);
-    if (session.ocppIdentity === ocppIdentity && session.connectorId === connectorId) {
+    // Si connectorId es undefined, buscar cualquier sesión para esta estación
+    if (session.ocppIdentity === ocppIdentity && (connectorId === undefined || session.connectorId === connectorId)) {
       console.log(`[findPendingSession] MATCH FOUND! sessionId=${sessionId}, userId=${session.userId}`);
       return { sessionId, session };
     }
   }
-  console.log(`[findPendingSession] NO MATCH found for ocppIdentity="${ocppIdentity}", connectorId=${connectorId}`);
+  console.log(`[findPendingSession] NO MATCH found for ocppIdentity="${ocppIdentity}", connectorId=${connectorId ?? 'ANY'}`);
   return null;
 }
 // Fix startCharge RemoteStartTransaction - deployed Mon Feb 17 2026

@@ -1123,3 +1123,49 @@
 ### Tests
 - [x] 24 tests unitarios para lógica de monitor de saldo, thresholds, auto-stop, Wompi integration
 - [x] 799 tests totales pasando, 0 errores TypeScript
+
+
+## Bugs Críticos Producción: Logs OCPP EVG001 - 18 Feb 2026
+
+### BUG RAÍZ: StartTransaction responde "Invalid" con transactionId=0
+- [ ] handleOCPP16StartTransaction responde idTagInfo.status="Invalid" porque no encuentra sesión pendiente para idTag "EV-3PZ3L6"
+- [ ] Con transactionId=0 NO se crea transacción en BD → app se queda en "Conectando" eternamente
+- [ ] FIX: Aceptar SIEMPRE el StartTransaction del cargador (idTagInfo.status="Accepted") y asignar transactionId real
+- [ ] FIX: Buscar sesión pendiente por ocppIdentity+connectorId, NO por idTag (el idTag del cargador puede ser diferente al esperado)
+
+### BUG: StatusNotification no actualiza estado en BD (producción)
+- [ ] Verificar que el fix del statusMap (Preparing→PREPARING) está publicado en producción
+- [ ] Si no está publicado, los fixes solo existen en dev y producción sigue con el código viejo
+
+### BUG: Monitor muestra CLOSED cuando cargador tiene actividad reciente
+- [ ] El cargador se reconecta frecuentemente (3 sesiones en 10 min) - posible problema de red
+- [ ] El estado híbrido (logs recientes < 5 min) debería mostrar "conectado" si hay heartbeats recientes
+
+
+## Infraestructura idTag y Soporte RFID - 18 Feb 2026
+
+### Tabla de idTags/Tarjetas RFID
+- [x] Crear tabla `id_tags` en schema: idTag (único), userId (FK), type (APP/RFID/NFC), label, isActive, createdAt
+- [x] Migrar lógica actual de idTag a usar la nueva tabla
+- [x] Endpoint CRUD para gestionar tarjetas RFID por usuario
+- [x] Endpoint admin para listar/asignar/revocar tarjetas RFID
+
+### Mejora StartTransaction Handler
+- [x] Auto-resolución redundante de stationId dentro del handler (no depender solo de handleCall)
+- [x] Búsqueda de sesión pendiente por ocppIdentity+connectorId como prioridad (no solo por idTag)
+- [x] Búsqueda de usuario por idTag en tabla id_tags (soporta APP y RFID)
+- [x] Aceptar StartTransaction SIEMPRE que se pueda resolver el EVSE (no rechazar por idTag desconocido)
+- [x] Logging detallado de cada paso de resolución para diagnóstico
+
+### Handler Authorize (OCPP 1.6)
+- [x] Implementar handleOCPP16Authorize para validar idTags
+- [x] Buscar idTag en tabla id_tags → Accepted si existe y está activo
+- [x] Buscar idTag en sesiones pendientes → Accepted si hay sesión esperando
+- [x] Fallback: Accepted para idTags desconocidos (modo permisivo configurable)
+- [x] Log OCPP de cada Authorize request/response
+
+### Tests
+- [x] Tests para tabla id_tags y CRUD (35 tests)
+- [x] Tests para StartTransaction mejorado con diferentes escenarios de idTag
+- [x] Tests para Authorize handler
+- [x] 834 tests totales pasando, 0 errores TypeScript

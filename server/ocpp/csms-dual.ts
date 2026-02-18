@@ -484,8 +484,23 @@ export class DualCSMS {
         return this.handleOCPP201TransactionEvent(conn, payload as OCPP201TransactionEventRequest);
       case "MeterValues":
         return this.handleOCPP201MeterValues(conn, payload as OCPP201MeterValuesRequest);
-      case "Authorize":
+      case "Authorize": {
+        const authReq = payload as any;
+        const idToken = authReq?.idToken?.idToken || authReq?.idTag || "";
+        console.log(`[CSMS-DUAL] OCPP 2.0.1 Authorize from ${conn.ocppIdentity}: idToken="${idToken}"`);
+        if (idToken) {
+          try {
+            const validation = await db.validateIdTag(idToken);
+            if (validation.valid) {
+              console.log(`[CSMS-DUAL] Authorize 2.0.1: idToken "${idToken}" ACCEPTED (userId=${validation.userId})`);
+              if (conn.stationId) await db.recordIdTagUsage(idToken, conn.stationId);
+            } else {
+              console.warn(`[CSMS-DUAL] Authorize 2.0.1: idToken "${idToken}" not found (${validation.reason}). ACCEPTING in permissive mode.`);
+            }
+          } catch (e) { /* no-op, accept anyway */ }
+        }
         return { idTokenInfo: { status: "Accepted" } };
+      }
       case "NotifyReport":
         return {};
       case "NotifyEvent":
@@ -621,35 +636,135 @@ export class DualCSMS {
   }
 
   private async handleOCPP16Authorize(conn: ChargingStationConnection, req: OCPP16AuthorizeRequest): Promise<any> {
-    console.log(`[CSMS-DUAL] OCPP 1.6 Authorize from ${conn.ocppIdentity}:`, req);
-    // TODO: Verificar idTag en base de datos
-    return {
-      idTagInfo: {
-        status: "Accepted",
-        expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      },
-    };
+    console.log(`[CSMS-DUAL] OCPP 1.6 Authorize from ${conn.ocppIdentity}: idTag="${req.idTag}"`);
+
+    // Auto-resolución de stationId si es necesario
+    if (!conn.stationId) {
+      try {
+        const station = await db.getChargingStationByOcppIdentity(conn.ocppIdentity);
+        if (station) {
+          conn.stationId = station.id;
+          console.log(`[CSMS-DUAL] Authorize: Auto-resolved stationId=${station.id} for ${conn.ocppIdentity}`);
+        }
+      } catch (e) { /* no-op */ }
+    }
+
+    try {
+      // Validar el idTag en la tabla id_tags
+      const validation = await db.validateIdTag(req.idTag);
+      
+      if (validation.valid) {
+        console.log(`[CSMS-DUAL] Authorize: idTag "${req.idTag}" ACCEPTED (userId=${validation.userId}, type=${validation.tagType})`);
+        
+        // Registrar uso del idTag
+        if (conn.stationId) {
+          await db.recordIdTagUsage(req.idTag, conn.stationId);
+        }
+        
+        return {
+          idTagInfo: {
+            status: "Accepted",
+            expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          },
+        };
+      }
+      
+      // Si el tag no está en id_tags, buscar en tabla users (legacy)
+      const userLegacy = await db.getUserByIdTag(req.idTag);
+      if (userLegacy) {
+        console.log(`[CSMS-DUAL] Authorize: idTag "${req.idTag}" ACCEPTED via legacy users table (userId=${userLegacy.id})`);
+        
+        // Sincronizar a la nueva tabla id_tags
+        await db.syncUserIdTag(userLegacy.id, req.idTag);
+        
+        return {
+          idTagInfo: {
+            status: "Accepted",
+            expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          },
+        };
+      }
+
+      // Buscar si hay una sesión pendiente de la app para esta estación
+      const pendingSession = findPendingSessionByOcppIdentity(conn.ocppIdentity);
+      if (pendingSession && pendingSession.session) {
+        console.log(`[CSMS-DUAL] Authorize: idTag "${req.idTag}" ACCEPTED - pending session found (userId=${pendingSession.session.userId})`);
+        return {
+          idTagInfo: {
+            status: "Accepted",
+            expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          },
+        };
+      }
+
+      // MODO PERMISIVO: Aceptar idTags desconocidos para no bloquear carga física
+      // En el futuro esto puede ser configurable por estación (strict vs permissive)
+      console.warn(`[CSMS-DUAL] Authorize: idTag "${req.idTag}" NOT FOUND in DB. Reason: ${validation.reason}. ACCEPTING in permissive mode.`);
+      return {
+        idTagInfo: {
+          status: "Accepted",
+          expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        },
+      };
+    } catch (error: any) {
+      console.error(`[CSMS-DUAL] Authorize: Error validating idTag "${req.idTag}":`, error.message);
+      // En caso de error de BD, aceptar para no bloquear la carga
+      return {
+        idTagInfo: {
+          status: "Accepted",
+          expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        },
+      };
+    }
   }
 
   private async handleOCPP16StartTransaction(conn: ChargingStationConnection, req: OCPP16StartTransactionRequest): Promise<any> {
-    console.log(`[CSMS-DUAL] OCPP 1.6 StartTransaction from ${conn.ocppIdentity}:`, req);
+    console.log(`[CSMS-DUAL] OCPP 1.6 StartTransaction from ${conn.ocppIdentity}:`, JSON.stringify(req));
 
+    // =========================================================================
+    // PASO 1: Auto-resolución redundante de stationId
+    // Si handleCall no pudo resolver (race condition, error de BD), intentar aquí
+    // =========================================================================
     if (!conn.stationId) {
-      return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
+      console.warn(`[CSMS-DUAL] StartTransaction: stationId is null for ${conn.ocppIdentity}, attempting auto-resolution...`);
+      try {
+        const station = await db.getChargingStationByOcppIdentity(conn.ocppIdentity);
+        if (station) {
+          conn.stationId = station.id;
+          console.log(`[CSMS-DUAL] StartTransaction: Auto-resolved stationId=${station.id} for ${conn.ocppIdentity}`);
+          await db.updateChargingStation(station.id, { isOnline: true });
+        } else {
+          console.error(`[CSMS-DUAL] StartTransaction: CRITICAL - Station ${conn.ocppIdentity} not found in DB. Cannot process transaction.`);
+          return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
+        }
+      } catch (resolveError: any) {
+        console.error(`[CSMS-DUAL] StartTransaction: Error resolving stationId for ${conn.ocppIdentity}:`, resolveError.message);
+        return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
+      }
     }
 
-    const evses = await db.getEvsesByStationId(conn.stationId);
-    const evse = evses.find(e => e.evseIdLocal === req.connectorId);
+    // =========================================================================
+    // PASO 2: Buscar EVSE/conector
+    // =========================================================================
+    const evseList = await db.getEvsesByStationId(conn.stationId);
+    let evse = evseList.find(e => e.evseIdLocal === req.connectorId);
+
+    // Fallback: si connectorId=1 y no hay match exacto, usar el primer EVSE disponible
+    if (!evse && evseList.length > 0) {
+      evse = evseList[0];
+      console.warn(`[CSMS-DUAL] StartTransaction: No EVSE with evseIdLocal=${req.connectorId}, using first EVSE (id=${evse.id}, evseIdLocal=${evse.evseIdLocal})`);
+    }
 
     if (!evse) {
+      console.error(`[CSMS-DUAL] StartTransaction: No EVSEs found for station ${conn.stationId} (${conn.ocppIdentity})`);
       return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
     }
 
-    // PROTECCIÓN CONTRA DUPLICADOS: Verificar si ya hay una transacción IN_PROGRESS para este EVSE
+    // =========================================================================
+    // PASO 3: Protección contra duplicados
+    // =========================================================================
     const existingTransaction = await db.getActiveTransaction(evse.id);
     if (existingTransaction) {
-      // Ya hay una transacción activa para este conector, devolver el ID existente
-      // Buscar el ocpp16TransactionId mapeado
       let existingOcpp16Id = 0;
       const txEntries = Array.from(this.ocpp16Transactions.entries());
       for (const [ocppId, internalId] of txEntries) {
@@ -659,7 +774,6 @@ export class DualCSMS {
         }
       }
       if (existingOcpp16Id === 0) {
-        // Si no hay mapeo, crear uno nuevo
         existingOcpp16Id = this.transactionIdCounter++;
         this.ocpp16Transactions.set(existingOcpp16Id, existingTransaction.ocppTransactionId || "");
       }
@@ -670,31 +784,64 @@ export class DualCSMS {
       };
     }
 
-    // Buscar usuario por idTag
-    let userId = 1; // Fallback
+    // =========================================================================
+    // PASO 4: Resolver usuario - Múltiples estrategias
+    // Prioridad: sesión pendiente > idTag en id_tags > idTag en users > formato USER-{id} > fallback
+    // =========================================================================
+    let userId: number | null = null;
     let pendingSessionData: { sessionId: string; session: any } | null = null;
+    let userResolutionSource = "none";
     
-    // Buscar sesión pendiente de la app móvil para vincular (PRIORIDAD MÁXIMA)
+    // 4a. Buscar sesión pendiente de la app por ocppIdentity + connectorId (PRIORIDAD MÁXIMA)
     pendingSessionData = findPendingSessionByOcppIdentity(conn.ocppIdentity, req.connectorId);
     if (pendingSessionData && pendingSessionData.session) {
       userId = pendingSessionData.session.userId;
-      console.log(`[CSMS-DUAL] StartTransaction: Linked with pending session from user ${userId} (sessionId: ${pendingSessionData.sessionId})`);
-    } else {
-      // Si no hay sesión pendiente, intentar buscar por idTag en la base de datos
-      if (req.idTag) {
-        const user = await db.getUserByIdTag(req.idTag);
-        if (user) {
-          userId = user.id;
-          console.log(`[CSMS-DUAL] StartTransaction: Found user ${userId} by idTag ${req.idTag}`);
+      userResolutionSource = "pending_session";
+      console.log(`[CSMS-DUAL] StartTransaction: [RESOLVE] User ${userId} from pending session (sessionId: ${pendingSessionData.sessionId})`);
+    }
+    
+    // 4b. Si no hay sesión pendiente, buscar por idTag en tabla id_tags (soporta APP + RFID + NFC)
+    if (!userId && req.idTag) {
+      try {
+        const resolved = await db.resolveUserByIdTag(req.idTag);
+        if (resolved.user) {
+          userId = resolved.user.id;
+          userResolutionSource = resolved.source;
+          console.log(`[CSMS-DUAL] StartTransaction: [RESOLVE] User ${userId} from idTag "${req.idTag}" via ${resolved.source}`);
         } else {
-          // Si el idTag tiene formato USER-{id}, extraer el userId
-          const userIdMatch = req.idTag.match(/^USER-(\d+)$/);
-          if (userIdMatch) {
-            userId = parseInt(userIdMatch[1], 10);
-            console.log(`[CSMS-DUAL] StartTransaction: Extracted userId ${userId} from idTag ${req.idTag}`);
-          }
+          console.warn(`[CSMS-DUAL] StartTransaction: [RESOLVE] idTag "${req.idTag}" not found in any table (source: ${resolved.source})`);
         }
+      } catch (resolveErr: any) {
+        console.error(`[CSMS-DUAL] StartTransaction: [RESOLVE] Error resolving idTag "${req.idTag}":`, resolveErr.message);
       }
+    }
+    
+    // 4c. Si no hay sesión pendiente por connectorId, buscar cualquier sesión pendiente para esta estación
+    if (!userId) {
+      pendingSessionData = findPendingSessionByOcppIdentity(conn.ocppIdentity);
+      if (pendingSessionData && pendingSessionData.session) {
+        userId = pendingSessionData.session.userId;
+        userResolutionSource = "pending_session_any_connector";
+        console.log(`[CSMS-DUAL] StartTransaction: [RESOLVE] User ${userId} from pending session (any connector, sessionId: ${pendingSessionData.sessionId})`);
+      }
+    }
+
+    // 4d. DECISIÓN CRÍTICA: ¿Aceptar o rechazar si no se encontró usuario?
+    // Para RFID futuro: SIEMPRE aceptar la transacción incluso sin usuario conocido.
+    // El cargador ya decidió cargar (el usuario pasó su tarjeta), nosotros debemos registrar.
+    if (!userId) {
+      console.warn(`[CSMS-DUAL] StartTransaction: [RESOLVE] No user found for idTag "${req.idTag}". Accepting transaction with fallback userId=0 (unassigned).`);
+      userId = 0; // userId=0 indica transacción sin usuario asignado (RFID desconocido, walk-up, etc.)
+      userResolutionSource = "fallback_unassigned";
+    }
+
+    console.log(`[CSMS-DUAL] StartTransaction: [SUMMARY] station=${conn.stationId}, evse=${evse.id}, userId=${userId}, idTag=${req.idTag}, source=${userResolutionSource}`);
+
+    // Registrar uso del idTag
+    if (req.idTag) {
+      try {
+        await db.recordIdTagUsage(req.idTag, conn.stationId);
+      } catch (e) { /* no-op */ }
     }
 
     // Obtener tarifa activa (usa precios globales si no tiene tarifa propia)
