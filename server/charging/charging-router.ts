@@ -9,28 +9,32 @@ import * as db from "../db";
 import * as dynamicPricing from "../pricing/dynamic-pricing";
 import { 
   getConnection, 
-  getConnectionByStationId, 
-  sendOcppCommand,
+  getConnectionByStationId as legacyGetConnectionByStationId, 
+  sendOcppCommand as legacySendOcppCommand,
   getAllConnections 
 } from "../ocpp/connection-manager";
+import { dualCSMS } from "../ocpp/csms-dual";
 import { v4 as uuidv4 } from "uuid";
 import * as simulator from "./charging-simulator";
 
-// Helper: buscar conexión OCPP por stationId o por ocppIdentity como fallback
-function findOcppConnection(stationId: number, ocppIdentity?: string | null) {
-  // Primero intentar por stationId
-  const connByStationId = getConnectionByStationId(stationId);
-  if (connByStationId && connByStationId.ws.readyState === 1) {
-    return connByStationId;
+// Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
+function getConnectionByStationId(stationId: number) {
+  const dualConn = dualCSMS.getConnectionByStationId(stationId);
+  if (dualConn) {
+    return {
+      ocppIdentity: dualConn.ocppIdentity,
+      ws: dualConn.ws,
+      connectorStatuses: new Map<number, string>(), // dualCSMS no trackea esto directamente
+    };
   }
-  // Fallback: buscar por ocppIdentity directamente
-  if (ocppIdentity) {
-    const connByIdentity = getConnection(ocppIdentity);
-    if (connByIdentity && connByIdentity.ws.readyState === 1) {
-      return connByIdentity;
-    }
-  }
-  return undefined;
+  return legacyGetConnectionByStationId(stationId);
+}
+
+// Helper: enviar comando OCPP por dualCSMS primero, luego fallback a legacy
+function sendOcppCommand(ocppIdentity: string, messageId: string, action: string, payload: any): boolean {
+  const sent = dualCSMS.sendCommandIfConnected(ocppIdentity, messageId, action, payload);
+  if (sent) return true;
+  return legacySendOcppCommand(ocppIdentity, messageId, action, payload);
 }
 
 // Tipos de carga disponibles
@@ -92,23 +96,23 @@ export const chargingRouter = router({
       const connectors = await db.getEvsesByStationId(station.id);
       
       // Verificar si la estación está conectada al servidor OCPP
-      // Buscar por stationId primero, luego por ocppIdentity como fallback
-      const ocppConnection = findOcppConnection(station.id, station.ocppIdentity);
+      const ocppConnection = getConnectionByStationId(station.id);
       const isOcppConnected = !!ocppConnection && ocppConnection.ws.readyState === 1;
       
       // La estación está online si:
       // 1. Tiene conexión OCPP activa (WebSocket abierto), O
       // 2. Está marcada como online en la BD (puede estar en grace period de reconexión), O
       // 3. La estación está activa Y tiene al menos un conector disponible en la BD
-      const hasAvailableConnector = connectors.some((c: any) => c.status === 'AVAILABLE');
+      const hasAvailableConnector = connectors.some(c => c.status === 'AVAILABLE');
       const isOnline = isOcppConnected || station.isOnline || (station.isActive && hasAvailableConnector);
       
-      // Obtener estados de conectores: usar BD directamente si no hay datos OCPP
+      // Obtener estados de conectores: usar BD directamente (dualCSMS actualiza la BD en StatusNotification)
+      // No depender del mapa en memoria que puede estar vacío
       return {
         station,
         connectors: connectors.map(c => ({
           ...c,
-          ocppStatus: (ocppConnection?.connectorStatuses?.get(c.connectorId)) || c.status,
+          ocppStatus: c.status, // Usar estado de BD que es actualizado por OCPP StatusNotification
         })),
         isOnline,
         ocppIdentity: ocppConnection?.ocppIdentity || station.ocppIdentity,
@@ -126,15 +130,14 @@ export const chargingRouter = router({
       const { stationId } = input;
       
       const connectors = await db.getEvsesByStationId(stationId);
-      // Buscar conexión OCPP por stationId o por ocppIdentity
-      const stationData = await db.getChargingStationById(stationId);
-      const ocppConnection = findOcppConnection(stationId, stationData?.ocppIdentity);
+      const ocppConnection = getConnectionByStationId(stationId);
       
       // Combinar estado de BD con estado OCPP en tiempo real
+      // dualCSMS actualiza la BD directamente en StatusNotification, así que c.status ya es el estado real
       return connectors.map(c => {
         let realTimeStatus = c.status;
         if (ocppConnection && ocppConnection.connectorStatuses.size > 0) {
-          // Usar evseIdLocal para buscar el estado OCPP (el cargador reporta por connectorId que es evseIdLocal)
+          // Solo usar mapa en memoria si tiene datos (legacy connection-manager)
           const ocppStatus = ocppConnection.connectorStatuses.get(c.evseIdLocal);
           if (ocppStatus) {
             realTimeStatus = ocppStatus as typeof c.status;
@@ -189,9 +192,14 @@ export const chargingRouter = router({
       // Obtener primer EVSE para calcular precio dinámico
       const evsesForPrice = await db.getEvsesByStationId(stationId);
       const firstEvse = evsesForPrice[0];
-      const dynamicPrice = firstEvse 
-        ? await dynamicPricing.calculateDynamicPrice(stationId, firstEvse.id)
-        : { finalPrice: 800, factors: { finalMultiplier: 1 } } as dynamicPricing.DynamicPrice;
+      let dynamicPrice: dynamicPricing.DynamicPrice;
+      if (firstEvse) {
+        dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, firstEvse.id);
+      } else {
+        // Sin EVSE, usar precio efectivo de la estación (global si no tiene tarifa propia)
+        const effectivePrice = await db.getEffectiveStationPrice(stationId);
+        dynamicPrice = { finalPrice: effectivePrice.pricePerKwh, factors: { finalMultiplier: 1 } } as dynamicPricing.DynamicPrice;
+      }
       const pricePerKwh = dynamicPrice.finalPrice;
       
       // Calcular estimación según modo de carga
@@ -287,7 +295,9 @@ export const chargingRouter = router({
       } else {
         // Usar precio fijo configurado por el inversionista
         // Pero aplicar diferenciación AC/DC si está habilitada
-        const basePrice = parseFloat(tariff?.pricePerKwh?.toString() || "800");
+        // Usar precio efectivo (tarifa de estación o global)
+        const effectivePriceData = await db.getEffectiveStationPrice(stationId);
+        const basePrice = effectivePriceData.pricePerKwh;
         if (evseId) {
           const priceByType = await db.getPriceByConnectorType(evseId, basePrice);
           pricePerKwh = priceByType.price;
@@ -335,24 +345,32 @@ export const chargingRouter = router({
         const connectors = await db.getEvsesByStationId(stationId);
         
         // Buscar conexión OCPP: primero por stationId, luego por ocppIdentity
-        const effectiveConnection = findOcppConnection(stationId, stationData?.ocppIdentity);
-        const hasOcppConnection = !!effectiveConnection;
-        const ocppIdentityForCommand = effectiveConnection?.ocppIdentity || stationData?.ocppIdentity || '';
+        const hasOcppConnection = !!ocppConnection && ocppConnection.ws.readyState === 1;
+        let ocppIdentityForCommand = ocppConnection?.ocppIdentity || stationData?.ocppIdentity || '';
+        
+        // Si no hay conexión por stationId, intentar por ocppIdentity directamente
+        let isConnectedByIdentity = false;
+        if (!hasOcppConnection && ocppIdentityForCommand) {
+          isConnectedByIdentity = dualCSMS.isStationConnected(ocppIdentityForCommand);
+          if (isConnectedByIdentity) {
+            console.log(`[startCharge] No connection by stationId but found by ocppIdentity: ${ocppIdentityForCommand}`);
+          }
+        }
         
         // Verificar disponibilidad usando la MISMA lógica que getStationByCode:
-        // 1. Conexión OCPP activa en memoria (por stationId o por ocppIdentity)
-        // 2. isOnline=true en BD (grace period de reconexión)
-        // 3. Estación activa con al menos un conector AVAILABLE en BD
-        //    (el servidor OCPP actualiza la BD directamente en StatusNotification,
-        //     así que connector_status='AVAILABLE' significa que el cargador
-        //     reportó ese estado recientemente)
+        // isAvailable = hasOcppConnection || isConnectedByIdentity || stationOnlineInDb || (stationIsActive && hasAvailableConnector)
+        // Esto asegura que si la estación aparece como disponible en la app,
+        // también permita iniciar la carga.
         const stationOnlineInDb = !!stationData?.isOnline;
-        const hasAvailableConnector = connectors.some((c: any) => c.status === 'AVAILABLE' || c.status === 'PREPARING');
         const stationIsActive = !!stationData?.isActive;
+        const hasAvailableConnector = connectors.some((c: any) => {
+          const s = (c.status || '').toUpperCase();
+          return s === 'AVAILABLE' || s === 'PREPARING';
+        });
         
-        const isAvailable = hasOcppConnection || stationOnlineInDb || (stationIsActive && hasAvailableConnector);
+        const isAvailable = hasOcppConnection || isConnectedByIdentity || stationOnlineInDb || (stationIsActive && hasAvailableConnector);
         
-        console.log(`[startCharge] Station ${stationId} availability check: hasOcppConnection=${hasOcppConnection}, stationOnlineInDb=${stationOnlineInDb}, stationIsActive=${stationIsActive}, hasAvailableConnector=${hasAvailableConnector}, isAvailable=${isAvailable}`);
+        console.log(`[startCharge] Station ${stationId} availability: hasOcppConnection=${hasOcppConnection}, isConnectedByIdentity=${isConnectedByIdentity}, stationOnlineInDb=${stationOnlineInDb}, stationIsActive=${stationIsActive}, hasAvailableConnector=${hasAvailableConnector}, isAvailable=${isAvailable}`);
         
         if (!isAvailable) {
           throw new TRPCError({
@@ -363,7 +381,7 @@ export const chargingRouter = router({
         
         // Verificar que el conector específico está disponible
         if (hasOcppConnection) {
-          const connectorStatus = effectiveConnection!.connectorStatuses.get(connectorId);
+          const connectorStatus = ocppConnection!.connectorStatuses.get(connectorId);
           if (connectorStatus && connectorStatus !== "Available" && connectorStatus !== "AVAILABLE" && connectorStatus !== "Preparing" && connectorStatus !== "PREPARING") {
             throw new TRPCError({
               code: "BAD_REQUEST",
@@ -428,7 +446,7 @@ export const chargingRouter = router({
           // Si la estación fue considerada disponible por tener conector AVAILABLE en BD
           // (pero sin conexión OCPP activa), el cargador puede estar conectado pero
           // el servidor aún no tiene la conexión WebSocket restablecida.
-          if (hasOcppConnection) {
+          if (hasOcppConnection || isConnectedByIdentity) {
             // Había conexión pero el envío falló - error temporal
             pendingChargeSessions.delete(sessionId);
             throw new TRPCError({
@@ -438,12 +456,11 @@ export const chargingRouter = router({
           }
           
           // No hay conexión OCPP pero la estación tiene conector AVAILABLE en BD.
-          // Mantenemos la sesión pendiente - el usuario puede iniciar la carga
-          // directamente en el cargador.
+          // Mantenemos la sesión pendiente - informamos al usuario.
           console.log(`[startCharge] Command not sent via WebSocket but station has AVAILABLE connector. Session ${sessionId} created as pending.`);
         }
         
-        // Corregir isOnline en BD si la estación tiene conector disponible
+        // Auto-corregir isOnline en BD si la estación tiene conector disponible pero isOnline=0
         if (!stationOnlineInDb && hasAvailableConnector && stationData) {
           console.log(`[startCharge] Correcting isOnline for station ${stationId}: setting to true (has AVAILABLE connector)`);
           await db.updateChargingStation(stationId, { isOnline: true });
@@ -581,6 +598,8 @@ export const chargingRouter = router({
       // Buscar transacción activa del usuario
       const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
       
+      console.log(`[getActiveSession] userId=${ctx.user.id}, activeTransaction=${activeTransaction ? `id=${activeTransaction.id}, status=${activeTransaction.status}` : 'null'}, pendingSessions=${pendingChargeSessions.size}, activeSessions=${activeChargeSessions.size}`);
+      
       if (!activeTransaction) {
         // Verificar si hay una sesión pendiente (esperando que el cargador confirme StartTransaction)
         const entries = Array.from(pendingChargeSessions.entries());
@@ -599,9 +618,7 @@ export const chargingRouter = router({
             const evses = await db.getEvsesByStationId(session.stationId);
             const evse = evses.find((e: any) => e.evseIdLocal === session.connectorId || e.connectorId === session.connectorId);
             // Obtener tarifa real de la estación
-            const tariffs = await db.getTariffsByStationId(session.stationId);
-            const tariff = tariffs[0];
-            const pendingPricePerKwh = tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : 800;
+            const effectivePrice = await db.getEffectiveStationPrice(session.stationId);
             return {
               transactionId: 0,
               stationId: session.stationId,
@@ -614,7 +631,7 @@ export const chargingRouter = router({
               currentKwh: 0,
               estimatedKwh: 0,
               currentCost: 0,
-              pricePerKwh: pendingPricePerKwh,
+              pricePerKwh: effectivePrice.pricePerKwh,
               powerKw: evse?.powerKw ? parseFloat(String(evse.powerKw)) : 7,
               currentPower: 0,
               status: "CONNECTING",
@@ -639,7 +656,6 @@ export const chargingRouter = router({
             // Transacción recién completada, devolver con estado COMPLETED
             const station = await db.getChargingStationById(lastCompleted.stationId);
             const evse = await db.getEvseById(lastCompleted.evseId);
-            const tariffs_completed = await db.getTariffsByStationId(lastCompleted.stationId);
             
             return {
               transactionId: lastCompleted.id,
@@ -653,7 +669,7 @@ export const chargingRouter = router({
               currentKwh: lastCompleted.kwhConsumed ? parseFloat(lastCompleted.kwhConsumed) : 0,
               estimatedKwh: lastCompleted.kwhConsumed ? parseFloat(lastCompleted.kwhConsumed) : 0,
               currentCost: lastCompleted.totalCost ? parseFloat(lastCompleted.totalCost) : 0,
-              pricePerKwh: (() => { const t = tariffs_completed?.[0]; return t?.pricePerKwh ? parseFloat(t.pricePerKwh) : 800; })(),
+              pricePerKwh: (await db.getEffectiveStationPrice(lastCompleted.stationId)).pricePerKwh,
               powerKw: 7,
               currentPower: 0,
               status: "COMPLETED",
@@ -677,17 +693,38 @@ export const chargingRouter = router({
       const startTime = new Date(activeTransaction.startTime);
       const elapsedMinutes = Math.floor((Date.now() - startTime.getTime()) / 60000);
       
-      // Obtener último valor de medición
-      const lastMeterValue = await db.getLastMeterValue(activeTransaction.id);
-      const currentKwh = lastMeterValue?.energyKwh 
-        ? parseFloat(lastMeterValue.energyKwh) - (activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0)
-        : 0;
+      // Obtener info de sesión activa en memoria (actualizada en tiempo real por MeterValues)
+      const activeSessionInfo = getActiveSessionById(activeTransaction.id);
       
-      // Obtener tarifa de la estación para calcular costo
-      const tariffs = await db.getTariffsByStationId(activeTransaction.stationId);
-      const tariff = tariffs[0];
-      const pricePerKwh = tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : 800;
-      const currentCost = currentKwh * pricePerKwh;
+      // Priorizar datos en memoria (actualizados por MeterValues en tiempo real)
+      // Si no hay sesión en memoria, usar datos de la BD como fallback
+      let currentKwh: number;
+      let currentCost: number;
+      let pricePerKwh: number;
+      
+      if (activeSessionInfo && activeSessionInfo.currentKwh > 0) {
+        // Datos actualizados en tiempo real desde MeterValues
+        currentKwh = activeSessionInfo.currentKwh;
+        currentCost = activeSessionInfo.currentCost;
+        pricePerKwh = activeSessionInfo.pricePerKwh;
+      } else {
+        // Fallback: leer de la BD
+        const lastMeterValue = await db.getLastMeterValue(activeTransaction.id);
+        currentKwh = lastMeterValue?.energyKwh 
+          ? parseFloat(lastMeterValue.energyKwh) - (activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0)
+          : 0;
+        
+        const tariffs = await db.getTariffsByStationId(activeTransaction.stationId);
+        const tariff = tariffs[0];
+        if (tariff?.pricePerKwh) {
+          pricePerKwh = parseFloat(tariff.pricePerKwh);
+        } else {
+          // Sin tarifa de estación, usar precio global
+          const effectivePriceData = await db.getEffectiveStationPrice(activeTransaction.stationId);
+          pricePerKwh = effectivePriceData.pricePerKwh;
+        }
+        currentCost = currentKwh * pricePerKwh;
+      }
       
       // Obtener el evse para el connectorId
       const evse = await db.getEvseById(activeTransaction.evseId);
@@ -696,16 +733,41 @@ export const chargingRouter = router({
       const connectorType = evse?.connectorType || "TYPE_2";
       const powerKw = evse?.powerKw ? parseFloat(evse.powerKw) : 22;
       
-      // Calcular potencia actual basada en el tiempo y energía
-      const currentPower = elapsedMinutes > 0 ? (currentKwh / (elapsedMinutes / 60)) : powerKw;
+      // Obtener potencia actual desde el último MeterValue de potencia
+      const lastPowerMeter = await db.getLastMeterValue(activeTransaction.id);
+      let currentPower = 0;
+      if (lastPowerMeter?.powerKw) {
+        currentPower = parseFloat(lastPowerMeter.powerKw);
+      } else if (elapsedMinutes > 0 && currentKwh > 0) {
+        // Estimar potencia basada en energía y tiempo
+        currentPower = currentKwh / (elapsedMinutes / 60);
+      } else {
+        currentPower = powerKw; // Usar potencia nominal del conector
+      }
       
       // Estimar tiempo restante basado en la potencia actual
-      // Usar kwhConsumed si está disponible, sino estimar
       const estimatedTotalKwh = activeTransaction.kwhConsumed 
         ? parseFloat(activeTransaction.kwhConsumed)
         : Math.max(currentKwh * 2, 30); // Estimación simple de al menos 30 kWh
       const remainingKwh = Math.max(0, estimatedTotalKwh - currentKwh);
       const estimatedMinutes = currentPower > 0 ? Math.ceil((remainingKwh / currentPower) * 60) : 30;
+      
+      // Obtener SoC si está disponible
+      const chargeMode = activeSessionInfo?.chargeMode || "full_charge" as const;
+      const targetValue = activeSessionInfo?.targetValue || 0;
+      
+      // Calcular progreso basado en el modo de carga
+      let progress = 0;
+      if (chargeMode === "fixed_amount" && targetValue > 0) {
+        progress = Math.min(100, Math.round((currentCost / targetValue) * 100));
+      } else if (chargeMode === "percentage" && targetValue > 0) {
+        const batteryCapacity = 60; // kWh estimado
+        const targetKwh = ((targetValue - 20) / 100) * batteryCapacity;
+        progress = targetKwh > 0 ? Math.min(100, Math.round((currentKwh / targetKwh) * 100)) : 0;
+      } else {
+        // full_charge: estimar basado en kWh estimados
+        progress = estimatedTotalKwh > 0 ? Math.min(100, Math.round((currentKwh / estimatedTotalKwh) * 100)) : 0;
+      }
       
       return {
         transactionId: activeTransaction.id,
@@ -723,10 +785,12 @@ export const chargingRouter = router({
         powerKw,
         currentPower: Math.round(currentPower * 10) / 10,
         status: activeTransaction.status,
-        chargeMode: "full_charge" as const, // TODO: Obtener del registro de sesión
-        targetPercentage: 100,
-        targetAmount: currentCost * 2,
+        chargeMode,
+        targetPercentage: chargeMode === "percentage" ? targetValue : 100,
+        targetAmount: chargeMode === "fixed_amount" ? targetValue : currentCost * 2,
         startPercentage: 20,
+        progress,
+        isSimulation: false,
       };
     }),
 
@@ -872,3 +936,36 @@ export function getActiveSessionById(transactionId: number) {
 export function removeActiveSession(transactionId: number) {
   activeChargeSessions.delete(transactionId);
 }
+
+/**
+ * Buscar sesión pendiente por stationId y connectorId (para vincular con StartTransaction OCPP)
+ */
+export function findPendingSessionByStation(stationId: number, connectorId: number): { sessionId: string; session: ReturnType<typeof getPendingSession> } | null {
+  const entries = Array.from(pendingChargeSessions.entries());
+  for (let i = 0; i < entries.length; i++) {
+    const [sessionId, session] = entries[i];
+    if (session.stationId === stationId && session.connectorId === connectorId) {
+      return { sessionId, session };
+    }
+  }
+  return null;
+}
+
+/**
+ * Buscar sesión pendiente por ocppIdentity y connectorId
+ */
+export function findPendingSessionByOcppIdentity(ocppIdentity: string, connectorId: number): { sessionId: string; session: ReturnType<typeof getPendingSession> } | null {
+  const entries = Array.from(pendingChargeSessions.entries());
+  console.log(`[findPendingSession] Searching for ocppIdentity="${ocppIdentity}", connectorId=${connectorId}. Total pending sessions: ${entries.length}`);
+  for (let i = 0; i < entries.length; i++) {
+    const [sessionId, session] = entries[i];
+    console.log(`[findPendingSession] Checking session ${sessionId}: ocppIdentity="${session.ocppIdentity}", connectorId=${session.connectorId}, userId=${session.userId}`);
+    if (session.ocppIdentity === ocppIdentity && session.connectorId === connectorId) {
+      console.log(`[findPendingSession] MATCH FOUND! sessionId=${sessionId}, userId=${session.userId}`);
+      return { sessionId, session };
+    }
+  }
+  console.log(`[findPendingSession] NO MATCH found for ocppIdentity="${ocppIdentity}", connectorId=${connectorId}`);
+  return null;
+}
+// Fix startCharge availability - deployed Tue Feb 17 19:37:22 EST 2026
