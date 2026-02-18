@@ -1249,3 +1249,15 @@
 - [x] Gráfico de línea de potencia en tiempo real en ChargingMonitor (Chart.js)
 - [x] Notificación push cuando SoC alcance el porcentaje objetivo del usuario (backend + frontend toast)
 - [x] Tests unitarios para historial de potencia y notificación SoC (17 tests pasando)
+
+
+## Fix MeterValues no se procesan - 18 Feb 2026
+
+- [x] Diagnosticar por qué MeterValues con transactionId=10 no actualiza la sesión (fallback por stationId + ocppIdentity)
+- [x] Verificar mapeo de transactionId OCPP numérico a ID interno en ambos handlers (3 niveles de fallback)
+- [x] Corregir cálculo de energía consumida (meterStart vs valor actual en Wh)
+- [x] Estimar potencia a partir de diferencia de energía entre MeterValues consecutivos (delta kWh / delta tiempo)
+- [x] Asegurar que el frontend muestre datos aunque el cargador solo envíe Energy (badge 'SoC estimado')
+- [x] Crear sesión activa automáticamente si no existe cuando llegan MeterValues
+- [x] Logging detallado para diagnosticar problemas de MeterValues
+- [x] 17 tests pasando
