@@ -1041,9 +1041,50 @@ export const chargingRouter = router({
         });
       }
       
-      // Obtener conexión OCPP
-      const ocppConnection = getConnectionByStationId(transaction.stationId);
+      // Obtener conexión OCPP - múltiples estrategias de búsqueda
+      let ocppConnection = getConnectionByStationId(transaction.stationId);
+      let ocppIdentityForCommand = ocppConnection?.ocppIdentity || '';
+      
+      // Fallback 1: buscar por ocppIdentity de la estación en la BD
       if (!ocppConnection || ocppConnection.ws.readyState !== 1) {
+        const station = await db.getChargingStationById(transaction.stationId);
+        if (station?.ocppIdentity) {
+          // Buscar directamente en dualCSMS por ocppIdentity
+          const dualConn = dualCSMS.isStationConnected(station.ocppIdentity);
+          if (dualConn) {
+            ocppIdentityForCommand = station.ocppIdentity;
+            console.log(`[stopCharge] Fallback: found connection via ocppIdentity=${station.ocppIdentity} for stationId=${transaction.stationId}`);
+          } else {
+            console.log(`[stopCharge] No connection found. stationId=${transaction.stationId}, ocppIdentity=${station.ocppIdentity}`);
+          }
+        }
+      }
+      
+      // Fallback 2: buscar en sesión activa en memoria por transactionId
+      if (!ocppIdentityForCommand) {
+        const session = getActiveSessionById(transactionId);
+        if (session) {
+          const station = await db.getChargingStationById(session.stationId);
+          if (station?.ocppIdentity && dualCSMS.isStationConnected(station.ocppIdentity)) {
+            ocppIdentityForCommand = station.ocppIdentity;
+            console.log(`[stopCharge] Fallback 2: found via active session ocppIdentity=${station.ocppIdentity}`);
+          }
+        }
+      }
+      
+      // Fallback 3: buscar directamente por ocppIdentity en legacy connection-manager
+      if (!ocppIdentityForCommand) {
+        const station = await db.getChargingStationById(transaction.stationId);
+        if (station?.ocppIdentity) {
+          const legacyConn = getConnection(station.ocppIdentity);
+          if (legacyConn && legacyConn.ws.readyState === 1) {
+            ocppIdentityForCommand = station.ocppIdentity;
+            console.log(`[stopCharge] Fallback 3: found via legacy getConnection ocppIdentity=${station.ocppIdentity}`);
+          }
+        }
+      }
+      
+      if (!ocppIdentityForCommand) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "No se puede comunicar con el cargador en este momento",
@@ -1052,11 +1093,13 @@ export const chargingRouter = router({
       
       // Enviar RemoteStopTransaction
       const messageId = uuidv4();
+      const ocppTxId = transaction.ocppTransactionId || transactionId.toString();
+      console.log(`[stopCharge] Sending RemoteStopTransaction to ${ocppIdentityForCommand}, txId=${ocppTxId}`);
       const sent = sendOcppCommand(
-        ocppConnection.ocppIdentity,
+        ocppIdentityForCommand,
         messageId,
         "RemoteStopTransaction",
-        { transactionId: transaction.ocppTransactionId || transactionId.toString() }
+        { transactionId: ocppTxId }
       );
       
       if (!sent) {

@@ -1288,3 +1288,11 @@
 ### Tests
 - [x] Tests unitarios para perfiles de marca (17 tests pasando)
 - [x] 868 tests totales pasando (52 archivos)
+
+
+## Fix: Error al detener carga - 18 Feb 2026
+- [x] Fix: "No se puede comunicar con el cargador en este momento" al presionar Detener Carga
+- [x] Diagnosticar por qué la conexión WebSocket no se encuentra al enviar RemoteStopTransaction
+- [x] Propagar stationId al connection-manager en pre-resolución y auto-resolución (_core/index.ts)
+- [x] Agregar 3 niveles de fallback en stopCharge: dualCSMS por ocppIdentity, sesión activa, legacy getConnection
+- [x] 868 tests pasando
