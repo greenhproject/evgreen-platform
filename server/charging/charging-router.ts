@@ -1109,7 +1109,14 @@ export const chargingRouter = router({
       let transactionId = input.transactionId;
       
       if (!transactionId && input.sessionId) {
-        // Buscar transacción activa del usuario
+        const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
+        if (activeTransaction) {
+          transactionId = activeTransaction.id;
+        }
+      }
+      
+      if (!transactionId) {
+        // Último intento: buscar cualquier transacción activa del usuario
         const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
         if (activeTransaction) {
           transactionId = activeTransaction.id;
@@ -1119,11 +1126,10 @@ export const chargingRouter = router({
       if (!transactionId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Se requiere sessionId o transactionId",
+          message: "No se encontró una carga activa para detener",
         });
       }
       
-      // Verificar que la transacción pertenece al usuario
       const transaction = await db.getTransactionById(transactionId);
       if (!transaction) {
         throw new TRPCError({
@@ -1146,73 +1152,115 @@ export const chargingRouter = router({
         });
       }
       
-      // Obtener conexión OCPP - múltiples estrategias de búsqueda
-      let ocppConnection = getConnectionByStationId(transaction.stationId);
-      let ocppIdentityForCommand = ocppConnection?.ocppIdentity || '';
+      // Obtener ocppIdentity de la estación
+      const station = await db.getChargingStationById(transaction.stationId);
+      const ocppIdentity = station?.ocppIdentity || '';
       
-      // Fallback 1: buscar por ocppIdentity de la estación en la BD
-      if (!ocppConnection || ocppConnection.ws.readyState !== 1) {
-        const station = await db.getChargingStationById(transaction.stationId);
-        if (station?.ocppIdentity) {
-          // Buscar directamente en dualCSMS por ocppIdentity
-          const dualConn = dualCSMS.isStationConnected(station.ocppIdentity);
-          if (dualConn) {
-            ocppIdentityForCommand = station.ocppIdentity;
-            console.log(`[stopCharge] Fallback: found connection via ocppIdentity=${station.ocppIdentity} for stationId=${transaction.stationId}`);
-          } else {
-            console.log(`[stopCharge] No connection found. stationId=${transaction.stationId}, ocppIdentity=${station.ocppIdentity}`);
-          }
+      console.log(`[stopCharge] userId=${ctx.user.id}, txId=${transactionId}, stationId=${transaction.stationId}, ocppIdentity=${ocppIdentity}`);
+      
+      // Estrategia 1: Buscar conexión en connection-manager por stationId
+      let ocppIdentityForCommand = '';
+      const connByStation = legacyGetConnectionByStationId(transaction.stationId);
+      if (connByStation && connByStation.ws.readyState === 1) {
+        ocppIdentityForCommand = connByStation.ocppIdentity;
+        console.log(`[stopCharge] Found connection via stationId: ${ocppIdentityForCommand}`);
+      }
+      
+      // Estrategia 2: Buscar por ocppIdentity directamente en connection-manager
+      if (!ocppIdentityForCommand && ocppIdentity) {
+        const connByIdentity = getConnection(ocppIdentity);
+        if (connByIdentity && connByIdentity.ws.readyState === 1) {
+          ocppIdentityForCommand = ocppIdentity;
+          console.log(`[stopCharge] Found connection via ocppIdentity: ${ocppIdentityForCommand}`);
         }
       }
       
-      // Fallback 2: buscar en sesión activa en memoria por transactionId
-      if (!ocppIdentityForCommand) {
-        const session = getActiveSessionById(transactionId);
-        if (session) {
-          const station = await db.getChargingStationById(session.stationId);
-          if (station?.ocppIdentity && dualCSMS.isStationConnected(station.ocppIdentity)) {
-            ocppIdentityForCommand = station.ocppIdentity;
-            console.log(`[stopCharge] Fallback 2: found via active session ocppIdentity=${station.ocppIdentity}`);
-          }
+      // Estrategia 3: Intentar dualCSMS como último recurso
+      if (!ocppIdentityForCommand && ocppIdentity) {
+        if (dualCSMS.isStationConnected(ocppIdentity)) {
+          ocppIdentityForCommand = ocppIdentity;
+          console.log(`[stopCharge] Found connection via dualCSMS: ${ocppIdentityForCommand}`);
         }
       }
       
-      // Fallback 3: buscar directamente por ocppIdentity en legacy connection-manager
-      if (!ocppIdentityForCommand) {
-        const station = await db.getChargingStationById(transaction.stationId);
-        if (station?.ocppIdentity) {
-          const legacyConn = getConnection(station.ocppIdentity);
-          if (legacyConn && legacyConn.ws.readyState === 1) {
-            ocppIdentityForCommand = station.ocppIdentity;
-            console.log(`[stopCharge] Fallback 3: found via legacy getConnection ocppIdentity=${station.ocppIdentity}`);
-          }
+      // Intentar enviar RemoteStopTransaction si hay conexión
+      let remoteStopSent = false;
+      if (ocppIdentityForCommand) {
+        const messageId = uuidv4();
+        // OCPP 1.6 requiere transactionId numérico
+        const ocppTxId = transaction.ocppTransactionId 
+          ? parseInt(transaction.ocppTransactionId) 
+          : transactionId;
+        
+        console.log(`[stopCharge] Sending RemoteStopTransaction to ${ocppIdentityForCommand}, ocppTxId=${ocppTxId}`);
+        
+        // Intentar enviar por connection-manager (handler real en _core/index.ts)
+        remoteStopSent = legacySendOcppCommand(
+          ocppIdentityForCommand,
+          messageId,
+          "RemoteStopTransaction",
+          { transactionId: ocppTxId }
+        );
+        
+        // Si falló, intentar por dualCSMS
+        if (!remoteStopSent) {
+          remoteStopSent = dualCSMS.sendCommandIfConnected(
+            ocppIdentityForCommand,
+            messageId,
+            "RemoteStopTransaction",
+            { transactionId: ocppTxId }
+          );
         }
+        
+        if (remoteStopSent) {
+          console.log(`[stopCharge] RemoteStopTransaction sent successfully to ${ocppIdentityForCommand}`);
+          
+          // Registrar log OCPP
+          try {
+            await db.createOcppLog({
+              ocppIdentity: ocppIdentityForCommand,
+              stationId: transaction.stationId,
+              direction: "OUT",
+              messageType: "RemoteStopTransaction",
+              payload: { transactionId: ocppTxId },
+            });
+          } catch (logErr) {
+            console.error(`[stopCharge] Error logging OCPP:`, logErr);
+          }
+        } else {
+          console.warn(`[stopCharge] Failed to send RemoteStopTransaction to ${ocppIdentityForCommand}`);
+        }
+      } else {
+        console.warn(`[stopCharge] No OCPP connection found for station ${transaction.stationId} (${ocppIdentity})`);
       }
       
-      if (!ocppIdentityForCommand) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "No se puede comunicar con el cargador en este momento",
-        });
+      // IMPORTANTE: Si no se pudo enviar RemoteStopTransaction, completar la transacción
+      // localmente para no dejar al usuario bloqueado en "Finalizando carga..."
+      if (!remoteStopSent) {
+        console.log(`[stopCharge] No OCPP connection - completing transaction locally. txId=${transactionId}`);
+        await completeTransactionLocally(transactionId, transaction);
+        
+        return {
+          status: "completed",
+          message: "Carga detenida (sin conexión al cargador)",
+          isSimulation: false,
+          transactionId: transactionId,
+        };
       }
       
-      // Enviar RemoteStopTransaction
-      const messageId = uuidv4();
-      const ocppTxId = transaction.ocppTransactionId || transactionId.toString();
-      console.log(`[stopCharge] Sending RemoteStopTransaction to ${ocppIdentityForCommand}, txId=${ocppTxId}`);
-      const sent = sendOcppCommand(
-        ocppIdentityForCommand,
-        messageId,
-        "RemoteStopTransaction",
-        { transactionId: ocppTxId }
-      );
-      
-      if (!sent) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "No se pudo enviar el comando de parada. Intenta de nuevo.",
-        });
-      }
+      // Si se envió RemoteStopTransaction, programar un timeout de seguridad
+      // Si el cargador no responde con StopTransaction en 45 segundos, completar localmente
+      setTimeout(async () => {
+        try {
+          const txCheck = await db.getTransactionById(transactionId!);
+          if (txCheck && txCheck.status === "IN_PROGRESS") {
+            console.warn(`[stopCharge] Timeout: StopTransaction not received after 45s for txId=${transactionId}. Completing locally.`);
+            await completeTransactionLocally(transactionId!, txCheck);
+          }
+        } catch (err) {
+          console.error(`[stopCharge] Timeout handler error:`, err);
+        }
+      }, 45000);
       
       return {
         status: "stopping",
@@ -1355,4 +1403,124 @@ export function findPendingSessionByOcppIdentity(ocppIdentity: string, connector
   console.log(`[findPendingSession] NO MATCH found for ocppIdentity="${ocppIdentity}", connectorId=${connectorId ?? 'ANY'}`);
   return null;
 }
+/**
+ * Completar una transacción localmente cuando no hay conexión OCPP
+ * o cuando el cargador no responde con StopTransaction a tiempo.
+ * Calcula costos basados en datos disponibles y descuenta del saldo del usuario.
+ */
+async function completeTransactionLocally(transactionId: number, transaction: any) {
+  try {
+    const endTime = new Date();
+    const startTime = new Date(transaction.startTime);
+    const durationMinutes = (endTime.getTime() - startTime.getTime()) / (1000 * 60);
+    
+    // Obtener datos de la sesión activa en memoria (si existe)
+    const activeSession = activeChargeSessions.get(transactionId);
+    
+    // Calcular energía entregada
+    let energyDelivered = 0;
+    if (activeSession?.currentKwh && activeSession.currentKwh > 0) {
+      energyDelivered = activeSession.currentKwh;
+    } else if (transaction.meterEnd && transaction.meterStart) {
+      energyDelivered = (parseFloat(transaction.meterEnd) - parseFloat(transaction.meterStart)) / 1000;
+    } else if (transaction.kwhConsumed) {
+      energyDelivered = parseFloat(transaction.kwhConsumed);
+    }
+    
+    // Obtener tarifa
+    const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
+    const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+    const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
+    const sessionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : 0;
+    
+    // Calcular costos
+    const energyCost = energyDelivered * pricePerKwh;
+    const timeCost = durationMinutes * pricePerMinute;
+    const totalCost = energyCost + timeCost + sessionFee;
+    
+    // Distribución de ingresos
+    const revenueConfig = await db.getRevenueShareConfig();
+    const investorShare = totalCost * (revenueConfig.investorPercent / 100);
+    const platformFee = totalCost * (revenueConfig.platformPercent / 100);
+    
+    // Actualizar transacción en BD
+    await db.updateTransaction(transactionId, {
+      endTime,
+      kwhConsumed: energyDelivered.toFixed(4),
+      energyCost: energyCost.toFixed(2),
+      timeCost: timeCost.toFixed(2),
+      sessionCost: sessionFee.toFixed(2),
+      totalCost: totalCost.toFixed(2),
+      investorShare: investorShare.toFixed(2),
+      platformFee: platformFee.toFixed(2),
+      status: "COMPLETED",
+      stopReason: "Local",
+    });
+    
+    // Actualizar estado del EVSE
+    try {
+      await db.updateEvseStatus(transaction.evseId, "AVAILABLE");
+    } catch (evseErr) {
+      console.error(`[completeTransactionLocally] Error updating EVSE:`, evseErr);
+    }
+    
+    // Descontar saldo del usuario
+    if (totalCost > 0 && transaction.userId) {
+      try {
+        await db.deductWalletBalance(transaction.userId, totalCost, transactionId);
+        console.log(`[completeTransactionLocally] Deducted $${totalCost.toFixed(0)} COP from user ${transaction.userId}`);
+      } catch (walletErr) {
+        console.error(`[completeTransactionLocally] Error deducting wallet:`, walletErr);
+        // No lanzar error - la transacción ya se completó, el cobro se puede hacer después
+      }
+    }
+    
+    // Actualizar wallet del inversor
+    try {
+      const station = await db.getChargingStationById(transaction.stationId);
+      if (station?.ownerId) {
+        await db.addInvestorEarnings(station.ownerId, investorShare, transactionId);
+        console.log(`[completeTransactionLocally] Added $${investorShare.toFixed(0)} COP to investor ${station.ownerId}`);
+      }
+    } catch (investorErr) {
+      console.error(`[completeTransactionLocally] Error updating investor wallet:`, investorErr);
+    }
+    
+    // Enviar notificación al usuario
+    if (transaction.userId) {
+      try {
+        const station = await db.getChargingStationById(transaction.stationId);
+        const stationName = station?.name || "Estación";
+        await db.createNotification({
+          userId: transaction.userId,
+          title: "⚡ Carga completada",
+          message: `Tu carga en ${stationName} ha finalizado. Consumiste ${energyDelivered.toFixed(2)} kWh por un total de $${totalCost.toLocaleString()} COP. Duración: ${Math.round(durationMinutes)} minutos.`,
+          type: "CHARGE_COMPLETE",
+          referenceId: transactionId,
+          referenceType: "transaction",
+        });
+      } catch (notifErr) {
+        console.error(`[completeTransactionLocally] Error sending notification:`, notifErr);
+      }
+    }
+    
+    // Limpiar sesión activa de memoria
+    activeChargeSessions.delete(transactionId);
+    
+    console.log(`[completeTransactionLocally] Transaction ${transactionId} completed: ${energyDelivered.toFixed(4)} kWh, $${totalCost.toFixed(0)} COP`);
+  } catch (err) {
+    console.error(`[completeTransactionLocally] Error completing transaction ${transactionId}:`, err);
+    // Fallback: al menos marcar como completada para no dejar al usuario bloqueado
+    try {
+      await db.updateTransaction(transactionId, {
+        endTime: new Date(),
+        status: "COMPLETED",
+        stopReason: "Error",
+      });
+    } catch (fallbackErr) {
+      console.error(`[completeTransactionLocally] Fallback error:`, fallbackErr);
+    }
+  }
+}
+
 // Fix startCharge RemoteStartTransaction - deployed Mon Feb 17 2026

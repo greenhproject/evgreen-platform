@@ -1320,3 +1320,12 @@
 - [x] Fix: SoC manual no se guarda al ingresarlo, sigue mostrando 20%
 - [x] Precargar capacidad de batería desde "Mi Vehículo" si el usuario tiene vehículo guardado
 - [x] Verificar que el endpoint setManualSoc funciona correctamente
+
+
+## Bug: Detener carga no envía RemoteStop ni calcula consumo - 18 Feb 2026
+- [x] BUG: Al presionar "Detener carga" la app se queda en "Finalizando carga..." indefinidamente
+- [x] BUG: No se envía RemoteStopTransaction al cargador (no aparece en logs OCPP)
+- [x] BUG: No se calcula el consumo ni se descuenta de la billetera
+- [x] Diagnosticar flujo stopCharge: frontend → backend → OCPP
+- [x] Corregir el envío de RemoteStopTransaction
+- [x] Asegurar que la transacción se complete y descuente saldo
