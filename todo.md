@@ -1240,3 +1240,12 @@
 - [x] Implementar lectura real de MeterValues del cargador OCPP (SoC, Power, Energy)
 - [x] Actualizar frontend del monitor de carga para mostrar datos reales del cargador
 - [x] Tests unitarios para updateActiveSessionMeterData (9 tests)
+
+
+## Gráfico de Potencia en Tiempo Real y Notificación SoC - 18 Feb 2026
+
+- [x] Almacenar historial de potencia en memoria durante sesión activa
+- [x] Endpoint para obtener historial de potencia de sesión activa
+- [x] Gráfico de línea de potencia en tiempo real en ChargingMonitor (Chart.js)
+- [x] Notificación push cuando SoC alcance el porcentaje objetivo del usuario (backend + frontend toast)
+- [x] Tests unitarios para historial de potencia y notificación SoC (17 tests pasando)

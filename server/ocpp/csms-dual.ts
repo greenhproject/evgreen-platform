@@ -981,6 +981,8 @@ export class DualCSMS {
         voltage: null,
         current: null,
         lastMeterUpdate: null,
+        powerHistory: [],
+        socTargetNotified: false,
       });
       
       removePendingSession(pendingSessionData.sessionId);
@@ -1003,6 +1005,8 @@ export class DualCSMS {
         voltage: null,
         current: null,
         lastMeterUpdate: null,
+        powerHistory: [],
+        socTargetNotified: false,
       });
       console.log(`[CSMS-DUAL] StartTransaction: Created basic active session for userId ${userId}, transactionId: ${transactionId}`);
     }
@@ -1406,6 +1410,8 @@ export class DualCSMS {
             voltage: null,
             current: null,
             lastMeterUpdate: null,
+            powerHistory: [],
+            socTargetNotified: false,
           });
           
           if (pendingSession) {
@@ -1523,6 +1529,38 @@ export class DualCSMS {
             });
             
             console.log(`[CSMS-DUAL] MeterValues updated session ${transaction.id}: ${consumedKwh.toFixed(2)} kWh, $${Math.round(currentCost)} COP, power: ${latestPowerKw?.toFixed(1) || 'N/A'} kW`);
+            
+            // ============================================================
+            // NOTIFICACIÓN: SoC alcanzó el porcentaje objetivo del usuario
+            // ============================================================
+            if (latestSoc !== null && transaction.userId && !activeSession.socTargetNotified) {
+              const targetPercentage = activeSession.chargeMode === "percentage" 
+                ? activeSession.targetValue 
+                : 100;
+              
+              if (latestSoc >= targetPercentage) {
+                activeSession.socTargetNotified = true;
+                
+                const notificationKey = `soc_target_reached_${transaction.id}`;
+                const existingNotification = await db.getNotificationByKey(transaction.userId, notificationKey);
+                
+                if (!existingNotification) {
+                  await db.createNotification({
+                    userId: transaction.userId,
+                    type: "soc_target_reached",
+                    title: `🔋 ¡Batería al ${latestSoc}%! Objetivo alcanzado`,
+                    message: `Tu vehículo ha alcanzado el ${latestSoc}% de carga (objetivo: ${targetPercentage}%). Puedes desconectar cuando lo desees.`,
+                    data: JSON.stringify({
+                      transactionId: transaction.id,
+                      soc: latestSoc,
+                      targetPercentage,
+                      key: notificationKey,
+                    }),
+                  });
+                  console.log(`[CSMS-DUAL] SoC target notification sent: user=${transaction.userId}, soc=${latestSoc}%, target=${targetPercentage}%`);
+                }
+              }
+            }
             
             // ============================================================
             // AUTO-STOP: Verificar si se alcanzó el límite de carga

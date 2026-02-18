@@ -825,7 +825,7 @@ async function handleOCPP16Message(
       const transactionId = payload.transactionId;
       
       // Importar updateActiveSessionMeterData para actualizar sesión en memoria
-      const { updateActiveSessionMeterData } = await import("../charging/charging-router");
+      const { updateActiveSessionMeterData, getActiveSessionById } = await import("../charging/charging-router");
       
       if (transactionId) {
         const internalTransactionId = ocpp16Transactions.get(transactionId);
@@ -963,6 +963,42 @@ async function handleOCPP16Message(
           });
           
           console.log(`[OCPP] MeterValues - Transaction ${transactionId}: ${kwhConsumed.toFixed(4)} kWh, $${currentTotalCost.toFixed(0)} COP, SoC=${soc ?? 'N/A'}%, Power=${powerKw?.toFixed(1) ?? 'N/A'}kW`);
+          
+          // ============================================================
+          // NOTIFICACIÓN: SoC alcanzó el porcentaje objetivo del usuario
+          // ============================================================
+          if (soc !== null && transaction.userId) {
+            const activeSessionInfo = getActiveSessionById(transaction.id);
+            if (activeSessionInfo && !activeSessionInfo.socTargetNotified) {
+              const targetPercentage = activeSessionInfo.chargeMode === "percentage" 
+                ? activeSessionInfo.targetValue 
+                : 100;
+              
+              if (soc >= targetPercentage) {
+                // Marcar como notificado para no enviar múltiples veces
+                activeSessionInfo.socTargetNotified = true;
+                
+                const notificationKey = `soc_target_reached_${transaction.id}`;
+                const existingNotification = await db.getNotificationByKey(transaction.userId, notificationKey);
+                
+                if (!existingNotification) {
+                  await db.createNotification({
+                    userId: transaction.userId,
+                    type: "soc_target_reached",
+                    title: `🔋 ¡Batería al ${soc}%! Objetivo alcanzado`,
+                    message: `Tu vehículo ha alcanzado el ${soc}% de carga (objetivo: ${targetPercentage}%). Puedes desconectar cuando lo desees.`,
+                    data: JSON.stringify({
+                      transactionId: transaction.id,
+                      soc,
+                      targetPercentage,
+                      key: notificationKey,
+                    }),
+                  });
+                  console.log(`[OCPP] SoC target notification sent: user=${transaction.userId}, soc=${soc}%, target=${targetPercentage}%`);
+                }
+              }
+            }
+          }
           
           // Verificar saldo bajo del usuario
           if (transaction.userId && energyWh !== null) {

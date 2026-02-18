@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
+import { PowerChart } from "@/components/PowerChart";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -130,6 +131,7 @@ export default function ChargingMonitor() {
   
   const [showStopDialog, setShowStopDialog] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [socTargetNotified, setSocTargetNotified] = useState(false);
   
   // Obtener sesión activa - polling cada 3 segundos para datos más frescos
   const { data: session, isLoading, refetch } = trpc.charging.getActiveSession.useQuery(
@@ -212,6 +214,23 @@ export default function ChargingMonitor() {
     }
   }, [isLoading, session, redirecting, completedTransactionId, setLocation]);
   
+  // Notificación cuando SoC alcanza el objetivo
+  useEffect(() => {
+    if (!session || socTargetNotified) return;
+    
+    const soc = (session as any).soc;
+    const chargeMode = session.chargeMode as string;
+    const targetPct = chargeMode === "percentage" ? (session.targetPercentage || 100) : 100;
+    
+    if (soc !== null && soc !== undefined && soc >= targetPct) {
+      setSocTargetNotified(true);
+      toast.success(
+        `🔋 ¡Batería al ${Math.round(soc)}%! Tu objetivo de ${targetPct}% fue alcanzado.`,
+        { duration: 10000 }
+      );
+    }
+  }, [session, socTargetNotified]);
+  
   const handleStopCharge = () => {
     if (!session) return;
     
@@ -278,6 +297,9 @@ export default function ChargingMonitor() {
   // Asegurar rango válido
   if (isNaN(progressPercentage)) progressPercentage = 0;
   progressPercentage = Math.min(100, Math.max(0, progressPercentage));
+  
+  // Detectar cuando SoC alcanza el objetivo y mostrar toast
+  const targetPercentage = chargeMode === "percentage" ? (session.targetPercentage || 100) : 100;
   
   // Costo total incluyendo tarifa de conexión
   const connectionFee = (session as any).connectionFee || 0;
@@ -469,6 +491,26 @@ export default function ChargingMonitor() {
               </Card>
             )}
           </div>
+        )}
+        
+        {/* Gráfico de potencia en tiempo real */}
+        {(session as any).powerHistory && (session as any).powerHistory.length >= 2 && (
+          <Card className="mt-4 border-amber-500/20">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Zap className="w-4 h-4 text-amber-600" />
+                <span className="text-sm font-semibold text-foreground">Potencia en tiempo real</span>
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse ml-auto" />
+              </div>
+              <div style={{ height: "200px" }}>
+                <PowerChart
+                  powerHistory={(session as any).powerHistory}
+                  startTime={session.startTime}
+                  nominalPower={session.powerKw}
+                />
+              </div>
+            </CardContent>
+          </Card>
         )}
         
         {/* Banner publicitario */}
