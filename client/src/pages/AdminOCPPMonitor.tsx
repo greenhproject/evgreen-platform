@@ -506,7 +506,7 @@ function ChargerDetailView({
               <Zap className="h-6 w-6 text-primary" />
               {station?.name || ocppIdentity}
               {isConnected ? (
-                conn?.isHealthy ? (
+                conn?.wsReadyState === 1 ? (
                   <Badge className="bg-green-500 text-white">Conectado</Badge>
                 ) : (
                   <Badge className="bg-yellow-500 text-white">Degradado</Badge>

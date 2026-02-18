@@ -4624,3 +4624,29 @@ export async function syncUserIdTag(userId: number, idTag: string): Promise<void
     label: "Tag de la app",
   });
 }
+
+
+// ============================================================================
+// ACTIVE TRANSACTIONS BY STATION (para StopTransaction fallback)
+// ============================================================================
+
+/**
+ * Obtener transacciones activas (IN_PROGRESS) de una estación
+ */
+export async function getActiveTransactionsByStationId(stationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.stationId, stationId),
+        eq(transactions.status, "IN_PROGRESS")
+      )
+    )
+    .orderBy(desc(transactions.startTime))
+    .limit(10);
+  
+  return result;
+}

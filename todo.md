@@ -1205,3 +1205,21 @@
 - [x] Verificar deploy: CONFIRMADO que deploy anterior no tenía los fixes. Agregado BUILD_VERSION v2026.02.18.B
 - [x] Agregado fallback SQL directo (mysql2) si Drizzle falla en auto-resolución
 - [x] 834 tests pasando, 0 errores TypeScript
+
+## Bug: Inconsistencia de estados entre vistas - 18 Feb 2026
+- [x] Monitor OCPP muestra "AVAILABLE" y "Desconectado" cuando estación está en "Preparing"
+  - CAUSA RAÍZ DEFINITIVA: Hay DOS handlers OCPP en paralelo:
+    - server/_core/index.ts (handler REAL que procesa TODOS los mensajes WebSocket)
+    - server/ocpp/csms-dual.ts (NUNCA recibe conexiones WebSocket, solo se usa para getDetailedDiagnostics)
+  - El handler REAL tenía Preparing: "AVAILABLE" (BUG) y no tenía auto-resolución de stationId
+- [x] FIXES APLICADOS al handler REAL (_core/index.ts):
+  - Pre-resolución de stationId al conectarse (no esperar BootNotification)
+  - Auto-resolución de stationId en cada mensaje si es null
+  - StatusNotification: Preparing → PREPARING (corregido de AVAILABLE)
+  - StartTransaction: auto-resolución stationId + búsqueda id_tags + users + modo permisivo
+  - StopTransaction: fallback multi-estrategia para transactionId=0
+  - Authorize: modo permisivo, busca en id_tags + users + acepta desconocidos
+  - BUILD_VERSION v2026.02.18.B para verificar deploys
+- [x] Monitor OCPP: corregido getChargerDetail para usar connection-manager con campos calculados
+- [x] App de usuario: lee de BD que ahora se actualiza correctamente
+- [x] 834 tests pasando, 0 errores TypeScript
