@@ -1,0 +1,26 @@
+{
+  "query": "SELECT * FROM id_tags WHERE id_tag = 'EV-3HTZZD';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT * FROM id_tags WHERE id_tag = 'EV-3HTZZD';",
+  "rows": [
+    {
+      "id": "31",
+      "id_tag": "EV-3HTZZD",
+      "user_id": "570001",
+      "id_tag_type": "APP",
+      "id_tag_status": "ACTIVE",
+      "label": "Tag de la app",
+      "serial_number": "NULL",
+      "expires_at": "NULL",
+      "parent_id_tag": "NULL",
+      "max_active_transactions": "1",
+      "last_used_at": "NULL",
+      "last_used_station_id": "NULL",
+      "created_at": "2026-02-18 03:55:32",
+      "updated_at": "2026-02-18 03:55:32"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tid_tag\tuser_id\tid_tag_type\tid_tag_status\tlabel\tserial_number\texpires_at\tparent_id_tag\tmax_active_transactions\tlast_used_at\tlast_used_station_id\tcreated_at\tupdated_at\n31\tEV-3HTZZD\t570001\tAPP\tACTIVE\tTag de la app\tNULL\tNULL\tNULL\t1\tNULL\tNULL\t2026-02-18 03:55:32\t2026-02-18 03:55:32\n",
+  "stderr": "",
+  "execution_time_ms": 52
+}

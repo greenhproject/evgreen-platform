@@ -1169,3 +1169,19 @@
 - [x] Tests para StartTransaction mejorado con diferentes escenarios de idTag
 - [x] Tests para Authorize handler
 - [x] 834 tests totales pasando, 0 errores TypeScript
+
+## Bugs Críticos OCPP - 18 Feb 2026 (Logs EVG001)
+
+### Bug 1: StartTransaction devuelve "Invalid" (stationId null tras reconexión WebSocket)
+- [x] Causa raíz: idTag EV-3HTZZD no estaba en tabla id_tags (solo en users). Ya insertado.
+- [x] Auto-resolución de stationId en StartTransaction handler funciona correctamente
+
+### Bug 2: StatusNotification "Preparing" no actualiza estado del EVSE en la app
+- [x] Código ya correcto desde checkpoint anterior (mapeo Preparing → PREPARING)
+- [x] Problema era que el deploy anterior no tenía estos fixes
+
+### Bug 3: StopTransaction con transactionId=0 devuelve "Invalid"
+- [x] Reescribir StopTransaction con búsqueda multi-estrategia:
+  - Mapa en memoria → EVSE activo por estación → idTag → auto-resolve stationId
+- [x] Si no encuentra transacción: Accepted + limpiar EVSEs a AVAILABLE
+- [x] Nunca devolver "Invalid" para no confundir al cargador
