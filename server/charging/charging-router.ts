@@ -194,8 +194,12 @@ export const chargingRouter = router({
         
         // Normalizar estado para comparación
         const normalizedStatus = realTimeStatus?.toUpperCase() || 'UNAVAILABLE';
-        // Un conector está disponible si está en estado AVAILABLE o Available
-        const isAvailable = normalizedStatus === "AVAILABLE" || normalizedStatus === "PREPARING";
+        // Un conector está disponible SOLO si está en estado AVAILABLE
+        // PREPARING = cable conectado por otro usuario, NO disponible
+        // CHARGING = cargando activamente, NO disponible
+        const isAvailable = normalizedStatus === "AVAILABLE";
+        // Determinar si está ocupado (alguien lo está usando)
+        const isOccupied = ["PREPARING", "CHARGING", "SUSPENDED_EV", "SUSPENDED_EVSE", "FINISHING"].includes(normalizedStatus);
         
         return {
           id: c.id,
@@ -206,6 +210,7 @@ export const chargingRouter = router({
           powerKw: c.powerKw,
           status: normalizedStatus,
           isAvailable,
+          isOccupied,
         };
       });
     }),
@@ -556,12 +561,14 @@ export const chargingRouter = router({
           await db.updateChargingStation(stationId, { isOnline: true });
         }
         
-        // Crear notificación de inicio
+        // Crear notificación de inicio con precio dinámico formateado
+        const formattedPrice = Math.round(pricePerKwh).toLocaleString("es-CO");
+        const stationNameForNotif = stationData?.name || "Estación EVGreen";
         await db.createNotification({
           userId: ctx.user.id,
-          title: "Carga iniciada",
-          message: `Conecta tu vehículo al conector ${connectorId}. Tarifa actual: $${pricePerKwh}/kWh`,
-          type: "charging",
+          title: "Carga solicitada",
+          message: `Se ha enviado la orden de carga al conector ${connectorId} de ${stationNameForNotif}. Tarifa: $${formattedPrice} COP/kWh. Conecta tu vehículo si aún no lo has hecho.`,
+          type: "CHARGE_REQUESTED",
         });
         
         return {
@@ -689,6 +696,19 @@ export const chargingRouter = router({
       const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
       
       console.log(`[getActiveSession] userId=${ctx.user.id}, activeTransaction=${activeTransaction ? `id=${activeTransaction.id}, status=${activeTransaction.status}` : 'null'}, pendingSessions=${pendingChargeSessions.size}, activeSessions=${activeChargeSessions.size}`);
+      
+      // IMPORTANTE: Si hay transacción activa en BD, SIEMPRE priorizarla sobre sesiones pendientes
+      // Esto evita race conditions donde la sesión pendiente aún no se eliminó pero StartTransaction ya se procesó
+      if (activeTransaction) {
+        // Limpiar cualquier sesión pendiente residual del mismo usuario
+        const entries = Array.from(pendingChargeSessions.entries());
+        for (const [sessionId, session] of entries) {
+          if (session.userId === ctx.user.id) {
+            pendingChargeSessions.delete(sessionId);
+            console.log(`[getActiveSession] Cleaned up residual pending session ${sessionId} - transaction ${activeTransaction.id} already active`);
+          }
+        }
+      }
       
       if (!activeTransaction) {
         // Verificar si hay una sesión pendiente (esperando que el cargador confirme StartTransaction)
