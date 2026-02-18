@@ -260,10 +260,27 @@ export class DualCSMS {
         this.pingIntervals.delete(ocppIdentity);
       }
 
-      // Registrar la conexión
+      // PRE-RESOLVER stationId INMEDIATAMENTE en la conexión
+      // Esto es CRÍTICO: si esperamos a handleCall, puede fallar silenciosamente
+      let preResolvedStationId: number | null = null;
+      try {
+        const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+        if (station) {
+          preResolvedStationId = station.id;
+          console.log(`[CSMS-DUAL] Pre-resolved stationId=${station.id} for ${ocppIdentity} at connection time`);
+          // Marcar como online inmediatamente
+          await db.updateChargingStation(station.id, { isOnline: true });
+        } else {
+          console.warn(`[CSMS-DUAL] Station not found in DB for ocppIdentity="${ocppIdentity}" at connection time`);
+        }
+      } catch (err) {
+        console.error(`[CSMS-DUAL] CRITICAL: Failed to pre-resolve stationId for ${ocppIdentity}:`, err);
+      }
+
+      // Registrar la conexión con stationId ya resuelto
       const connection: ChargingStationConnection = {
         ws,
-        stationId: null,
+        stationId: preResolvedStationId,
         ocppIdentity,
         ocppVersion,
         connectedAt: new Date(),
@@ -312,12 +329,13 @@ export class DualCSMS {
         console.error(`[CSMS-DUAL] WebSocket error from ${ocppIdentity}:`, error);
       });
 
-      // Log de conexión
+      // Log de conexión (incluir stationId resuelto)
       await db.createOcppLog({
         ocppIdentity,
+        stationId: preResolvedStationId,
         direction: "IN",
         messageType: "CONNECTION",
-        payload: { url: req.url, protocol, ocppVersion },
+        payload: { url: req.url, protocol, ocppVersion, preResolvedStationId },
       });
     });
 
@@ -391,20 +409,21 @@ export class DualCSMS {
     let response: any;
 
     try {
-      // AUTO-RESOLUCIÓN: Si conn.stationId es null (cargador reconectó sin BootNotification),
-      // buscar la estación por ocppIdentity en la BD y asignarla automáticamente.
-      // Esto es común en cargadores Wallbox que omiten BootNotification tras reconexión rápida.
+      // AUTO-RESOLUCIÓN REDUNDANTE: Si conn.stationId sigue null (no se resolvió en conexión),
+      // intentar de nuevo. Esto cubre el caso donde la BD no estaba lista en el momento de la conexión.
       if (!conn.stationId && action !== "BootNotification") {
-        const station = await db.getChargingStationByOcppIdentity(conn.ocppIdentity);
-        if (station) {
-          conn.stationId = station.id;
-          console.log(`[CSMS-DUAL] Auto-resolved stationId=${station.id} for ${conn.ocppIdentity} (no BootNotification received)`);
-          // También marcar como online
-          await db.updateChargingStation(station.id, {
-            isOnline: true,
-          });
-        } else {
-          console.warn(`[CSMS-DUAL] Cannot resolve stationId for ${conn.ocppIdentity}: station not found in DB`);
+        console.log(`[CSMS-DUAL] stationId is null for ${conn.ocppIdentity} on action=${action}, attempting auto-resolve...`);
+        try {
+          const station = await db.getChargingStationByOcppIdentity(conn.ocppIdentity);
+          if (station) {
+            conn.stationId = station.id;
+            console.log(`[CSMS-DUAL] Auto-resolved stationId=${station.id} for ${conn.ocppIdentity} (fallback in handleCall)`);
+            await db.updateChargingStation(station.id, { isOnline: true });
+          } else {
+            console.warn(`[CSMS-DUAL] Cannot resolve stationId for "${conn.ocppIdentity}": station not found in DB`);
+          }
+        } catch (resolveErr) {
+          console.error(`[CSMS-DUAL] CRITICAL: Auto-resolve failed for ${conn.ocppIdentity}:`, resolveErr);
         }
       }
 
