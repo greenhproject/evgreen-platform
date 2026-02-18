@@ -963,3 +963,4 @@ export function findPendingSessionByOcppIdentity(ocppIdentity: string, connector
   console.log(`[findPendingSession] NO MATCH found for ocppIdentity="${ocppIdentity}", connectorId=${connectorId}`);
   return null;
 }
+// Fix startCharge availability - deployed Tue Feb 17 19:37:22 EST 2026
