@@ -52,6 +52,14 @@ const pendingChargeSessions = new Map<string, {
   ocppIdentity: string;
 }>();
 
+// Tipo para un punto de datos en el historial de potencia
+export type PowerHistoryPoint = {
+  timestamp: number; // Unix ms
+  power: number; // kW
+  energy: number; // kWh acumulados
+  soc: number | null; // % batería
+};
+
 // Almacén de sesiones de carga activas
 const activeChargeSessions = new Map<number, {
   transactionId: number;
@@ -70,6 +78,10 @@ const activeChargeSessions = new Map<number, {
   voltage: number | null; // Voltaje (V)
   current: number | null; // Corriente (A)
   lastMeterUpdate: Date | null; // Timestamp del último MeterValues
+  // Historial de potencia para gráfico en tiempo real
+  powerHistory: PowerHistoryPoint[];
+  // Control de notificación SoC objetivo
+  socTargetNotified: boolean;
 }>();
 
 /**
@@ -947,6 +959,21 @@ export const chargingRouter = router({
         progress,
         isSimulation: false,
         hasRealMeterData: activeSessionInfo?.lastMeterUpdate !== null && activeSessionInfo?.lastMeterUpdate !== undefined,
+        powerHistory: (activeSessionInfo?.powerHistory || []).slice(-120), // Últimos 120 puntos (~10 min)
+      };
+    }),
+
+  /**
+   * Obtener historial completo de potencia de la sesión activa
+   */
+  getPowerHistory: protectedProcedure
+    .query(async ({ ctx }) => {
+      const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
+      if (!activeTransaction) return { history: [] };
+      
+      const session = getActiveSessionById(activeTransaction.id);
+      return {
+        history: session?.powerHistory || [],
       };
     }),
 
@@ -1116,7 +1143,35 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   if (data.current !== undefined) session.current = data.current;
   session.lastMeterUpdate = new Date();
   
+  // Agregar punto al historial de potencia (máx 360 puntos = ~30 min a 5s interval)
+  const power = data.currentPower !== undefined ? data.currentPower : session.currentPower;
+  const energy = data.currentKwh !== undefined ? data.currentKwh : session.currentKwh;
+  const soc = data.soc !== undefined ? data.soc : session.soc;
+  
+  if (!session.powerHistory) session.powerHistory = [];
+  
+  session.powerHistory.push({
+    timestamp: Date.now(),
+    power: power,
+    energy: energy,
+    soc: soc,
+  });
+  
+  // Limitar a 360 puntos (mantener los más recientes)
+  if (session.powerHistory.length > 360) {
+    session.powerHistory = session.powerHistory.slice(-360);
+  }
+  
   return true;
+}
+
+/**
+ * Obtener historial de potencia de una sesión activa
+ */
+export function getActiveSessionPowerHistory(transactionId: number): PowerHistoryPoint[] {
+  const session = activeChargeSessions.get(transactionId);
+  if (!session) return [];
+  return session.powerHistory || [];
 }
 
 /**
