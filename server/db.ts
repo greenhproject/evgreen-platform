@@ -63,6 +63,9 @@ import {
   idTags,
   IdTag,
   InsertIdTag,
+  chargerBrands,
+  ChargerBrand,
+  InsertChargerBrand,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -4649,4 +4652,102 @@ export async function getActiveTransactionsByStationId(stationId: number) {
     .limit(10);
   
   return result;
+}
+
+
+// ============================================================================
+// CHARGER BRANDS / PROFILES
+// ============================================================================
+
+/**
+ * Obtener todos los perfiles de marca de cargador activos
+ */
+export async function getAllChargerBrands() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.select()
+    .from(chargerBrands)
+    .where(eq(chargerBrands.isActive, true))
+    .orderBy(chargerBrands.brand, chargerBrands.model);
+  
+  return result;
+}
+
+/**
+ * Obtener un perfil de marca de cargador por ID
+ */
+export async function getChargerBrandById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(chargerBrands)
+    .where(eq(chargerBrands.id, id))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+/**
+ * Obtener perfil de marca por nombre de marca y modelo
+ */
+export async function getChargerBrandByBrandModel(brand: string, model: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(chargerBrands)
+    .where(
+      and(
+        eq(chargerBrands.brand, brand),
+        eq(chargerBrands.model, model),
+        eq(chargerBrands.isActive, true)
+      )
+    )
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+/**
+ * Crear un nuevo perfil de marca de cargador
+ */
+export async function createChargerBrand(data: InsertChargerBrand) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(chargerBrands).values(data);
+  return result[0].insertId;
+}
+
+/**
+ * Actualizar un perfil de marca de cargador
+ */
+export async function updateChargerBrand(id: number, data: Partial<InsertChargerBrand>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(chargerBrands)
+    .set(data)
+    .where(eq(chargerBrands.id, id));
+}
+
+/**
+ * Obtener el perfil de marca asociado a una estación
+ */
+export async function getChargerBrandForStation(stationId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const station = await db.select({
+    chargerBrandId: chargingStations.chargerBrandId,
+  })
+    .from(chargingStations)
+    .where(eq(chargingStations.id, stationId))
+    .limit(1);
+  
+  if (!station[0]?.chargerBrandId) return null;
+  
+  return getChargerBrandById(station[0].chargerBrandId);
 }

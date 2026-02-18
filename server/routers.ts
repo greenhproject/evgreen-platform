@@ -471,12 +471,24 @@ const stationsRouter = router({
       ocppIdentity: z.string().optional(),
       operatingHours: z.any().optional(),
       amenities: z.array(z.string()).optional(),
+      chargerBrandId: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
-      const id = await db.createChargingStation({
+      // Si se seleccionó un perfil de marca, autoconfigurar manufacturer y model
+      let stationData: any = {
         ...input,
         country: "Colombia",
-      });
+      };
+      
+      if (input.chargerBrandId) {
+        const brand = await db.getChargerBrandById(input.chargerBrandId);
+        if (brand) {
+          stationData.manufacturer = brand.brand;
+          stationData.model = brand.model;
+        }
+      }
+      
+      const id = await db.createChargingStation(stationData);
       return { id };
     }),
   
@@ -523,6 +535,13 @@ const stationsRouter = router({
     .mutation(async ({ input }) => {
       await db.deleteChargingStation(input.id);
       return { success: true };
+    }),
+  
+  // Obtener perfil de marca asociado a una estación
+  getChargerBrand: protectedProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getChargerBrandForStation(input.stationId);
     }),
 });
 
@@ -3470,6 +3489,98 @@ const reviewsRouter = router({
     }),
 });
 
+// ============================================================================
+// CHARGER BRANDS ROUTER
+// ============================================================================
+
+const chargerBrandsRouter = router({
+  // Público: listar todas las marcas/modelos de cargadores disponibles
+  list: publicProcedure.query(async () => {
+    return db.getAllChargerBrands();
+  }),
+  
+  // Público: obtener perfil de una marca por ID
+  getById: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const brand = await db.getChargerBrandById(input.id);
+      if (!brand) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Perfil de cargador no encontrado" });
+      }
+      return brand;
+    }),
+  
+  // Admin: crear nuevo perfil de marca
+  create: adminProcedure
+    .input(z.object({
+      brand: z.string(),
+      model: z.string(),
+      displayName: z.string(),
+      imageUrl: z.string().optional(),
+      ocppVersion: z.string().default("1.6"),
+      ocppPasswordRequired: z.boolean().default(false),
+      chargeType: z.enum(["AC", "DC"]),
+      defaultPowerKw: z.string(),
+      maxPowerKw: z.string().optional(),
+      minChargingCurrentA: z.number().optional(),
+      maxChargingCurrentA: z.number().optional(),
+      defaultVoltage: z.number().optional(),
+      phases: z.number().default(1),
+      supportedConnectors: z.array(z.string()).optional(),
+      supportedMeasurands: z.array(z.string()).optional(),
+      energyUnit: z.string().default("Wh"),
+      supportsSoC: z.boolean().default(false),
+      supportsPowerMeasurement: z.boolean().default(false),
+      supportsCurrentMeasurement: z.boolean().default(false),
+      supportsVoltageMeasurement: z.boolean().default(false),
+      supportsRemoteStart: z.boolean().default(true),
+      supportsRemoteStop: z.boolean().default(true),
+      supportsReset: z.boolean().default(true),
+      supportsReservation: z.boolean().default(false),
+      supportsSmartCharging: z.boolean().default(false),
+      supportsFirmwareUpdate: z.boolean().default(false),
+      ocppConfig: z.any().optional(),
+      meterValueInterval: z.number().default(30),
+      cloudApiBaseUrl: z.string().optional(),
+      cloudApiAuthMethod: z.string().optional(),
+      cloudApiDocsUrl: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await db.createChargerBrand(input as any);
+      return { id };
+    }),
+  
+  // Admin: actualizar perfil de marca
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      data: z.object({
+        brand: z.string().optional(),
+        model: z.string().optional(),
+        displayName: z.string().optional(),
+        imageUrl: z.string().optional(),
+        ocppVersion: z.string().optional(),
+        ocppPasswordRequired: z.boolean().optional(),
+        defaultPowerKw: z.string().optional(),
+        maxPowerKw: z.string().optional(),
+        supportedMeasurands: z.array(z.string()).optional(),
+        supportsSoC: z.boolean().optional(),
+        supportsPowerMeasurement: z.boolean().optional(),
+        supportsCurrentMeasurement: z.boolean().optional(),
+        supportsVoltageMeasurement: z.boolean().optional(),
+        ocppConfig: z.any().optional(),
+        meterValueInterval: z.number().optional(),
+        notes: z.string().optional(),
+        isActive: z.boolean().optional(),
+      }),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateChargerBrand(input.id, input.data as any);
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -3504,6 +3615,7 @@ export const appRouter = router({
   security: securityRouter,
   reviews: reviewsRouter,
   idTags: idTagRouter,
+  chargerBrands: chargerBrandsRouter,
 });
 
 export type AppRouter = typeof appRouter;
