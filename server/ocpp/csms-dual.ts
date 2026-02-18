@@ -949,6 +949,7 @@ export class DualCSMS {
       stationId: conn.stationId,
       tariffId: tariff?.id,
       ocppTransactionId: internalTransactionId,
+      ocppNumericTxId: ocpp16TransactionId, // ID numérico OCPP 1.6 para RemoteStopTransaction
       startTime: new Date(req.timestamp),
       status: "IN_PROGRESS",
       meterStart: String(req.meterStart),
@@ -1390,6 +1391,7 @@ export class DualCSMS {
             stationId: conn.stationId,
             tariffId: tariff?.id,
             ocppTransactionId: internalTxId,
+            ocppNumericTxId: ocpp16TxId, // ID numérico OCPP 1.6 para RemoteStopTransaction
             startTime: new Date(),
             status: "IN_PROGRESS",
             meterStart: String(meterStart),

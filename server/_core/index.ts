@@ -624,16 +624,18 @@ async function handleOCPP16Message(
       const { nanoid } = await import("nanoid");
       const internalTransactionId = nanoid();
       
-      await db.createTransaction({
+      const newTxId = await db.createTransaction({
         evseId: evse.id,
         userId: userId || 1, // Usar usuario encontrado o fallback a 1 (admin)
         stationId: resolvedStId,
         tariffId: tariff?.id,
         ocppTransactionId: internalTransactionId,
+        ocppNumericTxId: transactionIdCounter, // ID numérico OCPP 1.6 para RemoteStopTransaction
         startTime: new Date(payload.timestamp),
         status: "IN_PROGRESS",
         meterStart: String(payload.meterStart),
       });
+      console.log(`[OCPP] StartTransaction - Created tx: dbId=${newTxId}, ocppNumericTxId=${transactionIdCounter}, internalId=${internalTransactionId}`);
       
       ocpp16Transactions.set(transactionIdCounter, internalTransactionId);
       await db.updateEvseStatus(evse.id, "CHARGING");
