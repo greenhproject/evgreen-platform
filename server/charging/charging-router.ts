@@ -66,6 +66,54 @@ const activeChargeSessions = new Map<number, {
   pricePerKwh: number;
 }>();
 
+/**
+ * Deferred RemoteStartTransaction: reintenta enviar el comando cada 5 segundos
+ * durante 60 segundos cuando no hay conexión OCPP activa al momento del inicio.
+ */
+const deferredRetryTimers = new Map<string, NodeJS.Timeout>();
+
+function startDeferredRemoteStart(
+  sessionId: string,
+  ocppIdentity: string,
+  connectorId: number,
+  idTag: string
+): void {
+  let attempts = 0;
+  const maxAttempts = 12; // 12 * 5s = 60 segundos
+  
+  const timer = setInterval(async () => {
+    attempts++;
+    
+    // Verificar si la sesión pendiente aún existe
+    const session = pendingChargeSessions.get(sessionId);
+    if (!session) {
+      console.log(`[DeferredStart] Session ${sessionId} no longer pending. Stopping retry.`);
+      clearInterval(timer);
+      deferredRetryTimers.delete(sessionId);
+      return;
+    }
+    
+    if (attempts > maxAttempts) {
+      console.log(`[DeferredStart] Max attempts reached for session ${sessionId}. Giving up.`);
+      clearInterval(timer);
+      deferredRetryTimers.delete(sessionId);
+      return;
+    }
+    
+    try {
+      console.log(`[DeferredStart] Attempt ${attempts}/${maxAttempts}: Sending RemoteStartTransaction to ${ocppIdentity} for session ${sessionId}`);
+      const response = await dualCSMS.requestStartTransaction(ocppIdentity, connectorId, idTag);
+      console.log(`[DeferredStart] SUCCESS! RemoteStartTransaction sent to ${ocppIdentity}: ${JSON.stringify(response)}`);
+      clearInterval(timer);
+      deferredRetryTimers.delete(sessionId);
+    } catch (error: any) {
+      console.log(`[DeferredStart] Attempt ${attempts}/${maxAttempts} failed for ${ocppIdentity}: ${error.message}`);
+    }
+  }, 5000);
+  
+  deferredRetryTimers.set(sessionId, timer);
+}
+
 export const chargingRouter = router({
   /**
    * Obtener estación por código QR (ocppIdentity o ID)
@@ -425,27 +473,59 @@ export const chargingRouter = router({
           ocppIdentity: ocppIdentityForCommand,
         });
         
-        // Enviar RemoteStartTransaction al cargador
-        const messageId = uuidv4();
+        // Enviar RemoteStartTransaction al cargador usando el método robusto
+        // que espera respuesta y registra logs OCPP
         const idTag = ctx.user.idTag || `USER-${ctx.user.id}`;
         
-        const payload = {
-          connectorId,
-          idTag,
-        };
+        let sent = false;
+        let remoteStartResponse: { status: string } | null = null;
         
-        const sent = sendOcppCommand(
-          ocppIdentityForCommand,
-          messageId,
-          "RemoteStartTransaction",
-          payload
-        );
+        // Intentar enviar con requestStartTransaction (async, espera respuesta, registra logs)
+        // Retry hasta 3 veces con backoff de 2s entre intentos
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            console.log(`[startCharge] Attempt ${attempt}/3: Sending RemoteStartTransaction to ${ocppIdentityForCommand}, connectorId=${connectorId}, idTag=${idTag}`);
+            remoteStartResponse = await dualCSMS.requestStartTransaction(
+              ocppIdentityForCommand,
+              connectorId,
+              idTag
+            );
+            sent = true;
+            console.log(`[startCharge] RemoteStartTransaction response from ${ocppIdentityForCommand}: ${JSON.stringify(remoteStartResponse)}`);
+            
+            // Verificar si el cargador aceptó el comando
+            if (remoteStartResponse?.status === "Rejected") {
+              console.warn(`[startCharge] Charger ${ocppIdentityForCommand} REJECTED RemoteStartTransaction`);
+              // No reintentar si fue rechazado explícitamente
+              break;
+            }
+            break; // Éxito, salir del loop
+          } catch (error: any) {
+            console.error(`[startCharge] Attempt ${attempt}/3 failed for ${ocppIdentityForCommand}: ${error.message}`);
+            if (attempt < 3) {
+              // Esperar antes de reintentar (2s, 4s)
+              await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+            }
+          }
+        }
+        
+        // Si requestStartTransaction falló, intentar con sendCommandIfConnected como último recurso
+        if (!sent) {
+          console.log(`[startCharge] requestStartTransaction failed, trying sendCommandIfConnected as fallback`);
+          const messageId = uuidv4();
+          sent = sendOcppCommand(
+            ocppIdentityForCommand,
+            messageId,
+            "RemoteStartTransaction",
+            { connectorId, idTag }
+          );
+          if (sent) {
+            console.log(`[startCharge] Fallback sendCommandIfConnected succeeded for ${ocppIdentityForCommand}`);
+          }
+        }
         
         if (!sent) {
-          // El comando no se pudo enviar por WebSocket.
-          // Si la estación fue considerada disponible por tener conector AVAILABLE en BD
-          // (pero sin conexión OCPP activa), el cargador puede estar conectado pero
-          // el servidor aún no tiene la conexión WebSocket restablecida.
+          // El comando no se pudo enviar por ningún medio.
           if (hasOcppConnection || isConnectedByIdentity) {
             // Había conexión pero el envío falló - error temporal
             pendingChargeSessions.delete(sessionId);
@@ -456,8 +536,18 @@ export const chargingRouter = router({
           }
           
           // No hay conexión OCPP pero la estación tiene conector AVAILABLE en BD.
-          // Mantenemos la sesión pendiente - informamos al usuario.
-          console.log(`[startCharge] Command not sent via WebSocket but station has AVAILABLE connector. Session ${sessionId} created as pending.`);
+          // Iniciar deferred retry: intentar enviar el comando cada 5 segundos durante 60 segundos
+          console.log(`[startCharge] No OCPP connection available. Starting deferred retry for session ${sessionId}`);
+          startDeferredRemoteStart(sessionId, ocppIdentityForCommand, connectorId, idTag);
+        }
+        
+        // Si el cargador rechazó explícitamente, limpiar y notificar
+        if (remoteStartResponse?.status === "Rejected") {
+          pendingChargeSessions.delete(sessionId);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "El cargador rechazó la solicitud de inicio. Verifica que el vehículo esté correctamente conectado e intenta de nuevo.",
+          });
         }
         
         // Auto-corregir isOnline en BD si la estación tiene conector disponible pero isOnline=0
@@ -968,4 +1058,4 @@ export function findPendingSessionByOcppIdentity(ocppIdentity: string, connector
   console.log(`[findPendingSession] NO MATCH found for ocppIdentity="${ocppIdentity}", connectorId=${connectorId}`);
   return null;
 }
-// Fix startCharge availability - deployed Tue Feb 17 19:37:22 EST 2026
+// Fix startCharge RemoteStartTransaction - deployed Mon Feb 17 2026
