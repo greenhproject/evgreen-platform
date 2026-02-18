@@ -1006,3 +1006,49 @@
 - [x] Verificar que el cargador responde Accepted/Rejected y manejar ambos casos
 - [x] 27 tests unitarios para lógica de retry, fallback, y deferred retry
 - [x] 721 tests totales pasando, 0 errores TypeScript
+
+
+## Panel Diagnóstico OCPP en Tiempo Real + Notificaciones Push - 18 Feb 2026
+
+### Panel Diagnóstico OCPP (Admin)
+- [ ] Endpoint para obtener conexiones WebSocket activas con detalles (ocppIdentity, stationId, versión OCPP, tiempo conectado, último heartbeat)
+- [ ] Endpoint para obtener últimos comandos enviados/recibidos por estación (últimos 50 logs OCPP)
+- [ ] Endpoint para obtener resumen de estado de la red OCPP (total conectados, desconectados, errores)
+- [ ] Página admin /admin/ocpp-diagnostics con vista en tiempo real
+- [ ] Auto-refresh cada 10 segundos de conexiones activas
+- [ ] Tabla de conexiones con indicadores de estado (verde=conectado, rojo=desconectado)
+- [ ] Vista de logs OCPP filtrable por estación con colores por dirección (IN/OUT)
+- [ ] Botón para enviar comandos manuales (TriggerMessage, Reset, etc.)
+
+### Notificación Push al Usuario en StartTransaction Accepted
+- [ ] Detectar StartTransaction Accepted en csms-dual.ts y notificar al usuario vinculado
+- [ ] Crear notificación en BD con tipo "charging_started" 
+- [ ] Implementar mecanismo de notificación en tiempo real (polling optimizado o SSE)
+- [ ] Frontend: mostrar notificación toast cuando la carga inicia exitosamente
+
+
+## Rediseño Monitor OCPP + Diagnóstico + Notificaciones Push - 18 Feb 2026 [COMPLETADO]
+
+### Rediseño UX: Tarjetas de cargadores como punto de entrada
+- [x] Vista principal: grid de tarjetas de cargadores (conectados + registrados en BD)
+- [x] Cada tarjeta muestra: nombre, estado conexión, versión OCPP, último heartbeat, estado conectores
+- [x] Al hacer clic en tarjeta: abrir panel de detalle del cargador con tabs
+- [x] Tab Monitor: estado en tiempo real, conectores, uptime, readyState, pendingCalls
+- [x] Tab Logs: logs OCPP filtrados por ese cargador con colores IN/OUT
+- [x] Tab Configuración: GetConfiguration/ChangeConfiguration para ese cargador
+- [x] Tab Comandos: Reset, Unlock, TriggerMessage, RemoteStart/Stop para ese cargador
+- [x] Mantener resumen general (stats cards) y métricas en la vista principal
+- [x] Botón volver al grid desde el detalle del cargador
+
+### Backend: Diagnóstico detallado
+- [x] Endpoint getDiagnostics: readyState, pendingCalls count, uptime, bootInfo, connectorStatuses por cargador
+- [x] Endpoint getChargerDetail: detalle completo de un cargador con logs recientes (auto-refresh 3s)
+
+### Notificación Push al Usuario en StartTransaction Accepted
+- [x] Detectar StartTransaction Accepted en csms-dual.ts y crear notificación para el usuario vinculado
+- [x] Crear notificación en BD con tipo "CHARGING_STARTED"
+- [x] Frontend: polling optimizado de notificaciones durante pantalla de carga (getActiveSession cada 2s)
+- [x] Frontend: mostrar toast automático cuando la carga inicia exitosamente
+- [x] Transición automática de pantalla "Conectando" a "Cargando" al detectar IN_PROGRESS
+- [x] 12 tests unitarios para diagnóstico y notificaciones
+- [x] 733 tests totales pasando, 0 errores TypeScript

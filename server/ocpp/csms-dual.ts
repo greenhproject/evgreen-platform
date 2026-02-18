@@ -698,6 +698,23 @@ export class DualCSMS {
       console.log(`[CSMS-DUAL] StartTransaction: Created basic active session for userId ${userId}, transactionId: ${transactionId}`);
     }
 
+    // Notificar al usuario que la carga ha iniciado exitosamente
+    try {
+      const station = await db.getChargingStationById(conn.stationId);
+      const stationName = station?.name || conn.ocppIdentity;
+      await db.createNotification({
+        userId,
+        title: "Carga iniciada",
+        message: `Tu sesión de carga ha comenzado en ${stationName} (conector #${req.connectorId}). Puedes monitorear el progreso en tiempo real.`,
+        type: "CHARGING_STARTED",
+        referenceId: transactionId,
+        referenceType: "transaction",
+      });
+      console.log(`[CSMS-DUAL] StartTransaction: Notification sent to user ${userId} for charging started`);
+    } catch (notifError: any) {
+      console.error(`[CSMS-DUAL] StartTransaction: Failed to send notification to user ${userId}:`, notifError.message);
+    }
+
     return {
       idTagInfo: {
         status: "Accepted",
@@ -1764,6 +1781,53 @@ export class DualCSMS {
       connectedAt: conn.connectedAt,
       lastHeartbeat: conn.lastHeartbeat,
     }));
+  }
+
+  /**
+   * Obtiene diagnóstico detallado de todas las conexiones activas
+   * Incluye readyState, pendingCalls, uptime, bootInfo
+   */
+  getDetailedDiagnostics(): Array<{
+    ocppIdentity: string;
+    ocppVersion: string;
+    stationId: number | null;
+    connectedAt: string;
+    lastHeartbeat: string;
+    uptimeSeconds: number;
+    heartbeatAgeSeconds: number;
+    wsReadyState: number;
+    wsReadyStateLabel: string;
+    pendingCallsCount: number;
+    pendingCallIds: string[];
+    isHealthy: boolean;
+  }> {
+    const now = Date.now();
+    const readyStateLabels: Record<number, string> = {
+      0: 'CONNECTING',
+      1: 'OPEN',
+      2: 'CLOSING',
+      3: 'CLOSED',
+    };
+    return Array.from(this.connections.values()).map(conn => {
+      const uptimeSeconds = Math.floor((now - conn.connectedAt.getTime()) / 1000);
+      const heartbeatAgeSeconds = Math.floor((now - conn.lastHeartbeat.getTime()) / 1000);
+      const wsReadyState = conn.ws.readyState;
+      const pendingCallIds = Array.from(conn.pendingCalls.keys());
+      return {
+        ocppIdentity: conn.ocppIdentity,
+        ocppVersion: conn.ocppVersion,
+        stationId: conn.stationId,
+        connectedAt: conn.connectedAt.toISOString(),
+        lastHeartbeat: conn.lastHeartbeat.toISOString(),
+        uptimeSeconds,
+        heartbeatAgeSeconds,
+        wsReadyState,
+        wsReadyStateLabel: readyStateLabels[wsReadyState] || 'UNKNOWN',
+        pendingCallsCount: conn.pendingCalls.size,
+        pendingCallIds,
+        isHealthy: wsReadyState === 1 && heartbeatAgeSeconds < 120,
+      };
+    });
   }
 
   /**

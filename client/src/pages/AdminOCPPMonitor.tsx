@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,14 +9,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { 
-  Activity, 
-  Wifi, 
-  WifiOff, 
-  RefreshCw, 
-  Zap, 
-  Clock, 
-  Server, 
+import {
+  Activity,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Zap,
+  Clock,
+  Server,
   Terminal,
   Play,
   Square,
@@ -38,7 +38,15 @@ import {
   ChevronUp,
   Eye,
   Monitor,
-  X
+  X,
+  ArrowLeft,
+  Heart,
+  AlertTriangle,
+  Cpu,
+  Plug,
+  MapPin,
+  Info,
+  Wrench,
 } from "lucide-react";
 import {
   Chart as ChartJS,
@@ -54,7 +62,6 @@ import {
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
 
-// Registrar componentes de Chart.js
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -67,158 +74,87 @@ ChartJS.register(
   Filler
 );
 
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
 export default function AdminOCPPMonitor() {
   const [selectedCharger, setSelectedCharger] = useState<string | null>(null);
-  const [expandedLogId, setExpandedLogId] = useState<number | null>(null);
-  const [logFilters, setLogFilters] = useState({
-    ocppIdentity: "",
-    messageType: "",
-    direction: "" as "" | "IN" | "OUT" | undefined,
-    limit: 50,
-    offset: 0,
-  });
 
-  // Queries
-  const { data: connections, refetch: refetchConnections } = trpc.ocpp.getActiveConnections.useQuery(
-    undefined,
-    { refetchInterval: 5000 } // Actualizar cada 5 segundos
+  return selectedCharger ? (
+    <ChargerDetailView
+      ocppIdentity={selectedCharger}
+      onBack={() => setSelectedCharger(null)}
+    />
+  ) : (
+    <ChargerGridView onSelectCharger={setSelectedCharger} />
   );
-  
-  const { data: stats, refetch: refetchStats } = trpc.ocpp.getConnectionStats.useQuery(
-    undefined,
-    { refetchInterval: 5000 }
-  );
-  
-  const { data: logsData, refetch: refetchLogs } = trpc.ocpp.getLogs.useQuery({
-    ...logFilters,
-    direction: logFilters.direction || undefined,
-  }, {
-    refetchInterval: 10000,
-  });
-  
-  const { data: messageTypes } = trpc.ocpp.getMessageTypes.useQuery();
+}
 
-  // Mutations
-  const resetMutation = trpc.ocpp.sendReset.useMutation({
-    onSuccess: () => {
-      toast.success("Comando Reset enviado");
-      refetchLogs();
-    },
-    onError: (err) => toast.error(err.message),
+// ============================================================================
+// CHARGER GRID VIEW - Vista principal con tarjetas de cargadores
+// ============================================================================
+
+function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) => void }) {
+  const { data: diagnostics, refetch: refetchDiag } = trpc.ocpp.getDiagnostics.useQuery(undefined, {
+    refetchInterval: 5000,
+  });
+  const { data: stats } = trpc.ocpp.getConnectionStats.useQuery(undefined, {
+    refetchInterval: 5000,
+  });
+  const { data: allStations } = trpc.ocpp.getChargePointIds.useQuery(undefined, {
+    refetchInterval: 30000,
   });
 
-  const unlockMutation = trpc.ocpp.sendUnlockConnector.useMutation({
-    onSuccess: () => {
-      toast.success("Comando UnlockConnector enviado");
-      refetchLogs();
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  // Combinar cargadores conectados + registrados en BD
+  const chargers = useMemo(() => {
+    const map = new Map<string, any>();
 
-  const triggerMutation = trpc.ocpp.sendTriggerMessage.useMutation({
-    onSuccess: () => {
-      toast.success("Comando TriggerMessage enviado");
-      refetchLogs();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const changeAvailabilityMutation = trpc.ocpp.sendChangeAvailability.useMutation({
-    onSuccess: () => {
-      toast.success("Comando ChangeAvailability enviado");
-      refetchLogs();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const getConfigMutation = trpc.ocpp.sendGetConfiguration.useMutation({
-    onSuccess: () => {
-      toast.success("Comando GetConfiguration enviado. Revise los logs para ver la respuesta.");
-      refetchLogs();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const changeConfigMutation = trpc.ocpp.sendChangeConfiguration.useMutation({
-    onSuccess: () => {
-      toast.success("Comando ChangeConfiguration enviado");
-      refetchLogs();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  // Estado para configuración remota
-  const [configCharger, setConfigCharger] = useState<string>("");
-  const [configKey, setConfigKey] = useState<string>("");
-  const [configValue, setConfigValue] = useState<string>("");
-
-  // Estado para métricas históricas
-  const [metricsRange, setMetricsRange] = useState<"24h" | "7d" | "30d">("24h");
-  const [metricsGranularity, setMetricsGranularity] = useState<"hour" | "day">("hour");
-
-  // Calcular fechas para métricas
-  const getMetricsDates = () => {
-    const endDate = new Date();
-    const startDate = new Date();
-    switch (metricsRange) {
-      case "24h":
-        startDate.setHours(startDate.getHours() - 24);
-        break;
-      case "7d":
-        startDate.setDate(startDate.getDate() - 7);
-        break;
-      case "30d":
-        startDate.setDate(startDate.getDate() - 30);
-        break;
+    // Primero: cargadores registrados en BD (pueden estar offline)
+    if (allStations) {
+      for (const cpId of allStations) {
+        if (cpId) {
+          map.set(cpId, {
+            ocppIdentity: cpId,
+            isConnected: false,
+            stationName: cpId,
+            connectors: [],
+          });
+        }
+      }
     }
-    return { startDate: startDate.toISOString(), endDate: endDate.toISOString() };
+
+    // Luego: sobrescribir con datos de diagnóstico en tiempo real
+    if (diagnostics) {
+      for (const diag of diagnostics) {
+        map.set(diag.ocppIdentity, {
+          ...diag,
+          isConnected: true,
+        });
+      }
+    }
+
+    return Array.from(map.values());
+  }, [diagnostics, allStations]);
+
+  const connectedCount = chargers.filter(c => c.isConnected).length;
+  const offlineCount = chargers.filter(c => !c.isConnected).length;
+
+  const formatUptime = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return `${h}h ${m}m`;
   };
 
-  const metricsDates = getMetricsDates();
-
-  // Query para métricas de conexiones
-  const { data: connectionMetrics } = trpc.ocpp.getConnectionMetrics.useQuery({
-    startDate: metricsDates.startDate,
-    endDate: metricsDates.endDate,
-    granularity: metricsRange === "24h" ? "hour" : "day",
-  }, {
-    refetchInterval: 60000, // Actualizar cada minuto
-  });
-
-  // Query para métricas de transacciones
-  const { data: transactionMetrics } = trpc.ocpp.getTransactionMetrics.useQuery({
-    startDate: metricsDates.startDate,
-    endDate: metricsDates.endDate,
-    granularity: metricsRange === "24h" ? "hour" : "day",
-  }, {
-    refetchInterval: 60000,
-  });
-
-  // Formatear tiempo relativo
-  const formatRelativeTime = (isoString: string) => {
-    const date = new Date(isoString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffSec = Math.floor(diffMs / 1000);
-    
-    if (diffSec < 60) return `${diffSec}s`;
-    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m`;
-    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h`;
-    return `${Math.floor(diffSec / 86400)}d`;
-  };
-
-  // Obtener color del estado del conector
   const getConnectorStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case "available": return "bg-green-500";
-      case "preparing": return "bg-yellow-500";
-      case "charging": return "bg-blue-500";
-      case "suspendedev":
-      case "suspendedevse": return "bg-orange-500";
-      case "finishing": return "bg-purple-500";
-      case "reserved": return "bg-cyan-500";
-      case "unavailable": return "bg-gray-500";
-      case "faulted": return "bg-red-500";
+    switch (status?.toUpperCase()) {
+      case "AVAILABLE": return "bg-green-500";
+      case "CHARGING": return "bg-blue-500";
+      case "RESERVED": return "bg-cyan-500";
+      case "UNAVAILABLE": return "bg-gray-500";
+      case "FAULTED": return "bg-red-500";
       default: return "bg-gray-400";
     }
   };
@@ -233,23 +169,16 @@ export default function AdminOCPPMonitor() {
             Monitor OCPP
           </h1>
           <p className="text-muted-foreground">
-            Monitoreo en tiempo real de cargadores conectados
+            Seleccione un cargador para ver su detalle y opciones de control
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            refetchConnections();
-            refetchStats();
-            refetchLogs();
-          }}
-        >
+        <Button variant="outline" onClick={() => refetchDiag()}>
           <RefreshCw className="h-4 w-4 mr-2" />
           Actualizar
         </Button>
       </div>
 
-      {/* WebSocket URL Card - Para soporte y configuración */}
+      {/* WebSocket URL Card */}
       <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
         <CardContent className="pt-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -264,33 +193,21 @@ export default function AdminOCPPMonitor() {
                 </p>
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <div className="flex items-center gap-2 bg-background border rounded-lg px-3 py-2">
-                <code className="text-sm font-mono text-primary select-all">
-                  wss://www.evgreen.lat/api/ocpp/ws/{'{CHARGE_POINT_ID}'}
-                </code>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  onClick={() => {
-                    navigator.clipboard.writeText('wss://www.evgreen.lat/api/ocpp/ws/');
-                    toast.success('URL copiada al portapapeles');
-                  }}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-            <div className="flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
-              <div className="text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">Protocolos soportados:</p>
-                <p className="mt-1">OCPP 1.6J (ocpp1.6) y OCPP 2.0.1 (ocpp2.0.1)</p>
-                <p className="mt-2"><strong>Ejemplo:</strong> Para un cargador con ID "CP001", la URL sería: <code className="bg-background px-1 rounded">wss://www.evgreen.lat/api/ocpp/ws/CP001</code></p>
-              </div>
+            <div className="flex items-center gap-2 bg-background border rounded-lg px-3 py-2">
+              <code className="text-sm font-mono text-primary select-all">
+                wss://www.evgreen.lat/api/ocpp/ws/{'{CHARGE_POINT_ID}'}
+              </code>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                onClick={() => {
+                  navigator.clipboard.writeText('wss://www.evgreen.lat/api/ocpp/ws/');
+                  toast.success('URL copiada al portapapeles');
+                }}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -302,73 +219,395 @@ export default function AdminOCPPMonitor() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Conectados</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {stats?.connectedCount || 0}
-                </p>
-              </div>
-              <Wifi className="h-8 w-8 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Desconectados</p>
-                <p className="text-2xl font-bold text-gray-600">
-                  {stats?.disconnectedCount || 0}
-                </p>
-              </div>
-              <WifiOff className="h-8 w-8 text-gray-400" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">OCPP 1.6</p>
-                <p className="text-2xl font-bold">
-                  {stats?.byVersion?.["1.6"] || 0}
-                </p>
+                <p className="text-sm text-muted-foreground">Total</p>
+                <p className="text-2xl font-bold">{chargers.length}</p>
               </div>
               <Server className="h-8 w-8 text-blue-500" />
             </div>
           </CardContent>
         </Card>
-        
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">OCPP 2.0.1</p>
-                <p className="text-2xl font-bold">
-                  {stats?.byVersion?.["2.0.1"] || 0}
+                <p className="text-sm text-muted-foreground">Conectados</p>
+                <p className="text-2xl font-bold text-green-600">{connectedCount}</p>
+              </div>
+              <Wifi className="h-8 w-8 text-green-500" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Desconectados</p>
+                <p className="text-2xl font-bold text-gray-600">{offlineCount}</p>
+              </div>
+              <WifiOff className="h-8 w-8 text-gray-400" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Saludables</p>
+                <p className="text-2xl font-bold text-emerald-600">
+                  {diagnostics?.filter(d => d.isHealthy).length || 0}
                 </p>
               </div>
-              <Server className="h-8 w-8 text-purple-500" />
+              <Heart className="h-8 w-8 text-emerald-500" />
             </div>
           </CardContent>
         </Card>
       </div>
 
+      {/* Charger Cards Grid */}
+      {chargers.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {chargers
+            .sort((a, b) => (b.isConnected ? 1 : 0) - (a.isConnected ? 1 : 0))
+            .map((charger) => (
+            <Card
+              key={charger.ocppIdentity}
+              className={`cursor-pointer transition-all hover:shadow-lg hover:scale-[1.01] ${
+                charger.isConnected
+                  ? charger.isHealthy
+                    ? 'border-green-500/50 hover:border-green-500'
+                    : 'border-yellow-500/50 hover:border-yellow-500'
+                  : 'border-gray-300 hover:border-gray-400'
+              }`}
+              onClick={() => onSelectCharger(charger.ocppIdentity)}
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    {charger.isConnected ? (
+                      charger.isHealthy ? (
+                        <span className="relative flex h-3 w-3">
+                          <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping" />
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
+                        </span>
+                      ) : (
+                        <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                      )
+                    ) : (
+                      <span className="h-3 w-3 rounded-full bg-gray-400" />
+                    )}
+                    <Zap className="h-4 w-4 text-primary" />
+                    {charger.ocppIdentity}
+                  </CardTitle>
+                  {charger.isConnected && (
+                    <Badge variant="outline" className="text-xs">
+                      OCPP {charger.ocppVersion || '1.6'}
+                    </Badge>
+                  )}
+                </div>
+                {charger.stationName && charger.stationName !== charger.ocppIdentity && (
+                  <CardDescription className="text-xs truncate">
+                    {charger.stationName}
+                  </CardDescription>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Manufacturer/Model */}
+                {charger.manufacturer && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Cpu className="h-3 w-3" />
+                    {charger.manufacturer} {charger.model || ''}
+                  </div>
+                )}
+
+                {/* Address */}
+                {charger.address && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
+                    <MapPin className="h-3 w-3 shrink-0" />
+                    {charger.address}
+                  </div>
+                )}
+
+                {/* Connection info */}
+                {charger.isConnected ? (
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      Uptime: {formatUptime(charger.uptimeSeconds || 0)}
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <Activity className="h-3 w-3" />
+                      HB: {charger.heartbeatAgeSeconds != null ? `${charger.heartbeatAgeSeconds}s` : '-'}
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <Monitor className="h-3 w-3" />
+                      WS: <Badge variant={charger.wsReadyState === 1 ? "default" : "destructive"} className="text-[10px] px-1 py-0 h-4">
+                        {charger.wsReadyStateLabel || 'UNKNOWN'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <Send className="h-3 w-3" />
+                      Pending: {charger.pendingCallsCount || 0}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <WifiOff className="h-3 w-3" />
+                    Sin conexión WebSocket activa
+                  </div>
+                )}
+
+                {/* Connectors */}
+                {charger.connectors && charger.connectors.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {charger.connectors.map((conn: any) => (
+                      <Badge
+                        key={conn.connectorId}
+                        variant="outline"
+                        className={`text-[10px] ${getConnectorStatusColor(conn.status)} text-white border-0`}
+                      >
+                        <Plug className="h-2.5 w-2.5 mr-0.5" />
+                        #{conn.connectorId} {conn.status} {conn.powerKw ? `(${conn.powerKw}kW)` : ''}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                {/* Click hint */}
+                <div className="flex items-center justify-end text-xs text-muted-foreground pt-1">
+                  <Eye className="h-3 w-3 mr-1" />
+                  Ver detalle
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <WifiOff className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium">No hay cargadores registrados</h3>
+            <p className="text-muted-foreground">
+              Los cargadores aparecerán aquí cuando se conecten al servidor OCPP o se registren en la plataforma
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// CHARGER DETAIL VIEW - Vista de detalle con tabs por cargador
+// ============================================================================
+
+function ChargerDetailView({
+  ocppIdentity,
+  onBack,
+}: {
+  ocppIdentity: string;
+  onBack: () => void;
+}) {
+  const [expandedLogId, setExpandedLogId] = useState<number | null>(null);
+  const [logFilters, setLogFilters] = useState({
+    ocppIdentity,
+    messageType: "",
+    direction: "" as "" | "IN" | "OUT" | undefined,
+    limit: 50,
+    offset: 0,
+  });
+
+  // Datos del cargador en tiempo real
+  const { data: chargerDetail, refetch: refetchDetail } = trpc.ocpp.getChargerDetail.useQuery(
+    { ocppIdentity },
+    { refetchInterval: 3000 }
+  );
+
+  // Logs del cargador
+  const { data: logsData, refetch: refetchLogs } = trpc.ocpp.getLogs.useQuery({
+    ...logFilters,
+    direction: logFilters.direction || undefined,
+  }, {
+    refetchInterval: 5000,
+  });
+
+  const { data: messageTypes } = trpc.ocpp.getMessageTypes.useQuery();
+
+  // Mutations
+  const resetMutation = trpc.ocpp.sendReset.useMutation({
+    onSuccess: () => { toast.success("Comando Reset enviado"); refetchLogs(); refetchDetail(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const unlockMutation = trpc.ocpp.sendUnlockConnector.useMutation({
+    onSuccess: () => { toast.success("Comando UnlockConnector enviado"); refetchLogs(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const triggerMutation = trpc.ocpp.sendTriggerMessage.useMutation({
+    onSuccess: () => { toast.success("Comando TriggerMessage enviado"); refetchLogs(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const changeAvailabilityMutation = trpc.ocpp.sendChangeAvailability.useMutation({
+    onSuccess: () => { toast.success("Comando ChangeAvailability enviado"); refetchLogs(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const getConfigMutation = trpc.ocpp.sendGetConfiguration.useMutation({
+    onSuccess: () => { toast.success("GetConfiguration enviado. Revise los logs."); refetchLogs(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const changeConfigMutation = trpc.ocpp.sendChangeConfiguration.useMutation({
+    onSuccess: () => { toast.success("ChangeConfiguration enviado"); refetchLogs(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const remoteStartMutation = trpc.ocpp.sendRemoteStart.useMutation({
+    onSuccess: () => { toast.success("RemoteStartTransaction enviado"); refetchLogs(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const remoteStopMutation = trpc.ocpp.sendRemoteStop.useMutation({
+    onSuccess: () => { toast.success("RemoteStopTransaction enviado"); refetchLogs(); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Config state
+  const [configKey, setConfigKey] = useState("");
+  const [configValue, setConfigValue] = useState("");
+  const [remoteStartConnector, setRemoteStartConnector] = useState("1");
+  const [remoteStartIdTag, setRemoteStartIdTag] = useState("ADMIN");
+  const [remoteStopTxId, setRemoteStopTxId] = useState("");
+
+  const isConnected = chargerDetail?.isConnected ?? false;
+  const conn = chargerDetail?.connection;
+  const station = chargerDetail?.station;
+
+  const getConnectorStatusColor = (status: string) => {
+    switch (status?.toUpperCase()) {
+      case "AVAILABLE": return "bg-green-500";
+      case "CHARGING": return "bg-blue-500";
+      case "RESERVED": return "bg-cyan-500";
+      case "UNAVAILABLE": return "bg-gray-500";
+      case "FAULTED": return "bg-red-500";
+      default: return "bg-gray-400";
+    }
+  };
+
+  const formatUptime = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return `${h}h ${m}m`;
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header con botón volver */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Zap className="h-6 w-6 text-primary" />
+              {station?.name || ocppIdentity}
+              {isConnected ? (
+                conn?.isHealthy ? (
+                  <Badge className="bg-green-500 text-white">Conectado</Badge>
+                ) : (
+                  <Badge className="bg-yellow-500 text-white">Degradado</Badge>
+                )
+              ) : (
+                <Badge variant="secondary">Desconectado</Badge>
+              )}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {station?.address ? `${station.address}, ${station.city}` : `OCPP Identity: ${ocppIdentity}`}
+            </p>
+          </div>
+        </div>
+        <Button variant="outline" onClick={() => { refetchDetail(); refetchLogs(); }}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Actualizar
+        </Button>
+      </div>
+
+      {/* Info cards row */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <Card>
+          <CardContent className="pt-4 pb-3 text-center">
+            <p className="text-xs text-muted-foreground">WebSocket</p>
+            <Badge variant={conn?.wsReadyState === 1 ? "default" : "destructive"} className="mt-1">
+              {conn?.wsReadyStateLabel || 'CLOSED'}
+            </Badge>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 text-center">
+            <p className="text-xs text-muted-foreground">Uptime</p>
+            <p className="text-lg font-bold">{conn ? formatUptime(conn.uptimeSeconds) : '-'}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 text-center">
+            <p className="text-xs text-muted-foreground">Heartbeat</p>
+            <p className="text-lg font-bold">{conn ? `${conn.heartbeatAgeSeconds}s` : '-'}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 text-center">
+            <p className="text-xs text-muted-foreground">Pending Calls</p>
+            <p className="text-lg font-bold">{conn?.pendingCallsCount ?? '-'}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 text-center">
+            <p className="text-xs text-muted-foreground">Protocolo</p>
+            <p className="text-lg font-bold">OCPP {conn?.ocppVersion || '1.6'}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Connectors row */}
+      {chargerDetail?.connectors && chargerDetail.connectors.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Plug className="h-4 w-4" />
+              Conectores
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {chargerDetail.connectors.map((c: any) => (
+                <div key={c.connectorId} className="flex items-center gap-3 p-3 border rounded-lg">
+                  <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white font-bold ${getConnectorStatusColor(c.status)}`}>
+                    #{c.connectorId}
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm">{c.connectorType || 'Desconocido'}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {c.status} {c.powerKw ? `· ${c.powerKw} kW` : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tabs */}
-      <Tabs defaultValue="connections" className="space-y-4">
+      <Tabs defaultValue="monitor" className="space-y-4">
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="connections">
-            <Wifi className="h-4 w-4 mr-2" />
-            Conexiones
-          </TabsTrigger>
-          <TabsTrigger value="metrics">
-            <BarChart3 className="h-4 w-4 mr-2" />
-            Métricas
+          <TabsTrigger value="monitor">
+            <Monitor className="h-4 w-4 mr-2" />
+            Monitor
           </TabsTrigger>
           <TabsTrigger value="logs">
             <Terminal className="h-4 w-4 mr-2" />
             Logs
+          </TabsTrigger>
+          <TabsTrigger value="commands">
+            <Send className="h-4 w-4 mr-2" />
+            Comandos
           </TabsTrigger>
           <TabsTrigger value="config">
             <Settings className="h-4 w-4 mr-2" />
@@ -376,203 +615,549 @@ export default function AdminOCPPMonitor() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Conexiones Activas */}
-        <TabsContent value="connections" className="space-y-4">
-          {connections && connections.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {connections.map((conn) => (
-                <Card key={conn.ocppIdentity} className={`${conn.isConnected ? 'border-green-500/50' : 'border-gray-300'}`}>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        {conn.isConnected ? (
-                          <Wifi className="h-5 w-5 text-green-500" />
-                        ) : (
-                          <WifiOff className="h-5 w-5 text-gray-400" />
-                        )}
-                        {conn.ocppIdentity}
-                      </CardTitle>
-                      <Badge variant={conn.isConnected ? "default" : "secondary"}>
-                        OCPP {conn.ocppVersion}
+        {/* ==================== TAB: MONITOR ==================== */}
+        <TabsContent value="monitor" className="space-y-4">
+          {/* Station info from DB */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Info className="h-4 w-4" />
+                Información de la Estación
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">OCPP Identity</span>
+                    <span className="font-mono font-medium">{ocppIdentity}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Fabricante</span>
+                    <span>{station?.manufacturer || conn?.ocppVersion === '2.0.1' ? 'N/A' : '-'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Modelo</span>
+                    <span>{station?.model || '-'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Serial</span>
+                    <span className="font-mono text-xs">{station?.serialNumber || '-'}</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Firmware</span>
+                    <span>{station?.firmwareVersion || '-'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Último Boot</span>
+                    <span className="text-xs">{station?.lastBootNotification ? new Date(station.lastBootNotification).toLocaleString('es-CO') : '-'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Conectado desde</span>
+                    <span className="text-xs">{conn?.connectedAt ? new Date(conn.connectedAt).toLocaleString('es-CO') : '-'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Total logs</span>
+                    <span>{chargerDetail?.totalLogs || 0}</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Live activity - últimos mensajes */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Actividad Reciente
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                  </span>
+                </CardTitle>
+                <Badge variant="outline" className="text-xs">Auto-refresh 3s</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {chargerDetail?.recentLogs && chargerDetail.recentLogs.length > 0 ? (
+                <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                  {chargerDetail.recentLogs.slice(0, 20).map((log: any) => (
+                    <div
+                      key={log.id}
+                      className={`flex items-center gap-2 text-xs font-mono py-1.5 px-2 rounded ${
+                        log.direction === 'IN'
+                          ? 'bg-green-500/5 text-green-700 dark:text-green-400'
+                          : 'bg-blue-500/5 text-blue-700 dark:text-blue-400'
+                      }`}
+                    >
+                      <Badge
+                        variant={log.direction === 'IN' ? 'default' : 'secondary'}
+                        className="text-[10px] px-1.5 py-0 h-4 shrink-0"
+                      >
+                        {log.direction === 'IN' ? '← IN' : '→ OUT'}
                       </Badge>
+                      <span className="text-muted-foreground shrink-0">
+                        {new Date(log.createdAt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
+                      <Badge variant="outline" className="text-[10px] shrink-0">{log.messageType}</Badge>
+                      <span className="truncate text-muted-foreground">
+                        {typeof log.payload === 'string' ? log.payload : JSON.stringify(log.payload)}
+                      </span>
                     </div>
-                    {conn.bootInfo && (
-                      <CardDescription>
-                        {conn.bootInfo.vendor} - {conn.bootInfo.model}
-                      </CardDescription>
-                    )}
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {/* Timestamps */}
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div className="flex items-center gap-1 text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        Conectado: {formatRelativeTime(conn.connectedAt)}
-                      </div>
-                      <div className="flex items-center gap-1 text-muted-foreground">
-                        <Activity className="h-3 w-3" />
-                        Heartbeat: {formatRelativeTime(conn.lastHeartbeat)}
-                      </div>
-                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Terminal className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No hay actividad reciente para este cargador</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                    {/* Connector Statuses */}
-                    {Object.keys(conn.connectorStatuses).length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Conectores:</p>
-                        <div className="flex flex-wrap gap-1">
-                          {Object.entries(conn.connectorStatuses || {}).map(([id, statusVal]) => {
-                            const status = String(statusVal);
-                            return (
-                              <Badge 
-                                key={id} 
-                                variant="outline"
-                                className={`text-xs ${getConnectorStatusColor(status)} text-white border-0`}
-                              >
-                                #{id}: {status}
-                              </Badge>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+        {/* ==================== TAB: LOGS ==================== */}
+        <TabsContent value="logs" className="space-y-4">
+          {/* Filtros */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Filter className="h-4 w-4" />
+                Filtros de Logs
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Select
+                  value={logFilters.messageType || "all"}
+                  onValueChange={(v) => setLogFilters(prev => ({ ...prev, messageType: v === "all" ? "" : v, offset: 0 }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Tipo de mensaje" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los tipos</SelectItem>
+                    {messageTypes?.map((type) => (
+                      <SelectItem key={type} value={type || ""}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={logFilters.direction || "all"}
+                  onValueChange={(v) => setLogFilters(prev => ({ ...prev, direction: v === "all" ? "" : v as "IN" | "OUT", offset: 0 }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Dirección" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    <SelectItem value="IN">Entrante (IN)</SelectItem>
+                    <SelectItem value="OUT">Saliente (OUT)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => refetchLogs()}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Actualizar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (!logsData?.logs?.length) { toast.error("No hay logs"); return; }
+                      const lines = logsData.logs.map((log: any) => {
+                        const date = new Date(log.createdAt).toLocaleString('es-CO');
+                        const dir = log.direction === 'IN' ? '← IN ' : '→ OUT';
+                        let payloadStr = '';
+                        try { payloadStr = typeof log.payload === 'string' ? log.payload : JSON.stringify(log.payload, null, 2); } catch { payloadStr = String(log.payload); }
+                        return `[${date}] ${dir} | ${log.messageType}\n${payloadStr}`;
+                      });
+                      const content = `=== EVGreen OCPP Logs - ${ocppIdentity} ===\nExportado: ${new Date().toLocaleString('es-CO')}\nTotal: ${logsData.logs.length} registros\n${'='.repeat(60)}\n\n${lines.join('\n\n' + '-'.repeat(60) + '\n\n')}`;
+                      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `ocpp-logs-${ocppIdentity}-${new Date().toISOString().slice(0,10)}.txt`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      toast.success(`${logsData.logs.length} logs exportados`);
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-                    {/* Actions */}
-                    {conn.isConnected && (
-                      <div className="flex flex-wrap gap-2 pt-2">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button size="sm" variant="outline">
-                              <Power className="h-3 w-3 mr-1" />
-                              Reset
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Reiniciar Cargador</DialogTitle>
-                              <DialogDescription>
-                                Enviar comando Reset a {conn.ocppIdentity}
-                              </DialogDescription>
-                            </DialogHeader>
-                            <div className="flex gap-2">
-                              <Button
-                                onClick={() => resetMutation.mutate({ 
-                                  ocppIdentity: conn.ocppIdentity, 
-                                  type: "Soft" 
+          {/* Tabla de Logs */}
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[140px]">Fecha/Hora</TableHead>
+                      <TableHead className="w-[80px]">Dir</TableHead>
+                      <TableHead className="w-[150px]">Mensaje</TableHead>
+                      <TableHead>Payload</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {logsData?.logs && logsData.logs.length > 0 ? (
+                      logsData.logs.map((log: any) => {
+                        const isExpanded = expandedLogId === log.id;
+                        let formattedPayload = '';
+                        try {
+                          const parsed = typeof log.payload === 'string' ? JSON.parse(log.payload) : log.payload;
+                          formattedPayload = JSON.stringify(parsed, null, 2);
+                        } catch { formattedPayload = String(log.payload); }
+                        const shortPayload = JSON.stringify(log.payload);
+                        return (
+                          <Fragment key={log.id}>
+                            <TableRow
+                              className="cursor-pointer hover:bg-muted/50"
+                              onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                            >
+                              <TableCell className="text-xs font-mono">
+                                {new Date(log.createdAt).toLocaleString('es-CO', {
+                                  month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
                                 })}
-                                disabled={resetMutation.isPending}
-                              >
-                                Soft Reset
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                onClick={() => resetMutation.mutate({ 
-                                  ocppIdentity: conn.ocppIdentity, 
-                                  type: "Hard" 
-                                })}
-                                disabled={resetMutation.isPending}
-                              >
-                                Hard Reset
-                              </Button>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
-
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => triggerMutation.mutate({
-                            ocppIdentity: conn.ocppIdentity,
-                            requestedMessage: "StatusNotification",
-                            connectorId: 1,
-                          })}
-                          disabled={triggerMutation.isPending}
-                        >
-                          <Send className="h-3 w-3 mr-1" />
-                          Status
-                        </Button>
-
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => unlockMutation.mutate({
-                            ocppIdentity: conn.ocppIdentity,
-                            connectorId: 1,
-                          })}
-                          disabled={unlockMutation.isPending}
-                        >
-                          <Unlock className="h-3 w-3 mr-1" />
-                          Unlock
-                        </Button>
-                      </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={log.direction === "IN" ? "default" : "secondary"}>
+                                  {log.direction === "IN" ? "← IN" : "→ OUT"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{log.messageType}</Badge>
+                              </TableCell>
+                              <TableCell className="max-w-[400px]">
+                                <div className="flex items-center gap-2">
+                                  <pre className="text-xs overflow-hidden text-ellipsis whitespace-nowrap flex-1">
+                                    {shortPayload}
+                                  </pre>
+                                  {shortPayload.length > 40 && (
+                                    isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && (
+                              <TableRow>
+                                <TableCell colSpan={4} className="bg-muted/30 p-0">
+                                  <div className="p-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Payload completo</span>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 text-xs"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigator.clipboard.writeText(formattedPayload);
+                                          toast.success("Payload copiado");
+                                        }}
+                                      >
+                                        <Copy className="h-3 w-3 mr-1" />
+                                        Copiar
+                                      </Button>
+                                    </div>
+                                    <pre className="text-xs font-mono bg-background rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all border">
+                                      {formattedPayload}
+                                    </pre>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
+                        );
+                      })
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                          No hay logs para este cargador
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </CardContent>
-                </Card>
-              ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Paginación */}
+          {logsData && logsData.total > logFilters.limit && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Mostrando {logFilters.offset + 1} - {Math.min(logFilters.offset + logFilters.limit, logsData.total)} de {logsData.total}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={logFilters.offset === 0}
+                  onClick={() => setLogFilters(prev => ({ ...prev, offset: Math.max(0, prev.offset - prev.limit) }))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={logFilters.offset + logFilters.limit >= logsData.total}
+                  onClick={() => setLogFilters(prev => ({ ...prev, offset: prev.offset + prev.limit }))}
+                >
+                  Siguiente
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-          ) : (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <WifiOff className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No hay cargadores conectados</h3>
-                <p className="text-muted-foreground">
-                  Los cargadores aparecerán aquí cuando se conecten al servidor OCPP
-                </p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Endpoint: wss://www.evgreen.lat/api/ocpp/ws/&#123;chargePointId&#125;
-                </p>
-              </CardContent>
-            </Card>
           )}
         </TabsContent>
 
-        {/* Logs OCPP */}
-        <TabsContent value="logs" className="space-y-4">
-          {/* Selector de Cargadores */}
-          <ChargerLogsPanel
-            logFilters={logFilters}
-            setLogFilters={setLogFilters}
-            logsData={logsData}
-            refetchLogs={refetchLogs}
-            messageTypes={messageTypes}
-            expandedLogId={expandedLogId}
-            setExpandedLogId={setExpandedLogId}
-            connections={connections}
-          />
+        {/* ==================== TAB: COMMANDS ==================== */}
+        <TabsContent value="commands" className="space-y-4">
+          {!isConnected && (
+            <Card className="border-yellow-500/50 bg-yellow-500/5">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                  <p className="text-sm">Este cargador no está conectado. Los comandos no se enviarán hasta que se reconecte.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Reset */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Power className="h-4 w-4" />
+                  Reset
+                </CardTitle>
+                <CardDescription>Reiniciar el cargador (Soft o Hard)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    variant="outline"
+                    onClick={() => resetMutation.mutate({ ocppIdentity, type: "Soft" })}
+                    disabled={resetMutation.isPending || !isConnected}
+                  >
+                    Soft Reset
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    variant="destructive"
+                    onClick={() => resetMutation.mutate({ ocppIdentity, type: "Hard" })}
+                    disabled={resetMutation.isPending || !isConnected}
+                  >
+                    Hard Reset
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Unlock Connector */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Unlock className="h-4 w-4" />
+                  Desbloquear Conector
+                </CardTitle>
+                <CardDescription>Desbloquea un conector específico</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2">
+                  {(chargerDetail?.connectors || [{ connectorId: 1 }]).map((c: any) => (
+                    <Button
+                      key={c.connectorId}
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => unlockMutation.mutate({ ocppIdentity, connectorId: c.connectorId })}
+                      disabled={unlockMutation.isPending || !isConnected}
+                    >
+                      <Unlock className="h-3 w-3 mr-1" />
+                      Conector #{c.connectorId}
+                    </Button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Trigger Message */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Send className="h-4 w-4" />
+                  Trigger Message
+                </CardTitle>
+                <CardDescription>Solicitar un mensaje específico al cargador</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["StatusNotification", "Heartbeat", "MeterValues", "BootNotification"] as const).map((msg) => (
+                    <Button
+                      key={msg}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => triggerMutation.mutate({ ocppIdentity, requestedMessage: msg, connectorId: 1 })}
+                      disabled={triggerMutation.isPending || !isConnected}
+                    >
+                      {msg.replace(/([A-Z])/g, ' $1').trim()}
+                    </Button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Change Availability */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Power className="h-4 w-4" />
+                  Cambiar Disponibilidad
+                </CardTitle>
+                <CardDescription>Cambiar estado de disponibilidad del conector</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => changeAvailabilityMutation.mutate({ ocppIdentity, connectorId: 1, type: "Operative" })}
+                    disabled={changeAvailabilityMutation.isPending || !isConnected}
+                  >
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Operativo
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => changeAvailabilityMutation.mutate({ ocppIdentity, connectorId: 1, type: "Inoperative" })}
+                    disabled={changeAvailabilityMutation.isPending || !isConnected}
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Inoperativo
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Remote Start Transaction */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Play className="h-4 w-4" />
+                  RemoteStartTransaction
+                </CardTitle>
+                <CardDescription>Iniciar una transacción de carga remotamente</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-muted-foreground">Conector</label>
+                    <Input
+                      value={remoteStartConnector}
+                      onChange={(e) => setRemoteStartConnector(e.target.value)}
+                      type="number"
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">idTag</label>
+                    <Input
+                      value={remoteStartIdTag}
+                      onChange={(e) => setRemoteStartIdTag(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={() => remoteStartMutation.mutate({
+                    ocppIdentity,
+                    connectorId: parseInt(remoteStartConnector) || 1,
+                    idTag: remoteStartIdTag || "ADMIN",
+                  })}
+                  disabled={remoteStartMutation.isPending || !isConnected}
+                >
+                  <Play className="h-4 w-4 mr-2" />
+                  Iniciar Carga
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Remote Stop Transaction */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Square className="h-4 w-4" />
+                  RemoteStopTransaction
+                </CardTitle>
+                <CardDescription>Detener una transacción de carga en curso</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <label className="text-xs text-muted-foreground">Transaction ID</label>
+                  <Input
+                    value={remoteStopTxId}
+                    onChange={(e) => setRemoteStopTxId(e.target.value)}
+                    type="number"
+                    placeholder="ID de la transacción"
+                  />
+                </div>
+                <Button
+                  className="w-full"
+                  variant="destructive"
+                  onClick={() => {
+                    if (!remoteStopTxId) { toast.error("Ingrese el Transaction ID"); return; }
+                    remoteStopMutation.mutate({
+                      ocppIdentity,
+                      transactionId: parseInt(remoteStopTxId),
+                    });
+                  }}
+                  disabled={remoteStopMutation.isPending || !isConnected || !remoteStopTxId}
+                >
+                  <Square className="h-4 w-4 mr-2" />
+                  Detener Carga
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
-        {/* Configuración Remota */}
+        {/* ==================== TAB: CONFIG ==================== */}
         <TabsContent value="config" className="space-y-4">
+          {!isConnected && (
+            <Card className="border-yellow-500/50 bg-yellow-500/5">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                  <p className="text-sm">Este cargador no está conectado. Los comandos de configuración no se enviarán hasta que se reconecte.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <div className="grid gap-6 md:grid-cols-2">
             {/* GetConfiguration */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Eye className="h-4 w-4" />
                   Obtener Configuración
                 </CardTitle>
                 <CardDescription>
-                  Solicita la configuración actual del cargador. La respuesta aparecerá en los logs.
+                  La respuesta aparecerá en los logs del cargador.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Cargador</label>
-                  <Select
-                    value={configCharger}
-                    onValueChange={setConfigCharger}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar cargador conectado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {connections?.filter(c => c.isConnected).map((conn) => (
-                        <SelectItem key={conn.ocppIdentity} value={conn.ocppIdentity}>
-                          {conn.ocppIdentity} - {conn.bootInfo?.vendor || 'Desconocido'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Claves específicas (opcional)</label>
                   <Input
@@ -581,29 +1166,18 @@ export default function AdminOCPPMonitor() {
                     onChange={(e) => setConfigKey(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Deje vacío para obtener toda la configuración, o ingrese claves separadas por coma.
+                    Deje vacío para obtener toda la configuración.
                   </p>
                 </div>
                 <Button
                   className="w-full"
                   onClick={() => {
-                    if (!configCharger) {
-                      toast.error("Seleccione un cargador");
-                      return;
-                    }
                     const keys = configKey.trim() ? configKey.split(',').map(k => k.trim()) : undefined;
-                    getConfigMutation.mutate({
-                      ocppIdentity: configCharger,
-                      keys,
-                    });
+                    getConfigMutation.mutate({ ocppIdentity, keys });
                   }}
-                  disabled={getConfigMutation.isPending || !configCharger}
+                  disabled={getConfigMutation.isPending || !isConnected}
                 >
-                  {getConfigMutation.isPending ? (
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4 mr-2" />
-                  )}
+                  {getConfigMutation.isPending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
                   Obtener Configuración
                 </Button>
               </CardContent>
@@ -612,8 +1186,8 @@ export default function AdminOCPPMonitor() {
             {/* ChangeConfiguration */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Wrench className="h-4 w-4" />
                   Cambiar Configuración
                 </CardTitle>
                 <CardDescription>
@@ -622,29 +1196,8 @@ export default function AdminOCPPMonitor() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Cargador</label>
-                  <Select
-                    value={configCharger}
-                    onValueChange={setConfigCharger}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar cargador conectado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {connections?.filter(c => c.isConnected).map((conn) => (
-                        <SelectItem key={conn.ocppIdentity} value={conn.ocppIdentity}>
-                          {conn.ocppIdentity} - {conn.bootInfo?.vendor || 'Desconocido'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Clave de configuración</label>
-                  <Select
-                    value={configKey}
-                    onValueChange={setConfigKey}
-                  >
+                  <label className="text-sm font-medium">Parámetro</label>
+                  <Select value={configKey} onValueChange={setConfigKey}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar parámetro" />
                     </SelectTrigger>
@@ -658,11 +1211,8 @@ export default function AdminOCPPMonitor() {
                       <SelectItem value="LocalAuthorizeOffline">LocalAuthorizeOffline</SelectItem>
                       <SelectItem value="AuthorizeRemoteTxRequests">AuthorizeRemoteTxRequests</SelectItem>
                       <SelectItem value="StopTransactionOnEVSideDisconnect">StopTransactionOnEVSideDisconnect</SelectItem>
-                      <SelectItem value="StopTransactionOnInvalidId">StopTransactionOnInvalidId</SelectItem>
                       <SelectItem value="UnlockConnectorOnEVSideDisconnect">UnlockConnectorOnEVSideDisconnect</SelectItem>
                       <SelectItem value="WebSocketPingInterval">WebSocketPingInterval</SelectItem>
-                      <SelectItem value="TransactionMessageAttempts">TransactionMessageAttempts</SelectItem>
-                      <SelectItem value="TransactionMessageRetryInterval">TransactionMessageRetryInterval</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -677,36 +1227,23 @@ export default function AdminOCPPMonitor() {
                 <Button
                   className="w-full"
                   onClick={() => {
-                    if (!configCharger || !configKey || !configValue) {
-                      toast.error("Complete todos los campos");
-                      return;
-                    }
-                    changeConfigMutation.mutate({
-                      ocppIdentity: configCharger,
-                      key: configKey,
-                      value: configValue,
-                    });
+                    if (!configKey || !configValue) { toast.error("Complete todos los campos"); return; }
+                    changeConfigMutation.mutate({ ocppIdentity, key: configKey, value: configValue });
                   }}
-                  disabled={changeConfigMutation.isPending || !configCharger || !configKey || !configValue}
+                  disabled={changeConfigMutation.isPending || !isConnected || !configKey || !configValue}
                 >
-                  {changeConfigMutation.isPending ? (
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4 mr-2" />
-                  )}
+                  {changeConfigMutation.isPending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
                   Cambiar Configuración
                 </Button>
               </CardContent>
             </Card>
           </div>
 
-          {/* Referencia de parámetros comunes */}
+          {/* Referencia de parámetros */}
           <Card>
             <CardHeader>
-              <CardTitle>Referencia de Parámetros OCPP</CardTitle>
-              <CardDescription>
-                Parámetros de configuración comunes soportados por la mayoría de cargadores OCPP 1.6
-              </CardDescription>
+              <CardTitle className="text-base">Referencia de Parámetros OCPP</CardTitle>
+              <CardDescription>Parámetros comunes soportados por cargadores OCPP 1.6</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -720,740 +1257,29 @@ export default function AdminOCPPMonitor() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    <TableRow>
-                      <TableCell className="font-mono">HeartbeatInterval</TableCell>
-                      <TableCell>Integer</TableCell>
-                      <TableCell>Intervalo entre heartbeats (segundos)</TableCell>
-                      <TableCell>60</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-mono">MeterValueSampleInterval</TableCell>
-                      <TableCell>Integer</TableCell>
-                      <TableCell>Intervalo de muestreo de valores de medición (segundos)</TableCell>
-                      <TableCell>60</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-mono">MeterValuesSampledData</TableCell>
-                      <TableCell>CSL</TableCell>
-                      <TableCell>Valores a muestrear (Energy.Active.Import.Register, Power.Active.Import, etc.)</TableCell>
-                      <TableCell>Energy.Active.Import.Register</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-mono">ConnectionTimeOut</TableCell>
-                      <TableCell>Integer</TableCell>
-                      <TableCell>Tiempo máximo de espera para conexión de vehículo (segundos)</TableCell>
-                      <TableCell>30</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-mono">LocalPreAuthorize</TableCell>
-                      <TableCell>Boolean</TableCell>
-                      <TableCell>Permitir autorización local antes de enviar al servidor</TableCell>
-                      <TableCell>true</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-mono">StopTransactionOnEVSideDisconnect</TableCell>
-                      <TableCell>Boolean</TableCell>
-                      <TableCell>Detener transacción cuando el vehículo se desconecta</TableCell>
-                      <TableCell>true</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-mono">UnlockConnectorOnEVSideDisconnect</TableCell>
-                      <TableCell>Boolean</TableCell>
-                      <TableCell>Desbloquear conector cuando el vehículo se desconecta</TableCell>
-                      <TableCell>true</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-mono">WebSocketPingInterval</TableCell>
-                      <TableCell>Integer</TableCell>
-                      <TableCell>Intervalo de ping WebSocket (segundos)</TableCell>
-                      <TableCell>30</TableCell>
-                    </TableRow>
+                    {[
+                      { key: "HeartbeatInterval", type: "Integer", desc: "Intervalo entre heartbeats (segundos)", val: "60" },
+                      { key: "MeterValueSampleInterval", type: "Integer", desc: "Intervalo de muestreo de medición (segundos)", val: "60" },
+                      { key: "MeterValuesSampledData", type: "CSL", desc: "Valores a muestrear", val: "Energy.Active.Import.Register" },
+                      { key: "ConnectionTimeOut", type: "Integer", desc: "Tiempo máximo espera conexión vehículo (s)", val: "30" },
+                      { key: "StopTransactionOnEVSideDisconnect", type: "Boolean", desc: "Detener al desconectar vehículo", val: "true" },
+                      { key: "UnlockConnectorOnEVSideDisconnect", type: "Boolean", desc: "Desbloquear al desconectar vehículo", val: "true" },
+                      { key: "WebSocketPingInterval", type: "Integer", desc: "Intervalo de ping WebSocket (s)", val: "30" },
+                    ].map((p) => (
+                      <TableRow key={p.key}>
+                        <TableCell className="font-mono text-xs">{p.key}</TableCell>
+                        <TableCell className="text-xs">{p.type}</TableCell>
+                        <TableCell className="text-xs">{p.desc}</TableCell>
+                        <TableCell className="text-xs">{p.val}</TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
-
-        {/* Métricas Históricas */}
-        <TabsContent value="metrics" className="space-y-6">
-          {/* Selector de rango */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Métricas Históricas
-              </h3>
-              <p className="text-sm text-muted-foreground">Tendencias de conexiones y transacciones</p>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant={metricsRange === "24h" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setMetricsRange("24h")}
-              >
-                24 horas
-              </Button>
-              <Button
-                variant={metricsRange === "7d" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setMetricsRange("7d")}
-              >
-                7 días
-              </Button>
-              <Button
-                variant={metricsRange === "30d" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setMetricsRange("30d")}
-              >
-                30 días
-              </Button>
-            </div>
-          </div>
-
-          {/* Gráficos */}
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* Gráfico de Conexiones */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Wifi className="h-4 w-4" />
-                  Conexiones OCPP
-                </CardTitle>
-                <CardDescription>
-                  Número de conexiones activas por {metricsRange === "24h" ? "hora" : "día"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {connectionMetrics && connectionMetrics.length > 0 ? (
-                  <div className="h-[300px]">
-                    <Line
-                      data={{
-                        labels: connectionMetrics.map((m: any) => {
-                          const date = new Date(m.period);
-                          return metricsRange === "24h"
-                            ? date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })
-                            : date.toLocaleDateString("es", { day: "2-digit", month: "short" });
-                        }),
-                        datasets: [
-                          {
-                            label: "Conexiones",
-                            data: connectionMetrics.map((m: any) => m.count),
-                            borderColor: "rgb(34, 197, 94)",
-                            backgroundColor: "rgba(34, 197, 94, 0.1)",
-                            fill: true,
-                            tension: 0.4,
-                          },
-                        ],
-                      }}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                          legend: { display: false },
-                        },
-                        scales: {
-                          y: {
-                            beginAtZero: true,
-                            ticks: { stepSize: 1 },
-                          },
-                        },
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>No hay datos de conexiones en este período</p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Gráfico de Transacciones */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Zap className="h-4 w-4" />
-                  Transacciones de Carga
-                </CardTitle>
-                <CardDescription>
-                  Transacciones completadas por {metricsRange === "24h" ? "hora" : "día"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {transactionMetrics && transactionMetrics.length > 0 ? (
-                  <div className="h-[300px]">
-                    <Bar
-                      data={{
-                        labels: transactionMetrics.map((m: any) => {
-                          const date = new Date(m.period);
-                          return metricsRange === "24h"
-                            ? date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })
-                            : date.toLocaleDateString("es", { day: "2-digit", month: "short" });
-                        }),
-                        datasets: [
-                          {
-                            label: "Transacciones",
-                            data: transactionMetrics.map((m: any) => m.count),
-                            backgroundColor: "rgba(59, 130, 246, 0.8)",
-                            borderRadius: 4,
-                          },
-                        ],
-                      }}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                          legend: { display: false },
-                        },
-                        scales: {
-                          y: {
-                            beginAtZero: true,
-                            ticks: { stepSize: 1 },
-                          },
-                        },
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>No hay transacciones en este período</p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Gráfico de Energía */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Activity className="h-4 w-4" />
-                  Energía Entregada (kWh)
-                </CardTitle>
-                <CardDescription>
-                  Total de kWh entregados por {metricsRange === "24h" ? "hora" : "día"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {transactionMetrics && transactionMetrics.length > 0 ? (
-                  <div className="h-[300px]">
-                    <Line
-                      data={{
-                        labels: transactionMetrics.map((m: any) => {
-                          const date = new Date(m.period);
-                          return metricsRange === "24h"
-                            ? date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })
-                            : date.toLocaleDateString("es", { day: "2-digit", month: "short" });
-                        }),
-                        datasets: [
-                          {
-                            label: "kWh",
-                            data: transactionMetrics.map((m: any) => Number(m.totalKwh || 0).toFixed(2)),
-                            borderColor: "rgb(168, 85, 247)",
-                            backgroundColor: "rgba(168, 85, 247, 0.1)",
-                            fill: true,
-                            tension: 0.4,
-                          },
-                        ],
-                      }}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                          legend: { display: false },
-                        },
-                        scales: {
-                          y: {
-                            beginAtZero: true,
-                          },
-                        },
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>No hay datos de energía en este período</p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Gráfico de Ingresos */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
-                  Ingresos (COP)
-                </CardTitle>
-                <CardDescription>
-                  Ingresos totales por {metricsRange === "24h" ? "hora" : "día"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {transactionMetrics && transactionMetrics.length > 0 ? (
-                  <div className="h-[300px]">
-                    <Bar
-                      data={{
-                        labels: transactionMetrics.map((m: any) => {
-                          const date = new Date(m.period);
-                          return metricsRange === "24h"
-                            ? date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })
-                            : date.toLocaleDateString("es", { day: "2-digit", month: "short" });
-                        }),
-                        datasets: [
-                          {
-                            label: "Ingresos",
-                            data: transactionMetrics.map((m: any) => Number(m.totalRevenue || 0)),
-                            backgroundColor: "rgba(34, 197, 94, 0.8)",
-                            borderRadius: 4,
-                          },
-                        ],
-                      }}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                          legend: { display: false },
-                        },
-                        scales: {
-                          y: {
-                            beginAtZero: true,
-                            ticks: {
-                              callback: (value) => `$${Number(value).toLocaleString()}`,
-                            },
-                          },
-                        },
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>No hay datos de ingresos en este período</p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Resumen de métricas */}
-          {transactionMetrics && transactionMetrics.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Resumen del Período</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <p className="text-2xl font-bold text-blue-600">
-                      {transactionMetrics.reduce((sum: number, m: any) => sum + (m.count || 0), 0)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Transacciones</p>
-                  </div>
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <p className="text-2xl font-bold text-purple-600">
-                      {transactionMetrics.reduce((sum: number, m: any) => sum + Number(m.totalKwh || 0), 0).toFixed(1)} kWh
-                    </p>
-                    <p className="text-sm text-muted-foreground">Energía Entregada</p>
-                  </div>
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <p className="text-2xl font-bold text-green-600">
-                      ${transactionMetrics.reduce((sum: number, m: any) => sum + Number(m.totalRevenue || 0), 0).toLocaleString()}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Ingresos Totales</p>
-                  </div>
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <p className="text-2xl font-bold text-orange-600">
-                      {connectionMetrics ? connectionMetrics.reduce((sum: number, m: any) => sum + (m.count || 0), 0) : 0}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Conexiones Totales</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-/**
- * ChargerLogsPanel - Panel de logs con selector visual de cargadores
- */
-function ChargerLogsPanel({
-  logFilters,
-  setLogFilters,
-  logsData,
-  refetchLogs,
-  messageTypes,
-  expandedLogId,
-  setExpandedLogId,
-  connections,
-}: {
-  logFilters: any;
-  setLogFilters: (fn: any) => void;
-  logsData: any;
-  refetchLogs: () => void;
-  messageTypes: string[] | undefined;
-  expandedLogId: number | null;
-  setExpandedLogId: (id: number | null) => void;
-  connections: any;
-}) {
-  const [selectedCp, setSelectedCp] = useState<string | null>(null);
-
-  // Query para obtener lista de Charge Point IDs
-  const { data: chargePointIds } = trpc.ocpp.getChargePointIds.useQuery(undefined, {
-    refetchInterval: 30000,
-  });
-
-  // Determinar cuáles están conectados actualmente
-  const connectedIds = useMemo(() => {
-    if (!connections) return new Set<string>();
-    return new Set(connections.map((c: any) => c.chargePointId || c.ocppIdentity));
-  }, [connections]);
-
-  // Cuando se selecciona un cargador, actualizar el filtro
-  const handleSelectCp = (cpId: string | null) => {
-    setSelectedCp(cpId);
-    setLogFilters((prev: any) => ({
-      ...prev,
-      ocppIdentity: cpId || "",
-      offset: 0,
-    }));
-    setExpandedLogId(null);
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Selector de Cargadores */}
-      {chargePointIds && chargePointIds.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Monitor className="h-4 w-4" />
-              Seleccionar Cargador
-            </CardTitle>
-            <CardDescription>
-              Seleccione un cargador para ver sus logs de comunicación
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {/* Chip "Todos" */}
-              <button
-                onClick={() => handleSelectCp(null)}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all border ${
-                  selectedCp === null
-                    ? "bg-primary text-primary-foreground border-primary shadow-md"
-                    : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <Server className="h-3.5 w-3.5" />
-                Todos
-                {logsData?.total != null && selectedCp === null && (
-                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
-                    {logsData.total}
-                  </Badge>
-                )}
-              </button>
-
-              {/* Chips por cargador */}
-              {chargePointIds.filter(Boolean).map((cpId) => {
-                const isConnected = connectedIds.has(cpId);
-                const isSelected = selectedCp === cpId;
-                return (
-                  <button
-                    key={cpId}
-                    onClick={() => handleSelectCp(cpId)}
-                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all border ${
-                      isSelected
-                        ? "bg-primary text-primary-foreground border-primary shadow-md"
-                        : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    <span className={`h-2 w-2 rounded-full shrink-0 ${
-                      isConnected ? "bg-green-400 animate-pulse" : "bg-gray-400"
-                    }`} />
-                    <Zap className="h-3.5 w-3.5" />
-                    {cpId}
-                    {isSelected && logsData?.total != null && (
-                      <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
-                        {logsData.total}
-                      </Badge>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Encabezado del cargador seleccionado */}
-      {selectedCp && (
-        <div className="flex items-center justify-between bg-primary/5 border border-primary/20 rounded-lg px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className={`h-3 w-3 rounded-full ${
-              connectedIds.has(selectedCp) ? "bg-green-500 animate-pulse" : "bg-gray-400"
-            }`} />
-            <div>
-              <p className="font-semibold text-sm">Cargador: <span className="font-mono">{selectedCp}</span></p>
-              <p className="text-xs text-muted-foreground">
-                {connectedIds.has(selectedCp) ? "Conectado" : "Desconectado"}
-                {logsData?.total != null && ` · ${logsData.total} registros`}
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleSelectCp(null)}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-4 w-4 mr-1" />
-            Limpiar filtro
-          </Button>
-        </div>
-      )}
-
-      {/* Filtros adicionales */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Filter className="h-4 w-4" />
-            Filtros
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            {!selectedCp && (
-              <Input
-                placeholder="Charge Point ID"
-                value={logFilters.ocppIdentity}
-                onChange={(e) => setLogFilters((prev: any) => ({ ...prev, ocppIdentity: e.target.value, offset: 0 }))}
-              />
-            )}
-            <Select
-              value={logFilters.messageType}
-              onValueChange={(v) => setLogFilters((prev: any) => ({ ...prev, messageType: v === "all" ? "" : v, offset: 0 }))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Tipo de mensaje" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {messageTypes?.map((type) => (
-                  <SelectItem key={type} value={type || ""}>{type}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={logFilters.direction || "all"}
-              onValueChange={(v) => setLogFilters((prev: any) => ({ ...prev, direction: v === "all" ? "" : v as "IN" | "OUT", offset: 0 }))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Direcci\u00f3n" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                <SelectItem value="IN">Entrante (IN)</SelectItem>
-                <SelectItem value="OUT">Saliente (OUT)</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => refetchLogs()}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Actualizar
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (!logsData?.logs?.length) {
-                    toast.error("No hay logs para exportar");
-                    return;
-                  }
-                  const lines = logsData.logs.map((log: any) => {
-                    const date = new Date(log.createdAt).toLocaleString('es-CO');
-                    const dir = log.direction === 'IN' ? '\u2190 IN ' : '\u2192 OUT';
-                    let payloadStr = '';
-                    try {
-                      payloadStr = typeof log.payload === 'string' ? log.payload : JSON.stringify(log.payload, null, 2);
-                    } catch { payloadStr = String(log.payload); }
-                    return `[${date}] ${dir} | ${log.ocppIdentity} | ${log.messageType}\n${payloadStr}`;
-                  });
-                  const cpLabel = selectedCp ? ` - ${selectedCp}` : '';
-                  const content = `=== EVGreen OCPP Logs${cpLabel} ===\nExportado: ${new Date().toLocaleString('es-CO')}\nTotal: ${logsData.logs.length} registros\n${'='.repeat(60)}\n\n${lines.join('\n\n' + '-'.repeat(60) + '\n\n')}`;
-                  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  const filenameCp = selectedCp ? `-${selectedCp}` : '';
-                  a.download = `ocpp-logs${filenameCp}-${new Date().toISOString().slice(0,10)}.txt`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                  toast.success(`${logsData.logs.length} logs exportados correctamente`);
-                }}
-              >
-                <Download className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Tabla de Logs */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[140px]">Fecha/Hora</TableHead>
-                  <TableHead className="w-[100px]">Direcci\u00f3n</TableHead>
-                  {!selectedCp && <TableHead className="w-[120px]">Charge Point</TableHead>}
-                  <TableHead className="w-[150px]">Mensaje</TableHead>
-                  <TableHead>Payload</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {logsData?.logs && logsData.logs.length > 0 ? (
-                  logsData.logs.map((log: any) => {
-                    const isExpanded = expandedLogId === log.id;
-                    let formattedPayload = '';
-                    try {
-                      const parsed = typeof log.payload === 'string' ? JSON.parse(log.payload) : log.payload;
-                      formattedPayload = JSON.stringify(parsed, null, 2);
-                    } catch {
-                      formattedPayload = String(log.payload);
-                    }
-                    const shortPayload = JSON.stringify(log.payload);
-                    const colSpan = selectedCp ? 4 : 5;
-                    return (
-                      <Fragment key={log.id}>
-                        <TableRow
-                          className="cursor-pointer hover:bg-muted/50 transition-colors"
-                          onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                        >
-                          <TableCell className="text-xs font-mono">
-                            {new Date(log.createdAt).toLocaleString('es-CO', {
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                            })}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={log.direction === "IN" ? "default" : "secondary"}>
-                              {log.direction === "IN" ? "\u2190 IN" : "\u2192 OUT"}
-                            </Badge>
-                          </TableCell>
-                          {!selectedCp && (
-                            <TableCell className="font-mono text-sm">
-                              {log.ocppIdentity}
-                            </TableCell>
-                          )}
-                          <TableCell>
-                            <Badge variant="outline">{log.messageType}</Badge>
-                          </TableCell>
-                          <TableCell className="max-w-[500px]">
-                            <div className="flex items-center gap-2">
-                              <pre className="text-xs overflow-hidden text-ellipsis whitespace-nowrap flex-1">
-                                {shortPayload}
-                              </pre>
-                              {shortPayload.length > 40 && (
-                                isExpanded
-                                  ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
-                                  : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                        {isExpanded && (
-                          <TableRow>
-                            <TableCell colSpan={colSpan} className="bg-muted/30 p-0">
-                              <div className="p-4">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Payload completo</span>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 text-xs"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      navigator.clipboard.writeText(formattedPayload);
-                                      toast.success("Payload copiado al portapapeles");
-                                    }}
-                                  >
-                                    <Copy className="h-3 w-3 mr-1" />
-                                    Copiar
-                                  </Button>
-                                </div>
-                                <pre className="text-xs font-mono bg-background rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all border">
-                                  {formattedPayload}
-                                </pre>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={selectedCp ? 4 : 5} className="text-center py-8 text-muted-foreground">
-                      {selectedCp
-                        ? `No hay logs para el cargador ${selectedCp}`
-                        : "No hay logs que mostrar"}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Paginaci\u00f3n */}
-      {logsData && logsData.total > logFilters.limit && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Mostrando {logFilters.offset + 1} - {Math.min(logFilters.offset + logFilters.limit, logsData.total)} de {logsData.total}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={logFilters.offset === 0}
-              onClick={() => setLogFilters((prev: any) => ({ ...prev, offset: Math.max(0, prev.offset - prev.limit) }))}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Anterior
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={logFilters.offset + logFilters.limit >= logsData.total}
-              onClick={() => setLogFilters((prev: any) => ({ ...prev, offset: prev.offset + prev.limit }))}
-            >
-              Siguiente
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -180,6 +180,13 @@ export default function ChargingWaiting() {
       
       // Si hay energía consumida o la transacción está IN_PROGRESS, el cargador ya respondió
       if (session.status === "IN_PROGRESS") {
+        if (status !== "connected") {
+          // Mostrar toast de éxito solo la primera vez que detectamos la transición
+          toast.success("¡Carga iniciada exitosamente!", {
+            description: "El cargador confirmó el inicio de la sesión",
+            duration: 4000,
+          });
+        }
         if (session.currentKwh > 0) {
           // Ya hay consumo real, navegar inmediatamente
           setStatus("connected");
