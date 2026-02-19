@@ -386,7 +386,8 @@ export default function UserWallet() {
     },
     onError: (error) => {
       setIsQuickRecharging(false);
-      toast.error(error.message || "Error en la recarga rápida");
+      const msg = error.message || "Error en la recarga rápida";
+      toast.error(`${msg}. Prueba con otro método de pago.`, { duration: 6000 });
     },
   });
 
@@ -498,29 +499,46 @@ export default function UserWallet() {
 
   const hasPaymentSource = !!subscription?.wompiPaymentSourceId;
 
-  const handleRecharge = () => {
+  // Validar monto antes de procesar
+  const validateAmount = (): number | null => {
     const amount = customAmount ? parseInt(customAmount) : selectedAmount;
     if (!amount || amount < 10000) {
       toast.error("El monto mínimo de recarga es $10,000 COP");
-      return;
+      return null;
     }
     if (amount > 50000000) {
       toast.error("El monto máximo de recarga es $50,000,000 COP");
-      return;
+      return null;
     }
-
     if (!hasPaymentMethod) {
       toast.error("Los pagos están siendo configurados. Intenta de nuevo en unos minutos.");
-      return;
+      return null;
     }
+    return amount;
+  };
 
-    // Si tiene tarjeta inscrita con payment source, usar recarga rápida
+  // Recarga rápida con tarjeta inscrita (sin salir de la app)
+  const handleQuickRecharge = () => {
+    const amount = validateAmount();
+    if (!amount) return;
+    setIsQuickRecharging(true);
+    quickRecharge.mutate({ amount });
+  };
+
+  // Abrir checkout de Wompi (para PSE, Nequi, Bancolombia, Efecty, o tarjeta sin inscribir)
+  const handleCheckoutRecharge = () => {
+    const amount = validateAmount();
+    if (!amount) return;
+    setIsProcessing(true);
+    createWompiRecharge.mutate({ amount });
+  };
+
+  // Botón principal: recarga rápida si tiene tarjeta, sino checkout
+  const handleRecharge = () => {
     if (hasSavedCard && hasPaymentSource) {
-      setIsQuickRecharging(true);
-      quickRecharge.mutate({ amount });
+      handleQuickRecharge();
     } else {
-      setIsProcessing(true);
-      createWompiRecharge.mutate({ amount });
+      handleCheckoutRecharge();
     }
   };
 
@@ -925,7 +943,7 @@ export default function UserWallet() {
                     <Card
                       key={method.id}
                       className="p-3 hover:border-primary/30 cursor-pointer transition-colors"
-                      onClick={handleRecharge}
+                      onClick={handleCheckoutRecharge}
                     >
                       <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-xl ${method.color} flex items-center justify-center flex-shrink-0`}>
