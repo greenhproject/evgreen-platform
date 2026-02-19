@@ -1366,3 +1366,8 @@
 - [x] Detectar cuando la app se abre en modo standalone (PWA instalada)
 - [x] Redirigir automáticamente al mapa/dashboard en vez del landing page
 - [x] Mantener landing page para visitantes desde el navegador normal
+
+## Splash Screen PWA - 19 Feb 2026
+- [x] Verificar si ya existe splash screen o animación de carga (ya existía en index.html)
+- [x] Mejorar splash screen: anillo de energía giratorio, logo con glow, gradiente de marca, tagline, barra de carga animada
+- [x] Splash se muestra siempre (mínimo 1.5s) con transición suave al contenido
