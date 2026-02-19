@@ -132,19 +132,39 @@ function getHomeRouteByRole(role: string | undefined): string {
   }
 }
 
+// Detectar si la app se ejecuta como PWA instalada (standalone)
+function isPWAInstalled(): boolean {
+  // Android Chrome / Edge / Samsung Internet
+  if (window.matchMedia('(display-mode: standalone)').matches) return true;
+  // iOS Safari
+  if ((navigator as any).standalone === true) return true;
+  // TWA (Trusted Web Activity)
+  if (document.referrer.includes('android-app://')) return true;
+  return false;
+}
+
 // Componente para redirigir según el rol
 function RoleBasedRedirect() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading } = useAuth();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
+    if (loading) return;
+    
     if (isAuthenticated && user) {
       const targetRoute = getHomeRouteByRole(user.role);
       setLocation(targetRoute);
+    } else if (isPWAInstalled()) {
+      // PWA instalada: ir directo al mapa (mostrará login si no está autenticado)
+      setLocation('/map');
     }
-  }, [isAuthenticated, user, setLocation]);
+  }, [isAuthenticated, user, loading, setLocation]);
 
-  if (!isAuthenticated) {
+  if (loading) {
+    return <LazySpinner />;
+  }
+
+  if (!isAuthenticated && !isPWAInstalled()) {
     return <Landing />;
   }
 

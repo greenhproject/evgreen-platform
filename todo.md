@@ -1360,3 +1360,9 @@
 - [x] Verificar flujo de tokenización de tarjetas: funciona correctamente
 - [x] Verificar flujo de checkout para PSE/Nequi: ahora usa handleCheckoutRecharge separado
 - [x] Corregir integración de pagos: separar handleQuickRecharge de handleCheckoutRecharge
+
+
+## Mejora PWA: Saltar landing page en modo instalado - 19 Feb 2026
+- [x] Detectar cuando la app se abre en modo standalone (PWA instalada)
+- [x] Redirigir automáticamente al mapa/dashboard en vez del landing page
+- [x] Mantener landing page para visitantes desde el navegador normal
