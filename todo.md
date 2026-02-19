@@ -1371,3 +1371,12 @@
 - [x] Verificar si ya existe splash screen o animación de carga (ya existía en index.html)
 - [x] Mejorar splash screen: anillo de energía giratorio, logo con glow, gradiente de marca, tagline, barra de carga animada
 - [x] Splash se muestra siempre (mínimo 1.5s) con transición suave al contenido
+
+
+## Bugs Wompi installments + Ruta 404 + Notificaciones - 19 Feb 2026
+- [x] BUG: Error Wompi "No se especificó el número de cuotas (installments)" en recarga automática - VERIFICADO (installments: 1 ya presente en ambos endpoints)
+- [x] BUG: Botón "Recargar" en pantalla de notificación lleva a ruta 404 - VERIFICADO (todas las rutas usan /wallet)
+- [x] Agregar actionUrl: "/wallet" a todas las notificaciones de balance en balance-monitor.ts
+- [x] Mejorar NotificationPanel: extraer actionUrl del campo data JSON de notificaciones
+- [x] Mejorar NotificationPanel: botón de acción visible "Ir a billetera" para notificaciones con actionUrl
+- [x] NotificationPanel: expandir/colapsar mensajes largos independiente de la navegación
