@@ -1380,3 +1380,12 @@
 - [x] Mejorar NotificationPanel: extraer actionUrl del campo data JSON de notificaciones
 - [x] Mejorar NotificationPanel: botón de acción visible "Ir a billetera" para notificaciones con actionUrl
 - [x] NotificationPanel: expandir/colapsar mensajes largos independiente de la navegación
+
+
+## Notificaciones Push Reales con FCM - 19 Feb 2026
+- [x] Analizar infraestructura FCM existente (firebase.ts, service worker, tokens)
+- [x] Crear helper sendBalancePush en balance-monitor.ts (usa sendPushNotification de firebase/fcm)
+- [x] Integrar envío de push en balance-monitor.ts para: saldo bajo, recarga exitosa, recarga fallida, carga detenida, recarga desactivada
+- [x] Mejorar service worker: parseo robusto de FCM payload, requireInteraction para alertas críticas, renotify, agrupación por tipo
+- [x] Incluir actionUrl en el payload de push para navegar al hacer clic (SW extrae clickAction/actionUrl)
+- [x] Tests unitarios: 10 tests en balance-monitor-push.test.ts (todos pasan)
