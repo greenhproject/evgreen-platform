@@ -20,6 +20,8 @@ import {
 import { getAcceptanceToken } from "../wompi/recurring-billing";
 import { subscriptions, transactions } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { sendPushNotification } from "../firebase/fcm";
+import type { NotificationType } from "../firebase/fcm";
 
 // Track which users we've already attempted auto-recharge for in this cycle
 // to avoid spamming Wompi with repeated requests
@@ -129,10 +131,12 @@ async function checkUserBalance(tx: any) {
         console.log(`[BalanceMonitor] Auto-recharge SUCCESS for user ${userId}: $${rechargeAmount} COP`);
 
         // Notify user of successful auto-recharge
+        const successTitle = "Recarga automática exitosa";
+        const successMsg = `Se recargaron $${rechargeAmount.toLocaleString()} COP a tu billetera automáticamente durante tu carga activa. Tarjeta ****${subscription.cardLastFour || ""}`;
         await db.createNotification({
           userId,
-          title: "Recarga automática exitosa",
-          message: `Se recargaron $${rechargeAmount.toLocaleString()} COP a tu billetera automáticamente durante tu carga activa. Tarjeta ****${subscription.cardLastFour || ""}`,
+          title: successTitle,
+          message: successMsg,
           type: "PAYMENT",
           data: JSON.stringify({
             key: `auto-recharge-${Date.now()}`,
@@ -141,6 +145,9 @@ async function checkUserBalance(tx: any) {
             actionUrl: "/wallet",
           }),
         });
+
+        // Send push notification
+        await sendBalancePush(userId, "balance_added", successTitle, successMsg, "/wallet");
 
         // Update last auto-recharge timestamp
         await updateAutoRechargeTimestamp(userId);
@@ -153,10 +160,12 @@ async function checkUserBalance(tx: any) {
         console.warn(`[BalanceMonitor] Auto-recharge FAILED for user ${userId}: ${result.message}`);
 
         // Notify user of failed auto-recharge
+        const failTitle = "Recarga automática fallida";
+        const failMsg = `No se pudo recargar tu billetera automáticamente. ${result.message}. Si tu saldo llega a $0, la carga se detendrá.`;
         await db.createNotification({
           userId,
-          title: "Recarga automática fallida",
-          message: `No se pudo recargar tu billetera automáticamente. ${result.message}. Si tu saldo llega a $0, la carga se detendrá.`,
+          title: failTitle,
+          message: failMsg,
           type: "ALERT",
           data: JSON.stringify({
             key: `auto-recharge-fail-${Date.now()}`,
@@ -165,6 +174,9 @@ async function checkUserBalance(tx: any) {
             actionUrl: "/wallet",
           }),
         });
+
+        // Send push notification
+        await sendBalancePush(userId, "system_alert", failTitle, failMsg, "/wallet");
 
         // Increment fail count
         await incrementAutoRechargeFailCount(userId);
@@ -179,10 +191,12 @@ async function checkUserBalance(tx: any) {
     // Only notify once per session
     if (!autoRechargeInProgress.has(userId)) {
       autoRechargeInProgress.add(userId);
+      const lowTitle = "Saldo bajo durante carga";
+      const lowMsg = `Tu saldo es de $${Math.round(balance).toLocaleString()} COP. Activa la recarga automática en tu perfil para evitar que tu carga se detenga.`;
       await db.createNotification({
         userId,
-        title: "Saldo bajo durante carga",
-        message: `Tu saldo es de $${Math.round(balance).toLocaleString()} COP. Activa la recarga automática en tu perfil para evitar que tu carga se detenga.`,
+        title: lowTitle,
+        message: lowMsg,
         type: "ALERT",
         data: JSON.stringify({
           key: `low-balance-${Date.now()}`,
@@ -191,6 +205,9 @@ async function checkUserBalance(tx: any) {
           actionUrl: "/wallet",
         }),
       });
+
+      // Send push notification - critical for background awareness
+      await sendBalancePush(userId, "low_balance", lowTitle, lowMsg, "/wallet");
     }
   }
 
@@ -392,10 +409,12 @@ async function stopChargingForInsufficientBalance(tx: any, userId: number) {
   }
 
   // Create notification for user
+  const stopTitle = "Carga detenida por saldo insuficiente";
+  const stopMsg = "Tu carga se detuvo automáticamente porque tu saldo llegó a $0 COP. Recarga tu billetera para continuar cargando.";
   await db.createNotification({
     userId,
-    title: "Carga detenida por saldo insuficiente",
-    message: "Tu carga se detuvo automáticamente porque tu saldo llegó a $0 COP. Recarga tu billetera para continuar cargando.",
+    title: stopTitle,
+    message: stopMsg,
     type: "ALERT",
     data: JSON.stringify({
       key: `auto-stop-balance-${Date.now()}`,
@@ -404,6 +423,9 @@ async function stopChargingForInsufficientBalance(tx: any, userId: number) {
       actionUrl: "/wallet",
     }),
   });
+
+  // Send push notification - urgent, user needs to know charge stopped
+  await sendBalancePush(userId, "charging_error", stopTitle, stopMsg, "/wallet");
 
   // Log the auto-stop event
   await db.createOcppLog({
@@ -455,20 +477,69 @@ async function incrementAutoRechargeFailCount(userId: number) {
           autoRechargeEnabled: false,
         }).where(eq(subscriptions.userId, userId));
 
+        const disabledTitle = "Recarga automática desactivada";
+        const disabledMsg = "La recarga automática se desactivó después de 3 intentos fallidos. Verifica tu método de pago y reactívala en tu perfil.";
         await db.createNotification({
           userId,
-          title: "Recarga automática desactivada",
-          message: "La recarga automática se desactivó después de 3 intentos fallidos. Verifica tu método de pago y reactívala en tu perfil.",
+          title: disabledTitle,
+          message: disabledMsg,
           type: "ALERT",
           data: JSON.stringify({
             key: `auto-recharge-disabled-${Date.now()}`,
             actionUrl: "/wallet",
           }),
         });
+
+        // Send push notification
+        await sendBalancePush(userId, "system_alert", disabledTitle, disabledMsg, "/wallet");
       }
     }
   } catch (err) {
     console.warn(`[BalanceMonitor] Error incrementing fail count:`, err);
+  }
+}
+
+/**
+ * Send a push notification to a user for balance-related events.
+ * Silently fails if user has no FCM token or Firebase is not configured.
+ */
+async function sendBalancePush(
+  userId: number,
+  type: NotificationType,
+  title: string,
+  body: string,
+  clickAction: string
+): Promise<void> {
+  try {
+    const user = await db.getUserById(userId);
+    if (!user?.fcmToken) {
+      return; // User has no push token registered
+    }
+
+    // Skip local tokens (they don't work with FCM server-side)
+    if (user.fcmToken.startsWith("local_")) {
+      return;
+    }
+
+    const sent = await sendPushNotification(user.fcmToken, {
+      type,
+      title,
+      body,
+      clickAction,
+      data: {
+        actionUrl: clickAction,
+        userId: userId.toString(),
+      },
+    });
+
+    if (sent) {
+      console.log(`[BalanceMonitor] Push notification sent to user ${userId}: ${title}`);
+    } else {
+      console.log(`[BalanceMonitor] Push notification failed for user ${userId} (token may be invalid)`);
+    }
+  } catch (err) {
+    // Push failures should never block the balance monitor flow
+    console.warn(`[BalanceMonitor] Error sending push to user ${userId}:`, err);
   }
 }
 
@@ -478,4 +549,5 @@ export {
   performAutoRecharge,
   stopChargingForInsufficientBalance,
   checkUserBalance,
+  sendBalancePush,
 };

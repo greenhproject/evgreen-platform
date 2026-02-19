@@ -181,24 +181,64 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Manejar notificaciones push
+// Manejar notificaciones push (FCM y genéricas)
 self.addEventListener('push', (event) => {
   if (!event.data) return;
 
-  const data = event.data.json();
+  let data;
+  try {
+    data = event.data.json();
+  } catch (e) {
+    // Si no es JSON, usar como texto plano
+    data = { title: 'EVGreen', body: event.data.text() };
+  }
+
+  // FCM envía datos en data.notification y data.data
+  // El formato puede variar: { notification: {title, body}, data: {...} } o { title, body, data: {...} }
+  const title = data.notification?.title || data.title || 'EVGreen';
+  const body = data.notification?.body || data.body || 'Nueva notificación de EVGreen';
+  const image = data.notification?.image || data.notification?.imageUrl || data.imageUrl;
+  
+  // Extraer actionUrl/clickAction de los datos
+  const clickAction = data.data?.clickAction || data.data?.actionUrl || data.fcmOptions?.link || data.url || '/';
+
   const options = {
-    body: data.body || 'Nueva notificación de EVGreen',
+    body,
     icon: '/icons/icon-192x192.png',
     badge: '/icons/badge-72x72.png',
-    vibrate: [100, 50, 100],
+    vibrate: [200, 100, 200],
+    tag: data.data?.type || 'evgreen-notification', // Agrupar por tipo
+    renotify: true, // Vibrar incluso si reemplaza una notificación existente
+    requireInteraction: data.data?.type === 'low_balance' || data.data?.type === 'charging_error', // No auto-cerrar para alertas críticas
     data: {
-      url: data.url || '/'
+      url: clickAction,
+      type: data.data?.type || 'general',
+      ...data.data,
     },
-    actions: data.actions || []
+    actions: data.actions || [],
   };
 
+  // Agregar imagen si existe
+  if (image) {
+    options.image = image;
+  }
+
   event.waitUntil(
-    self.registration.showNotification(data.title || 'EVGreen', options)
+    self.registration.showNotification(title, options)
+      .then(() => {
+        // Notificar a la app en primer plano si está abierta
+        return self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+          .then((clientList) => {
+            clientList.forEach((client) => {
+              client.postMessage({
+                type: 'PUSH_NOTIFICATION',
+                title,
+                body,
+                data: data.data || {},
+              });
+            });
+          });
+      })
   );
 });
 
@@ -206,17 +246,26 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const urlToOpen = event.notification.data?.url || '/';
+  // Determinar URL a abrir: actionUrl del data, o clickAction, o URL genérica
+  const notifData = event.notification.data || {};
+  let urlToOpen = notifData.url || notifData.actionUrl || notifData.clickAction || '/';
+  
+  // Asegurar que sea una URL completa
+  if (urlToOpen.startsWith('/')) {
+    urlToOpen = self.location.origin + urlToOpen;
+  }
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
+        // Intentar reusar una ventana existente
         for (const client of clientList) {
           if (client.url.includes(self.location.origin) && 'focus' in client) {
-            client.navigate(urlToOpen);
-            return client.focus();
+            // Navegar a la URL deseada y enfocar
+            return client.navigate(urlToOpen).then(() => client.focus());
           }
         }
+        // Si no hay ventana abierta, abrir una nueva
         if (clients.openWindow) {
           return clients.openWindow(urlToOpen);
         }
