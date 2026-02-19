@@ -1,0 +1,16 @@
+{
+  "query": "SELECT wompiPublicKey, LEFT(wompiPrivateKey, 20) as privKeyPrefix, LEFT(wompiIntegritySecret, 20) as integrityPrefix, wompiTestMode FROM platform_settings LIMIT 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT wompiPublicKey, LEFT(wompiPrivateKey, 20) as privKeyPrefix, LEFT(wompiIntegritySecret, 20) as integrityPrefix, wompiTestMode FROM platform_settings LIMIT 1;",
+  "rows": [
+    {
+      "wompiPublicKey": "pub_prod_CIHdAORFzRcPHk0J14eNpsUmKsZaJWtN",
+      "privKeyPrefix": "prv_prod_7TArbIKiPwr",
+      "integrityPrefix": "prod_integrity_pDlaY",
+      "wompiTestMode": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "wompiPublicKey\tprivKeyPrefix\tintegrityPrefix\twompiTestMode\npub_prod_CIHdAORFzRcPHk0J14eNpsUmKsZaJWtN\tprv_prod_7TArbIKiPwr\tprod_integrity_pDlaY\t0\n",
+  "stderr": "",
+  "execution_time_ms": 85
+}

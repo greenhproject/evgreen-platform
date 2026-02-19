@@ -1,0 +1,8 @@
+{
+  "query": "SELECT u.name, u.email, s.tier, s.wompiPaymentSourceId, s.cardBrand, s.cardLastFour, s.cardHolderName, s.wompiCardToken FROM users u LEFT JOIN subscriptions s ON u.id = s.userId WHERE u.name LIKE '%MARIA%' OR u.name LIKE '%Maria%' OR u.name LIKE '%LOPEZ%' LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT u.name, u.email, s.tier, s.wompiPaymentSourceId, s.cardBrand, s.cardLastFour, s.cardHolderName, s.wompiCardToken FROM users u LEFT JOIN subscriptions s ON u.id = s.userId WHERE u.name LIKE '%MARIA%' OR u.name LIKE '%Maria%' OR u.name LIKE '%LOPEZ%' LIMIT 5;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 's.tier' in 'field list'"
+  ]
+}

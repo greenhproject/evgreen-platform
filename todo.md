@@ -1351,3 +1351,12 @@
 - [x] Guardar el transactionId OCPP numérico (ocppNumericTxId) en la BD al procesar StartTransaction
 - [x] Corregir stopCharge para usar ocppNumericTxId en RemoteStopTransaction
 - [x] Agregar fallback: usar transactionId de la BD si ocppNumericTxId es null
+
+
+## Bug CRÍTICO: Pagos Wompi no funcionan - 19 Feb 2026
+- [x] BUG: Pago con tarjeta - simplificado payload de quickRecharge (removido signature y payment_method innecesarios)
+- [x] BUG: PSE, Nequi y otros métodos ahora abren checkout de Wompi (antes usaban handleRecharge que cobraba con tarjeta)
+- [x] Diagnosticar credenciales Wompi: están en producción correctamente (pub_prod_/prv_prod_)
+- [x] Verificar flujo de tokenización de tarjetas: funciona correctamente
+- [x] Verificar flujo de checkout para PSE/Nequi: ahora usa handleCheckoutRecharge separado
+- [x] Corregir integración de pagos: separar handleQuickRecharge de handleCheckoutRecharge
