@@ -138,6 +138,7 @@ async function checkUserBalance(tx: any) {
             key: `auto-recharge-${Date.now()}`,
             amount: rechargeAmount,
             transactionId: tx.id,
+            actionUrl: "/wallet",
           }),
         });
 
@@ -161,6 +162,7 @@ async function checkUserBalance(tx: any) {
             key: `auto-recharge-fail-${Date.now()}`,
             reason: result.message,
             transactionId: tx.id,
+            actionUrl: "/wallet",
           }),
         });
 
@@ -186,6 +188,7 @@ async function checkUserBalance(tx: any) {
           key: `low-balance-${Date.now()}`,
           balance: Math.round(balance),
           transactionId: tx.id,
+          actionUrl: "/wallet",
         }),
       });
     }
@@ -398,6 +401,7 @@ async function stopChargingForInsufficientBalance(tx: any, userId: number) {
       key: `auto-stop-balance-${Date.now()}`,
       transactionId: tx.id,
       reason: "INSUFFICIENT_BALANCE",
+      actionUrl: "/wallet",
     }),
   });
 
@@ -456,6 +460,10 @@ async function incrementAutoRechargeFailCount(userId: number) {
           title: "Recarga automática desactivada",
           message: "La recarga automática se desactivó después de 3 intentos fallidos. Verifica tu método de pago y reactívala en tu perfil.",
           type: "ALERT",
+          data: JSON.stringify({
+            key: `auto-recharge-disabled-${Date.now()}`,
+            actionUrl: "/wallet",
+          }),
         });
       }
     }

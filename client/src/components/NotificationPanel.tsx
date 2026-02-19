@@ -64,15 +64,25 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
   const utils = trpc.useUtils();
 
   // Convertir notificaciones de la API al formato local
-  const notifications: Notification[] = (notificationsQuery.data || []).map((n: any) => ({
-    id: n.id,
-    type: n.type as Notification["type"],
-    title: n.title,
-    message: n.message,
-    read: n.isRead ?? n.read ?? false,
-    createdAt: new Date(n.createdAt),
-    actionUrl: n.actionUrl,
-  }));
+  const notifications: Notification[] = (notificationsQuery.data || []).map((n: any) => {
+    // Extraer actionUrl del campo data JSON si existe
+    let actionUrl = n.actionUrl;
+    if (!actionUrl && n.data) {
+      try {
+        const parsed = typeof n.data === 'string' ? JSON.parse(n.data) : n.data;
+        actionUrl = parsed?.actionUrl;
+      } catch {}
+    }
+    return {
+      id: n.id,
+      type: n.type as Notification["type"],
+      title: n.title,
+      message: n.message,
+      read: n.isRead ?? n.read ?? false,
+      createdAt: new Date(n.createdAt),
+      actionUrl,
+    };
+  });
 
   const unreadCount = notifications.filter(n => !n.read).length;
   const loading = notificationsQuery.isLoading;
@@ -114,7 +124,15 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
       handleMarkAsRead(notification.id);
     }
     
-    // Si tiene actionUrl, navegar. Si no, expandir/colapsar.
+    // Toggle expand/collapse para ver el mensaje completo
+    setExpandedId(expandedId === notification.id ? null : notification.id);
+  };
+
+  const handleNavigateAction = (e: React.MouseEvent, notification: Notification) => {
+    e.stopPropagation();
+    if (!notification.read) {
+      handleMarkAsRead(notification.id);
+    }
     if (notification.actionUrl) {
       if (isExternalUrl(notification.actionUrl)) {
         openExternalUrl(notification.actionUrl);
@@ -122,9 +140,6 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
         setLocation(notification.actionUrl);
       }
       setOpen(false);
-    } else {
-      // Toggle expand/collapse para ver el mensaje completo
-      setExpandedId(expandedId === notification.id ? null : notification.id);
     }
   };
 
@@ -253,10 +268,7 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
                           <p className="text-[10px] text-muted-foreground/70">
                             {formatDistanceToNow(notification.createdAt, { addSuffix: true, locale: es })}
                           </p>
-                          {notification.actionUrl && isExternalUrl(notification.actionUrl) && (
-                            <ExternalLink className="w-2.5 h-2.5 text-muted-foreground/50" />
-                          )}
-                          {longMessage && !notification.actionUrl && (
+                          {longMessage && (
                             <button
                               className="flex items-center gap-0.5 text-[10px] text-primary/70 hover:text-primary"
                               onClick={(e) => {
@@ -278,6 +290,19 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
                                   <span>Ver más</span>
                                 </>
                               )}
+                            </button>
+                          )}
+                          {notification.actionUrl && (
+                            <button
+                              className="flex items-center gap-0.5 text-[10px] text-primary font-medium hover:text-primary/80"
+                              onClick={(e) => handleNavigateAction(e, notification)}
+                            >
+                              {isExternalUrl(notification.actionUrl) ? (
+                                <ExternalLink className="w-3 h-3" />
+                              ) : (
+                                <Zap className="w-3 h-3" />
+                              )}
+                              <span>{notification.actionUrl === '/wallet' ? 'Ir a billetera' : 'Ver'}</span>
                             </button>
                           )}
                         </div>
