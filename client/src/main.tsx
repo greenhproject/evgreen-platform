@@ -60,13 +60,22 @@ createRoot(document.getElementById("root")!).render(
   </trpc.Provider>
 );
 
-// Eliminar splash screen con fade-out suave
+// Eliminar splash screen con transición suave
+// Esperar un mínimo de 1.5s para que la animación se aprecie
+const splashMinTime = 1500;
+const splashStart = performance.now();
+
 requestAnimationFrame(() => {
   const splash = document.getElementById("splash-screen");
   if (splash) {
-    splash.style.transition = "opacity 0.4s ease-out";
-    splash.style.opacity = "0";
-    setTimeout(() => splash.remove(), 400);
+    const elapsed = performance.now() - splashStart;
+    const remaining = Math.max(0, splashMinTime - elapsed);
+    
+    setTimeout(() => {
+      splash.style.transition = "opacity 0.6s ease-out";
+      splash.style.opacity = "0";
+      setTimeout(() => splash.remove(), 600);
+    }, remaining);
   }
 });
 
