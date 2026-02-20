@@ -1451,3 +1451,16 @@
 - [x] Implementar período de gracia/debounce para desconexiones temporales (5 min en ambos CSMS)
 - [x] Solo notificar cuando el cargador esté desconectado por un período prolongado (no por momentos)
 - [x] Evitar spam de notificaciones por reconexiones intermitentes (cooldown 30 min + contador de reconexiones)
+
+## Corregir Landing Inversionistas - Valores Hardcodeados y Cálculos - 20 Feb 2026
+- [x] Eliminar valores hardcodeados de "energía solar" en tabla comparativa Individual vs Colectivo
+- [x] Hacer todos los valores dinámicos basados en configuración real de la plataforma (params del backend)
+- [x] Corregir cálculo del margen neto: ahora muestra margen BASE (sin escenario) y margen ajustado
+- [x] Margen neto = (precio venta - costo energía) × (1 - costos operativos) × % inversionista
+- [x] Tabla comparativa: 14 filas ahora calculadas dinámicamente desde params
+- [x] Cards de paquetes: ROI y payback calculados dinámicamente (ya no ~85%, ~107%, ~126% hardcodeados)
+- [x] Porcentaje de distribución dinámico (ya no 70% hardcodeado)
+- [x] Porcentaje de ahorro solar dinámico (calculado desde costoEnergiaRed vs costoEnergiaSolar)
+- [x] Precio de venta se sincroniza con el backend al cargar la página
+- [x] Fórmula del margen explicada claramente en la UI
+- [x] 909 tests pasando, 0 errores TypeScript
