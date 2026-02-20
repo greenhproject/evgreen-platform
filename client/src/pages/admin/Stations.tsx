@@ -42,7 +42,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign, Clock, Cpu } from "lucide-react";
+import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign, Clock, Cpu, ImagePlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { StationQRCode } from "@/components/StationQRCode";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -87,6 +87,7 @@ interface StationFormData {
   isPublic: boolean;
   premiumZone: string;
   operatingHours: Record<string, { open: string; close: string; closed?: boolean }>;
+  imageUrl: string;
 }
 
 const initialFormData: StationFormData = {
@@ -102,6 +103,7 @@ const initialFormData: StationFormData = {
   isActive: true,
   isPublic: true,
   premiumZone: "C",
+  imageUrl: "",
   operatingHours: {
     monday: { open: "06:00", close: "22:00" },
     tuesday: { open: "06:00", close: "22:00" },
@@ -132,6 +134,10 @@ export default function AdminStations() {
   
   // Estado de marca/modelo de cargador
   const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
+  
+  // Estado de imagen de estación
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   
   // Estado de conectores
   const [connectors, setConnectors] = useState<ConnectorConfig[]>([]);
@@ -232,10 +238,18 @@ export default function AdminStations() {
     await deleteStationMutation.mutateAsync({ id: stationToDelete.id });
   };
 
+  const uploadImageMutation = trpc.stations.uploadImage.useMutation({
+    onError: (error: any) => {
+      toast.error(`Error al subir imagen: ${error.message}`);
+    },
+  });
+
   const resetForm = () => {
     setFormData(initialFormData);
     setConnectors([]);
     setSelectedBrandId(null);
+    setImageFile(null);
+    setImagePreview(null);
   };
   
   // Autoconfigurar estación al seleccionar marca de cargador
@@ -290,6 +304,7 @@ export default function AdminStations() {
       isActive: station.isActive ?? true,
       isPublic: station.isPublic ?? true,
       premiumZone: station.premiumZone || "C",
+      imageUrl: station.imageUrl || "",
       operatingHours: station.operatingHours && typeof station.operatingHours === 'object' 
         ? station.operatingHours as any 
         : initialFormData.operatingHours,
@@ -377,6 +392,28 @@ export default function AdminStations() {
         operatingHours: formData.operatingHours as any,
         chargerBrandId: selectedBrandId || undefined,
       });
+      
+      // Si hay imagen seleccionada, subirla
+      if (stationResult.id && imageFile) {
+        try {
+          const reader = new FileReader();
+          const base64 = await new Promise<string>((resolve) => {
+            reader.onload = () => {
+              const result = reader.result as string;
+              resolve(result.split(',')[1]);
+            };
+            reader.readAsDataURL(imageFile);
+          });
+          await uploadImageMutation.mutateAsync({
+            stationId: stationResult.id,
+            fileName: imageFile.name,
+            fileBase64: base64,
+            contentType: imageFile.type,
+          });
+        } catch (imgErr) {
+          toast.error("Estación creada pero falló la subida de imagen");
+        }
+      }
       
       if (stationResult.id) {
         let evseIdLocal = 1;
@@ -729,6 +766,99 @@ export default function AdminStations() {
               disabled={isEdit}
             />
           </div>
+        </div>
+      </div>
+
+      {/* Foto de la estación */}
+      <div className="space-y-4">
+        <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+          <ImagePlus className="w-4 h-4" />
+          Foto de la Estación
+        </h3>
+        <div className="space-y-3">
+          {(imagePreview || formData.imageUrl) && (
+            <div className="relative w-full max-w-md mx-auto">
+              <img 
+                src={imagePreview || formData.imageUrl} 
+                alt="Vista previa" 
+                className="w-full h-48 object-cover rounded-lg border border-border"
+              />
+              <Button
+                variant="destructive"
+                size="icon"
+                className="absolute top-2 right-2 h-7 w-7"
+                onClick={() => {
+                  setImageFile(null);
+                  setImagePreview(null);
+                  setFormData({...formData, imageUrl: ""});
+                }}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            <label className="flex-1">
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 10 * 1024 * 1024) {
+                    toast.error("La imagen no puede superar 10MB");
+                    return;
+                  }
+                  setImageFile(file);
+                  const url = URL.createObjectURL(file);
+                  setImagePreview(url);
+                }}
+              />
+              <div className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-muted-foreground/30 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors">
+                <ImagePlus className="w-5 h-5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  {imagePreview || formData.imageUrl ? "Cambiar foto" : "Seleccionar foto de la estación"}
+                </span>
+              </div>
+            </label>
+            {isEdit && imageFile && (
+              <Button
+                size="sm"
+                disabled={uploadImageMutation.isPending}
+                onClick={async () => {
+                  if (!imageFile || !editingStation) return;
+                  try {
+                    const reader = new FileReader();
+                    const base64 = await new Promise<string>((resolve) => {
+                      reader.onload = () => {
+                        const result = reader.result as string;
+                        resolve(result.split(',')[1]);
+                      };
+                      reader.readAsDataURL(imageFile);
+                    });
+                    const result = await uploadImageMutation.mutateAsync({
+                      stationId: editingStation.id,
+                      fileName: imageFile.name,
+                      fileBase64: base64,
+                      contentType: imageFile.type,
+                    });
+                    setFormData({...formData, imageUrl: result.url});
+                    setImageFile(null);
+                    setImagePreview(null);
+                    toast.success("Foto actualizada exitosamente");
+                  } catch (err) {
+                    toast.error("Error al subir la imagen");
+                  }
+                }}
+              >
+                {uploadImageMutation.isPending ? (
+                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Subiendo...</>
+                ) : "Subir foto"}
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">Formatos: JPEG, PNG, WebP. Máximo 10MB. La foto ayuda a los usuarios a identificar la estación.</p>
         </div>
       </div>
 

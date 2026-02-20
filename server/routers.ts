@@ -472,6 +472,7 @@ const stationsRouter = router({
       operatingHours: z.any().optional(),
       amenities: z.array(z.string()).optional(),
       chargerBrandId: z.number().optional(),
+      imageUrl: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       // Si se seleccionó un perfil de marca, autoconfigurar manufacturer y model
@@ -507,6 +508,7 @@ const stationsRouter = router({
         amenities: z.array(z.string()).optional(),
         isActive: z.boolean().optional(),
         isPublic: z.boolean().optional(),
+        imageUrl: z.string().nullable().optional(),
       }),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -522,6 +524,33 @@ const stationsRouter = router({
       return { success: true };
     }),
   
+  // Upload de imagen de estación a S3
+  uploadImage: technicianProcedure
+    .input(z.object({
+      stationId: z.number(),
+      fileName: z.string(),
+      fileBase64: z.string(),
+      contentType: z.string().refine(
+        (ct) => ["image/jpeg", "image/png", "image/webp"].includes(ct),
+        { message: "Solo se permiten imágenes JPEG, PNG o WebP" }
+      ),
+    }))
+    .mutation(async ({ input }) => {
+      const { storagePut } = await import("./storage");
+      const ext = input.fileName.split(".").pop() || "jpg";
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const fileKey = `stations/station-${input.stationId}/photo-${timestamp}-${randomSuffix}.${ext}`;
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      if (buffer.length > 10 * 1024 * 1024) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La imagen no puede superar 10MB" });
+      }
+      const { url } = await storagePut(fileKey, buffer, input.contentType);
+      // Actualizar la estación con la URL de la imagen
+      await db.updateChargingStation(input.stationId, { imageUrl: url });
+      return { url, fileKey };
+    }),
+
   // Obtener EVSEs de una estación
   getEvses: protectedProcedure
     .input(z.object({ stationId: z.number() }))

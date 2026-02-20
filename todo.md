@@ -1397,3 +1397,12 @@
 ## BUG: Firma de integridad faltante en quickRecharge - 19 Feb 2026
 - [x] BUG: Error "Firma de integridad requerida no enviada" al hacer recarga rápida
 - [x] Agregar campo signature al payload de quickRecharge en wompi/router.ts
+
+## Foto de estaciones de carga - 19 Feb 2026
+- [x] Agregar campo imageUrl al schema de charging_stations (SQL ALTER TABLE)
+- [x] Crear endpoint stations.uploadImage con upload a S3 en routers.ts
+- [x] Agregar imageUrl al input de create y update station
+- [x] Agregar campo de selección de foto en formulario admin de crear/editar estación
+- [x] Mostrar foto como hero image con overlay gradiente en StationDetail del usuario
+- [x] Mostrar miniatura de foto en tarjeta del mapa y en lista de estaciones
+- [x] Migrar schema con SQL ALTER TABLE
