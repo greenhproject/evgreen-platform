@@ -193,18 +193,8 @@ const usersRouter = router({
       return { success: true };
     }),
     
-  // Usuario: regenerar su propio idTag
-  regenerateMyIdTag: protectedProcedure
-    .mutation(async ({ ctx }) => {
-      const newIdTag = await db.regenerateUserIdTag(ctx.user.id);
-      if (!newIdTag) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "No se pudo regenerar el idTag",
-        });
-      }
-      return { idTag: newIdTag };
-    }),
+  // idTag es inmutable una vez asignado (se usa para tarjetas NFC)
+  // No se permite regenerar desde el frontend
 
   // Admin: eliminar usuario
   delete: adminProcedure
