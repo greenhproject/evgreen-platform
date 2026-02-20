@@ -23,6 +23,67 @@ const TEST_USER_EMAILS = [
   "demo@evgreen.lat",
 ];
 
+// OCPP identities de estaciones de demostración
+// Cualquier usuario que cargue en estas estaciones usará simulación
+const DEMO_STATION_OCPP_IDS = [
+  "cp001cp001",
+];
+
+// Monto de saldo demo que se recarga automáticamente (COP)
+const DEMO_WALLET_TOPUP = 25000;
+
+/**
+ * Verifica si una estación es de demostración (activa simulación para cualquier usuario)
+ */
+export function isDemoStation(ocppIdentity: string): boolean {
+  return DEMO_STATION_OCPP_IDS.includes(ocppIdentity.toLowerCase());
+}
+
+/**
+ * Recarga saldo demo para un usuario que escanea una estación de demostración.
+ * Solo recarga si el saldo es menor a DEMO_WALLET_TOPUP.
+ * Retorna el monto recargado (0 si ya tenía suficiente saldo).
+ */
+export async function topUpDemoWallet(userId: number): Promise<{ topUpAmount: number; newBalance: number }> {
+  let wallet = await db.getWalletByUserId(userId);
+  
+  // Crear billetera si no existe
+  if (!wallet) {
+    await db.createWallet({ userId });
+    wallet = await db.getWalletByUserId(userId);
+  }
+  
+  const currentBalance = wallet ? parseFloat(wallet.balance) : 0;
+  
+  // Solo recargar si el saldo es menor al mínimo demo
+  if (currentBalance >= DEMO_WALLET_TOPUP) {
+    return { topUpAmount: 0, newBalance: currentBalance };
+  }
+  
+  const topUpAmount = DEMO_WALLET_TOPUP - currentBalance;
+  const newBalance = DEMO_WALLET_TOPUP;
+  
+  await db.updateWalletBalance(userId, String(newBalance));
+  
+  // Registrar la recarga en el historial de billetera
+  if (wallet) {
+    await db.createWalletTransaction({
+      walletId: wallet.id,
+      userId,
+      type: "BONUS",
+      amount: String(topUpAmount),
+      balanceBefore: String(currentBalance),
+      balanceAfter: String(newBalance),
+      description: "Saldo de demostración - Evento Inversionistas Fundadores",
+      referenceType: "DEMO",
+      status: "COMPLETED",
+    });
+  }
+  
+  console.log(`[Simulator] Demo wallet top-up: userId=${userId}, topUp=$${topUpAmount}, newBalance=$${newBalance}`);
+  return { topUpAmount, newBalance };
+}
+
 // Sesiones de simulación activas
 interface SimulationSession {
   userId: number;
@@ -60,6 +121,15 @@ export function isTestUser(email: string): boolean {
 }
 
 /**
+ * Verifica si debe usarse simulación (usuario de prueba O estación demo)
+ */
+export function shouldSimulate(email: string, ocppIdentity?: string): boolean {
+  if (isTestUser(email)) return true;
+  if (ocppIdentity && isDemoStation(ocppIdentity)) return true;
+  return false;
+}
+
+/**
  * Verifica si hay una simulación activa para un usuario
  */
 export function hasActiveSimulation(userId: number): boolean {
@@ -92,6 +162,7 @@ export async function startSimulation(params: {
   chargeMode: "fixed_amount" | "percentage" | "full_charge";
   targetValue: number;
   pricePerKwh: number;
+  isDemoMode?: boolean;
   callbacks?: SimulationSession["callbacks"];
 }): Promise<{ transactionId: number; sessionId: string }> {
   const {
@@ -106,8 +177,8 @@ export async function startSimulation(params: {
     callbacks = {},
   } = params;
 
-  // Verificar que es usuario de prueba
-  if (!isTestUser(userEmail)) {
+  // Verificar que es usuario de prueba O que se permite simulación (estación demo)
+  if (!isTestUser(userEmail) && !params.isDemoMode) {
     throw new Error("Solo usuarios de prueba pueden usar el simulador");
   }
 
