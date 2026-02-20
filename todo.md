@@ -1464,3 +1464,13 @@
 - [x] Precio de venta se sincroniza con el backend al cargar la página
 - [x] Fórmula del margen explicada claramente en la UI
 - [x] 909 tests pasando, 0 errores TypeScript
+
+## Simulación de Carga para Evento de Inversionistas - 20 Feb 2026
+- [x] Detectar estación cp001cp001 como estación de demostración (isDemoStation)
+- [x] Al escanear QR de cp001cp001, recargar saldo demo automáticamente ($25,000 COP)
+- [x] Simular ciclo completo: usa charging-simulator existente con isDemoMode flag
+- [x] Mostrar todas las animaciones reales (reutiliza el simulador completo)
+- [x] Aislamiento total: solo se activa para estaciones en DEMO_STATION_OCPP_IDS
+- [x] Forzar estación demo como activa/online en mapa (listPublic, listOwned, getStationByCode, getAvailableConnectors)
+- [x] En startCharge, detectar estación demo y activar simulación para cualquier usuario
+- [x] 909 tests pasando, 0 errores TypeScript

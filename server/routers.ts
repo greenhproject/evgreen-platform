@@ -378,15 +378,20 @@ const stationsRouter = router({
       }
       
       // Agregar tarifa activa y EVSEs a cada estación
+      const { isDemoStation } = await import("./charging/charging-simulator");
       const stationsWithData = await Promise.all(
         stations.map(async (station: any) => {
           const tariff = await db.getActiveTariffByStationId(station.id);
           const evses = await db.getEvsesByStationId(station.id);
-          // Usar precio efectivo (tarifa de estación o precios globales)
           const effectivePrice = await db.getEffectiveStationPrice(station.id);
+          
+          // Verificar si es estación demo para forzar online y conectores AVAILABLE
+          const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
+          
           return {
             ...station,
-            evses,
+            isOnline: isDemo ? true : station.isOnline,
+            evses: isDemo ? evses.map((e: any) => ({ ...e, status: 'AVAILABLE' })) : evses,
             pricePerKwh: tariff?.pricePerKwh || effectivePrice.pricePerKwh.toString(),
             reservationFee: tariff?.reservationFee || effectivePrice.reservationFee.toString(),
             overstayPenaltyPerMin: tariff?.overstayPenaltyPerMinute || effectivePrice.overstayPenaltyPerMin.toString(),
@@ -415,6 +420,7 @@ const stationsRouter = router({
   // Inversionista: listar sus estaciones con tarifas y EVSEs
   listOwned: investorProcedure.query(async ({ ctx }) => {
     const stations = await db.getAllChargingStations({ ownerId: ctx.user.id });
+    const { isDemoStation } = await import("./charging/charging-simulator");
     
     // Obtener conexiones OCPP activas para estado en tiempo real
     const csmsConnections = dualCSMS.getConnectionsStatus();
@@ -439,10 +445,13 @@ const stationsRouter = router({
           c.ocppIdentity === ocppId || c.stationId === station.id
         );
         
+        // Verificar si es estación demo
+        const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
+        
         return {
           ...station,
-          // Usar estado real de OCPP en lugar de solo isOnline de BD
-          isOnline: isConnectedOCPP || station.isOnline,
+          // Usar estado real de OCPP en lugar de solo isOnline de BD (demo siempre online)
+          isOnline: isDemo || isConnectedOCPP || station.isOnline,
           isConnectedOCPP,
           ocppConnection: ocppConn ? {
             ocppVersion: ocppConn.ocppVersion,

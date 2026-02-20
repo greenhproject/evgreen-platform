@@ -143,7 +143,7 @@ export const chargingRouter = router({
     .input(z.object({
       code: z.string(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const { code } = input;
       
       // Intentar buscar por ocppIdentity primero
@@ -161,6 +161,26 @@ export const chargingRouter = router({
         });
       }
       
+      // ========== MODO DEMO: Estaciones de demostración ==========
+      const stationOcppId = station.ocppIdentity || code;
+      const isDemo = simulator.isDemoStation(stationOcppId);
+      let demoTopUp = { topUpAmount: 0, newBalance: 0 };
+      
+      if (isDemo && ctx.user) {
+        // Recargar saldo demo automáticamente
+        demoTopUp = await simulator.topUpDemoWallet(ctx.user.id);
+        if (demoTopUp.topUpAmount > 0) {
+          console.log(`[Demo] Recargado saldo demo $${demoTopUp.topUpAmount} para usuario ${ctx.user.id}`);
+          await db.createNotification({
+            userId: ctx.user.id,
+            title: "\u26a1 Saldo de demostraci\u00f3n acreditado",
+            message: `Se te han acreditado $${Math.round(demoTopUp.topUpAmount).toLocaleString()} COP de saldo de demostraci\u00f3n para que pruebes la experiencia de carga EVGreen. \u00a1Disfruta!`,
+            type: "WALLET",
+          });
+        }
+      }
+      // ========== FIN MODO DEMO ==========
+      
       // Obtener conectores de la estación
       const connectors = await db.getEvsesByStationId(station.id);
       
@@ -169,22 +189,27 @@ export const chargingRouter = router({
       const isOcppConnected = !!ocppConnection && ocppConnection.ws.readyState === 1;
       
       // La estación está online si:
-      // 1. Tiene conexión OCPP activa (WebSocket abierto), O
-      // 2. Está marcada como online en la BD (puede estar en grace period de reconexión), O
-      // 3. La estación está activa Y tiene al menos un conector disponible en la BD
+      // 1. Es estación demo (siempre online), O
+      // 2. Tiene conexión OCPP activa (WebSocket abierto), O
+      // 3. Está marcada como online en la BD, O
+      // 4. La estación está activa Y tiene al menos un conector disponible en la BD
       const hasAvailableConnector = connectors.some(c => c.status === 'AVAILABLE');
-      const isOnline = isOcppConnected || station.isOnline || (station.isActive && hasAvailableConnector);
+      const isOnline = isDemo || isOcppConnected || station.isOnline || (station.isActive && hasAvailableConnector);
       
-      // Obtener estados de conectores: usar BD directamente (dualCSMS actualiza la BD en StatusNotification)
-      // No depender del mapa en memoria que puede estar vacío
+      // Para estaciones demo, forzar conectores como AVAILABLE
+      const mappedConnectors = connectors.map(c => ({
+        ...c,
+        status: isDemo ? 'AVAILABLE' as typeof c.status : c.status,
+        ocppStatus: isDemo ? 'AVAILABLE' : c.status,
+      }));
+      
       return {
         station,
-        connectors: connectors.map(c => ({
-          ...c,
-          ocppStatus: c.status, // Usar estado de BD que es actualizado por OCPP StatusNotification
-        })),
+        connectors: mappedConnectors,
         isOnline,
         ocppIdentity: ocppConnection?.ocppIdentity || station.ocppIdentity,
+        isDemo,
+        demoTopUp: isDemo ? demoTopUp : undefined,
       };
     }),
 
@@ -201,32 +226,33 @@ export const chargingRouter = router({
       const connectors = await db.getEvsesByStationId(stationId);
       const ocppConnection = getConnectionByStationId(stationId);
       
+      // Verificar si es estación demo
+      const station = await db.getChargingStationById(stationId);
+      const isDemo = station?.ocppIdentity ? simulator.isDemoStation(station.ocppIdentity) : false;
+      
       // Combinar estado de BD con estado OCPP en tiempo real
-      // dualCSMS actualiza la BD directamente en StatusNotification, así que c.status ya es el estado real
       return connectors.map(c => {
         let realTimeStatus = c.status;
-        if (ocppConnection && ocppConnection.connectorStatuses.size > 0) {
-          // Solo usar mapa en memoria si tiene datos (legacy connection-manager)
+        
+        // Para estaciones demo, forzar AVAILABLE
+        if (isDemo) {
+          realTimeStatus = 'AVAILABLE' as typeof c.status;
+        } else if (ocppConnection && ocppConnection.connectorStatuses.size > 0) {
           const ocppStatus = ocppConnection.connectorStatuses.get(c.evseIdLocal);
           if (ocppStatus) {
             realTimeStatus = ocppStatus as typeof c.status;
           }
         }
         
-        // Normalizar estado para comparación
         const normalizedStatus = realTimeStatus?.toUpperCase() || 'UNAVAILABLE';
-        // Un conector está disponible SOLO si está en estado AVAILABLE
-        // PREPARING = cable conectado por otro usuario, NO disponible
-        // CHARGING = cargando activamente, NO disponible
         const isAvailable = normalizedStatus === "AVAILABLE";
-        // Determinar si está ocupado (alguien lo está usando)
         const isOccupied = ["PREPARING", "CHARGING", "SUSPENDED_EV", "SUSPENDED_EVSE", "FINISHING"].includes(normalizedStatus);
         
         return {
           id: c.id,
-          evseId: c.id, // ID de la BD
-          connectorNumber: c.evseIdLocal, // Número visible del conector (1, 2, 3...)
-          connectorId: c.evseIdLocal, // Para compatibilidad con el frontend
+          evseId: c.id,
+          connectorNumber: c.evseIdLocal,
+          connectorId: c.evseIdLocal,
           type: c.connectorType,
           powerKw: c.powerKw,
           status: normalizedStatus,
@@ -406,14 +432,18 @@ export const chargingRouter = router({
         });
       }
       
-      // Verificar si es usuario de prueba para usar simulador
+      // Verificar si es usuario de prueba o estación demo para usar simulador
       const userEmail = ctx.user.email || "";
+      const stationForDemo = await db.getChargingStationById(stationId);
+      const stationOcppId = stationForDemo?.ocppIdentity || "";
+      const isDemo = simulator.isDemoStation(stationOcppId);
       const isTestUser = simulator.isTestUser(userEmail);
+      const useSimulation = isTestUser || isDemo;
       
-      // Verificar que la estación está conectada (solo si no es usuario de prueba)
+      // Verificar que la estación está conectada (solo si no es simulación)
       const ocppConnection = getConnectionByStationId(stationId);
       
-      if (!isTestUser) {
+      if (!useSimulation) {
         // Obtener datos de la estación y conectores de la BD
         const stationData = await db.getChargingStationById(stationId);
         const connectors = await db.getEvsesByStationId(stationId);
@@ -603,14 +633,20 @@ export const chargingRouter = router({
         };
       }
       
-      // Flujo de simulación para usuarios de prueba
-      console.log(`[Charging] Usuario de prueba ${userEmail} - iniciando simulación`);
+      // Flujo de simulación para usuarios de prueba o estaciones demo
+      const simReason = isDemo ? `estación demo ${stationOcppId}` : `usuario de prueba ${userEmail}`;
+      console.log(`[Charging] Simulación activada por ${simReason}`);
       
       if (!evseId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "No se encontró el conector especificado.",
         });
+      }
+      
+      // Para estaciones demo, recargar saldo si es necesario
+      if (isDemo) {
+        await simulator.topUpDemoWallet(ctx.user.id);
       }
       
       try {
@@ -623,13 +659,18 @@ export const chargingRouter = router({
           chargeMode,
           targetValue,
           pricePerKwh,
+          isDemoMode: isDemo,
         });
         
-        // Crear notificación de inicio (simulación)
+        // Crear notificación de inicio
+        const formattedPrice = Math.round(pricePerKwh).toLocaleString("es-CO");
+        const stationNameNotif = stationForDemo?.name || "Estación EVGreen";
         await db.createNotification({
           userId: ctx.user.id,
-          title: "Carga simulada iniciada",
-          message: `Simulación de carga en conector ${connectorId}. Tarifa: $${pricePerKwh}/kWh`,
+          title: isDemo ? "\u26a1 Carga de demostraci\u00f3n iniciada" : "Carga simulada iniciada",
+          message: isDemo 
+            ? `Experiencia de carga en ${stationNameNotif}, conector ${connectorId}. Tarifa: $${formattedPrice} COP/kWh. \u00a1Disfruta la experiencia EVGreen!`
+            : `Simulaci\u00f3n de carga en conector ${connectorId}. Tarifa: $${formattedPrice} COP/kWh`,
           type: "charging",
         });
         
@@ -637,7 +678,9 @@ export const chargingRouter = router({
           sessionId: result.sessionId,
           transactionId: result.transactionId,
           status: "simulation_started",
-          message: "Simulación de carga iniciada (usuario de prueba)",
+          message: isDemo 
+            ? "\u00a1Experiencia de carga EVGreen iniciada! Conecta tu veh\u00edculo" 
+            : "Simulaci\u00f3n de carga iniciada (usuario de prueba)",
           estimatedCost,
           pricePerKwh,
           connectorId,
