@@ -524,7 +524,7 @@ const stationsRouter = router({
       return { success: true };
     }),
   
-  // Upload de imagen de estación a S3
+  // Upload de imagen de estación a S3 con compresión automática
   uploadImage: technicianProcedure
     .input(z.object({
       stationId: z.number(),
@@ -536,19 +536,47 @@ const stationsRouter = router({
       ),
     }))
     .mutation(async ({ input }) => {
+      const sharp = (await import("sharp")).default;
       const { storagePut } = await import("./storage");
-      const ext = input.fileName.split(".").pop() || "jpg";
       const timestamp = Date.now();
       const randomSuffix = Math.random().toString(36).substring(2, 8);
-      const fileKey = `stations/station-${input.stationId}/photo-${timestamp}-${randomSuffix}.${ext}`;
-      const buffer = Buffer.from(input.fileBase64, "base64");
-      if (buffer.length > 10 * 1024 * 1024) {
+      const originalBuffer = Buffer.from(input.fileBase64, "base64");
+      if (originalBuffer.length > 10 * 1024 * 1024) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "La imagen no puede superar 10MB" });
       }
-      const { url } = await storagePut(fileKey, buffer, input.contentType);
-      // Actualizar la estación con la URL de la imagen
-      await db.updateChargingStation(input.stationId, { imageUrl: url });
-      return { url, fileKey };
+
+      // Imagen principal: max 1200px de ancho, calidad 80, formato WebP
+      const mainImage = await sharp(originalBuffer)
+        .resize(1200, 900, { fit: "inside", withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toBuffer();
+      const mainKey = `stations/station-${input.stationId}/photo-${timestamp}-${randomSuffix}.webp`;
+      const { url: imageUrl } = await storagePut(mainKey, mainImage, "image/webp");
+
+      // Miniatura: max 300px de ancho, calidad 70, formato WebP
+      const thumbImage = await sharp(originalBuffer)
+        .resize(300, 225, { fit: "cover" })
+        .webp({ quality: 70 })
+        .toBuffer();
+      const thumbKey = `stations/station-${input.stationId}/thumb-${timestamp}-${randomSuffix}.webp`;
+      const { url: thumbnailUrl } = await storagePut(thumbKey, thumbImage, "image/webp");
+
+      // Actualizar la estación con ambas URLs
+      await db.updateChargingStation(input.stationId, { imageUrl, thumbnailUrl });
+
+      const originalSizeKB = Math.round(originalBuffer.length / 1024);
+      const compressedSizeKB = Math.round(mainImage.length / 1024);
+      const thumbSizeKB = Math.round(thumbImage.length / 1024);
+      const savings = Math.round((1 - mainImage.length / originalBuffer.length) * 100);
+
+      return {
+        imageUrl,
+        thumbnailUrl,
+        originalSizeKB,
+        compressedSizeKB,
+        thumbSizeKB,
+        savings: `${savings}%`,
+      };
     }),
 
   // Obtener EVSEs de una estación

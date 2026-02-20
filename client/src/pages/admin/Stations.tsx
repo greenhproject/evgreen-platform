@@ -843,10 +843,10 @@ export default function AdminStations() {
                       fileBase64: base64,
                       contentType: imageFile.type,
                     });
-                    setFormData({...formData, imageUrl: result.url});
+                    setFormData({...formData, imageUrl: result.imageUrl});
                     setImageFile(null);
                     setImagePreview(null);
-                    toast.success("Foto actualizada exitosamente");
+                    toast.success(`Foto optimizada y subida: ${result.originalSizeKB}KB → ${result.compressedSizeKB}KB (${result.savings} menos)`);
                   } catch (err) {
                     toast.error("Error al subir la imagen");
                   }

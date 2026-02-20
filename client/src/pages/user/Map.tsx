@@ -622,11 +622,12 @@ export default function UserMap() {
                 >
                   <div className="flex items-start gap-3">
                     {/* Miniatura de foto */}
-                    {(station as any).imageUrl ? (
+                    {((station as any).thumbnailUrl || (station as any).imageUrl) ? (
                       <img 
-                        src={(station as any).imageUrl} 
+                        src={(station as any).thumbnailUrl || (station as any).imageUrl} 
                         alt={station.name}
                         className="w-14 h-14 rounded-lg object-cover shrink-0"
+                        loading="lazy"
                       />
                     ) : (
                       <div className="w-14 h-14 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -686,12 +687,13 @@ export default function UserMap() {
             >
               <Card className="shadow-2xl border-primary/20 overflow-hidden">
                 {/* Foto de la estación */}
-                {(selectedStation as any).imageUrl && (
+                {((selectedStation as any).imageUrl || (selectedStation as any).thumbnailUrl) && (
                   <div className="relative h-28 w-full">
                     <img 
-                      src={(selectedStation as any).imageUrl} 
+                      src={(selectedStation as any).thumbnailUrl || (selectedStation as any).imageUrl} 
                       alt={selectedStation.name}
                       className="w-full h-full object-cover"
+                      loading="lazy"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
                     <div className="absolute top-2 right-2 flex items-center gap-1">
