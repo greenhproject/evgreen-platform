@@ -87,6 +87,9 @@ const authRouter = router({
     .input(z.object({
       name: z.string().optional(),
       phone: z.string().optional(),
+      birthDate: z.string().optional(), // YYYY-MM-DD
+      address: z.string().optional(),
+      city: z.string().optional(),
       avatarUrl: z.string().optional(),
       companyName: z.string().optional(),
       taxId: z.string().optional(),
@@ -96,6 +99,40 @@ const authRouter = router({
     .mutation(async ({ ctx, input }) => {
       await db.updateUser(ctx.user.id, input);
       return { success: true };
+    }),
+
+  uploadAvatar: protectedProcedure
+    .input(z.object({
+      fileName: z.string(),
+      fileBase64: z.string(),
+      contentType: z.string().refine(
+        (ct) => ["image/jpeg", "image/png", "image/webp"].includes(ct),
+        { message: "Solo se permiten imágenes JPEG, PNG o WebP" }
+      ),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const sharp = (await import("sharp")).default;
+      const { storagePut } = await import("./storage");
+      const originalBuffer = Buffer.from(input.fileBase64, "base64");
+      if (originalBuffer.length > 5 * 1024 * 1024) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La imagen no puede superar 5MB" });
+      }
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      // Comprimir y redimensionar a 400x400 max para avatar
+      const compressedBuffer = await sharp(originalBuffer)
+        .resize(400, 400, { fit: "cover", position: "center" })
+        .webp({ quality: 80 })
+        .toBuffer();
+      const fileKey = `avatars/user-${ctx.user.id}-${timestamp}-${randomSuffix}.webp`;
+      const { url } = await storagePut(fileKey, compressedBuffer, "image/webp");
+      // Guardar URL en el perfil del usuario
+      await db.updateUser(ctx.user.id, { avatarUrl: url });
+      return {
+        avatarUrl: url,
+        originalSize: originalBuffer.length,
+        compressedSize: compressedBuffer.length,
+      };
     }),
 });
 
