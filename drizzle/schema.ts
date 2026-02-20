@@ -60,6 +60,9 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }).unique(),
   phone: varchar("phone", { length: 20 }),
+  birthDate: varchar("birthDate", { length: 10 }), // YYYY-MM-DD
+  address: varchar("address", { length: 500 }),
+  city: varchar("city", { length: 100 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: userRoleEnum.default("user").notNull(),
   avatarUrl: text("avatarUrl"),

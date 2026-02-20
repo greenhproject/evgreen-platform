@@ -1415,3 +1415,19 @@
 - [x] Actualizar frontend para usar thumbnailUrl en lista y mapa con lazy loading
 - [x] Tests unitarios para la función de compresión (9 tests pasan)
 - [x] Mostrar feedback de compresión al admin (tamaño original → comprimido, % ahorro)
+
+## BUG: Imagen estación no aparece + Info Personal no guarda - 19 Feb 2026
+- [x] BUG: Imagen de estación no aparece en detalles del usuario (era NULL, se resolvió al subir foto)
+- [x] BUG: Sección Información Personal no guarda datos (nombre, fecha nacimiento, teléfono)
+- [x] Diagnosticar por qué imageUrl no se muestra en StationDetail (imageUrl era NULL, no se había subido foto)
+- [x] Agregar campos al schema de users: birthDate, address, city (SQL ALTER TABLE)
+- [x] Crear endpoint updateProfile con birthDate, address, city + uploadAvatar con compresión sharp
+- [x] Conectar formulario de Información Personal con backend para guardar/cargar datos
+- [x] Verificar avatar de Google: SDK de Manus no devuelve avatar, se usa upload manual
+- [x] Permitir subir foto de perfil manualmente con compresión (400x400 WebP, max 5MB)
+- [x] Usar iniciales del nombre como fallback cuando no hay foto personalizada
+
+## BUG: Imagen de estación se pierde al editar - 20 Feb 2026
+- [x] La imagen se sube pero al guardar edición se sobrescribe con null
+- [x] handleUpdateStation ahora sube imagen automáticamente al guardar + muestra preview de imagen existente
+- [x] Corregir: handleUpdateStation solo sube imagen si hay archivo nuevo seleccionado

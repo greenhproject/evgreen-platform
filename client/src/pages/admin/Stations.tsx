@@ -309,6 +309,13 @@ export default function AdminStations() {
         ? station.operatingHours as any 
         : initialFormData.operatingHours,
     });
+    // Mostrar imagen existente como preview
+    if (station.imageUrl) {
+      setImagePreview(station.imageUrl);
+    } else {
+      setImagePreview(null);
+    }
+    setImageFile(null);
     
     // Cargar conectores existentes
     if (station.evses && Array.isArray(station.evses)) {
@@ -462,6 +469,31 @@ export default function AdminStations() {
           operatingHours: formData.operatingHours as any,
         },
       });
+
+      // Si hay imagen seleccionada pendiente de subir, subirla automáticamente
+      if (imageFile) {
+        try {
+          const reader = new FileReader();
+          const base64 = await new Promise<string>((resolve) => {
+            reader.onload = () => {
+              const result = reader.result as string;
+              resolve(result.split(',')[1]);
+            };
+            reader.readAsDataURL(imageFile);
+          });
+          const imgResult = await uploadImageMutation.mutateAsync({
+            stationId: editingStation.id,
+            fileName: imageFile.name,
+            fileBase64: base64,
+            contentType: imageFile.type,
+          });
+          toast.success(`Foto optimizada: ${imgResult.originalSizeKB}KB → ${imgResult.compressedSizeKB}KB (${imgResult.savings} menos)`);
+          setImageFile(null);
+          setImagePreview(null);
+        } catch (imgErr) {
+          toast.error("Estación actualizada pero falló la subida de imagen");
+        }
+      }
 
       // Crear nuevos conectores si hay alguno agregado
       const newConnectors = connectors.filter(c => c.id.startsWith('conn-'));
