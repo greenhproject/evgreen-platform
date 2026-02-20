@@ -332,27 +332,47 @@ export default function StationDetail() {
   return (
     <UserLayout title={station.name} showBack>
       <div className="pb-32">
-        {/* Imagen/Mapa de la estación */}
-        <div className="h-48 bg-gradient-to-br from-primary/20 to-secondary/20 relative">
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Zap className="w-16 h-16 text-primary/30" />
-          </div>
+        {/* Imagen/Header de la estación */}
+        <div className="relative overflow-hidden" style={{ minHeight: station.imageUrl ? '220px' : '180px' }}>
+          {station.imageUrl ? (
+            <>
+              <img 
+                src={station.imageUrl} 
+                alt={station.name}
+                className="w-full h-56 object-cover"
+              />
+              {/* Overlay gradiente para legibilidad */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            </>
+          ) : (
+            <div className="h-48 bg-gradient-to-br from-primary/20 via-emerald-900/30 to-secondary/20">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-primary/10 blur-3xl rounded-full w-32 h-32 -translate-x-1/2 -translate-y-1/2" />
+                  <Zap className="w-16 h-16 text-primary/30" />
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Badges sobre la imagen */}
           <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
-            <Badge className={availableCount > 0 ? "bg-primary" : "bg-muted"}>
+            <Badge className={`${availableCount > 0 ? "bg-primary" : "bg-muted"} shadow-lg`}>
               {availableCount} disponibles
             </Badge>
-            {occupancy && (
-              <Badge 
-                variant="outline" 
-                className={`
-                  ${occupancy.occupancyRate < 30 ? "border-green-500 text-green-400" : ""}
-                  ${occupancy.occupancyRate >= 30 && occupancy.occupancyRate < 70 ? "border-blue-500 text-blue-400" : ""}
-                  ${occupancy.occupancyRate >= 70 ? "border-orange-500 text-orange-400" : ""}
-                `}
-              >
-                {Math.round(occupancy.occupancyRate)}% ocupación
-              </Badge>
-            )}
+            <div className="flex gap-2">
+              {occupancy && (
+                <Badge 
+                  variant="outline" 
+                  className={`backdrop-blur-sm bg-black/30 shadow-lg
+                    ${occupancy.occupancyRate < 30 ? "border-green-500 text-green-400" : ""}
+                    ${occupancy.occupancyRate >= 30 && occupancy.occupancyRate < 70 ? "border-blue-500 text-blue-400" : ""}
+                    ${occupancy.occupancyRate >= 70 ? "border-orange-500 text-orange-400" : ""}
+                  `}
+                >
+                  {Math.round(occupancy.occupancyRate)}% ocupación
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
 

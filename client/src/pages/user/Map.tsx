@@ -620,7 +620,19 @@ export default function UserMap() {
                   className="p-4 cursor-pointer card-interactive"
                   onClick={() => handleStationSelect(station)}
                 >
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-3">
+                    {/* Miniatura de foto */}
+                    {(station as any).imageUrl ? (
+                      <img 
+                        src={(station as any).imageUrl} 
+                        alt={station.name}
+                        className="w-14 h-14 rounded-lg object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                        <Zap className="w-6 h-6 text-primary/40" />
+                      </div>
+                    )}
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <h4 className="font-semibold">{station.name}</h4>
@@ -672,7 +684,30 @@ export default function UserMap() {
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
               className="absolute bottom-20 left-4 right-4"
             >
-              <Card className="p-4 shadow-2xl border-primary/20">
+              <Card className="shadow-2xl border-primary/20 overflow-hidden">
+                {/* Foto de la estación */}
+                {(selectedStation as any).imageUrl && (
+                  <div className="relative h-28 w-full">
+                    <img 
+                      src={(selectedStation as any).imageUrl} 
+                      alt={selectedStation.name}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                    <div className="absolute top-2 right-2 flex items-center gap-1">
+                      <FavoriteButton stationId={selectedStation.id} />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 h-8 w-8"
+                        onClick={() => setSelectedStation(null)}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <div className="p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
                     <h4 className="font-semibold text-lg">{selectedStation.name}</h4>
@@ -680,17 +715,19 @@ export default function UserMap() {
                       {selectedStation.address}, {selectedStation.city}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <FavoriteButton stationId={selectedStation.id} />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="rounded-full -mt-1 -mr-1"
-                      onClick={() => setSelectedStation(null)}
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  {!(selectedStation as any).imageUrl && (
+                    <div className="flex items-center gap-1">
+                      <FavoriteButton stationId={selectedStation.id} />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full -mt-1 -mr-1"
+                        onClick={() => setSelectedStation(null)}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-4 mb-4 flex-wrap">
@@ -735,6 +772,7 @@ export default function UserMap() {
                     <Navigation className="w-4 h-4 mr-2" />
                     Ir
                   </Button>
+                </div>
                 </div>
               </Card>
             </motion.div>
