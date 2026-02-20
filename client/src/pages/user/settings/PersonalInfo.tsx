@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, User, Mail, Phone, MapPin, Calendar, Camera, Loader2, Check } from "lucide-react";
+import { ArrowLeft, User, Mail, Phone, MapPin, Calendar, Camera, Loader2, Check, CreditCard, Copy } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -203,6 +203,42 @@ export default function PersonalInfo() {
                   ) : (
                     "Cambiar foto"
                   )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ID Tag (NFC) - Solo lectura */}
+          <Card className="border-primary/30 bg-primary/5">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-primary" />
+                ID Tag (NFC)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="font-mono text-lg font-bold tracking-wider text-primary">
+                    {(user as any)?.idTag || "Generando..."}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Identificador único para tarjetas NFC. No puede ser modificado.
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => {
+                    const idTag = (user as any)?.idTag;
+                    if (idTag) {
+                      navigator.clipboard.writeText(idTag);
+                      toast.success("ID Tag copiado al portapapeles");
+                    }
+                  }}
+                >
+                  <Copy className="w-4 h-4" />
                 </Button>
               </div>
             </CardContent>

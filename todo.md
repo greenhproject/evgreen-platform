@@ -1431,3 +1431,17 @@
 - [x] La imagen se sube pero al guardar edición se sobrescribe con null
 - [x] handleUpdateStation ahora sube imagen automáticamente al guardar + muestra preview de imagen existente
 - [x] Corregir: handleUpdateStation solo sube imagen si hay archivo nuevo seleccionado
+
+## idTag inmutable + Botones Llévame/Teléfono - 20 Feb 2026
+- [x] idTag de usuario es único e inmutable (eliminado endpoint regenerateMyIdTag)
+- [x] Mostrar idTag en perfil y en info personal como solo lectura con botón copiar
+- [x] idTag no editable: eliminado botón regenerar, solo se muestra y copia
+- [x] Botón "Cómo llegar" abre Google Maps con coordenadas de la estación
+- [x] Botón "Contactar" abre tel: con número de la estación
+
+## idTag inmutable + Botones Cómo llegar/Contactar - 20 Feb 2026
+- [x] idTag de usuario es único e inmutable (eliminado endpoint regenerateMyIdTag)
+- [x] Mostrar idTag en perfil y en info personal como solo lectura con botón copiar
+- [x] idTag no editable: eliminado botón regenerar, solo se muestra y copia
+- [x] Botón "Cómo llegar" abre Google Maps con coordenadas de la estación
+- [x] Botón "Contactar" abre tel: con número de la estación (campo contactPhone agregado)

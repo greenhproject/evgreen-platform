@@ -150,6 +150,7 @@ export const chargingStations = mysqlTable("charging_stations", {
   images: json("images"), // URLs de imágenes
   imageUrl: text("imageUrl"), // URL de la foto principal de la estación
   thumbnailUrl: text("thumbnailUrl"), // URL de la miniatura optimizada
+  contactPhone: varchar("contactPhone", { length: 20 }),
   // Datos de registro UPME/CárgaME
   upmeRegistrationId: varchar("upmeRegistrationId", { length: 100 }),
   cargameId: varchar("cargameId", { length: 100 }),

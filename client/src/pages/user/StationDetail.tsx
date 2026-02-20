@@ -694,11 +694,33 @@ export default function StationDetail() {
             transition={{ delay: 0.4 }}
             className="grid grid-cols-2 gap-3"
           >
-            <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+            <Button
+              variant="outline"
+              className="h-auto py-4 flex flex-col gap-2"
+              onClick={() => {
+                if (station.latitude && station.longitude) {
+                  const url = `https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}&travelmode=driving`;
+                  window.open(url, '_blank');
+                } else {
+                  toast.error("No hay coordenadas disponibles para esta estación");
+                }
+              }}
+            >
               <Navigation className="w-5 h-5" />
               <span className="text-xs">Cómo llegar</span>
             </Button>
-            <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+            <Button
+              variant="outline"
+              className="h-auto py-4 flex flex-col gap-2"
+              onClick={() => {
+                const phone = (station as any).contactPhone;
+                if (phone) {
+                  window.open(`tel:${phone}`, '_self');
+                } else {
+                  toast.info("Esta estación no tiene número de contacto registrado");
+                }
+              }}
+            >
               <Phone className="w-5 h-5" />
               <span className="text-xs">Contactar</span>
             </Button>

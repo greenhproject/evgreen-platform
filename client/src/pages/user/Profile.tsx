@@ -21,28 +21,15 @@ import {
   Crown,
   Settings,
   Copy,
-  RefreshCw,
   Zap
 } from "lucide-react";
-import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
 export default function UserProfile() {
   const { user, logout, refresh } = useAuth();
   const [, setLocation] = useLocation();
-  const [isRegenerating, setIsRegenerating] = useState(false);
-  
-  const regenerateIdTagMutation = trpc.users.regenerateMyIdTag.useMutation({
-    onSuccess: (data: { idTag: string }) => {
-      toast.success(`idTag regenerado: ${data.idTag}`);
-      refresh();
-    },
-    onError: (error) => {
-      toast.error(error.message || "Error al regenerar idTag");
-    },
-    onSettled: () => setIsRegenerating(false),
-  });
+
   
   const copyIdTag = () => {
     if (user?.idTag) {
@@ -51,10 +38,7 @@ export default function UserProfile() {
     }
   };
   
-  const handleRegenerateIdTag = () => {
-    setIsRegenerating(true);
-    regenerateIdTagMutation.mutate();
-  };
+
 
   const handleLogout = async () => {
     await logout();
@@ -144,24 +128,14 @@ export default function UserProfile() {
               <code className="text-lg font-mono font-bold text-primary">
                 {user?.idTag || "Generando..."}
               </code>
-              <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={copyIdTag}
-                  disabled={!user?.idTag}
-                >
-                  <Copy className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleRegenerateIdTag}
-                  disabled={isRegenerating}
-                >
-                  <RefreshCw className={`w-4 h-4 ${isRegenerating ? "animate-spin" : ""}`} />
-                </Button>
-              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={copyIdTag}
+                disabled={!user?.idTag}
+              >
+                <Copy className="w-4 h-4" />
+              </Button>
             </div>
             
             <p className="text-xs text-muted-foreground mt-3">
