@@ -15,6 +15,7 @@ import * as db from "../db";
 import { nanoid } from "nanoid";
 import { findPendingSessionByOcppIdentity, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
 import { sendChargingCompleteNotification } from "../firebase/fcm";
+import * as alertsService from "./alerts-service";
 import mysql from "mysql2/promise";
 
 // BUILD VERSION para diagnóstico de deploys
@@ -238,7 +239,7 @@ export class DualCSMS {
   private ocpp16Transactions: Map<number, string> = new Map(); // OCPP 1.6 transactionId -> internal transactionId
   private reconnectionGrace: Map<string, NodeJS.Timeout> = new Map(); // Grace period para reconexión
   private pingIntervals: Map<string, NodeJS.Timeout> = new Map(); // Ping keepalive intervals
-  private static GRACE_PERIOD_MS = 120000; // 2 minutos de gracia para reconexión
+  private static GRACE_PERIOD_MS = 300000; // 5 minutos de gracia para reconexión (evitar notificaciones por desconexiones temporales)
   private static PING_INTERVAL_MS = 30000; // Ping cada 30 segundos
 
   constructor() {
@@ -1983,6 +1984,10 @@ export class DualCSMS {
           // No se reconectó, ahora sí marcar como offline
           console.log(`[CSMS-DUAL] Grace period expired, marking offline: ${ocppIdentity}`);
           await db.updateStationOnlineStatus(ocppIdentity, false);
+          
+          // Generar alerta de desconexión SOLO después del grace period (desconexión real confirmada)
+          alertsService.handleDisconnection(ocppIdentity, conn.stationId ?? undefined)
+            .catch(err => console.error("[CSMS-DUAL] Error sending disconnect alert:", err));
           
           // Actualizar estado de conectores a UNAVAILABLE
           try {

@@ -16,6 +16,11 @@ import { startBalanceMonitor } from "../charging/balance-monitor";
 import * as ocppManager from "../ocpp/connection-manager";
 import * as alertsService from "../ocpp/alerts-service";
 
+// Grace period para desconexiones temporales del legacy CSMS
+// Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
+const LEGACY_DISCONNECT_GRACE_MS = 5 * 60 * 1000; // 5 minutos
+const legacyDisconnectGrace = new Map<string, NodeJS.Timeout>();
+
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
     const server = net.createServer();
@@ -250,6 +255,14 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
   // Registrar en el connection manager
   const connection = ocppManager.registerConnection(ocppIdentity, ws, ocppVersion);
   
+  // Si hay un grace period activo para este cargador, cancelarlo (reconexión exitosa)
+  const existingGraceOnConnect = legacyDisconnectGrace.get(ocppIdentity);
+  if (existingGraceOnConnect) {
+    clearTimeout(existingGraceOnConnect);
+    legacyDisconnectGrace.delete(ocppIdentity);
+    console.log(`[OCPP] Reconnection within grace period for: ${ocppIdentity} - no alert will be sent`);
+  }
+  
   // Mapeo de transacciones OCPP 1.6 a IDs internos
   const ocpp16Transactions = new Map<number, string>();
   let transactionIdCounter = 1;
@@ -388,14 +401,7 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       // Remover del connection manager
       ocppManager.removeConnection(ocppIdentity);
       
-      if (stationId) {
-        await db.updateStationOnlineStatus(ocppIdentity, false);
-      }
-      
-      // Generar alerta de desconexión
-      alertsService.handleDisconnection(ocppIdentity, stationId ?? undefined)
-        .catch(err => console.error("[OCPP Alert] Error:", err));
-      
+      // Registrar log de desconexión inmediatamente (para auditoría)
       await db.createOcppLog({
         ocppIdentity,
         stationId,
@@ -403,6 +409,39 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
         messageType: "DISCONNECTION",
         payload: {},
       });
+      
+      // Cancelar grace period anterior si existe (nueva desconexión reemplaza la anterior)
+      const existingGrace = legacyDisconnectGrace.get(ocppIdentity);
+      if (existingGrace) {
+        clearTimeout(existingGrace);
+        legacyDisconnectGrace.delete(ocppIdentity);
+      }
+      
+      // Usar grace period: NO marcar offline ni enviar alerta inmediatamente
+      // Esperar 5 minutos para ver si el cargador se reconecta
+      console.log(`[OCPP] Starting ${LEGACY_DISCONNECT_GRACE_MS / 1000}s grace period for: ${ocppIdentity}`);
+      
+      const graceTimeout = setTimeout(async () => {
+        // Verificar si el cargador se reconectó durante el grace period
+        const currentConn = ocppManager.getConnection(ocppIdentity);
+        if (!currentConn) {
+          // No se reconectó después de 5 minutos, ahora sí marcar como offline y notificar
+          console.log(`[OCPP] Grace period expired, marking offline and sending alert: ${ocppIdentity}`);
+          
+          if (stationId) {
+            await db.updateStationOnlineStatus(ocppIdentity, false);
+          }
+          
+          // Generar alerta de desconexión solo después del grace period
+          alertsService.handleDisconnection(ocppIdentity, stationId ?? undefined)
+            .catch(err => console.error("[OCPP Alert] Error:", err));
+        } else {
+          console.log(`[OCPP] Charger reconnected during grace period, no alert needed: ${ocppIdentity}`);
+        }
+        legacyDisconnectGrace.delete(ocppIdentity);
+      }, LEGACY_DISCONNECT_GRACE_MS);
+      
+      legacyDisconnectGrace.set(ocppIdentity, graceTimeout);
     });
 
     ws.on("error", (error) => {

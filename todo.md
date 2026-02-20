@@ -1445,3 +1445,9 @@
 - [x] idTag no editable: eliminado botón regenerar, solo se muestra y copia
 - [x] Botón "Cómo llegar" abre Google Maps con coordenadas de la estación
 - [x] Botón "Contactar" abre tel: con número de la estación (campo contactPhone agregado)
+
+## Mejorar detección de desconexión de cargadores - 20 Feb 2026
+- [x] Analizar lógica actual de monitoreo de conexión y notificaciones de desconexión
+- [x] Implementar período de gracia/debounce para desconexiones temporales (5 min en ambos CSMS)
+- [x] Solo notificar cuando el cargador esté desconectado por un período prolongado (no por momentos)
+- [x] Evitar spam de notificaciones por reconexiones intermitentes (cooldown 30 min + contador de reconexiones)

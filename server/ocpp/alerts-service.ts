@@ -41,7 +41,12 @@ export interface OcppAlert {
 
 // Cache de alertas recientes para evitar duplicados
 const recentAlerts = new Map<string, number>();
-const ALERT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutos entre alertas del mismo tipo
+const ALERT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutos entre alertas del mismo tipo (default)
+const DISCONNECT_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutos entre alertas de desconexión (evitar spam por reconexiones intermitentes)
+
+// Contador de reconexiones para detectar inestabilidad
+const reconnectionCounts = new Map<string, { count: number; firstSeen: number }>();
+const RECONNECTION_WINDOW_MS = 60 * 60 * 1000; // Ventana de 1 hora para contar reconexiones
 
 /**
  * Genera una clave única para una alerta
@@ -57,7 +62,9 @@ function isInCooldown(ocppIdentity: string, alertType: OcppAlertType): boolean {
   const key = getAlertKey(ocppIdentity, alertType);
   const lastAlert = recentAlerts.get(key);
   if (!lastAlert) return false;
-  return Date.now() - lastAlert < ALERT_COOLDOWN_MS;
+  // Usar cooldown más largo para desconexiones (30 min) vs otros tipos (5 min)
+  const cooldown = alertType === "DISCONNECTION" ? DISCONNECT_COOLDOWN_MS : ALERT_COOLDOWN_MS;
+  return Date.now() - lastAlert < cooldown;
 }
 
 /**
@@ -112,21 +119,54 @@ export async function handleDisconnection(
   ocppIdentity: string,
   stationId?: number
 ): Promise<void> {
-  if (isInCooldown(ocppIdentity, "DISCONNECTION")) return;
+  if (isInCooldown(ocppIdentity, "DISCONNECTION")) {
+    console.log(`[OCPP Alert] Disconnection alert for ${ocppIdentity} is in cooldown (30 min), skipping`);
+    return;
+  }
+  
+  // Rastrear reconexiones frecuentes
+  const now = Date.now();
+  let reconnInfo = reconnectionCounts.get(ocppIdentity);
+  if (!reconnInfo || (now - reconnInfo.firstSeen > RECONNECTION_WINDOW_MS)) {
+    reconnInfo = { count: 1, firstSeen: now };
+  } else {
+    reconnInfo.count++;
+  }
+  reconnectionCounts.set(ocppIdentity, reconnInfo);
+  
+  // Construir mensaje con info de estabilidad
+  let message = `El cargador ${ocppIdentity} se ha desconectado del servidor OCPP.`;
+  if (reconnInfo.count > 1) {
+    message += ` (${reconnInfo.count} desconexiones en la última hora - conexión inestable)`;
+  }
   
   const alert: OcppAlert = {
     ocppIdentity,
     stationId,
     alertType: "DISCONNECTION",
-    severity: "warning",
+    severity: reconnInfo.count >= 5 ? "critical" : "warning",
     title: `Cargador ${ocppIdentity} desconectado`,
-    message: `El cargador ${ocppIdentity} se ha desconectado del servidor OCPP.`,
+    message,
+    payload: { disconnectionCount: reconnInfo.count, windowHours: 1 },
     acknowledged: false,
     createdAt: new Date(),
   };
   
   await saveAndNotifyAlert(alert);
   registerAlert(ocppIdentity, "DISCONNECTION");
+}
+
+/**
+ * Registra que un cargador se reconectó exitosamente
+ * Llamar cuando el cargador vuelve a conectarse para limpiar contadores
+ */
+export function handleReconnection(ocppIdentity: string): void {
+  // No limpiar el contador de reconexiones aquí - lo necesitamos para detectar inestabilidad
+  // Solo registrar en log
+  const reconnInfo = reconnectionCounts.get(ocppIdentity);
+  if (reconnInfo) {
+    console.log(`[OCPP Alert] ${ocppIdentity} reconnected (${reconnInfo.count} disconnections in current window)`);
+  }
 }
 
 /**
