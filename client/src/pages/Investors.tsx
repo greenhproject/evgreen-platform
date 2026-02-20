@@ -5,13 +5,9 @@
  * Incluye calculadora de ROI, casos de uso, gráficos de ingresos
  * y beneficios de la plataforma con IA.
  * 
- * Modelo de Negocio Actualizado (Feb 2026):
- * - Precio compra energía: $850 COP/kWh (promedio red)
- * - Precio compra energía solar: $250 COP/kWh
- * - Precio venta energía: $1,700 COP/kWh (promedio DC)
- * - Distribución: 70% inversionista / 30% plataforma
- * - Paquete Individual: $85M (1x Huawei FusionCharge 120kW)
- * - Paquete Colectivo: $1,000M (Estación 4x120kW = 480kW total + Solar)
+ * TODOS los parámetros financieros se cargan dinámicamente desde
+ * la configuración de la plataforma (settings.getCalculatorParams).
+ * NO hay valores hardcodeados de costos de energía, márgenes ni ROI.
  */
 
 import { useState, useMemo, useEffect } from "react";
@@ -57,24 +53,11 @@ import {
 } from "lucide-react";
 
 // ============================================================================
-// CONSTANTES DE NEGOCIO - MODELO REALISTA (Feb 2026)
+// NOTA: Todos los parámetros financieros (costos de energía, precios de venta,
+// distribución, costos operativos) se cargan dinámicamente desde el backend
+// a través de trpc.settings.getCalculatorParams. Los defaults solo se usan
+// como fallback si el backend no responde.
 // ============================================================================
-
-// Costos de energía
-const PRECIO_COMPRA_KWH_RED = 850; // COP promedio de la red
-const PRECIO_COMPRA_KWH_SOLAR = 250; // COP con energía solar propia
-
-// Precio de venta al usuario final
-const PRECIO_VENTA_KWH_MIN = 1400;
-const PRECIO_VENTA_KWH_MAX = 2200;
-const PRECIO_VENTA_KWH_DEFAULT = 1800;
-
-// Distribución de ingresos
-const PORCENTAJE_INVERSIONISTA = 0.70; // 70% para el inversionista
-const PORCENTAJE_PLATAFORMA = 0.30; // 30% para EVGreen
-
-// Costos operativos estimados (% del ingreso bruto)
-const COSTOS_OPERATIVOS_PORCENTAJE = 0.15; // 15% mantenimiento, seguros, etc.
 
 // ============================================================================
 // PAQUETES DE INVERSIÓN CORREGIDOS
@@ -241,7 +224,7 @@ export default function Investors() {
   // Estado para la calculadora
   const [paqueteSeleccionado, setPaqueteSeleccionado] = useState<"AC" | "INDIVIDUAL" | "COLECTIVO">("COLECTIVO");
   const [horasUso, setHorasUso] = useState(4); // Conservador por defecto
-  const [precioVenta, setPrecioVenta] = useState(PRECIO_VENTA_KWH_DEFAULT);
+  const [precioVenta, setPrecioVenta] = useState(1800); // Default, se sincroniza con backend
   const [zonaPremium, setZonaPremium] = useState<"A" | "B" | "C">("C");
   const [participacionColectiva, setParticipacionColectiva] = useState(50000000);
   const [escenario, setEscenario] = useState<"pesimista" | "realista" | "optimista">("realista");
@@ -265,6 +248,34 @@ export default function Investors() {
     inversionistaPct: (calcParams?.investorPercentage ?? 70) / 100,
   }), [calcParams]);
 
+  // Sincronizar precio de venta con el backend cuando se carguen los params
+  useEffect(() => {
+    if (calcParams?.precioVentaDefault) {
+      setPrecioVenta(calcParams.precioVentaDefault);
+    }
+  }, [calcParams?.precioVentaDefault]);
+
+  // ROI estimado dinámico para las cards de paquetes (escenario conservador: 4h/día)
+  const paqueteROIs = useMemo(() => {
+    const calcROI = (paquete: typeof PAQUETES.AC | typeof PAQUETES.INDIVIDUAL, costoEnergia: number, costosOpPct: number, horasBase: number, factorUtil: number = 1) => {
+      const potencia = 'potenciaTotal' in paquete ? (paquete as any).potenciaTotal : paquete.potenciaKw * paquete.cantidadCargadores;
+      const eficiencia = paquete.tipo.includes('AC') ? params.eficienciaAC : params.eficienciaDC;
+      const energiaDia = potencia * horasBase * factorUtil * eficiencia;
+      const margenDia = energiaDia * (params.precioVentaDefault - costoEnergia) * (1 - costosOpPct) * params.inversionistaPct;
+      const inversion = 'participacionMinima' in paquete ? (paquete as any).participacionMinima : paquete.precio;
+      const participacion = 'participacionMinima' in paquete ? (paquete as any).participacionMinima / paquete.precio : 1;
+      const ingresoDia = margenDia * participacion;
+      const roiAnual = inversion > 0 ? (ingresoDia * 365 / inversion * 100) : 0;
+      const paybackMeses = ingresoDia > 0 ? (inversion / (ingresoDia * 30)) : 999;
+      return { roiAnual: Math.round(roiAnual), paybackMeses: Math.round(paybackMeses) };
+    };
+    return {
+      AC: calcROI(PAQUETES.AC, params.costoEnergiaRed, params.costosOpAC, PAQUETES.AC.horasUsoConservador),
+      INDIVIDUAL: calcROI(PAQUETES.INDIVIDUAL, params.costoEnergiaRed, params.costosOpIndividual, PAQUETES.INDIVIDUAL.horasUsoConservador),
+      COLECTIVO: calcROI(PAQUETES.COLECTIVO, params.costoEnergiaSolar, params.costosOpColectivo, PAQUETES.COLECTIVO.horasUsoConservador, params.factorUtilizacionPremium),
+    };
+  }, [params]);
+
   // Factores de escenario: afectan las horas de uso y el precio
   const factorEscenario = useMemo(() => {
     switch (escenario) {
@@ -275,18 +286,11 @@ export default function Investors() {
   }, [escenario]);
 
   // ============================================================================
-  // CÁLCULOS DE ROI - MODELO REALISTA CORREGIDO
+  // CÁLCULOS DE ROI - MODELO DINÁMICO
   // ============================================================================
-  // 
-  // MODELO DE NEGOCIO:
-  // - Individual: 1 cargador 120kW, energía de red ($850/kWh), 100% propiedad
-  // - Colectivo: 4 cargadores 480kW total, energía solar ($250/kWh), participación %
-  //
-  // El modelo colectivo es más rentable porque:
-  // 1. Menor costo de energía (solar): $250 vs $850 = 70% ahorro
-  // 2. Mayor utilización por ubicaciones premium (8h vs 6h promedio)
-  // 3. Economías de escala en operación (10% costos vs 15%)
-  // 4. Mayor margen por kWh: $1,550 vs $950 = 63% más margen
+  // Todos los parámetros financieros (costos de energía, márgenes, distribución)
+  // se cargan dinámicamente desde el backend (settings.getCalculatorParams).
+  // No hay valores hardcodeados en los cálculos.
   // ============================================================================
   
   const calculos = useMemo(() => {
@@ -397,8 +401,12 @@ export default function Investors() {
     // ROI anual como porcentaje
     const roiAnual = inversionTotal > 0 ? (ingresoAnual / inversionTotal) * 100 : 0;
 
-    // Margen neto por kWh para el inversionista
+    // Margen neto por kWh para el inversionista (con factor de escenario)
     const margenNetoPorKwhInversionista = (margenBrutoPorKwh * (1 - costosOperativosPct)) * params.inversionistaPct;
+    
+    // Margen neto BASE por kWh (sin factor de escenario, para mostrar en info box)
+    const margenBrutoBase = precioVenta - costoEnergia;
+    const margenNetoBaseInversionista = (margenBrutoBase * (1 - costosOperativosPct)) * params.inversionistaPct;
     
     // Potencia efectiva del inversionista (para mostrar)
     const potenciaEfectiva = potenciaTotal * porcentajeParticipacion;
@@ -430,7 +438,9 @@ export default function Investors() {
       costoEnergia,
       margenBrutoPorKwh,
       margenNetoPorKwhInversionista: Math.round(margenNetoPorKwhInversionista),
+      margenNetoBaseInversionista: Math.round(margenNetoBaseInversionista),
       costosOperativosPct,
+      precioVentaBase: precioVenta,
       
       // Participación
       porcentajeParticipacion,
@@ -532,11 +542,11 @@ export default function Investors() {
     }
   ];
 
-  // Estadísticas del mercado
+  // Estadísticas del mercado (dinámicas desde params)
   const estadisticas = [
     { valor: "115%", descripcion: "Crecimiento anual del mercado EV en Colombia" },
     { valor: "1:125", descripcion: "Déficit actual de cargadores por vehículo" },
-    { valor: "70%", descripcion: "De los ingresos para el inversionista" },
+    { valor: `${Math.round(params.inversionistaPct * 100)}%`, descripcion: "De los ingresos para el inversionista" },
     { valor: "480kW", descripcion: "Potencia total estación colectiva" }
   ];
 
@@ -738,7 +748,7 @@ export default function Investors() {
                       </li>
                       <li className="flex items-start gap-2">
                         <CheckCircle2 className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-                        <span>Recibes el <strong className="text-white">70% de los ingresos</strong> según tu porcentaje de participación</span>
+                        <span>Recibes el <strong className="text-white">{Math.round(params.inversionistaPct * 100)}% de los ingresos</strong> según tu porcentaje de participación</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <CheckCircle2 className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
@@ -886,11 +896,11 @@ export default function Investors() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-2 rounded-lg bg-black/30 text-center">
-                    <p className="text-xl font-bold text-blue-400">~85%</p>
+                    <p className="text-xl font-bold text-blue-400">~{paqueteROIs.AC.roiAnual}%</p>
                     <p className="text-xs text-white/60">ROI Anual</p>
                   </div>
                   <div className="p-2 rounded-lg bg-black/30 text-center">
-                    <p className="text-xl font-bold text-blue-400">~14</p>
+                    <p className="text-xl font-bold text-blue-400">~{paqueteROIs.AC.paybackMeses}</p>
                     <p className="text-xs text-white/60">Meses Payback</p>
                   </div>
                 </div>
@@ -937,11 +947,11 @@ export default function Investors() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded-lg bg-black/30 text-center">
-                    <p className="text-2xl font-bold text-green-400">~107%</p>
-                    <p className="text-xs text-white/60">ROI Anual (4h/día)</p>
+                    <p className="text-2xl font-bold text-green-400">~{paqueteROIs.INDIVIDUAL.roiAnual}%</p>
+                    <p className="text-xs text-white/60">ROI Anual ({PAQUETES.INDIVIDUAL.horasUsoConservador}h/día)</p>
                   </div>
                   <div className="p-3 rounded-lg bg-black/30 text-center">
-                    <p className="text-2xl font-bold text-green-400">~11</p>
+                    <p className="text-2xl font-bold text-green-400">~{paqueteROIs.INDIVIDUAL.paybackMeses}</p>
                     <p className="text-xs text-white/60">Meses Payback</p>
                   </div>
                 </div>
@@ -988,22 +998,28 @@ export default function Investors() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded-lg bg-black/30 text-center">
-                    <p className="text-2xl font-bold text-amber-400">~126%</p>
+                    <p className="text-2xl font-bold text-amber-400">~{paqueteROIs.COLECTIVO.roiAnual}%</p>
                     <p className="text-xs text-white/60">ROI Anual (ubicación premium)</p>
                   </div>
                   <div className="p-3 rounded-lg bg-black/30 text-center">
-                    <p className="text-2xl font-bold text-amber-400">~10</p>
+                    <p className="text-2xl font-bold text-amber-400">~{paqueteROIs.COLECTIVO.paybackMeses}</p>
                     <p className="text-xs text-white/60">Meses Payback</p>
                   </div>
                 </div>
 
                 <ul className="space-y-3">
-                  {PAQUETES.COLECTIVO.caracteristicas.map((item, i) => (
+                  {PAQUETES.COLECTIVO.caracteristicas.map((item, i) => {
+                    // Reemplazar dinámicamente el porcentaje de reducción de energía solar
+                    const displayItem = item.includes("Reducción ~70%") 
+                      ? `Reducción ~${params.costoEnergiaRed > 0 ? Math.round((1 - params.costoEnergiaSolar / params.costoEnergiaRed) * 100) : 70}% costo de energía`
+                      : item;
+                    return (
                     <li key={i} className="flex items-center gap-3 text-white/80">
                       <CheckCircle2 className="w-5 h-5 text-amber-400 flex-shrink-0" />
-                      <span>{item}</span>
+                      <span>{displayItem}</span>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
 
                 <a href="#crowdfunding">
@@ -1223,16 +1239,26 @@ export default function Investors() {
                   <p className="text-sm text-white/60">
                     <span className="text-white font-medium">Costo de energía:</span>{" "}
                     {formatCOP(calculos.costoEnergia)}/kWh
-                    {paqueteSeleccionado === "COLECTIVO" && (
+                    {calculos.costoEnergia < params.costoEnergiaRed && (
                       <span className="text-amber-400 ml-2">(con solar)</span>
                     )}
                   </p>
                   <p className="text-sm text-white/60 mt-1">
-                    <span className="text-white font-medium">Tu margen neto (70%):</span>{" "}
-                    <span className="text-green-400">{formatCOP(calculos.margenNetoPorKwhInversionista)}/kWh</span>
+                    <span className="text-white font-medium">Precio de venta:</span>{" "}
+                    {formatCOP(calculos.precioVentaBase)}/kWh
+                    {escenario !== "realista" && (
+                      <span className="text-cyan-400 ml-2">(ajustado: {formatCOP(calculos.precioVentaEfectivo)}/kWh en esc. {calculos.escenarioLabel})</span>
+                    )}
+                  </p>
+                  <p className="text-sm text-white/60 mt-1">
+                    <span className="text-white font-medium">Tu margen neto ({Math.round(params.inversionistaPct * 100)}%):</span>{" "}
+                    <span className="text-green-400">{formatCOP(calculos.margenNetoBaseInversionista)}/kWh</span>
+                    {escenario !== "realista" && (
+                      <span className="text-cyan-400 ml-2">(ajustado: {formatCOP(calculos.margenNetoPorKwhInversionista)}/kWh)</span>
+                    )}
                   </p>
                   <p className="text-xs text-white/40 mt-2">
-                    * Se descuenta {Math.round(calculos.costosOperativosPct * 100)}% para costos operativos (mantenimiento, seguros)
+                    * Margen = (Precio venta - Costo energía) × {100 - Math.round(calculos.costosOperativosPct * 100)}% (después de costos operativos) × {Math.round(params.inversionistaPct * 100)}% (tu parte)
                     {paqueteSeleccionado === "COLECTIVO" && " — economías de escala"}
                   </p>
                 </div>
@@ -1430,23 +1456,48 @@ export default function Investors() {
                   </div>
                 </div>
 
-                {/* Filas de comparación */}
-                {[
-                  { label: "Inversión Mínima", individual: "$85,000,000", colectivo: "$50,000,000", winner: "colectivo" },
-                  { label: "Potencia Total", individual: "120 kW", colectivo: "480 kW (4x120kW)", winner: "colectivo" },
-                  { label: "Fuente de Energía", individual: "Red Eléctrica", colectivo: "Solar + Red", winner: "colectivo" },
-                  { label: "Costo Energía/kWh", individual: "$850 COP", colectivo: "$250 COP (70% ahorro)", winner: "colectivo" },
-                  { label: "Margen por kWh", individual: "$950 COP", colectivo: "$1,550 COP (+63%)", winner: "colectivo" },
-                  { label: "Costos Operativos", individual: "15%", colectivo: "10% (escala)", winner: "colectivo" },
-                  { label: "Ubicación", individual: "A elección", colectivo: "Premium garantizada", winner: "colectivo" },
-                  { label: "Utilización Esperada", individual: "4h/día", colectivo: "8h/día (2x tráfico)", winner: "colectivo" },
-                  { label: "ROI Anual Estimado", individual: "~107%", colectivo: "~126%", winner: "colectivo" },
-                  { label: "Payback", individual: "~11 meses", colectivo: "~10 meses", winner: "colectivo" },
-                  { label: "Seguridad de Ingresos", individual: "Variable", colectivo: "Alta (ubicación estratégica)", winner: "colectivo" },
-                  { label: "Riesgo de Demanda", individual: "Medio-Alto", colectivo: "Bajo (alto tráfico)", winner: "colectivo" },
-                  { label: "Propiedad", individual: "100% tuya", colectivo: "Proporcional", winner: "individual" },
-                  { label: "Flexibilidad", individual: "Total control", colectivo: "Gestión EVGreen", winner: "individual" },
-                ].map((row, i) => (
+                {/* Filas de comparación - Valores dinámicos desde params */}
+                {(() => {
+                  // Cálculos dinámicos para la tabla comparativa
+                  const costoIndividual = params.costoEnergiaRed;
+                  const costoColectivo = params.costoEnergiaSolar;
+                  const precioBase = params.precioVentaDefault;
+                  const ahorroSolar = params.costoEnergiaRed > 0 ? Math.round((1 - costoColectivo / costoIndividual) * 100) : 0;
+                  
+                  // Margen bruto por kWh
+                  const margenIndividual = precioBase - costoIndividual;
+                  const margenColectivo = precioBase - costoColectivo;
+                  const margenDiff = margenIndividual > 0 ? Math.round(((margenColectivo - margenIndividual) / margenIndividual) * 100) : 0;
+                  
+                  // ROI dinámico (escenario realista, horas base)
+                  const horasInd = PAQUETES.INDIVIDUAL.horasUsoConservador;
+                  const horasCol = PAQUETES.COLECTIVO.horasUsoConservador * params.factorUtilizacionPremium;
+                  const energiaInd = PAQUETES.INDIVIDUAL.potenciaKw * horasInd * params.eficienciaDC;
+                  const energiaCol = (PAQUETES.COLECTIVO as any).potenciaTotal * horasCol * params.eficienciaDC;
+                  const ingresoIndDia = (energiaInd * (precioBase - costoIndividual) * (1 - params.costosOpIndividual) * params.inversionistaPct);
+                  const ingresoColDia = (energiaCol * (precioBase - costoColectivo) * (1 - params.costosOpColectivo) * params.inversionistaPct);
+                  const roiIndAnual = PAQUETES.INDIVIDUAL.precio > 0 ? ((ingresoIndDia * 365) / PAQUETES.INDIVIDUAL.precio * 100) : 0;
+                  const roiColAnual = PAQUETES.COLECTIVO.participacionMinima > 0 ? ((ingresoColDia * 365 * (PAQUETES.COLECTIVO.participacionMinima / PAQUETES.COLECTIVO.precio)) / PAQUETES.COLECTIVO.participacionMinima * 100) : 0;
+                  const paybackInd = ingresoIndDia > 0 ? (PAQUETES.INDIVIDUAL.precio / (ingresoIndDia * 30)) : 999;
+                  const paybackCol = ingresoColDia > 0 ? (PAQUETES.COLECTIVO.participacionMinima / (ingresoColDia * (PAQUETES.COLECTIVO.participacionMinima / PAQUETES.COLECTIVO.precio) * 30)) : 999;
+
+                  return [
+                    { label: "Inversión Mínima", individual: formatCOP(PAQUETES.INDIVIDUAL.precio), colectivo: formatCOP(PAQUETES.COLECTIVO.participacionMinima), winner: "colectivo" },
+                    { label: "Potencia Total", individual: `${PAQUETES.INDIVIDUAL.potenciaKw} kW`, colectivo: `${(PAQUETES.COLECTIVO as any).potenciaTotal} kW (${PAQUETES.COLECTIVO.cantidadCargadores}×${PAQUETES.COLECTIVO.potenciaKw}kW)`, winner: "colectivo" },
+                    { label: "Fuente de Energía", individual: "Red Eléctrica", colectivo: "Solar + Red", winner: "colectivo" },
+                    { label: "Costo Energía/kWh", individual: `${formatCOP(costoIndividual)} COP`, colectivo: `${formatCOP(costoColectivo)} COP (${ahorroSolar}% ahorro)`, winner: "colectivo" },
+                    { label: "Margen por kWh", individual: `${formatCOP(margenIndividual)} COP`, colectivo: `${formatCOP(margenColectivo)} COP (+${margenDiff}%)`, winner: "colectivo" },
+                    { label: "Costos Operativos", individual: `${Math.round(params.costosOpIndividual * 100)}%`, colectivo: `${Math.round(params.costosOpColectivo * 100)}% (escala)`, winner: "colectivo" },
+                    { label: "Ubicación", individual: "A elección", colectivo: "Premium garantizada", winner: "colectivo" },
+                    { label: "Utilización Esperada", individual: `${horasInd}h/día`, colectivo: `${horasCol.toFixed(0)}h/día (${params.factorUtilizacionPremium}x tráfico)`, winner: "colectivo" },
+                    { label: "ROI Anual Estimado", individual: `~${roiIndAnual.toFixed(0)}%`, colectivo: `~${roiColAnual.toFixed(0)}%`, winner: roiColAnual > roiIndAnual ? "colectivo" : "individual" },
+                    { label: "Payback", individual: `~${paybackInd.toFixed(0)} meses`, colectivo: `~${paybackCol.toFixed(0)} meses`, winner: paybackCol < paybackInd ? "colectivo" : "individual" },
+                    { label: "Seguridad de Ingresos", individual: "Variable", colectivo: "Alta (ubicación estratégica)", winner: "colectivo" },
+                    { label: "Riesgo de Demanda", individual: "Medio-Alto", colectivo: "Bajo (alto tráfico)", winner: "colectivo" },
+                    { label: "Propiedad", individual: "100% tuya", colectivo: "Proporcional", winner: "individual" },
+                    { label: "Flexibilidad", individual: "Total control", colectivo: "Gestión EVGreen", winner: "individual" },
+                  ];
+                })().map((row, i) => (
                   <div key={i} className={`grid grid-cols-3 ${i % 2 === 0 ? 'bg-slate-900/30' : ''} border-b border-white/5`}>
                     <div className="p-4">
                       <p className="text-white/80 font-medium">{row.label}</p>
@@ -1531,7 +1582,7 @@ export default function Investors() {
                   </div>
                   <h3 className="text-lg font-bold text-white mb-2">Energía Solar</h3>
                   <p className="text-white/60 text-sm">
-                    Paneles solares integrados reducen el costo de energía en <strong className="text-amber-400">70%</strong>, aumentando significativamente el margen.
+                    Paneles solares integrados reducen el costo de energía en <strong className="text-amber-400">{params.costoEnergiaRed > 0 ? Math.round((1 - params.costoEnergiaSolar / params.costoEnergiaRed) * 100) : 70}%</strong>, aumentando significativamente el margen.
                   </p>
                 </CardContent>
               </Card>
