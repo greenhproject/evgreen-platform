@@ -1393,3 +1393,7 @@
 ## BUG: Error Wompi installments en recarga rápida - 19 Feb 2026
 - [x] BUG: Error "No se especificó el número de cuotas (installments)" al hacer recarga rápida desde billetera
 - [x] Agregar payment_method: { type: "CARD", installments: 1 } al payload de quickRecharge en wompi/router.ts
+
+## BUG: Firma de integridad faltante en quickRecharge - 19 Feb 2026
+- [x] BUG: Error "Firma de integridad requerida no enviada" al hacer recarga rápida
+- [x] Agregar campo signature al payload de quickRecharge en wompi/router.ts

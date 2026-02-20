@@ -775,6 +775,7 @@ export const wompiRouter = router({
             payment_source_id: parseInt(subscription.wompiPaymentSourceId),
             reference,
             customer_email: ctx.user.email || "",
+            signature,
             acceptance_token: acceptanceData.acceptanceToken,
             payment_method: {
               type: "CARD",
