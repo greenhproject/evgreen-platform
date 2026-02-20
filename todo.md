@@ -1406,3 +1406,12 @@
 - [x] Mostrar foto como hero image con overlay gradiente en StationDetail del usuario
 - [x] Mostrar miniatura de foto en tarjeta del mapa y en lista de estaciones
 - [x] Migrar schema con SQL ALTER TABLE
+
+## Compresión automática de imágenes de estaciones - 19 Feb 2026
+- [x] Instalar sharp para procesamiento de imágenes en el servidor
+- [x] Comprimir y redimensionar imágenes antes de subir a S3 (max 1200px, WebP calidad 80)
+- [x] Generar miniatura adicional para lista del mapa (300x225px, WebP calidad 70)
+- [x] Guardar ambas URLs (imageUrl para detalle, thumbnailUrl para lista/mapa)
+- [x] Actualizar frontend para usar thumbnailUrl en lista y mapa con lazy loading
+- [x] Tests unitarios para la función de compresión (9 tests pasan)
+- [x] Mostrar feedback de compresión al admin (tamaño original → comprimido, % ahorro)
