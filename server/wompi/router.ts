@@ -776,6 +776,10 @@ export const wompiRouter = router({
             reference,
             customer_email: ctx.user.email || "",
             acceptance_token: acceptanceData.acceptanceToken,
+            payment_method: {
+              type: "CARD",
+              installments: 1,
+            },
           }),
         });
 

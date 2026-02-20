@@ -1389,3 +1389,7 @@
 - [x] Mejorar service worker: parseo robusto de FCM payload, requireInteraction para alertas críticas, renotify, agrupación por tipo
 - [x] Incluir actionUrl en el payload de push para navegar al hacer clic (SW extrae clickAction/actionUrl)
 - [x] Tests unitarios: 10 tests en balance-monitor-push.test.ts (todos pasan)
+
+## BUG: Error Wompi installments en recarga rápida - 19 Feb 2026
+- [x] BUG: Error "No se especificó el número de cuotas (installments)" al hacer recarga rápida desde billetera
+- [x] Agregar payment_method: { type: "CARD", installments: 1 } al payload de quickRecharge en wompi/router.ts
