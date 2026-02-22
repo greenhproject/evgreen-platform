@@ -1536,3 +1536,12 @@
 - [x] Persistir manualSoc en DB al llamar setManualSoc (updateTransaction con manualSoc y manualBatteryCapacityKwh)
 - [x] Restaurar manualSoc desde DB en getActiveSession (prioridad: memoria > DB > vehículo)
 - [x] Verificar TypeScript sin errores (0 errores)
+
+## Bug: App no redirige a sesión de carga activa al volver - 22 Feb 2026
+- [x] Investigar flujo actual de detección de sesión activa al abrir la app
+- [x] Implementar detección automática de sesión activa al cargar la app (RoleBasedRedirect en App.tsx)
+- [x] Redirigir automáticamente al ChargingMonitor si hay sesión activa
+- [x] Mostrar banner flotante "Carga en progreso" con tiempo, kWh y costo en todas las páginas de usuario
+- [x] Hook useActiveChargingSession para detección reutilizable
+- [x] Componente ActiveChargingBanner con animación y datos en tiempo real
+- [x] Verificar TypeScript sin errores (0 errores)

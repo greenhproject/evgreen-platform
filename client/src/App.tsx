@@ -4,7 +4,8 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { useAuth } from "@/_core/hooks/useAuth";
+import { useAuth } from "./_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Onboarding, useOnboarding } from "@/components/Onboarding";
 
@@ -113,6 +114,7 @@ import StaffLayout from "./layouts/StaffLayout";
 // Widgets (carga diferida)
 const AIChatWidget = lazy(() => import("./components/AIChat").then(m => ({ default: m.AIChatWidget })));
 const InstallBanner = lazy(() => import("./components/InstallBanner").then(m => ({ default: m.InstallBanner })));
+const ActiveChargingBanner = lazy(() => import("./components/ActiveChargingBanner").then(m => ({ default: m.ActiveChargingBanner })));
 
 // Función para obtener la ruta de inicio según el rol
 function getHomeRouteByRole(role: string | undefined): string {
@@ -148,20 +150,36 @@ function isPWAInstalled(): boolean {
 function RoleBasedRedirect() {
   const { user, isAuthenticated, loading } = useAuth();
   const [, setLocation] = useLocation();
+  
+  // Verificar si el usuario tiene una sesión de carga activa
+  const { data: activeSession, isLoading: sessionLoading } = trpc.charging.getActiveSession.useQuery(
+    undefined,
+    {
+      enabled: !!isAuthenticated && !!user && user.role === "user",
+      retry: 1,
+    }
+  );
 
   useEffect(() => {
     if (loading) return;
+    // Para usuarios, esperar a que se resuelva la consulta de sesión activa
+    if (isAuthenticated && user && user.role === "user" && sessionLoading) return;
     
     if (isAuthenticated && user) {
+      // Si es usuario y tiene sesión de carga activa, ir al monitor
+      if (user.role === "user" && activeSession && activeSession.transactionId > 0 && activeSession.status !== "COMPLETED") {
+        setLocation("/charging-monitor");
+        return;
+      }
       const targetRoute = getHomeRouteByRole(user.role);
       setLocation(targetRoute);
     } else if (isPWAInstalled()) {
       // PWA instalada: ir directo al mapa (mostrará login si no está autenticado)
       setLocation('/map');
     }
-  }, [isAuthenticated, user, loading, setLocation]);
+  }, [isAuthenticated, user, loading, setLocation, activeSession, sessionLoading]);
 
-  if (loading) {
+  if (loading || (isAuthenticated && user?.role === "user" && sessionLoading)) {
     return <LazySpinner />;
   }
 
@@ -597,6 +615,7 @@ function App() {
             <>
               <Router />
               <Suspense fallback={null}>
+                <ActiveChargingBanner />
                 <AIChatWidget />
                 <InstallBanner />
               </Suspense>
