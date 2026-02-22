@@ -33,7 +33,9 @@ import {
   Plug,
   Edit3,
   Check,
-  BatteryCharging
+  BatteryCharging,
+  Timer,
+  AlertCircle
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -160,6 +162,12 @@ export default function ChargingMonitor() {
     },
   });
   
+  // Consultar estado de overstay del usuario
+  const { data: overstayStatus } = trpc.overstay.getMyStatus.useQuery(undefined, {
+    refetchInterval: 10000, // Cada 10 segundos
+    enabled: !!user,
+  });
+
   // Obtener sesión activa - polling cada 3 segundos para datos más frescos
   const { data: session, isLoading, refetch } = trpc.charging.getActiveSession.useQuery(
     undefined,
@@ -706,6 +714,75 @@ export default function ChargingMonitor() {
         <div className="mt-6">
           <ChargingBanner />
         </div>
+
+        {/* Indicador de Overstay / Grace Period */}
+        {overstayStatus && (
+          <Card className={`mt-4 border-2 ${
+            overstayStatus.status === "penalty" 
+              ? "border-red-500/50 bg-red-500/5" 
+              : overstayStatus.status === "grace" 
+                ? "border-amber-500/50 bg-amber-500/5"
+                : "border-blue-500/50 bg-blue-500/5"
+          }`}>
+            <CardContent className="p-4">
+              {overstayStatus.status === "penalty" ? (
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-full bg-red-100 dark:bg-red-900/30 animate-pulse">
+                    <AlertCircle className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm text-red-700 dark:text-red-400">Tarifa de ocupación activa</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Tu carga terminó hace {overstayStatus.elapsedMinutes} min. Se está cobrando
+                      <span className="font-bold text-red-600"> {formatCurrency(overstayStatus.penaltyPerMinute)}/min</span>
+                    </p>
+                    <div className="mt-2 flex items-center justify-between bg-red-100/50 dark:bg-red-900/20 rounded-lg px-3 py-2">
+                      <span className="text-xs font-medium text-red-700 dark:text-red-400">Acumulado:</span>
+                      <span className="text-lg font-bold text-red-600">{formatCurrency(overstayStatus.accumulatedCost || 0)}</span>
+                    </div>
+                    <p className="text-xs text-red-600/80 mt-2 font-medium">
+                      Desconecta tu vehículo para detener el cobro
+                    </p>
+                  </div>
+                </div>
+              ) : overstayStatus.status === "grace" ? (
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-900/30">
+                    <Timer className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm text-amber-700 dark:text-amber-400">Carga completada - Período de gracia</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Tienes <span className="font-bold text-amber-600">{overstayStatus.graceRemaining} min</span> para desconectar tu vehículo.
+                    </p>
+                    <div className="mt-2 w-full bg-amber-200/50 dark:bg-amber-900/30 rounded-full h-2">
+                      <div 
+                        className="bg-amber-500 h-2 rounded-full transition-all duration-1000"
+                        style={{ width: `${Math.max(5, (1 - (overstayStatus.graceRemaining || 0) / (overstayStatus.gracePeriodMinutes || 10)) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-amber-600/80 mt-2">
+                      Después se cobrará {formatCurrency(overstayStatus.penaltyPerMinute)}/min
+                    </p>
+                  </div>
+                </div>
+              ) : overstayStatus.status === "finishing" ? (
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30">
+                    <Timer className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm text-blue-700 dark:text-blue-400">Carga finalizada</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Período de gracia: <span className="font-bold">{overstayStatus.gracePeriodMinutes} min</span> para desconectar.
+                      Luego se cobrará {formatCurrency(overstayStatus.penaltyPerMinute)}/min.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        )}
         
         {/* Información adicional */}
         <Card className="mt-4 border-dashed">

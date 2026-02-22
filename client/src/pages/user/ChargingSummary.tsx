@@ -589,6 +589,27 @@ export default function ChargingSummary() {
                   <span className="text-muted-foreground">Energía consumida</span>
                   <span className="font-medium">{transaction.kwhConsumed} kWh</span>
                 </div>
+                {(transaction as any).energyCost > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Costo energía</span>
+                    <span className="font-medium">{formatCurrency((transaction as any).energyCost)}</span>
+                  </div>
+                )}
+                {(transaction as any).sessionCost > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Tarifa de conexión</span>
+                    <span className="font-medium">{formatCurrency((transaction as any).sessionCost)}</span>
+                  </div>
+                )}
+                {(transaction as any).overstayCost > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 text-red-500" />
+                      Tarifa de ocupación
+                    </span>
+                    <span className="font-medium text-red-600">{formatCurrency((transaction as any).overstayCost)}</span>
+                  </div>
+                )}
                 
                 <Separator />
                 

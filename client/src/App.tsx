@@ -94,6 +94,7 @@ const AdminAISettings = lazy(() => import("./pages/admin/AISettings"));
 const AdminPayouts = lazy(() => import("./pages/admin/Payouts"));
 const AdminCrowdfunding = lazy(() => import("./pages/admin/Crowdfunding"));
 const AdminOCPPMonitor = lazy(() => import("./pages/AdminOCPPMonitor"));
+const AdminOverstayHistory = lazy(() => import("./pages/admin/OverstayHistory"));
 
 // Páginas de Staff (Evento)
 const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
@@ -520,6 +521,14 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin"]}>
             <AdminLayout>
               <AdminCrowdfunding />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        <Route path="/admin/overstay">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminOverstayHistory />
             </AdminLayout>
           </ProtectedRoute>
         </Route>

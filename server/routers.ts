@@ -1032,6 +1032,9 @@ const transactionsRouter = router({
         durationMinutes,
         kwhConsumed: transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed).toFixed(2) : "0.00",
         pricePerKwh: tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : (await db.getEffectiveStationPrice(transaction.stationId)).pricePerKwh,
+        energyCost: transaction.energyCost ? parseFloat(transaction.energyCost.toString()) : 0,
+        sessionCost: transaction.sessionCost ? parseFloat(transaction.sessionCost.toString()) : 0,
+        overstayCost: transaction.overstayCost ? parseFloat(transaction.overstayCost.toString()) : 0,
         totalCost: transaction.totalCost ? parseFloat(transaction.totalCost) : 0,
         status: transaction.status,
         paymentMethod: "wallet", // Por defecto wallet
@@ -3685,6 +3688,148 @@ const chargerBrandsRouter = router({
     }),
 });
 
+// ============================================================================
+// OVERSTAY ROUTER - Historial y estado de penalizaciones por ocupación
+// ============================================================================
+
+const overstayRouter = router({
+  // Usuario: obtener estado de overstay activo (si tiene)
+  getMyStatus: protectedProcedure
+    .query(async ({ ctx }) => {
+      const { getOverstayInfo, getAllOverstaySessions } = await import("./charging/overstay-monitor");
+      
+      // Buscar si el usuario tiene una transacción activa con overstay
+      const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
+      if (!activeTransaction) return null;
+      
+      // Buscar el EVSE de la transacción activa
+      const evse = await db.getEvseById(activeTransaction.evseId);
+      if (!evse) return null;
+      
+      const info = getOverstayInfo(evse.id);
+      if (!info) {
+        // No hay overstay activo, pero verificar si el EVSE está en Finishing
+        if (evse.status === "FINISHING" || evse.status === "SUSPENDED_EV") {
+          // Obtener tarifa para mostrar info de grace period
+          const tariff = activeTransaction.tariffId ? await db.getTariffById(activeTransaction.tariffId) : null;
+          const globalPrices = await db.getPriceRanges();
+          return {
+            status: "finishing" as const,
+            gracePeriodMinutes: tariff?.overstayGracePeriodMinutes ?? globalPrices.defaultOverstayGracePeriodMinutes ?? 10,
+            penaltyPerMinute: tariff?.overstayPenaltyPerMinute ? parseFloat(tariff.overstayPenaltyPerMinute.toString()) : (globalPrices.defaultOverstayPenaltyPerMin ?? 500),
+            evseId: evse.id,
+            transactionId: activeTransaction.id,
+          };
+        }
+        return null;
+      }
+      
+      return {
+        status: info.isPenaltyActive ? "penalty" as const : "grace" as const,
+        ...info,
+      };
+    }),
+
+  // Admin: historial de transacciones con penalización por overstay
+  getHistory: adminProcedure
+    .input(z.object({
+      stationId: z.number().optional(),
+      userId: z.number().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      limit: z.number().min(1).max(500).default(100),
+    }).optional())
+    .query(async ({ input }) => {
+      const results = await db.getOverstayTransactions({
+        stationId: input?.stationId,
+        userId: input?.userId,
+        startDate: input?.startDate,
+        endDate: input?.endDate,
+        limit: input?.limit || 100,
+      });
+
+      return results.map((tx: any) => ({
+        id: tx.id,
+        userId: tx.userId,
+        userName: tx.userName || "Usuario",
+        stationId: tx.stationId,
+        stationName: tx.stationName || "Estación",
+        startTime: tx.startTime,
+        endTime: tx.endTime,
+        kwhConsumed: tx.kwhConsumed ? parseFloat(tx.kwhConsumed.toString()) : 0,
+        energyCost: tx.energyCost ? parseFloat(tx.energyCost.toString()) : 0,
+        overstayCost: tx.overstayCost ? parseFloat(tx.overstayCost.toString()) : 0,
+        totalCost: tx.totalCost ? parseFloat(tx.totalCost.toString()) : 0,
+        status: tx.status,
+      }));
+    }),
+
+  // Admin: obtener sesiones de overstay activas en tiempo real
+  getActiveSessions: adminProcedure
+    .query(async () => {
+      const { getAllOverstaySessions } = await import("./charging/overstay-monitor");
+      const sessions = getAllOverstaySessions();
+      
+      // Enriquecer con nombres de estación y usuario
+      const enriched = await Promise.all(sessions.map(async (s: any) => {
+        const evse = await db.getEvseById(s.evseId);
+        const station = evse ? await db.getChargingStationById(evse.stationId || 0) : null;
+        const tx = await db.getTransactionById(s.transactionId);
+        const user = tx ? await db.getUserById(tx.userId) : null;
+        
+        return {
+          ...s,
+          stationName: station?.name || "Estación",
+          userName: user?.name || "Usuario",
+          connectorId: evse?.connectorId || 0,
+        };
+      }));
+      
+      return enriched;
+    }),
+
+  // Admin: resumen estadístico de overstay
+  getSummary: adminProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const results = await db.getOverstayTransactions({
+        startDate: input?.startDate,
+        endDate: input?.endDate,
+        limit: 500,
+      });
+
+      const totalPenalties = results.reduce((sum: number, tx: any) => sum + parseFloat(tx.overstayCost?.toString() || "0"), 0);
+      const totalTransactions = results.length;
+      const avgPenalty = totalTransactions > 0 ? totalPenalties / totalTransactions : 0;
+      
+      // Agrupar por estación
+      const byStation: Record<number, { name: string; count: number; total: number }> = {};
+      for (const tx of results) {
+        const sid = tx.stationId;
+        if (!byStation[sid]) {
+          byStation[sid] = { name: (tx as any).stationName || "Estación", count: 0, total: 0 };
+        }
+        byStation[sid].count++;
+        byStation[sid].total += parseFloat(tx.overstayCost?.toString() || "0");
+      }
+
+      return {
+        totalPenalties: Math.round(totalPenalties),
+        totalTransactions,
+        avgPenalty: Math.round(avgPenalty),
+        byStation: Object.entries(byStation).map(([id, data]) => ({
+          stationId: parseInt(id),
+          stationName: data.name,
+          count: data.count,
+          total: Math.round(data.total),
+        })),
+      };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -3720,6 +3865,7 @@ export const appRouter = router({
   reviews: reviewsRouter,
   idTags: idTagRouter,
   chargerBrands: chargerBrandsRouter,
+  overstay: overstayRouter,
 });
 
 export type AppRouter = typeof appRouter;

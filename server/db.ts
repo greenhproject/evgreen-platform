@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, lt, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
+import { eq, and, desc, gte, lte, lt, gt, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -491,6 +491,46 @@ export async function getAllTransactions(filters?: { startDate?: Date; endDate?:
   }
   
   return query;
+}
+
+export async function getOverstayTransactions(filters?: {
+  stationId?: number;
+  userId?: number;
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [gt(transactions.overstayCost, "0")];
+  if (filters?.stationId) conditions.push(eq(transactions.stationId, filters.stationId));
+  if (filters?.userId) conditions.push(eq(transactions.userId, filters.userId));
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+
+  return db
+    .select({
+      id: transactions.id,
+      userId: transactions.userId,
+      stationId: transactions.stationId,
+      evseId: transactions.evseId,
+      status: transactions.status,
+      startTime: transactions.startTime,
+      endTime: transactions.endTime,
+      kwhConsumed: transactions.kwhConsumed,
+      energyCost: transactions.energyCost,
+      overstayCost: transactions.overstayCost,
+      totalCost: transactions.totalCost,
+      userName: users.name,
+      stationName: chargingStations.name,
+    })
+    .from(transactions)
+    .leftJoin(users, eq(transactions.userId, users.id))
+    .leftJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(and(...conditions))
+    .orderBy(desc(transactions.endTime))
+    .limit(filters?.limit || 200);
 }
 
 export async function getTransactionsByStationId(stationId: number, filters?: { startDate?: Date; endDate?: Date }) {
