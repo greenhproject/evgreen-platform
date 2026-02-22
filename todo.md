@@ -1529,3 +1529,10 @@
 - [x] Agregar tipo overstay_alert al NotificationType de FCM con icono y color rojo
 - [x] Crear notificación in-app (tipo CHARGING) para cada evento de overstay
 - [x] Verificar TypeScript sin errores (0 errores)
+
+## Bug: SoC manual se pierde al salir y volver a la app - 22 Feb 2026
+- [x] Investigar cómo se almacena el SoC (solo en memoria del servidor, se pierde al recrear sesión)
+- [x] Agregar campos manualSoc y manualBatteryCapacityKwh a tabla transactions en DB
+- [x] Persistir manualSoc en DB al llamar setManualSoc (updateTransaction con manualSoc y manualBatteryCapacityKwh)
+- [x] Restaurar manualSoc desde DB en getActiveSession (prioridad: memoria > DB > vehículo)
+- [x] Verificar TypeScript sin errores (0 errores)

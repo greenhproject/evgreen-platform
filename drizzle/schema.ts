@@ -271,6 +271,9 @@ export const transactions = mysqlTable("transactions", {
   // Método de inicio
   startMethod: varchar("startMethod", { length: 50 }), // QR, NFC, APP, RFID
   stopReason: varchar("stopReason", { length: 100 }), // REMOTE, LOCAL, ENERGY_LIMIT, etc.
+  // SoC manual ingresado por el usuario (cuando el cargador no lo reporta)
+  manualSoc: int("manualSoc"), // Porcentaje de batería ingresado manualmente (0-100)
+  manualBatteryCapacityKwh: decimal("manualBatteryCapacityKwh", { precision: 6, scale: 2 }), // Capacidad de batería en kWh
   // Reserva asociada (si aplica)
   reservationId: int("reservationId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
