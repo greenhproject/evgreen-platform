@@ -29,6 +29,10 @@ interface OverstaySession {
   stationId: number;
   userId: number;
   tariffId: number | null;
+  /** Station name for notifications */
+  stationName: string;
+  /** Connector number for notifications */
+  connectorId: number;
   /** When the charger reported "Finishing" (charge complete, cable connected) */
   finishingStartTime: Date;
   /** Grace period in minutes before penalty starts */
@@ -39,7 +43,9 @@ interface OverstaySession {
   accumulatedCost: number;
   /** Last time we charged the user */
   lastChargeTime: Date;
-  /** Whether we've sent the grace period warning */
+  /** Whether we've sent the initial finishing notification */
+  finishingNotified: boolean;
+  /** Whether we've sent the grace period warning (2 min remaining) */
   graceWarningNotified: boolean;
   /** Whether we've sent the first penalty notification */
   penaltyStartNotified: boolean;
@@ -142,17 +148,26 @@ export async function onChargingFinished(evseId: number, stationId: number) {
       return;
     }
 
+    // Get station and EVSE info for notification messages
+    const station = await db.getChargingStationById(stationId);
+    const evse = await db.getEvseById(evseId);
+    const stationName = station?.name || `Estación #${stationId}`;
+    const connectorId = evse?.connectorId || 1;
+
     const session: OverstaySession = {
       transactionId: transaction.id,
       evseId,
       stationId,
       userId: transaction.userId,
       tariffId: transaction.tariffId,
+      stationName,
+      connectorId,
       finishingStartTime: new Date(),
       gracePeriodMinutes,
       penaltyPerMinute,
       accumulatedCost: 0,
       lastChargeTime: new Date(),
+      finishingNotified: false,
       graceWarningNotified: false,
       penaltyStartNotified: false,
       chargeCount: 0,
@@ -160,6 +175,16 @@ export async function onChargingFinished(evseId: number, stationId: number) {
 
     activeOverstaySessions.set(evseId, session);
     console.log(`[OverstayMonitor] Started tracking EVSE ${evseId}: grace=${gracePeriodMinutes}min, penalty=$${penaltyPerMinute}/min, txId=${transaction.id}`);
+
+    // Send immediate notification that charging is complete
+    await sendOverstayNotification(session.userId, "finishing", {
+      stationName,
+      connectorId,
+      gracePeriodMinutes,
+      penaltyPerMinute,
+    });
+    session.finishingNotified = true;
+    console.log(`[OverstayMonitor] Finishing notification sent to user ${session.userId} for ${stationName} (conector ${connectorId})`);
 
   } catch (error) {
     console.error(`[OverstayMonitor] Error starting overstay tracking for EVSE ${evseId}:`, error);
@@ -266,6 +291,8 @@ async function chargeOverstayForSession(session: OverstaySession, isFinal: boole
     if (graceRemaining <= 2 && !session.graceWarningNotified) {
       session.graceWarningNotified = true;
       await sendOverstayNotification(session.userId, "warning", {
+        stationName: session.stationName,
+        connectorId: session.connectorId,
         graceRemaining: Math.ceil(graceRemaining),
         penaltyPerMinute: session.penaltyPerMinute,
       });
@@ -344,12 +371,16 @@ async function chargeOverstayForSession(session: OverstaySession, isFinal: boole
     if (!session.penaltyStartNotified) {
       session.penaltyStartNotified = true;
       await sendOverstayNotification(session.userId, "penalty_started", {
+        stationName: session.stationName,
+        connectorId: session.connectorId,
         penaltyPerMinute: session.penaltyPerMinute,
         accumulatedCost: session.accumulatedCost,
       });
     } else if (session.chargeCount % 5 === 0) {
       // Send periodic update every 5 charges (~5 minutes)
       await sendOverstayNotification(session.userId, "penalty_update", {
+        stationName: session.stationName,
+        connectorId: session.connectorId,
         penaltyPerMinute: session.penaltyPerMinute,
         accumulatedCost: session.accumulatedCost,
         elapsedMinutes: Math.round(elapsedMinutes - session.gracePeriodMinutes),
@@ -379,29 +410,45 @@ async function chargeOverstayForSession(session: OverstaySession, isFinal: boole
 // NOTIFICATIONS
 // ============================================================================
 
-type OverstayNotificationType = "warning" | "penalty_started" | "penalty_update";
+type OverstayNotificationType = "finishing" | "warning" | "penalty_started" | "penalty_update";
+
+interface OverstayNotificationData {
+  stationName?: string;
+  connectorId?: number;
+  gracePeriodMinutes?: number;
+  graceRemaining?: number;
+  penaltyPerMinute: number;
+  accumulatedCost?: number;
+  elapsedMinutes?: number;
+}
 
 async function sendOverstayNotification(
   userId: number,
   type: OverstayNotificationType,
-  data: { graceRemaining?: number; penaltyPerMinute: number; accumulatedCost?: number; elapsedMinutes?: number }
+  data: OverstayNotificationData
 ) {
   try {
     let title = "";
     let message = "";
+    const stationLabel = data.stationName ? `en ${data.stationName}` : "";
+    const connectorLabel = data.connectorId ? ` (conector ${data.connectorId})` : "";
 
     switch (type) {
+      case "finishing":
+        title = "⚡ Carga completada";
+        message = `Tu vehículo terminó de cargar ${stationLabel}${connectorLabel}. Tienes ${data.gracePeriodMinutes || 10} minutos de gracia para desconectar el cable. Después se aplicará una tarifa de ocupación de $${data.penaltyPerMinute.toLocaleString()}/min.`;
+        break;
       case "warning":
-        title = "Tu carga ha finalizado";
-        message = `Tu vehículo ya terminó de cargar. Tienes ${data.graceRemaining} minutos para desconectar el cable antes de que se aplique la tarifa de ocupación ($${data.penaltyPerMinute.toLocaleString()}/min).`;
+        title = `⏰ ¡Quedan ${data.graceRemaining} min de gracia!`;
+        message = `Tu vehículo sigue conectado ${stationLabel}${connectorLabel}. Desconéctalo en los próximos ${data.graceRemaining} minutos o se aplicará la tarifa de ocupación ($${data.penaltyPerMinute.toLocaleString()}/min).`;
         break;
       case "penalty_started":
-        title = "Tarifa de ocupación activa";
-        message = `Se está aplicando la tarifa de ocupación de $${data.penaltyPerMinute.toLocaleString()}/min. Desconecta tu vehículo para detener el cobro. Acumulado: $${Math.round(data.accumulatedCost || 0).toLocaleString()} COP.`;
+        title = "🚨 Tarifa de ocupación activa";
+        message = `Se está cobrando $${data.penaltyPerMinute.toLocaleString()}/min por ocupación ${stationLabel}${connectorLabel}. Desconecta tu vehículo para detener el cobro. Acumulado: $${Math.round(data.accumulatedCost || 0).toLocaleString()} COP.`;
         break;
       case "penalty_update":
-        title = "Tarifa de ocupación en curso";
-        message = `Llevas ${data.elapsedMinutes} minutos de ocupación. Acumulado: $${Math.round(data.accumulatedCost || 0).toLocaleString()} COP ($${data.penaltyPerMinute.toLocaleString()}/min). Desconecta tu vehículo.`;
+        title = "💸 Ocupación en curso";
+        message = `Llevas ${data.elapsedMinutes} min de ocupación ${stationLabel}${connectorLabel}. Acumulado: $${Math.round(data.accumulatedCost || 0).toLocaleString()} COP ($${data.penaltyPerMinute.toLocaleString()}/min). Desconecta tu vehículo.`;
         break;
     }
 
@@ -413,17 +460,19 @@ async function sendOverstayNotification(
       type: "CHARGING",
     });
 
-    // Send push notification
+    // Send push notification via FCM
     const user = await db.getUserById(userId);
     if (user?.fcmToken) {
       await sendPushNotification(user.fcmToken, {
-        type: "charging_complete",
+        type: type === "finishing" ? "charging_complete" : "overstay_alert",
         title,
         body: message,
         clickAction: "/charging",
         data: { overstayType: type },
       });
     }
+
+    console.log(`[OverstayMonitor] Notification sent: type=${type}, userId=${userId}, title="${title}"`);
   } catch (error) {
     console.error(`[OverstayMonitor] Error sending notification to user ${userId}:`, error);
   }
