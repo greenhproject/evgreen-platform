@@ -1087,6 +1087,7 @@ export const platformSettings = mysqlTable("platform_settings", {
   // Tarifas globales por defecto (configurables por admin)
   defaultReservationFee: decimal("defaultReservationFee", { precision: 10, scale: 2 }).default("5000").notNull(), // Fee de reserva por defecto
   defaultOverstayPenaltyPerMin: decimal("defaultOverstayPenaltyPerMin", { precision: 10, scale: 2 }).default("500").notNull(), // Penalización por minuto
+  defaultOverstayGracePeriodMinutes: int("defaultOverstayGracePeriodMinutes").default(10).notNull(), // Período de gracia antes de cobrar ocupación (minutos)
   defaultConnectionFee: decimal("defaultConnectionFee", { precision: 10, scale: 2 }).default("2000").notNull(), // Tarifa de conexión
   
   // Tarifas diferenciadas por tipo de conector (AC vs DC)

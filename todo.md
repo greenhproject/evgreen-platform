@@ -1474,3 +1474,27 @@
 - [x] Forzar estación demo como activa/online en mapa (listPublic, listOwned, getStationByCode, getAvailableConnectors)
 - [x] En startCharge, detectar estación demo y activar simulación para cualquier usuario
 - [x] 909 tests pasando, 0 errores TypeScript
+
+
+## Corregir Tarifa de Ocupación (Idle/Overstay Fee) - 21 Feb 2026
+- [ ] Investigar por qué la tarifa de ocupación no se cobra cuando el vehículo permanece conectado
+- [ ] Revisar la lógica de detección de carga completada vs vehículo aún conectado
+- [ ] Verificar que el timer de ocupación se active correctamente
+- [ ] Corregir el cobro automático de la tarifa de ocupación
+- [ ] Verificar que la tarifa se refleje en el resumen de la transacción
+- [ ] Hacer configurable el período de gracia y penalización de overstay desde panel admin/técnico
+
+## Overstay Fee (Tarifa de Ocupación)
+- [x] Servicio overstay-monitor.ts con tracking de sesiones y cobro por minuto
+- [x] Integración con CSMS (detección Finishing/Available)
+- [x] Inicio automático del monitor al arrancar el servidor
+- [x] Schema DB: campos overstayPenaltyPerMinute y overstayGracePeriodMinutes en tariffs
+- [x] Schema DB: campo defaultOverstayGracePeriodMinutes en platform_settings
+- [x] Backend: getPriceRanges y updatePriceRanges incluyen grace period global
+- [x] Backend: router updatePriceRanges acepta defaultOverstayGracePeriodMinutes
+- [x] Backend: router updateByStation acepta overstayGracePeriodMinutes por estación
+- [x] Backend: listPublic retorna overstayGracePeriodMinutes de cada estación
+- [x] UI Admin: Campo "Período de Gracia" en tarifas globales por defecto
+- [x] UI Admin: Campo "Período de gracia (minutos)" en diálogo de edición por estación
+- [x] UI Admin: Columna "Gracia" en tabla de tarifas por estación
+- [x] Overstay monitor usa grace period global como fallback cuando no hay tarifa específica

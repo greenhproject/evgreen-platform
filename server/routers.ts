@@ -395,6 +395,7 @@ const stationsRouter = router({
             pricePerKwh: tariff?.pricePerKwh || effectivePrice.pricePerKwh.toString(),
             reservationFee: tariff?.reservationFee || effectivePrice.reservationFee.toString(),
             overstayPenaltyPerMin: tariff?.overstayPenaltyPerMinute || effectivePrice.overstayPenaltyPerMin.toString(),
+            overstayGracePeriodMinutes: tariff?.overstayGracePeriodMinutes ?? 10,
             connectionFee: tariff?.pricePerSession || effectivePrice.connectionFee.toString(),
             tariffId: tariff?.id || null,
           };
@@ -464,6 +465,7 @@ const stationsRouter = router({
             reservationFee: tariff.reservationFee?.toString() || "5000",
             idleFeePerMin: tariff.overstayPenaltyPerMinute?.toString() || "500",
             connectionFee: tariff.pricePerSession?.toString() || "2000",
+            overstayGracePeriodMinutes: tariff.overstayGracePeriodMinutes ?? 10,
             autoPricing: tariff.autoPricing || false,
           } : undefined,
           evses: evses.map(e => ({
@@ -797,6 +799,7 @@ const tariffsRouter = router({
       reservationFee: z.number(),
       idleFeePerMin: z.number(),
       connectionFee: z.number(),
+      overstayGracePeriodMinutes: z.number().min(0).max(60).optional(),
       autoPricing: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -811,15 +814,20 @@ const tariffsRouter = router({
       // Buscar tarifa activa de la estación
       const tariff = await db.getActiveTariffByStationId(input.stationId);
       
+      const tariffData: Record<string, any> = {
+        pricePerKwh: input.pricePerKwh.toString(),
+        reservationFee: input.reservationFee.toString(),
+        overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
+        pricePerSession: input.connectionFee.toString(),
+        autoPricing: input.autoPricing ?? false,
+      };
+      if (input.overstayGracePeriodMinutes !== undefined) {
+        tariffData.overstayGracePeriodMinutes = input.overstayGracePeriodMinutes;
+      }
+      
       if (tariff) {
         // Actualizar tarifa existente
-        await db.updateTariff(tariff.id, {
-          pricePerKwh: input.pricePerKwh.toString(),
-          reservationFee: input.reservationFee.toString(),
-          overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
-          pricePerSession: input.connectionFee.toString(),
-          autoPricing: input.autoPricing ?? false,
-        });
+        await db.updateTariff(tariff.id, tariffData);
       } else {
         // Crear nueva tarifa
         await db.createTariff({
@@ -830,6 +838,7 @@ const tariffsRouter = router({
           overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
           pricePerSession: input.connectionFee.toString(),
           autoPricing: input.autoPricing ?? false,
+          overstayGracePeriodMinutes: input.overstayGracePeriodMinutes,
           isActive: true,
         });
       }
@@ -924,6 +933,7 @@ const tariffsRouter = router({
       defaultPricePerKwhAC: z.number().min(100).max(5000).optional(),
       defaultPricePerKwhDC: z.number().min(100).max(10000).optional(),
       enableDifferentiatedPricing: z.boolean().optional(),
+      defaultOverstayGracePeriodMinutes: z.number().min(0).max(60).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       if (input.minPrice >= input.maxPrice) {
@@ -961,7 +971,8 @@ const tariffsRouter = router({
         input.defaultPricePerKwhAC,
         input.defaultPricePerKwhDC,
         input.enableDifferentiatedPricing,
-        input.defaultBasePricePerKwh
+        input.defaultBasePricePerKwh,
+        input.defaultOverstayGracePeriodMinutes
       );
       return { success: true };
     }),
