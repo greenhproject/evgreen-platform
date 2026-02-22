@@ -1498,3 +1498,23 @@
 - [x] UI Admin: Campo "Período de gracia (minutos)" en diálogo de edición por estación
 - [x] UI Admin: Columna "Gracia" en tabla de tarifas por estación
 - [x] Overstay monitor usa grace period global como fallback cuando no hay tarifa específica
+
+## Notificación visual de grace period al usuario
+- [x] Endpoint backend getMyStatus para consultar estado de overstay en tiempo real por usuario
+- [x] Componente UI de indicador de grace period restante en ChargingMonitor (3 estados: finishing, grace, penalty)
+- [x] Barra de progreso visual del grace period con tiempo restante
+- [x] Alerta de penalización activa con monto acumulado y tarifa/min
+- [x] Desglose de overstayCost en ChargingSummary (recibo post-carga)
+- [x] Desglose de energyCost y sessionCost en ChargingSummary
+
+## Historial de penalizaciones por overstay (Admin)
+- [x] Función getOverstayTransactions en db.ts (filtra transacciones con overstayCost > 0)
+- [x] Endpoint getHistory: historial con filtros por estación, usuario, fecha
+- [x] Endpoint getActiveSessions: sesiones de overstay activas en tiempo real
+- [x] Endpoint getSummary: resumen estadístico (total, promedio, por estación)
+- [x] Página admin /admin/overstay con historial completo
+- [x] Filtros por estación, búsqueda por texto, y rango de fechas (7d, 30d, 90d, todo)
+- [x] Resumen estadístico: total recaudado, transacciones, promedio, sesiones activas
+- [x] Monitor de sesiones activas en tiempo real con auto-refresh
+- [x] Desglose por estación con conteo y totales
+- [x] Enlace "Penalizaciones" en menú lateral admin
