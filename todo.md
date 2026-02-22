@@ -1518,3 +1518,14 @@
 - [x] Monitor de sesiones activas en tiempo real con auto-refresh
 - [x] Desglose por estación con conteo y totales
 - [x] Enlace "Penalizaciones" en menú lateral admin
+
+## Notificación push de grace period expirando - 22 Feb 2026
+- [x] Agregar tracking de notificación enviada por sesión (finishingNotified, graceWarningNotified, penaltyStartNotified)
+- [x] Enviar push notification inmediata al entrar en Finishing ("⚡ Carga completada")
+- [x] Enviar push notification cuando queden ~2 min de grace period ("⏰ ¡Quedan X min de gracia!")
+- [x] Enviar push notification al iniciar penalización ("🚨 Tarifa de ocupación activa")
+- [x] Enviar push notification periódica cada 5 min durante penalización ("💸 Ocupación en curso")
+- [x] Incluir nombre de estación y conector en todos los mensajes de notificación
+- [x] Agregar tipo overstay_alert al NotificationType de FCM con icono y color rojo
+- [x] Crear notificación in-app (tipo CHARGING) para cada evento de overstay
+- [x] Verificar TypeScript sin errores (0 errores)

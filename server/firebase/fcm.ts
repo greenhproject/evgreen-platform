@@ -62,6 +62,7 @@ export type NotificationType =
   | "promotion"              // Promoción disponible
   | "station_available"      // Estación disponible
   | "reservation_reminder"   // Recordatorio de reserva
+  | "overstay_alert"          // Alerta de ocupación (overstay)
   | "system_alert";          // Alerta del sistema
 
 // Interfaz para datos de notificación
@@ -84,6 +85,7 @@ const notificationStyles: Record<NotificationType, { icon: string; color: string
   promotion: { icon: "🎉", color: "#8b5cf6" },
   station_available: { icon: "📍", color: "#06b6d4" },
   reservation_reminder: { icon: "⏰", color: "#f97316" },
+  overstay_alert: { icon: "🚨", color: "#dc2626" },
   system_alert: { icon: "🔔", color: "#64748b" },
 };
 
