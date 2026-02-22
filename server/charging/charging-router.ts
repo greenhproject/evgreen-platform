@@ -936,11 +936,30 @@ export const chargingRouter = router({
       
       // ============================================================
       // SoC MANUAL: Si el cargador no reporta SoC, usar el valor manual del usuario
+      // Prioridad: 1) memoria, 2) DB (transacción), 3) vehículo del usuario
       // ============================================================
       let manualSoc = activeSessionInfo?.manualSoc ?? null;
       let manualBatteryCapacity = activeSessionInfo?.manualBatteryCapacityKwh ?? null;
       
-      // Si no hay capacidad de batería en la sesión, intentar cargar del vehículo del usuario
+      // Si no hay manualSoc en memoria, intentar restaurar desde la DB (transacción activa)
+      if (manualSoc === null && activeTransaction.manualSoc !== null && activeTransaction.manualSoc !== undefined) {
+        manualSoc = activeTransaction.manualSoc;
+        // Restaurar también en la sesión en memoria para no volver a consultar la BD
+        if (activeSessionInfo) {
+          activeSessionInfo.manualSoc = manualSoc;
+        }
+        console.log(`[getActiveSession] Restored manualSoc=${manualSoc}% from DB for transaction ${activeTransaction.id}`);
+      }
+      
+      if (manualBatteryCapacity === null && activeTransaction.manualBatteryCapacityKwh !== null && activeTransaction.manualBatteryCapacityKwh !== undefined) {
+        manualBatteryCapacity = parseFloat(String(activeTransaction.manualBatteryCapacityKwh));
+        if (activeSessionInfo) {
+          activeSessionInfo.manualBatteryCapacityKwh = manualBatteryCapacity;
+        }
+        console.log(`[getActiveSession] Restored manualBatteryCapacity=${manualBatteryCapacity}kWh from DB for transaction ${activeTransaction.id}`);
+      }
+      
+      // Si no hay capacidad de batería en la sesión ni en DB, intentar cargar del vehículo del usuario
       if (manualBatteryCapacity === null) {
         try {
           const defaultVehicle = await db.getDefaultVehicle(ctx.user.id);
@@ -969,7 +988,7 @@ export const chargingRouter = router({
       } else if (hasManualSoc) {
         // SoC manual del usuario + kWh consumidos para estimar SoC actual
         const kwhToSocPercent = (currentKwh / manualBatteryCapacity) * 100;
-        estimatedSoc = Math.min(100, Math.round(manualSoc + kwhToSocPercent));
+        estimatedSoc = Math.min(100, Math.round(manualSoc! + kwhToSocPercent));
       }
       
       // Estimar tiempo restante basado en la potencia actual
@@ -1118,6 +1137,17 @@ export const chargingRouter = router({
         if (input.batteryCapacityKwh) {
           session.manualBatteryCapacityKwh = input.batteryCapacityKwh;
         }
+      }
+      
+      // Persistir en la base de datos para que sobreviva recargas de la app
+      try {
+        await db.updateTransaction(activeTransaction.id, {
+          manualSoc: input.soc,
+          manualBatteryCapacityKwh: (input.batteryCapacityKwh || 60).toFixed(2),
+        });
+        console.log(`[setManualSoc] Persisted to DB: transaction ${activeTransaction.id}, SoC=${input.soc}%, capacity=${input.batteryCapacityKwh || 60}kWh`);
+      } catch (e) {
+        console.error(`[setManualSoc] Error persisting to DB:`, e);
       }
       
       console.log(`[setManualSoc] User ${ctx.user.id} set manual SoC=${input.soc}%, batteryCapacity=${input.batteryCapacityKwh || 'default'}kWh for transaction ${activeTransaction.id}`);
