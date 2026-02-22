@@ -13,6 +13,7 @@ import { handleWompiWebhook } from "../wompi/webhook";
 import { startBillingCronJob } from "../wompi/recurring-billing";
 import { startTransactionCleanupJob } from "../jobs/transaction-cleanup";
 import { startBalanceMonitor } from "../charging/balance-monitor";
+import { startOverstayMonitor } from "../charging/overstay-monitor";
 import * as ocppManager from "../ocpp/connection-manager";
 import * as alertsService from "../ocpp/alerts-service";
 
@@ -244,6 +245,9 @@ async function startServer() {
     
     // Iniciar monitoreo de saldo durante cargas activas (cada 30s)
     startBalanceMonitor();
+    
+    // Iniciar monitoreo de tarifa de ocupación (overstay) cada 60s
+    startOverstayMonitor();
   });
 }
 

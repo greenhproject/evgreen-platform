@@ -700,6 +700,26 @@ export class DualCSMS {
           }
         }
 
+        // === OVERSTAY MONITOR: detectar Finishing y Available ===
+        if (req.status === "Finishing" && stationId) {
+          try {
+            const { onChargingFinished } = await import("../charging/overstay-monitor");
+            await onChargingFinished(evse.id, stationId);
+            console.log(`[CSMS-DUAL] StatusNotification: Overstay tracking started for EVSE ${evse.id}`);
+          } catch (e) {
+            console.error(`[CSMS-DUAL] StatusNotification: Error starting overstay tracking:`, e);
+          }
+        }
+        if (req.status === "Available" && oldStatus === "FINISHING") {
+          try {
+            const { onCableDisconnected } = await import("../charging/overstay-monitor");
+            await onCableDisconnected(evse.id);
+            console.log(`[CSMS-DUAL] StatusNotification: Overstay finalized for EVSE ${evse.id} (cable disconnected)`);
+          } catch (e) {
+            console.error(`[CSMS-DUAL] StatusNotification: Error finalizing overstay:`, e);
+          }
+        }
+
         // Generar alerta si hay error
         if (req.errorCode && req.errorCode !== "NoError") {
           console.warn(`[CSMS-DUAL] StatusNotification: Error reported by ${conn.ocppIdentity} connector ${req.connectorId}: ${req.errorCode} - ${req.info || ''}`);

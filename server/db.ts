@@ -3192,6 +3192,7 @@ export async function getPriceRanges(): Promise<{
   defaultBasePricePerKwh: number;
   defaultReservationFee: number;
   defaultOverstayPenaltyPerMin: number;
+  defaultOverstayGracePeriodMinutes: number;
   defaultConnectionFee: number;
   defaultPricePerKwhAC: number;
   defaultPricePerKwhDC: number;
@@ -3205,6 +3206,7 @@ export async function getPriceRanges(): Promise<{
     defaultBasePricePerKwh: parseFloat(settings?.defaultBasePricePerKwh?.toString() || "1200"),
     defaultReservationFee: parseFloat(settings?.defaultReservationFee?.toString() || "5000"),
     defaultOverstayPenaltyPerMin: parseFloat(settings?.defaultOverstayPenaltyPerMin?.toString() || "500"),
+    defaultOverstayGracePeriodMinutes: settings?.defaultOverstayGracePeriodMinutes ?? 10,
     defaultConnectionFee: parseFloat(settings?.defaultConnectionFee?.toString() || "2000"),
     defaultPricePerKwhAC: parseFloat(settings?.defaultPricePerKwhAC?.toString() || "800"),
     defaultPricePerKwhDC: parseFloat(settings?.defaultPricePerKwhDC?.toString() || "1200"),
@@ -3223,7 +3225,8 @@ export async function updatePriceRanges(
   defaultPricePerKwhAC?: number,
   defaultPricePerKwhDC?: number,
   enableDifferentiatedPricing?: boolean,
-  defaultBasePricePerKwh?: number
+  defaultBasePricePerKwh?: number,
+  defaultOverstayGracePeriodMinutes?: number
 ): Promise<void> {
   const updateData: Record<string, any> = {
     minPricePerKwh: minPrice.toString(),
@@ -3252,6 +3255,9 @@ export async function updatePriceRanges(
   }
   if (enableDifferentiatedPricing !== undefined) {
     updateData.enableDifferentiatedPricing = enableDifferentiatedPricing;
+  }
+  if (defaultOverstayGracePeriodMinutes !== undefined) {
+    updateData.defaultOverstayGracePeriodMinutes = defaultOverstayGracePeriodMinutes;
   }
   
   await upsertPlatformSettings(updateData);

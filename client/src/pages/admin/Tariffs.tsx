@@ -69,6 +69,7 @@ interface StationTariff {
   pricePerKwh: number;
   reservationFee: number;
   overstayPenaltyPerMin: number;
+  overstayGracePeriodMinutes?: number;
   connectionFee: number;
   tariffId?: number;
 }
@@ -77,6 +78,7 @@ interface EditTariffForm {
   pricePerKwh: string;
   reservationFee: string;
   overstayPenaltyPerMinute: string;
+  overstayGracePeriodMinutes: string;
   pricePerSession: string; // Tarifa de conexión
 }
 
@@ -88,6 +90,7 @@ export default function AdminTariffs() {
     pricePerKwh: "1200",
     reservationFee: "5000",
     overstayPenaltyPerMinute: "500",
+    overstayGracePeriodMinutes: "10",
     pricePerSession: "2000",
   });
   const [searchQuery, setSearchQuery] = useState("");
@@ -110,6 +113,7 @@ export default function AdminTariffs() {
     defaultBasePricePerKwh: 1200,
     defaultReservationFee: 5000,
     defaultOverstayPenaltyPerMin: 500,
+    defaultOverstayGracePeriodMinutes: 10,
     defaultConnectionFee: 2000,
     defaultPricePerKwhAC: 800,
     defaultPricePerKwhDC: 1200,
@@ -142,6 +146,7 @@ export default function AdminTariffs() {
         defaultBasePricePerKwh: priceRanges.defaultBasePricePerKwh,
         defaultReservationFee: priceRanges.defaultReservationFee,
         defaultOverstayPenaltyPerMin: priceRanges.defaultOverstayPenaltyPerMin,
+        defaultOverstayGracePeriodMinutes: priceRanges.defaultOverstayGracePeriodMinutes,
         defaultConnectionFee: priceRanges.defaultConnectionFee,
         defaultPricePerKwhAC: priceRanges.defaultPricePerKwhAC,
         defaultPricePerKwhDC: priceRanges.defaultPricePerKwhDC,
@@ -179,6 +184,7 @@ export default function AdminTariffs() {
       defaultBasePricePerKwh: localPriceRanges.defaultBasePricePerKwh,
       defaultReservationFee: localPriceRanges.defaultReservationFee,
       defaultOverstayPenaltyPerMin: localPriceRanges.defaultOverstayPenaltyPerMin,
+      defaultOverstayGracePeriodMinutes: localPriceRanges.defaultOverstayGracePeriodMinutes,
       defaultConnectionFee: localPriceRanges.defaultConnectionFee,
       defaultPricePerKwhAC: localPriceRanges.defaultPricePerKwhAC,
       defaultPricePerKwhDC: localPriceRanges.defaultPricePerKwhDC,
@@ -246,6 +252,7 @@ export default function AdminTariffs() {
       pricePerKwh: parseFloat(station.pricePerKwh || "1200"),
       reservationFee: parseFloat(station.reservationFee || "5000"),
       overstayPenaltyPerMin: parseFloat(station.overstayPenaltyPerMin || "500"),
+      overstayGracePeriodMinutes: station.overstayGracePeriodMinutes ?? 10,
       connectionFee: parseFloat(station.connectionFee || "2000"),
       tariffId: station.tariffId,
     });
@@ -253,6 +260,7 @@ export default function AdminTariffs() {
       pricePerKwh: station.pricePerKwh?.toString() || "1200",
       reservationFee: station.reservationFee?.toString() || "5000",
       overstayPenaltyPerMinute: station.overstayPenaltyPerMin?.toString() || "500",
+      overstayGracePeriodMinutes: station.overstayGracePeriodMinutes?.toString() || "10",
       pricePerSession: station.connectionFee?.toString() || "2000",
     });
     setIsEditDialogOpen(true);
@@ -265,6 +273,7 @@ export default function AdminTariffs() {
     const pricePerKwh = parseFloat(editForm.pricePerKwh);
     const reservationFee = parseFloat(editForm.reservationFee);
     const overstayPenalty = parseFloat(editForm.overstayPenaltyPerMinute);
+    const gracePeriod = parseInt(editForm.overstayGracePeriodMinutes);
     const connectionFee = parseFloat(editForm.pricePerSession);
     
     if (isNaN(pricePerKwh) || pricePerKwh < 0) {
@@ -277,6 +286,10 @@ export default function AdminTariffs() {
     }
     if (isNaN(overstayPenalty) || overstayPenalty < 0) {
       toast.error("La penalización por ocupación debe ser un número válido");
+      return;
+    }
+    if (isNaN(gracePeriod) || gracePeriod < 0 || gracePeriod > 60) {
+      toast.error("El período de gracia debe ser entre 0 y 60 minutos");
       return;
     }
     if (isNaN(connectionFee) || connectionFee < 0) {
@@ -292,6 +305,7 @@ export default function AdminTariffs() {
       pricePerKwh: editForm.pricePerKwh,
       reservationFee: editForm.reservationFee,
       overstayPenaltyPerMinute: editForm.overstayPenaltyPerMinute,
+      overstayGracePeriodMinutes: gracePeriod,
       pricePerSession: editForm.pricePerSession,
     });
   };
@@ -679,7 +693,7 @@ export default function AdminTariffs() {
           </p>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             {/* Precio base/kWh - Editable */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
@@ -757,6 +771,26 @@ export default function AdminTariffs() {
                 <span className="text-muted-foreground">COP</span>
               </div>
               <p className="text-xs text-muted-foreground">Cargo por minuto si permanece conectado</p>
+            </div>
+            
+            {/* Período de gracia - Editable */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-blue-600" />
+                Período de Gracia
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  value={localPriceRanges.defaultOverstayGracePeriodMinutes}
+                  onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, defaultOverstayGracePeriodMinutes: parseInt(e.target.value) || 0 }))}
+                  className="w-28"
+                  min={0}
+                  max={60}
+                />
+                <span className="text-muted-foreground">min</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Tiempo libre antes de cobrar ocupación</p>
             </div>
             
             {/* Tarifa de conexión - Editable */}
@@ -913,6 +947,7 @@ export default function AdminTariffs() {
                 <TableHead>Tarifa dinámica</TableHead>
                 <TableHead>Fee reserva</TableHead>
                 <TableHead>Penalización</TableHead>
+                <TableHead>Gracia</TableHead>
                 <TableHead>Tarifa conexión</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
@@ -935,6 +970,7 @@ export default function AdminTariffs() {
                     </TableCell>
                     <TableCell>{formatCurrency(station.reservationFee || 5000)}</TableCell>
                     <TableCell>{formatCurrency(station.overstayPenaltyPerMin || 500)}/min</TableCell>
+                    <TableCell>{station.overstayGracePeriodMinutes ?? 10} min</TableCell>
                     <TableCell>{formatCurrency(station.connectionFee || 2000)}</TableCell>
                     <TableCell className="text-right">
                       <Button 
@@ -1019,6 +1055,23 @@ export default function AdminTariffs() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Cargo por minuto cuando el vehículo permanece conectado después de cargar
+                </p>
+              </div>
+
+              {/* Período de gracia */}
+              <div className="space-y-2">
+                <Label htmlFor="gracePeriod">Período de gracia (minutos)</Label>
+                <Input
+                  id="gracePeriod"
+                  type="number"
+                  value={editForm.overstayGracePeriodMinutes}
+                  onChange={(e) => setEditForm({ ...editForm, overstayGracePeriodMinutes: e.target.value })}
+                  placeholder="10"
+                  min={0}
+                  max={60}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Minutos de tolerancia después de completar la carga antes de aplicar la penalización por ocupación (0-60 min)
                 </p>
               </div>
 
