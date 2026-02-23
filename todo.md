@@ -1689,3 +1689,9 @@
 - [x] Disconnect handler: mantiene RESERVED para EVSEs con reservas activas
 - [x] Invalidación de cache al cancelar reserva (listPublic + getEvses)
 - [x] API listPublic confirmada: EVSE 150001 muestra RESERVED para todos los usuarios
+
+## Bug: EVSE reservado no muestra botón de gestión para el dueño - 23 Feb 2026
+- [x] Cuando el EVSE está RESERVED, el usuario que hizo la reserva no ve botón para gestionar/cancelar
+- [x] Agregar botón "Ver reservas" y "Cancelar" cuando el usuario actual es el dueño
+- [x] Mostrar info de la reserva activa (fecha, hora, tarifa)
+- [x] Otros usuarios ven mensaje "Este conector está reservado por otro usuario"

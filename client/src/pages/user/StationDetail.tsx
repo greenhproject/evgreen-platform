@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AIInsightCard } from "@/components/AIInsightCard";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 // Componente de tarifa dinámica del kWh
 function DynamicPricingCard({ stationId }: { stationId: number }) {
@@ -163,6 +164,7 @@ export default function StationDetail() {
   const [newComment, setNewComment] = useState("");
 
   const stationId = parseInt(id || "0");
+  const { user } = useAuth();
 
   const { data: station, isLoading } = trpc.stations.getById.useQuery({ 
     id: stationId 
@@ -173,6 +175,29 @@ export default function StationDetail() {
     { stationId },
     { enabled: !!station }
   );
+
+  // Obtener mis reservas activas para esta estación
+  const { data: myReservations } = trpc.reservations.myReservations.useQuery(
+    undefined,
+    { enabled: !!user }
+  );
+
+  // Mutación para cancelar reserva
+  const cancelReservation = trpc.reservations.cancel.useMutation({
+    onSuccess: (data) => {
+      if (data.refundAmount && data.refundAmount > 0) {
+        toast.success(`Reserva cancelada. Reembolso: $${data.refundAmount.toLocaleString()} COP`);
+      } else {
+        toast.success("Reserva cancelada exitosamente");
+      }
+      utils.stations.listPublic.invalidate();
+      utils.stations.getEvses.invalidate();
+      utils.reservations.myReservations.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al cancelar la reserva");
+    },
+  });
 
   // Obtener calificaciones reales de la estación
   const { data: reviewsData } = trpc.reviews.getByStation.useQuery(
@@ -524,6 +549,71 @@ export default function StationDetail() {
                         </Button>
                       </div>
                     )}
+
+                    {/* Mostrar info y acciones cuando el EVSE está RESERVED */}
+                    {evse.status === "RESERVED" && (() => {
+                      const isMyReservation = evse.activeReservationUserId && user?.id && String(evse.activeReservationUserId) === String(user.id);
+                      const myRes = myReservations?.find((r: any) => r.id === evse.activeReservationId);
+                      return (
+                        <div className="mt-3 space-y-2">
+                          {isMyReservation && myRes ? (
+                            <>
+                              <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
+                                <div className="flex items-center gap-2 text-purple-400 text-sm font-medium mb-1">
+                                  <Calendar className="w-4 h-4" />
+                                  Tu reserva
+                                </div>
+                                <div className="text-xs text-muted-foreground space-y-1">
+                                  <div>
+                                    {new Date(myRes.startTime).toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" })}
+                                    {" a las "}
+                                    {new Date(myRes.startTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                                  </div>
+                                  {myRes.endTime && (
+                                    <div>Hasta: {new Date(myRes.endTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}</div>
+                                  )}
+                                  {myRes.reservationFee && (
+                                    <div className="text-purple-300">Tarifa: ${Number(myRes.reservationFee).toLocaleString()} COP</div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  className="flex-1 border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
+                                  onClick={() => setLocation("/reservations")}
+                                >
+                                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                                  Ver reservas
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                                  onClick={() => {
+                                    if (confirm("¿Cancelar esta reserva?")) {
+                                      cancelReservation.mutate({ id: myRes.id });
+                                    }
+                                  }}
+                                  disabled={cancelReservation.isPending}
+                                >
+                                  {cancelReservation.isPending ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <span className="text-xs">Cancelar</span>
+                                  )}
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
+                              <div className="text-xs text-purple-300">
+                                Este conector está reservado por otro usuario.
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </Card>
                 );
               })}
