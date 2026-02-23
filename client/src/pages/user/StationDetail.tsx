@@ -730,7 +730,7 @@ export default function StationDetail() {
 
       {/* Modal de Reserva con Tarifa Dinámica */}
       <Dialog open={showReservationModal} onOpenChange={setShowReservationModal}>
-        <DialogContent className="w-[95vw] max-w-md mx-auto bg-background/95 backdrop-blur border-border/50 max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md mx-auto bg-background/95 backdrop-blur border-border/50 max-h-[90vh] overflow-y-auto p-4 sm:p-6 overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Calendar className="w-5 h-5 text-primary" />
@@ -802,7 +802,7 @@ export default function StationDetail() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                 >
-                  <Card className={`p-4 border-2 ${
+                  <Card className={`p-3 sm:p-4 border-2 overflow-hidden ${
                     dynamicPrice.visualization.level === "LOW" ? "border-green-500/50 bg-green-500/10" :
                     dynamicPrice.visualization.level === "NORMAL" ? "border-blue-500/50 bg-blue-500/10" :
                     dynamicPrice.visualization.level === "HIGH" ? "border-orange-500/50 bg-orange-500/10" :
@@ -828,23 +828,23 @@ export default function StationDetail() {
                     </div>
 
                     <div className="space-y-2 text-sm">
-                      <div className="grid grid-cols-2 gap-1">
-                        <span className="text-muted-foreground text-xs">Precio base</span>
-                        <span className="text-right text-xs">${dynamicPrice.basePrice.toLocaleString()} COP/kWh</span>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground text-xs shrink-0">Precio base</span>
+                        <span className="text-xs text-right truncate">${dynamicPrice.basePrice.toLocaleString()} COP/kWh</span>
                       </div>
-                      <div className="grid grid-cols-2 gap-1">
-                        <span className="text-muted-foreground text-xs">Precio dinámico</span>
-                        <span className="text-right text-xs font-semibold" style={{ color: dynamicPrice.visualization.color }}>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground text-xs shrink-0">Precio dinámico</span>
+                        <span className="text-xs text-right font-semibold truncate" style={{ color: dynamicPrice.visualization.color }}>
                           ${dynamicPrice.finalPrice.toLocaleString()} COP/kWh
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 gap-1">
-                        <span className="text-muted-foreground text-xs">Tarifa reserva</span>
-                        <span className="text-right text-xs">${dynamicPrice.reservationFee.toLocaleString()} COP</span>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground text-xs shrink-0">Tarifa reserva</span>
+                        <span className="text-xs text-right truncate">${dynamicPrice.reservationFee.toLocaleString()} COP</span>
                       </div>
-                      <div className="pt-2 mt-2 border-t border-border/50 grid grid-cols-2 gap-1 items-center">
-                        <span className="font-medium text-sm">Total estimado</span>
-                        <span className="text-right font-bold text-base" style={{ color: dynamicPrice.visualization.color }}>
+                      <div className="pt-2 mt-2 border-t border-border/50 flex items-baseline justify-between gap-2">
+                        <span className="font-medium text-sm shrink-0">Total estimado</span>
+                        <span className="font-bold text-sm" style={{ color: dynamicPrice.visualization.color }}>
                           ${dynamicPrice.estimatedTotal.toLocaleString()} COP
                         </span>
                       </div>
@@ -853,7 +853,7 @@ export default function StationDetail() {
                     <div className="mt-3 pt-3 border-t border-border/50">
                       <div className="flex items-start gap-2 text-xs text-muted-foreground">
                         <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-                        <span className="break-words">Penalización por no presentarse: ${dynamicPrice.noShowPenalty.toLocaleString()} COP</span>
+                        <span className="break-words leading-relaxed">Penalización por no presentarse: <strong>${dynamicPrice.noShowPenalty.toLocaleString()} COP</strong></span>
                       </div>
                     </div>
                   </Card>

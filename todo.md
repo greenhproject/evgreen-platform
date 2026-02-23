@@ -1631,3 +1631,10 @@
 - [x] getAllConnections incluye estaciones en grace period con datos completos
 - [x] ConnectionStabilityOverview muestra badges de transparentes/reales/reconectando
 - [x] 19 tests unitarios pasan (reconexion seamless completa)
+
+## Bug: Responsive del modal de reservas roto en móvil - 23 Feb 2026 [CORREGIDO]
+- [x] Precios cortados: cambiado grid-cols-2 por flex justify-between con shrink-0 en labels
+- [x] Modal desbordado: cambiado w-[95vw] por w-[calc(100vw-2rem)] + overflow-x-hidden
+- [x] Card de precios: p-3 sm:p-4 + overflow-hidden para evitar desbordamiento
+- [x] Total estimado: reducido de text-base a text-sm para caber en móvil
+- [x] Penalización: texto con break-words + leading-relaxed + bold en monto
