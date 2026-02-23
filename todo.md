@@ -1545,3 +1545,20 @@
 - [x] Hook useActiveChargingSession para detección reutilizable
 - [x] Componente ActiveChargingBanner con animación y datos en tiempo real
 - [x] Verificar TypeScript sin errores (0 errores)
+
+## Bug: Discrepancia de precios entre admin y app usuario - 22 Feb 2026 [CORREGIDO]
+- [x] Investigar por qué admin muestra $1,300/kWh pero usuario ve $1,200/kWh como precio base
+- [x] Verificar cómo se obtiene el precio en getStationByCode vs getPriceRanges
+- [x] Verificar si la estación tiene tarifa personalizada que sobreescribe la global (sí: tariff id 90001 tenía $1,200)
+- [x] Corregir la lógica de asignación de precios (tarifas actualizadas a $1,300 mínimo)
+- [x] Verificar TypeScript sin errores (0 errores)
+
+## Validación de rangos globales de precio - 22 Feb 2026 [COMPLETADO]
+- [x] Backend: validar que tarifa por estación no esté fuera del rango global (min/max) al guardar
+- [x] Backend: validar en updateByStation, create y update (3 endpoints)
+- [x] Backend: usar getPriceRanges() existente para obtener min/max
+- [x] Frontend: mostrar error toast si el precio ingresado está fuera del rango global
+- [x] Frontend: mostrar los límites permitidos en formulario admin (Tariffs.tsx) e inversionista (Stations.tsx)
+- [x] Corregir tarifas existentes que violen el rango (diamante oriental y sede principal $1,200 → $1,300)
+- [x] Corregir CSS @import order (Google Fonts antes de tw-animate-css)
+- [x] Verificar TypeScript sin errores (0 errores), 8 tests nuevos pasan

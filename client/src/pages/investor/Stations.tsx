@@ -269,9 +269,20 @@ export default function InvestorStations() {
 
   const handleSaveTariff = () => {
     if (!selectedStation) return;
+    
+    const price = parseFloat(pricePerKwh) || 1200;
+    
+    // Validar contra rangos globales (solo si no es autoPricing)
+    if (!autoPricing && priceRanges) {
+      if (price < priceRanges.minPrice || price > priceRanges.maxPrice) {
+        toast.error(`El precio ($${price.toLocaleString("es-CO")}) debe estar entre $${priceRanges.minPrice.toLocaleString("es-CO")} y $${priceRanges.maxPrice.toLocaleString("es-CO")} COP/kWh`);
+        return;
+      }
+    }
+    
     updateTariff.mutate({
       stationId: selectedStation.id,
-      pricePerKwh: parseFloat(pricePerKwh) || 1200,
+      pricePerKwh: price,
       reservationFee: parseFloat(reservationFee) || 5000,
       idleFeePerMin: parseFloat(idleFee) || 500,
       connectionFee: parseFloat(connectionFee) || 2000,
@@ -772,6 +783,15 @@ export default function InvestorStations() {
                 <p className="text-xs text-muted-foreground mt-1">
                   Precio base por kilovatio-hora
                 </p>
+                {priceRanges && !autoPricing && (
+                  <p className={`text-xs mt-1 font-medium ${
+                    pricePerKwh && (parseFloat(pricePerKwh) < priceRanges.minPrice || parseFloat(pricePerKwh) > priceRanges.maxPrice)
+                      ? "text-red-500"
+                      : "text-emerald-600"
+                  }`}>
+                    Rango permitido: ${priceRanges.minPrice.toLocaleString("es-CO")} - ${priceRanges.maxPrice.toLocaleString("es-CO")} COP/kWh
+                  </p>
+                )}
               </div>
 
               <div>

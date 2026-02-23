@@ -750,6 +750,16 @@ const tariffsRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para crear tarifas en esta estación" });
       }
       
+      // Validar precio por kWh contra rangos globales
+      const priceRanges = await db.getPriceRanges();
+      const pricePerKwh = parseFloat(input.pricePerKwh);
+      if (!isNaN(pricePerKwh) && (pricePerKwh < priceRanges.minPrice || pricePerKwh > priceRanges.maxPrice)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `El precio por kWh ($${pricePerKwh.toLocaleString("es-CO")} COP) debe estar dentro del rango global permitido: $${priceRanges.minPrice.toLocaleString("es-CO")} - $${priceRanges.maxPrice.toLocaleString("es-CO")} COP/kWh`,
+        });
+      }
+      
       // Desactivar tarifas anteriores
       const existingTariffs = await db.getTariffsByStationId(input.stationId);
       for (const tariff of existingTariffs) {
@@ -787,6 +797,19 @@ const tariffsRouter = router({
       if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "engineer" && station?.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para modificar esta tarifa" });
       }
+      
+      // Validar precio por kWh contra rangos globales si se está actualizando
+      if (input.data.pricePerKwh) {
+        const priceRanges = await db.getPriceRanges();
+        const pricePerKwh = parseFloat(input.data.pricePerKwh);
+        if (!isNaN(pricePerKwh) && (pricePerKwh < priceRanges.minPrice || pricePerKwh > priceRanges.maxPrice)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `El precio por kWh ($${pricePerKwh.toLocaleString("es-CO")} COP) debe estar dentro del rango global permitido: $${priceRanges.minPrice.toLocaleString("es-CO")} - $${priceRanges.maxPrice.toLocaleString("es-CO")} COP/kWh`,
+          });
+        }
+      }
+      
       await db.updateTariff(input.id, input.data);
       return { success: true };
     }),
@@ -809,6 +832,17 @@ const tariffsRouter = router({
       }
       if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "engineer" && station.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para modificar esta estación" });
+      }
+      
+      // Validar precio por kWh contra rangos globales (solo si no es autoPricing)
+      if (!input.autoPricing) {
+        const priceRanges = await db.getPriceRanges();
+        if (input.pricePerKwh < priceRanges.minPrice || input.pricePerKwh > priceRanges.maxPrice) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `El precio por kWh ($${input.pricePerKwh.toLocaleString("es-CO")} COP) debe estar dentro del rango global permitido: $${priceRanges.minPrice.toLocaleString("es-CO")} - $${priceRanges.maxPrice.toLocaleString("es-CO")} COP/kWh`,
+          });
+        }
       }
       
       // Buscar tarifa activa de la estación
