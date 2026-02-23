@@ -246,6 +246,10 @@ export default function StationDetail() {
       toast.success(`Reserva creada exitosamente. Tarifa: $${data.reservationFee.toLocaleString()} COP`);
       setShowReservationModal(false);
       setSelectedEvse(null);
+      // Invalidar caches para que el estado RESERVED se refleje inmediatamente
+      utils.stations.listPublic.invalidate();
+      utils.stations.getEvses.invalidate();
+      utils.reservations.myReservations.invalidate();
     },
     onError: (error) => {
       toast.error(error.message);

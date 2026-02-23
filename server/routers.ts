@@ -386,12 +386,16 @@ const stationsRouter = router({
           const effectivePrice = await db.getEffectiveStationPrice(station.id);
           
           // Verificar si es estación demo para forzar online y conectores AVAILABLE
+          // Pero respetar el estado RESERVED si hay reservas activas
           const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
           
           return {
             ...station,
             isOnline: isDemo ? true : station.isOnline,
-            evses: isDemo ? evses.map((e: any) => ({ ...e, status: 'AVAILABLE' })) : evses,
+            evses: isDemo ? evses.map((e: any) => ({ 
+              ...e, 
+              status: e.status === 'RESERVED' ? 'RESERVED' : 'AVAILABLE' 
+            })) : evses,
             pricePerKwh: tariff?.pricePerKwh || effectivePrice.pricePerKwh.toString(),
             reservationFee: tariff?.reservationFee || effectivePrice.reservationFee.toString(),
             overstayPenaltyPerMin: tariff?.overstayPenaltyPerMinute || effectivePrice.overstayPenaltyPerMin.toString(),
