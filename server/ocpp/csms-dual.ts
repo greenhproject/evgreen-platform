@@ -240,7 +240,7 @@ export class DualCSMS {
   private reconnectionGrace: Map<string, NodeJS.Timeout> = new Map(); // Grace period para reconexión
   private pingIntervals: Map<string, NodeJS.Timeout> = new Map(); // Ping keepalive intervals
   private static GRACE_PERIOD_MS = 300000; // 5 minutos de gracia para reconexión (evitar notificaciones por desconexiones temporales)
-  private static PING_INTERVAL_MS = 30000; // Ping cada 30 segundos
+  private static PING_INTERVAL_MS = 20000; // Ping cada 20 segundos (debe ser < timeout del proxy ~120-180s)
 
   constructor() {
     // Initialize

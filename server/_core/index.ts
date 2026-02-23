@@ -44,6 +44,16 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  
+  // CRÍTICO: Configurar timeouts del servidor HTTP para conexiones WebSocket OCPP de larga duración
+  // El timeout por defecto de Node.js HTTP es 0 (sin timeout), pero los proxies intermedios
+  // (como el proxy de Manus) pueden tener timeouts de ~120-180 segundos.
+  // Configuramos el servidor para mantener las conexiones vivas el mayor tiempo posible.
+  server.timeout = 0; // Sin timeout para el servidor HTTP (permite WebSocket de larga duración)
+  server.keepAliveTimeout = 0; // Sin timeout de keep-alive
+  server.headersTimeout = 0; // Sin timeout de headers
+  server.requestTimeout = 0; // Sin timeout de request (Node 18+)
+  
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -151,17 +161,34 @@ async function startServer() {
     }
   });
 
-  // Ping/Pong para mantener conexiones vivas (cada 30 segundos)
+  // Ping/Pong para mantener conexiones vivas
+  // IMPORTANTE: El intervalo debe ser menor que el timeout del proxy (estimado ~120-180s)
+  // Usamos 20s para asegurar que siempre haya actividad en la conexión TCP
+  const WS_PING_INTERVAL_MS = 20000; // 20 segundos
+  let pingCount = 0;
   const pingInterval = setInterval(() => {
+    const clientCount = wss.clients.size;
+    if (clientCount > 0) {
+      pingCount++;
+      // Log cada 15 pings (cada 5 minutos) para no saturar logs
+      if (pingCount % 15 === 0) {
+        console.log(`[OCPP] Ping keepalive #${pingCount} - ${clientCount} client(s) connected`);
+      }
+    }
     wss.clients.forEach((ws) => {
       if ((ws as any).isAlive === false) {
-        console.log(`[OCPP] Terminating inactive connection`);
+        const identity = (ws as any)._ocppIdentity || 'unknown';
+        console.log(`[OCPP] Terminating inactive connection (no pong received): ${identity}`);
         return ws.terminate();
       }
       (ws as any).isAlive = false;
-      ws.ping();
+      try {
+        ws.ping();
+      } catch (err) {
+        console.error(`[OCPP] Error sending ping:`, err);
+      }
     });
-  }, 30000);
+  }, WS_PING_INTERVAL_MS);
 
   wss.on("close", () => {
     clearInterval(pingInterval);
@@ -195,9 +222,33 @@ async function startServer() {
         console.error(`[OCPP] Socket error during upgrade:`, err);
       });
       
-      // Enviar headers de respuesta manualmente para mejor compatibilidad con proxies
+      // CRÍTICO: Configurar TCP keep-alive en el socket subyacente
+      // Esto envía paquetes TCP keep-alive para evitar que proxies intermedios
+      // cierren la conexión por inactividad a nivel de transporte
+      const tcpSocket = socket as unknown as import('net').Socket;
+      if (typeof tcpSocket.setKeepAlive === 'function') {
+        tcpSocket.setKeepAlive(true, 15000); // TCP keep-alive cada 15 segundos
+      }
+      if (typeof tcpSocket.setTimeout === 'function') {
+        tcpSocket.setTimeout(0); // Sin timeout en el socket TCP
+      }
+      if (typeof tcpSocket.setNoDelay === 'function') {
+        tcpSocket.setNoDelay(true); // Desactivar Nagle para respuestas inmediatas
+      }
+      
       wss.handleUpgrade(request, socket, head, (ws) => {
         console.log(`[OCPP] Upgrade successful, emitting connection`);
+        
+        // También configurar el socket interno del WebSocket
+        const rawSocket = (ws as any)._socket;
+        if (rawSocket) {
+          rawSocket.setKeepAlive(true, 15000);
+          rawSocket.setTimeout(0);
+          if (typeof rawSocket.setNoDelay === 'function') {
+            rawSocket.setNoDelay(true);
+          }
+        }
+        
         wss.emit("connection", ws, request);
       });
     } else {
@@ -209,18 +260,23 @@ async function startServer() {
 
   // Manejar conexiones OCPP WebSocket
   wss.on("connection", async (ws, req) => {
-    // Marcar conexión como viva para ping/pong
-    (ws as any).isAlive = true;
-    ws.on("pong", () => {
-      (ws as any).isAlive = true;
-    });
-
     const url = new URL(req.url || "", `http://${req.headers.host}`);
     // El chargePointId viene después de /ocpp/
     const pathParts = url.pathname.split("/").filter(Boolean);
     const ocppIdentity = pathParts[pathParts.length - 1] || "";
     const protocol = ws.protocol || "ocpp1.6";
     const ocppVersion = protocol.includes("2.0") ? "2.0.1" : "1.6";
+
+    // Marcar conexión como viva para ping/pong y guardar identidad para logging
+    (ws as any).isAlive = true;
+    (ws as any)._ocppIdentity = ocppIdentity;
+    (ws as any)._connectedAt = Date.now();
+    
+    ws.on("pong", () => {
+      (ws as any).isAlive = true;
+      // Actualizar timestamp de última actividad en el connection manager
+      ocppManager.updateLastMessage(ocppIdentity);
+    });
 
     console.log(`[OCPP] New ${ocppVersion} connection established:`, {
       identity: ocppIdentity,
@@ -399,8 +455,17 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       }
     });
 
-    ws.on("close", async () => {
-      console.log(`[OCPP] Connection closed: ${ocppIdentity}`);
+    ws.on("close", async (code: number, reason: Buffer) => {
+      const connectedAt = (ws as any)._connectedAt || 0;
+      const durationSec = connectedAt ? Math.round((Date.now() - connectedAt) / 1000) : 0;
+      const reasonStr = reason?.toString() || '';
+      
+      console.log(`[OCPP] Connection closed: ${ocppIdentity}`, {
+        code,
+        reason: reasonStr,
+        durationSeconds: durationSec,
+        wasAlive: (ws as any).isAlive,
+      });
       
       // Remover del connection manager
       ocppManager.removeConnection(ocppIdentity);
@@ -411,7 +476,12 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
         stationId,
         direction: "IN",
         messageType: "DISCONNECTION",
-        payload: {},
+        payload: { 
+          closeCode: code, 
+          closeReason: reasonStr, 
+          connectionDurationSeconds: durationSec,
+          wasAlive: (ws as any).isAlive,
+        },
       });
       
       // Cancelar grace period anterior si existe (nueva desconexión reemplaza la anterior)
