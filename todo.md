@@ -1646,3 +1646,16 @@
 - [x] Font sizes reducidos a text-[11px] para precios, text-[10px] para penalización
 - [x] Badge de demanda compacto: text-[10px] px-1.5 py-0
 - [x] Card padding reducido a p-2.5 sm:p-4
+
+## Bug: Modal de reservas se ensancha al segundo de abrirlo - 23 Feb 2026 [CORREGIDO]
+- [x] Investigar si la animación zoom-in-95 causa el ensanchamiento
+- [x] Verificar si el contenido dinámico de precios (AnimatePresence) expande el modal
+- [x] Corregir con width fijo (w-[calc(100%-2rem)]) y overflow-x-hidden en DialogContent base
+
+## Bug: Reservas no persisten visualmente (EVSE muestra Disponible) - 23 Feb 2026 [CORREGIDO]
+- [x] Verificar que el endpoint reservations.create guarda correctamente en BD (SÍ funciona)
+- [x] Verificar que la tabla reservations tiene los datos después de crear (SÍ persiste)
+- [x] Verificar que myReservations query retorna las reservas activas (SÍ retorna)
+- [x] CAUSA RAÍZ: listPublic sobreescribía status de EVSEs demo a AVAILABLE (isDemoStation)
+- [x] FIX: Respetar estado RESERVED incluso en estaciones demo
+- [x] FIX: Invalidar cache de listPublic/getEvses/myReservations al crear reserva
