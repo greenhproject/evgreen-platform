@@ -1395,26 +1395,34 @@ function ConnectionStabilityTab({
 
               {/* Uptime actual */}
               <div className="text-center p-4 border rounded-lg">
-                <p className="text-xs text-muted-foreground mb-1">Uptime Actual</p>
+                <p className="text-xs text-muted-foreground mb-1">Uptime Continuo</p>
                 <p className="text-2xl font-bold">
-                  {stationData.isConnected ? formatUptime(stationData.currentUptimeSeconds) : '-'}
+                  {(stationData.isConnected || stationData.isReconnecting) 
+                    ? formatUptime(stationData.currentUptimeSeconds) 
+                    : '-'}
                 </p>
-                <Badge variant={stationData.isConnected ? "default" : "secondary"} className="mt-2">
-                  {stationData.isConnected ? "Conectado" : "Desconectado"}
+                <Badge 
+                  variant={stationData.isConnected ? "default" : stationData.isReconnecting ? "outline" : "secondary"} 
+                  className={`mt-2 ${stationData.isReconnecting ? 'border-yellow-500 text-yellow-500 animate-pulse' : ''}`}
+                >
+                  {stationData.isConnected ? "Conectado" : stationData.isReconnecting ? "Reconectando..." : "Desconectado"}
                 </Badge>
               </div>
 
-              {/* Reconexiones 24h */}
+              {/* Reconexiones seamless vs reales */}
               <div className="text-center p-4 border rounded-lg">
-                <p className="text-xs text-muted-foreground mb-1">Reconexiones (24h)</p>
-                <p className={`text-2xl font-bold ${stationData.reconnectionCount24h > 5 ? 'text-red-500' : stationData.reconnectionCount24h > 2 ? 'text-yellow-500' : 'text-green-500'}`}>
+                <p className="text-xs text-muted-foreground mb-1">Desconexiones Reales (24h)</p>
+                <p className={`text-2xl font-bold ${stationData.reconnectionCount24h > 2 ? 'text-red-500' : stationData.reconnectionCount24h > 0 ? 'text-yellow-500' : 'text-green-500'}`}>
                   {stationData.reconnectionCount24h}
                 </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  {stationData.reconnectionCount24h === 0 ? 'Sin desconexiones' : 
-                   stationData.reconnectionCount24h <= 2 ? 'Normal' : 
-                   stationData.reconnectionCount24h <= 5 ? 'Elevado' : 'Crítico'}
-                </p>
+                {stationData.seamlessReconnections > 0 && (
+                  <p className="text-xs text-green-500 mt-2">
+                    ⚡ {stationData.seamlessReconnections} reconexiones transparentes
+                  </p>
+                )}
+                {stationData.reconnectionCount24h === 0 && stationData.seamlessReconnections === 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">Sin desconexiones</p>
+                )}
               </div>
 
               {/* Duración promedio */}
@@ -1509,17 +1517,28 @@ function ConnectionStabilityTab({
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
+                    <TableRow>
+                    <TableHead>Tipo</TableHead>
                     <TableHead>Conectado</TableHead>
                     <TableHead>Desconectado</TableHead>
                     <TableHead>Duración</TableHead>
                     <TableHead>Código Cierre</TableHead>
-                    <TableHead>Razón</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {[...connectionHistory].reverse().map((session: any, idx: number) => (
-                    <TableRow key={idx}>
+                    <TableRow key={idx} className={session.wasSeamless ? 'opacity-60' : ''}>
+                      <TableCell>
+                        {session.wasSeamless ? (
+                          <Badge variant="outline" className="text-xs border-green-500 text-green-500">
+                            ⚡ Transparente
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive" className="text-xs">
+                            ❌ Real
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-xs">
                         {new Date(session.connectedAt).toLocaleString('es-CO')}
                       </TableCell>
@@ -1531,26 +1550,26 @@ function ConnectionStabilityTab({
                       </TableCell>
                       <TableCell>
                         <span className={`font-mono text-sm ${
-                          session.durationSeconds !== null && session.durationSeconds < 300 
-                            ? 'text-red-500 font-bold' 
-                            : session.durationSeconds !== null && session.durationSeconds > 3600
-                              ? 'text-green-500'
-                              : ''
+                          session.wasSeamless 
+                            ? 'text-green-500' 
+                            : session.durationSeconds !== null && session.durationSeconds < 300 
+                              ? 'text-red-500 font-bold' 
+                              : session.durationSeconds !== null && session.durationSeconds > 3600
+                                ? 'text-green-500'
+                                : ''
                         }`}>
                           {session.durationSeconds !== null ? formatUptime(session.durationSeconds) : '-'}
                         </span>
                       </TableCell>
                       <TableCell>
                         <Badge variant={
+                          session.wasSeamless ? "outline" :
                           session.closeCode === 1000 ? "default" : 
                           session.closeCode === 1006 ? "destructive" : 
                           "secondary"
-                        } className="text-xs">
-                          {getCloseCodeLabel(session.closeCode)}
+                        } className={`text-xs ${session.wasSeamless ? 'border-green-500/50 text-green-500' : ''}`}>
+                          {session.wasSeamless ? 'Proxy Cycle' : getCloseCodeLabel(session.closeCode)}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
-                        {session.closeReason || '-'}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1600,8 +1619,10 @@ function ConnectionStabilityOverview({ formatUptime }: { formatUptime: (s: numbe
   const avgScore = Math.round(
     stabilityReport.reduce((acc: number, s: any) => acc + s.stabilityScore, 0) / stabilityReport.length
   );
-  const totalReconnections = stabilityReport.reduce((acc: number, s: any) => acc + s.reconnectionCount24h, 0);
+  const totalRealReconnections = stabilityReport.reduce((acc: number, s: any) => acc + s.reconnectionCount24h, 0);
+  const totalSeamless = stabilityReport.reduce((acc: number, s: any) => acc + (s.seamlessReconnections || 0), 0);
   const unstableStations = stabilityReport.filter((s: any) => s.stabilityScore < 50);
+  const reconnectingStations = stabilityReport.filter((s: any) => s.isReconnecting);
 
   return (
     <Card>
@@ -1619,9 +1640,19 @@ function ConnectionStabilityOverview({ formatUptime }: { formatUptime: (s: numbe
               <span className="text-xs text-muted-foreground">Score promedio:</span>
               <span className={`font-bold ${getScoreColor(avgScore)}`}>{avgScore}/100</span>
             </div>
-            {totalReconnections > 0 && (
-              <Badge variant={totalReconnections > 10 ? "destructive" : "secondary"} className="text-xs">
-                {totalReconnections} reconexiones (24h)
+            {totalSeamless > 0 && (
+              <Badge variant="outline" className="text-xs border-green-500 text-green-500">
+                ⚡ {totalSeamless} transparentes
+              </Badge>
+            )}
+            {totalRealReconnections > 0 && (
+              <Badge variant={totalRealReconnections > 5 ? "destructive" : "secondary"} className="text-xs">
+                {totalRealReconnections} desc. reales (24h)
+              </Badge>
+            )}
+            {reconnectingStations.length > 0 && (
+              <Badge variant="outline" className="text-xs border-yellow-500 text-yellow-500 animate-pulse">
+                {reconnectingStations.length} reconectando
               </Badge>
             )}
             {unstableStations.length > 0 && (
@@ -1658,8 +1689,11 @@ function ConnectionStabilityOverview({ formatUptime }: { formatUptime: (s: numbe
                       </div>
                     </TableCell>
                     <TableCell className="text-center">
-                      <Badge variant={station.isConnected ? "default" : "secondary"} className="text-xs">
-                        {station.isConnected ? "Conectado" : "Desconectado"}
+                      <Badge 
+                        variant={station.isConnected ? "default" : station.isReconnecting ? "outline" : "secondary"} 
+                        className={`text-xs ${station.isReconnecting ? 'border-yellow-500 text-yellow-500 animate-pulse' : ''}`}
+                      >
+                        {station.isConnected ? "Conectado" : station.isReconnecting ? "Reconectando" : "Desconectado"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-center">
@@ -1671,9 +1705,16 @@ function ConnectionStabilityOverview({ formatUptime }: { formatUptime: (s: numbe
                       {station.isConnected ? formatUptime(station.currentUptimeSeconds) : '-'}
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className={`font-bold ${station.reconnectionCount24h > 5 ? 'text-red-500' : station.reconnectionCount24h > 2 ? 'text-yellow-500' : 'text-green-500'}`}>
-                        {station.reconnectionCount24h}
-                      </span>
+                      <div>
+                        <span className={`font-bold ${station.reconnectionCount24h > 2 ? 'text-red-500' : station.reconnectionCount24h > 0 ? 'text-yellow-500' : 'text-green-500'}`}>
+                          {station.reconnectionCount24h}
+                        </span>
+                        {station.seamlessReconnections > 0 && (
+                          <span className="text-xs text-green-500 ml-1" title="Reconexiones transparentes">
+                            (⚡{station.seamlessReconnections})
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-center font-mono text-sm">
                       {station.avgSessionDurationSeconds > 0 

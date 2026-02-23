@@ -1618,3 +1618,16 @@
 - [x] TCP keep-alive 15s, setNoDelay, setTimeout(0) en upgrade
 - [x] server.timeout/keepAliveTimeout/headersTimeout/requestTimeout = 0
 - [x] 25 tests pasan (anti-proxy-timeout strategy)
+
+## Solución Definitiva: Reconexión Seamless OCPP - 23 Feb 2026 [COMPLETADO]
+- [x] Grace period de 300s (5 min) con estado persistente que sobrevive desconexiones
+- [x] Restauración completa de estado OCPP (bootInfo, connectorStatuses, stationId, connectedAt original)
+- [x] Alertas suprimidas durante grace period (no notificaciones falsas)
+- [x] Historial distingue seamless (wasSeamless=true) vs desconexiones reales
+- [x] Sesiones de carga preservadas (no se llama removeConnection durante grace period)
+- [x] UI: "Reconectando..." con badge amarillo pulsante durante grace period
+- [x] Contadores separados: seamlessReconnections vs reconnectionCount24h (solo reales)
+- [x] Score de estabilidad alto (>=90) cuando solo hay reconexiones seamless
+- [x] getAllConnections incluye estaciones en grace period con datos completos
+- [x] ConnectionStabilityOverview muestra badges de transparentes/reales/reconectando
+- [x] 19 tests unitarios pasan (reconexion seamless completa)
