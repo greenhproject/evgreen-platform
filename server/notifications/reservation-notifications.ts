@@ -5,7 +5,7 @@
 
 import { notifyOwner } from "../_core/notification";
 import { getDb } from "../db";
-import { reservations, users, chargingStations, notifications } from "../../drizzle/schema";
+import { reservations, users, chargingStations, notifications, evses } from "../../drizzle/schema";
 import { eq, and, lte, gte, isNull } from "drizzle-orm";
 
 interface ReservationNotification {
@@ -264,8 +264,34 @@ export async function processNoShows(): Promise<void> {
         })
         .where(eq(reservations.id, reservation.id));
 
+      // Liberar el EVSE a AVAILABLE
+      if (reservation.evseId) {
+        await db
+          .update(evses)
+          .set({ status: "AVAILABLE" })
+          .where(eq(evses.id, reservation.evseId));
+        console.log(`[NoShow] Released EVSE ${reservation.evseId} back to AVAILABLE`);
+      }
+
       // Aplicar penalización a la billetera (se descuenta del saldo)
-      const penaltyAmount = Number(reservation.reservationFee) || 5000; // Penalización mínima de $5,000 COP
+      const penaltyAmount = Number(reservation.noShowPenalty) || Number(reservation.reservationFee) || 5000;
+      
+      // Descontar penalización de la billetera del usuario
+      try {
+        const { getWalletByUserId } = await import("../db");
+        const wallet = await getWalletByUserId(reservation.userId);
+        if (wallet) {
+          const currentBalance = Number(wallet.balance) || 0;
+          const newBalance = Math.max(0, currentBalance - penaltyAmount);
+          const { wallets } = await import("../../drizzle/schema");
+          await db.update(wallets)
+            .set({ balance: newBalance.toString() })
+            .where(eq(wallets.userId, reservation.userId));
+          console.log(`[NoShow] Deducted ${penaltyAmount} COP from user ${user.id} wallet (${currentBalance} -> ${newBalance})`);
+        }
+      } catch (e) {
+        console.error(`[NoShow] Failed to deduct penalty from wallet:`, e);
+      }
       
       // Enviar notificación
       await sendPenaltyNotification(user.id, reservation.id, station.name, penaltyAmount);
