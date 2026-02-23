@@ -349,23 +349,30 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
   // Importar db al inicio
   const db = await import("../db");
   
-  // Registrar en el connection manager
+  // Verificar si hay estado persistente (reconexión seamless)
+  const previousState = ocppManager.getPersistentState(ocppIdentity);
+  const isSeamlessReconnection = previousState?.isInGracePeriod === true;
+  
+  // Registrar en el connection manager (restaura estado si es reconexión seamless)
   const connection = ocppManager.registerConnection(ocppIdentity, ws, ocppVersion);
   
-  // Si hay un grace period activo para este cargador, cancelarlo (reconexión exitosa)
+  // Si hay un grace period activo del legacy system, cancelarlo
   const existingGraceOnConnect = legacyDisconnectGrace.get(ocppIdentity);
   if (existingGraceOnConnect) {
     clearTimeout(existingGraceOnConnect);
     legacyDisconnectGrace.delete(ocppIdentity);
-    console.log(`[OCPP] Reconnection within grace period for: ${ocppIdentity} - no alert will be sent`);
+  }
+  
+  if (isSeamlessReconnection) {
+    console.log(`[OCPP] ⚡ SEAMLESS RECONNECTION: ${ocppIdentity} - state restored (stationId=${connection.stationId}, connectors=${connection.connectorStatuses.size})`);
   }
   
   // Mapeo de transacciones OCPP 1.6 a IDs internos
   const ocpp16Transactions = new Map<number, string>();
   let transactionIdCounter = 1;
 
-  // Registrar conexión
-  let stationId: number | null = null;
+  // Registrar conexión - usar stationId restaurado si es reconexión seamless
+  let stationId: number | null = connection.stationId;
 
   // PRE-RESOLVER stationId inmediatamente al conectarse (no esperar a BootNotification)
   try {
@@ -550,66 +557,65 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       const connectedAt = (ws as any)._connectedAt || 0;
       const durationSec = connectedAt ? Math.round((Date.now() - connectedAt) / 1000) : 0;
       const reasonStr = reason?.toString() || '';
-      
-      // Registrar desconexión en el historial de estabilidad
-      ocppManager.recordDisconnection(
-        ocppIdentity,
-        new Date(connectedAt || Date.now()),
-        code,
-        reasonStr
-      );
+      const persistentState = ocppManager.getPersistentState(ocppIdentity);
+      const seamlessCount = persistentState?.seamlessReconnections || 0;
       
       console.log(`[OCPP] Connection closed: ${ocppIdentity}`, {
-        code,
-        reason: reasonStr,
-        durationSeconds: durationSec,
+        closeCode: code,
+        closeReason: reasonStr,
+        connectionDurationSeconds: durationSec,
         wasAlive: (ws as any).isAlive,
+        seamlessReconnections: seamlessCount,
       });
       
-      // Remover del connection manager
-      ocppManager.removeConnection(ocppIdentity);
+      // Delegar al connection-manager: inicia grace period y preserva estado
+      const { isGracePeriod } = ocppManager.handleDisconnection(ocppIdentity, code, reasonStr);
       
-      // Registrar log de desconexión inmediatamente (para auditoría)
+      // Registrar log de desconexión (para auditoría, marcado como proxy_cycle si es código 1006)
+      const isProxyCycle = code === 1006 && durationSec >= 170 && durationSec <= 200;
       await db.createOcppLog({
         ocppIdentity,
         stationId,
         direction: "IN",
-        messageType: "DISCONNECTION",
+        messageType: isProxyCycle ? "PROXY_RECONNECT" : "DISCONNECTION",
         payload: { 
           closeCode: code, 
           closeReason: reasonStr, 
           connectionDurationSeconds: durationSec,
           wasAlive: (ws as any).isAlive,
+          isProxyCycle,
+          seamlessReconnections: seamlessCount,
         },
       });
       
-      // Cancelar grace period anterior si existe (nueva desconexión reemplaza la anterior)
+      // NO marcar offline inmediatamente - el connection-manager maneja el grace period
+      // Solo si el grace period expira Y no se reconecta, marcar offline
+      // Cancelar grace period anterior del legacy system si existe
       const existingGrace = legacyDisconnectGrace.get(ocppIdentity);
       if (existingGrace) {
         clearTimeout(existingGrace);
         legacyDisconnectGrace.delete(ocppIdentity);
       }
       
-      // Usar grace period: NO marcar offline ni enviar alerta inmediatamente
-      // Esperar 5 minutos para ver si el cargador se reconecta
-      console.log(`[OCPP] Starting ${LEGACY_DISCONNECT_GRACE_MS / 1000}s grace period for: ${ocppIdentity}`);
-      
+      // Iniciar timer para verificar después del grace period
       const graceTimeout = setTimeout(async () => {
-        // Verificar si el cargador se reconectó durante el grace period
+        // Verificar si el cargador se reconectó (el connection-manager ya sabe)
         const currentConn = ocppManager.getConnection(ocppIdentity);
-        if (!currentConn) {
-          // No se reconectó después de 5 minutos, ahora sí marcar como offline y notificar
-          console.log(`[OCPP] Grace period expired, marking offline and sending alert: ${ocppIdentity}`);
+        const stillInGrace = ocppManager.isInGracePeriod(ocppIdentity);
+        
+        if (!currentConn && !stillInGrace) {
+          // Grace period expiró sin reconexión → desconexión REAL
+          console.log(`[OCPP] ❌ REAL DISCONNECTION after grace period: ${ocppIdentity}`);
           
           if (stationId) {
             await db.updateStationOnlineStatus(ocppIdentity, false);
           }
           
-          // Generar alerta de desconexión solo después del grace period
+          // Generar alerta solo para desconexiones REALES
           alertsService.handleDisconnection(ocppIdentity, stationId ?? undefined)
             .catch(err => console.error("[OCPP Alert] Error:", err));
-        } else {
-          console.log(`[OCPP] Charger reconnected during grace period, no alert needed: ${ocppIdentity}`);
+        } else if (currentConn) {
+          console.log(`[OCPP] ⚡ Seamless reconnection confirmed: ${ocppIdentity}`);
         }
         legacyDisconnectGrace.delete(ocppIdentity);
       }, LEGACY_DISCONNECT_GRACE_MS);
