@@ -233,7 +233,7 @@ interface OCPP201MeterValuesRequest {
 export class DualCSMS {
   private wss: WebSocketServer | null = null;
   private connections: Map<string, ChargingStationConnection> = new Map();
-  private heartbeatInterval: number = 60; // segundos
+  private heartbeatInterval: number = 30; // segundos (reducido de 60 para mantener proxy activo)
   private isRunning: boolean = false;
   private transactionIdCounter: number = 1;
   private ocpp16Transactions: Map<number, string> = new Map(); // OCPP 1.6 transactionId -> internal transactionId
@@ -356,6 +356,26 @@ export class DualCSMS {
         }
       }, DualCSMS.PING_INTERVAL_MS);
       this.pingIntervals.set(ocppIdentity, pingInterval);
+
+      // ANTI-PROXY-TIMEOUT: Enviar TriggerMessage(Heartbeat) cada 90s para generar tráfico de datos reales
+      // Los frames de control (ping/pong) NO resetean el proxy_read_timeout en muchos proxies
+      let dualKeepaliveCount = 0;
+      const ocppKeepalive = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          dualKeepaliveCount++;
+          try {
+            const msgId = `keepalive-dual-${Date.now()}-${dualKeepaliveCount}`;
+            const triggerMsg = JSON.stringify([2, msgId, "TriggerMessage", { requestedMessage: "Heartbeat" }]);
+            ws.send(triggerMsg);
+          } catch (err) {
+            console.error(`[CSMS-DUAL] Error sending keepalive to ${ocppIdentity}:`, err);
+          }
+        } else {
+          clearInterval(ocppKeepalive);
+        }
+      }, 90000); // 90 segundos
+      // Limpiar en close
+      ws.on("close", () => clearInterval(ocppKeepalive));
 
       // Configurar pong handler para actualizar lastHeartbeat
       ws.on("pong", () => {

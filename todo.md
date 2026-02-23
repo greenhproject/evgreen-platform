@@ -1606,3 +1606,15 @@
 - [x] UI: Tab "Estabilidad" en ChargerDetailView (score, uptime, reconexiones, historial)
 - [x] UI: ConnectionStabilityOverview colapsable en ChargerGridView (vista global)
 - [x] 15 tests unitarios pasan (score, close codes, historial, límites)
+
+## Bug: Desconexión OCPP cada ~181s por proxy timeout (código 1006) - 23 Feb 2026 [CORREGIDO]
+- [x] Confirmado: proxy externo cierra conexión cada ~180s (código 1006, wasAlive=true)
+- [x] Capa 1: WebSocket ping/pong cada 20s (frame de control)
+- [x] Capa 2: OCPP TriggerMessage(Heartbeat) cada 90s - genera tráfico de DATOS reales que resetea proxy_read_timeout
+- [x] Capa 3: BootNotification interval=30s + ChangeConfiguration HeartbeatInterval=30 - cargador envía heartbeats frecuentes
+- [x] Handler de CALLRESULT (tipo 3) y CALLERROR (tipo 4) para respuestas keepalive
+- [x] Ignorar silenciosamente errores de TriggerMessage no soportado
+- [x] DualCSMS también actualizado con keepalive OCPP cada 90s y heartbeatInterval=30
+- [x] TCP keep-alive 15s, setNoDelay, setTimeout(0) en upgrade
+- [x] server.timeout/keepAliveTimeout/headersTimeout/requestTimeout = 0
+- [x] 25 tests pasan (anti-proxy-timeout strategy)
