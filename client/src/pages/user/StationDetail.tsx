@@ -730,7 +730,7 @@ export default function StationDetail() {
 
       {/* Modal de Reserva con Tarifa Dinámica */}
       <Dialog open={showReservationModal} onOpenChange={setShowReservationModal}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-md mx-auto bg-background/95 backdrop-blur border-border/50 max-h-[90vh] overflow-y-auto p-4 sm:p-6 overflow-x-hidden">
+        <DialogContent className="!max-w-[92vw] sm:!max-w-md bg-background/95 backdrop-blur border-border/50 max-h-[90vh] overflow-y-auto !p-3 sm:!p-5 overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Calendar className="w-5 h-5 text-primary" />
@@ -802,22 +802,20 @@ export default function StationDetail() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                 >
-                  <Card className={`p-3 sm:p-4 border-2 overflow-hidden ${
+                  <Card className={`p-2.5 sm:p-4 border-2 overflow-hidden ${
                     dynamicPrice.visualization.level === "LOW" ? "border-green-500/50 bg-green-500/10" :
                     dynamicPrice.visualization.level === "NORMAL" ? "border-blue-500/50 bg-blue-500/10" :
                     dynamicPrice.visualization.level === "HIGH" ? "border-orange-500/50 bg-orange-500/10" :
                     "border-red-500/50 bg-red-500/10"
                   }`}>
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-2">
-                        <div style={{ color: dynamicPrice.visualization.color }}>
-                          {getDemandIcon(dynamicPrice.visualization.level)}
-                        </div>
-                        <span className="font-medium text-sm sm:text-base">{dynamicPrice.visualization.message}</span>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div style={{ color: dynamicPrice.visualization.color }}>
+                        {getDemandIcon(dynamicPrice.visualization.level)}
                       </div>
+                      <span className="font-medium text-xs sm:text-sm">{dynamicPrice.visualization.message}</span>
                       <Badge 
                         variant="outline"
-                        className="self-start sm:self-auto whitespace-nowrap"
+                        className="ml-auto text-[10px] px-1.5 py-0 whitespace-nowrap"
                         style={{ 
                           borderColor: dynamicPrice.visualization.color,
                           color: dynamicPrice.visualization.color 
@@ -827,34 +825,34 @@ export default function StationDetail() {
                       </Badge>
                     </div>
 
-                    <div className="space-y-2 text-sm">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-muted-foreground text-xs shrink-0">Precio base</span>
-                        <span className="text-xs text-right truncate">${dynamicPrice.basePrice.toLocaleString()} COP/kWh</span>
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground text-[11px]">Base</span>
+                        <span className="text-[11px]">${dynamicPrice.basePrice.toLocaleString()}/kWh</span>
                       </div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-muted-foreground text-xs shrink-0">Precio dinámico</span>
-                        <span className="text-xs text-right font-semibold truncate" style={{ color: dynamicPrice.visualization.color }}>
-                          ${dynamicPrice.finalPrice.toLocaleString()} COP/kWh
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground text-[11px]">Dinámico</span>
+                        <span className="text-[11px] font-semibold" style={{ color: dynamicPrice.visualization.color }}>
+                          ${dynamicPrice.finalPrice.toLocaleString()}/kWh
                         </span>
                       </div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-muted-foreground text-xs shrink-0">Tarifa reserva</span>
-                        <span className="text-xs text-right truncate">${dynamicPrice.reservationFee.toLocaleString()} COP</span>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground text-[11px]">Reserva</span>
+                        <span className="text-[11px]">${dynamicPrice.reservationFee.toLocaleString()}</span>
                       </div>
-                      <div className="pt-2 mt-2 border-t border-border/50 flex items-baseline justify-between gap-2">
-                        <span className="font-medium text-sm shrink-0">Total estimado</span>
+                      <div className="pt-1.5 mt-1.5 border-t border-border/50 flex justify-between items-center">
+                        <span className="font-medium text-xs">Total estimado</span>
                         <span className="font-bold text-sm" style={{ color: dynamicPrice.visualization.color }}>
-                          ${dynamicPrice.estimatedTotal.toLocaleString()} COP
+                          ${dynamicPrice.estimatedTotal.toLocaleString()}
                         </span>
                       </div>
                     </div>
 
-                    <div className="mt-3 pt-3 border-t border-border/50">
-                      <div className="flex items-start gap-2 text-xs text-muted-foreground">
-                        <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-                        <span className="break-words leading-relaxed">Penalización por no presentarse: <strong>${dynamicPrice.noShowPenalty.toLocaleString()} COP</strong></span>
-                      </div>
+                    <div className="mt-2 pt-2 border-t border-border/50">
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
+                        <AlertTriangle className="w-3 h-3 inline-block mr-1 align-text-bottom" />
+                        No presentarse: <strong>${dynamicPrice.noShowPenalty.toLocaleString()} COP</strong>
+                      </p>
                     </div>
                   </Card>
                 </motion.div>
