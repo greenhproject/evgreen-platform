@@ -46,7 +46,9 @@ import {
   Users,
   MapPin,
   Save,
-  Loader2
+  Loader2,
+  History,
+  FileText
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -175,6 +177,17 @@ export default function AdminTariffs() {
     if (localPriceRanges.enableDifferentiatedPricing && localPriceRanges.defaultPricePerKwhAC > localPriceRanges.defaultPricePerKwhDC) {
       toast.error("El precio AC (carga lenta) debe ser menor o igual al precio DC (carga rápida)");
       return;
+    }
+    // Validar que precios AC y DC estén dentro del rango global
+    if (localPriceRanges.enableDifferentiatedPricing) {
+      if (localPriceRanges.defaultPricePerKwhAC < localPriceRanges.minPrice || localPriceRanges.defaultPricePerKwhAC > localPriceRanges.maxPrice) {
+        toast.error(`El precio AC ($${localPriceRanges.defaultPricePerKwhAC.toLocaleString()}) debe estar dentro del rango global ($${localPriceRanges.minPrice.toLocaleString()} - $${localPriceRanges.maxPrice.toLocaleString()})`);
+        return;
+      }
+      if (localPriceRanges.defaultPricePerKwhDC < localPriceRanges.minPrice || localPriceRanges.defaultPricePerKwhDC > localPriceRanges.maxPrice) {
+        toast.error(`El precio DC ($${localPriceRanges.defaultPricePerKwhDC.toLocaleString()}) debe estar dentro del rango global ($${localPriceRanges.minPrice.toLocaleString()} - $${localPriceRanges.maxPrice.toLocaleString()})`);
+        return;
+      }
     }
     setSavingPriceRanges(true);
     updatePriceRanges.mutate({
@@ -1197,6 +1210,107 @@ export default function AdminTariffs() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Historial de Cambios de Tarifas (Auditoría) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="w-5 h-5 text-blue-500" />
+            Historial de Cambios de Tarifas
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">Registro de auditoría de todos los cambios realizados en tarifas y rangos globales</p>
+        </CardHeader>
+        <CardContent>
+          <TariffChangeLogTable />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Componente separado para el historial de cambios
+function TariffChangeLogTable() {
+  const { data: changeLogs, isLoading } = trpc.tariffs.getChangeLogs.useQuery({ limit: 30 });
+  
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-muted-foreground">Cargando historial...</span>
+      </div>
+    );
+  }
+  
+  if (!changeLogs || changeLogs.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <FileText className="w-10 h-10 mx-auto mb-2 opacity-50" />
+        <p>No hay cambios registrados aún</p>
+        <p className="text-xs">Los cambios de tarifas se registrarán automáticamente a partir de ahora</p>
+      </div>
+    );
+  }
+  
+  const getChangeTypeBadge = (type: string) => {
+    switch (type) {
+      case 'CREATE': return <Badge className="bg-green-100 text-green-800">Creación</Badge>;
+      case 'UPDATE': return <Badge className="bg-blue-100 text-blue-800">Actualización</Badge>;
+      case 'GLOBAL_UPDATE': return <Badge className="bg-purple-100 text-purple-800">Global</Badge>;
+      case 'DEACTIVATE': return <Badge className="bg-red-100 text-red-800">Desactivación</Badge>;
+      default: return <Badge variant="outline">{type}</Badge>;
+    }
+  };
+  
+  const formatValues = (values: any) => {
+    if (!values) return '-';
+    const entries = Object.entries(values).filter(([_, v]) => v !== undefined && v !== null);
+    return entries.map(([k, v]) => {
+      const label = k === 'pricePerKwh' ? 'Precio/kWh' 
+        : k === 'reservationFee' ? 'Reserva'
+        : k === 'minPrice' ? 'Mín'
+        : k === 'maxPrice' ? 'Máx'
+        : k === 'defaultBasePricePerKwh' ? 'Base'
+        : k === 'defaultPricePerKwhAC' ? 'AC'
+        : k === 'defaultPricePerKwhDC' ? 'DC'
+        : k === 'autoPricing' ? 'Auto-IA'
+        : k === 'name' ? 'Nombre'
+        : k;
+      const formatted = typeof v === 'number' ? `$${v.toLocaleString('es-CO')}` : String(v);
+      return `${label}: ${formatted}`;
+    }).join(', ');
+  };
+  
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Fecha</TableHead>
+            <TableHead>Tipo</TableHead>
+            <TableHead>Descripción</TableHead>
+            <TableHead>Valores Anteriores</TableHead>
+            <TableHead>Valores Nuevos</TableHead>
+            <TableHead>Realizado por</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {changeLogs.map((log: any) => (
+            <TableRow key={log.id}>
+              <TableCell className="text-xs whitespace-nowrap">
+                {new Date(log.createdAt).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
+              </TableCell>
+              <TableCell>{getChangeTypeBadge(log.changeType)}</TableCell>
+              <TableCell className="max-w-[300px] truncate text-sm">{log.description || '-'}</TableCell>
+              <TableCell className="text-xs max-w-[200px] truncate text-muted-foreground">{formatValues(log.previousValues)}</TableCell>
+              <TableCell className="text-xs max-w-[200px] truncate font-medium">{formatValues(log.newValues)}</TableCell>
+              <TableCell className="text-xs">
+                <span className="font-medium">{log.changedByName || 'Sistema'}</span>
+                {log.changedByRole && <Badge variant="outline" className="ml-1 text-[10px]">{log.changedByRole}</Badge>}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }
