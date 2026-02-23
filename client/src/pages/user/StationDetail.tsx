@@ -5,7 +5,7 @@ import UserLayout from "@/layouts/UserLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -732,175 +732,161 @@ export default function StationDetail() {
         </div>
       </div>
 
-      {/* Modal de Reserva con Tarifa Dinámica */}
-      <Dialog open={showReservationModal} onOpenChange={setShowReservationModal}>
-        <DialogContent className="!max-w-[92vw] sm:!max-w-md bg-background/95 backdrop-blur border-border/50 max-h-[90vh] overflow-y-auto !p-3 sm:!p-5 overflow-x-hidden">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+      {/* Sheet de Reserva con Tarifa Dinámica (mobile-first) */}
+      <Sheet open={showReservationModal} onOpenChange={setShowReservationModal}>
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] p-0">
+          {/* Handle visual para arrastrar */}
+          <div className="flex justify-center pt-3 pb-1">
+            <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+          </div>
+          
+          <SheetHeader className="px-4 pb-2">
+            <SheetTitle className="flex items-center gap-2 text-base">
               <Calendar className="w-5 h-5 text-primary" />
               Reservar Cargador
-            </DialogTitle>
-            <DialogDescription>
+            </SheetTitle>
+            <SheetDescription className="text-xs">
               {selectedEvse && `Conector ${selectedEvse.connectorType?.replace("_", " ")} • ${selectedEvse.powerKw} kW`}
-            </DialogDescription>
-          </DialogHeader>
+            </SheetDescription>
+          </SheetHeader>
 
-          <div className="space-y-4 py-4">
-            {/* Selector de fecha */}
-            <div className="space-y-2">
-              <Label>Fecha</Label>
-              <Input
-                type="date"
-                value={reservationDate}
-                onChange={(e) => setReservationDate(e.target.value)}
-                min={new Date().toISOString().split("T")[0]}
-                className="bg-background/50"
-              />
-            </div>
-
-            {/* Selector de hora */}
-            <div className="space-y-2">
-              <Label>Hora de inicio</Label>
-              <Input
-                type="time"
-                value={reservationTime}
-                onChange={(e) => setReservationTime(e.target.value)}
-                className="bg-background/50"
-              />
-            </div>
-
-            {/* Duración estimada */}
-            <div className="space-y-2">
-              <Label>Duración estimada</Label>
-              <Select value={estimatedDuration} onValueChange={setEstimatedDuration}>
-                <SelectTrigger className="bg-background/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="30">30 minutos</SelectItem>
-                  <SelectItem value="60">1 hora</SelectItem>
-                  <SelectItem value="90">1.5 horas</SelectItem>
-                  <SelectItem value="120">2 horas</SelectItem>
-                  <SelectItem value="180">3 horas</SelectItem>
-                  <SelectItem value="240">4 horas</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Tarifa Dinámica */}
-            <AnimatePresence mode="wait">
-              {priceLoading ? (
-                <motion.div
-                  key="loading"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="flex items-center justify-center py-6"
-                >
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                </motion.div>
-              ) : dynamicPrice ? (
-                <motion.div
-                  key="price"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                >
-                  <Card className={`p-2.5 sm:p-4 border-2 overflow-hidden ${
-                    dynamicPrice.visualization.level === "LOW" ? "border-green-500/50 bg-green-500/10" :
-                    dynamicPrice.visualization.level === "NORMAL" ? "border-blue-500/50 bg-blue-500/10" :
-                    dynamicPrice.visualization.level === "HIGH" ? "border-orange-500/50 bg-orange-500/10" :
-                    "border-red-500/50 bg-red-500/10"
-                  }`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <div style={{ color: dynamicPrice.visualization.color }}>
-                        {getDemandIcon(dynamicPrice.visualization.level)}
-                      </div>
-                      <span className="font-medium text-xs sm:text-sm">{dynamicPrice.visualization.message}</span>
-                      <Badge 
-                        variant="outline"
-                        className="ml-auto text-[10px] px-1.5 py-0 whitespace-nowrap"
-                        style={{ 
-                          borderColor: dynamicPrice.visualization.color,
-                          color: dynamicPrice.visualization.color 
-                        }}
-                      >
-                        {dynamicPrice.visualization.savingsOrSurge}
-                      </Badge>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground text-[11px]">Base</span>
-                        <span className="text-[11px]">${dynamicPrice.basePrice.toLocaleString()}/kWh</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground text-[11px]">Dinámico</span>
-                        <span className="text-[11px] font-semibold" style={{ color: dynamicPrice.visualization.color }}>
-                          ${dynamicPrice.finalPrice.toLocaleString()}/kWh
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground text-[11px]">Reserva</span>
-                        <span className="text-[11px]">${dynamicPrice.reservationFee.toLocaleString()}</span>
-                      </div>
-                      <div className="pt-1.5 mt-1.5 border-t border-border/50 flex justify-between items-center">
-                        <span className="font-medium text-xs">Total estimado</span>
-                        <span className="font-bold text-sm" style={{ color: dynamicPrice.visualization.color }}>
-                          ${dynamicPrice.estimatedTotal.toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="mt-2 pt-2 border-t border-border/50">
-                      <p className="text-[10px] text-muted-foreground leading-relaxed">
-                        <AlertTriangle className="w-3 h-3 inline-block mr-1 align-text-bottom" />
-                        No presentarse: <strong>${dynamicPrice.noShowPenalty.toLocaleString()} COP</strong>
-                      </p>
-                    </div>
-                  </Card>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-
-            {/* Mejores horarios sugeridos */}
-            {bestTimes && bestTimes.length > 0 && (
-              <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">Mejores horarios para cargar</Label>
-                <div className="flex gap-2 overflow-x-auto pb-2">
-                  {bestTimes
-                    .filter(t => t.recommendation === "BEST")
-                    .slice(0, 4)
-                    .map((slot, i) => (
-                      <Button
-                        key={i}
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0 border-green-500/50 text-green-400 hover:bg-green-500/10"
-                        onClick={() => {
-                          const d = new Date(slot.time);
-                          setReservationDate(d.toISOString().split("T")[0]);
-                          setReservationTime(d.toTimeString().slice(0, 5));
-                        }}
-                      >
-                        {new Date(slot.time).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
-                      </Button>
-                    ))}
+          <div className="overflow-y-auto px-4 pb-4" style={{ maxHeight: 'calc(85vh - 160px)' }}>
+            <div className="space-y-3">
+              {/* Fecha y hora en una fila */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Fecha</Label>
+                  <Input
+                    type="date"
+                    value={reservationDate}
+                    onChange={(e) => setReservationDate(e.target.value)}
+                    min={new Date().toISOString().split("T")[0]}
+                    className="bg-background/50 text-sm h-9"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Hora de inicio</Label>
+                  <Input
+                    type="time"
+                    value={reservationTime}
+                    onChange={(e) => setReservationTime(e.target.value)}
+                    className="bg-background/50 text-sm h-9"
+                  />
                 </div>
               </div>
-            )}
+
+              {/* Duración estimada */}
+              <div className="space-y-1">
+                <Label className="text-xs">Duración estimada</Label>
+                <Select value={estimatedDuration} onValueChange={setEstimatedDuration}>
+                  <SelectTrigger className="bg-background/50 h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="30">30 minutos</SelectItem>
+                    <SelectItem value="60">1 hora</SelectItem>
+                    <SelectItem value="90">1.5 horas</SelectItem>
+                    <SelectItem value="120">2 horas</SelectItem>
+                    <SelectItem value="180">3 horas</SelectItem>
+                    <SelectItem value="240">4 horas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Tarifa Dinámica */}
+              {priceLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                </div>
+              ) : dynamicPrice ? (
+                <div className={`p-3 rounded-lg border-2 ${
+                  dynamicPrice.visualization.level === "LOW" ? "border-green-500/50 bg-green-500/10" :
+                  dynamicPrice.visualization.level === "NORMAL" ? "border-blue-500/50 bg-blue-500/10" :
+                  dynamicPrice.visualization.level === "HIGH" ? "border-orange-500/50 bg-orange-500/10" :
+                  "border-red-500/50 bg-red-500/10"
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div style={{ color: dynamicPrice.visualization.color }}>
+                      {getDemandIcon(dynamicPrice.visualization.level)}
+                    </div>
+                    <span className="font-medium text-xs">{dynamicPrice.visualization.message}</span>
+                    <Badge 
+                      variant="outline"
+                      className="ml-auto text-[10px] px-1.5 py-0"
+                      style={{ 
+                        borderColor: dynamicPrice.visualization.color,
+                        color: dynamicPrice.visualization.color 
+                      }}
+                    >
+                      {dynamicPrice.visualization.savingsOrSurge}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-0.5 text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Base</span>
+                      <span>${dynamicPrice.basePrice.toLocaleString()}/kWh</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Dinámico</span>
+                      <span className="font-semibold" style={{ color: dynamicPrice.visualization.color }}>
+                        ${dynamicPrice.finalPrice.toLocaleString()}/kWh
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Reserva</span>
+                      <span>${dynamicPrice.reservationFee.toLocaleString()}</span>
+                    </div>
+                    <div className="pt-1 mt-1 border-t border-border/50 flex justify-between items-center">
+                      <span className="font-medium text-xs">Total estimado</span>
+                      <span className="font-bold text-sm" style={{ color: dynamicPrice.visualization.color }}>
+                        ${dynamicPrice.estimatedTotal.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-1.5 pt-1.5 border-t border-border/50">
+                    <p className="text-[10px] text-muted-foreground">
+                      <AlertTriangle className="w-3 h-3 inline-block mr-1 align-text-bottom" />
+                      No presentarse: <strong>${dynamicPrice.noShowPenalty.toLocaleString()} COP</strong>
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Mejores horarios sugeridos */}
+              {bestTimes && bestTimes.length > 0 && (
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Mejores horarios</Label>
+                  <div className="flex gap-2 flex-wrap">
+                    {bestTimes
+                      .filter(t => t.recommendation === "BEST")
+                      .slice(0, 4)
+                      .map((slot, i) => (
+                        <Button
+                          key={i}
+                          variant="outline"
+                          size="sm"
+                          className="border-green-500/50 text-green-400 hover:bg-green-500/10 text-xs h-7 px-2"
+                          onClick={() => {
+                            const d = new Date(slot.time);
+                            setReservationDate(d.toISOString().split("T")[0]);
+                            setReservationTime(d.toTimeString().slice(0, 5));
+                          }}
+                        >
+                          {new Date(slot.time).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                        </Button>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+          {/* Botón fijo en la parte inferior */}
+          <div className="px-4 pb-4 pt-2 border-t border-border/30">
             <Button
-              variant="outline"
-              className="flex-1 order-2 sm:order-1"
-              onClick={() => setShowReservationModal(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              className="flex-1 gradient-primary text-white order-1 sm:order-2"
+              className="w-full gradient-primary text-white h-11"
               onClick={handleConfirmReservation}
               disabled={createReservation.isPending || !dynamicPrice}
             >
@@ -909,11 +895,11 @@ export default function StationDetail() {
               ) : (
                 <CheckCircle2 className="w-4 h-4 mr-2" />
               )}
-              Confirmar
+              Confirmar Reserva
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
     </UserLayout>
   );
 }

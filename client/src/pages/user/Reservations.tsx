@@ -14,6 +14,7 @@ export default function UserReservations() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<any>(null);
 
+  const utils = trpc.useUtils();
   const cancelMutation = trpc.reservations.cancel.useMutation({
     onSuccess: (data) => {
       if (data.refundAmount && data.refundAmount > 0) {
@@ -24,6 +25,9 @@ export default function UserReservations() {
       setCancelDialogOpen(false);
       setSelectedReservation(null);
       refetch();
+      // Invalidar caches para que el EVSE vuelva a AVAILABLE
+      utils.stations.listPublic.invalidate();
+      utils.stations.getEvses.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || "Error al cancelar la reserva");
