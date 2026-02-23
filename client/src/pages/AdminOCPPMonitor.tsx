@@ -47,6 +47,9 @@ import {
   MapPin,
   Info,
   Wrench,
+  Shield,
+  Timer,
+  Signal,
 } from "lucide-react";
 import {
   Chart as ChartJS,
@@ -270,6 +273,9 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
           </SelectContent>
         </Select>
       </div>
+
+      {/* Stability Overview */}
+      <ConnectionStabilityOverview formatUptime={formatUptime} />
 
       {/* Charger List */}
       {isLoading ? (
@@ -609,6 +615,10 @@ function ChargerDetailView({
           <TabsTrigger value="config">
             <Settings className="h-4 w-4 mr-2" />
             Configuración
+          </TabsTrigger>
+          <TabsTrigger value="stability">
+            <Signal className="h-4 w-4 mr-2" />
+            Estabilidad
           </TabsTrigger>
         </TabsList>
 
@@ -1276,7 +1286,414 @@ function ChargerDetailView({
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* ==================== TAB: ESTABILIDAD ==================== */}
+        <TabsContent value="stability" className="space-y-4">
+          <ConnectionStabilityTab ocppIdentity={ocppIdentity} formatUptime={formatUptime} />
+        </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+
+// ============================================================================
+// CONNECTION STABILITY TAB - Monitoreo de estabilidad de conexión
+// ============================================================================
+
+function ConnectionStabilityTab({ 
+  ocppIdentity, 
+  formatUptime 
+}: { 
+  ocppIdentity: string; 
+  formatUptime: (s: number) => string;
+}) {
+  // Reporte de estabilidad general (incluye esta estación)
+  const { data: stabilityReport, isLoading: loadingReport } = trpc.ocpp.getConnectionStability.useQuery(
+    undefined,
+    { refetchInterval: 10000 }
+  );
+
+  // Historial de sesiones de conexión de esta estación
+  const { data: connectionHistory, isLoading: loadingHistory } = trpc.ocpp.getConnectionHistory.useQuery(
+    { ocppIdentity },
+    { refetchInterval: 10000 }
+  );
+
+  const stationData = stabilityReport?.find((s: any) => s.ocppIdentity === ocppIdentity);
+
+  const getStabilityColor = (score: number) => {
+    if (score >= 80) return "text-green-500";
+    if (score >= 50) return "text-yellow-500";
+    return "text-red-500";
+  };
+
+  const getStabilityBadge = (score: number) => {
+    if (score >= 90) return { label: "Excelente", className: "bg-green-500 text-white" };
+    if (score >= 70) return { label: "Buena", className: "bg-green-400 text-white" };
+    if (score >= 50) return { label: "Regular", className: "bg-yellow-500 text-white" };
+    if (score >= 30) return { label: "Inestable", className: "bg-orange-500 text-white" };
+    return { label: "Crítica", className: "bg-red-500 text-white" };
+  };
+
+  const getCloseCodeLabel = (code: number | null) => {
+    if (!code) return "Desconocido";
+    switch (code) {
+      case 1000: return "Normal";
+      case 1001: return "Going Away";
+      case 1002: return "Protocol Error";
+      case 1003: return "Unsupported Data";
+      case 1005: return "No Status";
+      case 1006: return "Abnormal Closure";
+      case 1007: return "Invalid Data";
+      case 1008: return "Policy Violation";
+      case 1009: return "Message Too Big";
+      case 1010: return "Extension Required";
+      case 1011: return "Internal Error";
+      case 1012: return "Service Restart";
+      case 1013: return "Try Again Later";
+      case 1015: return "TLS Handshake Fail";
+      default: return `Code ${code}`;
+    }
+  };
+
+  if (loadingReport || loadingHistory) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-muted-foreground">Cargando datos de estabilidad...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Score de Estabilidad */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Shield className="h-4 w-4" />
+            Estabilidad de Conexión
+          </CardTitle>
+          <CardDescription>
+            Monitoreo de la calidad y estabilidad de la conexión WebSocket OCPP
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {stationData ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Score */}
+              <div className="text-center p-4 border rounded-lg">
+                <p className="text-xs text-muted-foreground mb-1">Score de Estabilidad</p>
+                <p className={`text-4xl font-bold ${getStabilityColor(stationData.stabilityScore)}`}>
+                  {stationData.stabilityScore}
+                </p>
+                <Badge className={`mt-2 ${getStabilityBadge(stationData.stabilityScore).className}`}>
+                  {getStabilityBadge(stationData.stabilityScore).label}
+                </Badge>
+              </div>
+
+              {/* Uptime actual */}
+              <div className="text-center p-4 border rounded-lg">
+                <p className="text-xs text-muted-foreground mb-1">Uptime Actual</p>
+                <p className="text-2xl font-bold">
+                  {stationData.isConnected ? formatUptime(stationData.currentUptimeSeconds) : '-'}
+                </p>
+                <Badge variant={stationData.isConnected ? "default" : "secondary"} className="mt-2">
+                  {stationData.isConnected ? "Conectado" : "Desconectado"}
+                </Badge>
+              </div>
+
+              {/* Reconexiones 24h */}
+              <div className="text-center p-4 border rounded-lg">
+                <p className="text-xs text-muted-foreground mb-1">Reconexiones (24h)</p>
+                <p className={`text-2xl font-bold ${stationData.reconnectionCount24h > 5 ? 'text-red-500' : stationData.reconnectionCount24h > 2 ? 'text-yellow-500' : 'text-green-500'}`}>
+                  {stationData.reconnectionCount24h}
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {stationData.reconnectionCount24h === 0 ? 'Sin desconexiones' : 
+                   stationData.reconnectionCount24h <= 2 ? 'Normal' : 
+                   stationData.reconnectionCount24h <= 5 ? 'Elevado' : 'Crítico'}
+                </p>
+              </div>
+
+              {/* Duración promedio */}
+              <div className="text-center p-4 border rounded-lg">
+                <p className="text-xs text-muted-foreground mb-1">Duración Promedio</p>
+                <p className="text-2xl font-bold">
+                  {stationData.avgSessionDurationSeconds > 0 
+                    ? formatUptime(stationData.avgSessionDurationSeconds) 
+                    : '-'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Máx: {stationData.longestSessionSeconds > 0 ? formatUptime(stationData.longestSessionSeconds) : '-'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Signal className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No hay datos de estabilidad disponibles para esta estación.</p>
+              <p className="text-xs mt-1">Los datos se generan cuando la estación se conecta al servidor OCPP.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Estadísticas adicionales */}
+      {stationData && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Timer className="h-4 w-4 text-muted-foreground" />
+                <p className="text-sm font-medium">Sesión más larga</p>
+              </div>
+              <p className="text-xl font-bold">
+                {stationData.longestSessionSeconds > 0 
+                  ? formatUptime(stationData.longestSessionSeconds) 
+                  : 'Sin datos'}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Timer className="h-4 w-4 text-muted-foreground" />
+                <p className="text-sm font-medium">Sesión más corta</p>
+              </div>
+              <p className={`text-xl font-bold ${stationData.shortestSessionSeconds > 0 && stationData.shortestSessionSeconds < 300 ? 'text-red-500' : ''}`}>
+                {stationData.shortestSessionSeconds > 0 
+                  ? formatUptime(stationData.shortestSessionSeconds) 
+                  : 'Sin datos'}
+              </p>
+              {stationData.shortestSessionSeconds > 0 && stationData.shortestSessionSeconds < 300 && (
+                <p className="text-xs text-red-400 mt-1">Sesiones menores a 5 min indican inestabilidad</p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <p className="text-sm font-medium">Última desconexión</p>
+              </div>
+              <p className="text-sm font-bold">
+                {stationData.lastDisconnection 
+                  ? new Date(stationData.lastDisconnection).toLocaleString('es-CO')
+                  : 'Nunca'}
+              </p>
+              {stationData.lastCloseCode && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Código: {getCloseCodeLabel(stationData.lastCloseCode)} ({stationData.lastCloseCode})
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Historial de sesiones de conexión */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Historial de Sesiones de Conexión
+          </CardTitle>
+          <CardDescription>
+            Últimas {connectionHistory?.length || 0} sesiones registradas (máximo 50)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {connectionHistory && connectionHistory.length > 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Conectado</TableHead>
+                    <TableHead>Desconectado</TableHead>
+                    <TableHead>Duración</TableHead>
+                    <TableHead>Código Cierre</TableHead>
+                    <TableHead>Razón</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...connectionHistory].reverse().map((session: any, idx: number) => (
+                    <TableRow key={idx}>
+                      <TableCell className="text-xs">
+                        {new Date(session.connectedAt).toLocaleString('es-CO')}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {session.disconnectedAt 
+                          ? new Date(session.disconnectedAt).toLocaleString('es-CO')
+                          : <Badge variant="default" className="text-xs">Activa</Badge>
+                        }
+                      </TableCell>
+                      <TableCell>
+                        <span className={`font-mono text-sm ${
+                          session.durationSeconds !== null && session.durationSeconds < 300 
+                            ? 'text-red-500 font-bold' 
+                            : session.durationSeconds !== null && session.durationSeconds > 3600
+                              ? 'text-green-500'
+                              : ''
+                        }`}>
+                          {session.durationSeconds !== null ? formatUptime(session.durationSeconds) : '-'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={
+                          session.closeCode === 1000 ? "default" : 
+                          session.closeCode === 1006 ? "destructive" : 
+                          "secondary"
+                        } className="text-xs">
+                          {getCloseCodeLabel(session.closeCode)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
+                        {session.closeReason || '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Activity className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No hay historial de sesiones registrado.</p>
+              <p className="text-xs mt-1">El historial se genera automáticamente cuando la estación se conecta y desconecta.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+
+// ============================================================================
+// CONNECTION STABILITY OVERVIEW - Vista global de estabilidad en la grid
+// ============================================================================
+
+function ConnectionStabilityOverview({ formatUptime }: { formatUptime: (s: number) => string }) {
+  const [expanded, setExpanded] = useState(false);
+  const { data: stabilityReport, isLoading } = trpc.ocpp.getConnectionStability.useQuery(
+    undefined,
+    { refetchInterval: 15000 }
+  );
+
+  if (isLoading || !stabilityReport || stabilityReport.length === 0) return null;
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return "text-green-500";
+    if (score >= 50) return "text-yellow-500";
+    return "text-red-500";
+  };
+
+  const getScoreBg = (score: number) => {
+    if (score >= 80) return "bg-green-500/10";
+    if (score >= 50) return "bg-yellow-500/10";
+    return "bg-red-500/10";
+  };
+
+  // Calcular promedios globales
+  const avgScore = Math.round(
+    stabilityReport.reduce((acc: number, s: any) => acc + s.stabilityScore, 0) / stabilityReport.length
+  );
+  const totalReconnections = stabilityReport.reduce((acc: number, s: any) => acc + s.reconnectionCount24h, 0);
+  const unstableStations = stabilityReport.filter((s: any) => s.stabilityScore < 50);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Signal className="h-4 w-4 text-primary" />
+            <CardTitle className="text-base">Estabilidad de Conexiones</CardTitle>
+            <Badge variant="outline" className="ml-2">
+              {stabilityReport.length} estaciones
+            </Badge>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Score promedio:</span>
+              <span className={`font-bold ${getScoreColor(avgScore)}`}>{avgScore}/100</span>
+            </div>
+            {totalReconnections > 0 && (
+              <Badge variant={totalReconnections > 10 ? "destructive" : "secondary"} className="text-xs">
+                {totalReconnections} reconexiones (24h)
+              </Badge>
+            )}
+            {unstableStations.length > 0 && (
+              <Badge variant="destructive" className="text-xs">
+                {unstableStations.length} inestable{unstableStations.length > 1 ? 's' : ''}
+              </Badge>
+            )}
+            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </div>
+        </div>
+      </CardHeader>
+      {expanded && (
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Estación</TableHead>
+                  <TableHead className="text-center">Estado</TableHead>
+                  <TableHead className="text-center">Score</TableHead>
+                  <TableHead className="text-center">Uptime</TableHead>
+                  <TableHead className="text-center">Reconexiones (24h)</TableHead>
+                  <TableHead className="text-center">Duración Promedio</TableHead>
+                  <TableHead className="text-center">Última Desconexión</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stabilityReport.map((station: any) => (
+                  <TableRow key={station.ocppIdentity}>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium text-sm">{station.stationName}</p>
+                        <p className="text-xs text-muted-foreground font-mono">{station.ocppIdentity}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={station.isConnected ? "default" : "secondary"} className="text-xs">
+                        {station.isConnected ? "Conectado" : "Desconectado"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <span className={`inline-flex items-center justify-center w-12 h-8 rounded font-bold text-sm ${getScoreBg(station.stabilityScore)} ${getScoreColor(station.stabilityScore)}`}>
+                        {station.stabilityScore}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center font-mono text-sm">
+                      {station.isConnected ? formatUptime(station.currentUptimeSeconds) : '-'}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <span className={`font-bold ${station.reconnectionCount24h > 5 ? 'text-red-500' : station.reconnectionCount24h > 2 ? 'text-yellow-500' : 'text-green-500'}`}>
+                        {station.reconnectionCount24h}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center font-mono text-sm">
+                      {station.avgSessionDurationSeconds > 0 
+                        ? formatUptime(station.avgSessionDurationSeconds) 
+                        : '-'}
+                    </TableCell>
+                    <TableCell className="text-center text-xs text-muted-foreground">
+                      {station.lastDisconnection 
+                        ? new Date(station.lastDisconnection).toLocaleString('es-CO', { 
+                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
+                          })
+                        : '-'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      )}
+    </Card>
   );
 }

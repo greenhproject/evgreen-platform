@@ -460,6 +460,14 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       const durationSec = connectedAt ? Math.round((Date.now() - connectedAt) / 1000) : 0;
       const reasonStr = reason?.toString() || '';
       
+      // Registrar desconexión en el historial de estabilidad
+      ocppManager.recordDisconnection(
+        ocppIdentity,
+        new Date(connectedAt || Date.now()),
+        code,
+        reasonStr
+      );
+      
       console.log(`[OCPP] Connection closed: ${ocppIdentity}`, {
         code,
         reason: reasonStr,
