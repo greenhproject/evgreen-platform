@@ -1,0 +1,19 @@
+{
+  "query": "SELECT id, userId, evseId, reservation_status, isPenaltyApplied, reservationFee, noShowPenalty FROM reservations WHERE id = 60001",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT id, userId, evseId, reservation_status, isPenaltyApplied, reservationFee, noShowPenalty FROM reservations WHERE id = 60001",
+  "rows": [
+    {
+      "id": "60001",
+      "userId": "570001",
+      "evseId": "150001",
+      "reservation_status": "NO_SHOW",
+      "isPenaltyApplied": "1",
+      "reservationFee": "5350.00",
+      "noShowPenalty": "16050.00"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tevseId\treservation_status\tisPenaltyApplied\treservationFee\tnoShowPenalty\n60001\t570001\t150001\tNO_SHOW\t1\t5350.00\t16050.00\n",
+  "stderr": "",
+  "execution_time_ms": 347
+}

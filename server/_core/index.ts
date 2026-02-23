@@ -14,6 +14,7 @@ import { startBillingCronJob } from "../wompi/recurring-billing";
 import { startTransactionCleanupJob } from "../jobs/transaction-cleanup";
 import { startBalanceMonitor } from "../charging/balance-monitor";
 import { startOverstayMonitor } from "../charging/overstay-monitor";
+import { reservationJobs } from "../notifications/reservation-notifications";
 import * as ocppManager from "../ocpp/connection-manager";
 import * as alertsService from "../ocpp/alerts-service";
 
@@ -341,6 +342,27 @@ async function startServer() {
     
     // Iniciar monitoreo de tarifa de ocupación (overstay) cada 60s
     startOverstayMonitor();
+    
+    // Iniciar procesamiento de reservas vencidas (no-show) cada 60 segundos
+    setInterval(async () => {
+      try {
+        await reservationJobs.processNoShows();
+      } catch (e) {
+        console.error("[ReservationJobs] Error in processNoShows:", e);
+      }
+    }, 60_000);
+    // Ejecutar inmediatamente al iniciar
+    reservationJobs.processNoShows().catch(e => console.error("[ReservationJobs] Initial processNoShows error:", e));
+    
+    // Iniciar procesamiento de recordatorios de reservas cada 60 segundos
+    setInterval(async () => {
+      try {
+        await reservationJobs.processReminders();
+      } catch (e) {
+        console.error("[ReservationJobs] Error in processReminders:", e);
+      }
+    }, 60_000);
+    console.log("[ReservationJobs] No-show processor and reminders started (every 60s)");
   });
 }
 

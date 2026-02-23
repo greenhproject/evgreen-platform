@@ -1695,3 +1695,11 @@
 - [x] Agregar botón "Ver reservas" y "Cancelar" cuando el usuario actual es el dueño
 - [x] Mostrar info de la reserva activa (fecha, hora, tarifa)
 - [x] Otros usuarios ven mensaje "Este conector está reservado por otro usuario"
+
+## Bug: Reservas vencidas no expiran automáticamente - 23 Feb 2026
+- [x] Implementar job periódico que expire reservas vencidas (cada 60s)
+- [x] Marcar reserva como NO_SHOW cuando expira sin uso (15 min de gracia)
+- [x] Cobrar penalización por no-show al usuario (descuento de billetera)
+- [x] Liberar EVSE a AVAILABLE cuando la reserva expira
+- [x] Liberar la reserva vencida actual (EVSE 150001 -> AVAILABLE, reserva 60001 -> NO_SHOW)
+- [x] Registrar job en server/_core/index.ts con setInterval + ejecución inmediata al iniciar
