@@ -1638,3 +1638,11 @@
 - [x] Card de precios: p-3 sm:p-4 + overflow-hidden para evitar desbordamiento
 - [x] Total estimado: reducido de text-base a text-sm para caber en móvil
 - [x] Penalización: texto con break-words + leading-relaxed + bold en monto
+
+## Bug: Modal de reservas sigue demasiado ancho en móvil - 23 Feb 2026 [CORREGIDO]
+- [x] DialogContent base tiene max-w-[calc(100%-2rem)] + sm:max-w-lg que es demasiado ancho
+- [x] Override con !max-w-[92vw] sm:!max-w-md y !p-3 sm:!p-5
+- [x] Precios simplificados: quitar "COP/" redundante, labels cortos (Base, Dinámico, Reserva)
+- [x] Font sizes reducidos a text-[11px] para precios, text-[10px] para penalización
+- [x] Badge de demanda compacto: text-[10px] px-1.5 py-0
+- [x] Card padding reducido a p-2.5 sm:p-4
