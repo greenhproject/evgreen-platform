@@ -1,0 +1,31 @@
+{
+  "query": "SELECT t.id, t.stationId, t.name, t.pricePerKwh, cs.name as station_name FROM tariffs t LEFT JOIN charging_stations cs ON t.stationId = cs.id WHERE t.isActive = 1 ORDER BY t.id",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT t.id, t.stationId, t.name, t.pricePerKwh, cs.name as station_name FROM tariffs t LEFT JOIN charging_stations cs ON t.stationId = cs.id WHERE t.isActive = 1 ORDER BY t.id",
+  "rows": [
+    {
+      "id": "30002",
+      "stationId": "1",
+      "name": "Tarifa Green EV Mosquera - Sede Principal",
+      "pricePerKwh": "1300.00",
+      "station_name": "NULL"
+    },
+    {
+      "id": "60001",
+      "stationId": "60001",
+      "name": "Tarifa Test charging",
+      "pricePerKwh": "1800.00",
+      "station_name": "NULL"
+    },
+    {
+      "id": "90001",
+      "stationId": "150001",
+      "name": "Tarifa Estándar",
+      "pricePerKwh": "1300.00",
+      "station_name": "EVG diamante oriental"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstationId\tname\tpricePerKwh\tstation_name\n30002\t1\tTarifa Green EV Mosquera - Sede Principal\t1300.00\tNULL\n60001\t60001\tTarifa Test charging\t1800.00\tNULL\n90001\t150001\tTarifa Estándar\t1300.00\tEVG diamante oriental\n",
+  "stderr": "",
+  "execution_time_ms": 63
+}

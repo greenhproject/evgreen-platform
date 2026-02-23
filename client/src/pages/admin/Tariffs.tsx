@@ -280,6 +280,11 @@ export default function AdminTariffs() {
       toast.error("El precio por kWh debe ser un número válido");
       return;
     }
+    // Validar contra rangos globales
+    if (priceRanges && (pricePerKwh < priceRanges.minPrice || pricePerKwh > priceRanges.maxPrice)) {
+      toast.error(`El precio por kWh ($${pricePerKwh.toLocaleString("es-CO")}) debe estar entre $${priceRanges.minPrice.toLocaleString("es-CO")} y $${priceRanges.maxPrice.toLocaleString("es-CO")} COP`);
+      return;
+    }
     if (isNaN(reservationFee) || reservationFee < 0) {
       toast.error("La tarifa de reserva debe ser un número válido");
       return;
@@ -1026,6 +1031,15 @@ export default function AdminTariffs() {
                 <p className="text-xs text-muted-foreground">
                   Precio base que se cobra por cada kilovatio-hora consumido
                 </p>
+                {priceRanges && (
+                  <p className={`text-xs mt-1 font-medium ${
+                    editForm.pricePerKwh && (parseFloat(editForm.pricePerKwh) < priceRanges.minPrice || parseFloat(editForm.pricePerKwh) > priceRanges.maxPrice)
+                      ? "text-red-500"
+                      : "text-emerald-600"
+                  }`}>
+                    Rango permitido: ${priceRanges.minPrice.toLocaleString("es-CO")} - ${priceRanges.maxPrice.toLocaleString("es-CO")} COP/kWh
+                  </p>
+                )}
               </div>
 
               {/* Tarifa de reserva */}
