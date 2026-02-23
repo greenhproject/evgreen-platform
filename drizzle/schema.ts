@@ -1813,3 +1813,59 @@ export type InsertChargerBrand = typeof chargerBrands.$inferInsert;
 export const chargerBrandsRelations = relations(chargerBrands, ({ many }) => ({
   stations: many(chargingStations),
 }));
+
+
+// ============================================================================
+// TARIFF CHANGE LOG (Historial de cambios de tarifas para auditoría)
+// ============================================================================
+
+export const tariffChangeTypeEnum = mysqlEnum("tariff_change_type", [
+  "CREATE",       // Tarifa creada
+  "UPDATE",       // Tarifa actualizada
+  "GLOBAL_UPDATE", // Rangos globales actualizados
+  "DEACTIVATE",   // Tarifa desactivada
+]);
+
+export const tariffChangeLogs = mysqlTable("tariff_change_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Referencia a la tarifa y estación
+  tariffId: int("tariffId"),           // FK a tariffs (null para cambios globales)
+  stationId: int("stationId"),         // FK a charging_stations (null para cambios globales)
+  
+  // Quién hizo el cambio
+  changedBy: int("changedBy").notNull(), // FK a users
+  changedByName: varchar("changedByName", { length: 255 }),
+  changedByRole: varchar("changedByRole", { length: 50 }),
+  
+  // Tipo de cambio
+  changeType: tariffChangeTypeEnum.notNull(),
+  
+  // Valores anteriores y nuevos (JSON)
+  previousValues: json("previousValues"), // { pricePerKwh: "1200", ... }
+  newValues: json("newValues"),           // { pricePerKwh: "1300", ... }
+  
+  // Descripción legible del cambio
+  description: text("description"),
+  
+  // Timestamp
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type TariffChangeLog = typeof tariffChangeLogs.$inferSelect;
+export type InsertTariffChangeLog = typeof tariffChangeLogs.$inferInsert;
+
+export const tariffChangeLogsRelations = relations(tariffChangeLogs, ({ one }) => ({
+  tariff: one(tariffs, {
+    fields: [tariffChangeLogs.tariffId],
+    references: [tariffs.id],
+  }),
+  station: one(chargingStations, {
+    fields: [tariffChangeLogs.stationId],
+    references: [chargingStations.id],
+  }),
+  user: one(users, {
+    fields: [tariffChangeLogs.changedBy],
+    references: [users.id],
+  }),
+}));

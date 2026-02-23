@@ -150,7 +150,7 @@ export default function AdminBanners() {
     },
   });
 
-  const toggleActiveMutation = trpc.banners.toggleActive.useMutation({
+  const toggleActiveMutation = trpc.banners.toggleStatus.useMutation({
     onSuccess: () => {
       refetch();
     },

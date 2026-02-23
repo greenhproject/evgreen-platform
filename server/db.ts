@@ -66,6 +66,9 @@ import {
   chargerBrands,
   ChargerBrand,
   InsertChargerBrand,
+  tariffChangeLogs,
+  TariffChangeLog,
+  InsertTariffChangeLog,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -4796,4 +4799,91 @@ export async function getChargerBrandForStation(stationId: number) {
   if (!station[0]?.chargerBrandId) return null;
   
   return getChargerBrandById(station[0].chargerBrandId);
+}
+
+
+// ============================================================================
+// TARIFF CHANGE LOG OPERATIONS (Auditoría de cambios de tarifas)
+// ============================================================================
+
+export async function createTariffChangeLog(log: InsertTariffChangeLog): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(tariffChangeLogs).values(log);
+  return result[0].insertId;
+}
+
+export async function getTariffChangeLogs(filters?: {
+  tariffId?: number;
+  stationId?: number;
+  changedBy?: number;
+  changeType?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<TariffChangeLog[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [];
+  if (filters?.tariffId) conditions.push(eq(tariffChangeLogs.tariffId, filters.tariffId));
+  if (filters?.stationId) conditions.push(eq(tariffChangeLogs.stationId, filters.stationId));
+  if (filters?.changedBy) conditions.push(eq(tariffChangeLogs.changedBy, filters.changedBy));
+  
+  const query = db.select().from(tariffChangeLogs);
+  
+  if (conditions.length > 0) {
+    return query
+      .where(and(...conditions))
+      .orderBy(desc(tariffChangeLogs.createdAt))
+      .limit(filters?.limit || 50)
+      .offset(filters?.offset || 0);
+  }
+  
+  return query
+    .orderBy(desc(tariffChangeLogs.createdAt))
+    .limit(filters?.limit || 50)
+    .offset(filters?.offset || 0);
+}
+
+export async function getTariffChangeLogsByStation(stationId: number, limit = 50): Promise<TariffChangeLog[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(tariffChangeLogs)
+    .where(eq(tariffChangeLogs.stationId, stationId))
+    .orderBy(desc(tariffChangeLogs.createdAt))
+    .limit(limit);
+}
+
+// Obtener todos los inversionistas con estaciones activas (para notificaciones)
+export async function getInvestorsWithActiveStations(): Promise<Array<{
+  userId: number;
+  userName: string | null;
+  email: string | null;
+  fcmToken: string | null;
+  stationCount: number;
+}>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const results = await db.execute(sql`
+    SELECT 
+      u.id as userId,
+      u.name as userName,
+      u.email as email,
+      u.fcmToken as fcmToken,
+      COUNT(cs.id) as stationCount
+    FROM users u
+    INNER JOIN charging_stations cs ON cs.ownerId = u.id AND cs.isActive = 1
+    WHERE u.role = 'investor'
+    GROUP BY u.id, u.name, u.email, u.fcmToken
+  `);
+  
+  const rows = (results as any)[0] as any[];
+  return rows.map(r => ({
+    userId: r.userId,
+    userName: r.userName,
+    email: r.email,
+    fcmToken: r.fcmToken,
+    stationCount: Number(r.stationCount),
+  }));
 }

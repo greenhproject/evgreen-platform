@@ -1562,3 +1562,23 @@
 - [x] Corregir tarifas existentes que violen el rango (diamante oriental y sede principal $1,200 → $1,300)
 - [x] Corregir CSS @import order (Google Fonts antes de tw-animate-css)
 - [x] Verificar TypeScript sin errores (0 errores), 8 tests nuevos pasan
+
+## Mejoras de Tarifas - 22 Feb 2026 [COMPLETADO]
+
+### Historial de cambios de tarifas (Auditoría)
+- [x] Crear tabla tariff_change_logs en BD (id, tariffId, stationId, changedBy, changeType, previousValues, newValues, createdAt)
+- [x] Registrar cada cambio de tarifa en el log (create, update, updateByStation, updatePriceRanges)
+- [x] Endpoints getChangeLogs y getChangeLogsByStation para consultar historial
+- [x] UI admin: sección de historial de cambios con tabla de auditoría (TariffChangeLogTable)
+
+### Notificación al inversionista cuando cambien rangos globales
+- [x] Detectar cambio de rangos globales en updatePriceRanges (comparar previousRanges vs input)
+- [x] Obtener lista de inversionistas con estaciones activas (getInvestorsWithActiveStations)
+- [x] Enviar notificación in-app (createNotification) y push FCM a cada inversionista
+- [x] Incluir rangos anteriores vs nuevos en la notificación
+
+### Validación de precios AC/DC diferenciados contra rangos globales
+- [x] Backend: validar precios AC y DC contra rango global (minPrice/maxPrice) en updatePriceRanges
+- [x] Backend: validar que AC <= DC cuando precios diferenciados están habilitados
+- [x] Frontend: validación de AC/DC en handleSavePriceRanges (admin Tariffs.tsx)
+- [x] 21 tests unitarios pasan (validación básica, AC/DC, audit log, notificaciones)

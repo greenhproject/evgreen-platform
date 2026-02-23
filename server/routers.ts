@@ -769,6 +769,22 @@ const tariffsRouter = router({
       }
       
       const id = await db.createTariff({ ...input, isActive: true });
+      
+      // Registrar en log de auditoría
+      try {
+        await db.createTariffChangeLog({
+          tariffId: id,
+          stationId: input.stationId,
+          changedBy: ctx.user.id,
+          changedByName: ctx.user.name || 'Sin nombre',
+          changedByRole: ctx.user.role || 'unknown',
+          changeType: 'CREATE',
+          previousValues: null,
+          newValues: { pricePerKwh: input.pricePerKwh, reservationFee: input.reservationFee, name: input.name },
+          description: `Tarifa "${input.name}" creada para estación ${station?.name || input.stationId} con precio $${input.pricePerKwh} COP/kWh`,
+        });
+      } catch (e) { console.error('[AuditLog] Error logging tariff create:', e); }
+      
       return { id };
     }),
   
@@ -860,11 +876,26 @@ const tariffsRouter = router({
       }
       
       if (tariff) {
+        // Registrar cambio en log de auditoría
+        try {
+          await db.createTariffChangeLog({
+            tariffId: tariff.id,
+            stationId: input.stationId,
+            changedBy: ctx.user.id,
+            changedByName: ctx.user.name || 'Sin nombre',
+            changedByRole: ctx.user.role || 'unknown',
+            changeType: 'UPDATE',
+            previousValues: { pricePerKwh: tariff.pricePerKwh, reservationFee: tariff.reservationFee, overstayPenaltyPerMinute: tariff.overstayPenaltyPerMinute, autoPricing: tariff.autoPricing },
+            newValues: { pricePerKwh: input.pricePerKwh.toString(), reservationFee: input.reservationFee.toString(), overstayPenaltyPerMinute: input.idleFeePerMin.toString(), autoPricing: input.autoPricing },
+            description: `Tarifa de estación ${station?.name || input.stationId} actualizada: $${tariff.pricePerKwh} → $${input.pricePerKwh} COP/kWh`,
+          });
+        } catch (e) { console.error('[AuditLog] Error logging tariff updateByStation:', e); }
+        
         // Actualizar tarifa existente
         await db.updateTariff(tariff.id, tariffData);
       } else {
         // Crear nueva tarifa
-        await db.createTariff({
+        const newId = await db.createTariff({
           stationId: input.stationId,
           name: "Tarifa Estándar",
           pricePerKwh: input.pricePerKwh.toString(),
@@ -875,6 +906,21 @@ const tariffsRouter = router({
           overstayGracePeriodMinutes: input.overstayGracePeriodMinutes,
           isActive: true,
         });
+        
+        // Registrar creación en log de auditoría
+        try {
+          await db.createTariffChangeLog({
+            tariffId: newId,
+            stationId: input.stationId,
+            changedBy: ctx.user.id,
+            changedByName: ctx.user.name || 'Sin nombre',
+            changedByRole: ctx.user.role || 'unknown',
+            changeType: 'CREATE',
+            previousValues: null,
+            newValues: { pricePerKwh: input.pricePerKwh.toString(), reservationFee: input.reservationFee.toString() },
+            description: `Tarifa estándar creada para estación ${station?.name || input.stationId} con precio $${input.pricePerKwh} COP/kWh`,
+          });
+        } catch (e) { console.error('[AuditLog] Error logging tariff create via updateByStation:', e); }
       }
       
       return { success: true };
@@ -985,15 +1031,33 @@ const tariffsRouter = router({
           });
         }
       }
-      // Validar que AC sea menor que DC si precios diferenciados est\u00e1n habilitados
+      //       // Validar que AC sea menor que DC si precios diferenciados están habilitados
       if (input.enableDifferentiatedPricing && input.defaultPricePerKwhAC && input.defaultPricePerKwhDC) {
         if (input.defaultPricePerKwhAC > input.defaultPricePerKwhDC) {
           throw new TRPCError({ 
             code: "BAD_REQUEST", 
-            message: "El precio AC (carga lenta) debe ser menor o igual al precio DC (carga r\u00e1pida)" 
+            message: "El precio AC (carga lenta) debe ser menor o igual al precio DC (carga rápida)" 
           });
         }
       }
+      // Validar que precios AC y DC estén dentro del rango global
+      if (input.enableDifferentiatedPricing) {
+        if (input.defaultPricePerKwhAC !== undefined && (input.defaultPricePerKwhAC < input.minPrice || input.defaultPricePerKwhAC > input.maxPrice)) {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: `El precio AC ($${input.defaultPricePerKwhAC.toLocaleString("es-CO")}) debe estar dentro del rango global ($${input.minPrice.toLocaleString("es-CO")} - $${input.maxPrice.toLocaleString("es-CO")})` 
+          });
+        }
+        if (input.defaultPricePerKwhDC !== undefined && (input.defaultPricePerKwhDC < input.minPrice || input.defaultPricePerKwhDC > input.maxPrice)) {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: `El precio DC ($${input.defaultPricePerKwhDC.toLocaleString("es-CO")}) debe estar dentro del rango global ($${input.minPrice.toLocaleString("es-CO")} - $${input.maxPrice.toLocaleString("es-CO")})` 
+          });
+        }
+      }
+      // Obtener rangos anteriores para comparación
+      const previousRanges = await db.getPriceRanges();
+      
       await db.updatePriceRanges(
         input.minPrice, 
         input.maxPrice, 
@@ -1008,6 +1072,52 @@ const tariffsRouter = router({
         input.defaultBasePricePerKwh,
         input.defaultOverstayGracePeriodMinutes
       );
+      
+      // Registrar cambio global en log de auditoría
+      try {
+        await db.createTariffChangeLog({
+          tariffId: null,
+          stationId: null,
+          changedBy: ctx.user.id,
+          changedByName: ctx.user.name || 'Sin nombre',
+          changedByRole: ctx.user.role || 'unknown',
+          changeType: 'GLOBAL_UPDATE',
+          previousValues: { minPrice: previousRanges.minPrice, maxPrice: previousRanges.maxPrice, defaultBasePricePerKwh: previousRanges.defaultBasePricePerKwh, defaultPricePerKwhAC: previousRanges.defaultPricePerKwhAC, defaultPricePerKwhDC: previousRanges.defaultPricePerKwhDC },
+          newValues: { minPrice: input.minPrice, maxPrice: input.maxPrice, defaultBasePricePerKwh: input.defaultBasePricePerKwh, defaultPricePerKwhAC: input.defaultPricePerKwhAC, defaultPricePerKwhDC: input.defaultPricePerKwhDC },
+          description: `Rangos globales actualizados: $${previousRanges.minPrice.toLocaleString("es-CO")} - $${previousRanges.maxPrice.toLocaleString("es-CO")} → $${input.minPrice.toLocaleString("es-CO")} - $${input.maxPrice.toLocaleString("es-CO")} COP/kWh`,
+        });
+      } catch (e) { console.error('[AuditLog] Error logging global price update:', e); }
+      
+      // Notificar a inversionistas si los rangos de precio cambiaron
+      const rangesChanged = previousRanges.minPrice !== input.minPrice || previousRanges.maxPrice !== input.maxPrice;
+      if (rangesChanged) {
+        try {
+          const investors = await db.getInvestorsWithActiveStations();
+          const { sendPushNotification } = await import("./firebase/fcm");
+          
+          for (const investor of investors) {
+            // Crear notificación in-app
+            await db.createNotification({
+              userId: investor.userId,
+              title: "Actualización de rangos de precio",
+              message: `Los rangos globales de precio han sido actualizados por el administrador. Nuevo rango: $${input.minPrice.toLocaleString("es-CO")} - $${input.maxPrice.toLocaleString("es-CO")} COP/kWh. Verifica que tus tarifas estén dentro del rango permitido.`,
+              type: "SYSTEM",
+              data: JSON.stringify({ previousMin: previousRanges.minPrice, previousMax: previousRanges.maxPrice, newMin: input.minPrice, newMax: input.maxPrice }),
+            });
+            
+            // Enviar push notification si tiene token FCM
+            if (investor.fcmToken) {
+              await sendPushNotification(investor.fcmToken, {
+                type: "system_alert",
+                title: "Rangos de precio actualizados",
+                body: `Nuevo rango: $${input.minPrice.toLocaleString("es-CO")} - $${input.maxPrice.toLocaleString("es-CO")} COP/kWh`,
+              }).catch(() => {});
+            }
+          }
+          console.log(`[Notifications] Notificados ${investors.length} inversionistas sobre cambio de rangos globales`);
+        } catch (e) { console.error('[Notifications] Error notifying investors:', e); }
+      }
+      
       return { success: true };
     }),
   
@@ -1015,6 +1125,25 @@ const tariffsRouter = router({
   getInvestorDemand: investorProcedure
     .query(async ({ ctx }) => {
       return db.getInvestorStationsDemand(ctx.user.id);
+    }),
+  
+  // Obtener historial de cambios de tarifas (auditoría)
+  getChangeLogs: adminProcedure
+    .input(z.object({
+      stationId: z.number().optional(),
+      tariffId: z.number().optional(),
+      limit: z.number().optional().default(50),
+      offset: z.number().optional().default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getTariffChangeLogs(input || {});
+    }),
+  
+  // Obtener historial de cambios por estación específica
+  getChangeLogsByStation: protectedProcedure
+    .input(z.object({ stationId: z.number(), limit: z.number().optional().default(20) }))
+    .query(async ({ input }) => {
+      return db.getTariffChangeLogsByStation(input.stationId, input.limit);
     }),
 });
 
@@ -2193,7 +2322,7 @@ const bannersRouter = router({
       return { success: true };
     }),
   
-  toggleActive: adminProcedure
+  toggleStatus: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const banner = await db.getBannerById(input.id);
