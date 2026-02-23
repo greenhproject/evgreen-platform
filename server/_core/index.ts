@@ -161,16 +161,25 @@ async function startServer() {
     }
   });
 
-  // Ping/Pong para mantener conexiones vivas
-  // IMPORTANTE: El intervalo debe ser menor que el timeout del proxy (estimado ~120-180s)
-  // Usamos 20s para asegurar que siempre haya actividad en la conexión TCP
+  // ============================================================================
+  // ESTRATEGIA ANTI-PROXY-TIMEOUT (3 capas)
+  // ============================================================================
+  // El proxy externo (Manus/Railway/Nginx) tiene un timeout de ~180s para WebSocket.
+  // Los frames de control (ping/pong) NO resetean este timeout en muchos proxies.
+  // Necesitamos enviar DATOS REALES por el WebSocket para resetear el proxy_read_timeout.
+  //
+  // Capa 1: WebSocket ping/pong (cada 20s) - mantiene el protocolo WS vivo
+  // Capa 2: OCPP TriggerMessage Heartbeat (cada 90s) - genera tráfico de datos bidireccional
+  // Capa 3: OCPP ChangeConfiguration HeartbeatInterval=30 - el cargador envía heartbeats frecuentes
+  // ============================================================================
+
+  // CAPA 1: WebSocket ping/pong estándar (frame de control)
   const WS_PING_INTERVAL_MS = 20000; // 20 segundos
   let pingCount = 0;
   const pingInterval = setInterval(() => {
     const clientCount = wss.clients.size;
     if (clientCount > 0) {
       pingCount++;
-      // Log cada 15 pings (cada 5 minutos) para no saturar logs
       if (pingCount % 15 === 0) {
         console.log(`[OCPP] Ping keepalive #${pingCount} - ${clientCount} client(s) connected`);
       }
@@ -190,8 +199,36 @@ async function startServer() {
     });
   }, WS_PING_INTERVAL_MS);
 
+  // CAPA 2: Enviar TriggerMessage(Heartbeat) OCPP cada 90s para generar tráfico de DATOS reales
+  // Esto es un mensaje OCPP real [2, "keepalive-xxx", "TriggerMessage", {"requestedMessage": "Heartbeat"}]
+  // que genera una respuesta del cargador, reseteando el proxy_read_timeout
+  const OCPP_KEEPALIVE_INTERVAL_MS = 90000; // 90 segundos (bien por debajo de los 180s del proxy)
+  let keepaliveCount = 0;
+  const ocppKeepaliveInterval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if (ws.readyState !== 1) return; // Solo OPEN
+      const identity = (ws as any)._ocppIdentity || 'unknown';
+      keepaliveCount++;
+      
+      try {
+        // Enviar TriggerMessage para solicitar un Heartbeat del cargador
+        // Esto genera tráfico bidireccional real (datos, no control frames)
+        const messageId = `keepalive-${Date.now()}-${keepaliveCount}`;
+        const triggerMsg = JSON.stringify([2, messageId, "TriggerMessage", { requestedMessage: "Heartbeat" }]);
+        ws.send(triggerMsg);
+        
+        if (keepaliveCount % 10 === 0) {
+          console.log(`[OCPP] Keepalive TriggerMessage #${keepaliveCount} sent to ${identity}`);
+        }
+      } catch (err) {
+        console.error(`[OCPP] Error sending keepalive TriggerMessage to ${identity}:`, err);
+      }
+    });
+  }, OCPP_KEEPALIVE_INTERVAL_MS);
+
   wss.on("close", () => {
     clearInterval(pingInterval);
+    clearInterval(ocppKeepaliveInterval);
   });
 
   // Manejar upgrade de HTTP a WebSocket para rutas OCPP
@@ -355,6 +392,31 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
         const message = JSON.parse(data.toString());
         const messageType = message[0];
 
+        // Manejar CALLRESULT (tipo 3) - respuestas del cargador a nuestros comandos
+        if (messageType === 3) {
+          const [, messageId, payload] = message;
+          // Ignorar silenciosamente respuestas a keepalive y configuración automática
+          if (messageId.startsWith('keepalive-') || messageId.startsWith('cfg-hb-') || messageId.startsWith('trigger-hb-')) {
+            // Respuesta a nuestro TriggerMessage/ChangeConfiguration keepalive - OK, proxy timeout reseteado
+            ocppManager.updateLastMessage(ocppIdentity);
+            return;
+          }
+          console.log(`[OCPP] ${ocppIdentity} -> CALLRESULT [${messageId}]:`, JSON.stringify(payload).substring(0, 200));
+          return;
+        }
+
+        // Manejar CALLERROR (tipo 4) - errores del cargador
+        if (messageType === 4) {
+          const [, messageId, errorCode, errorDescription] = message;
+          if (messageId.startsWith('keepalive-') || messageId.startsWith('cfg-hb-') || messageId.startsWith('trigger-hb-')) {
+            // Error en keepalive - ignorar silenciosamente (algunos cargadores no soportan TriggerMessage)
+            console.log(`[OCPP] ${ocppIdentity} -> Keepalive command not supported: ${errorCode} - ${errorDescription}`);
+            return;
+          }
+          console.log(`[OCPP] ${ocppIdentity} -> CALLERROR [${messageId}]: ${errorCode} - ${errorDescription}`);
+          return;
+        }
+
         if (messageType === 2) { // CALL
           const [, messageId, action, payload] = message;
           console.log(`[OCPP] ${ocppIdentity} -> ${action}:`, JSON.stringify(payload).substring(0, 200));
@@ -408,6 +470,35 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
               firmwareVersion: payload.chargingStation?.firmwareVersion,
             };
             ocppManager.updateBootInfo(ocppIdentity, bootInfo, stationId);
+            
+            // CAPA 3: Después de BootNotification, configurar HeartbeatInterval agresivo
+            // para generar tráfico de datos bidireccional frecuente que resetee el proxy timeout
+            setTimeout(() => {
+              try {
+                if (ws.readyState === 1) {
+                  // Reducir HeartbeatInterval a 30 segundos (por defecto suele ser 60-300s)
+                  const changeConfigMsg = JSON.stringify([2, `cfg-hb-${Date.now()}`, "ChangeConfiguration", {
+                    key: "HeartbeatInterval",
+                    value: "30"
+                  }]);
+                  ws.send(changeConfigMsg);
+                  console.log(`[OCPP] Sent ChangeConfiguration HeartbeatInterval=30 to ${ocppIdentity}`);
+                  
+                  // También solicitar un Heartbeat inmediato para generar tráfico
+                  setTimeout(() => {
+                    if (ws.readyState === 1) {
+                      const triggerMsg = JSON.stringify([2, `trigger-hb-${Date.now()}`, "TriggerMessage", {
+                        requestedMessage: "Heartbeat"
+                      }]);
+                      ws.send(triggerMsg);
+                      console.log(`[OCPP] Sent initial TriggerMessage Heartbeat to ${ocppIdentity}`);
+                    }
+                  }, 2000);
+                }
+              } catch (err) {
+                console.error(`[OCPP] Error sending post-boot configuration to ${ocppIdentity}:`, err);
+              }
+            }, 3000); // Esperar 3s después de BootNotification para que el cargador esté listo
           }
           
           // Actualizar heartbeat
@@ -568,7 +659,7 @@ async function handleOCPP16Message(
       }
       return {
         currentTime: new Date().toISOString(),
-        interval: 60,
+        interval: 30, // Heartbeat cada 30s para mantener proxy activo (era 60)
         status: station ? "Accepted" : "Pending",
         _stationId: station?.id,
       };
@@ -1417,7 +1508,7 @@ async function handleOCPP201Message(
       }
       return {
         currentTime: new Date().toISOString(),
-        interval: 60,
+        interval: 30, // Heartbeat cada 30s para mantener proxy activo (era 60)
         status: station ? "Accepted" : "Pending",
         _stationId: station?.id,
       };
