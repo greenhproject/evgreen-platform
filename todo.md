@@ -1582,3 +1582,18 @@
 - [x] Backend: validar que AC <= DC cuando precios diferenciados están habilitados
 - [x] Frontend: validación de AC/DC en handleSavePriceRanges (admin Tariffs.tsx)
 - [x] 21 tests unitarios pasan (validación básica, AC/DC, audit log, notificaciones)
+
+## Bug: Desconexión cíclica OCPP estación EVG001 (Wallbox) - 23 Feb 2026 [CORREGIDO]
+- [x] Analizar logs OCPP: patrón de desconexión cada ~180s (3 min), 3 heartbeats por ciclo
+- [x] Examinar código WebSocket: ping/pong 30s, sin TCP keep-alive, sin config de timeout HTTP
+- [x] Causa raíz: timeout de proxy/transporte TCP ~180s; heartbeat OCPP (capa aplicación) no previene cierre TCP
+- [x] Correcciones implementadas:
+  - server.timeout/keepAliveTimeout/headersTimeout/requestTimeout = 0
+  - Ping/pong WebSocket reducido de 30s a 20s (legacy + DualCSMS)
+  - TCP keep-alive habilitado a 15s en socket de upgrade
+  - setNoDelay(true) para respuestas inmediatas
+  - socket.setTimeout(0) sin timeout TCP
+  - Logging mejorado: closeCode, closeReason, connectionDurationSeconds, wasAlive
+  - _ocppIdentity guardado en ws para tracking de pings
+  - Pong actualiza lastMessage en connection-manager
+- [x] 0 errores TypeScript, 18 tests nuevos pasan
