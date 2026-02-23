@@ -1597,3 +1597,12 @@
   - _ocppIdentity guardado en ws para tracking de pings
   - Pong actualiza lastMessage en connection-manager
 - [x] 0 errores TypeScript, 18 tests nuevos pasan
+
+## Monitoreo de Conexión Continua OCPP - 23 Feb 2026 [COMPLETADO]
+- [x] Endpoint backend: getConnectionStability (uptime, score, reconexiones 24h, duración promedio)
+- [x] Endpoint backend: getConnectionHistory (historial de sesiones con duración y código cierre)
+- [x] Backend: recordDisconnection en connection-manager + hook en close handler
+- [x] Backend: getConnectionStabilityReport con score 0-100 y estadísticas
+- [x] UI: Tab "Estabilidad" en ChargerDetailView (score, uptime, reconexiones, historial)
+- [x] UI: ConnectionStabilityOverview colapsable en ChargerGridView (vista global)
+- [x] 15 tests unitarios pasan (score, close codes, historial, límites)

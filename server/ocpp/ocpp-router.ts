@@ -956,6 +956,66 @@ export const ocppRouter = router({
     }),
 
   // ============================================================================
+  // CONNECTION STABILITY MONITORING
+  // ============================================================================
+
+  /**
+   * Obtener reporte de estabilidad de conexión de todas las estaciones
+   * Incluye: uptime actual, reconexiones en 24h, duración promedio, score de estabilidad
+   */
+  getConnectionStability: ocppProcedure.query(async () => {
+    const report = ocppManager.getConnectionStabilityReport();
+    
+    // Enriquecer con nombres de estaciones desde BD
+    const enriched = await Promise.all(
+      report.map(async (entry) => {
+        let stationName = entry.ocppIdentity;
+        let stationAddress = '';
+        try {
+          if (entry.stationId) {
+            const station = await db.getChargingStationById(entry.stationId);
+            if (station) {
+              stationName = station.name;
+              stationAddress = station.address || '';
+            }
+          } else {
+            const station = await db.getChargingStationByOcppIdentity(entry.ocppIdentity);
+            if (station) {
+              stationName = station.name;
+              stationAddress = station.address || '';
+            }
+          }
+        } catch (e) {
+          // Ignore
+        }
+        return {
+          ...entry,
+          stationName,
+          stationAddress,
+        };
+      })
+    );
+    
+    return enriched;
+  }),
+
+  /**
+   * Obtener historial de sesiones de conexión de una estación específica
+   */
+  getConnectionHistory: ocppProcedure
+    .input(z.object({
+      ocppIdentity: z.string(),
+    }))
+    .query(async ({ input }) => {
+      const history = ocppManager.getConnectionHistory(input.ocppIdentity);
+      return history.map(session => ({
+        ...session,
+        connectedAt: session.connectedAt.toISOString(),
+        disconnectedAt: session.disconnectedAt?.toISOString() || null,
+      }));
+    }),
+
+  // ============================================================================
   // STATION HEALTH MONITORING
   // ============================================================================
 
