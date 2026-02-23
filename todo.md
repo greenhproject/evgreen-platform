@@ -1678,7 +1678,7 @@
 - [ ] El EVSE debe mostrar "Reservado" a todos, no solo al usuario que reservó
 
 
-## Bug CRÍTICO: Correcciones definitivas de reservas - 23 Feb 2026 (3ra iteración)
+## Bug CRÍTICO: Correcciones definitivas de reservas - 23 Feb 2026 (v3 - DEFINITIVO)
 - [x] Modal responsive: Reescrito completamente como Sheet bottom (slide-up) en vez de Dialog
 - [x] Sheet bottom con handle visual, scroll interno, y botón fijo abajo
 - [x] Fecha y hora en una fila (grid 2 cols) para mejor uso del espacio
