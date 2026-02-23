@@ -693,6 +693,15 @@ export class DualCSMS {
         const newStatus = (statusMap[req.status] || "UNAVAILABLE") as "AVAILABLE" | "PREPARING" | "CHARGING" | "SUSPENDED_EVSE" | "SUSPENDED_EV" | "FINISHING" | "RESERVED" | "UNAVAILABLE" | "FAULTED";
         const oldStatus = evse.status;
         
+        // NO sobreescribir RESERVED→AVAILABLE si hay una reserva activa para este EVSE
+        if (newStatus === "AVAILABLE" && oldStatus === "RESERVED") {
+          const activeRes = await db.getActiveReservation(evse.id);
+          if (activeRes) {
+            console.log(`[CSMS-DUAL] StatusNotification: Ignoring AVAILABLE for EVSE ${evse.id} - has active reservation #${activeRes.id}`);
+            return {};
+          }
+        }
+        
         await db.updateEvseStatus(evse.id, newStatus);
         console.log(`[CSMS-DUAL] StatusNotification: EVSE ${evse.id} (connector ${req.connectorId}) status changed: ${oldStatus} → ${newStatus}`);
 
@@ -1162,9 +1171,15 @@ export class DualCSMS {
         try {
           const evseList = await db.getEvsesByStationId(conn.stationId);
           for (const evse of evseList) {
-            if (evse.status !== "AVAILABLE") {
-              await db.updateEvseStatus(evse.id, "AVAILABLE");
-              console.log(`[CSMS-DUAL] StopTransaction: Reset EVSE ${evse.id} to AVAILABLE (orphan cleanup)`);
+            if (evse.status !== "AVAILABLE" && evse.status !== "RESERVED") {
+              // No resetear EVSEs con reservas activas
+              const activeRes = await db.getActiveReservation(evse.id);
+              if (!activeRes) {
+                await db.updateEvseStatus(evse.id, "AVAILABLE");
+                console.log(`[CSMS-DUAL] StopTransaction: Reset EVSE ${evse.id} to AVAILABLE (orphan cleanup)`);
+              } else {
+                console.log(`[CSMS-DUAL] StopTransaction: Skipping EVSE ${evse.id} reset - has active reservation #${activeRes.id}`);
+              }
             }
           }
         } catch (e) { /* no-op */ }
@@ -1719,8 +1734,18 @@ export class DualCSMS {
           Unavailable: "UNAVAILABLE",
           Faulted: "FAULTED",
         };
-        const status = statusMap[req.connectorStatus] || "UNAVAILABLE";
-        await db.updateEvseStatus(evse.id, status);
+        const newStatus = statusMap[req.connectorStatus] || "UNAVAILABLE";
+        
+        // NO sobreescribir RESERVED→AVAILABLE si hay una reserva activa
+        if (newStatus === "AVAILABLE" && evse.status === "RESERVED") {
+          const activeRes = await db.getActiveReservation(evse.id);
+          if (activeRes) {
+            console.log(`[CSMS-DUAL] OCPP 2.0.1 StatusNotification: Ignoring AVAILABLE for EVSE ${evse.id} - has active reservation #${activeRes.id}`);
+            return {};
+          }
+        }
+        
+        await db.updateEvseStatus(evse.id, newStatus);
       }
     }
 
@@ -2029,11 +2054,18 @@ export class DualCSMS {
           alertsService.handleDisconnection(ocppIdentity, conn.stationId ?? undefined)
             .catch(err => console.error("[CSMS-DUAL] Error sending disconnect alert:", err));
           
-          // Actualizar estado de conectores a UNAVAILABLE
+          // Actualizar estado de conectores a UNAVAILABLE (excepto los que tienen reserva activa)
           try {
             const evses = await db.getEvsesByStationId(conn.stationId!);
             for (const evse of evses) {
-              await db.updateEvseStatus(evse.id, "UNAVAILABLE");
+              const activeRes = await db.getActiveReservation(evse.id);
+              if (!activeRes) {
+                await db.updateEvseStatus(evse.id, "UNAVAILABLE");
+              } else {
+                // Mantener RESERVED para EVSEs con reservas activas
+                await db.updateEvseStatus(evse.id, "RESERVED");
+                console.log(`[CSMS-DUAL] Disconnect: Keeping EVSE ${evse.id} as RESERVED - has active reservation #${activeRes.id}`);
+              }
             }
           } catch (err) {
             console.error(`[CSMS-DUAL] Error updating EVSE status on disconnect:`, err);

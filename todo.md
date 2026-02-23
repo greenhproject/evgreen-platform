@@ -1659,3 +1659,33 @@
 - [x] CAUSA RAÍZ: listPublic sobreescribía status de EVSEs demo a AVAILABLE (isDemoStation)
 - [x] FIX: Respetar estado RESERVED incluso en estaciones demo
 - [x] FIX: Invalidar cache de listPublic/getEvses/myReservations al crear reserva
+
+## Bug CRÍTICO: Modal de reservas sigue desbordado en móvil - 23 Feb 2026
+- [ ] Reescribir modal de reservas COMPLETAMENTE desde cero con enfoque mobile-first
+- [ ] NO usar Dialog/DialogContent de shadcn - usar sheet o fullscreen overlay en móvil
+- [ ] Inputs no deben desbordarse del contenedor
+- [ ] Probar que funcione en viewport 360px de ancho
+
+## Feature: Mis Reservas visible para el usuario - 23 Feb 2026
+- [ ] Crear sección/página de "Mis Reservas" accesible desde el menú
+- [ ] Mostrar reservas activas con fecha, hora, estación, estado
+- [ ] Mostrar historial de reservas pasadas
+- [ ] Banner/indicador de reserva activa visible en la app
+
+## Bug: Reserva no bloquea EVSE para otros usuarios - 23 Feb 2026
+- [ ] Verificar que getEvsesByStationId marca RESERVED para TODOS los usuarios (no solo el dueño)
+- [ ] Verificar que listPublic respeta RESERVED para cualquier usuario que consulte
+- [ ] El EVSE debe mostrar "Reservado" a todos, no solo al usuario que reservó
+
+
+## Bug CRÍTICO: Correcciones definitivas de reservas - 23 Feb 2026 (3ra iteración)
+- [x] Modal responsive: Reescrito completamente como Sheet bottom (slide-up) en vez de Dialog
+- [x] Sheet bottom con handle visual, scroll interno, y botón fijo abajo
+- [x] Fecha y hora en una fila (grid 2 cols) para mejor uso del espacio
+- [x] Reservas no bloquean EVSE: getEvsesByStationId verifica reservas activas y fuerza RESERVED
+- [x] OCPP 1.6 StatusNotification: protegido para no sobreescribir RESERVED→AVAILABLE
+- [x] OCPP 2.0.1 StatusNotification: protegido para no sobreescribir RESERVED→AVAILABLE
+- [x] StopTransaction orphan cleanup: protegido para no resetear EVSEs con reservas activas
+- [x] Disconnect handler: mantiene RESERVED para EVSEs con reservas activas
+- [x] Invalidación de cache al cancelar reserva (listPublic + getEvses)
+- [x] API listPublic confirmada: EVSE 150001 muestra RESERVED para todos los usuarios

@@ -396,7 +396,25 @@ export async function getEvseById(id: number) {
 export async function getEvsesByStationId(stationId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(evses).where(eq(evses.stationId, stationId)).orderBy(evses.evseIdLocal);
+  const evseList = await db.select().from(evses).where(eq(evses.stationId, stationId)).orderBy(evses.evseIdLocal);
+  
+  // Verificar reservas activas para cada EVSE y forzar estado RESERVED si corresponde
+  const now = new Date();
+  const enriched = await Promise.all(evseList.map(async (evse) => {
+    if (evse.status === 'AVAILABLE' || evse.status === 'RESERVED') {
+      const activeRes = await db.select().from(reservations)
+        .where(and(
+          eq(reservations.evseId, evse.id),
+          eq(reservations.status, 'ACTIVE')
+        ))
+        .limit(1);
+      if (activeRes.length > 0) {
+        return { ...evse, status: 'RESERVED' as typeof evse.status, activeReservationId: activeRes[0].id, activeReservationUserId: activeRes[0].userId };
+      }
+    }
+    return { ...evse, activeReservationId: null, activeReservationUserId: null };
+  }));
+  return enriched;
 }
 
 export async function updateEvseStatus(id: number, status: Evse["status"]) {
