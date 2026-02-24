@@ -13,7 +13,7 @@ import { handleWompiWebhook } from "../wompi/webhook";
 import { startBillingCronJob } from "../wompi/recurring-billing";
 import { startTransactionCleanupJob } from "../jobs/transaction-cleanup";
 import { startBalanceMonitor } from "../charging/balance-monitor";
-import { startOverstayMonitor } from "../charging/overstay-monitor";
+import { startOverstayMonitor, onChargingFinished, onCableDisconnected } from "../charging/overstay-monitor";
 import { reservationJobs } from "../notifications/reservation-notifications";
 import * as ocppManager from "../ocpp/connection-manager";
 import * as alertsService from "../ocpp/alerts-service";
@@ -722,8 +722,30 @@ async function handleOCPP16Message(
             Faulted: "FAULTED",
           };
           const newStatus = statusMap[payload.status] || "UNAVAILABLE";
-          await db.updateEvseStatus(evse.id, newStatus);
-          console.log(`[OCPP] StatusNotification - Updated EVSE ${evse.id} to ${newStatus} (OCPP: ${payload.status})`);
+          
+          // PROTECCIÓN: No sobreescribir RESERVED a menos que sea el cargador reportando RESERVED
+          if (evse.status === "RESERVED" && newStatus !== "RESERVED" && newStatus !== "CHARGING" && newStatus !== "PREPARING") {
+            console.log(`[OCPP] StatusNotification - Skipping update: EVSE ${evse.id} is RESERVED, ignoring ${newStatus}`);
+          } else {
+            await db.updateEvseStatus(evse.id, newStatus);
+            console.log(`[OCPP] StatusNotification - Updated EVSE ${evse.id} to ${newStatus} (OCPP: ${payload.status})`);
+          }
+          
+          // OVERSTAY: Detectar transición a Finishing (carga completada, cable conectado)
+          if (payload.status === "Finishing" || payload.status === "SuspendedEV") {
+            console.log(`[OCPP] StatusNotification - EVSE ${evse.id} entered ${payload.status}, starting overstay tracking`);
+            onChargingFinished(evse.id, resolvedStationId).catch(err => 
+              console.error(`[OCPP] Error starting overstay tracking:`, err)
+            );
+          }
+          
+          // OVERSTAY: Detectar cable desconectado (Available)
+          if (payload.status === "Available") {
+            console.log(`[OCPP] StatusNotification - EVSE ${evse.id} now Available, finalizing overstay if active`);
+            onCableDisconnected(evse.id).catch(err => 
+              console.error(`[OCPP] Error finalizing overstay:`, err)
+            );
+          }
         }
       } else if (payload.connectorId === 0 && resolvedStationId) {
         // connectorId=0 es la estación completa, actualizar isOnline
@@ -1024,8 +1046,15 @@ async function handleOCPP16Message(
         stopReason: payload.reason || "Remote",
       });
       
-      // Actualizar estado del EVSE
-      await db.updateEvseStatus(transaction.evseId, "AVAILABLE");
+      // Actualizar estado del EVSE a FINISHING (cable aún puede estar conectado)
+      // El StatusNotification posterior determinará si pasa a Available o se queda en Finishing
+      await db.updateEvseStatus(transaction.evseId, "FINISHING");
+      console.log(`[OCPP] StopTransaction - EVSE ${transaction.evseId} set to FINISHING (pending cable disconnect)`);
+      
+      // Iniciar tracking de overstay inmediatamente
+      onChargingFinished(transaction.evseId, transaction.stationId).catch(err => 
+        console.error(`[OCPP] Error starting overstay tracking after StopTransaction:`, err)
+      );
       
       // Descontar saldo del usuario
       if (totalCost > 0 && transaction.userId) {
@@ -1556,7 +1585,22 @@ async function handleOCPP201Message(
             Unavailable: "UNAVAILABLE",
             Faulted: "FAULTED",
           };
-          await db.updateEvseStatus(evse.id, statusMap[payload.connectorStatus] || "UNAVAILABLE");
+          const newStatus = statusMap[payload.connectorStatus] || "UNAVAILABLE";
+          
+          // PROTECCIÓN: No sobreescribir RESERVED
+          if (evse.status === "RESERVED" && newStatus !== "RESERVED" && newStatus !== "CHARGING") {
+            console.log(`[OCPP 2.0.1] StatusNotification - Skipping: EVSE ${evse.id} is RESERVED`);
+          } else {
+            await db.updateEvseStatus(evse.id, newStatus);
+          }
+          
+          // OVERSTAY: En OCPP 2.0.1, "Occupied" con connectorStatus puede indicar Finishing
+          // También manejar Available para finalizar overstay
+          if (payload.connectorStatus === "Available") {
+            onCableDisconnected(evse.id).catch(err => 
+              console.error(`[OCPP 2.0.1] Error finalizing overstay:`, err)
+            );
+          }
         }
       }
       return {};

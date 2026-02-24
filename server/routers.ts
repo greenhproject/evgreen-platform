@@ -1502,9 +1502,17 @@ const transactionsRouter = router({
         });
       }
       
-      // Actualizar estado del EVSE
+      // Actualizar estado del EVSE a FINISHING (cable aún puede estar conectado)
+      // El overstay-monitor se encargará de cobrar penalización si el cable sigue conectado
       if (transaction.evseId) {
-        await db.updateEvseStatus(transaction.evseId, "AVAILABLE");
+        await db.updateEvseStatus(transaction.evseId, "FINISHING");
+        console.log(`[Charging] stopChargingSession - EVSE ${transaction.evseId} set to FINISHING (pending cable disconnect)`);
+        
+        // Iniciar tracking de overstay
+        const { onChargingFinished } = await import("./charging/overstay-monitor");
+        onChargingFinished(transaction.evseId, transaction.stationId).catch(err => 
+          console.error(`[Charging] Error starting overstay tracking:`, err)
+        );
       }
       
       return {
@@ -3873,27 +3881,55 @@ const overstayRouter = router({
     .query(async ({ ctx }) => {
       const { getOverstayInfo, getAllOverstaySessions } = await import("./charging/overstay-monitor");
       
-      // Buscar si el usuario tiene una transacción activa con overstay
-      const activeTransaction = await db.getActiveTransactionByUserId(ctx.user.id);
-      if (!activeTransaction) return null;
+      // Buscar si el usuario tiene una transacción activa (IN_PROGRESS)
+      let transaction = await db.getActiveTransactionByUserId(ctx.user.id);
       
-      // Buscar el EVSE de la transacción activa
-      const evse = await db.getEvseById(activeTransaction.evseId);
+      // Si no hay transacción activa, buscar la más reciente COMPLETED (para overstay post-carga)
+      if (!transaction) {
+        const dbInstance = await db.getDb();
+        if (dbInstance) {
+          const { transactions: txTable } = await import("../drizzle/schema");
+          const { eq, and, desc } = await import("drizzle-orm");
+          const recentCompleted = await dbInstance.select()
+            .from(txTable)
+            .where(
+              and(
+                eq(txTable.userId, ctx.user.id),
+                eq(txTable.status, "COMPLETED")
+              )
+            )
+            .orderBy(desc(txTable.endTime))
+            .limit(1);
+          if (recentCompleted.length > 0) {
+            const tx = recentCompleted[0];
+            // Only consider if ended within last 2 hours
+            const endTime = tx.endTime ? new Date(tx.endTime) : null;
+            if (endTime && (Date.now() - endTime.getTime()) < 2 * 60 * 60 * 1000) {
+              transaction = tx;
+            }
+          }
+        }
+      }
+      
+      if (!transaction) return null;
+      
+      // Buscar el EVSE de la transacción
+      const evse = await db.getEvseById(transaction.evseId);
       if (!evse) return null;
       
       const info = getOverstayInfo(evse.id);
       if (!info) {
-        // No hay overstay activo, pero verificar si el EVSE está en Finishing
+        // No hay overstay activo en memoria, pero verificar si el EVSE está en Finishing
         if (evse.status === "FINISHING" || evse.status === "SUSPENDED_EV") {
           // Obtener tarifa para mostrar info de grace period
-          const tariff = activeTransaction.tariffId ? await db.getTariffById(activeTransaction.tariffId) : null;
+          const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
           const globalPrices = await db.getPriceRanges();
           return {
             status: "finishing" as const,
             gracePeriodMinutes: tariff?.overstayGracePeriodMinutes ?? globalPrices.defaultOverstayGracePeriodMinutes ?? 10,
             penaltyPerMinute: tariff?.overstayPenaltyPerMinute ? parseFloat(tariff.overstayPenaltyPerMinute.toString()) : (globalPrices.defaultOverstayPenaltyPerMin ?? 500),
             evseId: evse.id,
-            transactionId: activeTransaction.id,
+            transactionId: transaction.id,
           };
         }
         return null;

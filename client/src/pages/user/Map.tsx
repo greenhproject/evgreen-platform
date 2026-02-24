@@ -27,7 +27,9 @@ import {
   Sparkles,
   Heart,
   CalendarCheck,
-  QrCode
+  QrCode,
+  AlertTriangle,
+  Timer
 } from "lucide-react";
 import { AIInsightCard } from "@/components/AIInsightCard";
 
@@ -154,6 +156,12 @@ export default function UserMap() {
 
   // Obtener billetera del usuario
   const { data: wallet } = trpc.wallet.getMyWallet.useQuery();
+
+  // Obtener estado de overstay (penalización por ocupación)
+  const { data: overstayStatus } = trpc.overstay.getMyStatus.useQuery(
+    undefined,
+    { enabled: isAuthenticated, refetchInterval: 10000 }
+  );
 
   // Obtener reservas del usuario para mostrar banner de reserva activa
   const { data: myReservations } = trpc.reservations.myReservations.useQuery(
@@ -630,8 +638,64 @@ export default function UserMap() {
           )}
         </AnimatePresence>
 
+        {/* Banner de overstay (penalización por ocupación) */}
+        <AnimatePresence>
+          {overstayStatus && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="absolute left-4 right-4 z-20"
+              style={{ top: activeReservation ? '170px' : '110px' }}
+            >
+              <div className={`backdrop-blur-md rounded-2xl border shadow-xl p-3 ${
+                overstayStatus.status === 'penalty'
+                  ? 'bg-red-900/95 border-red-500/40 shadow-red-900/30'
+                  : 'bg-amber-900/95 border-amber-500/40 shadow-amber-900/30'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    overstayStatus.status === 'penalty' ? 'bg-red-500/20' : 'bg-amber-500/20'
+                  }`}>
+                    {overstayStatus.status === 'penalty' 
+                      ? <AlertTriangle className="w-5 h-5 text-red-300" />
+                      : <Timer className="w-5 h-5 text-amber-300" />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold truncate ${
+                      overstayStatus.status === 'penalty' ? 'text-red-100' : 'text-amber-100'
+                    }`}>
+                      {overstayStatus.status === 'penalty' ? 'Penalización activa' : 'Período de gracia'}
+                    </p>
+                    <p className={`text-xs truncate ${
+                      overstayStatus.status === 'penalty' ? 'text-red-300' : 'text-amber-300'
+                    }`}>
+                      {overstayStatus.status === 'penalty'
+                        ? `$${Math.round(overstayStatus.accumulatedCost || 0).toLocaleString()} COP • $${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min`
+                        : `Desconecta en ${overstayStatus.gracePeriodMinutes || 10} min`
+                      }
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    className={`h-8 px-2.5 text-xs text-white ${
+                      overstayStatus.status === 'penalty'
+                        ? 'bg-red-500 hover:bg-red-400'
+                        : 'bg-amber-500 hover:bg-amber-400'
+                    }`}
+                    onClick={() => setLocation('/charging')}
+                  >
+                    Ver
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Widget de sugerencia de IA */}
-        <div className={`absolute left-4 right-4 sm:right-20 max-w-sm z-10 ${activeReservation ? 'top-44' : 'top-24'}`}>
+        <div className={`absolute left-4 right-4 sm:right-20 max-w-sm z-10 ${activeReservation || overstayStatus ? 'top-44' : 'top-24'}`}>
           <AIInsightCard 
             type="map" 
             className="bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60"
