@@ -673,7 +673,7 @@ export default function UserMap() {
                     }`}>
                       {overstayStatus.status === 'penalty'
                         ? `$${Math.round(overstayStatus.accumulatedCost || 0).toLocaleString()} COP • $${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min`
-                        : `Desconecta en ${overstayStatus.gracePeriodMinutes || 10} min`
+                        : `Desconecta en ${'gracePeriodMinutes' in overstayStatus ? overstayStatus.gracePeriodMinutes : 10} min`
                       }
                     </p>
                   </div>
@@ -684,7 +684,7 @@ export default function UserMap() {
                         ? 'bg-red-500 hover:bg-red-400'
                         : 'bg-amber-500 hover:bg-amber-400'
                     }`}
-                    onClick={() => setLocation('/charging-monitor')}
+                    onClick={() => setLocation('/overstay')}
                   >
                     Ver
                   </Button>

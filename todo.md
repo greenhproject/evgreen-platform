@@ -1765,3 +1765,6 @@
 - [x] Tests unitarios para lógica de overstay (24 tests)
 
 - [x] BUG: Banner de overstay en mapa redirige a /charging (404) - debe ir a /charging-monitor
+- [x] BUG: ChargingMonitor muestra "sin sesión activa" cuando hay overstay post-carga (transacción COMPLETED)
+- [x] Crear pantalla dedicada de overstay con cobro minuto a minuto, contador en tiempo real, detalles de estación
+- [x] Redirigir banner de overstay del mapa a la pantalla correcta (/overstay)
