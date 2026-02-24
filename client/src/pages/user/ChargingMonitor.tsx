@@ -280,22 +280,69 @@ export default function ChargingMonitor() {
     }
   }, [isLoading, session, redirecting, completedTransactionId, setLocation]);
   
-  // Notificación cuando SoC alcanza el objetivo
+  // Auto-stop y notificación cuando se alcanza el objetivo de carga
   useEffect(() => {
-    if (!session || socTargetNotified) return;
+    if (!session || socTargetNotified || stopChargeMutation.isPending || redirecting) return;
     
-    const soc = (session as any).soc;
-    const chargeMode = session.chargeMode as string;
-    const targetPct = chargeMode === "percentage" ? (session.targetPercentage || 100) : 100;
+    const currentChargeMode = session.chargeMode as string;
+    let shouldAutoStop = false;
+    let reason = "";
     
-    if (soc !== null && soc !== undefined && soc >= targetPct) {
-      setSocTargetNotified(true);
-      toast.success(
-        `🔋 ¡Batería al ${Math.round(soc)}%! Tu objetivo de ${targetPct}% fue alcanzado.`,
-        { duration: 10000 }
-      );
+    // Calcular progreso actual dentro del effect
+    const realSocVal = (session as any).soc;
+    const isSimVal = (session as any).isSimulation;
+    const simProgressVal = (session as any).progress;
+    const startBatteryVal = session.startPercentage || 20;
+    let currentProgress = 0;
+    
+    if (realSocVal !== null && realSocVal !== undefined) {
+      currentProgress = realSocVal;
+    } else if (isSimVal && typeof simProgressVal === 'number') {
+      if (currentChargeMode === "percentage") {
+        const targetBat = session.targetPercentage || 100;
+        currentProgress = startBatteryVal + ((targetBat - startBatteryVal) * (simProgressVal / 100));
+      } else if (currentChargeMode === "full_charge") {
+        currentProgress = startBatteryVal + ((100 - startBatteryVal) * (simProgressVal / 100));
+      } else {
+        currentProgress = simProgressVal;
+      }
+    } else {
+      const kwhDel = session.currentKwh || 0;
+      currentProgress = startBatteryVal + (kwhDel / 60) * 100;
     }
-  }, [session, socTargetNotified]);
+    currentProgress = Math.min(100, Math.max(0, currentProgress));
+    
+    // Verificar por porcentaje (SoC)
+    if (currentChargeMode === "percentage" || currentChargeMode === "full_charge") {
+      const targetPct = currentChargeMode === "percentage" ? (session.targetPercentage || 100) : 100;
+      if (currentProgress >= targetPct && currentProgress > 0) {
+        shouldAutoStop = true;
+        reason = `🔋 ¡Batería al ${Math.round(currentProgress)}%! Objetivo de ${targetPct}% alcanzado.`;
+      }
+    }
+    
+    // Verificar por monto fijo
+    if (currentChargeMode === "fixed_amount") {
+      const targetAmount = session.targetAmount || 0;
+      const currentCost = session.currentCost || 0;
+      if (targetAmount > 0 && currentCost >= targetAmount) {
+        shouldAutoStop = true;
+        reason = `💰 ¡Monto objetivo de ${formatCurrency(targetAmount)} alcanzado!`;
+      }
+    }
+    
+    if (shouldAutoStop) {
+      setSocTargetNotified(true);
+      toast.success(reason, { duration: 10000 });
+      // Auto-detener la carga después de 2 segundos para que el usuario vea el mensaje
+      setTimeout(() => {
+        if (session.transactionId) {
+          toast.info("⏹ Deteniendo carga automáticamente...");
+          stopChargeMutation.mutate({ transactionId: session.transactionId });
+        }
+      }, 2000);
+    }
+  }, [session, socTargetNotified, stopChargeMutation.isPending, redirecting]);
   
   const handleStopCharge = () => {
     if (!session) return;
@@ -370,6 +417,8 @@ export default function ChargingMonitor() {
   // Detectar cuando SoC alcanza el objetivo y mostrar toast
   const targetPercentage = chargeMode === "percentage" ? (session.targetPercentage || 100) : 100;
   
+  // Auto-stop se maneja en el useEffect antes de los returns condicionales
+  
   // Costo total incluyendo tarifa de conexión
   const connectionFee = (session as any).connectionFee || 0;
   const displayCost = session.currentCost || 0;
@@ -391,10 +440,10 @@ export default function ChargingMonitor() {
           </Badge>
           <Badge variant="outline" className="border-white/30 text-white">
             {chargeMode === "fixed_amount" 
-              ? `$${session.targetAmount?.toLocaleString() || 0}` 
+              ? `Meta: $${session.targetAmount?.toLocaleString() || 0}` 
               : chargeMode === "percentage" 
-                ? `${session.targetPercentage}%`
-                : "Carga completa"}
+                ? `Meta: ${session.targetPercentage}%`
+                : "Meta: 100%"}
           </Badge>
         </div>
         

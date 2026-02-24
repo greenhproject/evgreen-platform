@@ -1731,3 +1731,11 @@
 - [x] Botón "Cargar" que abre el flujo de carga con la estación pre-cargada
 - [x] Widget de IA se desplaza automáticamente cuando hay banner activo
 - [x] myReservations enriquecido con nombre de estación
+
+## Bug: Header de carga siempre dice "Carga completa" - 23 Feb 2026 [COMPLETADO]
+- [x] El header ahora muestra "Meta: 84%" o "Meta: $20,000" según la selección del usuario
+- [x] Badge del header actualizado para mostrar tipo de carga correcto
+- [x] Auto-stop implementado: carga se detiene automáticamente al alcanzar objetivo
+- [x] Soporta auto-stop por porcentaje, monto fijo, y carga completa
+- [x] Toast de notificación 2s antes de detener + toast de deteniendo
+- [x] useEffect movido antes de returns condicionales (regla de hooks React)
