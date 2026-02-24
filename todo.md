@@ -1739,3 +1739,27 @@
 - [x] Soporta auto-stop por porcentaje, monto fijo, y carga completa
 - [x] Toast de notificación 2s antes de detener + toast de deteniendo
 - [x] useEffect movido antes de returns condicionales (regla de hooks React)
+
+## Bug: Penalización por ocupación post-carga no se activa - 24 Feb 2026
+- [ ] Después de detener la carga, el EVSE queda en "Ocupado" pero no se cobra penalización
+- [ ] Investigar si el sistema de overstay detecta correctamente el fin de carga
+- [ ] Verificar si el contador de gracia y penalización se activa en el backend
+- [ ] Corregir la lógica para que detecte overstay y cobre $500 COP/min
+
+
+## Fix: Sistema de Penalización por Overstay (Ocupación Post-Carga) - 23 Feb 2026
+
+- [x] BUG: onChargingFinished() nunca se llamaba desde handlers OCPP ni StopTransaction
+- [x] BUG: onCableDisconnected() nunca se llamaba desde StatusNotification
+- [x] Conectar StatusNotification OCPP 1.6 con overstay-monitor (Finishing → onChargingFinished, Available → onCableDisconnected)
+- [x] Conectar StatusNotification OCPP 2.0.1 con overstay-monitor
+- [x] Cambiar StopTransaction para marcar EVSE como FINISHING (no AVAILABLE) para detectar cable conectado
+- [x] Cambiar stopChargingSession (routers.ts) para marcar EVSE como FINISHING y activar overstay tracking
+- [x] Agregar scan periódico de BD para detectar EVSEs en FINISHING sin tracking activo (fallback)
+- [x] Resetear EVSEs en FINISHING con transacciones >2h a AVAILABLE (limpieza de estados stale)
+- [x] Actualizar getMyStatus para buscar transacciones COMPLETED recientes (no solo IN_PROGRESS)
+- [x] Agregar protección RESERVED en StatusNotification (no sobreescribir reservas)
+- [x] Banner de overstay en pantalla de mapa (período de gracia / penalización activa)
+- [x] Pantalla completa de overstay en ChargingSession cuando no hay sesión activa
+- [x] Banner inline de overstay durante sesión de carga activa
+- [x] Tests unitarios para lógica de overstay (24 tests)

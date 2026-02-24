@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import UserLayout from "@/layouts/UserLayout";
 import { Card } from "@/components/ui/card";
@@ -15,7 +15,10 @@ import {
   Activity,
   TrendingUp,
   MapPin,
-  Loader2
+  Loader2,
+  AlertTriangle,
+  Timer,
+  Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ChargingBanner } from "@/components/ChargingBanner";
@@ -31,12 +34,16 @@ export default function ChargingSession() {
     { refetchInterval: 5000 } // Actualizar cada 5 segundos
   );
 
+  // Obtener estado de overstay
+  const { data: overstayStatus } = trpc.overstay.getMyStatus.useQuery(
+    undefined,
+    { refetchInterval: 5000 }
+  );
+
   const stopMutation = trpc.transactions.stopChargingSession.useMutation({
     onSuccess: (result) => {
       toast.success(result.message);
-      setTimeout(() => {
-        setLocation("/history");
-      }, 2000);
+      // No redirigir inmediatamente - quedarse para mostrar overstay si aplica
     },
     onError: (error) => {
       toast.error(error.message);
@@ -86,8 +93,25 @@ export default function ChargingSession() {
     );
   }
 
-  // Si no hay sesión activa
+  // Si hay overstay activo pero no hay sesión IN_PROGRESS, mostrar pantalla de overstay
+  if (overstayStatus && !activeSession) {
+    return (
+      <UserLayout showHeader={false} showBottomNav={false}>
+        <OverstayScreen overstayStatus={overstayStatus} onGoBack={() => setLocation("/map")} />
+      </UserLayout>
+    );
+  }
+
+  // Si no hay sesión activa ni overstay
   if (!activeSession) {
+    // Verificar si hay overstay
+    if (overstayStatus) {
+      return (
+        <UserLayout showHeader={false} showBottomNav={false}>
+          <OverstayScreen overstayStatus={overstayStatus} onGoBack={() => setLocation("/map")} />
+        </UserLayout>
+      );
+    }
     return (
       <UserLayout showHeader={false} showBottomNav={false}>
         <div className="min-h-screen flex flex-col items-center justify-center p-4">
@@ -143,6 +167,13 @@ export default function ChargingSession() {
             <span>{station.name} - Conector {evse.evseIdLocal}</span>
           </div>
         </div>
+
+        {/* Banner de overstay si aplica */}
+        <AnimatePresence>
+          {overstayStatus && (
+            <OverstayBanner overstayStatus={overstayStatus} />
+          )}
+        </AnimatePresence>
 
         {/* Métricas en tiempo real */}
         <div className="grid grid-cols-2 gap-4 mb-4">
@@ -302,5 +333,232 @@ export default function ChargingSession() {
         )}
       </div>
     </UserLayout>
+  );
+}
+
+// ============================================================================
+// OVERSTAY BANNER (shown inline during charging session)
+// ============================================================================
+
+function OverstayBanner({ overstayStatus }: { overstayStatus: any }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (overstayStatus.status === "finishing" || overstayStatus.status === "grace") {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10 }}
+        className="mb-4 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30"
+      >
+        <div className="flex items-start gap-3">
+          <Timer className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-semibold text-amber-400 text-sm">Período de gracia</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Desconecta tu vehículo en los próximos {overstayStatus.gracePeriodMinutes || 10} minutos
+              para evitar la tarifa de ocupación de ${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min.
+            </p>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (overstayStatus.status === "penalty") {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10 }}
+        className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/30"
+      >
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="font-semibold text-red-400 text-sm">Tarifa de ocupación activa</p>
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs text-muted-foreground">
+                ${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min
+              </span>
+              <span className="text-lg font-bold text-red-400">
+                ${Math.round(overstayStatus.accumulatedCost || 0).toLocaleString()} COP
+              </span>
+            </div>
+            <p className="text-xs text-red-400/70 mt-1">
+              Desconecta tu vehículo para detener el cobro
+            </p>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  return null;
+}
+
+// ============================================================================
+// OVERSTAY FULL SCREEN (shown when no active charging session)
+// ============================================================================
+
+function OverstayScreen({ overstayStatus, onGoBack }: { overstayStatus: any; onGoBack: () => void }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isPenalty = overstayStatus.status === "penalty";
+  const isGrace = overstayStatus.status === "grace" || overstayStatus.status === "finishing";
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-background to-background p-4">
+      {/* Header */}
+      <div className="text-center py-8">
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          className={`w-24 h-24 mx-auto mb-4 rounded-full flex items-center justify-center ${
+            isPenalty 
+              ? "bg-red-500/20 border-2 border-red-500/50" 
+              : "bg-amber-500/20 border-2 border-amber-500/50"
+          }`}
+        >
+          {isPenalty ? (
+            <motion.div
+              animate={{ scale: [1, 1.15, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            >
+              <AlertTriangle className="w-12 h-12 text-red-500" />
+            </motion.div>
+          ) : (
+            <motion.div
+              animate={{ rotate: [0, 10, -10, 0] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            >
+              <Timer className="w-12 h-12 text-amber-500" />
+            </motion.div>
+          )}
+        </motion.div>
+
+        <h1 className="text-2xl font-bold mb-2">
+          {isPenalty ? "Tarifa de ocupación activa" : "Carga completada"}
+        </h1>
+        <p className="text-muted-foreground text-sm">
+          {isPenalty 
+            ? "Tu vehículo sigue conectado y se está cobrando penalización"
+            : "Desconecta tu vehículo para liberar el punto de carga"
+          }
+        </p>
+      </div>
+
+      {/* Estado principal */}
+      {isPenalty && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+        >
+          <Card className="p-6 mb-4 border-red-500/30 bg-red-500/5">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground mb-1">Penalización acumulada</p>
+              <motion.p 
+                className="text-4xl font-bold text-red-400"
+                key={overstayStatus.accumulatedCost}
+                initial={{ scale: 1.1 }}
+                animate={{ scale: 1 }}
+              >
+                ${Math.round(overstayStatus.accumulatedCost || 0).toLocaleString()}
+              </motion.p>
+              <p className="text-sm text-red-400/70 mt-1">COP</p>
+            </div>
+            <div className="mt-4 pt-4 border-t border-red-500/20 flex justify-between text-sm">
+              <span className="text-muted-foreground">Tarifa</span>
+              <span className="font-medium text-red-400">
+                ${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min
+              </span>
+            </div>
+            {overstayStatus.elapsedMinutes != null && (
+              <div className="flex justify-between text-sm mt-2">
+                <span className="text-muted-foreground">Tiempo de ocupación</span>
+                <span className="font-medium">
+                  {Math.round(overstayStatus.elapsedMinutes)} min
+                </span>
+              </div>
+            )}
+          </Card>
+        </motion.div>
+      )}
+
+      {isGrace && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+        >
+          <Card className="p-6 mb-4 border-amber-500/30 bg-amber-500/5">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground mb-1">Período de gracia</p>
+              <p className="text-4xl font-bold text-amber-400">
+                {overstayStatus.gracePeriodMinutes || 10} min
+              </p>
+              <p className="text-sm text-amber-400/70 mt-1">para desconectar</p>
+            </div>
+            <div className="mt-4 pt-4 border-t border-amber-500/20 text-sm text-center text-muted-foreground">
+              Después se cobrará ${(overstayStatus.penaltyPerMinute || 500).toLocaleString()}/min
+            </div>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Acción */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="space-y-3"
+      >
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/5 border border-primary/20">
+          <Unplug className="w-6 h-6 text-primary shrink-0" />
+          <p className="text-sm">
+            Desconecta el cable de carga de tu vehículo para liberar el punto de carga y detener la penalización.
+          </p>
+        </div>
+
+        <Button
+          size="lg"
+          variant="outline"
+          className="w-full h-14 text-lg rounded-xl"
+          onClick={onGoBack}
+        >
+          Volver al mapa
+        </Button>
+      </motion.div>
+
+      {/* Pulso de alerta */}
+      {isPenalty && (
+        <div className="mt-8 flex justify-center">
+          <motion.div
+            className="w-4 h-4 rounded-full bg-red-500"
+            animate={{
+              scale: [1, 1.5, 1],
+              opacity: [1, 0.5, 1],
+            }}
+            transition={{
+              duration: 1.5,
+              repeat: Infinity,
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }

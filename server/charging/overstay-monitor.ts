@@ -16,7 +16,7 @@
 
 import * as db from "../db";
 import { transactions, evses, tariffs } from "../../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, desc } from "drizzle-orm";
 import { sendPushNotification } from "../firebase/fcm";
 
 // ============================================================================
@@ -247,13 +247,88 @@ export function getAllOverstaySessions() {
 }
 
 // ============================================================================
+// INTERNAL: DB SCAN for unmonitored overstay
+// ============================================================================
+
+/**
+ * Scans the database for EVSEs in FINISHING/SUSPENDED_EV state that have
+ * a recently completed transaction but no active overstay tracking.
+ * This catches cases where:
+ * - The StatusNotification "Finishing" was missed
+ * - The server restarted and lost in-memory sessions
+ * - The user stopped charging via the app (stopChargingSession) but the call to
+ *   onChargingFinished didn't succeed
+ */
+async function scanForUnmonitoredOverstay() {
+  const dbInstance = await db.getDb();
+  if (!dbInstance) return;
+
+  try {
+    // Find EVSEs in FINISHING or SUSPENDED_EV state
+    const finishingEvses = await dbInstance.select()
+      .from(evses)
+      .where(
+        or(
+          eq(evses.status, "FINISHING"),
+          eq(evses.status, "SUSPENDED_EV")
+        )
+      );
+
+    for (const evse of finishingEvses) {
+      // Skip if already being tracked
+      if (activeOverstaySessions.has(evse.id)) continue;
+
+      // Find the most recent COMPLETED transaction for this EVSE
+      const recentTx = await dbInstance.select()
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.evseId, evse.id),
+            eq(transactions.status, "COMPLETED")
+          )
+        )
+        .orderBy(desc(transactions.endTime))
+        .limit(1);
+
+      if (recentTx.length === 0) continue;
+
+      const tx = recentTx[0];
+      // Only consider transactions that ended recently (within 2 hours)
+      const endTime = tx.endTime ? new Date(tx.endTime) : null;
+      if (!endTime) continue;
+      
+      const hoursSinceEnd = (Date.now() - endTime.getTime()) / (1000 * 60 * 60);
+      if (hoursSinceEnd > 2) {
+        // Transaction ended more than 2 hours ago - likely stale EVSE status, reset it
+        console.log(`[OverstayMonitor] EVSE ${evse.id} in ${evse.status} but last tx ended ${hoursSinceEnd.toFixed(1)}h ago. Resetting to AVAILABLE.`);
+        await db.updateEvseStatus(evse.id, "AVAILABLE");
+        continue;
+      }
+
+      console.log(`[OverstayMonitor] DB Scan: Found unmonitored EVSE ${evse.id} in ${evse.status} with completed tx ${tx.id}. Starting overstay tracking.`);
+      await onChargingFinished(evse.id, tx.stationId);
+    }
+  } catch (error) {
+    console.error(`[OverstayMonitor] Error in scanForUnmonitoredOverstay:`, error);
+  }
+}
+
+// ============================================================================
 // INTERNAL: PERIODIC PROCESSING
 // ============================================================================
 
 /**
  * Main processing loop - runs every 60 seconds
+ * Also scans the DB for EVSEs in FINISHING state that don't have active tracking
  */
 async function processOverstaySessions() {
+  // SCAN DB: Detect EVSEs in FINISHING state without active overstay tracking
+  try {
+    await scanForUnmonitoredOverstay();
+  } catch (error) {
+    console.error(`[OverstayMonitor] Error scanning for unmonitored overstay:`, error);
+  }
+
   if (activeOverstaySessions.size === 0) return;
 
   console.log(`[OverstayMonitor] Processing ${activeOverstaySessions.size} active overstay session(s)`);
