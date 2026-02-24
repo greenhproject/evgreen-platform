@@ -449,6 +449,22 @@ export const chargingRouter = router({
         });
       }
       
+      // Check-in automático: si el usuario tiene una reserva activa para este EVSE, marcarla como FULFILLED
+      if (evseId) {
+        const activeReservation = await db.getActiveReservation(evseId);
+        if (activeReservation && activeReservation.userId === ctx.user.id) {
+          console.log(`[startCharge] Check-in automático: reserva ${activeReservation.id} para EVSE ${evseId} marcada como FULFILLED`);
+          await db.updateReservation(activeReservation.id, { status: "FULFILLED" });
+          // Notificar al usuario del check-in exitoso
+          await db.createNotification({
+            userId: ctx.user.id,
+            title: "\u2705 Check-in exitoso",
+            message: `Tu reserva ha sido confirmada. Se canceló la penalización por no-show. \u00a1Disfruta tu carga!`,
+            type: "RESERVATION_CHECKIN",
+          });
+        }
+      }
+      
       // Verificar si es usuario de prueba o estación demo para usar simulador
       const userEmail = ctx.user.email || "";
       const stationForDemo = await db.getChargingStationById(stationId);
@@ -459,6 +475,9 @@ export const chargingRouter = router({
       
       // Verificar que la estación está conectada (solo si no es simulación)
       const ocppConnection = getConnectionByStationId(stationId);
+      
+      // Para estaciones reales: también permitir iniciar carga si el conector está RESERVED por el usuario actual
+      // (el check-in ya marcó la reserva como FULFILLED arriba)
       
       if (!useSimulation) {
         // Obtener datos de la estación y conectores de la BD
@@ -512,8 +531,9 @@ export const chargingRouter = router({
         } else {
           const connector = connectors.find((c: any) => c.connectorId === connectorId || c.evseIdLocal === connectorId);
           if (connector) {
-            const dbStatus = (connector.status || '').toUpperCase();
-            if (dbStatus && dbStatus !== 'AVAILABLE' && dbStatus !== 'PREPARING') {
+                const dbStatus = (connector.status || '').toUpperCase();
+            // Permitir RESERVED si es la reserva del usuario actual (ya fue marcada FULFILLED arriba)
+            if (dbStatus && dbStatus !== 'AVAILABLE' && dbStatus !== 'PREPARING' && dbStatus !== 'RESERVED') {
               throw new TRPCError({
                 code: "BAD_REQUEST",
                 message: `El conector no está disponible. Estado actual: ${dbStatus}`,
