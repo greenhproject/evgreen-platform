@@ -30,6 +30,7 @@ function LazySpinner() {
 
 // Páginas públicas secundarias
 const Investors = lazy(() => import("./pages/Investors"));
+const ThankYouInvestors = lazy(() => import("./pages/ThankYouInvestors"));
 
 // Páginas de usuario
 const UserMap = lazy(() => import("./pages/user/Map"));
@@ -237,6 +238,7 @@ function Router() {
         {/* Rutas públicas */}
         <Route path="/landing" component={Landing} />
         <Route path="/investors" component={Investors} />
+        <Route path="/gracias-inversionistas" component={ThankYouInvestors} />
         
         {/* Ruta para códigos QR - Redirige a StartCharge */}
         <Route path="/c/:code" component={QRRedirect} />

@@ -1771,3 +1771,8 @@
 
 ## Checkpoint: Pantalla Overstay Dedicada - 23 Feb 2026
 - [x] Pantalla /overstay con UI moderna (gradiente animado, contador en tiempo real, resumen de carga, datos de estación)
+
+## Página de Agradecimiento a Inversionistas
+- [x] Crear página de agradecimiento moderna para personas que invirtieron en EVGreen
+- [x] Integrar como ruta pública /gracias-inversionistas
+- [x] Diseño premium con animaciones y estética de marca EVGreen
