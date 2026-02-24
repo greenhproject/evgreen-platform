@@ -1528,7 +1528,15 @@ import * as dynamicPricing from "./pricing/dynamic-pricing";
 
 const reservationsRouter = router({
   myReservations: protectedProcedure.query(async ({ ctx }) => {
-    return db.getReservationsByUserId(ctx.user.id);
+    const reservations = await db.getReservationsByUserId(ctx.user.id);
+    // Enriquecer con nombre de estación
+    const enriched = await Promise.all(
+      reservations.map(async (r) => {
+        const station = await db.getChargingStationById(r.stationId);
+        return { ...r, stationName: station?.name || `Estación #${r.stationId}` };
+      })
+    );
+    return enriched;
   }),
   
   // Obtener tarifa dinámica para una reserva

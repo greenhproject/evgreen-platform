@@ -1714,4 +1714,20 @@
 - [x] Frontend: Toast "Reserva detectada" con info del conector
 - [x] Frontend: Conector reservado marcado como "Tu reserva" en púrpura (seleccionable)
 - [x] Si no hay reserva: mantener flujo normal de carga
-- [ ] Cancelar timer de no-show al iniciar carga exitosamente (pendiente)
+- [x] Cancelar timer de no-show al iniciar carga exitosamente (implementado en startCharge)
+
+## Feature: Cancelar no-show al iniciar carga - 23 Feb 2026 [COMPLETADO]
+- [x] Detectar en startCharge si el usuario tiene reserva activa para ese EVSE
+- [x] Marcar la reserva como FULFILLED (check-in exitoso) al iniciar carga
+- [x] Permitir RESERVED como estado válido para iniciar carga (usuario con reserva)
+- [x] Enviar notificación de check-in exitoso al usuario
+- [x] processNoShows ignora reservas FULFILLED automáticamente
+
+## Feature: Banner de reserva activa en pantalla principal - 23 Feb 2026 [COMPLETADO]
+- [x] Agregar query de myReservations en la pantalla del Mapa
+- [x] Filtrar reservas activas próximas (dentro de las próximas 2 horas)
+- [x] Mostrar banner flotante púrpura con info de la reserva (estación, hora)
+- [x] Botón "Ver" que navega al detalle de la estación
+- [x] Botón "Cargar" que abre el flujo de carga con la estación pre-cargada
+- [x] Widget de IA se desplaza automáticamente cuando hay banner activo
+- [x] myReservations enriquecido con nombre de estación

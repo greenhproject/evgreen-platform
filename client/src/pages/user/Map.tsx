@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import UserLayout from "@/layouts/UserLayout";
 import { MapView } from "@/components/Map";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,9 @@ import {
   Car,
   X,
   Sparkles,
-  Heart
+  Heart,
+  CalendarCheck,
+  QrCode
 } from "lucide-react";
 import { AIInsightCard } from "@/components/AIInsightCard";
 
@@ -144,11 +147,33 @@ export default function UserMap() {
     available: true,
   });
 
+  const { user, isAuthenticated } = useAuth();
+
   // Obtener estaciones - sin filtro de ubicación para mostrar todas las estaciones públicas
   const { data: stations, isLoading, refetch } = trpc.stations.listPublic.useQuery({});
 
   // Obtener billetera del usuario
   const { data: wallet } = trpc.wallet.getMyWallet.useQuery();
+
+  // Obtener reservas del usuario para mostrar banner de reserva activa
+  const { data: myReservations } = trpc.reservations.myReservations.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+
+  // Filtrar reserva activa próxima (dentro de las próximas 2 horas o en curso)
+  const activeReservation = useMemo(() => {
+    if (!myReservations) return null;
+    const now = Date.now();
+    const twoHoursFromNow = now + 2 * 60 * 60 * 1000;
+    return myReservations.find((r: any) => {
+      if (r.status !== 'ACTIVE') return false;
+      const startTime = new Date(r.startTime).getTime();
+      const endTime = new Date(r.endTime).getTime();
+      // Mostrar si la reserva está en curso o empieza dentro de 2 horas
+      return (startTime <= twoHoursFromNow && endTime > now);
+    }) || null;
+  }, [myReservations]);
 
   // Tracking GPS en tiempo real con watchPosition
   useEffect(() => {
@@ -557,8 +582,56 @@ export default function UserMap() {
           </div>
         </div>
 
+        {/* Banner de reserva activa */}
+        <AnimatePresence>
+          {activeReservation && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="absolute left-4 right-4 z-20"
+              style={{ top: '110px' }}
+            >
+              <div className="bg-purple-900/95 backdrop-blur-md rounded-2xl border border-purple-500/40 shadow-xl shadow-purple-900/30 p-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                    <CalendarCheck className="w-5 h-5 text-purple-300" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-purple-100 truncate">
+                      Reserva activa
+                    </p>
+                    <p className="text-xs text-purple-300 truncate">
+                      {(activeReservation as any).stationName || `Estación #${activeReservation.stationId}`} • {new Date(activeReservation.startTime).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2.5 text-xs text-purple-200 hover:bg-purple-500/20 hover:text-white"
+                      onClick={() => setLocation(`/station/${activeReservation.stationId}`)}
+                    >
+                      <MapPin className="w-3.5 h-3.5 mr-1" />
+                      Ver
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-8 px-2.5 text-xs bg-purple-500 hover:bg-purple-400 text-white"
+                      onClick={() => setLocation(`/start-charge?code=${activeReservation.stationId}`)}
+                    >
+                      <QrCode className="w-3.5 h-3.5 mr-1" />
+                      Cargar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Widget de sugerencia de IA */}
-        <div className="absolute left-4 top-24 right-4 sm:right-20 max-w-sm z-10">
+        <div className={`absolute left-4 right-4 sm:right-20 max-w-sm z-10 ${activeReservation ? 'top-44' : 'top-24'}`}>
           <AIInsightCard 
             type="map" 
             className="bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60"
