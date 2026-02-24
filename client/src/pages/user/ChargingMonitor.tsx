@@ -807,7 +807,7 @@ export default function ChargingMonitor() {
                     <div className="mt-2 w-full bg-amber-200/50 dark:bg-amber-900/30 rounded-full h-2">
                       <div 
                         className="bg-amber-500 h-2 rounded-full transition-all duration-1000"
-                        style={{ width: `${Math.max(5, (1 - (overstayStatus.graceRemaining || 0) / (overstayStatus.gracePeriodMinutes || 10)) * 100)}%` }}
+                        style={{ width: `${Math.max(5, (1 - (overstayStatus.graceRemaining || 0) / (Number('gracePeriodMinutes' in overstayStatus ? overstayStatus.gracePeriodMinutes : 10) || 10)) * 100)}%` }}
                       />
                     </div>
                     <p className="text-xs text-amber-600/80 mt-2">
@@ -823,7 +823,7 @@ export default function ChargingMonitor() {
                   <div className="flex-1">
                     <p className="font-semibold text-sm text-blue-700 dark:text-blue-400">Carga finalizada</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Período de gracia: <span className="font-bold">{overstayStatus.gracePeriodMinutes} min</span> para desconectar.
+                      Período de gracia: <span className="font-bold">{'gracePeriodMinutes' in overstayStatus ? overstayStatus.gracePeriodMinutes : 10} min</span> para desconectar.
                       Luego se cobrará {formatCurrency(overstayStatus.penaltyPerMinute)}/min.
                     </p>
                   </div>

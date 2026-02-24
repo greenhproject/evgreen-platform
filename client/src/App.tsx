@@ -45,6 +45,7 @@ const ScanPage = lazy(() => import("./pages/user/Scan"));
 const StartCharge = lazy(() => import("./pages/user/StartCharge"));
 const QRRedirect = lazy(() => import("./pages/QRRedirect"));
 const ChargingMonitor = lazy(() => import("./pages/user/ChargingMonitor"));
+const OverstayMonitor = lazy(() => import("./pages/user/OverstayMonitor"));
 const ChargingSummary = lazy(() => import("./pages/user/ChargingSummary"));
 const ChargingWaiting = lazy(() => import("./pages/user/ChargingWaiting"));
 const UserSettingsNotifications = lazy(() => import("./pages/user/settings/Notifications"));
@@ -259,6 +260,7 @@ function Router() {
         <Route path="/start-charge" component={StartCharge} />
         <Route path="/charging-waiting" component={ChargingWaiting} />
         <Route path="/charging-monitor" component={ChargingMonitor} />
+        <Route path="/overstay" component={OverstayMonitor} />
         <Route path="/charging-summary/:transactionId" component={ChargingSummary} />
         <Route path="/vehicles" component={UserSettingsVehicles} />
         <Route path="/settings/payment" component={UserSettingsPaymentMethods} />

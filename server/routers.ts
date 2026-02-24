@@ -3917,6 +3917,21 @@ const overstayRouter = router({
       const evse = await db.getEvseById(transaction.evseId);
       if (!evse) return null;
       
+      // Obtener datos de estación para la UI
+      const station = await db.getChargingStationById(transaction.stationId);
+      const stationInfo = {
+        stationName: station?.name || "Estación",
+        stationAddress: station?.address || "",
+        connectorType: evse.connectorType || "TYPE_2",
+        powerKw: evse.powerKw ? parseFloat(evse.powerKw.toString()) : 7,
+        evseIdLocal: evse.evseIdLocal || 1,
+        kwhConsumed: transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed.toString()) : 0,
+        energyCost: transaction.energyCost ? parseFloat(transaction.energyCost.toString()) : 0,
+        totalChargeCost: transaction.totalCost ? parseFloat(transaction.totalCost.toString()) : 0,
+        chargeEndTime: transaction.endTime ? new Date(transaction.endTime).toISOString() : new Date().toISOString(),
+        chargeStartTime: transaction.startTime ? new Date(transaction.startTime).toISOString() : new Date().toISOString(),
+      };
+      
       const info = getOverstayInfo(evse.id);
       if (!info) {
         // No hay overstay activo en memoria, pero verificar si el EVSE está en Finishing
@@ -3930,6 +3945,7 @@ const overstayRouter = router({
             penaltyPerMinute: tariff?.overstayPenaltyPerMinute ? parseFloat(tariff.overstayPenaltyPerMinute.toString()) : (globalPrices.defaultOverstayPenaltyPerMin ?? 500),
             evseId: evse.id,
             transactionId: transaction.id,
+            ...stationInfo,
           };
         }
         return null;
@@ -3938,6 +3954,7 @@ const overstayRouter = router({
       return {
         status: info.isPenaltyActive ? "penalty" as const : "grace" as const,
         ...info,
+        ...stationInfo,
       };
     }),
 
