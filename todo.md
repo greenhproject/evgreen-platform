@@ -1768,3 +1768,6 @@
 - [x] BUG: ChargingMonitor muestra "sin sesión activa" cuando hay overstay post-carga (transacción COMPLETED)
 - [x] Crear pantalla dedicada de overstay con cobro minuto a minuto, contador en tiempo real, detalles de estación
 - [x] Redirigir banner de overstay del mapa a la pantalla correcta (/overstay)
+
+## Checkpoint: Pantalla Overstay Dedicada - 23 Feb 2026
+- [x] Pantalla /overstay con UI moderna (gradiente animado, contador en tiempo real, resumen de carga, datos de estación)
