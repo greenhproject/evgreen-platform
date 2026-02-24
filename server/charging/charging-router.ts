@@ -196,12 +196,21 @@ export const chargingRouter = router({
       const hasAvailableConnector = connectors.some(c => c.status === 'AVAILABLE');
       const isOnline = isDemo || isOcppConnected || station.isOnline || (station.isActive && hasAvailableConnector);
       
-      // Para estaciones demo, forzar conectores como AVAILABLE
+      // Para estaciones demo, forzar conectores como AVAILABLE PERO respetar RESERVED
       const mappedConnectors = connectors.map(c => ({
         ...c,
-        status: isDemo ? 'AVAILABLE' as typeof c.status : c.status,
-        ocppStatus: isDemo ? 'AVAILABLE' : c.status,
+        status: (isDemo && c.status !== 'RESERVED') ? 'AVAILABLE' as typeof c.status : c.status,
+        ocppStatus: (isDemo && c.status !== 'RESERVED') ? 'AVAILABLE' : c.status,
       }));
+      
+      // Verificar si el usuario tiene una reserva activa en esta estación
+      let userActiveReservation = null;
+      if (ctx.user) {
+        const userReservations = await db.getReservationsByUserId(ctx.user.id);
+        userActiveReservation = userReservations.find(
+          (r: any) => r.stationId === station.id && r.status === 'ACTIVE'
+        ) || null;
+      }
       
       return {
         station,
@@ -210,6 +219,7 @@ export const chargingRouter = router({
         ocppIdentity: ocppConnection?.ocppIdentity || station.ocppIdentity,
         isDemo,
         demoTopUp: isDemo ? demoTopUp : undefined,
+        userActiveReservation,
       };
     }),
 
@@ -234,13 +244,18 @@ export const chargingRouter = router({
       return connectors.map(c => {
         let realTimeStatus = c.status;
         
-        // Para estaciones demo, forzar AVAILABLE
-        if (isDemo) {
+        // Para estaciones demo, forzar AVAILABLE PERO respetar RESERVED
+        if (isDemo && realTimeStatus !== 'RESERVED') {
           realTimeStatus = 'AVAILABLE' as typeof c.status;
-        } else if (ocppConnection && ocppConnection.connectorStatuses.size > 0) {
+        } else if (!isDemo && ocppConnection && ocppConnection.connectorStatuses.size > 0) {
           const ocppStatus = ocppConnection.connectorStatuses.get(c.evseIdLocal);
           if (ocppStatus) {
-            realTimeStatus = ocppStatus as typeof c.status;
+            // No sobreescribir RESERVED con AVAILABLE del OCPP
+            if (realTimeStatus === 'RESERVED' && ocppStatus.toUpperCase() === 'AVAILABLE') {
+              // Mantener RESERVED
+            } else {
+              realTimeStatus = ocppStatus as typeof c.status;
+            }
           }
         }
         
@@ -258,6 +273,8 @@ export const chargingRouter = router({
           status: normalizedStatus,
           isAvailable,
           isOccupied,
+          activeReservationId: (c as any).activeReservationId || null,
+          activeReservationUserId: (c as any).activeReservationUserId || null,
         };
       });
     }),

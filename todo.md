@@ -1703,3 +1703,15 @@
 - [x] Liberar EVSE a AVAILABLE cuando la reserva expira
 - [x] Liberar la reserva vencida actual (EVSE 150001 -> AVAILABLE, reserva 60001 -> NO_SHOW)
 - [x] Registrar job en server/_core/index.ts con setInterval + ejecución inmediata al iniciar
+
+## Feature: Check-in automático via QR - 23 Feb 2026
+- [x] Analizar flujo actual de escaneo QR y cómo se inicia la carga
+- [x] Backend: getStationByCode retorna userActiveReservation del usuario actual
+- [x] Backend: getAvailableConnectors respeta RESERVED y retorna activeReservationUserId
+- [x] Backend: getStationByCode respeta RESERVED en estaciones demo
+- [x] Frontend: Al escanear QR, detectar reserva activa y auto-seleccionar conector
+- [x] Frontend: Saltar directamente a opciones de carga (skip select_connector)
+- [x] Frontend: Toast "Reserva detectada" con info del conector
+- [x] Frontend: Conector reservado marcado como "Tu reserva" en púrpura (seleccionable)
+- [x] Si no hay reserva: mantener flujo normal de carga
+- [ ] Cancelar timer de no-show al iniciar carga exitosamente (pendiente)

@@ -294,6 +294,25 @@ export default function StartCharge() {
         });
         return;
       }
+      
+      // Check-in automático: si el usuario tiene reserva activa en esta estación
+      const reservation = stationQuery.data.userActiveReservation;
+      if (reservation) {
+        toast.success("¡Reserva detectada!", {
+          description: `Tienes una reserva activa en el conector ${reservation.evseId}. Seleccionando automáticamente...`,
+          duration: 4000,
+        });
+        // Auto-seleccionar el conector reservado y saltar a opciones de carga
+        const reservedConnector = stationQuery.data.connectors.find(
+          (c: any) => c.id === reservation.evseId || c.evseIdLocal === reservation.evseId
+        );
+        if (reservedConnector) {
+          setSelectedConnector(reservedConnector.evseIdLocal || reservedConnector.connectorId || 1);
+          setStep("charge_options");
+          return;
+        }
+      }
+      
       setStep("select_connector");
     }
   }, [stationQuery.data, step]);
@@ -550,6 +569,13 @@ export default function StartCharge() {
                       return statusMap[status?.toUpperCase()] || status;
                     };
                     
+                    // Verificar si este conector es el reservado por el usuario actual
+                    const isMyReservation = connector.status === 'RESERVED' && 
+                      connector.activeReservationUserId && 
+                      user?.id && 
+                      String(connector.activeReservationUserId) === String(user.id);
+                    const canSelect = connector.isAvailable || isMyReservation;
+                    
                     return (
                       <button
                         key={connector.id}
@@ -558,26 +584,28 @@ export default function StartCharge() {
                           e.preventDefault();
                           e.stopPropagation();
                           console.log("[StartCharge] Button clicked, connector:", connector);
-                          if (connector.isAvailable) {
+                          if (canSelect) {
                             handleSelectConnector(connector.connectorId);
                           } else {
                             console.log("[StartCharge] Connector not available, status:", connector.status);
                           }
                         }}
-                        disabled={!connector.isAvailable}
+                        disabled={!canSelect}
                         className={`p-4 rounded-lg border-2 transition-all text-left w-full ${
-                          connector.isAvailable
-                            ? "border-primary/30 hover:border-primary hover:bg-primary/5 cursor-pointer active:scale-[0.98]"
-                            : "border-muted bg-muted/50 cursor-not-allowed opacity-60"
+                          isMyReservation
+                            ? "border-purple-500/50 hover:border-purple-500 hover:bg-purple-500/5 cursor-pointer active:scale-[0.98] ring-1 ring-purple-500/30"
+                            : canSelect
+                              ? "border-primary/30 hover:border-primary hover:bg-primary/5 cursor-pointer active:scale-[0.98]"
+                              : "border-muted bg-muted/50 cursor-not-allowed opacity-60"
                         }`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div className={`p-2 rounded-full ${
-                              connector.isAvailable ? "bg-green-500/10" : "bg-muted"
+                              isMyReservation ? "bg-purple-500/10" : connector.isAvailable ? "bg-green-500/10" : "bg-muted"
                             }`}>
                               <Plug className={`h-5 w-5 ${
-                                connector.isAvailable ? "text-green-500" : "text-muted-foreground"
+                                isMyReservation ? "text-purple-500" : connector.isAvailable ? "text-green-500" : "text-muted-foreground"
                               }`} />
                             </div>
                             <div>
@@ -587,8 +615,9 @@ export default function StartCharge() {
                               </p>
                             </div>
                           </div>
-                          <Badge variant={connector.isAvailable ? "default" : "secondary"}>
-                            {getStatusText(connector.status)}
+                          <Badge variant={isMyReservation ? "default" : connector.isAvailable ? "default" : "secondary"}
+                            className={isMyReservation ? "bg-purple-600 text-white" : ""}>
+                            {isMyReservation ? "✅ Tu reserva" : getStatusText(connector.status)}
                           </Badge>
                         </div>
                       </button>
