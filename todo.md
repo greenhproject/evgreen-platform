@@ -1763,3 +1763,5 @@
 - [x] Pantalla completa de overstay en ChargingSession cuando no hay sesión activa
 - [x] Banner inline de overstay durante sesión de carga activa
 - [x] Tests unitarios para lógica de overstay (24 tests)
+
+- [x] BUG: Banner de overstay en mapa redirige a /charging (404) - debe ir a /charging-monitor

@@ -684,7 +684,7 @@ export default function UserMap() {
                         ? 'bg-red-500 hover:bg-red-400'
                         : 'bg-amber-500 hover:bg-amber-400'
                     }`}
-                    onClick={() => setLocation('/charging')}
+                    onClick={() => setLocation('/charging-monitor')}
                   >
                     Ver
                   </Button>
