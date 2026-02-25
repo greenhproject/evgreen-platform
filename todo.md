@@ -1776,3 +1776,6 @@
 - [x] Crear página de agradecimiento moderna para personas que invirtieron en EVGreen
 - [x] Integrar como ruta pública /gracias-inversionistas
 - [x] Diseño premium con animaciones y estética de marca EVGreen
+- [x] Rediseñar página: enfoque post-pago de inversión (no hay infraestructura aún, ronda recién cerrada)
+- [x] Quitar métricas de estaciones montadas y galería de infraestructura
+- [x] Agregar visión futura, próximos pasos del proyecto, timeline
