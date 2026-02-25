@@ -7,7 +7,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { getDb } from "./db";
 import { users, userVehicles, favoriteStations, notifications } from "../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { aiRouter } from "./ai/ai-router";
 import { stripeRouter } from "./stripe/router";
 import { wompiRouter } from "./wompi/router";
@@ -4058,6 +4058,128 @@ const overstayRouter = router({
     }),
 });
 
+// ============================================================================
+// INVESTOR MANAGEMENT ROUTER (Admin)
+// ============================================================================
+
+const investorManagementRouter = router({
+  // Admin: listar todos los inversionistas con sus participaciones
+  list: adminProcedure.query(async () => {
+    const allUsers = await db.getAllUsers('investor');
+    // Para cada inversionista, obtener sus participaciones
+    const investorsWithData = await Promise.all(
+      allUsers.map(async (user: any) => {
+        const participations = await db.getInvestorParticipations(user.id);
+        const stations = await db.getAllChargingStations({ ownerId: user.id });
+        return {
+          ...user,
+          participations,
+          ownedStations: stations,
+          totalInvested: participations.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0),
+        };
+      })
+    );
+    return investorsWithData;
+  }),
+
+  // Admin: actualizar perfil de inversionista (tipo, fundador, frase, bio, badge, etc)
+  updateProfile: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      investorType: z.enum(['individual', 'collective', 'founder']).optional(),
+      isFounder: z.boolean().optional(),
+      founderTitle: z.string().max(100).optional().nullable(),
+      founderOrder: z.number().optional().nullable(),
+      investorQuote: z.string().max(500).optional().nullable(),
+      investorBio: z.string().optional().nullable(),
+      investorBadge: z.enum(['gold', 'platinum', 'diamond', 'emerald']).optional().nullable(),
+      investorJoinedAt: z.date().optional().nullable(),
+      investorShowInWall: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { userId, ...data } = input;
+      await db.updateUser(userId, data as any);
+      return { success: true };
+    }),
+
+  // Admin: subir foto de perfil del inversionista
+  uploadPhoto: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      fileName: z.string(),
+      fileBase64: z.string(),
+      contentType: z.string().refine(
+        (ct) => ['image/jpeg', 'image/png', 'image/webp'].includes(ct),
+        { message: 'Solo se permiten imágenes JPEG, PNG o WebP' }
+      ),
+    }))
+    .mutation(async ({ input }) => {
+      const sharp = (await import('sharp')).default;
+      const { storagePut } = await import('./storage');
+      const originalBuffer = Buffer.from(input.fileBase64, 'base64');
+      if (originalBuffer.length > 5 * 1024 * 1024) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'La imagen no puede superar 5MB' });
+      }
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const compressedBuffer = await sharp(originalBuffer)
+        .resize(600, 600, { fit: 'cover', position: 'center' })
+        .webp({ quality: 85 })
+        .toBuffer();
+      const fileKey = `investor-photos/investor-${input.userId}-${timestamp}-${randomSuffix}.webp`;
+      const { url } = await storagePut(fileKey, compressedBuffer, 'image/webp');
+      await db.updateUser(input.userId, { investorPhotoUrl: url } as any);
+      return { photoUrl: url };
+    }),
+
+  // Público: obtener muro de fundadores
+  getFoundersWall: publicProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) return [];
+    const founders = await database.select({
+      id: users.id,
+      name: users.name,
+      investorType: users.investorType,
+      isFounder: users.isFounder,
+      founderTitle: users.founderTitle,
+      founderOrder: users.founderOrder,
+      investorPhotoUrl: users.investorPhotoUrl,
+      investorQuote: users.investorQuote,
+      investorBio: users.investorBio,
+      investorBadge: users.investorBadge,
+      investorJoinedAt: users.investorJoinedAt,
+      companyName: users.companyName,
+    })
+      .from(users)
+      .where(
+        and(
+          eq(users.isFounder, true),
+          eq(users.investorShowInWall, true)
+        )
+      )
+      .orderBy(users.founderOrder);
+    return founders;
+  }),
+
+  // Inversionista: obtener su propio perfil de inversionista
+  getMyProfile: investorProcedure.query(async ({ ctx }) => {
+    const user = await db.getUserById(ctx.user.id);
+    if (!user) throw new TRPCError({ code: 'NOT_FOUND' });
+    return {
+      investorType: user.investorType,
+      isFounder: user.isFounder,
+      founderTitle: user.founderTitle,
+      investorPhotoUrl: user.investorPhotoUrl,
+      investorQuote: user.investorQuote,
+      investorBio: user.investorBio,
+      investorBadge: user.investorBadge,
+      investorJoinedAt: user.investorJoinedAt,
+      investorTotalInvested: user.investorTotalInvested,
+      companyName: user.companyName,
+    };
+  }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -4094,6 +4216,7 @@ export const appRouter = router({
   idTags: idTagRouter,
   chargerBrands: chargerBrandsRouter,
   overstay: overstayRouter,
+  investorManagement: investorManagementRouter,
 });
 
 export type AppRouter = typeof appRouter;

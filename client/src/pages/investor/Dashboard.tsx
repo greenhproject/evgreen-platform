@@ -3,47 +3,44 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Zap,
-  MapPin,
-  DollarSign,
-  TrendingUp,
-  Activity,
-  Wallet,
+  Zap, MapPin, DollarSign, TrendingUp, Activity, Wallet,
+  Crown, Gem, Award, Shield, Star, Building2, Users as UsersIcon,
+  Sparkles,
 } from "lucide-react";
 import { InvestorInsights } from "@/components/InvestorInsights";
 import { CollectiveInvestmentCard } from "@/components/CollectiveInvestmentCard";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, AreaChart, Area,
 } from "recharts";
+import { motion } from "framer-motion";
+
+const BADGE_CONFIG: Record<string, { label: string; icon: any; gradient: string; ring: string }> = {
+  emerald: { label: "Esmeralda", icon: Gem, gradient: "from-emerald-500 to-emerald-700", ring: "ring-emerald-400" },
+  gold: { label: "Oro", icon: Award, gradient: "from-yellow-400 to-amber-600", ring: "ring-yellow-400" },
+  platinum: { label: "Platino", icon: Shield, gradient: "from-slate-300 to-slate-500", ring: "ring-slate-300" },
+  diamond: { label: "Diamante", icon: Star, gradient: "from-cyan-300 to-blue-500", ring: "ring-cyan-300" },
+};
+
+const TYPE_CONFIG: Record<string, { label: string; icon: any; desc: string }> = {
+  individual: { label: "Dueño Individual", icon: Building2, desc: "Propietario de estación completa" },
+  collective: { label: "Participación Colectiva", icon: UsersIcon, desc: "Participación en estación" },
+  founder: { label: "Fundador", icon: Crown, desc: "Inversionista fundador" },
+};
 
 export default function InvestorDashboard() {
   const { data: stations } = trpc.stations.listOwned.useQuery();
   const { data: metrics, isLoading } = trpc.dashboard.investorMetrics.useQuery(undefined, {
     refetchInterval: 30000,
   });
-  
-  // Obtener el porcentaje del inversionista desde la configuración
+  const { data: investorProfile } = trpc.investorManagement.getMyProfile.useQuery();
   const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();
   const investorPercentage = platformSettings?.investorPercentage ?? 80;
   const platformFeePercentage = platformSettings?.platformFeePercentage ?? 20;
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-CO", {
-      style: "currency",
-      currency: "COP",
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(amount);
 
-  // Datos de ejemplo para gráficos (se pueden reemplazar con datos reales)
   const revenueData = [
     { name: "Lun", value: 0 },
     { name: "Mar", value: 0 },
@@ -62,6 +59,9 @@ export default function InvestorDashboard() {
     { name: "16:00", kwh: 0 },
     { name: "20:00", kwh: metrics?.monthlyKwh || 0 },
   ];
+
+  const badgeInfo = investorProfile?.investorBadge ? BADGE_CONFIG[investorProfile.investorBadge] : null;
+  const typeInfo = investorProfile?.investorType ? TYPE_CONFIG[investorProfile.investorType] : null;
 
   if (isLoading) {
     return (
@@ -84,10 +84,95 @@ export default function InvestorDashboard() {
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      {/* Header con insignia de fundador */}
+      {investorProfile?.isFounder && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative overflow-hidden rounded-2xl"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-yellow-500/5 to-amber-500/10" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-amber-400/10 via-transparent to-transparent" />
+          <div className="relative p-5 sm:p-6 flex items-center gap-4">
+            {/* Insignia grande */}
+            <div className="relative flex-shrink-0">
+              <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br ${badgeInfo?.gradient || "from-amber-400 to-amber-600"} flex items-center justify-center shadow-lg ${badgeInfo?.ring || "ring-amber-400"} ring-2 ring-offset-2 ring-offset-background`}>
+                {badgeInfo ? (
+                  <badgeInfo.icon className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+                ) : (
+                  <Crown className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+                )}
+              </div>
+              <div className="absolute -top-1 -right-1 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center animate-pulse">
+                <Sparkles className="w-3.5 h-3.5 text-white" />
+              </div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg sm:text-xl font-bold">
+                  {investorProfile.founderTitle || "Fundador EVGreen"}
+                </h2>
+                {badgeInfo && (
+                  <Badge className={`bg-gradient-to-r ${badgeInfo.gradient} text-white border-0 text-xs`}>
+                    <badgeInfo.icon className="w-3 h-3 mr-1" />
+                    {badgeInfo.label}
+                  </Badge>
+                )}
+              </div>
+              {investorProfile.investorQuote && (
+                <p className="text-sm text-muted-foreground mt-1 italic">
+                  "{investorProfile.investorQuote}"
+                </p>
+              )}
+              <div className="flex items-center gap-3 mt-2 flex-wrap">
+                {typeInfo && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <typeInfo.icon className="w-3 h-3" />
+                    {typeInfo.label}
+                  </span>
+                )}
+                {investorProfile.investorJoinedAt && (
+                  <span className="text-xs text-muted-foreground">
+                    Desde {new Date(investorProfile.investorJoinedAt).toLocaleDateString("es-CO", { month: "long", year: "numeric" })}
+                  </span>
+                )}
+                {investorProfile.companyName && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Building2 className="w-3 h-3" />
+                    {investorProfile.companyName}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Header sin fundador pero con tipo */}
+      {!investorProfile?.isFounder && typeInfo && (
+        <div className="flex items-center gap-3 p-4 bg-muted/30 rounded-xl">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+            <typeInfo.icon className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold">{typeInfo.label}</h2>
+              {badgeInfo && (
+                <Badge className={`bg-gradient-to-r ${badgeInfo.gradient} text-white border-0 text-xs`}>
+                  <badgeInfo.icon className="w-3 h-3 mr-1" />
+                  {badgeInfo.label}
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">{typeInfo.desc}</p>
+          </div>
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold">Mi Dashboard</h1>
         <p className="text-muted-foreground">
-          Monitorea el rendimiento de tus estaciones en tiempo real
+          Monitorea el rendimiento de tus {investorProfile?.investorType === "collective" ? "participaciones" : "estaciones"} en tiempo real
         </p>
       </div>
 
@@ -96,7 +181,9 @@ export default function InvestorDashboard() {
         <Card className="p-4 sm:p-6">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-xs sm:text-sm text-muted-foreground truncate">Mis ingresos ({investorPercentage}%)</p>
+              <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                Mis ingresos ({investorPercentage}%)
+              </p>
               <h3 className="text-lg sm:text-2xl font-bold mt-1 truncate">
                 {formatCurrency(metrics?.monthlyEarnings || 0)}
               </h3>
@@ -129,7 +216,9 @@ export default function InvestorDashboard() {
         <Card className="p-4 sm:p-6">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-xs sm:text-sm text-muted-foreground truncate">Estaciones</p>
+              <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                {investorProfile?.investorType === "collective" ? "Participaciones" : "Estaciones"}
+              </p>
               <h3 className="text-lg sm:text-2xl font-bold mt-1">
                 {metrics?.onlineStations || 0} / {metrics?.totalStations || 0}
               </h3>
@@ -202,18 +291,13 @@ export default function InvestorDashboard() {
               <XAxis dataKey="name" />
               <YAxis />
               <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="kwh"
-                stroke="#22c55e"
-                strokeWidth={2}
-              />
+              <Line type="monotone" dataKey="kwh" stroke="#22c55e" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </Card>
       </div>
 
-      {/* Estado de estaciones y cargas activas */}
+      {/* Estado de estaciones */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <Card className="p-4 sm:p-6">
           <h3 className="font-semibold mb-4 flex items-center gap-2 text-sm sm:text-base">
@@ -227,21 +311,12 @@ export default function InvestorDashboard() {
           ) : (
             <div className="space-y-3">
               {stations?.slice(0, 5).map((station) => (
-                <div
-                  key={station.id}
-                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
-                >
+                <div key={station.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                   <div>
                     <div className="font-medium">{station.name}</div>
                     <div className="text-sm text-muted-foreground">{station.city}</div>
                   </div>
-                  <Badge
-                    className={
-                      station.isOnline
-                        ? "bg-green-100 text-green-700"
-                        : "bg-red-100 text-red-700"
-                    }
-                  >
+                  <Badge className={station.isOnline ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
                     {station.isOnline ? "En línea" : "Fuera de línea"}
                   </Badge>
                 </div>

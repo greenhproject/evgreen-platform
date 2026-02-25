@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE users \nADD COLUMN investor_type ENUM('individual', 'collective', 'founder') NULL,\nADD COLUMN isFounder TINYINT(1) DEFAULT 0 NOT NULL,\nADD COLUMN founderTitle VARCHAR(100) NULL,\nADD COLUMN founderOrder INT NULL,\nADD COLUMN investorPhotoUrl TEXT NULL,\nADD COLUMN investorQuote VARCHAR(500) NULL,\nADD COLUMN investorBio TEXT NULL,\nADD COLUMN investorBadge VARCHAR(50) NULL,\nADD COLUMN investorJoinedAt TIMESTAMP NULL,\nADD COLUMN investorTotalInvested BIGINT DEFAULT 0,\nADD COLUMN investorShowInWall TINYINT(1) DEFAULT 1 NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute ALTER TABLE users \nADD COLUMN investor_type ENUM('individual', 'collective', 'founder') NULL,\nADD COLUMN isFounder TINYINT(1) DEFAULT 0 NOT NULL,\nADD COLUMN founderTitle VARCHAR(100) NULL,\nADD COLUMN founderOrder INT NULL,\nADD COLUMN investorPhotoUrl TEXT NULL,\nADD COLUMN investorQuote VARCHAR(500) NULL,\nADD COLUMN investorBio TEXT NULL,\nADD COLUMN investorBadge VARCHAR(50) NULL,\nADD COLUMN investorJoinedAt TIMESTAMP NULL,\nADD COLUMN investorTotalInvested BIGINT DEFAULT 0,\nADD COLUMN investorShowInWall TINYINT(1) DEFAULT 1 NOT NULL;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 4665
+}

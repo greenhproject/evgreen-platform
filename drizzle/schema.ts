@@ -74,6 +74,18 @@ export const users = mysqlTable("users", {
   taxId: varchar("taxId", { length: 50 }), // NIT en Colombia
   bankAccount: varchar("bankAccount", { length: 100 }),
   bankName: varchar("bankName", { length: 100 }),
+  // Tipo de inversionista y perfil público
+  investorType: mysqlEnum("investor_type", ["individual", "collective", "founder"]),
+  isFounder: boolean("isFounder").default(false),
+  founderTitle: varchar("founderTitle", { length: 100 }), // Ej: "Fundador Visionario", "Co-Fundador"
+  founderOrder: int("founderOrder"), // Orden de aparición en el muro
+  investorPhotoUrl: text("investorPhotoUrl"), // Foto de perfil del inversionista
+  investorQuote: varchar("investorQuote", { length: 500 }), // Frase personalizable
+  investorBio: text("investorBio"), // Biografía corta
+  investorBadge: varchar("investorBadge", { length: 50 }), // Tipo de insignia: gold, platinum, diamond
+  investorJoinedAt: timestamp("investorJoinedAt"), // Fecha de ingreso como inversionista
+  investorTotalInvested: bigint("investorTotalInvested", { mode: "number" }).default(0), // Total invertido en COP
+  investorShowInWall: boolean("investorShowInWall").default(true), // Visible en muro de fundadores
   // Para técnicos - información adicional
   technicianLicense: varchar("technicianLicense", { length: 100 }),
   assignedRegion: varchar("assignedRegion", { length: 100 }),

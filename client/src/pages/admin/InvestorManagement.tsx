@@ -1,0 +1,549 @@
+import { useState, useRef } from "react";
+import { trpc } from "@/lib/trpc";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Search, Crown, Star, Building2, Users, Camera, Upload, Pencil,
+  Award, Gem, Shield, TrendingUp, MapPin, DollarSign, Eye, EyeOff,
+} from "lucide-react";
+import { toast } from "sonner";
+
+const BADGE_OPTIONS = [
+  { value: "emerald", label: "Esmeralda", icon: Gem, color: "bg-emerald-500 text-white" },
+  { value: "gold", label: "Oro", icon: Award, color: "bg-yellow-500 text-white" },
+  { value: "platinum", label: "Platino", icon: Shield, color: "bg-slate-400 text-white" },
+  { value: "diamond", label: "Diamante", icon: Star, color: "bg-cyan-400 text-white" },
+];
+
+const TYPE_OPTIONS = [
+  { value: "individual", label: "Dueño Individual", desc: "Propietario de estación completa" },
+  { value: "collective", label: "Participación Colectiva", desc: "Dueño de participación en estación" },
+  { value: "founder", label: "Fundador", desc: "Inversionista fundador del proyecto" },
+];
+
+export default function InvestorManagement() {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedInvestor, setSelectedInvestor] = useState<any>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: investors, isLoading, refetch } = trpc.investorManagement.list.useQuery();
+  const updateProfile = trpc.investorManagement.updateProfile.useMutation({
+    onSuccess: () => {
+      toast.success("Perfil de inversionista actualizado");
+      refetch();
+      setShowEditModal(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const uploadPhoto = trpc.investorManagement.uploadPhoto.useMutation({
+    onSuccess: (data) => {
+      toast.success("Foto subida correctamente");
+      setSelectedInvestor((prev: any) => prev ? { ...prev, investorPhotoUrl: data.photoUrl } : null);
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Form state
+  const [editForm, setEditForm] = useState({
+    investorType: "" as string,
+    isFounder: false,
+    founderTitle: "",
+    founderOrder: 0,
+    investorQuote: "",
+    investorBio: "",
+    investorBadge: "" as string,
+    investorShowInWall: true,
+  });
+
+  const openEditModal = (investor: any) => {
+    setSelectedInvestor(investor);
+    setEditForm({
+      investorType: investor.investorType || "",
+      isFounder: investor.isFounder || false,
+      founderTitle: investor.founderTitle || "",
+      founderOrder: investor.founderOrder || 0,
+      investorQuote: investor.investorQuote || "",
+      investorBio: investor.investorBio || "",
+      investorBadge: investor.investorBadge || "",
+      investorShowInWall: investor.investorShowInWall !== false,
+    });
+    setShowEditModal(true);
+  };
+
+  const handleSave = () => {
+    if (!selectedInvestor) return;
+    updateProfile.mutate({
+      userId: selectedInvestor.id,
+      investorType: editForm.investorType as any || undefined,
+      isFounder: editForm.isFounder,
+      founderTitle: editForm.founderTitle || null,
+      founderOrder: editForm.founderOrder || null,
+      investorQuote: editForm.investorQuote || null,
+      investorBio: editForm.investorBio || null,
+      investorBadge: editForm.investorBadge as any || null,
+      investorShowInWall: editForm.investorShowInWall,
+    });
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedInvestor) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("La imagen no puede superar 5MB");
+      return;
+    }
+    setUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(",")[1];
+        uploadPhoto.mutate({
+          userId: selectedInvestor.id,
+          fileName: file.name,
+          fileBase64: base64,
+          contentType: file.type,
+        });
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(amount);
+
+  const getBadgeInfo = (badge: string | null) =>
+    BADGE_OPTIONS.find((b) => b.value === badge) || null;
+
+  const getTypeLabel = (type: string | null) =>
+    TYPE_OPTIONS.find((t) => t.value === type)?.label || "Sin asignar";
+
+  const filtered = investors?.filter((inv: any) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      inv.name?.toLowerCase().includes(q) ||
+      inv.email?.toLowerCase().includes(q) ||
+      inv.companyName?.toLowerCase().includes(q)
+    );
+  });
+
+  // Stats
+  const totalInvestors = investors?.length || 0;
+  const founders = investors?.filter((i: any) => i.isFounder)?.length || 0;
+  const individualOwners = investors?.filter((i: any) => i.investorType === "individual")?.length || 0;
+  const collectiveOwners = investors?.filter((i: any) => i.investorType === "collective")?.length || 0;
+
+  return (
+    <div className="p-4 sm:p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Gestión de Inversionistas</h1>
+        <p className="text-muted-foreground">Administra perfiles, tipos, insignias y el muro de fundadores</p>
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+              <Users className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Total</p>
+              <p className="text-xl font-bold">{totalInvestors}</p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+              <Crown className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Fundadores</p>
+              <p className="text-xl font-bold">{founders}</p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+              <Building2 className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Individuales</p>
+              <p className="text-xl font-bold">{individualOwners}</p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+              <TrendingUp className="w-5 h-5 text-purple-600" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Colectivos</p>
+              <p className="text-xl font-bold">{collectiveOwners}</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar inversionista..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-10"
+        />
+      </div>
+
+      {/* Table */}
+      <Card>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Inversionista</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Insignia</TableHead>
+                <TableHead>Estaciones</TableHead>
+                <TableHead>Invertido</TableHead>
+                <TableHead>Muro</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    Cargando inversionistas...
+                  </TableCell>
+                </TableRow>
+              ) : filtered?.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    No se encontraron inversionistas
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered?.map((inv: any) => {
+                  const badgeInfo = getBadgeInfo(inv.investorBadge);
+                  return (
+                    <TableRow key={inv.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="relative">
+                            <Avatar className="h-10 w-10 border-2 border-emerald-500/20">
+                              <AvatarImage src={inv.investorPhotoUrl || inv.avatarUrl} />
+                              <AvatarFallback className="bg-emerald-500/10 text-emerald-600 text-sm font-bold">
+                                {inv.name?.charAt(0)?.toUpperCase() || "I"}
+                              </AvatarFallback>
+                            </Avatar>
+                            {inv.isFounder && (
+                              <div className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
+                                <Crown className="w-3 h-3 text-white" />
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">{inv.name || "Sin nombre"}</p>
+                            <p className="text-xs text-muted-foreground">{inv.email}</p>
+                            {inv.companyName && (
+                              <p className="text-xs text-muted-foreground">{inv.companyName}</p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {getTypeLabel(inv.investorType)}
+                        </Badge>
+                        {inv.isFounder && (
+                          <Badge className="ml-1 bg-amber-500/10 text-amber-600 text-xs">
+                            {inv.founderTitle || "Fundador"}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {badgeInfo ? (
+                          <Badge className={`${badgeInfo.color} text-xs`}>
+                            <badgeInfo.icon className="w-3 h-3 mr-1" />
+                            {badgeInfo.label}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1 text-sm">
+                          <MapPin className="w-3 h-3 text-muted-foreground" />
+                          {inv.ownedStations?.length || 0}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm font-medium">
+                          {formatCurrency(inv.totalInvested || 0)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {inv.investorShowInWall !== false ? (
+                          <Eye className="w-4 h-4 text-emerald-500" />
+                        ) : (
+                          <EyeOff className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button size="sm" variant="outline" onClick={() => openEditModal(inv)}>
+                          <Pencil className="w-3 h-3 mr-1" />
+                          Editar
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+
+      {/* Edit Modal */}
+      <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <div className="relative">
+                <Avatar className="h-14 w-14 border-2 border-emerald-500/30">
+                  <AvatarImage src={selectedInvestor?.investorPhotoUrl || selectedInvestor?.avatarUrl} />
+                  <AvatarFallback className="bg-emerald-500/10 text-emerald-600 text-lg font-bold">
+                    {selectedInvestor?.name?.charAt(0)?.toUpperCase() || "I"}
+                  </AvatarFallback>
+                </Avatar>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute -bottom-1 -right-1 w-7 h-7 bg-emerald-500 rounded-full flex items-center justify-center hover:bg-emerald-600 transition-colors"
+                >
+                  <Camera className="w-3.5 h-3.5 text-white" />
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handlePhotoUpload}
+                />
+              </div>
+              <div>
+                <span>{selectedInvestor?.name || "Inversionista"}</span>
+                <p className="text-sm font-normal text-muted-foreground">{selectedInvestor?.email}</p>
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Tipo de inversionista */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Tipo de Inversionista</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {TYPE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setEditForm((f) => ({ ...f, investorType: opt.value }))}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                      editForm.investorType === opt.value
+                        ? "border-emerald-500 bg-emerald-500/5"
+                        : "border-border hover:border-emerald-500/30"
+                    }`}
+                  >
+                    <p className="font-medium text-sm">{opt.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Fundador */}
+            <Card className="p-4 bg-amber-500/5 border-amber-500/20">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Crown className="w-5 h-5 text-amber-500" />
+                  <Label className="text-sm font-semibold">Fundador</Label>
+                </div>
+                <Switch
+                  checked={editForm.isFounder}
+                  onCheckedChange={(v) => setEditForm((f) => ({ ...f, isFounder: v }))}
+                />
+              </div>
+              {editForm.isFounder && (
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-xs">Título de Fundador</Label>
+                    <Input
+                      placeholder="Ej: Co-Fundador, Fundador Visionario..."
+                      value={editForm.founderTitle}
+                      onChange={(e) => setEditForm((f) => ({ ...f, founderTitle: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Orden en el Muro</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={editForm.founderOrder}
+                      onChange={(e) => setEditForm((f) => ({ ...f, founderOrder: parseInt(e.target.value) || 0 }))}
+                    />
+                  </div>
+                </div>
+              )}
+            </Card>
+
+            {/* Insignia */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Insignia</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {BADGE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setEditForm((f) => ({ ...f, investorBadge: f.investorBadge === opt.value ? "" : opt.value }))}
+                    className={`p-3 rounded-xl border-2 text-center transition-all ${
+                      editForm.investorBadge === opt.value
+                        ? "border-emerald-500 bg-emerald-500/5"
+                        : "border-border hover:border-emerald-500/30"
+                    }`}
+                  >
+                    <opt.icon className={`w-6 h-6 mx-auto mb-1 ${
+                      opt.value === "emerald" ? "text-emerald-500" :
+                      opt.value === "gold" ? "text-yellow-500" :
+                      opt.value === "platinum" ? "text-slate-400" :
+                      "text-cyan-400"
+                    }`} />
+                    <p className="text-xs font-medium">{opt.label}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Frase y Bio */}
+            <div className="space-y-3">
+              <div>
+                <Label className="text-sm font-semibold">Frase del Inversionista</Label>
+                <Textarea
+                  placeholder="Una frase inspiradora o motivacional..."
+                  value={editForm.investorQuote}
+                  onChange={(e) => setEditForm((f) => ({ ...f, investorQuote: e.target.value }))}
+                  maxLength={500}
+                  rows={2}
+                />
+                <p className="text-xs text-muted-foreground mt-1">{editForm.investorQuote.length}/500</p>
+              </div>
+              <div>
+                <Label className="text-sm font-semibold">Biografía Corta</Label>
+                <Textarea
+                  placeholder="Breve descripción del inversionista..."
+                  value={editForm.investorBio}
+                  onChange={(e) => setEditForm((f) => ({ ...f, investorBio: e.target.value }))}
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            {/* Visibilidad en muro */}
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-xl">
+              <div>
+                <p className="text-sm font-medium">Visible en Muro de Fundadores</p>
+                <p className="text-xs text-muted-foreground">Mostrar en la sección pública del muro</p>
+              </div>
+              <Switch
+                checked={editForm.investorShowInWall}
+                onCheckedChange={(v) => setEditForm((f) => ({ ...f, investorShowInWall: v }))}
+              />
+            </div>
+
+            {/* Info de participaciones */}
+            {selectedInvestor?.participations?.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Participaciones</Label>
+                <div className="space-y-2">
+                  {selectedInvestor.participations.map((p: any) => (
+                    <div key={p.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div>
+                        <p className="text-sm font-medium">{p.project?.name || "Proyecto"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {p.project?.city} • {Number(p.participationPercent).toFixed(1)}% participación
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold">{formatCurrency(Number(p.amount))}</p>
+                        <Badge variant="outline" className="text-xs">
+                          {p.paymentStatus === "COMPLETED" ? "Pagado" : "Pendiente"}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Estaciones propias */}
+            {selectedInvestor?.ownedStations?.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Estaciones Propias</Label>
+                <div className="space-y-2">
+                  {selectedInvestor.ownedStations.map((s: any) => (
+                    <div key={s.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-emerald-500" />
+                        <div>
+                          <p className="text-sm font-medium">{s.name}</p>
+                          <p className="text-xs text-muted-foreground">{s.city} - {s.address}</p>
+                        </div>
+                      </div>
+                      <Badge className={s.isOnline ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
+                        {s.isOnline ? "Online" : "Offline"}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditModal(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={updateProfile.isPending}
+              className="bg-emerald-500 hover:bg-emerald-600"
+            >
+              {updateProfile.isPending ? "Guardando..." : "Guardar Cambios"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -1,0 +1,43 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME IN ('investor_type', 'investorType', 'isFounder', 'is_founder', 'founderTitle', 'founder_title', 'founderOrder', 'founder_order', 'investorPhotoUrl', 'investor_photo_url', 'investorQuote', 'investor_quote', 'investorBio', 'investor_bio', 'investorBadge', 'investor_badge', 'investorJoinedAt', 'investor_joined_at', 'investorTotalInvested', 'investor_total_invested', 'investorShowInWall', 'investor_show_in_wall');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME IN ('investor_type', 'investorType', 'isFounder', 'is_founder', 'founderTitle', 'founder_title', 'founderOrder', 'founder_order', 'investorPhotoUrl', 'investor_photo_url', 'investorQuote', 'investor_quote', 'investorBio', 'investor_bio', 'investorBadge', 'investor_badge', 'investorJoinedAt', 'investor_joined_at', 'investorTotalInvested', 'investor_total_invested', 'investorShowInWall', 'investor_show_in_wall');",
+  "rows": [
+    {
+      "COLUMN_NAME": "investor_type"
+    },
+    {
+      "COLUMN_NAME": "isFounder"
+    },
+    {
+      "COLUMN_NAME": "founderTitle"
+    },
+    {
+      "COLUMN_NAME": "founderOrder"
+    },
+    {
+      "COLUMN_NAME": "investorPhotoUrl"
+    },
+    {
+      "COLUMN_NAME": "investorQuote"
+    },
+    {
+      "COLUMN_NAME": "investorBio"
+    },
+    {
+      "COLUMN_NAME": "investorBadge"
+    },
+    {
+      "COLUMN_NAME": "investorJoinedAt"
+    },
+    {
+      "COLUMN_NAME": "investorTotalInvested"
+    },
+    {
+      "COLUMN_NAME": "investorShowInWall"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\ninvestor_type\nisFounder\nfounderTitle\nfounderOrder\ninvestorPhotoUrl\ninvestorQuote\ninvestorBio\ninvestorBadge\ninvestorJoinedAt\ninvestorTotalInvested\ninvestorShowInWall\n",
+  "stderr": "",
+  "execution_time_ms": 379
+}
