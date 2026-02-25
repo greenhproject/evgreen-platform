@@ -1779,3 +1779,11 @@
 - [x] Rediseñar página: enfoque post-pago de inversión (no hay infraestructura aún, ronda recién cerrada)
 - [x] Quitar métricas de estaciones montadas y galería de infraestructura
 - [x] Agregar visión futura, próximos pasos del proyecto, timeline
+
+## Módulo de Gestión de Inversionistas - 25 Feb 2026
+- [x] Schema BD: tipo inversionista (individual/colectivo/fundador), foto, frase, bio, insignia, muro
+- [x] Backend: endpoints admin de gestión de inversionistas (CRUD, upload foto, muro fundadores)
+- [x] Admin: página dedicada /admin/investors con tabla, modal de edición, subida de foto
+- [x] Dashboard inversionista: insignia de fundador con diseño premium, cálculos por tipo de inversión
+- [x] Muro de fundadores: componente en InvestorLayout sidebar con fotos y frases configurables
+- [x] Endpoint público getFoundersWall para cargar datos del muro
