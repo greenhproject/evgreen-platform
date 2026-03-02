@@ -1866,3 +1866,19 @@
 - [x] Enviar timezone del usuario (Intl.DateTimeFormat) desde el frontend con cada mensaje
 - [x] Usar la timezone del usuario para generar la fecha/hora en el system prompt
 - [x] Asegurar que todas las referencias de fecha/hora en el asistente sean locales al usuario
+
+
+## Bugs Reportados - 02 Mar
+
+### Bug 1: Reserva desde EV Assistant no se guarda en BD
+- [x] El asistente dice que hizo la reserva pero no se crea realmente en la base de datos
+- [x] Investigar el flujo del tag [RESERVE:...] y el componente ReservationButton
+- [x] Corregido: ReservationButton usaba setTimeout falso en vez de esperar la mutation real
+- [x] Ahora espera la respuesta real de trpc.reservations.create antes de mostrar confirmación
+
+### Bug 2: Notificaciones Push no se activan
+- [x] El toggle de notificaciones push no funciona al intentar activarlo
+- [x] Causa: dependía de Firebase FCM del frontend sin credenciales configuradas
+- [x] Solución: implementado Web Push nativo con VAPID keys propias
+- [x] Nuevo push-router con registerSubscription para Web Push + registerToken como fallback FCM
+- [x] Service Worker ya maneja correctamente los eventos push nativos

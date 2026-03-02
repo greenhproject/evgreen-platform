@@ -1,6 +1,7 @@
 /**
  * Hook para manejar notificaciones push en el frontend
- * Integra con Firebase y el backend de EVGreen
+ * Usa Web Push nativo (VAPID) como método principal
+ * con FCM como fallback si está configurado
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -12,6 +13,7 @@ import {
   onForegroundMessage,
   areNotificationsEnabled,
   getNotificationPermission,
+  getWebPushSubscriptionData,
   getFCMToken,
   initializeFirebase,
   showLocalNotification,
@@ -38,6 +40,7 @@ export function useNotifications() {
     enabled: isAuthenticated,
   });
 
+  const registerSubscriptionMutation = trpc.push.registerSubscription.useMutation();
   const registerTokenMutation = trpc.push.registerToken.useMutation();
   const unregisterTokenMutation = trpc.push.unregisterToken.useMutation();
   const updatePreferencesMutation = trpc.push.updatePreferences.useMutation();
@@ -48,7 +51,7 @@ export function useNotifications() {
     const init = async () => {
       const supported = isPushSupported();
       setIsSupported(supported);
-      
+
       if (supported) {
         await initializeFirebase();
         const permission = getNotificationPermission();
@@ -78,7 +81,6 @@ export function useNotifications() {
     if (!isEnabled) return;
 
     const unsubscribe = onForegroundMessage((payload) => {
-      // Mostrar toast cuando llega una notificación en primer plano
       toast.info(payload.title, {
         description: payload.body,
         duration: 5000,
@@ -88,32 +90,71 @@ export function useNotifications() {
     return unsubscribe;
   }, [isEnabled]);
 
-  // Habilitar notificaciones
+  // Habilitar notificaciones - Web Push nativo primero, FCM como fallback
   const enableNotifications = useCallback(async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const granted = await requestNotificationPermission();
       setPermissionStatus(getNotificationPermission());
 
-      if (granted) {
-        const token = await getFCMToken();
-        
-        if (token && isAuthenticated) {
-          await registerTokenMutation.mutateAsync({ fcmToken: token });
-          setIsEnabled(true);
-          toast.success("Notificaciones activadas");
-          preferencesQuery.refetch();
-        }
-      } else {
-        toast.error("Permiso de notificaciones denegado");
+      if (!granted) {
+        toast.error("Permiso de notificaciones denegado. Revisa la configuración de tu navegador.");
+        setError("Permiso denegado");
+        return;
       }
-    } catch (error) {
-      console.error("Error enabling notifications:", error);
+
+      if (!isAuthenticated) {
+        toast.error("Debes iniciar sesión para activar notificaciones");
+        return;
+      }
+
+      let registered = false;
+
+      // 1. Intentar Web Push nativo (VAPID)
+      try {
+        const subscriptionData = await getWebPushSubscriptionData();
+        if (subscriptionData) {
+          await registerSubscriptionMutation.mutateAsync({
+            subscription: subscriptionData,
+          });
+          registered = true;
+          console.log("[Push] Registrado con Web Push nativo");
+        }
+      } catch (webPushError) {
+        console.warn("[Push] Web Push nativo falló, intentando FCM:", webPushError);
+      }
+
+      // 2. Fallback: FCM
+      if (!registered) {
+        try {
+          const token = await getFCMToken();
+          if (token) {
+            await registerTokenMutation.mutateAsync({ fcmToken: token });
+            registered = true;
+            console.log("[Push] Registrado con FCM");
+          }
+        } catch (fcmError) {
+          console.warn("[Push] FCM también falló:", fcmError);
+        }
+      }
+
+      if (registered) {
+        setIsEnabled(true);
+        toast.success("Notificaciones push activadas correctamente");
+        preferencesQuery.refetch();
+      } else {
+        toast.error("No se pudieron activar las notificaciones. Intenta de nuevo.");
+        setError("Error al registrar suscripción");
+      }
+    } catch (err) {
+      console.error("Error enabling notifications:", err);
       toast.error("Error al activar notificaciones");
+      setError("Error inesperado");
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthenticated, registerTokenMutation, preferencesQuery]);
+  }, [isAuthenticated, registerSubscriptionMutation, registerTokenMutation, preferencesQuery]);
 
   // Deshabilitar notificaciones
   const disableNotifications = useCallback(async () => {
@@ -125,8 +166,8 @@ export function useNotifications() {
       setIsEnabled(false);
       toast.success("Notificaciones desactivadas");
       preferencesQuery.refetch();
-    } catch (error) {
-      console.error("Error disabling notifications:", error);
+    } catch (err) {
+      console.error("Error disabling notifications:", err);
       toast.error("Error al desactivar notificaciones");
     } finally {
       setIsLoading(false);
@@ -134,16 +175,19 @@ export function useNotifications() {
   }, [isAuthenticated, unregisterTokenMutation, preferencesQuery]);
 
   // Actualizar preferencias
-  const updatePreferences = useCallback(async (newPrefs: Partial<NotificationPreferences>) => {
-    try {
-      await updatePreferencesMutation.mutateAsync(newPrefs);
-      setPreferences((prev) => prev ? { ...prev, ...newPrefs } : null);
-      toast.success("Preferencias actualizadas");
-    } catch (error) {
-      console.error("Error updating preferences:", error);
-      toast.error("Error al actualizar preferencias");
-    }
-  }, [updatePreferencesMutation]);
+  const updatePreferences = useCallback(
+    async (newPrefs: Partial<NotificationPreferences>) => {
+      try {
+        await updatePreferencesMutation.mutateAsync(newPrefs);
+        setPreferences((prev) => (prev ? { ...prev, ...newPrefs } : null));
+        toast.success("Preferencias actualizadas");
+      } catch (err) {
+        console.error("Error updating preferences:", err);
+        toast.error("Error al actualizar preferencias");
+      }
+    },
+    [updatePreferencesMutation]
+  );
 
   // Enviar notificación de prueba
   const sendTestNotification = useCallback(async () => {
@@ -152,20 +196,25 @@ export function useNotifications() {
       if (result.success) {
         toast.success("Notificación de prueba enviada");
       } else {
-        // Mostrar notificación local como fallback
-        await showLocalNotification("Notificación de prueba", {
+        // Fallback: mostrar notificación local
+        await showLocalNotification("Notificación de prueba - EVGreen", {
           body: `¡Hola ${user?.name || "Usuario"}! Las notificaciones están funcionando.`,
           tag: "test-notification",
         });
-        toast.info("Notificación local mostrada");
+        toast.info("Notificación local mostrada como fallback");
       }
-    } catch (error) {
-      console.error("Error sending test notification:", error);
+    } catch (err) {
+      console.error("Error sending test notification:", err);
       // Intentar notificación local
-      await showLocalNotification("Notificación de prueba", {
-        body: "Las notificaciones locales están funcionando.",
-        tag: "test-notification",
-      });
+      try {
+        await showLocalNotification("Notificación de prueba - EVGreen", {
+          body: "Las notificaciones locales están funcionando.",
+          tag: "test-notification",
+        });
+        toast.info("Notificación local mostrada");
+      } catch {
+        toast.error("Error al enviar notificación de prueba");
+      }
     }
   }, [sendTestMutation, user]);
 

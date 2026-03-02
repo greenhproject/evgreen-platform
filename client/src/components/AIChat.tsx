@@ -420,10 +420,11 @@ function ReservationButton({
   onConfirm 
 }: { 
   content: string;
-  onConfirm?: (stationId: number, evseId: number, startTime: string, duration: number) => void;
+  onConfirm?: (stationId: number, evseId: number, startTime: string, duration: number) => Promise<void> | void;
 }) {
   const [isConfirming, setIsConfirming] = useState(false);
   const [isReserved, setIsReserved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Detectar tag [RESERVE:stationId,evseId,startTime,duration]
   const reserveRegex = /\[RESERVE:(\d+),(\d+),([^,]+),(\d+)\]/;
@@ -436,15 +437,19 @@ function ReservationButton({
   const startTime = reserveMatch[3].trim();
   const duration = parseInt(reserveMatch[4]);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setIsConfirming(true);
-    if (onConfirm) {
-      onConfirm(stationId, evseId, startTime, duration);
-    }
-    setTimeout(() => {
-      setIsConfirming(false);
+    setError(null);
+    try {
+      if (onConfirm) {
+        await onConfirm(stationId, evseId, startTime, duration);
+      }
       setIsReserved(true);
-    }, 2000);
+    } catch (err: any) {
+      setError(err.message || 'Error al crear la reserva');
+    } finally {
+      setIsConfirming(false);
+    }
   };
 
   if (isReserved) {
@@ -479,7 +484,7 @@ function ReservationButton({
         </div>
         <div className="flex-1 text-left">
           <span className="block text-sm font-semibold">
-            {isConfirming ? "Reservando..." : "Confirmar reserva"}
+            {isConfirming ? "Reservando..." : error ? "Reintentar reserva" : "Confirmar reserva"}
           </span>
           <span className="block text-[11px] text-muted-foreground">
             {new Date(startTime).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })} · {duration} min
@@ -487,6 +492,9 @@ function ReservationButton({
         </div>
         <CalendarClock className="h-4 w-4 shrink-0" />
       </button>
+      {error && (
+        <p className="text-xs text-red-500 mt-1 px-2">{error}</p>
+      )}
     </div>
   );
 }

@@ -1,10 +1,11 @@
 /**
- * Firebase Client SDK - Configuración para notificaciones push en el navegador
- * Integración con Firebase Cloud Messaging (FCM)
+ * Push Notifications Client - Web Push nativo con VAPID
  * 
- * MODO DUAL:
- * 1. Si las credenciales de Firebase están configuradas → usa FCM real
- * 2. Si no → usa notificaciones locales del Service Worker (funciona en PWA)
+ * MÉTODO PRINCIPAL: Web Push API nativa con VAPID keys
+ * FALLBACK: Firebase Cloud Messaging (si está configurado)
+ * 
+ * La Web Push API funciona directamente con el Service Worker,
+ * sin necesidad de Firebase en el frontend.
  */
 
 let firebaseApp: any = null;
@@ -12,7 +13,10 @@ let messagingInstance: any = null;
 let fcmToken: string | null = null;
 let firebaseAvailable = false;
 
-// Verificar si las credenciales de Firebase están configuradas
+// VAPID public key para Web Push nativo
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
+
+// Firebase config (fallback)
 const FIREBASE_CONFIG = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "",
@@ -23,19 +27,30 @@ const FIREBASE_CONFIG = {
 };
 
 const hasFirebaseConfig = !!(
-  FIREBASE_CONFIG.apiKey && 
-  FIREBASE_CONFIG.messagingSenderId && 
+  FIREBASE_CONFIG.apiKey &&
+  FIREBASE_CONFIG.messagingSenderId &&
   FIREBASE_CONFIG.appId
 );
+
+/**
+ * Convertir VAPID key de base64 URL-safe a Uint8Array
+ */
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 /**
  * Verificar si el navegador soporta notificaciones push
  */
 export function isPushSupported(): boolean {
-  return (
-    "Notification" in window &&
-    "serviceWorker" in navigator
-  );
+  return "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
 }
 
 /**
@@ -55,13 +70,136 @@ export function getNotificationPermission(): NotificationPermission | "unsupport
 }
 
 /**
+ * Solicitar permiso para notificaciones
+ */
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (!isPushSupported()) {
+    console.log("[Push] Notificaciones no soportadas en este navegador");
+    return false;
+  }
+
+  try {
+    const permission = await Notification.requestPermission();
+
+    if (permission === "granted") {
+      console.log("[Push] Permiso de notificaciones concedido");
+      return true;
+    } else {
+      console.log("[Push] Permiso de notificaciones denegado:", permission);
+      return false;
+    }
+  } catch (error) {
+    console.error("[Push] Error solicitando permiso:", error);
+    return false;
+  }
+}
+
+/**
+ * Obtener suscripción Web Push nativa
+ * Retorna la suscripción PushSubscription del Service Worker
+ */
+export async function getWebPushSubscription(): Promise<PushSubscription | null> {
+  if (!areNotificationsEnabled() || !VAPID_PUBLIC_KEY) {
+    return null;
+  }
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+
+    // Verificar si ya hay una suscripción
+    let subscription = await registration.pushManager.getSubscription();
+
+    if (subscription) {
+      console.log("[Push] Suscripción Web Push existente encontrada");
+      return subscription;
+    }
+
+    // Crear nueva suscripción
+    const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
+    });
+
+    console.log("[Push] Nueva suscripción Web Push creada");
+    return subscription;
+  } catch (error) {
+    console.error("[Push] Error obteniendo suscripción Web Push:", error);
+    return null;
+  }
+}
+
+/**
+ * Obtener los datos de suscripción en formato para enviar al backend
+ */
+export async function getWebPushSubscriptionData(): Promise<{
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+} | null> {
+  const subscription = await getWebPushSubscription();
+  if (!subscription) return null;
+
+  const json = subscription.toJSON();
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+    console.error("[Push] Suscripción incompleta:", json);
+    return null;
+  }
+
+  return {
+    endpoint: json.endpoint,
+    keys: {
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+    },
+  };
+}
+
+/**
+ * Obtener token FCM (legacy fallback)
+ */
+export async function getFCMToken(): Promise<string | null> {
+  if (!areNotificationsEnabled()) {
+    return null;
+  }
+
+  if (fcmToken) {
+    return fcmToken;
+  }
+
+  if (hasFirebaseConfig) {
+    const msg = await getFirebaseMessaging();
+    if (msg) {
+      try {
+        const { getToken } = await import("firebase/messaging");
+        const registration = await navigator.serviceWorker.ready;
+        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || "";
+
+        const token = await getToken(msg, {
+          vapidKey,
+          serviceWorkerRegistration: registration,
+        });
+
+        if (token) {
+          fcmToken = token;
+          console.log("[Push] Token FCM obtenido:", token.substring(0, 20) + "...");
+          return token;
+        }
+      } catch (error) {
+        console.warn("[Push] Error al obtener token FCM:", error);
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Inicializar Firebase App (solo si hay credenciales)
  */
 export async function initializeFirebaseApp(): Promise<any> {
   if (firebaseApp) return firebaseApp;
-  
+
   if (!hasFirebaseConfig) {
-    console.log("[Push] Firebase no configurado - usando notificaciones locales del Service Worker");
     return null;
   }
 
@@ -87,98 +225,18 @@ export async function initializeFirebaseApp(): Promise<any> {
  */
 async function getFirebaseMessaging(): Promise<any> {
   if (messagingInstance) return messagingInstance;
-  
+
   const app = await initializeFirebaseApp();
   if (!app || !isPushSupported()) return null;
 
   try {
     const { getMessaging } = await import("firebase/messaging");
     messagingInstance = getMessaging(app);
-    console.log("[Push] Firebase Messaging inicializado");
     return messagingInstance;
   } catch (error) {
     console.warn("[Push] Error al inicializar Messaging:", error);
     return null;
   }
-}
-
-/**
- * Solicitar permiso para notificaciones
- */
-export async function requestNotificationPermission(): Promise<boolean> {
-  if (!isPushSupported()) {
-    console.log("[Push] Notificaciones no soportadas en este navegador");
-    return false;
-  }
-
-  try {
-    const permission = await Notification.requestPermission();
-    
-    if (permission === "granted") {
-      console.log("[Push] Permiso de notificaciones concedido");
-      return true;
-    } else {
-      console.log("[Push] Permiso de notificaciones denegado:", permission);
-      return false;
-    }
-  } catch (error) {
-    console.error("[Push] Error solicitando permiso:", error);
-    return false;
-  }
-}
-
-/**
- * Obtener token FCM o generar token local para el Service Worker
- */
-export async function getFCMToken(): Promise<string | null> {
-  if (!areNotificationsEnabled()) {
-    return null;
-  }
-
-  // Retornar token cacheado si existe
-  if (fcmToken) {
-    return fcmToken;
-  }
-
-  // Intentar obtener token de Firebase si está configurado
-  if (hasFirebaseConfig) {
-    const msg = await getFirebaseMessaging();
-    if (msg) {
-      try {
-        const { getToken } = await import("firebase/messaging");
-        const registration = await navigator.serviceWorker.ready;
-        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || "";
-        
-        const token = await getToken(msg, {
-          vapidKey,
-          serviceWorkerRegistration: registration,
-        });
-
-        if (token) {
-          fcmToken = token;
-          console.log("[Push] Token FCM obtenido:", token.substring(0, 20) + "...");
-          return token;
-        }
-      } catch (error) {
-        console.warn("[Push] Error al obtener token FCM, usando fallback local:", error);
-      }
-    }
-  }
-
-  // Fallback: generar token local único para identificar este dispositivo
-  // El backend usará este token para enviar notificaciones via el notification system interno
-  const storedToken = localStorage.getItem("evgreen_push_token");
-  if (storedToken) {
-    fcmToken = storedToken;
-    return fcmToken;
-  }
-
-  // Generar nuevo token local
-  const newToken = `local_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-  localStorage.setItem("evgreen_push_token", newToken);
-  fcmToken = newToken;
-  console.log("[Push] Token local generado para notificaciones del SW");
-  return fcmToken;
 }
 
 /**
@@ -194,14 +252,14 @@ export async function showLocalNotification(
 
   try {
     const registration = await navigator.serviceWorker.ready;
-    
+
     await registration.showNotification(title, {
       icon: "/icons/icon-192x192.png",
       badge: "/icons/badge-72x72.png",
       vibrate: [100, 50, 100],
       ...options,
     } as NotificationOptions);
-    
+
     return true;
   } catch (error) {
     console.error("[Push] Error mostrando notificación:", error);
@@ -221,23 +279,25 @@ export function onForegroundMessage(
 
   // Escuchar mensajes de Firebase si está configurado
   let unsubscribeFirebase: (() => void) | null = null;
-  
+
   if (hasFirebaseConfig && messagingInstance) {
-    import("firebase/messaging").then(({ onMessage }) => {
-      if (messagingInstance) {
-        unsubscribeFirebase = onMessage(messagingInstance, (payload: any) => {
-          console.log("[Push] Mensaje Firebase recibido:", payload);
-          callback({
-            title: payload.notification?.title || "EVGreen",
-            body: payload.notification?.body || "",
-            data: payload.data as Record<string, string>,
+    import("firebase/messaging")
+      .then(({ onMessage }) => {
+        if (messagingInstance) {
+          unsubscribeFirebase = onMessage(messagingInstance, (payload: any) => {
+            console.log("[Push] Mensaje Firebase recibido:", payload);
+            callback({
+              title: payload.notification?.title || "EVGreen",
+              body: payload.notification?.body || "",
+              data: payload.data as Record<string, string>,
+            });
           });
-        });
-      }
-    }).catch(() => {});
+        }
+      })
+      .catch(() => {});
   }
 
-  // Escuchar mensajes del Service Worker (funciona siempre)
+  // Escuchar mensajes del Service Worker (funciona siempre para Web Push nativo)
   const handleMessage = (event: MessageEvent) => {
     if (event.data && event.data.type === "PUSH_NOTIFICATION") {
       callback({
@@ -252,7 +312,6 @@ export function onForegroundMessage(
     navigator.serviceWorker.addEventListener("message", handleMessage);
   }
 
-  // Retornar función para desuscribirse
   return () => {
     if (unsubscribeFirebase) {
       unsubscribeFirebase();
@@ -264,7 +323,7 @@ export function onForegroundMessage(
 }
 
 /**
- * Inicializar Firebase y Service Worker
+ * Inicializar sistema de push (Service Worker + Firebase si disponible)
  */
 export async function initializeFirebase(): Promise<boolean> {
   if (!isPushSupported()) {
@@ -276,23 +335,28 @@ export async function initializeFirebase(): Promise<boolean> {
     // Registrar Service Worker si no está registrado
     const registrations = await navigator.serviceWorker.getRegistrations();
     let hasRegistration = false;
-    
+
     for (const reg of registrations) {
       if (reg.active?.scriptURL.includes("sw.js")) {
         hasRegistration = true;
         break;
       }
     }
-    
+
     if (!hasRegistration) {
       await navigator.serviceWorker.register("/sw.js");
       console.log("[Push] Service Worker registrado");
     }
 
-    // Inicializar Firebase App si hay credenciales
+    // Inicializar Firebase App si hay credenciales (fallback)
     if (hasFirebaseConfig) {
       await initializeFirebaseApp();
     }
+
+    console.log("[Push] Sistema de push inicializado", {
+      webPush: !!VAPID_PUBLIC_KEY,
+      firebase: hasFirebaseConfig,
+    });
 
     return true;
   } catch (error) {
@@ -306,6 +370,8 @@ export default {
   areNotificationsEnabled,
   getNotificationPermission,
   requestNotificationPermission,
+  getWebPushSubscription,
+  getWebPushSubscriptionData,
   getFCMToken,
   showLocalNotification,
   onForegroundMessage,

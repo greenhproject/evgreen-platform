@@ -1,6 +1,7 @@
 /**
  * Router de Notificaciones Push
- * Endpoints para gestionar tokens FCM y preferencias de notificaciones
+ * Soporta Web Push nativo (VAPID) como método principal
+ * y FCM como fallback si está configurado
  */
 
 import { z } from "zod";
@@ -8,27 +9,64 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
-import { 
-  subscribeToTopic, 
+import {
+  subscribeToTopic,
   unsubscribeFromTopic,
-  sendPushNotification 
+  sendPushNotification,
 } from "../firebase/fcm";
+import { sendWebPush, isWebPushAvailable, type PushSubscriptionData } from "./web-push-service";
 import { checkProximityAndNotify } from "../proximity/proximity-alert-service";
 
 export const pushRouter = router({
   /**
-   * Registrar token FCM del dispositivo
+   * Registrar suscripción Web Push del dispositivo
    */
-  registerToken: protectedProcedure
-    .input(z.object({
-      fcmToken: z.string().min(1),
-    }))
+  registerSubscription: protectedProcedure
+    .input(
+      z.object({
+        subscription: z.object({
+          endpoint: z.string().url(),
+          keys: z.object({
+            p256dh: z.string().min(1),
+            auth: z.string().min(1),
+          }),
+        }),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { success: false, error: "Database not available" };
-      
+
       const userId = ctx.user.id;
-      
+
+      // Guardar suscripción Web Push como JSON
+      await db
+        .update(users)
+        .set({
+          pushSubscription: JSON.stringify(input.subscription),
+          fcmTokenUpdatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
+
+      console.log(`[Push] Web Push subscription registered for user ${userId}`);
+      return { success: true };
+    }),
+
+  /**
+   * Registrar token FCM del dispositivo (legacy/fallback)
+   */
+  registerToken: protectedProcedure
+    .input(
+      z.object({
+        fcmToken: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return { success: false, error: "Database not available" };
+
+      const userId = ctx.user.id;
+
       // Actualizar token FCM del usuario
       await db
         .update(users)
@@ -48,10 +86,7 @@ export const pushRouter = router({
         .limit(1);
 
       if (user) {
-        // Suscribir a topic general de EVGreen
         await subscribeToTopic(input.fcmToken, "evgreen_all");
-        
-        // Suscribir a promociones si está habilitado
         if (user.notifyPromotions) {
           await subscribeToTopic(input.fcmToken, "evgreen_promotions");
         }
@@ -61,100 +96,99 @@ export const pushRouter = router({
     }),
 
   /**
-   * Eliminar token FCM (logout o desinstalar app)
+   * Eliminar suscripción push (logout o desinstalar app)
    */
-  unregisterToken: protectedProcedure
-    .mutation(async ({ ctx }) => {
-      const db = await getDb();
-      if (!db) return { success: false, error: "Database not available" };
-      
-      const userId = ctx.user.id;
-      
-      // Obtener token actual antes de eliminarlo
-      const [user] = await db
-        .select({ fcmToken: users.fcmToken })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
+  unregisterToken: protectedProcedure.mutation(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
 
-      if (user?.fcmToken) {
-        // Desuscribir de todos los topics
-        await unsubscribeFromTopic(user.fcmToken, "evgreen_all");
-        await unsubscribeFromTopic(user.fcmToken, "evgreen_promotions");
-      }
+    const userId = ctx.user.id;
 
-      // Eliminar token
-      await db
-        .update(users)
-        .set({
-          fcmToken: null,
-          fcmTokenUpdatedAt: null,
-        })
-        .where(eq(users.id, userId));
+    // Obtener token actual antes de eliminarlo
+    const [user] = await db
+      .select({ fcmToken: users.fcmToken })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
 
-      return { success: true };
-    }),
+    if (user?.fcmToken) {
+      await unsubscribeFromTopic(user.fcmToken, "evgreen_all");
+      await unsubscribeFromTopic(user.fcmToken, "evgreen_promotions");
+    }
+
+    // Eliminar ambos: token FCM y suscripción Web Push
+    await db
+      .update(users)
+      .set({
+        fcmToken: null,
+        fcmTokenUpdatedAt: null,
+        pushSubscription: null,
+      })
+      .where(eq(users.id, userId));
+
+    return { success: true };
+  }),
 
   /**
    * Obtener preferencias de notificaciones
    */
-  getPreferences: protectedProcedure
-    .query(async ({ ctx }) => {
-      const db = await getDb();
-      if (!db) {
-        return {
-          chargingComplete: true,
-          lowBalance: true,
-          promotions: true,
-          pushEnabled: false,
-        };
-      }
-
-      const [user] = await db
-        .select({
-          notifyChargingComplete: users.notifyChargingComplete,
-          notifyLowBalance: users.notifyLowBalance,
-          notifyPromotions: users.notifyPromotions,
-          fcmToken: users.fcmToken,
-        })
-        .from(users)
-        .where(eq(users.id, ctx.user.id))
-        .limit(1);
-
+  getPreferences: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) {
       return {
-        chargingComplete: user?.notifyChargingComplete ?? true,
-        lowBalance: user?.notifyLowBalance ?? true,
-        promotions: user?.notifyPromotions ?? true,
-        pushEnabled: !!user?.fcmToken,
+        chargingComplete: true,
+        lowBalance: true,
+        promotions: true,
+        pushEnabled: false,
       };
-    }),
+    }
+
+    const [user] = await db
+      .select({
+        notifyChargingComplete: users.notifyChargingComplete,
+        notifyLowBalance: users.notifyLowBalance,
+        notifyPromotions: users.notifyPromotions,
+        fcmToken: users.fcmToken,
+        pushSubscription: users.pushSubscription,
+      })
+      .from(users)
+      .where(eq(users.id, ctx.user.id))
+      .limit(1);
+
+    return {
+      chargingComplete: user?.notifyChargingComplete ?? true,
+      lowBalance: user?.notifyLowBalance ?? true,
+      promotions: user?.notifyPromotions ?? true,
+      pushEnabled: !!(user?.pushSubscription || user?.fcmToken),
+    };
+  }),
 
   /**
    * Actualizar preferencias de notificaciones
    */
   updatePreferences: protectedProcedure
-    .input(z.object({
-      chargingComplete: z.boolean().optional(),
-      lowBalance: z.boolean().optional(),
-      promotions: z.boolean().optional(),
-    }))
+    .input(
+      z.object({
+        chargingComplete: z.boolean().optional(),
+        lowBalance: z.boolean().optional(),
+        promotions: z.boolean().optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { success: false, error: "Database not available" };
-      
+
       const userId = ctx.user.id;
-      
-      // Obtener usuario actual
+
       const [user] = await db
-        .select({ 
-          fcmToken: users.fcmToken, 
-          notifyPromotions: users.notifyPromotions 
+        .select({
+          fcmToken: users.fcmToken,
+          notifyPromotions: users.notifyPromotions,
         })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
 
-      // Actualizar preferencias
       const updateData: Record<string, boolean> = {};
       if (input.chargingComplete !== undefined) {
         updateData.notifyChargingComplete = input.chargingComplete;
@@ -164,8 +198,7 @@ export const pushRouter = router({
       }
       if (input.promotions !== undefined) {
         updateData.notifyPromotions = input.promotions;
-        
-        // Actualizar suscripción a topic de promociones
+
         if (user?.fcmToken) {
           if (input.promotions) {
             await subscribeToTopic(user.fcmToken, "evgreen_promotions");
@@ -189,10 +222,12 @@ export const pushRouter = router({
    * Verificar proximidad con estaciones compatibles y precio bajo
    */
   checkProximity: protectedProcedure
-    .input(z.object({
-      latitude: z.number().min(-90).max(90),
-      longitude: z.number().min(-180).max(180),
-    }))
+    .input(
+      z.object({
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const result = await checkProximityAndNotify({
         userId: ctx.user.id,
@@ -205,39 +240,40 @@ export const pushRouter = router({
   /**
    * Obtener preferencias de proximidad
    */
-  getProximityPreferences: protectedProcedure
-    .query(async ({ ctx }) => {
-      const db = await getDb();
-      if (!db) {
-        return {
-          enabled: true,
-          radiusKm: 5,
-        };
-      }
-
-      const [user] = await db
-        .select({
-          notifyProximity: users.notifyProximity,
-          proximityRadiusKm: users.proximityRadiusKm,
-        })
-        .from(users)
-        .where(eq(users.id, ctx.user.id))
-        .limit(1);
-
+  getProximityPreferences: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) {
       return {
-        enabled: user?.notifyProximity ?? true,
-        radiusKm: user?.proximityRadiusKm ?? 5,
+        enabled: true,
+        radiusKm: 5,
       };
-    }),
+    }
+
+    const [user] = await db
+      .select({
+        notifyProximity: users.notifyProximity,
+        proximityRadiusKm: users.proximityRadiusKm,
+      })
+      .from(users)
+      .where(eq(users.id, ctx.user.id))
+      .limit(1);
+
+    return {
+      enabled: user?.notifyProximity ?? true,
+      radiusKm: user?.proximityRadiusKm ?? 5,
+    };
+  }),
 
   /**
    * Actualizar preferencias de proximidad
    */
   updateProximityPreferences: protectedProcedure
-    .input(z.object({
-      enabled: z.boolean().optional(),
-      radiusKm: z.number().min(1).max(10).optional(),
-    }))
+    .input(
+      z.object({
+        enabled: z.boolean().optional(),
+        radiusKm: z.number().min(1).max(10).optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { success: false, error: "Database not available" };
@@ -261,32 +297,57 @@ export const pushRouter = router({
     }),
 
   /**
-   * Enviar notificación de prueba (solo para desarrollo)
+   * Enviar notificación de prueba
    */
-  sendTestNotification: protectedProcedure
-    .mutation(async ({ ctx }) => {
-      const db = await getDb();
-      if (!db) return { success: false, error: "Database not available" };
+  sendTestNotification: protectedProcedure.mutation(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
 
-      const [user] = await db
-        .select({ fcmToken: users.fcmToken, name: users.name })
-        .from(users)
-        .where(eq(users.id, ctx.user.id))
-        .limit(1);
+    const [user] = await db
+      .select({
+        fcmToken: users.fcmToken,
+        pushSubscription: users.pushSubscription,
+        name: users.name,
+      })
+      .from(users)
+      .where(eq(users.id, ctx.user.id))
+      .limit(1);
 
-      if (!user?.fcmToken) {
-        return { success: false, error: "No hay token FCM registrado" };
+    if (!user) {
+      return { success: false, error: "Usuario no encontrado" };
+    }
+
+    // Intentar Web Push nativo primero
+    if (user.pushSubscription && isWebPushAvailable()) {
+      try {
+        const subscription: PushSubscriptionData = JSON.parse(user.pushSubscription);
+        const result = await sendWebPush(subscription, {
+          title: "Notificación de prueba - EVGreen",
+          body: `¡Hola ${user.name || "Usuario"}! Las notificaciones push están funcionando correctamente.`,
+          tag: "test-notification",
+          data: { type: "test", url: "/perfil" },
+        });
+        if (result) {
+          return { success: true };
+        }
+      } catch (error) {
+        console.error("[Push] Error sending Web Push test:", error);
       }
+    }
 
+    // Fallback a FCM
+    if (user.fcmToken) {
       const result = await sendPushNotification(user.fcmToken, {
         type: "system_alert",
         title: "Notificación de prueba",
         body: `¡Hola ${user.name || "Usuario"}! Las notificaciones push están funcionando correctamente.`,
         clickAction: "/profile",
       });
-
       return { success: result };
-    }),
+    }
+
+    return { success: false, error: "No hay suscripción push registrada" };
+  }),
 });
 
 export type PushRouter = typeof pushRouter;
