@@ -3,6 +3,8 @@
  * Widget flotante y página de pantalla completa
  * Con escritura progresiva (streaming simulado) y auto-scroll
  * Integración con Google Maps para rutas a estaciones
+ * Planificador de rutas inteligente con paradas de carga
+ * Reserva de cargadores desde el chat
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -44,6 +46,10 @@ import {
   MoreVertical,
   History,
   ExternalLink,
+  Route,
+  CalendarClock,
+  CheckCircle2,
+  MapPinned,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -88,14 +94,12 @@ function useProgressiveText(fullText: string, isActive: boolean, speed: number =
     setIsComplete(false);
     indexRef.current = 0;
 
-    // Escritura progresiva palabra por palabra para velocidad natural
-    const words = fullText.split(/(\s+)/); // preservar espacios
+    const words = fullText.split(/(\s+)/);
     let wordIndex = 0;
     let accumulated = "";
 
     intervalRef.current = setInterval(() => {
       if (wordIndex < words.length) {
-        // Agregar entre 1 y 3 palabras por tick para velocidad natural
         const wordsPerTick = Math.min(2, words.length - wordIndex);
         for (let i = 0; i < wordsPerTick; i++) {
           accumulated += words[wordIndex];
@@ -119,7 +123,6 @@ function useProgressiveText(fullText: string, isActive: boolean, speed: number =
     };
   }, [fullText, isActive, speed]);
 
-  // Permitir saltar al final
   const skipToEnd = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -141,11 +144,13 @@ function ChatMessage({
   isUser,
   isLatestAssistant,
   onStreamComplete,
+  onReservationConfirm,
 }: {
   message: Message;
   isUser: boolean;
   isLatestAssistant: boolean;
   onStreamComplete?: () => void;
+  onReservationConfirm?: (stationId: number, evseId: number, startTime: string, duration: number) => void;
 }) {
   const shouldStream = isLatestAssistant && message.isStreaming;
   const { displayedText, isComplete, skipToEnd } = useProgressiveText(
@@ -161,8 +166,11 @@ function ChatMessage({
   }, [isComplete, shouldStream, onStreamComplete]);
 
   const rawText = shouldStream ? displayedText : message.content;
-  // Limpiar tags [NAV:...] del texto visible pero conservar para GoogleMapsButtons
-  const cleanText = rawText.replace(/\[NAV:(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\|([^\]]+)\]/g, '');
+  // Limpiar todos los tags especiales del texto visible
+  const cleanText = rawText
+    .replace(/\[NAV:(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\|([^\]]+)\]/g, '')
+    .replace(/\[ROUTE:([^\]]+)\]/g, '')
+    .replace(/\[RESERVE:([^\]]+)\]/g, '');
 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -192,8 +200,14 @@ function ChatMessage({
                 Mostrar todo ↓
               </button>
             )}
-            {/* Botón de Google Maps si la respuesta contiene coordenadas o nombres de estaciones */}
-            {!isUser && isComplete && <GoogleMapsButtons content={rawText} />}
+            {/* Action buttons - only show when streaming is complete */}
+            {!isUser && isComplete && (
+              <>
+                <NavigationButtons content={rawText} />
+                <RouteButton content={rawText} />
+                <ReservationButton content={rawText} onConfirm={onReservationConfirm} />
+              </>
+            )}
           </div>
         )}
       </div>
@@ -202,10 +216,10 @@ function ChatMessage({
 }
 
 // ============================================================================
-// BOTONES DE GOOGLE MAPS
+// BOTONES DE NAVEGACIÓN (Google Maps) - Solo para consultas de ubicación
 // ============================================================================
 
-function GoogleMapsButtons({ content }: { content: string }) {
+function NavigationButtons({ content }: { content: string }) {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
@@ -217,7 +231,7 @@ function GoogleMapsButtons({ content }: { content: string }) {
     }
   }, []);
 
-  // 1. Detectar tags [NAV:lat,lng|nombre] del LLM (método principal)
+  // SOLO detectar tags [NAV:lat,lng|nombre] explícitos del LLM
   const navMatches: { lat: number; lng: number; name: string }[] = [];
   const navTagRegex = /\[NAV:(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\|([^\]]+)\]/g;
   let m;
@@ -229,12 +243,8 @@ function GoogleMapsButtons({ content }: { content: string }) {
     });
   }
 
-  // 2. Fallback: detectar si la respuesta menciona estaciones
-  const hasNavigationContext =
-    navMatches.length > 0 ||
-    /estaci[oó]n|direcci[oó]n|ubicaci[oó]n|llegar|ruta|navegar|m[aá]s cercana|c[oó]mo llego|ll[eé]vame|ir a/i.test(content);
-
-  if (!hasNavigationContext) return null;
+  // Si no hay tags NAV explícitos, NO mostrar nada
+  if (navMatches.length === 0) return null;
 
   const openGoogleMapsCoords = (lat: number, lng: number) => {
     let url: string;
@@ -246,69 +256,187 @@ function GoogleMapsButtons({ content }: { content: string }) {
     window.open(url, "_blank");
   };
 
-  const openGoogleMapsSearch = (query: string) => {
-    let url: string;
-    if (userLocation) {
-      url = `https://www.google.com/maps/dir/?api=1&origin=${userLocation.lat},${userLocation.lng}&destination=${encodeURIComponent(query)}&travelmode=driving`;
-    } else {
-      url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  return (
+    <div className="mt-3 space-y-2">
+      {navMatches.slice(0, 3).map((nav, i) => (
+        <button
+          key={i}
+          onClick={() => openGoogleMapsCoords(nav.lat, nav.lng)}
+          className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-600/10 to-green-600/10 text-blue-500 hover:from-blue-600/20 hover:to-green-600/20 transition-all text-sm font-medium border border-blue-500/20 active:scale-[0.98]"
+        >
+          <div className="h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+            <Navigation className="h-4 w-4" />
+          </div>
+          <div className="flex-1 text-left">
+            <span className="block text-xs font-semibold">{nav.name}</span>
+            <span className="block text-[10px] text-muted-foreground">Abrir ruta en Google Maps</span>
+          </div>
+          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================================
+// BOTÓN DE RUTA COMPLETA (Planificador de viajes)
+// ============================================================================
+
+function RouteButton({ content }: { content: string }) {
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => {}
+      );
     }
+  }, []);
+
+  // Detectar tag [ROUTE:lat1,lng1|lat2,lng2|...|nombre]
+  const routeRegex = /\[ROUTE:([^\]]+)\]/;
+  const routeMatch = content.match(routeRegex);
+  
+  if (!routeMatch) return null;
+
+  const parts = routeMatch[1].split('|');
+  if (parts.length < 3) return null; // Mínimo: origen, destino, nombre
+
+  const routeName = parts[parts.length - 1].trim();
+  const waypoints: { lat: number; lng: number }[] = [];
+  
+  for (let i = 0; i < parts.length - 1; i++) {
+    const coords = parts[i].split(',');
+    if (coords.length === 2) {
+      const lat = parseFloat(coords[0].trim());
+      const lng = parseFloat(coords[1].trim());
+      if (!isNaN(lat) && !isNaN(lng)) {
+        waypoints.push({ lat, lng });
+      }
+    }
+  }
+
+  if (waypoints.length < 2) return null;
+
+  const openRouteInMaps = () => {
+    const origin = waypoints[0];
+    const destination = waypoints[waypoints.length - 1];
+    const intermediateStops = waypoints.slice(1, -1);
+
+    // Usar ubicación actual como origen si está disponible y el primer waypoint es el origen
+    const actualOrigin = userLocation || origin;
+
+    let url = `https://www.google.com/maps/dir/?api=1&origin=${actualOrigin.lat},${actualOrigin.lng}&destination=${destination.lat},${destination.lng}&travelmode=driving`;
+    
+    if (intermediateStops.length > 0) {
+      const waypointsStr = intermediateStops.map(w => `${w.lat},${w.lng}`).join('|');
+      url += `&waypoints=${encodeURIComponent(waypointsStr)}`;
+    }
+
     window.open(url, "_blank");
   };
 
-  // Si tenemos coordenadas exactas del LLM
-  if (navMatches.length > 0) {
+  return (
+    <div className="mt-3">
+      <button
+        onClick={openRouteInMaps}
+        className="flex items-center gap-3 w-full px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600/15 to-blue-600/15 text-emerald-600 hover:from-emerald-600/25 hover:to-blue-600/25 transition-all text-sm font-medium border border-emerald-500/20 active:scale-[0.98]"
+      >
+        <div className="h-10 w-10 rounded-full bg-emerald-500/15 flex items-center justify-center shrink-0">
+          <Route className="h-5 w-5" />
+        </div>
+        <div className="flex-1 text-left">
+          <span className="block text-sm font-semibold">{routeName}</span>
+          <span className="block text-[11px] text-muted-foreground">
+            {waypoints.length - 2} parada{waypoints.length - 2 !== 1 ? 's' : ''} de carga · Abrir ruta completa en Google Maps
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <MapPinned className="h-4 w-4" />
+          <ExternalLink className="h-3.5 w-3.5" />
+        </div>
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// BOTÓN DE RESERVA
+// ============================================================================
+
+function ReservationButton({ 
+  content, 
+  onConfirm 
+}: { 
+  content: string;
+  onConfirm?: (stationId: number, evseId: number, startTime: string, duration: number) => void;
+}) {
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isReserved, setIsReserved] = useState(false);
+
+  // Detectar tag [RESERVE:stationId,evseId,startTime,duration]
+  const reserveRegex = /\[RESERVE:(\d+),(\d+),([^,]+),(\d+)\]/;
+  const reserveMatch = content.match(reserveRegex);
+  
+  if (!reserveMatch) return null;
+
+  const stationId = parseInt(reserveMatch[1]);
+  const evseId = parseInt(reserveMatch[2]);
+  const startTime = reserveMatch[3].trim();
+  const duration = parseInt(reserveMatch[4]);
+
+  const handleConfirm = () => {
+    setIsConfirming(true);
+    if (onConfirm) {
+      onConfirm(stationId, evseId, startTime, duration);
+    }
+    setTimeout(() => {
+      setIsConfirming(false);
+      setIsReserved(true);
+    }, 2000);
+  };
+
+  if (isReserved) {
     return (
-      <div className="mt-3 space-y-2">
-        {navMatches.slice(0, 3).map((nav, i) => (
-          <button
-            key={i}
-            onClick={() => openGoogleMapsCoords(nav.lat, nav.lng)}
-            className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-600/10 to-green-600/10 text-blue-500 hover:from-blue-600/20 hover:to-green-600/20 transition-all text-sm font-medium border border-blue-500/20 active:scale-[0.98]"
-          >
-            <div className="h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
-              <Navigation className="h-4 w-4" />
-            </div>
-            <div className="flex-1 text-left">
-              <span className="block text-xs font-semibold">{nav.name}</span>
-              <span className="block text-[10px] text-muted-foreground">Abrir ruta en Google Maps</span>
-            </div>
-            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-          </button>
-        ))}
+      <div className="mt-3">
+        <div className="flex items-center gap-3 w-full px-4 py-3 rounded-xl bg-green-600/15 text-green-600 text-sm font-medium border border-green-500/20">
+          <CheckCircle2 className="h-5 w-5" />
+          <div className="flex-1">
+            <span className="block text-sm font-semibold">Reserva confirmada</span>
+            <span className="block text-[11px] text-muted-foreground">
+              {new Date(startTime).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })} · {duration} min
+            </span>
+          </div>
+        </div>
       </div>
     );
   }
 
-  // Fallback: buscar por texto
-  const stationMatches = content.match(/(?:estaci[oó]n|cargador|punto de carga)\s+(?:de\s+)?["\u201c\u201d]?([^"\u201c\u201d.,\n]{3,40})["\u201c\u201d]?/gi) || [];
-  const addressMatches = content.match(/(?:(?:Calle|Carrera|Cra|Cl|Av|Avenida|Diagonal|Transversal|Autopista)\s*\.?\s*\d+[A-Za-z]?\s*(?:#|No\.?\s*)\s*\d+[A-Za-z]?\s*[-\u2013]\s*\d+[A-Za-z]?)/gi) || [];
-  const searchTerms = [...stationMatches, ...addressMatches];
-
   return (
-    <div className="mt-3 flex flex-wrap gap-2">
-      {searchTerms.length > 0 ? (
-        searchTerms.slice(0, 2).map((term, i) => (
-          <button
-            key={i}
-            onClick={() => openGoogleMapsSearch(term.trim())}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/10 text-blue-500 hover:bg-blue-600/20 transition-colors text-xs font-medium border border-blue-500/20"
-          >
-            <Navigation className="h-3 w-3" />
-            Ir con Google Maps
-            <ExternalLink className="h-3 w-3" />
-          </button>
-        ))
-      ) : (
-        <button
-          onClick={() => openGoogleMapsSearch("estación de carga eléctrica EVGreen Colombia")}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/10 text-blue-500 hover:bg-blue-600/20 transition-colors text-xs font-medium border border-blue-500/20"
-        >
-          <Navigation className="h-3 w-3" />
-          Abrir en Google Maps
-          <ExternalLink className="h-3 w-3" />
-        </button>
-      )}
+    <div className="mt-3">
+      <button
+        onClick={handleConfirm}
+        disabled={isConfirming}
+        className="flex items-center gap-3 w-full px-4 py-3 rounded-xl bg-gradient-to-r from-purple-600/15 to-indigo-600/15 text-purple-600 hover:from-purple-600/25 hover:to-indigo-600/25 transition-all text-sm font-medium border border-purple-500/20 active:scale-[0.98] disabled:opacity-50"
+      >
+        <div className="h-10 w-10 rounded-full bg-purple-500/15 flex items-center justify-center shrink-0">
+          {isConfirming ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <CalendarClock className="h-5 w-5" />
+          )}
+        </div>
+        <div className="flex-1 text-left">
+          <span className="block text-sm font-semibold">
+            {isConfirming ? "Reservando..." : "Confirmar reserva"}
+          </span>
+          <span className="block text-[11px] text-muted-foreground">
+            {new Date(startTime).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })} · {duration} min
+          </span>
+        </div>
+        <CalendarClock className="h-4 w-4 shrink-0" />
+      </button>
     </div>
   );
 }
@@ -325,13 +453,13 @@ const quickSuggestions = [
   },
   {
     icon: Zap,
-    text: "Precio actual del kWh",
-    prompt: "¿Cuál es el precio actual del kWh en las estaciones de carga?",
+    text: "Analiza mi consumo",
+    prompt: "Analiza mi historial de consumo de energía y dame recomendaciones para ahorrar en mis cargas.",
   },
   {
-    icon: Navigation,
-    text: "Llévame a cargar",
-    prompt: "Llévame a la estación de carga más cercana. Necesito la dirección exacta para navegar con Google Maps.",
+    icon: Route,
+    text: "Planificar un viaje",
+    prompt: "Quiero planificar un viaje largo. ¿Puedes ayudarme a calcular las paradas de carga necesarias según la autonomía de mi vehículo?",
   },
   {
     icon: TrendingUp,
@@ -365,17 +493,16 @@ export function AIChatWidget() {
   // Mutations
   const createConversation = trpc.ai.createConversation.useMutation();
   const sendMessage = trpc.ai.sendMessage.useMutation();
+  const createReservation = trpc.reservations.create.useMutation();
 
   // Auto-scroll continuo durante streaming
   useEffect(() => {
     if (scrollRef.current) {
       const el = scrollRef.current;
-      // Scroll suave al final
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
   }, [messages]);
 
-  // Auto-scroll durante streaming (más frecuente)
   useEffect(() => {
     if (streamingMessageId === null) return;
     const interval = setInterval(() => {
@@ -386,14 +513,12 @@ export function AIChatWidget() {
     return () => clearInterval(interval);
   }, [streamingMessageId]);
 
-  // Focus en input cuando se abre
   useEffect(() => {
     if (isOpen && inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
 
-  // Escuchar evento global para abrir chat con pregunta
   useEffect(() => {
     const handleOpenChat = (e: CustomEvent<{ question: string }>) => {
       setIsOpen(true);
@@ -405,7 +530,6 @@ export function AIChatWidget() {
     };
   }, []);
 
-  // Enviar pregunta pendiente cuando se abre el chat
   useEffect(() => {
     if (isOpen && pendingQuestion && !isLoading) {
       const question = pendingQuestion;
@@ -415,6 +539,48 @@ export function AIChatWidget() {
       }, 300);
     }
   }, [isOpen, pendingQuestion, isLoading]);
+
+  const handleReservationConfirm = useCallback(
+    async (stationId: number, evseId: number, startTime: string, durationMinutes: number) => {
+      try {
+        const start = new Date(startTime);
+        const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+        
+        const result = await createReservation.mutateAsync({
+          stationId,
+          evseId,
+          startTime: start,
+          endTime: end,
+          estimatedDurationMinutes: durationMinutes,
+        });
+
+        toast.success(`Reserva #${result.id} confirmada. Tarifa: $${result.reservationFee?.toLocaleString('es-CO')} COP`);
+        
+        // Agregar mensaje de confirmación al chat
+        const confirmMsg: Message = {
+          id: Date.now() + 100,
+          role: "assistant",
+          content: `✅ **Reserva confirmada exitosamente**\n\n- **ID de reserva:** #${result.id}\n- **Hora:** ${start.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}\n- **Duración:** ${durationMinutes} minutos\n- **Tarifa de reserva:** $${result.reservationFee?.toLocaleString('es-CO')} COP\n\nRecuerda llegar a tiempo. Tienes 15 minutos de gracia después de la hora de inicio.`,
+          createdAt: new Date(),
+          isStreaming: true,
+        };
+        setMessages((prev) => [...prev, confirmMsg]);
+        setStreamingMessageId(confirmMsg.id);
+      } catch (error: any) {
+        toast.error(error.message || "Error al crear la reserva");
+        const errorMsg: Message = {
+          id: Date.now() + 100,
+          role: "assistant",
+          content: `❌ No se pudo completar la reserva: ${error.message || 'Error desconocido'}. ¿Quieres intentar con otra estación u horario?`,
+          createdAt: new Date(),
+          isStreaming: true,
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+        setStreamingMessageId(errorMsg.id);
+      }
+    },
+    [createReservation]
+  );
 
   const handleSendMessage = useCallback(
     async (text: string) => {
@@ -431,7 +597,6 @@ export function AIChatWidget() {
           setConversationId(result.id);
         }
 
-        // Agregar mensaje del usuario inmediatamente
         const userMessage: Message = {
           id: Date.now(),
           role: "user",
@@ -440,13 +605,11 @@ export function AIChatWidget() {
         };
         setMessages((prev) => [...prev, userMessage]);
 
-        // Enviar mensaje y obtener respuesta
         const response = await sendMessage.mutateAsync({
           conversationId: currentConversationId,
           message: text,
         });
 
-        // Agregar respuesta del asistente con flag de streaming
         const assistantMsgId = Date.now() + 1;
         const assistantMessage: Message = {
           id: assistantMsgId,
@@ -468,7 +631,6 @@ export function AIChatWidget() {
 
   const handleStreamComplete = useCallback(() => {
     setStreamingMessageId(null);
-    // Marcar el mensaje como ya no streaming
     setMessages((prev) =>
       prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
     );
@@ -561,7 +723,7 @@ export function AIChatWidget() {
                   ¡Hola, {user?.name?.split(" ")[0] || "Usuario"}!
                 </h3>
                 <p className="text-sm text-muted-foreground mb-6">
-                  Soy tu asistente de EVGreen. Puedo ayudarte a encontrar estaciones, planificar viajes y más.
+                  Soy tu asistente de EVGreen. Puedo ayudarte a encontrar estaciones, planificar viajes, reservar cargadores y más.
                 </p>
                 <div className="grid grid-cols-2 gap-2 w-full">
                   {quickSuggestions.map((suggestion, index) => (
@@ -585,6 +747,7 @@ export function AIChatWidget() {
                     isUser={msg.role === "user"}
                     isLatestAssistant={msg.id === lastAssistantMsgId}
                     onStreamComplete={handleStreamComplete}
+                    onReservationConfirm={handleReservationConfirm}
                   />
                 ))}
                 {isLoading && (
@@ -668,6 +831,7 @@ export function AIChatPage() {
       }
     },
   });
+  const createReservation = trpc.reservations.create.useMutation();
 
   // Cargar mensajes cuando cambia la conversación
   const { data: conversationMessages } = trpc.ai.getMessages.useQuery(
@@ -688,14 +852,12 @@ export function AIChatPage() {
     }
   }, [conversationMessages]);
 
-  // Auto-scroll al cargar mensajes
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }
   }, [messages]);
 
-  // Auto-scroll continuo durante streaming
   useEffect(() => {
     if (streamingMessageId === null) return;
     const interval = setInterval(() => {
@@ -705,6 +867,47 @@ export function AIChatPage() {
     }, 100);
     return () => clearInterval(interval);
   }, [streamingMessageId]);
+
+  const handleReservationConfirm = useCallback(
+    async (stationId: number, evseId: number, startTime: string, durationMinutes: number) => {
+      try {
+        const start = new Date(startTime);
+        const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+        
+        const result = await createReservation.mutateAsync({
+          stationId,
+          evseId,
+          startTime: start,
+          endTime: end,
+          estimatedDurationMinutes: durationMinutes,
+        });
+
+        toast.success(`Reserva #${result.id} confirmada`);
+        
+        const confirmMsg: Message = {
+          id: Date.now() + 100,
+          role: "assistant",
+          content: `✅ **Reserva confirmada exitosamente**\n\n- **ID de reserva:** #${result.id}\n- **Hora:** ${start.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}\n- **Duración:** ${durationMinutes} minutos\n- **Tarifa de reserva:** $${result.reservationFee?.toLocaleString('es-CO')} COP\n\nRecuerda llegar a tiempo. Tienes 15 minutos de gracia después de la hora de inicio.`,
+          createdAt: new Date(),
+          isStreaming: true,
+        };
+        setMessages((prev) => [...prev, confirmMsg]);
+        setStreamingMessageId(confirmMsg.id);
+      } catch (error: any) {
+        toast.error(error.message || "Error al crear la reserva");
+        const errorMsg: Message = {
+          id: Date.now() + 100,
+          role: "assistant",
+          content: `❌ No se pudo completar la reserva: ${error.message || 'Error desconocido'}. ¿Quieres intentar con otra estación u horario?`,
+          createdAt: new Date(),
+          isStreaming: true,
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+        setStreamingMessageId(errorMsg.id);
+      }
+    },
+    [createReservation]
+  );
 
   const handleSendMessage = useCallback(
     async (text: string) => {
@@ -927,6 +1130,7 @@ export function AIChatPage() {
                     isUser={msg.role === "user"}
                     isLatestAssistant={msg.id === lastAssistantMsgId}
                     onStreamComplete={handleStreamComplete}
+                    onReservationConfirm={handleReservationConfirm}
                   />
                 ))}
                 {isLoading && (

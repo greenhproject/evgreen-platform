@@ -1787,3 +1787,24 @@
 - [x] Dashboard inversionista: insignia de fundador con diseño premium, cálculos por tipo de inversión
 - [x] Muro de fundadores: componente en InvestorLayout sidebar con fotos y frases configurables
 - [x] Endpoint público getFoundersWall para cargar datos del muro
+
+## Mejoras EV Assistant - 01 Mar 2026
+
+### Fix: Links de Google Maps solo cuando es relevante
+- [x] No mostrar botones "Ir con Google Maps" cuando la consulta no es de ubicación/direcciones
+- [x] Solo mostrar links de mapa cuando el usuario pregunta por ubicaciones, estaciones cercanas o rutas
+- [x] Mejorar system prompt del LLM para clasificar tipo de consulta
+
+### Feature: Planificador de Rutas Inteligente
+- [x] Calcular paradas de carga estratégicas basadas en autonomía del vehículo
+- [x] Considerar distancia total, velocidad promedio y consumo del vehículo
+- [x] Recomendar estaciones EVGreen en la ruta como paradas
+- [x] Generar link de Google Maps con ruta completa y waypoints de paradas
+- [x] Mostrar estimación de tiempo total incluyendo paradas de carga
+- [x] Mostrar costo estimado de cada parada
+
+### Feature: Reserva de Cargadores desde el Chat
+- [x] El asistente puede reservar un cargador a una hora específica solicitada por el usuario
+- [x] Integrar con el sistema de reservas existente
+- [x] Confirmar reserva con el usuario antes de ejecutar
+- [x] Mostrar resumen de la reserva realizada
