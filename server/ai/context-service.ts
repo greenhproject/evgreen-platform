@@ -6,6 +6,7 @@
  */
 
 import { getDb } from "../db";
+import * as dbOps from "../db";
 import { 
   chargingStations, 
   evses,
@@ -83,6 +84,22 @@ export interface PlatformContext {
   valleyHours: string[];
 }
 
+export interface RoutePatternContext {
+  originName: string;
+  destinationName: string;
+  frequency: number;
+  estimatedDistanceKm: number | null;
+  typicalDepartureHour: number | null;
+}
+
+export interface FrequentLocationContext {
+  label: string;
+  latitude: number;
+  longitude: number;
+  count: number;
+  typicalHours: string;
+}
+
 export interface AIContext {
   user: UserContext | null;
   nearbyStations: StationContext[];
@@ -91,6 +108,9 @@ export interface AIContext {
   currentDay: string;
   isWeekend: boolean;
   isPeakHour: boolean;
+  userLocation: { latitude: number; longitude: number } | null;
+  frequentRoutes: RoutePatternContext[];
+  frequentLocations: FrequentLocationContext[];
 }
 
 /**
@@ -116,6 +136,39 @@ export async function getAIContext(
   // Obtener contexto general de la plataforma
   const platformContext = await getPlatformContext();
 
+  // Obtener rutas frecuentes y ubicaciones frecuentes del usuario
+  let frequentRoutes: RoutePatternContext[] = [];
+  let frequentLocations: FrequentLocationContext[] = [];
+  if (userId) {
+    try {
+      const routePatterns = await dbOps.getUserRoutePatterns(userId, 5);
+      frequentRoutes = routePatterns.map(r => ({
+        originName: r.originName || 'Origen desconocido',
+        destinationName: r.destinationName || 'Destino desconocido',
+        frequency: r.frequency,
+        estimatedDistanceKm: r.estimatedDistanceKm ? Number(r.estimatedDistanceKm) : null,
+        typicalDepartureHour: r.typicalDepartureHour,
+      }));
+      frequentLocations = await dbOps.getUserFrequentLocations(userId);
+    } catch (error) {
+      console.error('[AIContext] Error getting route patterns:', error);
+    }
+
+    // Guardar ubicación actual si se proporcionó
+    if (userLat && userLng) {
+      try {
+        await dbOps.saveUserLocation({
+          userId,
+          latitude: userLat,
+          longitude: userLng,
+          source: 'chat',
+        });
+      } catch (error) {
+        console.error('[AIContext] Error saving user location:', error);
+      }
+    }
+  }
+
   return {
     user: userContext,
     nearbyStations,
@@ -124,6 +177,9 @@ export async function getAIContext(
     currentDay,
     isWeekend,
     isPeakHour,
+    userLocation: userLat && userLng ? { latitude: userLat, longitude: userLng } : null,
+    frequentRoutes,
+    frequentLocations,
   };
 }
 
