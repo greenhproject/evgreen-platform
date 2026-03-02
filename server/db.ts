@@ -404,21 +404,54 @@ export async function getEvsesByStationId(stationId: number) {
   if (!db) return [];
   const evseList = await db.select().from(evses).where(eq(evses.stationId, stationId)).orderBy(evses.evseIdLocal);
   
-  // Verificar reservas activas para cada EVSE y forzar estado RESERVED si corresponde
+  // Verificar reservas activas para cada EVSE
   const now = new Date();
+  const in15Min = new Date(now.getTime() + 15 * 60 * 1000);
   const enriched = await Promise.all(evseList.map(async (evse) => {
     if (evse.status === 'AVAILABLE' || evse.status === 'RESERVED') {
-      const activeRes = await db.select().from(reservations)
+      // Buscar reservas activas para este EVSE
+      const activeResList = await db.select().from(reservations)
         .where(and(
           eq(reservations.evseId, evse.id),
           eq(reservations.status, 'ACTIVE')
         ))
-        .limit(1);
-      if (activeRes.length > 0) {
-        return { ...evse, status: 'RESERVED' as typeof evse.status, activeReservationId: activeRes[0].id, activeReservationUserId: activeRes[0].userId };
+        .orderBy(reservations.startTime);
+      
+      if (activeResList.length > 0) {
+        // Buscar reserva que esté en curso o empiece en los próximos 15 min
+        const currentOrImminent = activeResList.find(r => 
+          r.startTime <= in15Min && r.endTime > now
+        );
+        
+        if (currentOrImminent) {
+          // Reserva en curso o inminente: marcar como RESERVED
+          return { 
+            ...evse, 
+            status: 'RESERVED' as typeof evse.status, 
+            activeReservationId: currentOrImminent.id, 
+            activeReservationUserId: currentOrImminent.userId,
+            nextReservation: null,
+          };
+        }
+        
+        // Solo hay reservas futuras (>15 min): conector sigue AVAILABLE
+        // pero incluimos info de la próxima reserva para referencia
+        const nextRes = activeResList[0];
+        return { 
+          ...evse, 
+          status: evse.status, // Mantener estado actual (AVAILABLE)
+          activeReservationId: null, 
+          activeReservationUserId: null,
+          nextReservation: {
+            id: nextRes.id,
+            userId: nextRes.userId,
+            startTime: nextRes.startTime,
+            endTime: nextRes.endTime,
+          },
+        };
       }
     }
-    return { ...evse, activeReservationId: null, activeReservationUserId: null };
+    return { ...evse, activeReservationId: null, activeReservationUserId: null, nextReservation: null };
   }));
   return enriched;
 }

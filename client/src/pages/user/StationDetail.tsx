@@ -532,21 +532,47 @@ export default function StationDetail() {
                     </div>
                     
                     {evse.status === "AVAILABLE" && (
-                      <div className="mt-4 flex gap-2">
-                        <Button
-                          className="flex-1 gradient-primary text-white"
-                          onClick={() => setLocation(`/start-charge?code=${station.ocppIdentity || station.id}`)}
-                        >
-                          <Zap className="w-4 h-4 mr-2" />
-                          Iniciar carga
-                        </Button>
-                        <Button 
-                          variant="outline"
-                          onClick={() => handleReserve(evse)}
-                          className="border-primary/50 hover:bg-primary/10"
-                        >
-                          <Calendar className="w-4 h-4" />
-                        </Button>
+                      <div className="mt-3 space-y-2">
+                        {/* Mostrar info de reserva futura si existe */}
+                        {(evse as any).nextReservation && (() => {
+                          const nextRes = (evse as any).nextReservation;
+                          const isMyNextRes = user?.id && String(nextRes.userId) === String(user.id);
+                          const myNextResDetail = myReservations?.find((r: any) => r.id === nextRes.id);
+                          return (
+                            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+                              <div className="flex items-center gap-2 text-blue-400 text-xs font-medium mb-1">
+                                <Calendar className="w-3 h-3" />
+                                {isMyNextRes ? "Tu pr\u00f3xima reserva" : "Reserva programada"}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {new Date(nextRes.startTime).toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" })}
+                                {" a las "}
+                                {new Date(nextRes.startTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                                {" - "}
+                                {new Date(nextRes.endTime).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                              </div>
+                              {isMyNextRes && myNextResDetail?.reservationFee && (
+                                <div className="text-xs text-blue-300 mt-1">Tarifa: ${Number(myNextResDetail.reservationFee).toLocaleString()} COP</div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        <div className="flex gap-2">
+                          <Button
+                            className="flex-1 gradient-primary text-white"
+                            onClick={() => setLocation(`/start-charge?code=${station.ocppIdentity || station.id}`)}
+                          >
+                            <Zap className="w-4 h-4 mr-2" />
+                            Iniciar carga
+                          </Button>
+                          <Button 
+                            variant="outline"
+                            onClick={() => handleReserve(evse)}
+                            className="border-primary/50 hover:bg-primary/10"
+                          >
+                            <Calendar className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
                     )}
 

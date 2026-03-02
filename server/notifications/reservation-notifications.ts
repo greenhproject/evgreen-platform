@@ -307,8 +307,91 @@ export async function processNoShows(): Promise<void> {
   }
 }
 
+/**
+ * Procesar reservas próximas: marcar conectores como RESERVED cuando falten 15 min o menos
+ * y liberar conectores cuando la reserva haya terminado
+ */
+async function processUpcomingReservations(): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const now = new Date();
+    const in15Min = new Date(now.getTime() + 15 * 60 * 1000);
+
+    // 1. Buscar reservas ACTIVAS que empiezan en los próximos 15 minutos
+    const upcomingReservations = await db
+      .select({
+        id: reservations.id,
+        evseId: reservations.evseId,
+        startTime: reservations.startTime,
+        endTime: reservations.endTime,
+      })
+      .from(reservations)
+      .where(
+        and(
+          eq(reservations.status, "ACTIVE"),
+          lte(reservations.startTime, in15Min),
+          gte(reservations.endTime, now)
+        )
+      );
+
+    for (const res of upcomingReservations) {
+      // Verificar estado actual del EVSE
+      const [evse] = await db
+        .select({ status: evses.status })
+        .from(evses)
+        .where(eq(evses.id, res.evseId));
+
+      if (evse && evse.status === "AVAILABLE") {
+        await db
+          .update(evses)
+          .set({ status: "RESERVED", lastStatusUpdate: now })
+          .where(eq(evses.id, res.evseId));
+        console.log(`[ReservationActivation] EVSE ${res.evseId} marcado como RESERVED (reserva #${res.id} inicia pronto)`);
+      }
+    }
+
+    // 2. Liberar conectores cuya reserva ya terminó y no están en uso
+    const expiredReservations = await db
+      .select({
+        id: reservations.id,
+        evseId: reservations.evseId,
+      })
+      .from(reservations)
+      .where(
+        and(
+          eq(reservations.status, "ACTIVE"),
+          lte(reservations.endTime, now)
+        )
+      );
+
+    for (const res of expiredReservations) {
+      const [evse] = await db
+        .select({ status: evses.status })
+        .from(evses)
+        .where(eq(evses.id, res.evseId));
+
+      // Solo liberar si está RESERVED (no si está CHARGING u otro estado activo)
+      if (evse && evse.status === "RESERVED") {
+        await db
+          .update(evses)
+          .set({ status: "AVAILABLE", lastStatusUpdate: now })
+          .where(eq(evses.id, res.evseId));
+        console.log(`[ReservationActivation] EVSE ${res.evseId} liberado a AVAILABLE (reserva #${res.id} terminó)`);
+      }
+    }
+
+    if (upcomingReservations.length > 0 || expiredReservations.length > 0) {
+      console.log(`[ReservationActivation] Processed ${upcomingReservations.length} upcoming, ${expiredReservations.length} expired`);
+    }
+  } catch (error) {
+    console.error("[ReservationActivation] Error:", error);
+  }
+}
+
 // Exportar funciones para uso en cron jobs
 export const reservationJobs = {
   processReminders: processReservationReminders,
   processNoShows: processNoShows,
+  processUpcomingReservations: processUpcomingReservations,
 };

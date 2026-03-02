@@ -1882,3 +1882,18 @@
 - [x] Solución: implementado Web Push nativo con VAPID keys propias
 - [x] Nuevo push-router con registerSubscription para Web Push + registerToken como fallback FCM
 - [x] Service Worker ya maneja correctamente los eventos push nativos
+
+
+## Bugs Reservas - 02 Mar (6:27 AM)
+
+### Bug 1: Conector se muestra "Reservado" antes de la hora de inicio
+- [x] Una reserva futura (ej: 8:00 AM) marca el conector como "Reservado" inmediatamente
+- [x] Corregido: getEvsesByStationId ahora solo marca RESERVED si la reserva empieza en <15 min
+- [x] Reservas futuras muestran info azul "Próxima reserva" sin cambiar estado del conector
+- [x] Job periódico processUpcomingReservations marca RESERVED 15 min antes del inicio
+- [x] Creación de reserva ya no cambia estado del EVSE si la reserva es futura (>5 min)
+
+### Bug 2: Reserva desde el chat falla diciendo "no se puede reservar"
+- [x] Causa: validación rechazaba si status !== AVAILABLE (incluyendo RESERVED por reservas futuras)
+- [x] Corregido: ahora solo bloquea estados realmente no disponibles (CHARGING, FAULTED, etc.)
+- [x] Permite reservar si el conector está AVAILABLE o RESERVED (verifica conflictos de horario)
