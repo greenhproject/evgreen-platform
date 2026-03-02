@@ -4280,6 +4280,27 @@ export async function getDefaultVehicle(userId: number): Promise<UserVehicle | u
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function updateVehicleBatteryLevel(
+  vehicleId: number,
+  userId: number,
+  batteryLevel: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(userVehicles)
+    .set({
+      batteryLevel,
+      lastBatteryUpdate: new Date(),
+    })
+    .where(
+      and(
+        eq(userVehicles.id, vehicleId),
+        eq(userVehicles.userId, userId)
+      )
+    );
+}
+
 
 // ============================================================================
 // FIRMWARE UPDATES

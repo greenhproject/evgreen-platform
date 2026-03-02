@@ -1830,3 +1830,30 @@
 - [x] Incluir horarios preferidos de carga en el contexto
 - [x] Incluir estaciones favoritas con distancia real desde ubicación actual
 - [x] El LLM debe saber la ubicación exacta del usuario sin preguntarle
+
+
+## Estado de Batería para Planificador - 02 Mar
+
+### BD y Backend
+- [x] Agregar campos batteryLevel y lastBatteryUpdate al schema de userVehicles
+- [x] Crear función updateVehicleBatteryLevel en db.ts
+- [x] Crear endpoints updateBatteryLevel y getBatteryLevel en vehiclesRouter
+
+### System Prompt y Planificador
+- [x] Incluir NIVEL DE BATERÍA ACTUAL en el system prompt del vehículo
+- [x] Calcular AUTONOMÍA RESTANTE ESTIMADA con factor de seguridad 15%
+- [x] Actualizar regla de planificación de rutas para usar batería actual
+- [x] Primera parada basada en batería actual, siguientes asumen carga al 80%
+- [x] Mostrar batería estimada al llegar a cada punto de la ruta
+
+### Tag BATTERY desde el chat
+- [x] Agregar regla 3B: tag [BATTERY:nivel] para actualizar batería desde el chat
+- [x] Componente BatteryUpdateHandler que detecta el tag y actualiza automáticamente
+- [x] Limpiar tag [BATTERY:...] del texto visible
+
+### UI de Batería
+- [x] Indicador de batería interactivo (slider) en la página de vehículos
+- [x] Barra visual de batería con colores según nivel (rojo/naranja/amarillo/verde)
+- [x] Estimación de km restantes en la tarjeta del vehículo
+- [x] Badge de batería compacto en el header del widget del chat
+- [x] Refrescamiento automático del badge cada 60 segundos
