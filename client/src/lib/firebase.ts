@@ -14,7 +14,7 @@ let fcmToken: string | null = null;
 let firebaseAvailable = false;
 
 // VAPID public key para Web Push nativo
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
+let VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
 
 // Firebase config (fallback)
 const FIREBASE_CONFIG = {
@@ -95,16 +95,66 @@ export async function requestNotificationPermission(): Promise<boolean> {
 }
 
 /**
+ * Esperar a que el Service Worker esté listo con timeout
+ */
+async function waitForServiceWorker(timeoutMs: number = 10000): Promise<ServiceWorkerRegistration | null> {
+  try {
+    // Primero asegurar que el SW está registrado
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    let hasActiveSW = false;
+    
+    for (const reg of registrations) {
+      if (reg.active || reg.installing || reg.waiting) {
+        hasActiveSW = true;
+        break;
+      }
+    }
+    
+    if (!hasActiveSW) {
+      console.log("[Push] No hay Service Worker registrado, registrando...");
+      await navigator.serviceWorker.register("/sw.js");
+    }
+    
+    // Esperar con timeout
+    const registration = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+    
+    if (!registration) {
+      console.error("[Push] Timeout esperando Service Worker ready");
+      return null;
+    }
+    
+    return registration;
+  } catch (error) {
+    console.error("[Push] Error esperando Service Worker:", error);
+    return null;
+  }
+}
+
+/**
  * Obtener suscripción Web Push nativa
  * Retorna la suscripción PushSubscription del Service Worker
  */
 export async function getWebPushSubscription(): Promise<PushSubscription | null> {
-  if (!areNotificationsEnabled() || !VAPID_PUBLIC_KEY) {
+  if (!VAPID_PUBLIC_KEY) {
+    console.log("[Push] No hay VAPID_PUBLIC_KEY configurada");
+    return null;
+  }
+
+  // Verificar que el permiso está concedido (ya debería estarlo en este punto)
+  if (Notification.permission !== "granted") {
+    console.log("[Push] Permiso de notificaciones no concedido:", Notification.permission);
     return null;
   }
 
   try {
-    const registration = await navigator.serviceWorker.ready;
+    const registration = await waitForServiceWorker();
+    if (!registration) {
+      console.error("[Push] No se pudo obtener Service Worker registration");
+      return null;
+    }
 
     // Verificar si ya hay una suscripción
     let subscription = await registration.pushManager.getSubscription();
@@ -115,13 +165,21 @@ export async function getWebPushSubscription(): Promise<PushSubscription | null>
     }
 
     // Crear nueva suscripción
+    // IMPORTANTE: Pasar Uint8Array directamente, no .buffer
+    // Algunos navegadores tienen problemas con ArrayBuffer
     const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    
+    console.log("[Push] Creando nueva suscripción Web Push...", {
+      keyLength: applicationServerKey.length,
+      endpoint: "pushManager.subscribe"
+    });
+    
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
+      applicationServerKey: applicationServerKey as BufferSource,
     });
 
-    console.log("[Push] Nueva suscripción Web Push creada");
+    console.log("[Push] Nueva suscripción Web Push creada:", subscription.endpoint.substring(0, 50) + "...");
     return subscription;
   } catch (error) {
     console.error("[Push] Error obteniendo suscripción Web Push:", error);
@@ -137,13 +195,22 @@ export async function getWebPushSubscriptionData(): Promise<{
   keys: { p256dh: string; auth: string };
 } | null> {
   const subscription = await getWebPushSubscription();
-  if (!subscription) return null;
+  if (!subscription) {
+    console.log("[Push] No se obtuvo suscripción Web Push");
+    return null;
+  }
 
   const json = subscription.toJSON();
   if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
     console.error("[Push] Suscripción incompleta:", json);
     return null;
   }
+
+  console.log("[Push] Datos de suscripción obtenidos:", {
+    endpoint: json.endpoint.substring(0, 50) + "...",
+    hasP256dh: !!json.keys.p256dh,
+    hasAuth: !!json.keys.auth,
+  });
 
   return {
     endpoint: json.endpoint,
@@ -251,7 +318,8 @@ export async function showLocalNotification(
   }
 
   try {
-    const registration = await navigator.serviceWorker.ready;
+    const registration = await waitForServiceWorker(5000);
+    if (!registration) return false;
 
     await registration.showNotification(title, {
       icon: "/icons/icon-192x192.png",
@@ -337,15 +405,17 @@ export async function initializeFirebase(): Promise<boolean> {
     let hasRegistration = false;
 
     for (const reg of registrations) {
-      if (reg.active?.scriptURL.includes("sw.js")) {
+      // Verificar cualquier estado del SW, no solo active
+      const swUrl = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL;
+      if (swUrl && swUrl.includes("sw.js")) {
         hasRegistration = true;
         break;
       }
     }
 
     if (!hasRegistration) {
-      await navigator.serviceWorker.register("/sw.js");
-      console.log("[Push] Service Worker registrado");
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      console.log("[Push] Service Worker registrado, estado:", reg.active?.state || reg.installing?.state || "pending");
     }
 
     // Inicializar Firebase App si hay credenciales (fallback)
@@ -353,8 +423,26 @@ export async function initializeFirebase(): Promise<boolean> {
       await initializeFirebaseApp();
     }
 
+    // Si no tenemos VAPID key del env, intentar obtenerla del servidor
+    if (!VAPID_PUBLIC_KEY) {
+      try {
+        const response = await fetch("/api/trpc/push.getVapidKey");
+        if (response.ok) {
+          const data = await response.json();
+          const vapidKey = data?.result?.data?.vapidPublicKey;
+          if (vapidKey) {
+            VAPID_PUBLIC_KEY = vapidKey;
+            console.log("[Push] VAPID key obtenida del servidor");
+          }
+        }
+      } catch (e) {
+        console.warn("[Push] No se pudo obtener VAPID key del servidor:", e);
+      }
+    }
+
     console.log("[Push] Sistema de push inicializado", {
       webPush: !!VAPID_PUBLIC_KEY,
+      vapidKeyLength: VAPID_PUBLIC_KEY.length,
       firebase: hasFirebaseConfig,
     });
 

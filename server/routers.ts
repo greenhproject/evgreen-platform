@@ -1712,17 +1712,13 @@ const reservationsRouter = router({
       // Calcular porcentaje de reembolso según tiempo de anticipación
       const now = new Date();
       const startTime = new Date(reservation.startTime);
-      const hoursUntilStart = (startTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+      const minutesUntilStart = (startTime.getTime() - now.getTime()) / (1000 * 60);
       
       let refundPercent = 0;
-      if (hoursUntilStart >= 24) {
-        refundPercent = 100; // Reembolso total si cancela con 24h+ de anticipación
-      } else if (hoursUntilStart >= 12) {
-        refundPercent = 75; // 75% si cancela con 12-24h de anticipación
-      } else if (hoursUntilStart >= 2) {
-        refundPercent = 50; // 50% si cancela con 2-12h de anticipación
+      if (minutesUntilStart >= 30) {
+        refundPercent = 100; // Reembolso total si cancela con 30+ min de anticipación
       } else {
-        refundPercent = 0; // Sin reembolso si cancela con menos de 2h
+        refundPercent = 0; // Sin reembolso si cancela con menos de 30 min
       }
       
       const result = await db.cancelReservationWithRefund(input.id, refundPercent);
