@@ -50,6 +50,7 @@ import {
   CalendarClock,
   CheckCircle2,
   MapPinned,
+  Battery,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -217,7 +218,8 @@ function ChatMessage({
   const cleanText = rawText
     .replace(/\[NAV:(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\|([^\]]+)\]/g, '')
     .replace(/\[ROUTE:([^\]]+)\]/g, '')
-    .replace(/\[RESERVE:([^\]]+)\]/g, '');
+    .replace(/\[RESERVE:([^\]]+)\]/g, '')
+    .replace(/\[BATTERY:(\d+)\]/g, '');
 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -253,6 +255,7 @@ function ChatMessage({
                 <NavigationButtons content={rawText} />
                 <RouteButton content={rawText} />
                 <ReservationButton content={rawText} onConfirm={onReservationConfirm} />
+                <BatteryUpdateHandler content={rawText} />
               </>
             )}
           </div>
@@ -484,6 +487,85 @@ function ReservationButton({
         </div>
         <CalendarClock className="h-4 w-4 shrink-0" />
       </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// ACTUALIZACIÓN AUTOMÁTICA DE BATERÍA DESDE EL CHAT
+// ============================================================================
+
+function BatteryUpdateHandler({ content }: { content: string }) {
+  const [updated, setUpdated] = useState(false);
+  const utils = trpc.useUtils();
+  const updateBattery = trpc.vehicles.updateBatteryLevel.useMutation({
+    onSuccess: () => {
+      utils.vehicles.getBatteryLevel.invalidate();
+      utils.vehicles.list.invalidate();
+      setUpdated(true);
+    },
+  });
+
+  // Detectar tag [BATTERY:nivel]
+  const batteryRegex = /\[BATTERY:(\d+)\]/;
+  const match = content.match(batteryRegex);
+
+  useEffect(() => {
+    if (match && !updated && !updateBattery.isPending) {
+      const level = parseInt(match[1], 10);
+      if (level >= 0 && level <= 100) {
+        updateBattery.mutate({ batteryLevel: level });
+      }
+    }
+  }, [match?.[1]]);
+
+  if (!match) return null;
+
+  const level = parseInt(match[1], 10);
+  const getBatteryColor = (l: number) => {
+    if (l <= 10) return 'text-red-500';
+    if (l <= 25) return 'text-orange-500';
+    if (l <= 50) return 'text-yellow-500';
+    return 'text-green-500';
+  };
+
+  return (
+    <div className="mt-2 flex items-center gap-2 text-xs bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2">
+      <Battery className={`w-4 h-4 ${getBatteryColor(level)}`} />
+      <span className="text-muted-foreground">
+        {updated ? (
+          <span className="text-green-500">Batería actualizada a {level}%</span>
+        ) : updateBattery.isPending ? (
+          'Actualizando batería...'
+        ) : (
+          `Batería: ${level}%`
+        )}
+      </span>
+    </div>
+  );
+}
+
+// ============================================================================
+// BADGE DE BATERÍA EN EL HEADER DEL CHAT
+// ============================================================================
+
+function ChatBatteryBadge() {
+  const { data: batteryData } = trpc.vehicles.getBatteryLevel.useQuery(undefined, {
+    refetchInterval: 60000, // refrescar cada minuto
+  });
+
+  if (!batteryData || batteryData.batteryLevel === null || batteryData.batteryLevel === undefined) {
+    return null;
+  }
+
+  const level = batteryData.batteryLevel;
+  const color = level <= 10 ? 'text-red-500' : level <= 25 ? 'text-orange-500' : level <= 50 ? 'text-yellow-500' : 'text-green-500';
+  const bgColor = level <= 10 ? 'bg-red-500/10' : level <= 25 ? 'bg-orange-500/10' : level <= 50 ? 'bg-yellow-500/10' : 'bg-green-500/10';
+
+  return (
+    <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${bgColor} text-xs font-medium ${color}`} title={`Batería: ${level}% - ${batteryData.vehicleName}`}>
+      <Battery className="w-3.5 h-3.5" />
+      <span>{level}%</span>
     </div>
   );
 }
@@ -740,7 +822,8 @@ export function AIChatWidget() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <ChatBatteryBadge />
                 <Button
                   variant="ghost"
                   size="icon"

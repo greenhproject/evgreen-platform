@@ -54,6 +54,8 @@ export interface VehicleContext {
   maxChargePowerKw: number | null;
   nickname: string | null;
   isDefault: boolean;
+  batteryLevel: number | null;
+  lastBatteryUpdate: Date | null;
 }
 
 export interface UserContext {
@@ -276,6 +278,8 @@ async function getUserContext(userId: number): Promise<UserContext | null> {
       maxChargePowerKw: v.maxChargePowerKw ? Number(v.maxChargePowerKw) : null,
       nickname: v.nickname,
       isDefault: v.isDefault,
+      batteryLevel: v.batteryLevel ?? null,
+      lastBatteryUpdate: v.lastBatteryUpdate ?? null,
     }));
 
     const defaultVehicle = vehicles.find(v => v.isDefault) || (vehicles.length > 0 ? vehicles[0] : null);

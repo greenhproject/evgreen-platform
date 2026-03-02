@@ -1573,6 +1573,10 @@ export const userVehicles = mysqlTable("user_vehicles", {
   // Velocidad máxima de carga
   maxChargePowerKw: decimal("maxChargePowerKw", { precision: 6, scale: 2 }), // kW máximos que acepta
 
+  // Estado de batería actual (reportado por el usuario)
+  batteryLevel: int("batteryLevel"), // Nivel de batería actual (0-100%)
+  lastBatteryUpdate: timestamp("lastBatteryUpdate"), // Última actualización del nivel
+
   // Estado
   isDefault: boolean("isDefault").default(false).notNull(), // Vehículo principal del usuario
   isActive: boolean("isActive").default(true).notNull(),

@@ -3598,6 +3598,47 @@ const vehiclesRouter = router({
       await db.setDefaultVehicle(input.id, ctx.user.id);
       return { message: "Vehículo establecido como predeterminado" };
     }),
+
+  // Actualizar nivel de batería del vehículo
+  updateBatteryLevel: protectedProcedure
+    .input(z.object({
+      vehicleId: z.number().optional(),
+      batteryLevel: z.number().min(0).max(100),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      let vehicleId = input.vehicleId;
+      if (!vehicleId) {
+        const defaultVehicle = await db.getDefaultVehicle(ctx.user.id);
+        if (!defaultVehicle) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "No tienes un vehículo registrado" });
+        }
+        vehicleId = defaultVehicle.id;
+      }
+      const existing = await db.getUserVehicleById(vehicleId, ctx.user.id);
+      if (!existing) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Vehículo no encontrado" });
+      }
+      await db.updateVehicleBatteryLevel(vehicleId, ctx.user.id, input.batteryLevel);
+      return {
+        message: `Batería actualizada a ${input.batteryLevel}%`,
+        batteryLevel: input.batteryLevel,
+        vehicleId,
+      };
+    }),
+
+  // Obtener nivel de batería del vehículo por defecto
+  getBatteryLevel: protectedProcedure.query(async ({ ctx }) => {
+    const defaultVehicle = await db.getDefaultVehicle(ctx.user.id);
+    if (!defaultVehicle) return null;
+    return {
+      vehicleId: defaultVehicle.id,
+      vehicleName: `${defaultVehicle.brand} ${defaultVehicle.model}`,
+      batteryLevel: defaultVehicle.batteryLevel,
+      lastBatteryUpdate: defaultVehicle.lastBatteryUpdate,
+      batteryCapacityKwh: defaultVehicle.batteryCapacityKwh ? Number(defaultVehicle.batteryCapacityKwh) : null,
+      rangeKm: defaultVehicle.rangeKm,
+    };
+  }),
 });
 
 // ============================================================================
