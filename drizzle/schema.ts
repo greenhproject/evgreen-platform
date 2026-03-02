@@ -92,6 +92,8 @@ export const users = mysqlTable("users", {
   // Token FCM para notificaciones push
   fcmToken: text("fcmToken"),
   fcmTokenUpdatedAt: timestamp("fcmTokenUpdatedAt"),
+  // Web Push subscription (JSON string with endpoint, keys)
+  pushSubscription: text("pushSubscription"),
   // Preferencias de notificaciones
   notifyChargingComplete: boolean("notifyChargingComplete").default(true),
   notifyLowBalance: boolean("notifyLowBalance").default(true),
