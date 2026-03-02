@@ -1897,3 +1897,36 @@
 - [x] Causa: validación rechazaba si status !== AVAILABLE (incluyendo RESERVED por reservas futuras)
 - [x] Corregido: ahora solo bloquea estados realmente no disponibles (CHARGING, FAULTED, etc.)
 - [x] Permite reservar si el conector está AVAILABLE o RESERVED (verifica conflictos de horario)
+
+
+## Bugs y Mejoras - 02 Mar (9:00 AM)
+
+### Feature: Cancelación anticipada de reserva con reembolso
+- [ ] Agregar botón "Cancelar" en la vista de reserva futura en StationDetail
+- [ ] Implementar lógica de reembolso: 100% si se cancela 30+ min antes del inicio
+- [ ] Sin reembolso si se cancela con menos de 30 min de anticipación
+- [ ] Actualizar estado de la reserva a CANCELLED
+- [ ] Liberar el conector si estaba marcado como RESERVED
+- [ ] Notificar al usuario del reembolso
+
+### Bug: Notificaciones Push no se activan
+- [ ] Investigar error "No se pudieron activar las notificaciones"
+- [ ] Verificar flujo de suscripción Web Push (VAPID keys, service worker, endpoint)
+- [ ] Corregir el registro de suscripción push en el backend
+- [ ] Probar que las notificaciones se activan correctamente
+
+## Bug Fixes - Marzo 2, 2026
+- [x] Fix notificaciones push: eliminar .buffer en applicationServerKey (compatibilidad navegadores)
+- [x] Fix notificaciones push: agregar timeout para Service Worker ready (evitar bloqueos)
+- [x] Fix notificaciones push: mejorar detección de SW (installing/waiting además de active)
+- [x] Agregar endpoint getVapidKey para obtener clave VAPID del servidor como fallback
+- [x] Agregar fallback a notificaciones locales si suscripción push falla
+- [x] Mejorar logging de diagnóstico en flujo de push notifications
+- [x] 23 tests unitarios para push notifications, VAPID, cancelación y reservas
+
+## Bug Fixes - Marzo 2, 2026
+- [x] Fix notificaciones push: eliminar .buffer en applicationServerKey
+- [x] Fix notificaciones push: agregar timeout para SW ready
+- [x] Agregar endpoint getVapidKey como fallback
+- [x] Agregar fallback a notificaciones locales
+- [x] 23 tests unitarios para push y reservas

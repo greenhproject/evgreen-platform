@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, publicProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -14,10 +14,20 @@ import {
   unsubscribeFromTopic,
   sendPushNotification,
 } from "../firebase/fcm";
-import { sendWebPush, isWebPushAvailable, type PushSubscriptionData } from "./web-push-service";
+import { sendWebPush, isWebPushAvailable, getVapidPublicKey, type PushSubscriptionData } from "./web-push-service";
 import { checkProximityAndNotify } from "../proximity/proximity-alert-service";
 
 export const pushRouter = router({
+  /**
+   * Obtener la clave pública VAPID para suscripción Web Push
+   */
+  getVapidKey: publicProcedure.query(() => {
+    return {
+      vapidPublicKey: getVapidPublicKey(),
+      webPushAvailable: isWebPushAvailable(),
+    };
+  }),
+
   /**
    * Registrar suscripción Web Push del dispositivo
    */

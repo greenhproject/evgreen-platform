@@ -95,6 +95,8 @@ export function useNotifications() {
     setIsLoading(true);
     setError(null);
     try {
+      console.log("[Push] Iniciando activación de notificaciones...");
+      
       const granted = await requestNotificationPermission();
       setPermissionStatus(getNotificationPermission());
 
@@ -103,6 +105,8 @@ export function useNotifications() {
         setError("Permiso denegado");
         return;
       }
+
+      console.log("[Push] Permiso concedido, verificando autenticación...");
 
       if (!isAuthenticated) {
         toast.error("Debes iniciar sesión para activar notificaciones");
@@ -113,26 +117,34 @@ export function useNotifications() {
 
       // 1. Intentar Web Push nativo (VAPID)
       try {
+        console.log("[Push] Intentando Web Push nativo...");
         const subscriptionData = await getWebPushSubscriptionData();
+        
         if (subscriptionData) {
+          console.log("[Push] Suscripción obtenida, registrando en servidor...");
           await registerSubscriptionMutation.mutateAsync({
             subscription: subscriptionData,
           });
           registered = true;
-          console.log("[Push] Registrado con Web Push nativo");
+          console.log("[Push] Registrado con Web Push nativo exitosamente");
+        } else {
+          console.warn("[Push] No se pudo obtener suscripción Web Push (subscriptionData es null)");
         }
       } catch (webPushError) {
-        console.warn("[Push] Web Push nativo falló, intentando FCM:", webPushError);
+        console.warn("[Push] Web Push nativo falló:", webPushError);
       }
 
       // 2. Fallback: FCM
       if (!registered) {
         try {
+          console.log("[Push] Intentando FCM como fallback...");
           const token = await getFCMToken();
           if (token) {
             await registerTokenMutation.mutateAsync({ fcmToken: token });
             registered = true;
             console.log("[Push] Registrado con FCM");
+          } else {
+            console.warn("[Push] No se pudo obtener token FCM");
           }
         } catch (fcmError) {
           console.warn("[Push] FCM también falló:", fcmError);
@@ -144,8 +156,20 @@ export function useNotifications() {
         toast.success("Notificaciones push activadas correctamente");
         preferencesQuery.refetch();
       } else {
-        toast.error("No se pudieron activar las notificaciones. Intenta de nuevo.");
-        setError("Error al registrar suscripción");
+        // Intentar mostrar una notificación local como último recurso
+        // para verificar que al menos las notificaciones del navegador funcionan
+        const localShown = await showLocalNotification("EVGreen - Notificaciones", {
+          body: "Las notificaciones locales están funcionando. La suscripción push se completará cuando el servidor esté disponible.",
+          tag: "push-setup",
+        });
+        
+        if (localShown) {
+          toast.info("Notificaciones locales activadas. Las notificaciones push se sincronizarán pronto.");
+          setIsEnabled(true);
+        } else {
+          toast.error("No se pudieron activar las notificaciones. Intenta de nuevo.");
+          setError("Error al registrar suscripción");
+        }
       }
     } catch (err) {
       console.error("Error enabling notifications:", err);

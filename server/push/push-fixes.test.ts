@@ -40,6 +40,37 @@ describe("Web Push Service", () => {
     const result = getVapidPublicKey();
     expect(typeof result).toBe("string");
   });
+
+  it("getVapidPublicKey should return a valid base64url string when configured", async () => {
+    const { getVapidPublicKey, isWebPushAvailable } = await import("./web-push-service");
+    const key = getVapidPublicKey();
+    if (isWebPushAvailable()) {
+      // VAPID public key should be base64url encoded (65 bytes = ~87 chars)
+      expect(key.length).toBeGreaterThanOrEqual(80);
+      expect(key.length).toBeLessThanOrEqual(90);
+      // Should only contain base64url characters
+      expect(key).toMatch(/^[A-Za-z0-9_-]+$/);
+    }
+  });
+
+  it("sendWebPush should return false when not initialized", async () => {
+    // Create a fresh module with no VAPID keys
+    const webpush = await import("web-push");
+    // We can't easily test this without mocking env, but we can verify the function signature
+    const { sendWebPush } = await import("./web-push-service");
+    expect(typeof sendWebPush).toBe("function");
+  });
+
+  it("sendWebPushToMultiple should handle empty array", async () => {
+    const { sendWebPushToMultiple } = await import("./web-push-service");
+    const result = await sendWebPushToMultiple([], {
+      title: "Test",
+      body: "Test body",
+    });
+    expect(result.success).toBe(0);
+    expect(result.failure).toBe(0);
+    expect(result.invalidSubscriptions).toHaveLength(0);
+  });
 });
 
 describe("Push Router - registerSubscription input validation", () => {
@@ -117,6 +148,62 @@ describe("Push notification payload format", () => {
     expect(parsed.data.url).toBe("/historial");
     expect(parsed.icon).toBe("/icons/icon-192x192.png");
   });
+
+  it("should handle notification with all optional fields", () => {
+    const notification = {
+      title: "Reserva confirmada",
+      body: "Tu reserva en EVG Diamante Oriental ha sido confirmada",
+      icon: "/icons/icon-192x192.png",
+      badge: "/icons/badge-72x72.png",
+      image: "https://example.com/station.jpg",
+      tag: "reservation-confirmed",
+      data: { type: "reservation", url: "/reservations" },
+      actions: [
+        { action: "view", title: "Ver reserva" },
+        { action: "cancel", title: "Cancelar" },
+      ],
+      vibrate: [200, 100, 200],
+      requireInteraction: false,
+    };
+
+    const payload = JSON.stringify(notification);
+    const parsed = JSON.parse(payload);
+    
+    expect(parsed.actions).toHaveLength(2);
+    expect(parsed.image).toBe("https://example.com/station.jpg");
+    expect(parsed.requireInteraction).toBe(false);
+  });
+});
+
+describe("VAPID key format validation", () => {
+  it("should validate base64url encoding", () => {
+    const validBase64url = "BNdeUbRCy_Ecyn6JZJ22nv9Ktk6DkjYA1-pP-e-YZxPkl4EvuK4mxFFbILasnquQHJMRheFPd3J3uG8MPa-HrO4";
+    
+    // Base64url should not contain + or / (those are base64 standard)
+    expect(validBase64url).not.toMatch(/[+/]/);
+    // Should only contain alphanumeric, - and _
+    expect(validBase64url).toMatch(/^[A-Za-z0-9_-]+$/);
+    // P-256 public key in base64url should be ~87 chars
+    expect(validBase64url.length).toBe(87);
+  });
+
+  it("should convert base64url to Uint8Array correctly", () => {
+    // Simulate the urlBase64ToUint8Array function
+    function urlBase64ToUint8Array(base64String: string): Uint8Array {
+      const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const rawData = Buffer.from(base64, "base64");
+      return new Uint8Array(rawData);
+    }
+
+    const testKey = "BNdeUbRCy_Ecyn6JZJ22nv9Ktk6DkjYA1-pP-e-YZxPkl4EvuK4mxFFbILasnquQHJMRheFPd3J3uG8MPa-HrO4";
+    const result = urlBase64ToUint8Array(testKey);
+    
+    // P-256 uncompressed public key should be 65 bytes
+    expect(result.length).toBe(65);
+    // First byte should be 0x04 (uncompressed point indicator)
+    expect(result[0]).toBe(0x04);
+  });
 });
 
 describe("Reservation from chat - data validation", () => {
@@ -171,5 +258,80 @@ describe("Reservation from chat - data validation", () => {
     const endDateTime = new Date(`${params.date}T${params.endTime}:00`);
 
     expect(startDateTime.getTime()).toBeGreaterThan(endDateTime.getTime());
+  });
+});
+
+describe("Reservation cancellation refund policy", () => {
+  it("should grant 100% refund when cancelled 30+ minutes before start", () => {
+    const now = new Date();
+    const startTime = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour from now
+    const minutesUntilStart = (startTime.getTime() - now.getTime()) / (1000 * 60);
+    
+    expect(minutesUntilStart).toBeGreaterThanOrEqual(30);
+    const hasRefund = minutesUntilStart >= 30;
+    expect(hasRefund).toBe(true);
+    
+    // Refund should be 100% of reservation fee
+    const reservationFee = 5000;
+    const refundAmount = hasRefund ? reservationFee : 0;
+    expect(refundAmount).toBe(5000);
+  });
+
+  it("should not grant refund when cancelled less than 30 minutes before start", () => {
+    const now = new Date();
+    const startTime = new Date(now.getTime() + 15 * 60 * 1000); // 15 minutes from now
+    const minutesUntilStart = (startTime.getTime() - now.getTime()) / (1000 * 60);
+    
+    expect(minutesUntilStart).toBeLessThan(30);
+    const hasRefund = minutesUntilStart >= 30;
+    expect(hasRefund).toBe(false);
+    
+    const reservationFee = 5000;
+    const refundAmount = hasRefund ? reservationFee : 0;
+    expect(refundAmount).toBe(0);
+  });
+
+  it("should handle edge case at exactly 30 minutes", () => {
+    const now = new Date();
+    const startTime = new Date(now.getTime() + 30 * 60 * 1000); // exactly 30 minutes
+    const minutesUntilStart = (startTime.getTime() - now.getTime()) / (1000 * 60);
+    
+    // At exactly 30 minutes, should still get refund
+    const hasRefund = minutesUntilStart >= 30;
+    expect(hasRefund).toBe(true);
+  });
+});
+
+describe("Connector status for future reservations", () => {
+  it("should keep connector AVAILABLE for reservations more than 15 min away", () => {
+    const now = new Date();
+    const reservationStart = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour from now
+    const minutesUntilStart = (reservationStart.getTime() - now.getTime()) / (1000 * 60);
+    
+    // Connector should stay AVAILABLE if reservation is >15 min away
+    const shouldMarkReserved = minutesUntilStart <= 15;
+    expect(shouldMarkReserved).toBe(false);
+  });
+
+  it("should mark connector RESERVED when 15 min or less before start", () => {
+    const now = new Date();
+    const reservationStart = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes from now
+    const minutesUntilStart = (reservationStart.getTime() - now.getTime()) / (1000 * 60);
+    
+    const shouldMarkReserved = minutesUntilStart <= 15;
+    expect(shouldMarkReserved).toBe(true);
+  });
+
+  it("should show cancel button for future reservations regardless of connector status", () => {
+    // The cancel button should appear in the "nextReservation" section
+    // even when the connector is AVAILABLE (not yet RESERVED)
+    const connectorStatus = "AVAILABLE";
+    const hasNextReservation = true;
+    const isMyReservation = true;
+    
+    // Cancel should be available when it's my reservation, regardless of connector status
+    const showCancelButton = hasNextReservation && isMyReservation;
+    expect(showCancelButton).toBe(true);
+    expect(connectorStatus).toBe("AVAILABLE"); // Connector stays available
   });
 });

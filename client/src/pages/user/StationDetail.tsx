@@ -554,6 +554,36 @@ export default function StationDetail() {
                               {isMyNextRes && myNextResDetail?.reservationFee && (
                                 <div className="text-xs text-blue-300 mt-1">Tarifa: ${Number(myNextResDetail.reservationFee).toLocaleString()} COP</div>
                               )}
+                              {isMyNextRes && (() => {
+                                const minutesUntilStart = (new Date(nextRes.startTime).getTime() - Date.now()) / (1000 * 60);
+                                const hasRefund = minutesUntilStart >= 30;
+                                return (
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs h-7"
+                                      onClick={() => {
+                                        const msg = hasRefund
+                                          ? `\u00bfCancelar esta reserva? Se te reembolsar\u00e1 el 100% ($${Number(myNextResDetail?.reservationFee || 0).toLocaleString()} COP) por cancelar con m\u00e1s de 30 minutos de anticipaci\u00f3n.`
+                                          : `\u00bfCancelar esta reserva? No habr\u00e1 reembolso porque faltan menos de 30 minutos para el inicio.`;
+                                        if (confirm(msg)) {
+                                          cancelReservation.mutate({ id: nextRes.id });
+                                        }
+                                      }}
+                                      disabled={cancelReservation.isPending}
+                                    >
+                                      {cancelReservation.isPending ? (
+                                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                                      ) : null}
+                                      Cancelar reserva
+                                    </Button>
+                                    <span className={`text-[10px] ${hasRefund ? 'text-green-400' : 'text-red-400'}`}>
+                                      {hasRefund ? 'Reembolso 100%' : 'Sin reembolso'}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           );
                         })()}
