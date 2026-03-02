@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import path from "path";
+import fs from "fs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -128,6 +130,42 @@ async function startServer() {
       </body>
       </html>
     `);
+  });
+
+  // Servir archivos críticos del Service Worker ANTES de Vite/static
+  // Esto garantiza que sw.js, manifest.json y offline.html siempre estén disponibles
+  // incluso a través de proxies (Cloudflare, Manus) que podrían interceptar las peticiones
+  const publicDir = path.resolve(import.meta.dirname, "../..", "client", "public");
+  
+  app.get("/sw.js", (_req, res) => {
+    const swPath = path.resolve(publicDir, "sw.js");
+    if (fs.existsSync(swPath)) {
+      res.setHeader("Content-Type", "application/javascript");
+      res.setHeader("Service-Worker-Allowed", "/");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.sendFile(swPath);
+    } else {
+      res.status(404).send("Service Worker not found");
+    }
+  });
+  
+  app.get("/manifest.json", (_req, res) => {
+    const manifestPath = path.resolve(publicDir, "manifest.json");
+    if (fs.existsSync(manifestPath)) {
+      res.setHeader("Content-Type", "application/manifest+json");
+      res.sendFile(manifestPath);
+    } else {
+      res.status(404).send("Manifest not found");
+    }
+  });
+  
+  app.get("/offline.html", (_req, res) => {
+    const offlinePath = path.resolve(publicDir, "offline.html");
+    if (fs.existsSync(offlinePath)) {
+      res.sendFile(offlinePath);
+    } else {
+      res.status(200).send("<html><body><h1>Sin conexión</h1><p>Vuelve a intentar cuando tengas conexión.</p></body></html>");
+    }
   });
 
   // development mode uses Vite, production mode uses static files

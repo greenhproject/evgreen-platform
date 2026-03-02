@@ -26,6 +26,13 @@ import {
   DEFAULT_PRICING_CONFIG 
 } from "../pricing/dynamic-pricing";
 
+export interface EvseContext {
+  id: number;
+  connectorType: string;
+  powerKw: number;
+  status: string;
+}
+
 export interface StationContext {
   id: number;
   name: string;
@@ -41,6 +48,7 @@ export interface StationContext {
   totalConnectors: number;
   connectorTypes: string[];
   distance?: number;
+  evseDetails: EvseContext[];
 }
 
 export interface VehicleContext {
@@ -397,6 +405,12 @@ async function getStationsContext(
         totalConnectors: stationConnectors.length,
         connectorTypes,
         distance,
+        evseDetails: stationConnectors.map((c: typeof stationConnectors[0]) => ({
+          id: c.id,
+          connectorType: c.connectorType,
+          powerKw: Number(c.powerKw || 0),
+          status: c.status,
+        })),
       });
     }
 
@@ -576,12 +590,18 @@ ${user.lastChargeDate ? `- Última carga: ${user.lastChargeDate}` : ''}
           ? `🔴 +${Math.round((station.dynamicPrice / station.pricePerKwh - 1) * 100)}%` 
           : '🔵 Precio normal';
       
-      systemPrompt += `- **${station.name}**${distanceText}
+      // Generar lista de conectores con IDs para reservas
+      const evseList = station.evseDetails.map(e => 
+        `    - Conector ID: ${e.id} (${e.connectorType}, ${e.powerKw}kW, ${e.status})`
+      ).join('\n');
+      
+      systemPrompt += `- **${station.name}** (Station ID: ${station.id})${distanceText}
   - Dirección: ${station.address}, ${station.city}
   - Precio actual: $${station.dynamicPrice} COP/kWh (${priceComparison})
   - Demanda: ${station.demandLevel}
   - Disponibilidad: ${station.availableConnectors}/${station.totalConnectors} conectores
-  - Tipos: ${station.connectorTypes.join(', ') || 'No especificado'}
+  - Conectores:
+${evseList}
 
 `;
     }
