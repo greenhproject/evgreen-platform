@@ -1857,3 +1857,12 @@
 - [x] Estimación de km restantes en la tarjeta del vehículo
 - [x] Badge de batería compacto en el header del widget del chat
 - [x] Refrescamiento automático del badge cada 60 segundos
+
+
+## Fix: Zona Horaria del EV Assistant - 02 Mar
+
+### Bug: El asistente muestra fecha/hora incorrecta
+- [x] El system prompt usa hora del servidor (UTC) en lugar de la hora local del usuario
+- [x] Enviar timezone del usuario (Intl.DateTimeFormat) desde el frontend con cada mensaje
+- [x] Usar la timezone del usuario para generar la fecha/hora en el system prompt
+- [x] Asegurar que todas las referencias de fecha/hora en el asistente sean locales al usuario

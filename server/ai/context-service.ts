@@ -121,12 +121,20 @@ export interface AIContext {
 export async function getAIContext(
   userId?: number,
   userLat?: number,
-  userLng?: number
+  userLng?: number,
+  userTimezone?: string
 ): Promise<AIContext> {
   const now = new Date();
-  const currentHour = now.getHours();
-  const currentDay = now.toLocaleDateString('es-CO', { weekday: 'long' });
-  const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+  // Usar la zona horaria del usuario para calcular fecha/hora local
+  const tz = userTimezone || 'America/Bogota';
+  const localTimeStr = now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: tz });
+  const localDayStr = now.toLocaleDateString('es-CO', { weekday: 'long', timeZone: tz });
+  const localDateStr = now.toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric', timeZone: tz });
+  // Obtener la hora local del usuario para cálculos de pico/fin de semana
+  const localHourStr = now.toLocaleTimeString('es-CO', { hour: '2-digit', hour12: false, timeZone: tz });
+  const currentHour = parseInt(localHourStr, 10);
+  const localDayOfWeek = now.toLocaleDateString('en-US', { weekday: 'short', timeZone: tz });
+  const isWeekend = localDayOfWeek === 'Sat' || localDayOfWeek === 'Sun';
   const isPeakHour = (currentHour >= 7 && currentHour <= 9) || (currentHour >= 17 && currentHour <= 20);
 
   // Obtener contexto del usuario si está autenticado
@@ -175,8 +183,8 @@ export async function getAIContext(
     user: userContext,
     nearbyStations,
     platform: platformContext,
-    currentTime: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
-    currentDay,
+    currentTime: localTimeStr,
+    currentDay: `${localDayStr}, ${localDateStr}`,
     isWeekend,
     isPeakHour,
     userLocation: userLat && userLng ? { latitude: userLat, longitude: userLng } : null,

@@ -244,4 +244,6 @@ export interface ConversationContext {
     preferredConnectorTypes: string[];
     maxChargingBudget?: number;
   };
+  // Zona horaria del usuario (ej: 'America/Bogota')
+  timezone?: string;
 }
