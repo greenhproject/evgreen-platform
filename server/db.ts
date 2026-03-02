@@ -69,6 +69,12 @@ import {
   tariffChangeLogs,
   TariffChangeLog,
   InsertTariffChangeLog,
+  userLocationHistory,
+  InsertUserLocationHistory,
+  UserLocationHistory,
+  userRoutePatterns,
+  InsertUserRoutePattern,
+  UserRoutePattern,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -4904,4 +4910,197 @@ export async function getInvestorsWithActiveStations(): Promise<Array<{
     fcmToken: r.fcmToken,
     stationCount: Number(r.stationCount),
   }));
+}
+
+
+// ============================================================================
+// USER LOCATION HISTORY
+// ============================================================================
+
+export async function saveUserLocation(data: {
+  userId: number;
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  source?: string;
+  address?: string;
+  city?: string;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.insert(userLocationHistory).values({
+    userId: data.userId,
+    latitude: data.latitude.toString(),
+    longitude: data.longitude.toString(),
+    accuracy: data.accuracy?.toString(),
+    source: data.source || "chat",
+    address: data.address,
+    city: data.city,
+  });
+  return (result as any)[0]?.insertId || 0;
+}
+
+export async function getRecentUserLocations(userId: number, limit = 20): Promise<UserLocationHistory[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(userLocationHistory)
+    .where(eq(userLocationHistory.userId, userId))
+    .orderBy(desc(userLocationHistory.createdAt))
+    .limit(limit);
+}
+
+export async function getLastUserLocation(userId: number): Promise<UserLocationHistory | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const results = await db.select().from(userLocationHistory)
+    .where(eq(userLocationHistory.userId, userId))
+    .orderBy(desc(userLocationHistory.createdAt))
+    .limit(1);
+  return results[0];
+}
+
+// ============================================================================
+// USER ROUTE PATTERNS
+// ============================================================================
+
+export async function getUserRoutePatterns(userId: number, limit = 10): Promise<UserRoutePattern[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(userRoutePatterns)
+    .where(eq(userRoutePatterns.userId, userId))
+    .orderBy(desc(userRoutePatterns.frequency))
+    .limit(limit);
+}
+
+export async function upsertRoutePattern(data: {
+  userId: number;
+  originLat: number;
+  originLng: number;
+  originName?: string;
+  destinationLat: number;
+  destinationLng: number;
+  destinationName?: string;
+  estimatedDistanceKm?: number;
+  departureHour?: number;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Buscar ruta similar existente (dentro de ~1km de radio)
+  const existing = await db.select().from(userRoutePatterns)
+    .where(eq(userRoutePatterns.userId, data.userId));
+
+  const THRESHOLD = 0.01; // ~1km
+  const match = existing.find(r => {
+    const oLatDiff = Math.abs(Number(r.originLatitude) - data.originLat);
+    const oLngDiff = Math.abs(Number(r.originLongitude) - data.originLng);
+    const dLatDiff = Math.abs(Number(r.destinationLatitude) - data.destinationLat);
+    const dLngDiff = Math.abs(Number(r.destinationLongitude) - data.destinationLng);
+    return oLatDiff < THRESHOLD && oLngDiff < THRESHOLD && dLatDiff < THRESHOLD && dLngDiff < THRESHOLD;
+  });
+
+  if (match) {
+    // Actualizar frecuencia
+    await db.update(userRoutePatterns)
+      .set({
+        frequency: match.frequency + 1,
+        lastUsed: new Date(),
+        updatedAt: new Date(),
+        ...(data.originName ? { originName: data.originName } : {}),
+        ...(data.destinationName ? { destinationName: data.destinationName } : {}),
+        ...(data.departureHour !== undefined ? { typicalDepartureHour: data.departureHour } : {}),
+      })
+      .where(eq(userRoutePatterns.id, match.id));
+  } else {
+    // Crear nueva ruta
+    await db.insert(userRoutePatterns).values({
+      userId: data.userId,
+      originLatitude: data.originLat.toString(),
+      originLongitude: data.originLng.toString(),
+      originName: data.originName,
+      destinationLatitude: data.destinationLat.toString(),
+      destinationLongitude: data.destinationLng.toString(),
+      destinationName: data.destinationName,
+      frequency: 1,
+      estimatedDistanceKm: data.estimatedDistanceKm?.toString(),
+      typicalDepartureHour: data.departureHour,
+    });
+  }
+}
+
+/**
+ * Obtener ubicaciones frecuentes del usuario (clusters de ubicación)
+ * Detecta "casa", "oficina", etc. basado en frecuencia y horarios
+ */
+export async function getUserFrequentLocations(userId: number): Promise<Array<{
+  latitude: number;
+  longitude: number;
+  count: number;
+  label: string;
+  typicalHours: string;
+}>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const locations = await db.select().from(userLocationHistory)
+    .where(eq(userLocationHistory.userId, userId))
+    .orderBy(desc(userLocationHistory.createdAt))
+    .limit(200);
+
+  if (locations.length < 3) return [];
+
+  // Simple clustering: agrupar ubicaciones cercanas
+  const clusters: Array<{
+    lat: number;
+    lng: number;
+    count: number;
+    hours: number[];
+    address?: string;
+  }> = [];
+
+  const CLUSTER_RADIUS = 0.005; // ~500m
+
+  for (const loc of locations) {
+    const lat = Number(loc.latitude);
+    const lng = Number(loc.longitude);
+    const hour = loc.createdAt.getHours();
+    
+    const existing = clusters.find(c => 
+      Math.abs(c.lat - lat) < CLUSTER_RADIUS && Math.abs(c.lng - lng) < CLUSTER_RADIUS
+    );
+
+    if (existing) {
+      existing.count++;
+      existing.hours.push(hour);
+      if (!existing.address && loc.address) existing.address = loc.address;
+    } else {
+      clusters.push({ lat, lng, count: 1, hours: [hour], address: loc.address || undefined });
+    }
+  }
+
+  // Ordenar por frecuencia y etiquetar
+  return clusters
+    .filter(c => c.count >= 2)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+    .map((c, i) => {
+      const avgHour = Math.round(c.hours.reduce((a, b) => a + b, 0) / c.hours.length);
+      let label = c.address || `Ubicación frecuente ${i + 1}`;
+      
+      // Heurística simple: si la mayoría de visitas son nocturnas, probablemente es casa
+      const nightVisits = c.hours.filter(h => h >= 20 || h <= 7).length;
+      const morningVisits = c.hours.filter(h => h >= 7 && h <= 10).length;
+      if (nightVisits > c.count * 0.5) label = `Posible casa (${c.address || 'sin dirección'})`;
+      else if (morningVisits > c.count * 0.3) label = `Posible trabajo (${c.address || 'sin dirección'})`;
+
+      const typicalHours = avgHour < 12 ? `Mañana (~${avgHour}:00)` : avgHour < 18 ? `Tarde (~${avgHour}:00)` : `Noche (~${avgHour}:00)`;
+
+      return {
+        latitude: c.lat,
+        longitude: c.lng,
+        count: c.count,
+        label,
+        typicalHours,
+      };
+    });
 }

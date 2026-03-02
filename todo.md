@@ -1808,3 +1808,25 @@
 - [x] Integrar con el sistema de reservas existente
 - [x] Confirmar reserva con el usuario antes de ejecutar
 - [x] Mostrar resumen de la reserva realizada
+
+## Mejoras EV Assistant - Ubicación y Personalización - 01 Mar 2026
+
+### Ubicación GPS en tiempo real
+- [x] Obtener ubicación GPS del usuario desde el navegador al abrir el chat
+- [x] Enviar coordenadas lat/lng con cada mensaje al backend
+- [x] Actualizar endpoint sendMessage para aceptar ubicación
+- [x] Actualizar system prompt para informar al LLM que tiene la ubicación real del usuario
+- [x] Pasar ubicación al context-service para calcular distancias reales
+
+### Rutas frecuentes y patrones de uso
+- [x] Crear tabla user_location_history en BD para guardar ubicaciones
+- [x] Crear tabla user_route_patterns para rutas frecuentes detectadas
+- [x] Guardar ubicación del usuario cada vez que interactúa con el chat
+- [x] Detectar patrones de rutas frecuentes (origen-destino repetidos)
+- [x] Incluir rutas frecuentes en el contexto del LLM para personalización
+
+### Personalización inteligente
+- [x] Incluir hábitos de consumo en el contexto del LLM
+- [x] Incluir horarios preferidos de carga en el contexto
+- [x] Incluir estaciones favoritas con distancia real desde ubicación actual
+- [x] El LLM debe saber la ubicación exacta del usuario sin preguntarle

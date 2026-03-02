@@ -1881,3 +1881,75 @@ export const tariffChangeLogsRelations = relations(tariffChangeLogs, ({ one }) =
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// HISTORIAL DE UBICACIÓN Y PATRONES DE USO DEL USUARIO
+// ============================================================================
+
+/**
+ * Historial de ubicaciones del usuario (se guarda con cada interacción del chat)
+ */
+export const userLocationHistory = mysqlTable("user_location_history", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }).notNull(),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }).notNull(),
+  accuracy: decimal("accuracy", { precision: 8, scale: 2 }), // metros
+  source: varchar("source", { length: 50 }).default("chat"), // chat, map, charging, app
+  // Dirección reversa (se puede llenar asincrónicamente)
+  address: varchar("address", { length: 500 }),
+  city: varchar("city", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type UserLocationHistory = typeof userLocationHistory.$inferSelect;
+export type InsertUserLocationHistory = typeof userLocationHistory.$inferInsert;
+
+/**
+ * Patrones de rutas frecuentes detectados automáticamente
+ */
+export const userRoutePatterns = mysqlTable("user_route_patterns", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  // Origen frecuente
+  originLatitude: decimal("originLatitude", { precision: 10, scale: 7 }).notNull(),
+  originLongitude: decimal("originLongitude", { precision: 10, scale: 7 }).notNull(),
+  originName: varchar("originName", { length: 200 }), // "Casa", "Oficina", etc.
+  originAddress: varchar("originAddress", { length: 500 }),
+  // Destino frecuente
+  destinationLatitude: decimal("destinationLatitude", { precision: 10, scale: 7 }).notNull(),
+  destinationLongitude: decimal("destinationLongitude", { precision: 10, scale: 7 }).notNull(),
+  destinationName: varchar("destinationName", { length: 200 }),
+  destinationAddress: varchar("destinationAddress", { length: 500 }),
+  // Estadísticas
+  frequency: int("frequency").default(1).notNull(), // veces que se ha hecho esta ruta
+  estimatedDistanceKm: decimal("estimatedDistanceKm", { precision: 8, scale: 2 }),
+  averageDurationMinutes: int("averageDurationMinutes"),
+  // Horarios típicos
+  typicalDepartureHour: int("typicalDepartureHour"), // 0-23
+  typicalDays: json("typicalDays"), // [1,2,3,4,5] = lunes a viernes
+  // Paradas de carga preferidas en esta ruta
+  preferredChargingStops: json("preferredChargingStops"), // [{stationId, name}]
+  lastUsed: timestamp("lastUsed").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type UserRoutePattern = typeof userRoutePatterns.$inferSelect;
+export type InsertUserRoutePattern = typeof userRoutePatterns.$inferInsert;
+
+// Relaciones
+export const userLocationHistoryRelations = relations(userLocationHistory, ({ one }) => ({
+  user: one(users, {
+    fields: [userLocationHistory.userId],
+    references: [users.id],
+  }),
+}));
+
+export const userRoutePatternsRelations = relations(userRoutePatterns, ({ one }) => ({
+  user: one(users, {
+    fields: [userRoutePatterns.userId],
+    references: [users.id],
+  }),
+}));

@@ -359,6 +359,51 @@ Tu nombre es "EV Assistant" y tu objetivo es ayudar a los usuarios con informaci
 `;
     }
 
+    // Agregar ubicación GPS real del usuario
+    if (platformContext?.userLocation) {
+      prompt += `
+=== UBICACIÓN GPS ACTUAL DEL USUARIO (EN TIEMPO REAL) ===
+- Latitud: ${platformContext.userLocation.latitude}
+- Longitud: ${platformContext.userLocation.longitude}
+- IMPORTANTE: Tienes la ubicación REAL del usuario obtenida por GPS. NO le pidas su ubicación ni punto de partida.
+- Usa estas coordenadas directamente como punto de origen para planificar rutas y calcular distancias.
+- Las distancias a estaciones ya están calculadas desde esta ubicación.
+`;
+    } else {
+      prompt += `
+=== UBICACIÓN DEL USUARIO ===
+- No se pudo obtener la ubicación GPS del usuario.
+- Si necesitas su ubicación para planificar una ruta, pídele que la comparta o que indique su punto de partida.
+`;
+    }
+
+    // Agregar rutas frecuentes del usuario
+    if (platformContext?.frequentRoutes && platformContext.frequentRoutes.length > 0) {
+      prompt += `
+=== RUTAS FRECUENTES DEL USUARIO ===
+`;
+      for (const route of platformContext.frequentRoutes) {
+        prompt += `- ${route.originName} → ${route.destinationName} (${route.frequency} veces)`;
+        if (route.estimatedDistanceKm) prompt += ` ~${route.estimatedDistanceKm} km`;
+        if (route.typicalDepartureHour !== null) prompt += ` | Sale normalmente a las ${route.typicalDepartureHour}:00`;
+        prompt += '\n';
+      }
+      prompt += `- Usa esta información para anticipar las necesidades del usuario y ofrecer sugerencias proactivas.
+`;
+    }
+
+    // Agregar ubicaciones frecuentes del usuario
+    if (platformContext?.frequentLocations && platformContext.frequentLocations.length > 0) {
+      prompt += `
+=== UBICACIONES FRECUENTES DEL USUARIO ===
+`;
+      for (const loc of platformContext.frequentLocations) {
+        prompt += `- ${loc.label} (${loc.count} visitas, ${loc.typicalHours})\n`;
+      }
+      prompt += `- Usa esta información para personalizar recomendaciones (ej: "como sueles ir a tu oficina...").
+`;
+    }
+
     prompt += `
 === INSTRUCCIONES CRÍTICAS ===
 

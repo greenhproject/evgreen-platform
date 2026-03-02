@@ -73,6 +73,53 @@ interface Conversation {
   lastMessageAt: Date | null;
 }
 
+// Hook para obtener ubicación GPS del usuario
+function useUserLocation() {
+  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocalización no soportada');
+      return;
+    }
+
+    // Intentar obtener ubicación inmediatamente
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+        setLocationError(null);
+      },
+      (err) => {
+        console.warn('[GPS] Error getting location:', err.message);
+        setLocationError(err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+
+    // Observar cambios de ubicación
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        setLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+        setLocationError(null);
+      },
+      (err) => {
+        console.warn('[GPS] Watch error:', err.message);
+      },
+      { enableHighAccuracy: false, timeout: 30000, maximumAge: 120000 }
+    );
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, []);
+
+  return { location, locationError };
+}
+
 // ============================================================================
 // HOOK DE ESCRITURA PROGRESIVA
 // ============================================================================
@@ -489,6 +536,7 @@ export function AIChatWidget() {
   const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { location: userGpsLocation } = useUserLocation();
 
   // Mutations
   const createConversation = trpc.ai.createConversation.useMutation();
@@ -608,6 +656,10 @@ export function AIChatWidget() {
         const response = await sendMessage.mutateAsync({
           conversationId: currentConversationId,
           message: text,
+          context: userGpsLocation ? {
+            currentLatitude: userGpsLocation.latitude,
+            currentLongitude: userGpsLocation.longitude,
+          } : undefined,
         });
 
         const assistantMsgId = Date.now() + 1;
@@ -626,7 +678,7 @@ export function AIChatWidget() {
         setIsLoading(false);
       }
     },
-    [conversationId, isLoading, createConversation, sendMessage]
+    [conversationId, isLoading, createConversation, sendMessage, userGpsLocation]
   );
 
   const handleStreamComplete = useCallback(() => {
@@ -815,6 +867,7 @@ export function AIChatPage() {
   const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { location: userGpsLocation } = useUserLocation();
 
   // Queries
   const { data: conversations, refetch: refetchConversations } = trpc.ai.getConversations.useQuery();
@@ -936,6 +989,10 @@ export function AIChatPage() {
         const response = await sendMessageMutation.mutateAsync({
           conversationId: currentConversationId,
           message: text,
+          context: userGpsLocation ? {
+            currentLatitude: userGpsLocation.latitude,
+            currentLongitude: userGpsLocation.longitude,
+          } : undefined,
         });
 
         const assistantMsgId = Date.now() + 1;
@@ -955,7 +1012,7 @@ export function AIChatPage() {
         setIsLoading(false);
       }
     },
-    [conversationId, isLoading, createConversation, sendMessageMutation, refetchConversations]
+    [conversationId, isLoading, createConversation, sendMessageMutation, refetchConversations, userGpsLocation]
   );
 
   const handleStreamComplete = useCallback(() => {
