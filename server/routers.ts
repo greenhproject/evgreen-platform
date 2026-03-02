@@ -1603,10 +1603,16 @@ const reservationsRouter = router({
       estimatedDurationMinutes: z.number().min(15).max(480).default(60),
     }))
     .mutation(async ({ ctx, input }) => {
-      // Verificar que el EVSE esté disponible
+      // Verificar que el EVSE exista y no esté fuera de servicio
       const evse = await db.getEvseById(input.evseId);
-      if (!evse || evse.status !== "AVAILABLE") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "El conector no está disponible para reserva" });
+      if (!evse) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Conector no encontrado" });
+      }
+      // Permitir reservas si el conector está AVAILABLE o RESERVED (puede tener reservas futuras sin conflicto)
+      // Solo bloquear si está en uso activo, fuera de servicio o con falla
+      const blockedStatuses = ["CHARGING", "OCCUPIED", "UNAVAILABLE", "FAULTED", "SUSPENDED_EV", "SUSPENDED_EVSE"];
+      if (blockedStatuses.includes(evse.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `El conector no está disponible (estado: ${evse.status})` });
       }
       
       // Verificar conflictos de horario
@@ -1672,8 +1678,13 @@ const reservationsRouter = router({
         });
       }
       
-      // Actualizar estado del EVSE
-      await db.updateEvseStatus(input.evseId, "RESERVED");
+      // Solo marcar como RESERVED si la reserva empieza dentro de los próximos 15 minutos
+      const now = new Date();
+      const minutesUntilStart = (input.startTime.getTime() - now.getTime()) / (1000 * 60);
+      if (minutesUntilStart <= 15 && evse.status === "AVAILABLE") {
+        await db.updateEvseStatus(input.evseId, "RESERVED");
+      }
+      // Para reservas futuras (>15 min), un job periódico se encargará de marcar RESERVED cuando se acerque la hora
       
       return { 
         id,

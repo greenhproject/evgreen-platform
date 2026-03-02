@@ -362,7 +362,17 @@ async function startServer() {
         console.error("[ReservationJobs] Error in processReminders:", e);
       }
     }, 60_000);
-    console.log("[ReservationJobs] No-show processor and reminders started (every 60s)");
+    // Iniciar procesamiento de activación de reservas próximas cada 60 segundos
+    setInterval(async () => {
+      try {
+        await reservationJobs.processUpcomingReservations();
+      } catch (e) {
+        console.error("[ReservationJobs] Error in processUpcomingReservations:", e);
+      }
+    }, 60_000);
+    // Ejecutar inmediatamente al iniciar
+    reservationJobs.processUpcomingReservations().catch(e => console.error("[ReservationJobs] Initial processUpcomingReservations error:", e));
+    console.log("[ReservationJobs] No-show processor, reminders and reservation activation started (every 60s)");
   });
 }
 
