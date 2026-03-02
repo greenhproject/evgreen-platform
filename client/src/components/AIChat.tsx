@@ -738,10 +738,13 @@ export function AIChatWidget() {
         const response = await sendMessage.mutateAsync({
           conversationId: currentConversationId,
           message: text,
-          context: userGpsLocation ? {
-            currentLatitude: userGpsLocation.latitude,
-            currentLongitude: userGpsLocation.longitude,
-          } : undefined,
+          context: {
+            ...(userGpsLocation ? {
+              currentLatitude: userGpsLocation.latitude,
+              currentLongitude: userGpsLocation.longitude,
+            } : {}),
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          },
         });
 
         const assistantMsgId = Date.now() + 1;
@@ -1072,10 +1075,13 @@ export function AIChatPage() {
         const response = await sendMessageMutation.mutateAsync({
           conversationId: currentConversationId,
           message: text,
-          context: userGpsLocation ? {
-            currentLatitude: userGpsLocation.latitude,
-            currentLongitude: userGpsLocation.longitude,
-          } : undefined,
+          context: {
+            ...(userGpsLocation ? {
+              currentLatitude: userGpsLocation.latitude,
+              currentLongitude: userGpsLocation.longitude,
+            } : {}),
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          },
         });
 
         const assistantMsgId = Date.now() + 1;

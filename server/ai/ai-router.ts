@@ -185,6 +185,7 @@ export const aiRouter = router({
         vehicleModel: z.string().optional(),
         batteryCapacity: z.number().optional(),
         connectorType: z.string().optional(),
+        timezone: z.string().optional(),
       }).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -233,6 +234,7 @@ export const aiRouter = router({
               connectorType: input.context.connectorType || "",
             }
           : undefined,
+        timezone: input.context?.timezone || undefined,
       };
 
       // Obtener respuesta de IA

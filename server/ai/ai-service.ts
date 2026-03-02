@@ -251,7 +251,8 @@ class AIService {
       platformContext = await getAIContext(
         context.userId,
         context.currentLocation?.latitude,
-        context.currentLocation?.longitude
+        context.currentLocation?.longitude,
+        context.timezone
       );
     } catch (error) {
       console.error('[AIService] Error getting platform context:', error);
