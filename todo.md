@@ -1902,18 +1902,18 @@
 ## Bugs y Mejoras - 02 Mar (9:00 AM)
 
 ### Feature: Cancelación anticipada de reserva con reembolso
-- [ ] Agregar botón "Cancelar" en la vista de reserva futura en StationDetail
-- [ ] Implementar lógica de reembolso: 100% si se cancela 30+ min antes del inicio
-- [ ] Sin reembolso si se cancela con menos de 30 min de anticipación
-- [ ] Actualizar estado de la reserva a CANCELLED
-- [ ] Liberar el conector si estaba marcado como RESERVED
-- [ ] Notificar al usuario del reembolso
+- [x] Agregar botón "Cancelar" en la vista de reserva futura en StationDetail
+- [x] Implementar lógica de reembolso: 100% si se cancela 30+ min antes del inicio
+- [x] Sin reembolso si se cancela con menos de 30 min de anticipación
+- [x] Actualizar estado de la reserva a CANCELLED
+- [x] Liberar el conector si estaba marcado como RESERVED
+- [x] Notificar al usuario del reembolso
 
 ### Bug: Notificaciones Push no se activan
-- [ ] Investigar error "No se pudieron activar las notificaciones"
-- [ ] Verificar flujo de suscripción Web Push (VAPID keys, service worker, endpoint)
-- [ ] Corregir el registro de suscripción push en el backend
-- [ ] Probar que las notificaciones se activan correctamente
+- [x] Investigar error "No se pudieron activar las notificaciones"
+- [x] Verificar flujo de suscripción Web Push (VAPID keys, service worker, endpoint)
+- [x] Corregir el registro de suscripción push en el backend
+- [x] Probar que las notificaciones se activan correctamente
 
 ## Bug Fixes - Marzo 2, 2026
 - [x] Fix notificaciones push: eliminar .buffer en applicationServerKey (compatibilidad navegadores)
@@ -1930,3 +1930,10 @@
 - [x] Agregar endpoint getVapidKey como fallback
 - [x] Agregar fallback a notificaciones locales
 - [x] 23 tests unitarios para push y reservas
+
+## Bug Fixes Urgentes - Marzo 2, 2026 (Ronda 2)
+- [x] BUG: Notificaciones push no se activan - CORREGIDO: sw.js ahora se sirve como ruta Express explícita antes de Vite, garantizando disponibilidad a través de proxies
+- [x] BUG: Reservas desde chat no se guardan correctamente - CORREGIDO: El contexto del AI ahora incluye Station ID y EVSE ID (Conector ID) para cada estación, permitiendo generar tags [RESERVE:...] con IDs correctos
+- [x] Agregar manifest.json y offline.html como rutas Express explícitas
+- [x] Incluir evseDetails (id, connectorType, powerKw, status) en StationContext del AI
+- [x] 12 tests unitarios para las correcciones (bugfix-march2.test.ts)

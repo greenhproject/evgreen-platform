@@ -1,0 +1,61 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'reservations' ORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'reservations' ORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id"
+    },
+    {
+      "COLUMN_NAME": "evseId"
+    },
+    {
+      "COLUMN_NAME": "userId"
+    },
+    {
+      "COLUMN_NAME": "stationId"
+    },
+    {
+      "COLUMN_NAME": "startTime"
+    },
+    {
+      "COLUMN_NAME": "endTime"
+    },
+    {
+      "COLUMN_NAME": "expiryTime"
+    },
+    {
+      "COLUMN_NAME": "reservation_status"
+    },
+    {
+      "COLUMN_NAME": "reservationFee"
+    },
+    {
+      "COLUMN_NAME": "noShowPenalty"
+    },
+    {
+      "COLUMN_NAME": "isPenaltyApplied"
+    },
+    {
+      "COLUMN_NAME": "transactionId"
+    },
+    {
+      "COLUMN_NAME": "ocppReservationId"
+    },
+    {
+      "COLUMN_NAME": "createdAt"
+    },
+    {
+      "COLUMN_NAME": "updatedAt"
+    },
+    {
+      "COLUMN_NAME": "reminder30MinSent"
+    },
+    {
+      "COLUMN_NAME": "reminder5MinSent"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\nid\nevseId\nuserId\nstationId\nstartTime\nendTime\nexpiryTime\nreservation_status\nreservationFee\nnoShowPenalty\nisPenaltyApplied\ntransactionId\nocppReservationId\ncreatedAt\nupdatedAt\nreminder30MinSent\nreminder5MinSent\n",
+  "stderr": "",
+  "execution_time_ms": 62
+}
