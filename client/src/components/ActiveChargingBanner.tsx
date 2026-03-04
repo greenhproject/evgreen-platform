@@ -21,6 +21,7 @@ export function ActiveChargingBanner() {
     "/charging-summary",
     "/charging-waiting",
     "/start-charge",
+    "/charging/",
   ];
   const isOnChargingPage = chargingPages.some(p => location.startsWith(p));
 
@@ -63,7 +64,6 @@ export function ActiveChargingBanner() {
         className="fixed top-[56px] left-0 right-0 z-40"
       >
         <Link href="/charging-monitor">
-          <a className="block">
             <div className="mx-2 mt-1 rounded-xl overflow-hidden shadow-lg shadow-emerald-900/30 border border-emerald-500/30">
               {/* Fondo con gradiente animado */}
               <div className="relative bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 px-4 py-3">
@@ -102,7 +102,6 @@ export function ActiveChargingBanner() {
                 </div>
               </div>
             </div>
-          </a>
         </Link>
       </motion.div>
     </AnimatePresence>

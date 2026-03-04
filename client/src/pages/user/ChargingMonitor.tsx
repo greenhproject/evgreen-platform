@@ -35,7 +35,9 @@ import {
   Check,
   BatteryCharging,
   Timer,
-  AlertCircle
+  AlertCircle,
+  Map,
+  ArrowLeft
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -433,6 +435,19 @@ export default function ChargingMonitor() {
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 pb-24">
       {/* Header */}
       <div className="bg-emerald-600 text-white p-4 pb-8 rounded-b-3xl shadow-lg">
+        {/* Botón volver al mapa */}
+        <div className="flex items-center justify-between mb-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-white hover:bg-white/20 -ml-2 gap-1.5"
+            onClick={() => setLocation("/map")}
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <Map className="w-4 h-4" />
+            <span className="text-sm">Mapa</span>
+          </Button>
+        </div>
         <div className="flex items-center justify-between mb-2">
           <Badge variant="secondary" className="bg-white/20 text-white border-0">
             <Zap className="w-3 h-3 mr-1" />
