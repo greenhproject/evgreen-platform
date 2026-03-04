@@ -1937,3 +1937,8 @@
 - [x] Agregar manifest.json y offline.html como rutas Express explícitas
 - [x] Incluir evseDetails (id, connectorType, powerKw, status) en StationContext del AI
 - [x] 12 tests unitarios para las correcciones (bugfix-march2.test.ts)
+
+## UX: Navegación durante carga activa - Marzo 4, 2026
+- [x] Agregar botón "Volver al mapa" en la pantalla de carga en progreso (ChargingMonitor + ChargingSession)
+- [x] Banner flotante "Carga en Proceso" ya existía (ActiveChargingBanner.tsx) - verificado y corregido nested anchor tag
+- [x] Al hacer clic en el banner, regresar a la pantalla de carga activa (link a /charging-monitor)

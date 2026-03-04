@@ -19,6 +19,8 @@ import {
   AlertTriangle,
   Timer,
   Unplug,
+  Map,
+  ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ChargingBanner } from "@/components/ChargingBanner";
@@ -141,8 +143,22 @@ export default function ChargingSession() {
   return (
     <UserLayout showHeader={false} showBottomNav={false}>
       <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background p-4">
+        {/* Botón volver al mapa */}
+        <div className="flex items-center pt-2 mb-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground gap-1.5"
+            onClick={() => setLocation("/map")}
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <Map className="w-4 h-4" />
+            <span className="text-sm">Mapa</span>
+          </Button>
+        </div>
+
         {/* Header */}
-        <div className="text-center py-8">
+        <div className="text-center py-4">
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
