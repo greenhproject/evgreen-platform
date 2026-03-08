@@ -1408,6 +1408,8 @@ const transactionsRouter = router({
         userId: ctx.user.id,
         status: "IN_PROGRESS",
         startTime: new Date(),
+        chargeMode: "full_charge",
+        targetValue: "0",
       });
       
       // Actualizar estado del EVSE

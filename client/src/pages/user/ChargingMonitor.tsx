@@ -314,17 +314,24 @@ export default function ChargingMonitor() {
     }
     currentProgress = Math.min(100, Math.max(0, currentProgress));
     
-    // Verificar por porcentaje (SoC)
-    if (currentChargeMode === "percentage" || currentChargeMode === "full_charge") {
-      const targetPct = currentChargeMode === "percentage" ? (session.targetPercentage || 100) : 100;
+    // REGLA: lo que ocurra primero detiene la carga
+    // 1. Verificar si la batería llegó al 100% (aplica a TODOS los modos)
+    if (currentProgress >= 100 && currentProgress > 0) {
+      shouldAutoStop = true;
+      reason = `🔋 ¡Batería al 100%! Carga completa.`;
+    }
+    
+    // 2. Verificar por porcentaje objetivo (solo modo percentage)
+    if (!shouldAutoStop && currentChargeMode === "percentage") {
+      const targetPct = session.targetPercentage || 100;
       if (currentProgress >= targetPct && currentProgress > 0) {
         shouldAutoStop = true;
         reason = `🔋 ¡Batería al ${Math.round(currentProgress)}%! Objetivo de ${targetPct}% alcanzado.`;
       }
     }
     
-    // Verificar por monto fijo
-    if (currentChargeMode === "fixed_amount") {
+    // 3. Verificar por monto fijo (solo modo fixed_amount)
+    if (!shouldAutoStop && currentChargeMode === "fixed_amount") {
       const targetAmount = session.targetAmount || 0;
       const currentCost = session.currentCost || 0;
       if (targetAmount > 0 && currentCost >= targetAmount) {
@@ -459,10 +466,10 @@ export default function ChargingMonitor() {
           </Badge>
           <Badge variant="outline" className="border-white/30 text-white">
             {chargeMode === "fixed_amount" 
-              ? `Meta: $${session.targetAmount?.toLocaleString() || 0}` 
+              ? `Meta: $${(session.targetAmount || 0).toLocaleString()}` 
               : chargeMode === "percentage" 
-                ? `Meta: ${session.targetPercentage}%`
-                : "Meta: 100%"}
+                ? `Meta: ${session.targetPercentage || 100}%`
+                : "Carga completa"}
           </Badge>
         </div>
         

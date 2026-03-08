@@ -256,6 +256,8 @@ export async function startSimulation(params: {
     startTime: new Date(),
     status: "IN_PROGRESS",
     meterStart: String(meterStart),
+    chargeMode,
+    targetValue: String(targetValue),
   });
 
   // Actualizar estado del EVSE
