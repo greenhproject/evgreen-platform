@@ -1,6 +1,8 @@
 /**
  * AI Insight Card Component
- * Muestra sugerencias contextuales de IA en diferentes partes de la aplicación
+ * Muestra sugerencias contextuales de IA en diferentes partes de la aplicación.
+ * Cuando se usa en una estación, recibe datos reales de demanda para dar
+ * sugerencias coherentes con el estado actual de precios.
  */
 
 import { useState } from "react";
@@ -12,16 +14,24 @@ import {
   ChevronRight, 
   Lightbulb, 
   TrendingDown, 
+  TrendingUp,
   Clock, 
   MapPin,
   Zap,
-  X
+  X,
+  AlertTriangle
 } from "lucide-react";
 import { openAIChatWithQuestion } from "@/components/AIChat";
 
 interface AIInsightCardProps {
   type: "station" | "map" | "history" | "wallet" | "general";
   stationId?: number;
+  /** Nivel de demanda real de la estación: LOW, NORMAL, HIGH, SURGE */
+  demandLevel?: string;
+  /** Porcentaje de recargo por demanda (ej: 37 para +37%) */
+  surchargePercent?: number;
+  /** Precio dinámico actual por kWh */
+  currentPrice?: number;
   className?: string;
   onAskAI?: (question: string) => void;
 }
@@ -35,12 +45,12 @@ interface Insight {
   type: "tip" | "saving" | "recommendation" | "alert";
 }
 
-export function AIInsightCard({ type, stationId, className, onAskAI }: AIInsightCardProps) {
+export function AIInsightCard({ type, stationId, demandLevel, surchargePercent, currentPrice, className, onAskAI }: AIInsightCardProps) {
   const [dismissed, setDismissed] = useState(false);
   const [currentInsightIndex, setCurrentInsightIndex] = useState(0);
 
-  // Obtener insights basados en el contexto
-  const insights = getContextualInsights(type, stationId);
+  // Obtener insights basados en el contexto Y datos reales de demanda
+  const insights = getContextualInsights(type, stationId, demandLevel, surchargePercent, currentPrice);
 
   if (dismissed || insights.length === 0) {
     return null;
@@ -58,9 +68,7 @@ export function AIInsightCard({ type, stationId, className, onAskAI }: AIInsight
     e.preventDefault();
     e.stopPropagation();
     if (currentInsight.actionQuestion) {
-      // Usar la función global para abrir el chat con la pregunta
       openAIChatWithQuestion(currentInsight.actionQuestion);
-      // También llamar al callback si existe
       if (onAskAI) {
         onAskAI(currentInsight.actionQuestion);
       }
@@ -152,36 +160,89 @@ export function AIInsightCard({ type, stationId, className, onAskAI }: AIInsight
   );
 }
 
-function getContextualInsights(type: string, stationId?: number): Insight[] {
+function getContextualInsights(
+  type: string, 
+  stationId?: number,
+  demandLevel?: string,
+  surchargePercent?: number,
+  currentPrice?: number
+): Insight[] {
   const now = new Date();
   const hour = now.getHours();
-  const isWeekend = now.getDay() === 0 || now.getDay() === 6;
-  const isPeakHour = (hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 20);
 
   const insights: Insight[] = [];
 
-  // Insights basados en el tipo de página
   switch (type) {
-    case "station":
-      if (isPeakHour) {
+    case "station": {
+      // === USAR DATOS REALES DE DEMANDA si están disponibles ===
+      const effectiveDemand = demandLevel || "UNKNOWN";
+      const hasSurcharge = (surchargePercent ?? 0) > 0;
+
+      if (effectiveDemand === "HIGH" || effectiveDemand === "SURGE") {
+        // ALTA DEMANDA: advertir al usuario, NO decir "buen momento"
+        const surchargeText = hasSurcharge ? `+${surchargePercent}%` : "";
         insights.push({
-          icon: <Clock className="h-4 w-4" />,
-          title: "Hora pico detectada",
-          description: "Los precios son más altos ahora. Considera cargar después de las 20:00 para ahorrar hasta un 25%.",
-          action: "¿Cuándo es mejor cargar?",
-          actionQuestion: "¿Cuál es el mejor horario para cargar hoy y ahorrar dinero?",
-          type: "saving",
+          icon: <TrendingUp className="h-4 w-4" />,
+          title: "Demanda alta en esta zona",
+          description: `Los precios están elevados ahora${surchargeText ? ` (${surchargeText})` : ""}. Considera cargar en horarios de menor demanda para ahorrar.`,
+          action: "¿Cuándo bajan los precios?",
+          actionQuestion: `La estación tiene alta demanda ahora${surchargeText ? ` con recargo de ${surchargeText}` : ""}. ¿Cuándo es el mejor horario para cargar y pagar menos?`,
+          type: "alert",
         });
-      } else {
+        // Sugerencia de estación alternativa
+        insights.push({
+          icon: <MapPin className="h-4 w-4" />,
+          title: "Busca mejores precios",
+          description: "Puede haber estaciones cercanas con menor demanda y precios más bajos.",
+          action: "Buscar alternativas",
+          actionQuestion: "¿Hay alguna estación cercana con menor demanda y precios más bajos que esta?",
+          type: "recommendation",
+        });
+      } else if (effectiveDemand === "LOW") {
+        // BAJA DEMANDA: sí es buen momento
         insights.push({
           icon: <TrendingDown className="h-4 w-4" />,
           title: "¡Buen momento para cargar!",
-          description: "La demanda está baja y los precios son favorables. Aprovecha ahora.",
+          description: `La demanda está baja${currentPrice ? ` ($${currentPrice.toLocaleString()}/kWh)` : ""} y los precios son favorables. Aprovecha ahora.`,
           action: "Ver estimación de costo",
           actionQuestion: "¿Cuánto me costaría cargar 30 kWh ahora en esta estación?",
+          type: "saving",
+        });
+      } else if (effectiveDemand === "NORMAL") {
+        // DEMANDA NORMAL: neutral
+        insights.push({
+          icon: <Clock className="h-4 w-4" />,
+          title: "Precios estándar",
+          description: `La demanda es normal${currentPrice ? ` ($${currentPrice.toLocaleString()}/kWh)` : ""}. Puedes cargar ahora o esperar a horas valle para ahorrar un poco más.`,
+          action: "Ver estimación de costo",
+          actionQuestion: "¿Cuánto me costaría cargar ahora vs. en horario de baja demanda?",
           type: "tip",
         });
+      } else {
+        // SIN DATOS DE DEMANDA: usar hora como fallback pero ser cauteloso
+        const isPeakHour = (hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 20);
+        if (isPeakHour) {
+          insights.push({
+            icon: <Clock className="h-4 w-4" />,
+            title: "Hora pico detectada",
+            description: "Los precios suelen ser más altos a esta hora. Verifica la tarifa actual antes de iniciar la carga.",
+            action: "¿Cuándo es mejor cargar?",
+            actionQuestion: "¿Cuál es el mejor horario para cargar hoy y ahorrar dinero?",
+            type: "alert",
+          });
+        } else {
+          insights.push({
+            icon: <Clock className="h-4 w-4" />,
+            title: "Horario fuera de pico",
+            description: "Generalmente los precios son más bajos a esta hora. Verifica la tarifa actual.",
+            action: "Ver estimación de costo",
+            actionQuestion: "¿Cuánto me costaría cargar 30 kWh ahora en esta estación?",
+            type: "tip",
+          });
+        }
       }
+
+      // Siempre agregar tip de optimización
       insights.push({
         icon: <Zap className="h-4 w-4" />,
         title: "Optimiza tu carga",
@@ -191,6 +252,7 @@ function getContextualInsights(type: string, stationId?: number): Insight[] {
         type: "tip",
       });
       break;
+    }
 
     case "map":
       insights.push({
@@ -201,15 +263,18 @@ function getContextualInsights(type: string, stationId?: number): Insight[] {
         actionQuestion: "¿Cuál es la mejor estación de carga cerca de mi ubicación actual?",
         type: "recommendation",
       });
-      if (isPeakHour) {
-        insights.push({
-          icon: <Clock className="h-4 w-4" />,
-          title: "Evita la espera",
-          description: "Algunas estaciones pueden estar ocupadas. Te ayudo a encontrar una disponible.",
-          action: "Ver disponibilidad",
-          actionQuestion: "¿Qué estaciones tienen conectores disponibles ahora mismo?",
-          type: "alert",
-        });
+      {
+        const isPeakHour = (hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 20);
+        if (isPeakHour) {
+          insights.push({
+            icon: <Clock className="h-4 w-4" />,
+            title: "Evita la espera",
+            description: "Algunas estaciones pueden estar ocupadas. Te ayudo a encontrar una disponible.",
+            action: "Ver disponibilidad",
+            actionQuestion: "¿Qué estaciones tienen conectores disponibles ahora mismo?",
+            type: "alert",
+          });
+        }
       }
       break;
 
