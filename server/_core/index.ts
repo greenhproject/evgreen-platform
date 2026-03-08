@@ -1394,6 +1394,7 @@ async function handleOCPP16Message(
                 lowPowerSince: null,
                 chargeCompleteDetected: false,
                 chargeCompleteNotified: false,
+          autoStopSent: false,
                 energyBasedSoc: null,
               });
             }
@@ -1502,6 +1503,7 @@ async function handleOCPP16Message(
               lowPowerSince: null,
               chargeCompleteDetected: false,
               chargeCompleteNotified: false,
+          autoStopSent: false,
               energyBasedSoc: null,
             });
           }

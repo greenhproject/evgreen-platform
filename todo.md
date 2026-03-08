@@ -1973,3 +1973,11 @@
 - [x] Actualizar UI ChargingMonitor: alerta batería llena, aviso potencia baja, badge por fuente de SoC
 - [x] Manejar discrepancia: energyBasedSoc usa kWh reales del OCPP, no estimaciones
 - [x] 17 tests unitarios (soc-correction.test.ts)
+
+## Feature: Mejoras SoC - Auto-stop, Notificación y Aprendizaje - Marzo 8, 2026
+- [ ] Notificación push automática al detectar batería llena por caída de potencia
+- [ ] Auto-stop de carga via RemoteStopTransaction OCPP cuando batería esté llena
+- [ ] Historial de precisión del SoC manual (tabla soc_accuracy_log)
+- [ ] Sugerencias de corrección del SoC basadas en historial del usuario
+- [ ] UI para mostrar sugerencia de SoC al iniciar carga
+- [ ] Tests unitarios para las 3 mejoras

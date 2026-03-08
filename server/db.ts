@@ -5358,3 +5358,70 @@ export async function payAllDebtsFromWallet(userId: number): Promise<{ totalPaid
 
   return { totalPaid, debtsCleared };
 }
+
+// ============================================================
+// SOC ACCURACY LOG - Historial de precisión del SoC manual
+// ============================================================
+export async function createSocAccuracyLog(data: {
+  userId: number;
+  transactionId: number;
+  vehicleId?: number | null;
+  manualSocStart: number;
+  manualBatteryCapacityKwh: number;
+  realKwhDelivered: number;
+  calculatedSocEnd?: number | null;
+  chargerSocEnd?: number | null;
+  batteryFullDetected?: boolean;
+  detectionMethod?: string;
+  estimatedErrorKwh?: number | null;
+  estimatedErrorSocPct?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const { socAccuracyLog } = await import("../drizzle/schema");
+  await db.insert(socAccuracyLog).values({
+    ...data,
+    batteryFullDetected: data.batteryFullDetected ?? false,
+  });
+  return true;
+}
+
+export async function getSocAccuracyByUser(userId: number, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  const { socAccuracyLog } = await import("../drizzle/schema");
+  return db.select().from(socAccuracyLog)
+    .where(eq(socAccuracyLog.userId, userId))
+    .orderBy(desc(socAccuracyLog.createdAt))
+    .limit(limit);
+}
+
+export async function getSocAccuracySuggestion(userId: number): Promise<{
+  suggestedCapacityKwh: number | null;
+  avgErrorKwh: number | null;
+  sampleCount: number;
+} | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const { socAccuracyLog } = await import("../drizzle/schema");
+  const logs = await db.select().from(socAccuracyLog)
+    .where(eq(socAccuracyLog.userId, userId))
+    .orderBy(desc(socAccuracyLog.createdAt))
+    .limit(10);
+  if (logs.length < 2) return { suggestedCapacityKwh: null, avgErrorKwh: null, sampleCount: logs.length };
+  // Calcular error promedio
+  const errors = logs
+    .filter(l => l.estimatedErrorKwh !== null)
+    .map(l => l.estimatedErrorKwh as number);
+  const avgError = errors.length > 0 ? errors.reduce((a, b) => a + b, 0) / errors.length : null;
+  // Sugerir capacidad corregida basada en el error promedio
+  const lastCapacity = logs[0].manualBatteryCapacityKwh;
+  const suggestedCapacity = avgError && Math.abs(avgError) > 2
+    ? Math.round((lastCapacity - avgError) * 10) / 10
+    : null;
+  return {
+    suggestedCapacityKwh: suggestedCapacity,
+    avgErrorKwh: avgError ? Math.round(avgError * 10) / 10 : null,
+    sampleCount: logs.length,
+  };
+}

@@ -10,6 +10,7 @@ import {
   json,
   bigint,
   tinyint,
+  float,
 } from "drizzle-orm/mysql-core";
 import { relations } from "drizzle-orm";
 
@@ -2010,4 +2011,40 @@ export const userDebtsRelations = relations(userDebts, ({ one }) => ({
     fields: [userDebts.transactionId],
     references: [transactions.id],
   }),
+}));
+
+// ============================================================
+// SOC ACCURACY LOG - Historial de precisión del SoC manual
+// ============================================================
+export const socAccuracyLog = mysqlTable("soc_accuracy_log", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  transactionId: int("transactionId").notNull().references(() => transactions.id, { onDelete: "cascade" }),
+  vehicleId: int("vehicleId").references(() => userVehicles.id, { onDelete: "set null" }),
+  /** SoC manual ingresado por el usuario al iniciar (%) */
+  manualSocStart: int("manualSocStart").notNull(),
+  /** Capacidad de batería ingresada manualmente (kWh) */
+  manualBatteryCapacityKwh: float("manualBatteryCapacityKwh").notNull(),
+  /** kWh reales entregados por el cargador (OCPP) */
+  realKwhDelivered: float("realKwhDelivered").notNull(),
+  /** SoC calculado al finalizar basado en kWh reales + capacidad manual */
+  calculatedSocEnd: int("calculatedSocEnd"),
+  /** SoC reportado por el cargador al finalizar (si disponible) */
+  chargerSocEnd: int("chargerSocEnd"),
+  /** Si se detectó batería llena por caída de potencia */
+  batteryFullDetected: boolean("batteryFullDetected").default(false).notNull(),
+  /** Método de detección: 'charger_soc', 'power_drop', 'user_stop', 'target_reached' */
+  detectionMethod: varchar("detectionMethod", { length: 50 }),
+  /** Error estimado en kWh (real - estimado) */
+  estimatedErrorKwh: float("estimatedErrorKwh"),
+  /** Error estimado en % de SoC */
+  estimatedErrorSocPct: int("estimatedErrorSocPct"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type SocAccuracyLog = typeof socAccuracyLog.$inferSelect;
+export type InsertSocAccuracyLog = typeof socAccuracyLog.$inferInsert;
+export const socAccuracyLogRelations = relations(socAccuracyLog, ({ one }) => ({
+  user: one(users, { fields: [socAccuracyLog.userId], references: [users.id] }),
+  transaction: one(transactions, { fields: [socAccuracyLog.transactionId], references: [transactions.id] }),
+  vehicle: one(userVehicles, { fields: [socAccuracyLog.vehicleId], references: [userVehicles.id] }),
 }));
