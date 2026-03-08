@@ -1039,6 +1039,7 @@ export class DualCSMS {
         lowPowerSince: null,
         chargeCompleteDetected: false,
         chargeCompleteNotified: false,
+          autoStopSent: false,
         energyBasedSoc: null,
       });
       
@@ -1069,6 +1070,7 @@ export class DualCSMS {
         lowPowerSince: null,
         chargeCompleteDetected: false,
         chargeCompleteNotified: false,
+          autoStopSent: false,
         energyBasedSoc: null,
       });
       console.log(`[CSMS-DUAL] StartTransaction: Created basic active session for userId ${userId}, transactionId: ${transactionId}`);
@@ -1327,6 +1329,56 @@ export class DualCSMS {
       console.error(`[CSMS-DUAL] Error sending push notification:`, pushError);
     }
 
+    // =========================================================================
+    // REGISTRO DE PRECISIÓN DE SOC
+    // =========================================================================
+    try {
+      const manualSocValue = transaction.manualSoc ?? activeSession?.manualSoc ?? null;
+      const batteryCapKwh = transaction.manualBatteryCapacityKwh
+        ? parseFloat(transaction.manualBatteryCapacityKwh)
+        : activeSession?.manualBatteryCapacityKwh ?? null;
+
+      if (manualSocValue !== null && batteryCapKwh && batteryCapKwh > 0 && energyDelivered > 0) {
+        // SoC calculado al finalizar: SoC inicio + (kWh reales / capacidad) * 100
+        const calculatedSocEnd = Math.min(100, Math.round(manualSocValue + (energyDelivered / batteryCapKwh) * 100));
+        // SoC reportado por el cargador (si disponible en MeterValues)
+        const chargerSocEnd = activeSession?.soc ?? null;
+        // Error estimado: si el cargador reportó SoC, comparar con el calculado
+        let estimatedErrorKwh: number | null = null;
+        let estimatedErrorSocPct: number | null = null;
+        if (chargerSocEnd !== null) {
+          estimatedErrorSocPct = calculatedSocEnd - chargerSocEnd;
+          estimatedErrorKwh = Math.round((estimatedErrorSocPct / 100) * batteryCapKwh * 10) / 10;
+        }
+        // Obtener vehicleId del vehículo por defecto del usuario
+        let vehicleId: number | null = null;
+        try {
+          const defaultVehicle = await db.getDefaultVehicle(transaction.userId);
+          vehicleId = defaultVehicle?.id ?? null;
+        } catch (_) { /* no-op */ }
+
+        await db.createSocAccuracyLog({
+          userId: transaction.userId,
+          transactionId: transaction.id,
+          vehicleId,
+          manualSocStart: manualSocValue,
+          manualBatteryCapacityKwh: batteryCapKwh,
+          realKwhDelivered: Math.round(energyDelivered * 100) / 100,
+          calculatedSocEnd,
+          chargerSocEnd,
+          batteryFullDetected: activeSession?.chargeCompleteDetected ?? false,
+          detectionMethod: activeSession?.chargeCompleteDetected
+            ? (activeSession.soc !== null ? 'charger_soc' : 'power_drop')
+            : (req.reason === 'Remote' ? 'target_reached' : 'user_stop'),
+          estimatedErrorKwh,
+          estimatedErrorSocPct,
+        });
+        console.log(`[CSMS-DUAL] SoC accuracy logged: tx=${transaction.id}, manualSoc=${manualSocValue}%, calcEnd=${calculatedSocEnd}%, chargerEnd=${chargerSocEnd ?? 'N/A'}%`);
+      }
+    } catch (socAccErr) {
+      console.error(`[CSMS-DUAL] Error logging SoC accuracy:`, socAccErr);
+    }
+
     // Limpiar sesión activa en memoria
     removeActiveSession(transaction.id);
 
@@ -1487,6 +1539,7 @@ export class DualCSMS {
             lowPowerSince: null,
             chargeCompleteDetected: false,
             chargeCompleteNotified: false,
+          autoStopSent: false,
             energyBasedSoc: null,
           });
           

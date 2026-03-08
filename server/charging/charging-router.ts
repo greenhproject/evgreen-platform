@@ -16,6 +16,7 @@ import {
 import { dualCSMS } from "../ocpp/csms-dual";
 import { v4 as uuidv4 } from "uuid";
 import * as simulator from "./charging-simulator";
+import { sendPushNotification } from "../firebase/fcm";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 function getConnectionByStationId(stationId: number) {
@@ -89,6 +90,7 @@ const activeChargeSessions = new Map<number, {
   lowPowerSince: Date | null; // Timestamp desde cuando la potencia está < umbral
   chargeCompleteDetected: boolean; // Si se detectó que la batería está llena
   chargeCompleteNotified: boolean; // Si ya se notificó al usuario
+  autoStopSent: boolean; // Si ya se envió RemoteStopTransaction automático
   // SoC calculado por energía real del OCPP (independiente del manual)
   energyBasedSoc: number | null; // SoC calculado solo por kWh reales / capacidad batería
 }>();
@@ -1212,6 +1214,7 @@ export const chargingRouter = router({
           lowPowerSince: null,
           chargeCompleteDetected: false,
           chargeCompleteNotified: false,
+          autoStopSent: false,
           energyBasedSoc: null,
         });
         session = getActiveSessionById(activeTransaction.id);
@@ -1508,6 +1511,55 @@ export const chargingRouter = router({
           : null,
       }));
     }),
+
+  /**
+   * Obtener historial de precisión de SoC del usuario
+   */
+  getSocAccuracyHistory: protectedProcedure
+    .input(z.object({ limit: z.number().optional().default(20) }))
+    .query(async ({ ctx, input }) => {
+      const logs = await db.getSocAccuracyByUser(ctx.user.id, input.limit);
+      return logs.map(l => ({
+        id: l.id,
+        transactionId: l.transactionId,
+        vehicleId: l.vehicleId,
+        manualSocStart: l.manualSocStart,
+        manualBatteryCapacityKwh: l.manualBatteryCapacityKwh,
+        realKwhDelivered: l.realKwhDelivered,
+        calculatedSocEnd: l.calculatedSocEnd,
+        chargerSocEnd: l.chargerSocEnd,
+        batteryFullDetected: l.batteryFullDetected,
+        detectionMethod: l.detectionMethod,
+        estimatedErrorKwh: l.estimatedErrorKwh,
+        estimatedErrorSocPct: l.estimatedErrorSocPct,
+        createdAt: l.createdAt,
+      }));
+    }),
+
+  /**
+   * Obtener sugerencia de capacidad de batería basada en historial de precisión
+   */
+  getSocAccuracySuggestion: protectedProcedure
+    .query(async ({ ctx }) => {
+      const suggestion = await db.getSocAccuracySuggestion(ctx.user.id);
+      if (!suggestion) return { hasSuggestion: false, message: null, suggestedCapacityKwh: null, avgErrorKwh: null, sampleCount: 0 };
+
+      const { suggestedCapacityKwh, avgErrorKwh, sampleCount } = suggestion;
+      const hasSuggestion = suggestedCapacityKwh !== null && Math.abs(avgErrorKwh ?? 0) > 2;
+
+      let message: string | null = null;
+      if (hasSuggestion && suggestedCapacityKwh !== null && avgErrorKwh !== null) {
+        const direction = avgErrorKwh > 0 ? "sobreestimando" : "subestimando";
+        const absError = Math.abs(avgErrorKwh);
+        message = `Basado en tus últimas ${sampleCount} cargas, pareces estar ${direction} la capacidad de tu batería en ~${absError} kWh. Te sugerimos usar ${suggestedCapacityKwh} kWh como capacidad para mayor precisión.`;
+      } else if (sampleCount >= 2) {
+        message = `Tus estimaciones de SoC son precisas. Basado en ${sampleCount} cargas recientes.`;
+      } else {
+        message = `Necesitamos al menos 2 cargas con SoC manual para generar sugerencias.`;
+      }
+
+      return { hasSuggestion, message, suggestedCapacityKwh, avgErrorKwh, sampleCount };
+    }),
 });
 
 // Exportar funciones para uso interno
@@ -1584,6 +1636,72 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
         // Forzar SoC a 100% ya que la batería está llena
         session.energyBasedSoc = 100;
         console.log(`[SoC] Transaction ${transactionId}: BATTERY FULL DETECTED - Low power for ${Math.round(lowPowerDuration/1000/60)} min. Setting SoC to 100%.`);
+        
+        // === NOTIFICACIÓN PUSH: Batería llena ===
+        if (!session.chargeCompleteNotified) {
+          session.chargeCompleteNotified = true;
+          const kwhDelivered = session.currentKwh.toFixed(2);
+          const cost = Math.round(session.currentCost).toLocaleString();
+          // Enviar notificación push al usuario
+          db.getUserById(session.userId).then(user => {
+            if (user?.fcmToken) {
+              sendPushNotification(user.fcmToken, {
+                type: "charging_complete",
+                title: "⚡ ¡Batería llena!",
+                body: `Tu vehículo ha completado la carga. ${kwhDelivered} kWh entregados por $${cost} COP. Desconecta para evitar tarifa de ocupación.`,
+                clickAction: "/charging-monitor",
+                data: {
+                  transactionId: transactionId.toString(),
+                  kwhDelivered,
+                  totalCost: cost,
+                  detectionMethod: "power_drop",
+                },
+              }).catch(err => console.error(`[SoC] Push notification error:`, err));
+            }
+          }).catch(err => console.error(`[SoC] Error fetching user for notification:`, err));
+          // También crear notificación in-app
+          db.createNotification({
+            userId: session.userId,
+            title: "⚡ ¡Batería llena!",
+            message: `Tu vehículo ha completado la carga. ${kwhDelivered} kWh entregados. Desconecta para evitar la tarifa de ocupación ($500/min).`,
+            type: "CHARGING",
+          }).catch(err => console.error(`[SoC] Error creating in-app notification:`, err));
+          console.log(`[SoC] Transaction ${transactionId}: Battery full notification sent to user ${session.userId}`);
+        }
+        
+        // === AUTO-STOP: Enviar RemoteStopTransaction al cargador ===
+        if (!session.autoStopSent) {
+          session.autoStopSent = true;
+          // Buscar la transacción en BD para obtener ocppIdentity y ocppNumericTxId
+          db.getTransactionById(transactionId).then(async (txRecord) => {
+            if (!txRecord) {
+              console.warn(`[SoC] Transaction ${transactionId}: AUTO-STOP skipped - transaction not found in DB`);
+              return;
+            }
+            // Obtener la estación para el ocppIdentity
+            const stationRecord = await db.getChargingStationById(session.stationId);
+            const ocppIdentityStr = stationRecord?.ocppIdentity || null;
+            const ocppTxId = txRecord.ocppNumericTxId || transactionId;
+            
+            if (ocppIdentityStr) {
+              const messageId = uuidv4();
+              const sent = sendOcppCommand(ocppIdentityStr, messageId, "RemoteStopTransaction", { transactionId: ocppTxId });
+              if (sent) {
+                console.log(`[SoC] Transaction ${transactionId}: AUTO-STOP sent via RemoteStopTransaction (ocppTxId=${ocppTxId}) to "${ocppIdentityStr}"`);
+              } else {
+                // Intentar también por dualCSMS
+                const sent2 = dualCSMS.sendCommandIfConnected(ocppIdentityStr, messageId, "RemoteStopTransaction", { transactionId: ocppTxId });
+                if (sent2) {
+                  console.log(`[SoC] Transaction ${transactionId}: AUTO-STOP sent via dualCSMS (ocppTxId=${ocppTxId}) to "${ocppIdentityStr}"`);
+                } else {
+                  console.warn(`[SoC] Transaction ${transactionId}: AUTO-STOP failed - could not send RemoteStopTransaction to "${ocppIdentityStr}"`);
+                }
+              }
+            } else {
+              console.warn(`[SoC] Transaction ${transactionId}: AUTO-STOP skipped - no OCPP identity available for station ${session.stationId}`);
+            }
+          }).catch(err => console.error(`[SoC] AUTO-STOP error:`, err));
+        }
       }
     }
   } else if (currentPowerVal >= LOW_POWER_THRESHOLD_KW) {

@@ -55,6 +55,7 @@ const UserSettingsVehicles = lazy(() => import("./pages/user/settings/Vehicles")
 const UserSettingsPaymentMethods = lazy(() => import("./pages/user/settings/PaymentMethods"));
 const UserSettingsConfig = lazy(() => import("./pages/user/settings/Config"));
 const UserSubscription = lazy(() => import("./pages/user/Subscription"));
+const SocAccuracyHistory = lazy(() => import("./pages/user/SocAccuracyHistory"));
 
 // Páginas de inversionista
 const InvestorDashboard = lazy(() => import("./pages/investor/Dashboard"));
@@ -269,6 +270,7 @@ function Router() {
         <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
         <Route path="/settings/config" component={UserSettingsConfig} />
         <Route path="/subscription" component={UserSubscription} />
+        <Route path="/soc-accuracy" component={SocAccuracyHistory} />
 
         {/* ============================================
             RUTAS DE INVERSIONISTA (con layout)
