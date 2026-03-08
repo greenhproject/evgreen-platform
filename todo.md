@@ -1990,3 +1990,6 @@
 - [x] Acciones de cobro manual y condonación de deudas
 - [x] Endpoints tRPC admin para gestión de deudas
 - [x] Tests unitarios para gestión de deudas
+
+## Bug Fix - 8 Marzo 2026
+- [x] Corregir 404 al presionar botón "Recargar" desde página de configuración de carga (ruta /user/wallet → /wallet)

@@ -669,7 +669,7 @@ export default function StartCharge() {
                     </div>
                   </div>
                   {!estimateQuery.data?.hasSufficientBalance && (
-                    <Button size="sm" onClick={() => setLocation("/user/wallet")}>
+                    <Button size="sm" onClick={() => setLocation("/wallet")}>
                       Recargar
                     </Button>
                   )}
