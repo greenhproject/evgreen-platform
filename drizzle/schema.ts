@@ -1959,3 +1959,55 @@ export const userRoutePatternsRelations = relations(userRoutePatterns, ({ one })
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// USER DEBTS TABLE - Deudas pendientes por ocupación (overstay)
+// ============================================================================
+
+export const debtStatusEnum = mysqlEnum("debt_status", [
+  "PENDING",    // Deuda activa, pendiente de pago
+  "PAID",       // Pagada completamente
+  "PARTIAL",    // Pago parcial realizado
+  "WAIVED",     // Condonada por admin
+]);
+
+export const userDebts = mysqlTable("user_debts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK a users
+  transactionId: int("transactionId"), // FK a transactions (la sesión de carga que generó la deuda)
+  /** Monto original de la deuda en COP */
+  originalAmount: decimal("originalAmount", { precision: 12, scale: 2 }).notNull(),
+  /** Monto pendiente por pagar en COP */
+  remainingAmount: decimal("remainingAmount", { precision: 12, scale: 2 }).notNull(),
+  /** Razón de la deuda */
+  reason: varchar("reason", { length: 100 }).notNull(), // "OVERSTAY", "INSUFFICIENT_BALANCE", etc.
+  /** Descripción legible */
+  description: text("description"),
+  /** Estado de la deuda */
+  status: debtStatusEnum.default("PENDING").notNull(),
+  /** Intentos de cobro automático fallidos */
+  autoChargeAttempts: int("autoChargeAttempts").default(0).notNull(),
+  /** Último intento de cobro automático */
+  lastAutoChargeAt: timestamp("lastAutoChargeAt"),
+  /** Referencia de pago (si fue pagada) */
+  paymentReference: varchar("paymentReference", { length: 255 }),
+  /** Fecha de pago */
+  paidAt: timestamp("paidAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type UserDebt = typeof userDebts.$inferSelect;
+export type InsertUserDebt = typeof userDebts.$inferInsert;
+
+export const userDebtsRelations = relations(userDebts, ({ one }) => ({
+  user: one(users, {
+    fields: [userDebts.userId],
+    references: [users.id],
+  }),
+  transaction: one(transactions, {
+    fields: [userDebts.transactionId],
+    references: [transactions.id],
+  }),
+}));

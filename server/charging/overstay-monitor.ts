@@ -18,6 +18,7 @@ import * as db from "../db";
 import { transactions, evses, tariffs } from "../../drizzle/schema";
 import { eq, and, or, desc } from "drizzle-orm";
 import { sendPushNotification } from "../firebase/fcm";
+import { autoChargeIfNeeded } from "../wompi/auto-charge";
 
 // ============================================================================
 // OVERSTAY SESSION TRACKING
@@ -386,28 +387,113 @@ async function chargeOverstayForSession(session: OverstaySession, isFinal: boole
   if (penaltyAmount <= 0) return;
 
   try {
-    // Deduct from wallet
+    // Deduct from wallet with debt management
     const wallet = await db.getWalletByUserId(session.userId);
     if (wallet) {
       const currentBalance = parseFloat(wallet.balance?.toString() || "0");
-      const newBalance = Math.max(0, currentBalance - penaltyAmount);
+      
+      if (currentBalance >= penaltyAmount) {
+        // Saldo suficiente: cobrar normalmente
+        const newBalance = currentBalance - penaltyAmount;
+        await db.updateWalletBalance(session.userId, newBalance.toString());
 
-      await db.updateWalletBalance(session.userId, newBalance.toString());
+        await db.createWalletTransaction({
+          walletId: wallet.id,
+          userId: session.userId,
+          type: "CHARGE_PAYMENT",
+          amount: (-penaltyAmount).toString(),
+          balanceBefore: currentBalance.toString(),
+          balanceAfter: newBalance.toString(),
+          referenceId: session.transactionId,
+          referenceType: "TRANSACTION",
+          status: "COMPLETED",
+          description: `Tarifa de ocupación: ${Math.round(minutesSinceLastCharge)} min × $${session.penaltyPerMinute}/min`,
+        });
 
-      await db.createWalletTransaction({
-        walletId: wallet.id,
-        userId: session.userId,
-        type: "CHARGE_PAYMENT",
-        amount: (-penaltyAmount).toString(),
-        balanceBefore: currentBalance.toString(),
-        balanceAfter: newBalance.toString(),
-        referenceId: session.transactionId,
-        referenceType: "TRANSACTION",
-        status: "COMPLETED",
-        description: `Tarifa de ocupación: ${Math.round(minutesSinceLastCharge)} min × $${session.penaltyPerMinute}/min`,
-      });
+        console.log(`[OverstayMonitor] Charged $${penaltyAmount} COP to user ${session.userId} for ${minutesSinceLastCharge.toFixed(1)} min overstay. Balance: $${currentBalance} → $${newBalance}`);
+      } else {
+        // Saldo insuficiente: cobrar lo que haya y manejar el déficit
+        const amountFromWallet = currentBalance; // Cobrar todo lo que tenga
+        const deficit = penaltyAmount - amountFromWallet;
 
-      console.log(`[OverstayMonitor] Charged $${penaltyAmount} COP to user ${session.userId} for ${minutesSinceLastCharge.toFixed(1)} min overstay. Balance: $${currentBalance} → $${newBalance}`);
+        // Cobrar lo que haya en billetera
+        if (amountFromWallet > 0) {
+          await db.updateWalletBalance(session.userId, "0");
+          await db.createWalletTransaction({
+            walletId: wallet.id,
+            userId: session.userId,
+            type: "CHARGE_PAYMENT",
+            amount: (-amountFromWallet).toString(),
+            balanceBefore: currentBalance.toString(),
+            balanceAfter: "0",
+            referenceId: session.transactionId,
+            referenceType: "TRANSACTION",
+            status: "COMPLETED",
+            description: `Tarifa de ocupación (parcial): ${Math.round(minutesSinceLastCharge)} min × $${session.penaltyPerMinute}/min (saldo insuficiente)`,
+          });
+          console.log(`[OverstayMonitor] Partial charge $${amountFromWallet} from wallet (of $${penaltyAmount} needed). Balance: $${currentBalance} → $0`);
+        }
+
+        // Intentar cobrar el déficit con tarjeta inscrita
+        let deficitCovered = false;
+        try {
+          const autoChargeResult = await autoChargeIfNeeded(session.userId, deficit);
+          if (autoChargeResult?.success) {
+            // Auto-cobro exitoso: descontar el déficit de la billetera recargada
+            const updatedWallet = await db.getWalletByUserId(session.userId);
+            const updatedBalance = parseFloat(updatedWallet?.balance?.toString() || "0");
+            const afterDeduction = Math.max(0, updatedBalance - deficit);
+            await db.updateWalletBalance(session.userId, afterDeduction.toString());
+            await db.createWalletTransaction({
+              walletId: wallet.id,
+              userId: session.userId,
+              type: "CHARGE_PAYMENT",
+              amount: (-deficit).toString(),
+              balanceBefore: updatedBalance.toString(),
+              balanceAfter: afterDeduction.toString(),
+              referenceId: session.transactionId,
+              referenceType: "TRANSACTION",
+              status: "COMPLETED",
+              description: `Tarifa de ocupación (auto-cobro tarjeta): déficit $${deficit} COP`,
+            });
+            deficitCovered = true;
+            console.log(`[OverstayMonitor] Deficit $${deficit} covered by auto-charge from card`);
+          }
+        } catch (autoChargeErr) {
+          console.error(`[OverstayMonitor] Auto-charge failed for user ${session.userId}:`, autoChargeErr);
+        }
+
+        // Si no se pudo cobrar con tarjeta: registrar deuda
+        if (!deficitCovered && deficit > 0) {
+          try {
+            await db.createUserDebt({
+              userId: session.userId,
+              transactionId: session.transactionId,
+              originalAmount: deficit,
+              reason: "OVERSTAY",
+              description: `Tarifa de ocupación no cobrada por saldo insuficiente. ${Math.round(minutesSinceLastCharge)} min × $${session.penaltyPerMinute}/min. Déficit: $${deficit} COP`,
+            });
+
+            // Notificar al usuario de la deuda
+            await db.createNotification({
+              userId: session.userId,
+              title: "Deuda por ocupación",
+              message: `Se ha registrado una deuda de $${deficit.toLocaleString()} COP por tarifa de ocupación. Tu saldo era insuficiente y no tienes tarjeta inscrita. No podrás iniciar nuevas cargas hasta pagar esta deuda.`,
+              type: "PAYMENT",
+              data: JSON.stringify({
+                key: `debt-overstay-${session.transactionId}-${Date.now()}`,
+                amount: deficit,
+                reason: "OVERSTAY",
+                transactionId: session.transactionId,
+              }),
+            });
+
+            console.log(`[OverstayMonitor] DEBT CREATED: $${deficit} COP for user ${session.userId} (no card, insufficient balance)`);
+          } catch (debtErr) {
+            console.error(`[OverstayMonitor] Error creating debt:`, debtErr);
+          }
+        }
+      }
     }
 
     // Update accumulated cost

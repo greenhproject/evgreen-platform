@@ -1369,6 +1369,16 @@ const transactionsRouter = router({
         input.evseId
       );
       
+      // Verificar si el usuario tiene deudas pendientes (bloqueo de cargas)
+      const hasPendingDebt = await db.userHasPendingDebt(ctx.user.id);
+      if (hasPendingDebt) {
+        const totalDebt = await db.getUserTotalDebt(ctx.user.id);
+        throw new TRPCError({ 
+          code: "FORBIDDEN", 
+          message: `Tienes una deuda pendiente de $${totalDebt.toLocaleString()} COP por tarifa de ocupación. Debes pagar tu deuda antes de iniciar una nueva carga. Ve a Billetera → Deudas Pendientes para saldarla.` 
+        });
+      }
+
       // Verificar saldo del usuario
       const wallet = await db.getWalletByUserId(ctx.user.id);
       if (!wallet) {
@@ -4228,6 +4238,146 @@ const investorManagementRouter = router({
   }),
 });
 
+// ============================================================================
+// DEBT MANAGEMENT ROUTER
+// ============================================================================
+
+const debtRouter = router({
+  // Obtener deudas pendientes del usuario actual
+  myDebts: protectedProcedure.query(async ({ ctx }) => {
+    const pendingDebts = await db.getUserPendingDebts(ctx.user.id);
+    const totalDebt = pendingDebts.reduce((sum, d) => sum + parseFloat(d.remainingAmount?.toString() || "0"), 0);
+    return {
+      debts: pendingDebts.map(d => ({
+        id: d.id,
+        originalAmount: parseFloat(d.originalAmount?.toString() || "0"),
+        remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
+        reason: d.reason,
+        description: d.description,
+        status: d.status,
+        createdAt: d.createdAt,
+      })),
+      totalDebt,
+      hasDebt: totalDebt > 0,
+    };
+  }),
+
+  // Obtener historial completo de deudas
+  myDebtHistory: protectedProcedure.query(async ({ ctx }) => {
+    const allDebts = await db.getAllUserDebts(ctx.user.id);
+    return allDebts.map(d => ({
+      id: d.id,
+      originalAmount: parseFloat(d.originalAmount?.toString() || "0"),
+      remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
+      reason: d.reason,
+      description: d.description,
+      status: d.status,
+      paidAt: d.paidAt,
+      createdAt: d.createdAt,
+    }));
+  }),
+
+  // Pagar deudas desde billetera
+  payFromWallet: protectedProcedure.mutation(async ({ ctx }) => {
+    const result = await db.payAllDebtsFromWallet(ctx.user.id);
+    if (result.totalPaid === 0) {
+      // Verificar si hay deudas
+      const hasDebt = await db.userHasPendingDebt(ctx.user.id);
+      if (!hasDebt) {
+        return { success: true, message: "No tienes deudas pendientes", totalPaid: 0, debtsCleared: 0 };
+      }
+      // Hay deuda pero no se pudo pagar (saldo insuficiente)
+      const wallet = await db.getWalletByUserId(ctx.user.id);
+      const balance = parseFloat(wallet?.balance?.toString() || "0");
+      const totalDebt = await db.getUserTotalDebt(ctx.user.id);
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Saldo insuficiente. Tu saldo es $${balance.toLocaleString()} COP pero tu deuda es $${totalDebt.toLocaleString()} COP. Recarga tu billetera primero.`,
+      });
+    }
+    return {
+      success: true,
+      message: `Se pagaron $${result.totalPaid.toLocaleString()} COP (${result.debtsCleared} deuda${result.debtsCleared > 1 ? 's' : ''})`,
+      totalPaid: result.totalPaid,
+      debtsCleared: result.debtsCleared,
+    };
+  }),
+
+  // Pagar una deuda específica
+  payDebt: protectedProcedure
+    .input(z.object({ debtId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const debts = await db.getUserPendingDebts(ctx.user.id);
+      const debt = debts.find(d => d.id === input.debtId);
+      if (!debt) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Deuda no encontrada" });
+      }
+
+      const remaining = parseFloat(debt.remainingAmount?.toString() || "0");
+      const wallet = await db.getWalletByUserId(ctx.user.id);
+      const balance = parseFloat(wallet?.balance?.toString() || "0");
+
+      if (balance < remaining) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Saldo insuficiente. Necesitas $${remaining.toLocaleString()} COP pero tienes $${balance.toLocaleString()} COP.`,
+        });
+      }
+
+      // Descontar de billetera
+      const newBalance = balance - remaining;
+      await db.updateWalletBalance(ctx.user.id, newBalance.toFixed(2));
+      await db.createWalletTransaction({
+        walletId: wallet!.id,
+        userId: ctx.user.id,
+        type: "OVERSTAY_PENALTY",
+        amount: (-remaining).toFixed(2),
+        balanceBefore: balance.toFixed(2),
+        balanceAfter: newBalance.toFixed(2),
+        description: `Pago de deuda #${debt.id} por ocupación`,
+        status: "COMPLETED",
+      });
+
+      // Marcar deuda como pagada
+      await db.payUserDebt(debt.id, remaining, `WALLET-${Date.now()}`);
+
+      return {
+        success: true,
+        message: `Deuda de $${remaining.toLocaleString()} COP pagada exitosamente`,
+        newBalance,
+      };
+    }),
+
+  // Admin: ver deudas de cualquier usuario
+  getUserDebts: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const allDebts = await db.getAllUserDebts(input.userId);
+      const totalPending = await db.getUserTotalDebt(input.userId);
+      return {
+        debts: allDebts.map(d => ({
+          id: d.id,
+          originalAmount: parseFloat(d.originalAmount?.toString() || "0"),
+          remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
+          reason: d.reason,
+          description: d.description,
+          status: d.status,
+          paidAt: d.paidAt,
+          createdAt: d.createdAt,
+        })),
+        totalPending,
+      };
+    }),
+
+  // Admin: condonar deuda
+  waiveDebt: adminProcedure
+    .input(z.object({ debtId: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.waiveUserDebt(input.debtId);
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -4265,6 +4415,7 @@ export const appRouter = router({
   chargerBrands: chargerBrandsRouter,
   overstay: overstayRouter,
   investorManagement: investorManagementRouter,
+  debts: debtRouter,
 });
 
 export type AppRouter = typeof appRouter;
