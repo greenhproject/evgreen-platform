@@ -1391,6 +1391,10 @@ async function handleOCPP16Message(
                 socTargetNotified: false,
                 manualSoc: autoManualSoc,
                 manualBatteryCapacityKwh: autoBatteryCapacity,
+                lowPowerSince: null,
+                chargeCompleteDetected: false,
+                chargeCompleteNotified: false,
+                energyBasedSoc: null,
               });
             }
           }
@@ -1495,6 +1499,10 @@ async function handleOCPP16Message(
               socTargetNotified: false,
               manualSoc: autoManualSoc2,
               manualBatteryCapacityKwh: autoBatteryCapacity2,
+              lowPowerSince: null,
+              chargeCompleteDetected: false,
+              chargeCompleteNotified: false,
+              energyBasedSoc: null,
             });
           }
           

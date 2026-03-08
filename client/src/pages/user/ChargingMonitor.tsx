@@ -374,16 +374,20 @@ export default function ChargingMonitor() {
   const chargeMode = session.chargeMode as string;
   const isSimulation = (session as any).isSimulation;
   const simulationProgress = (session as any).progress;
-  const realSoc = (session as any).soc; // SoC del vehículo (real o estimado desde manual)
+  const realSoc = (session as any).soc; // SoC del vehículo (real, estimado o por detección de potencia)
   const hasRealData = (session as any).hasRealMeterData;
-  const socSource = (session as any).socSource as string | undefined; // "charger" | "manual" | "none"
+  const socSource = (session as any).socSource as string | undefined; // "charger" | "manual" | "power_detection" | "energy" | "none"
   const serverManualSoc = (session as any).manualSoc as number | null;
   const serverBatteryCapacity = (session as any).manualBatteryCapacityKwh as number | null;
+  const chargeCompleteDetected = (session as any).chargeCompleteDetected as boolean | undefined;
+  const energyBasedSoc = (session as any).energyBasedSoc as number | null;
+  const lowPowerMinutes = (session as any).lowPowerMinutes as number | null;
   
   let progressPercentage = 0;
   
+  // El servidor ya calcula el SoC inteligente con prioridades:
+  // 1) SoC real del cargador, 2) Batería llena por potencia, 3) Energía real + manual, 4) Manual puro
   if (realSoc !== null && realSoc !== undefined) {
-    // PRIORIDAD: Usar SoC real del vehículo reportado por el cargador
     progressPercentage = realSoc;
   } else if (isSimulation && typeof simulationProgress === 'number') {
     // Simulación: usar progreso del simulador
@@ -406,7 +410,7 @@ export default function ChargingMonitor() {
   } else {
     // Sin SoC real y sin simulación: estimar basado en kWh
     const startBattery = session.startPercentage || 20;
-    const batteryCapacity = 60; // kWh estimado
+    const batteryCapacity = serverBatteryCapacity || 60;
     const kwhDelivered = session.currentKwh || 0;
     const percentAdded = (kwhDelivered / batteryCapacity) * 100;
     progressPercentage = startBattery + percentAdded;
@@ -490,12 +494,47 @@ export default function ChargingMonitor() {
         </div>
       </div>
       
+      {/* Alerta de batería llena detectada por caída de potencia */}
+      {chargeCompleteDetected && (
+        <div className="mx-4 mt-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+          <div className="flex items-center gap-2">
+            <Battery className="w-5 h-5 text-emerald-400" />
+            <div>
+              <p className="text-sm font-semibold text-emerald-400">¡Batería completa!</p>
+              <p className="text-xs text-muted-foreground">
+                Se detectó que la potencia de carga cayó a casi cero. Tu vehículo ya terminó de cargar.
+                Desconecta para evitar la tarifa de ocupación.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Aviso de potencia baja (posible batería llena pronto) */}
+      {!chargeCompleteDetected && lowPowerMinutes !== null && lowPowerMinutes >= 2 && (
+        <div className="mx-4 mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30">
+          <div className="flex items-center gap-2">
+            <BatteryCharging className="w-4 h-4 text-amber-400" />
+            <p className="text-xs text-amber-400">
+              Potencia baja detectada ({lowPowerMinutes} min). Tu batería podría estar casi llena.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Indicador de fuente de datos + Input SoC manual */}
       {socSource === "charger" ? (
         <div className="flex justify-center mt-1">
           <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300">
             <Battery className="w-3 h-3 mr-1" />
             SoC real del vehículo
+          </Badge>
+        </div>
+      ) : socSource === "power_detection" ? (
+        <div className="flex justify-center mt-1">
+          <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300">
+            <Battery className="w-3 h-3 mr-1" />
+            Batería llena (detectado por potencia)
           </Badge>
         </div>
       ) : socSource === "manual" ? (
@@ -519,16 +558,7 @@ export default function ChargingMonitor() {
         </div>
       ) : (
         <div className="flex justify-center mt-1">
-          {hasRealData ? (
-            <Badge 
-              variant="outline" 
-              className="text-xs text-amber-600 border-amber-300 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-900/20"
-              onClick={() => setShowSocInput(true)}
-            >
-              <Edit3 className="w-3 h-3 mr-1" />
-              Ingresar % batería manualmente
-            </Badge>
-          ) : !isSimulation ? (
+          {hasRealData || !isSimulation ? (
             <Badge 
               variant="outline" 
               className="text-xs text-amber-600 border-amber-300 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-900/20"

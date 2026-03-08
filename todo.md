@@ -1964,3 +1964,12 @@
 - [x] Notificar al usuario cuando se genera una deuda (sendWebPush con tipo DEBT)
 - [x] Permitir pago de deuda desde la billetera (payDebt, payFromWallet endpoints)
 - [x] 20 tests unitarios para gestión de deuda
+
+## Feature: Corrección SoC real en cargadores AC - Marzo 8, 2026
+- [x] Analizar flujo actual de SoC estimado vs datos OCPP MeterValues
+- [x] Calcular SoC real basado en energía entregada (kWh) del OCPP + capacidad batería (energyBasedSoc)
+- [x] Priorizar SoC del OCPP cuando el cargador lo reporte (prioridad: charger > power_detection > energy > manual)
+- [x] Detectar batería llena por caída de potencia (<0.5 kW por 5+ min) (chargeCompleteDetected)
+- [x] Actualizar UI ChargingMonitor: alerta batería llena, aviso potencia baja, badge por fuente de SoC
+- [x] Manejar discrepancia: energyBasedSoc usa kWh reales del OCPP, no estimaciones
+- [x] 17 tests unitarios (soc-correction.test.ts)
