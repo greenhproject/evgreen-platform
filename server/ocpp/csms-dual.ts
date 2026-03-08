@@ -1036,6 +1036,10 @@ export class DualCSMS {
         socTargetNotified: false,
         manualSoc: null,
         manualBatteryCapacityKwh: null,
+        lowPowerSince: null,
+        chargeCompleteDetected: false,
+        chargeCompleteNotified: false,
+        energyBasedSoc: null,
       });
       
       removePendingSession(pendingSessionData.sessionId);
@@ -1062,6 +1066,10 @@ export class DualCSMS {
         socTargetNotified: false,
         manualSoc: null,
         manualBatteryCapacityKwh: null,
+        lowPowerSince: null,
+        chargeCompleteDetected: false,
+        chargeCompleteNotified: false,
+        energyBasedSoc: null,
       });
       console.log(`[CSMS-DUAL] StartTransaction: Created basic active session for userId ${userId}, transactionId: ${transactionId}`);
     }
@@ -1476,6 +1484,10 @@ export class DualCSMS {
             socTargetNotified: false,
             manualSoc: null,
             manualBatteryCapacityKwh: null,
+            lowPowerSince: null,
+            chargeCompleteDetected: false,
+            chargeCompleteNotified: false,
+            energyBasedSoc: null,
           });
           
           if (pendingSession) {

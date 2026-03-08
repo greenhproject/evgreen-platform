@@ -85,6 +85,12 @@ const activeChargeSessions = new Map<number, {
   // SoC manual ingresado por el usuario (cuando el cargador no lo reporta)
   manualSoc: number | null;
   manualBatteryCapacityKwh: number | null;
+  // Detección de batería llena por caída de potencia
+  lowPowerSince: Date | null; // Timestamp desde cuando la potencia está < umbral
+  chargeCompleteDetected: boolean; // Si se detectó que la batería está llena
+  chargeCompleteNotified: boolean; // Si ya se notificó al usuario
+  // SoC calculado por energía real del OCPP (independiente del manual)
+  energyBasedSoc: number | null; // SoC calculado solo por kWh reales / capacidad batería
 }>();
 
 /**
@@ -1067,9 +1073,39 @@ export const chargingRouter = router({
         }
       }
       
-      // SoC para el gauge: prioridad: real > estimado (manual + kWh) > null
-      const displaySoc = estimatedSoc;
-      const socSource = soc !== null ? "charger" : (hasManualSoc ? "manual" : "none");
+      // ============================================================
+      // SoC INTELIGENTE: Prioridad de fuentes de datos
+      // 1) SoC real del cargador (OCPP MeterValues con SoC)
+      // 2) Batería llena detectada por caída de potencia
+      // 3) SoC estimado por energía real + SoC manual
+      // 4) SoC manual puro (sin corrección)
+      // ============================================================
+      const chargeCompleteDetected = activeSessionInfo?.chargeCompleteDetected || false;
+      const energyBasedSoc = activeSessionInfo?.energyBasedSoc ?? null;
+      
+      let displaySoc: number | null;
+      let socSource: string;
+      
+      if (soc !== null) {
+        // Prioridad 1: SoC real del cargador
+        displaySoc = soc;
+        socSource = "charger";
+      } else if (chargeCompleteDetected) {
+        // Prioridad 2: Batería llena detectada por caída de potencia
+        displaySoc = 100;
+        socSource = "power_detection";
+      } else if (energyBasedSoc !== null) {
+        // Prioridad 3: SoC calculado por energía real del OCPP
+        displaySoc = energyBasedSoc;
+        socSource = hasManualSoc ? "manual" : "energy";
+      } else if (estimatedSoc !== null) {
+        // Prioridad 4: Estimación previa
+        displaySoc = estimatedSoc;
+        socSource = hasManualSoc ? "manual" : "none";
+      } else {
+        displaySoc = null;
+        socSource = "none";
+      }
       
       return {
         transactionId: activeTransaction.id,
@@ -1102,6 +1138,12 @@ export const chargingRouter = router({
         isSimulation: false,
         hasRealMeterData: activeSessionInfo?.lastMeterUpdate !== null && activeSessionInfo?.lastMeterUpdate !== undefined,
         powerHistory: (activeSessionInfo?.powerHistory || []).slice(-120),
+        // Nuevos campos para detección de batería llena
+        chargeCompleteDetected, // true si se detectó batería llena por caída de potencia
+        energyBasedSoc, // SoC calculado por energía real del OCPP
+        lowPowerMinutes: activeSessionInfo?.lowPowerSince 
+          ? Math.round((Date.now() - activeSessionInfo.lowPowerSince.getTime()) / 60000) 
+          : null, // Minutos en baja potencia (null si no aplica)
       };
     }),
 
@@ -1167,6 +1209,10 @@ export const chargingRouter = router({
           socTargetNotified: false,
           manualSoc: input.soc,
           manualBatteryCapacityKwh: input.batteryCapacityKwh || 60,
+          lowPowerSince: null,
+          chargeCompleteDetected: false,
+          chargeCompleteNotified: false,
+          energyBasedSoc: null,
         });
         session = getActiveSessionById(activeTransaction.id);
       } else {
@@ -1507,6 +1553,46 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   if (data.voltage !== undefined) session.voltage = data.voltage;
   if (data.current !== undefined) session.current = data.current;
   session.lastMeterUpdate = new Date();
+  
+  // ============================================================
+  // CÁLCULO DE SoC BASADO EN ENERGÍA REAL DEL OCPP
+  // Independiente del SoC manual - usa kWh reales / capacidad batería
+  // ============================================================
+  if (session.manualSoc !== null && session.manualBatteryCapacityKwh && session.manualBatteryCapacityKwh > 0) {
+    const kwhToSocPercent = (session.currentKwh / session.manualBatteryCapacityKwh) * 100;
+    session.energyBasedSoc = Math.min(100, Math.round(session.manualSoc + kwhToSocPercent));
+  }
+  
+  // ============================================================
+  // DETECCIÓN DE BATERÍA LLENA POR CAÍDA DE POTENCIA
+  // Si la potencia cae a < 0.5 kW por más de 5 min en cargadores AC,
+  // la batería probablemente está llena (la curva CC-CV termina)
+  // ============================================================
+  const LOW_POWER_THRESHOLD_KW = 0.5; // kW - umbral de potencia baja
+  const LOW_POWER_DURATION_MS = 5 * 60 * 1000; // 5 minutos
+  const currentPowerVal = data.currentPower !== undefined ? data.currentPower : session.currentPower;
+  
+  if (currentPowerVal < LOW_POWER_THRESHOLD_KW && session.currentKwh > 0.5) {
+    // La potencia está por debajo del umbral y ya se ha entregado algo de energía
+    if (!session.lowPowerSince) {
+      session.lowPowerSince = new Date();
+      console.log(`[SoC] Transaction ${transactionId}: Low power detected (${currentPowerVal.toFixed(2)} kW < ${LOW_POWER_THRESHOLD_KW} kW). Monitoring...`);
+    } else {
+      const lowPowerDuration = Date.now() - session.lowPowerSince.getTime();
+      if (lowPowerDuration >= LOW_POWER_DURATION_MS && !session.chargeCompleteDetected) {
+        session.chargeCompleteDetected = true;
+        // Forzar SoC a 100% ya que la batería está llena
+        session.energyBasedSoc = 100;
+        console.log(`[SoC] Transaction ${transactionId}: BATTERY FULL DETECTED - Low power for ${Math.round(lowPowerDuration/1000/60)} min. Setting SoC to 100%.`);
+      }
+    }
+  } else if (currentPowerVal >= LOW_POWER_THRESHOLD_KW) {
+    // La potencia volvió a subir - resetear el timer
+    if (session.lowPowerSince) {
+      console.log(`[SoC] Transaction ${transactionId}: Power recovered (${currentPowerVal.toFixed(2)} kW). Resetting low power timer.`);
+      session.lowPowerSince = null;
+    }
+  }
   
   // Agregar punto al historial de potencia (máx 360 puntos = ~30 min a 5s interval)
   const power = data.currentPower !== undefined ? data.currentPower : session.currentPower;
