@@ -75,6 +75,9 @@ import {
   userRoutePatterns,
   InsertUserRoutePattern,
   UserRoutePattern,
+  userDebts,
+  UserDebt,
+  InsertUserDebt,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -5157,4 +5160,201 @@ export async function getUserFrequentLocations(userId: number): Promise<Array<{
         typicalHours,
       };
     });
+}
+
+
+// ============================================================================
+// USER DEBTS - Gestión de deudas pendientes
+// ============================================================================
+
+/**
+ * Crear una nueva deuda para un usuario
+ */
+export async function createUserDebt(data: {
+  userId: number;
+  transactionId?: number;
+  originalAmount: number;
+  reason: string;
+  description?: string;
+}): Promise<number> {
+  const dbInstance = await getDb();
+  if (!dbInstance) throw new Error("Database not available");
+
+  const [result] = await dbInstance.insert(userDebts).values({
+    userId: data.userId,
+    transactionId: data.transactionId ?? null,
+    originalAmount: data.originalAmount.toFixed(2),
+    remainingAmount: data.originalAmount.toFixed(2),
+    reason: data.reason,
+    description: data.description || null,
+    status: "PENDING",
+    autoChargeAttempts: 0,
+  });
+
+  console.log(`[Debt] Created debt #${result.insertId} for user ${data.userId}: $${data.originalAmount} COP (${data.reason})`);
+  return result.insertId;
+}
+
+/**
+ * Obtener deudas pendientes de un usuario
+ */
+export async function getUserPendingDebts(userId: number): Promise<UserDebt[]> {
+  const dbInstance = await getDb();
+  if (!dbInstance) return [];
+
+  return dbInstance.select()
+    .from(userDebts)
+    .where(and(
+      eq(userDebts.userId, userId),
+      or(
+        eq(userDebts.status, "PENDING"),
+        eq(userDebts.status, "PARTIAL")
+      )
+    ))
+    .orderBy(userDebts.createdAt);
+}
+
+/**
+ * Obtener el total de deuda pendiente de un usuario
+ */
+export async function getUserTotalDebt(userId: number): Promise<number> {
+  const debts = await getUserPendingDebts(userId);
+  return debts.reduce((total, debt) => {
+    return total + parseFloat(debt.remainingAmount?.toString() || "0");
+  }, 0);
+}
+
+/**
+ * Verificar si un usuario tiene deudas pendientes (para bloqueo de cargas)
+ */
+export async function userHasPendingDebt(userId: number): Promise<boolean> {
+  const totalDebt = await getUserTotalDebt(userId);
+  return totalDebt > 0;
+}
+
+/**
+ * Marcar una deuda como pagada (total o parcialmente)
+ */
+export async function payUserDebt(debtId: number, amountPaid: number, paymentReference?: string): Promise<void> {
+  const dbInstance = await getDb();
+  if (!dbInstance) return;
+
+  const [debt] = await dbInstance.select().from(userDebts).where(eq(userDebts.id, debtId)).limit(1);
+  if (!debt) return;
+
+  const remaining = parseFloat(debt.remainingAmount?.toString() || "0");
+  const newRemaining = Math.max(0, remaining - amountPaid);
+
+  await dbInstance.update(userDebts)
+    .set({
+      remainingAmount: newRemaining.toFixed(2),
+      status: newRemaining <= 0 ? "PAID" : "PARTIAL",
+      paymentReference: paymentReference || debt.paymentReference,
+      paidAt: newRemaining <= 0 ? new Date() : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(userDebts.id, debtId));
+
+  console.log(`[Debt] Debt #${debtId}: paid $${amountPaid}, remaining $${newRemaining} (${newRemaining <= 0 ? "PAID" : "PARTIAL"})`);
+}
+
+/**
+ * Incrementar intentos de auto-cobro fallido
+ */
+export async function incrementDebtAutoChargeAttempts(debtId: number): Promise<void> {
+  const dbInstance = await getDb();
+  if (!dbInstance) return;
+
+  const [debt] = await dbInstance.select().from(userDebts).where(eq(userDebts.id, debtId)).limit(1);
+  if (!debt) return;
+
+  await dbInstance.update(userDebts)
+    .set({
+      autoChargeAttempts: (debt.autoChargeAttempts || 0) + 1,
+      lastAutoChargeAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(userDebts.id, debtId));
+}
+
+/**
+ * Obtener todas las deudas de un usuario (incluyendo pagadas, para historial)
+ */
+export async function getAllUserDebts(userId: number): Promise<UserDebt[]> {
+  const dbInstance = await getDb();
+  if (!dbInstance) return [];
+
+  return dbInstance.select()
+    .from(userDebts)
+    .where(eq(userDebts.userId, userId))
+    .orderBy(desc(userDebts.createdAt));
+}
+
+/**
+ * Condonar una deuda (admin)
+ */
+export async function waiveUserDebt(debtId: number): Promise<void> {
+  const dbInstance = await getDb();
+  if (!dbInstance) return;
+
+  await dbInstance.update(userDebts)
+    .set({
+      status: "WAIVED",
+      remainingAmount: "0.00",
+      updatedAt: new Date(),
+    })
+    .where(eq(userDebts.id, debtId));
+
+  console.log(`[Debt] Debt #${debtId} waived by admin`);
+}
+
+/**
+ * Pagar todas las deudas pendientes de un usuario desde su billetera
+ * Retorna el monto total pagado
+ */
+export async function payAllDebtsFromWallet(userId: number): Promise<{ totalPaid: number; debtsCleared: number }> {
+  const dbInstance = await getDb();
+  if (!dbInstance) return { totalPaid: 0, debtsCleared: 0 };
+
+  const pendingDebts = await getUserPendingDebts(userId);
+  if (pendingDebts.length === 0) return { totalPaid: 0, debtsCleared: 0 };
+
+  const wallet = await getWalletByUserId(userId);
+  if (!wallet) return { totalPaid: 0, debtsCleared: 0 };
+
+  let balance = parseFloat(wallet.balance?.toString() || "0");
+  let totalPaid = 0;
+  let debtsCleared = 0;
+
+  for (const debt of pendingDebts) {
+    if (balance <= 0) break;
+    
+    const remaining = parseFloat(debt.remainingAmount?.toString() || "0");
+    const payment = Math.min(balance, remaining);
+    
+    await payUserDebt(debt.id, payment, `WALLET-${Date.now()}`);
+    balance -= payment;
+    totalPaid += payment;
+    
+    if (payment >= remaining) debtsCleared++;
+  }
+
+  if (totalPaid > 0) {
+    // Actualizar balance de billetera
+    await updateWalletBalance(userId, balance.toFixed(2));
+    
+    // Registrar transacción de billetera
+    await createWalletTransaction({
+      walletId: wallet.id,
+      userId,
+      type: "OVERSTAY_PENALTY",
+      amount: (-totalPaid).toFixed(2),
+      balanceBefore: (balance + totalPaid).toFixed(2),
+      balanceAfter: balance.toFixed(2),
+      description: `Pago de deuda pendiente por ocupación (${debtsCleared} deuda${debtsCleared > 1 ? 's' : ''})`,
+      status: "COMPLETED",
+    });
+  }
+
+  return { totalPaid, debtsCleared };
 }

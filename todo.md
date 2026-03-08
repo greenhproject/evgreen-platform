@@ -1953,3 +1953,14 @@
 - [x] Mostrar contenido coherente de la notificación al hacer clic - Redirige a /settings/notifications para test
 - [x] Corregir URLs incorrectas: /perfil->/settings/notifications, /charging->/overstay, /stations/->/station/
 - [x] Agregar mapeo inteligente tipo->ruta en SW para fallback cuando URL es inválida
+
+## Feature: Gestión de deuda por ocupación (overstay) - Marzo 8, 2026
+- [x] Analizar lógica actual de cobro de overstay cuando saldo es insuficiente - BUG: Math.max(0,...) perdía la penalización restante
+- [x] Implementar cobro automático con tarjeta inscrita cuando billetera no tiene saldo (autoChargeIfNeeded)
+- [x] Registrar deuda pendiente si no hay tarjeta inscrita o el cobro falla (tabla user_debts)
+- [x] Bloquear inicio de nuevas cargas si el usuario tiene deuda pendiente (server + UI)
+- [x] Agregar tabla user_debts en el schema con campos: originalAmount, remainingAmount, reason, status, autoChargeAttempts
+- [x] Actualizar UI: DebtBanner en Billetera + bloqueo visual en StationDetail
+- [x] Notificar al usuario cuando se genera una deuda (sendWebPush con tipo DEBT)
+- [x] Permitir pago de deuda desde la billetera (payDebt, payFromWallet endpoints)
+- [x] 20 tests unitarios para gestión de deuda

@@ -38,6 +38,8 @@ import {
   RotateCcw,
   Gift,
   Settings,
+  AlertTriangle,
+  Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -243,6 +245,148 @@ function AutoRechargeSection({ hasSavedCard }: { hasSavedCard: boolean }) {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+// ============================================================================
+// COMPONENTE: Banner de Deuda Pendiente
+// ============================================================================
+function DebtBanner() {
+  const { data: debtInfo, isLoading } = trpc.debts.myDebts.useQuery();
+  const utils = trpc.useUtils();
+  const [showDetails, setShowDetails] = useState(false);
+  const [payingDebtId, setPayingDebtId] = useState<number | null>(null);
+
+  const payDebt = trpc.debts.payDebt.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      utils.debts.myDebts.invalidate();
+      utils.wallet.getMyWallet.invalidate();
+      setPayingDebtId(null);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al pagar la deuda");
+      setPayingDebtId(null);
+    },
+  });
+
+  const payAll = trpc.debts.payFromWallet.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      utils.debts.myDebts.invalidate();
+      utils.wallet.getMyWallet.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al pagar las deudas");
+    },
+  });
+
+  if (isLoading || !debtInfo?.hasDebt) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <Card className="border-red-500/30 bg-red-500/5 overflow-hidden">
+        {/* Header de alerta */}
+        <div className="p-4 pb-3">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center flex-shrink-0">
+              <Ban className="w-5 h-5 text-red-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-bold text-red-400 text-sm">Deuda Pendiente</h3>
+                <Badge className="bg-red-500/20 text-red-300 border-red-500/30 text-[10px] px-1.5">
+                  Cargas bloqueadas
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Tienes una deuda por tarifa de ocupación. No podrás iniciar nuevas cargas hasta saldarla.
+              </p>
+              <div className="mt-2 flex items-baseline gap-1">
+                <span className="text-2xl font-bold text-red-400">
+                  ${debtInfo.totalDebt.toLocaleString()}
+                </span>
+                <span className="text-xs text-red-400/70">COP</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Botón pagar */}
+        <div className="px-4 pb-3 flex gap-2">
+          <Button
+            className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold text-sm h-10"
+            onClick={() => payAll.mutate()}
+            disabled={payAll.isPending}
+          >
+            {payAll.isPending ? (
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Pagando...</>
+            ) : (
+              <><CreditCard className="w-4 h-4 mr-2" /> Pagar con saldo</>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            className="border-red-500/30 text-red-400 hover:bg-red-500/10 h-10 px-3"
+            onClick={() => setShowDetails(!showDetails)}
+          >
+            <ChevronRight className={`w-4 h-4 transition-transform ${showDetails ? "rotate-90" : ""}`} />
+          </Button>
+        </div>
+
+        {/* Detalle de deudas */}
+        <AnimatePresence>
+          {showDetails && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="px-4 pb-4 space-y-2 border-t border-red-500/10 pt-3">
+                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Detalle de deudas</p>
+                {debtInfo.debts.map((debt) => (
+                  <div key={debt.id} className="flex items-center justify-between p-2.5 rounded-lg bg-background/50">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">
+                        {debt.reason === "OVERSTAY" ? "Tarifa de ocupación" : debt.reason}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {new Date(debt.createdAt).toLocaleDateString("es-CO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-red-400">
+                        ${debt.remainingAmount.toLocaleString()}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-[10px] text-red-400 hover:bg-red-500/10"
+                        onClick={() => {
+                          setPayingDebtId(debt.id);
+                          payDebt.mutate({ debtId: debt.id });
+                        }}
+                        disabled={payDebt.isPending && payingDebtId === debt.id}
+                      >
+                        {payDebt.isPending && payingDebtId === debt.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          "Pagar"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Card>
+    </motion.div>
   );
 }
 
@@ -693,6 +837,11 @@ export default function UserWallet() {
             )}
           </Card>
         </motion.div>
+
+        {/* ================================================================ */}
+        {/* BANNER DE DEUDA PENDIENTE */}
+        {/* ================================================================ */}
+        <DebtBanner />
 
         {/* ================================================================ */}
         {/* TARJETA DE CRÉDITO INSCRITA (CENTRO DE LA BILLETERA) */}

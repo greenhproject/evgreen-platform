@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   Loader2,
   CheckCircle2,
+  Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AIInsightCard } from "@/components/AIInsightCard";
@@ -246,6 +247,7 @@ export default function StationDetail() {
 
   // Mutación para crear review
   const utils = trpc.useUtils();
+  const { data: debtInfo } = trpc.debts.myDebts.useQuery();
   const submitReview = trpc.reviews.create.useMutation({
     onSuccess: () => {
       toast.success("¡Gracias por tu calificación!");
@@ -593,6 +595,25 @@ export default function StationDetail() {
                             </div>
                           );
                         })()}
+                        {/* Verificar deuda pendiente */}
+                        {debtInfo?.hasDebt ? (
+                          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Ban className="w-4 h-4 text-red-400" />
+                              <span className="text-xs font-bold text-red-400">Cargas bloqueadas</span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mb-2">
+                              Tienes una deuda de ${debtInfo.totalDebt.toLocaleString()} COP. Paga en Billetera para continuar.
+                            </p>
+                            <Button
+                              size="sm"
+                              className="w-full bg-red-500 hover:bg-red-600 text-white text-xs h-8"
+                              onClick={() => setLocation('/wallet')}
+                            >
+                              Ir a Billetera
+                            </Button>
+                          </div>
+                        ) : (
                         <div className="flex gap-2">
                           <Button
                             className="flex-1 gradient-primary text-white"
@@ -609,6 +630,7 @@ export default function StationDetail() {
                             <Calendar className="w-4 h-4" />
                           </Button>
                         </div>
+                        )}
                       </div>
                     )}
 
