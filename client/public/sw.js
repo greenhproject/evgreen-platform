@@ -1,5 +1,5 @@
-// EVGreen Service Worker v3.0.0 - Fix: Network First para assets con hash
-const CACHE_VERSION = 'v3';
+// EVGreen Service Worker v4.0.0 - Fix: Notification click routing + URL validation
+const CACHE_VERSION = 'v4';
 const CACHE_NAME = `evgreen-cache-${CACHE_VERSION}`;
 const OFFLINE_URL = '/offline.html';
 
@@ -242,18 +242,77 @@ self.addEventListener('push', (event) => {
   );
 });
 
+// Rutas válidas de la app para validar redirecciones
+const VALID_ROUTES = [
+  '/', '/map', '/wallet', '/history', '/profile', '/reservations',
+  '/support', '/assistant', '/scan', '/start-charge', '/overstay',
+  '/charging-waiting', '/charging-monitor', '/subscription',
+  '/settings/notifications', '/settings/personal', '/settings/vehicles',
+  '/settings/payment', '/settings/config', '/vehicles',
+  '/investor', '/investor/stations', '/investor/transactions',
+  '/investor/reports', '/investor/settings', '/investor/earnings',
+  '/admin'
+];
+
+// Rutas dinámicas válidas (con parámetros)
+const VALID_DYNAMIC_ROUTES = [
+  /^\/station\/\d+$/,
+  /^\/charging\/\d+$/,
+  /^\/charging-summary\/\d+$/,
+  /^\/c\/.+$/,
+];
+
+function isValidRoute(path) {
+  if (VALID_ROUTES.includes(path)) return true;
+  return VALID_DYNAMIC_ROUTES.some(regex => regex.test(path));
+}
+
+// Mapeo de rutas tipo notificación a rutas válidas de la app
+function getRouteForNotificationType(type) {
+  const typeRouteMap = {
+    'test': '/settings/notifications',
+    'charging_complete': '/charging-monitor',
+    'charging_started': '/charging-monitor',
+    'charging_error': '/charging-monitor',
+    'overstay_alert': '/overstay',
+    'low_balance': '/wallet',
+    'payment_received': '/wallet',
+    'payment_failed': '/wallet',
+    'reservation_reminder': '/reservations',
+    'reservation_confirmed': '/reservations',
+    'station_available': '/map',
+    'system_alert': '/settings/notifications',
+    'general': '/',
+  };
+  return typeRouteMap[type] || '/';
+}
+
 // Manejar click en notificaciones
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  // Determinar URL a abrir: actionUrl del data, o clickAction, o URL genérica
+  // Determinar URL a abrir desde múltiples fuentes posibles
   const notifData = event.notification.data || {};
-  let urlToOpen = notifData.url || notifData.actionUrl || notifData.clickAction || '/';
+  let targetPath = notifData.url || notifData.actionUrl || notifData.clickAction || '';
   
-  // Asegurar que sea una URL completa
-  if (urlToOpen.startsWith('/')) {
-    urlToOpen = self.location.origin + urlToOpen;
+  // Si la URL es completa, extraer solo el path
+  try {
+    if (targetPath.startsWith('http')) {
+      targetPath = new URL(targetPath).pathname;
+    }
+  } catch (e) {
+    targetPath = '/';
   }
+
+  // Validar que la ruta existe en la app
+  if (!targetPath || !isValidRoute(targetPath)) {
+    // Usar el tipo de notificación para determinar la ruta correcta
+    const notifType = notifData.type || 'general';
+    targetPath = getRouteForNotificationType(notifType);
+    console.log(`[SW] Invalid route "${notifData.url || notifData.clickAction}", redirecting to ${targetPath} based on type "${notifType}"`);
+  }
+
+  const urlToOpen = self.location.origin + targetPath;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })
