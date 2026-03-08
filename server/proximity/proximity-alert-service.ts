@@ -293,7 +293,7 @@ export async function checkProximityAndNotify(
     type: "station_available" as NotificationType,
     title: `${demandText} cerca de ti`,
     body: `${bestStation.stationName} a ${bestStation.distanceKm} km · $${bestStation.pricePerKwh.toLocaleString()}/kWh · ${bestStation.availableConnectors} conectores ${connectorText} para ${vehicleName}`,
-    clickAction: `/stations/${bestStation.stationId}`,
+    clickAction: `/station/${bestStation.stationId}`,
     data: {
       stationId: bestStation.stationId.toString(),
       stationName: bestStation.stationName,

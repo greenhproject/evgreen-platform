@@ -335,7 +335,7 @@ export const pushRouter = router({
           title: "Notificación de prueba - EVGreen",
           body: `¡Hola ${user.name || "Usuario"}! Las notificaciones push están funcionando correctamente.`,
           tag: "test-notification",
-          data: { type: "test", url: "/perfil" },
+          data: { type: "test", url: "/settings/notifications" },
         });
         if (result) {
           return { success: true };
@@ -351,7 +351,7 @@ export const pushRouter = router({
         type: "system_alert",
         title: "Notificación de prueba",
         body: `¡Hola ${user.name || "Usuario"}! Las notificaciones push están funcionando correctamente.`,
-        clickAction: "/profile",
+        clickAction: "/settings/notifications",
       });
       return { success: result };
     }

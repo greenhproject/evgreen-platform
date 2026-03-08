@@ -542,7 +542,7 @@ async function sendOverstayNotification(
         type: type === "finishing" ? "charging_complete" : "overstay_alert",
         title,
         body: message,
-        clickAction: "/charging",
+        clickAction: "/overstay",
         data: { overstayType: type },
       });
     }

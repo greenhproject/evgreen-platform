@@ -1946,3 +1946,10 @@
 ## Bug: Sugerencia IA incoherente con demanda - Marzo 7, 2026
 - [x] BUG: Sugerencia de IA dice "Buen momento para cargar" cuando la estación muestra "Alta demanda +37%" - CORREGIDO
 - [x] Corregir lógica de sugerencia para que sea coherente con el estado real de demanda/precio - AIInsightCard ahora recibe demandLevel, surchargePercent y currentPrice reales
+
+## Bug: Clic en notificación push lleva a 404 - Marzo 7, 2026
+- [x] BUG: Al hacer clic en notificación push del navegador, redirige a URL inexistente (404) - CORREGIDO
+- [x] Corregir sw.js para redirigir a rutas válidas de la app - SW v4.0 con validación de rutas y mapeo por tipo
+- [x] Mostrar contenido coherente de la notificación al hacer clic - Redirige a /settings/notifications para test
+- [x] Corregir URLs incorrectas: /perfil->/settings/notifications, /charging->/overstay, /stations/->/station/
+- [x] Agregar mapeo inteligente tipo->ruta en SW para fallback cuando URL es inválida
