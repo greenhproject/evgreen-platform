@@ -1993,3 +1993,10 @@
 
 ## Bug Fix - 8 Marzo 2026
 - [x] Corregir 404 al presionar botón "Recargar" desde página de configuración de carga (ruta /user/wallet → /wallet)
+- [x] Corregir header ChargingMonitor: mostrar meta real del usuario (valor fijo/$20,000, porcentaje/80%, o completa) en lugar de siempre "Meta: 100%"
+- [x] En cargas AC con modo 'completa', mostrar "Carga completa" en vez de "100%" (se detecta por caída de potencia)
+- [x] Asegurar que chargeMode/targetAmount se propaguen correctamente desde sesión activa real al frontend
+- [x] Persistir chargeMode/targetValue en tabla transactions para restaurar sesión tras reinicio servidor
+- [x] Regla 'lo que ocurra primero': batería 100% O meta del usuario detiene la carga
+- [x] Prevenir auto-stop duplicado con flag autoStopSent
+- [x] Usar capacidad real del vehículo del usuario en cálculo de auto-stop por porcentaje

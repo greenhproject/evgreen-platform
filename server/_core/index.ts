@@ -934,6 +934,12 @@ async function handleOCPP16Message(
       const { nanoid } = await import("nanoid");
       const internalTransactionId = nanoid();
       
+      // Buscar sesión pendiente para obtener chargeMode/targetValue
+      const { findPendingSessionByOcppIdentity: findPendingOcpp } = await import("../charging/charging-router");
+      const pendingSessionForTx = findPendingOcpp(ocppIdentity, payload.connectorId);
+      const txChargeMode = pendingSessionForTx?.session?.chargeMode || "full_charge";
+      const txTargetValue = pendingSessionForTx?.session?.targetValue || 0;
+      
       const newTxId = await db.createTransaction({
         evseId: evse.id,
         userId: userId || 1, // Usar usuario encontrado o fallback a 1 (admin)
@@ -944,6 +950,8 @@ async function handleOCPP16Message(
         startTime: new Date(payload.timestamp),
         status: "IN_PROGRESS",
         meterStart: String(payload.meterStart),
+        chargeMode: txChargeMode,
+        targetValue: String(txTargetValue),
       });
       console.log(`[OCPP] StartTransaction - Created tx: dbId=${newTxId}, ocppNumericTxId=${transactionIdCounter}, internalId=${internalTransactionId}`);
       
@@ -1371,13 +1379,17 @@ async function handleOCPP16Message(
                 console.error(`[OCPP] MeterValues - Error loading vehicle data:`, e);
               }
               
+              // Restaurar chargeMode/targetValue desde la BD
+              const restoredChargeMode = (transaction as any).chargeMode || "full_charge";
+              const restoredTargetValue = (transaction as any).targetValue ? parseFloat(String((transaction as any).targetValue)) : 0;
+              
               setActiveSession(transaction.id, {
                 transactionId: transaction.id,
                 userId: transaction.userId,
                 stationId: transaction.stationId,
                 connectorId: transaction.evseId,
-                chargeMode: "full_charge" as const,
-                targetValue: 100,
+                chargeMode: restoredChargeMode as "fixed_amount" | "percentage" | "full_charge",
+                targetValue: restoredTargetValue,
                 startTime: new Date(transaction.startTime),
                 currentKwh: kwhConsumed,
                 currentCost: 0,
@@ -1475,13 +1487,17 @@ async function handleOCPP16Message(
               console.error(`[OCPP] MeterValues - Error loading vehicle data (fallback):`, e);
             }
             
+            // Restaurar chargeMode/targetValue desde la BD (fallback path)
+            const restoredChargeMode2 = (transaction as any).chargeMode || "full_charge";
+            const restoredTargetValue2 = (transaction as any).targetValue ? parseFloat(String((transaction as any).targetValue)) : 0;
+            
             setActiveSession(transaction.id, {
               transactionId: transaction.id,
               userId: transaction.userId,
               stationId: transaction.stationId,
               connectorId: transaction.evseId,
-              chargeMode: "full_charge" as const,
-              targetValue: 100,
+              chargeMode: restoredChargeMode2 as "fixed_amount" | "percentage" | "full_charge",
+              targetValue: restoredTargetValue2,
               startTime: new Date(transaction.startTime),
               currentKwh: kwhConsumed,
               currentCost: currentTotalCost,

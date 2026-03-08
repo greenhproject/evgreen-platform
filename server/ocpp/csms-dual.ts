@@ -992,7 +992,9 @@ export class DualCSMS {
     const ocpp16TransactionId = this.transactionIdCounter++;
     const internalTransactionId = nanoid();
 
-    // Crear transacción con el userId correcto
+    // Crear transacción con el userId correcto (incluir chargeMode y targetValue para restaurar sesión)
+    const sessionChargeMode = pendingSessionData?.session?.chargeMode || "full_charge";
+    const sessionTargetValue = pendingSessionData?.session?.targetValue || 0;
     const transactionId = await db.createTransaction({
       evseId: evse.id,
       userId,
@@ -1003,6 +1005,8 @@ export class DualCSMS {
       startTime: new Date(req.timestamp),
       status: "IN_PROGRESS",
       meterStart: String(req.meterStart),
+      chargeMode: sessionChargeMode,
+      targetValue: String(sessionTargetValue),
     });
 
     // Mapear ID de transacción OCPP 1.6 a interno
@@ -1501,6 +1505,8 @@ export class DualCSMS {
           const internalTxId = nanoid();
           const ocpp16TxId = this.transactionIdCounter++;
           
+          const orphanChargeMode = pendingSession?.session?.chargeMode || "full_charge";
+          const orphanTargetValue = pendingSession?.session?.targetValue || 0;
           const txId = await db.createTransaction({
             evseId: evse.id,
             userId,
@@ -1511,6 +1517,8 @@ export class DualCSMS {
             startTime: new Date(),
             status: "IN_PROGRESS",
             meterStart: String(meterStart),
+            chargeMode: orphanChargeMode,
+            targetValue: String(orphanTargetValue),
           });
           
           this.ocpp16Transactions.set(ocpp16TxId, internalTxId);
@@ -1697,26 +1705,41 @@ export class DualCSMS {
             let shouldAutoStop = false;
             let autoStopReason = "";
             
-            if (activeSession.chargeMode === "fixed_amount" && activeSession.targetValue > 0) {
-              // Modo monto fijo: detener cuando el costo alcanza el monto objetivo
+            // REGLA: lo que ocurra primero detiene la carga
+            // Solo verificar si no se ha enviado ya un auto-stop
+            if (activeSession.autoStopSent) {
+              // Ya se envió un auto-stop, no verificar de nuevo
+            } else {
+            
+            // 1. Verificar SoC al 100% (aplica a TODOS los modos) - si el cargador reporta SoC
+            if (activeSession.soc !== null && activeSession.soc !== undefined && activeSession.soc >= 100) {
+              shouldAutoStop = true;
+              autoStopReason = `Batería al 100% (SoC reportado por cargador)`;
+            }
+            
+            // 2. Verificar por monto fijo
+            if (!shouldAutoStop && activeSession.chargeMode === "fixed_amount" && activeSession.targetValue > 0) {
               if (currentCost >= activeSession.targetValue) {
                 shouldAutoStop = true;
                 autoStopReason = `Monto objetivo alcanzado: $${Math.round(currentCost)} >= $${activeSession.targetValue}`;
               }
-            } else if (activeSession.chargeMode === "percentage" && activeSession.targetValue > 0) {
-              // Modo porcentaje: estimar kWh necesarios (batería 60 kWh por defecto)
-              const batteryCapacity = 60; // kWh
-              const startPercentage = 20; // Asumimos 20% de inicio
+            }
+            
+            // 3. Verificar por porcentaje objetivo
+            if (!shouldAutoStop && activeSession.chargeMode === "percentage" && activeSession.targetValue > 0) {
+              const batteryCapacity = activeSession.manualBatteryCapacityKwh || 60; // Usar capacidad real del vehículo
+              const startPercentage = activeSession.manualSoc || 20;
               const targetKwh = ((activeSession.targetValue - startPercentage) / 100) * batteryCapacity;
               if (consumedKwh >= targetKwh && targetKwh > 0) {
                 shouldAutoStop = true;
                 autoStopReason = `Porcentaje objetivo alcanzado: ${consumedKwh.toFixed(2)} kWh >= ${targetKwh.toFixed(2)} kWh (${activeSession.targetValue}%)`;
               }
             }
-            // full_charge: no auto-stop, el cargador decide cuándo parar
+            // full_charge: no auto-stop por lógica de negocio, se detecta por caída de potencia en AC
             
             if (shouldAutoStop) {
               console.log(`[CSMS-DUAL] AUTO-STOP triggered for transaction ${transaction.id}: ${autoStopReason}`);
+              activeSession.autoStopSent = true;
               
               // Buscar el OCPP transactionId numérico para enviar RemoteStopTransaction
               let ocpp16TxId: number | null = null;
@@ -1749,6 +1772,7 @@ export class DualCSMS {
                 console.warn(`[CSMS-DUAL] Could not find OCPP 1.6 transactionId for internal ${transaction.ocppTransactionId}`);
               }
             }
+            } // close else for autoStopSent check
           }
         }
       }
@@ -1843,7 +1867,8 @@ export class DualCSMS {
           ocppTransactionId: req.transactionInfo.transactionId,
           startTime: new Date(req.timestamp),
           status: "IN_PROGRESS",
-    
+          chargeMode: "full_charge",
+          targetValue: "0",
         });
 
         await db.updateEvseStatus(evse.id, "CHARGING");

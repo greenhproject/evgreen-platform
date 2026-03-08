@@ -289,6 +289,9 @@ export const transactions = mysqlTable("transactions", {
   // SoC manual ingresado por el usuario (cuando el cargador no lo reporta)
   manualSoc: int("manualSoc"), // Porcentaje de batería ingresado manualmente (0-100)
   manualBatteryCapacityKwh: decimal("manualBatteryCapacityKwh", { precision: 6, scale: 2 }), // Capacidad de batería en kWh
+  // Modo de carga y valor objetivo (para restaurar sesión desde BD)
+  chargeMode: varchar("chargeMode", { length: 20 }).default("full_charge"), // fixed_amount, percentage, full_charge
+  targetValue: decimal("targetValue", { precision: 12, scale: 2 }).default("0"), // $ para fixed_amount, % para percentage, 0 para full_charge
   // Reserva asociada (si aplica)
   reservationId: int("reservationId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

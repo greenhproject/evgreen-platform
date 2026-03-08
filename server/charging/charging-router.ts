@@ -1037,8 +1037,12 @@ export const chargingRouter = router({
       }
       
       // Estimar tiempo restante basado en la potencia actual
-      const chargeMode = activeSessionInfo?.chargeMode || "full_charge" as const;
-      const targetValue = activeSessionInfo?.targetValue || 0;
+      // Restaurar chargeMode y targetValue: priorizar memoria, luego BD
+      const chargeMode = activeSessionInfo?.chargeMode 
+        || (activeTransaction.chargeMode as "fixed_amount" | "percentage" | "full_charge") 
+        || "full_charge" as const;
+      const targetValue = activeSessionInfo?.targetValue 
+        ?? (activeTransaction.targetValue ? parseFloat(String(activeTransaction.targetValue)) : 0);
       
       // Calcular kWh estimados según modo de carga
       const batteryCapacity = manualBatteryCapacity;
