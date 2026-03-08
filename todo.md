@@ -1981,3 +1981,12 @@
 - [ ] Sugerencias de corrección del SoC basadas en historial del usuario
 - [ ] UI para mostrar sugerencia de SoC al iniciar carga
 - [ ] Tests unitarios para las 3 mejoras
+
+
+## Panel Admin de Deudas - 8 Marzo 2026
+
+- [x] Panel admin de deudas (/admin/debts) con tabla completa
+- [x] Filtros por estado (pendiente/pagada/condonada)
+- [x] Acciones de cobro manual y condonación de deudas
+- [x] Endpoints tRPC admin para gestión de deudas
+- [x] Tests unitarios para gestión de deudas

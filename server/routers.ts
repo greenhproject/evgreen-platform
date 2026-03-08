@@ -4376,6 +4376,103 @@ const debtRouter = router({
       await db.waiveUserDebt(input.debtId);
       return { success: true };
     }),
+
+  // Admin: listado global de deudas con filtros
+  adminListAll: adminProcedure
+    .input(z.object({
+      status: z.string().optional().default("ALL"),
+      reason: z.string().optional().default("ALL"),
+      search: z.string().optional().default(""),
+      limit: z.number().optional().default(50),
+      offset: z.number().optional().default(0),
+    }))
+    .query(async ({ input }) => {
+      const result = await db.getAllDebtsAdmin(input);
+      return {
+        debts: result.debts.map(d => ({
+          id: d.id,
+          userId: d.userId,
+          transactionId: d.transactionId,
+          originalAmount: parseFloat(d.originalAmount?.toString() || "0"),
+          remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
+          reason: d.reason,
+          description: d.description,
+          status: d.status,
+          autoChargeAttempts: d.autoChargeAttempts,
+          lastAutoChargeAt: d.lastAutoChargeAt,
+          paymentReference: d.paymentReference,
+          paidAt: d.paidAt,
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+          userName: d.userName || "Usuario desconocido",
+          userEmail: d.userEmail || "",
+          userPhone: d.userPhone || "",
+        })),
+        total: result.total,
+      };
+    }),
+
+  // Admin: estadísticas globales de deudas
+  adminStats: adminProcedure.query(async () => {
+    return db.getDebtStats();
+  }),
+
+  // Admin: cobro manual (marcar como pagada sin descontar billetera)
+  adminManualPay: adminProcedure
+    .input(z.object({
+      debtId: z.number(),
+      paymentReference: z.string().min(1, "Se requiere referencia de pago"),
+    }))
+    .mutation(async ({ input }) => {
+      await db.adminManualPayDebt(input.debtId, input.paymentReference);
+      return { success: true, message: "Deuda marcada como pagada" };
+    }),
+
+  // Admin: cobrar deuda desde billetera del usuario
+  adminChargeFromWallet: adminProcedure
+    .input(z.object({ debtId: z.number() }))
+    .mutation(async ({ input }) => {
+      const allDebts = await db.getAllUserDebts(0); // placeholder
+      // Get the specific debt first
+      const dbInstance = (await import("../drizzle/schema")).userDebts;
+      const { getDb } = await import("./db");
+      const dbConn = await getDb();
+      if (!dbConn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+      
+      const { eq } = await import("drizzle-orm");
+      const [debt] = await dbConn.select().from(dbInstance).where(eq(dbInstance.id, input.debtId)).limit(1);
+      if (!debt) throw new TRPCError({ code: "NOT_FOUND", message: "Deuda no encontrada" });
+      if (debt.status === "PAID" || debt.status === "WAIVED") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Esta deuda ya fue saldada o condonada" });
+      }
+
+      const remaining = parseFloat(debt.remainingAmount?.toString() || "0");
+      const wallet = await db.getWalletByUserId(debt.userId);
+      const balance = parseFloat(wallet?.balance?.toString() || "0");
+
+      if (balance < remaining) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Saldo insuficiente del usuario. Saldo: $${balance.toLocaleString()} COP, Deuda: $${remaining.toLocaleString()} COP`,
+        });
+      }
+
+      const newBalance = balance - remaining;
+      await db.updateWalletBalance(debt.userId, newBalance.toFixed(2));
+      await db.createWalletTransaction({
+        walletId: wallet!.id,
+        userId: debt.userId,
+        type: "OVERSTAY_PENALTY",
+        amount: (-remaining).toFixed(2),
+        balanceBefore: balance.toFixed(2),
+        balanceAfter: newBalance.toFixed(2),
+        description: `Cobro admin de deuda #${debt.id}`,
+        status: "COMPLETED",
+      });
+
+      await db.payUserDebt(debt.id, remaining, `ADMIN-WALLET-${Date.now()}`);
+      return { success: true, message: `Se cobraron $${remaining.toLocaleString()} COP de la billetera del usuario` };
+    }),
 });
 
 export const appRouter = router({
