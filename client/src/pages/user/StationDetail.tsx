@@ -238,6 +238,12 @@ export default function StationDetail() {
     { enabled: !!station }
   );
 
+  // Obtener precio dinámico actual para pasar a la sugerencia de IA
+  const { data: currentKwhPrice } = trpc.transactions.getDynamicKwhPrice.useQuery(
+    { stationId },
+    { enabled: !!station, refetchInterval: 60000 }
+  );
+
   // Mutación para crear review
   const utils = trpc.useUtils();
   const submitReview = trpc.reviews.create.useMutation({
@@ -688,6 +694,9 @@ export default function StationDetail() {
             <AIInsightCard 
               type="station" 
               stationId={stationId}
+              demandLevel={currentKwhPrice?.factors?.demandLevel}
+              surchargePercent={currentKwhPrice?.multiplier ? Math.round((currentKwhPrice.multiplier - 1) * 100) : undefined}
+              currentPrice={currentKwhPrice?.dynamicPricePerKwh}
               onAskAI={(question) => {
                 // Abrir el chat de IA con la pregunta
                 const chatButton = document.querySelector('[data-ai-chat-trigger]') as HTMLButtonElement;

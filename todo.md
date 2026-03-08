@@ -1942,3 +1942,7 @@
 - [x] Agregar botón "Volver al mapa" en la pantalla de carga en progreso (ChargingMonitor + ChargingSession)
 - [x] Banner flotante "Carga en Proceso" ya existía (ActiveChargingBanner.tsx) - verificado y corregido nested anchor tag
 - [x] Al hacer clic en el banner, regresar a la pantalla de carga activa (link a /charging-monitor)
+
+## Bug: Sugerencia IA incoherente con demanda - Marzo 7, 2026
+- [x] BUG: Sugerencia de IA dice "Buen momento para cargar" cuando la estación muestra "Alta demanda +37%" - CORREGIDO
+- [x] Corregir lógica de sugerencia para que sea coherente con el estado real de demanda/precio - AIInsightCard ahora recibe demandLevel, surchargePercent y currentPrice reales
