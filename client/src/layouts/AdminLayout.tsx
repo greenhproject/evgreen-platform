@@ -40,7 +40,8 @@ import {
   Wallet,
   Building2,
   Timer,
-  Crown
+  Crown,
+  Banknote
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -58,6 +59,7 @@ const adminMenuItems = [
   { icon: Building2, label: "Crowdfunding", path: "/admin/crowdfunding" },
   { icon: Terminal, label: "Monitor OCPP", path: "/admin/ocpp-monitor" },
   { icon: Timer, label: "Penalizaciones", path: "/admin/overstay" },
+  { icon: Banknote, label: "Deudas", path: "/admin/debts" },
   { icon: BarChart3, label: "Reportes", path: "/admin/reports" },
   { icon: Image, label: "Banners", path: "/admin/banners" },
   { icon: Bell, label: "Notificaciones", path: "/admin/notifications" },

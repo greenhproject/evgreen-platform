@@ -5425,3 +5425,170 @@ export async function getSocAccuracySuggestion(userId: number): Promise<{
     sampleCount: logs.length,
   };
 }
+
+
+// ============================================================
+// ADMIN DEBT MANAGEMENT - Funciones para panel admin de deudas
+// ============================================================
+
+/**
+ * Obtener todas las deudas del sistema con datos del usuario (para admin)
+ */
+export async function getAllDebtsAdmin(filters?: {
+  status?: string;
+  reason?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ debts: any[]; total: number }> {
+  const dbInstance = await getDb();
+  if (!dbInstance) return { debts: [], total: 0 };
+
+  const conditions: any[] = [];
+  
+  if (filters?.status && filters.status !== "ALL") {
+    conditions.push(eq(userDebts.status, filters.status as any));
+  }
+  if (filters?.reason && filters.reason !== "ALL") {
+    conditions.push(eq(userDebts.reason, filters.reason));
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const limit = filters?.limit || 50;
+  const offset = filters?.offset || 0;
+
+  // Obtener total
+  const [countResult] = await dbInstance
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(userDebts)
+    .where(whereClause);
+  const total = countResult?.count || 0;
+
+  // Obtener deudas con datos de usuario
+  const debts = await dbInstance
+    .select({
+      id: userDebts.id,
+      userId: userDebts.userId,
+      transactionId: userDebts.transactionId,
+      originalAmount: userDebts.originalAmount,
+      remainingAmount: userDebts.remainingAmount,
+      reason: userDebts.reason,
+      description: userDebts.description,
+      status: userDebts.status,
+      autoChargeAttempts: userDebts.autoChargeAttempts,
+      lastAutoChargeAt: userDebts.lastAutoChargeAt,
+      paymentReference: userDebts.paymentReference,
+      paidAt: userDebts.paidAt,
+      createdAt: userDebts.createdAt,
+      updatedAt: userDebts.updatedAt,
+      userName: users.name,
+      userEmail: users.email,
+      userPhone: users.phone,
+    })
+    .from(userDebts)
+    .leftJoin(users, eq(userDebts.userId, users.id))
+    .where(whereClause)
+    .orderBy(desc(userDebts.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  // Si there's a search filter, apply it in JS (name/email/phone)
+  let filteredDebts = debts;
+  if (filters?.search && filters.search.trim()) {
+    const searchLower = filters.search.toLowerCase().trim();
+    filteredDebts = debts.filter(d => 
+      (d.userName && d.userName.toLowerCase().includes(searchLower)) ||
+      (d.userEmail && d.userEmail.toLowerCase().includes(searchLower)) ||
+      (d.userPhone && d.userPhone.includes(searchLower)) ||
+      d.id.toString().includes(searchLower)
+    );
+  }
+
+  return { debts: filteredDebts, total };
+}
+
+/**
+ * Obtener estadísticas globales de deudas (para dashboard admin)
+ */
+export async function getDebtStats(): Promise<{
+  totalPending: number;
+  totalPaid: number;
+  totalWaived: number;
+  countPending: number;
+  countPaid: number;
+  countWaived: number;
+  countPartial: number;
+  totalAmount: number;
+}> {
+  const dbInstance = await getDb();
+  if (!dbInstance) return {
+    totalPending: 0, totalPaid: 0, totalWaived: 0,
+    countPending: 0, countPaid: 0, countWaived: 0, countPartial: 0,
+    totalAmount: 0,
+  };
+
+  const allDebts = await dbInstance.select().from(userDebts);
+
+  let totalPending = 0, totalPaid = 0, totalWaived = 0;
+  let countPending = 0, countPaid = 0, countWaived = 0, countPartial = 0;
+  let totalAmount = 0;
+
+  for (const d of allDebts) {
+    const original = parseFloat(d.originalAmount?.toString() || "0");
+    const remaining = parseFloat(d.remainingAmount?.toString() || "0");
+    totalAmount += original;
+
+    switch (d.status) {
+      case "PENDING":
+        totalPending += remaining;
+        countPending++;
+        break;
+      case "PARTIAL":
+        totalPending += remaining;
+        countPartial++;
+        break;
+      case "PAID":
+        totalPaid += original;
+        countPaid++;
+        break;
+      case "WAIVED":
+        totalWaived += original;
+        countWaived++;
+        break;
+    }
+  }
+
+  return {
+    totalPending: Math.round(totalPending),
+    totalPaid: Math.round(totalPaid),
+    totalWaived: Math.round(totalWaived),
+    countPending: countPending + countPartial,
+    countPaid,
+    countWaived,
+    countPartial,
+    totalAmount: Math.round(totalAmount),
+  };
+}
+
+/**
+ * Cobro manual: marcar deuda como pagada por admin (sin descontar billetera)
+ */
+export async function adminManualPayDebt(debtId: number, paymentReference: string): Promise<void> {
+  const dbInstance = await getDb();
+  if (!dbInstance) return;
+
+  const [debt] = await dbInstance.select().from(userDebts).where(eq(userDebts.id, debtId)).limit(1);
+  if (!debt) throw new Error(`Debt #${debtId} not found`);
+
+  await dbInstance.update(userDebts)
+    .set({
+      remainingAmount: "0.00",
+      status: "PAID",
+      paymentReference,
+      paidAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(userDebts.id, debtId));
+
+  console.log(`[Debt] Admin manual payment for debt #${debtId}: $${debt.originalAmount} COP (ref: ${paymentReference})`);
+}
