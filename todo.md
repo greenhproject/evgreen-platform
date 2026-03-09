@@ -2000,3 +2000,7 @@
 - [x] Regla 'lo que ocurra primero': batería 100% O meta del usuario detiene la carga
 - [x] Prevenir auto-stop duplicado con flag autoStopSent
 - [x] Usar capacidad real del vehículo del usuario en cálculo de auto-stop por porcentaje
+- [x] BUG: La tarifa aplicada en carga real usa precio base ($1,300) en vez del precio dinámico ($1,216) calculado por IA
+- [x] Agregar columna appliedPricePerKwh a transactions para persistir precio dinámico
+- [x] Propagar pricePerKwh desde pending session a transacción y sesión activa
+- [x] Usar precio dinámico en StopTransaction, MeterValues y getActiveSession

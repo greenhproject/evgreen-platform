@@ -292,6 +292,8 @@ export const transactions = mysqlTable("transactions", {
   // Modo de carga y valor objetivo (para restaurar sesión desde BD)
   chargeMode: varchar("chargeMode", { length: 20 }).default("full_charge"), // fixed_amount, percentage, full_charge
   targetValue: decimal("targetValue", { precision: 12, scale: 2 }).default("0"), // $ para fixed_amount, % para percentage, 0 para full_charge
+  // Precio dinámico aplicado al momento de iniciar la carga (incluye tarifa dinámica IA)
+  appliedPricePerKwh: decimal("appliedPricePerKwh", { precision: 10, scale: 2 }),
   // Reserva asociada (si aplica)
   reservationId: int("reservationId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

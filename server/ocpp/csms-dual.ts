@@ -986,7 +986,9 @@ export class DualCSMS {
     // Obtener tarifa activa (usa precios globales si no tiene tarifa propia)
     const effectivePrice = await db.getEffectiveStationPrice(conn.stationId);
     const tariff = await db.getActiveTariffByStationId(conn.stationId);
-    const pricePerKwh = effectivePrice.pricePerKwh;
+    // IMPORTANTE: Usar el precio dinámico de la sesión pendiente si existe,
+    // ya que fue calculado al momento de iniciar la carga (incluye tarifa dinámica IA)
+    const pricePerKwh = pendingSessionData?.session?.pricePerKwh || effectivePrice.pricePerKwh;
 
     // Generar ID de transacción OCPP 1.6 (entero)
     const ocpp16TransactionId = this.transactionIdCounter++;
@@ -1007,6 +1009,7 @@ export class DualCSMS {
       meterStart: String(req.meterStart),
       chargeMode: sessionChargeMode,
       targetValue: String(sessionTargetValue),
+      appliedPricePerKwh: String(pricePerKwh),
     });
 
     // Mapear ID de transacción OCPP 1.6 a interno
@@ -1211,9 +1214,10 @@ export class DualCSMS {
       console.log(`[CSMS-DUAL] StopTransaction: Using session energy ${energyDelivered} kWh (meterStop gave 0)`);
     }
 
-    // Calcular costo - obtener tarifa
+    // Calcular costo - usar precio dinámico de la sesión activa (que fue calculado al iniciar la carga)
+    // Si no hay sesión activa, usar la tarifa de la BD como fallback
     const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
-    const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+    const pricePerKwh = activeSession?.pricePerKwh || (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
     const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
     const connectionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : 0;
     
@@ -1488,7 +1492,8 @@ export class DualCSMS {
           
           const effectivePrice = await db.getEffectiveStationPrice(conn.stationId);
           const tariff = await db.getActiveTariffByStationId(conn.stationId);
-          const pricePerKwh = effectivePrice.pricePerKwh;
+          // Usar precio dinámico de la sesión pendiente si existe
+          const pricePerKwh = pendingSession?.session?.pricePerKwh || effectivePrice.pricePerKwh;
           
           // Obtener meterStart del primer MeterValue
           let meterStart = 0;
@@ -1519,6 +1524,7 @@ export class DualCSMS {
             meterStart: String(meterStart),
             chargeMode: orphanChargeMode,
             targetValue: String(orphanTargetValue),
+            appliedPricePerKwh: String(pricePerKwh),
           });
           
           this.ocpp16Transactions.set(ocpp16TxId, internalTxId);
@@ -1859,6 +1865,7 @@ export class DualCSMS {
       case "Started": {
         const tariff = await db.getActiveTariffByStationId(conn.stationId);
 
+        const pricePerKwh201 = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
         await db.createTransaction({
           evseId: evse.id,
           userId: 1,
@@ -1869,6 +1876,7 @@ export class DualCSMS {
           status: "IN_PROGRESS",
           chargeMode: "full_charge",
           targetValue: "0",
+          appliedPricePerKwh: String(pricePerKwh201),
         });
 
         await db.updateEvseStatus(evse.id, "CHARGING");
@@ -1917,7 +1925,10 @@ export class DualCSMS {
           }
 
           const tariff201 = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
-          const pricePerKwh201 = tariff201 ? parseFloat(tariff201.pricePerKwh) : 1800;
+          // Priorizar precio dinámico guardado en la transacción
+          const pricePerKwh201 = transaction.appliedPricePerKwh 
+            ? parseFloat(String(transaction.appliedPricePerKwh))
+            : (tariff201 ? parseFloat(tariff201.pricePerKwh) : 1800);
           const pricePerMinute201 = tariff201 ? parseFloat(tariff201.pricePerMinute || "0") : 0;
           const connectionFee201 = tariff201 ? parseFloat(tariff201.pricePerSession || "0") : 0;
           
