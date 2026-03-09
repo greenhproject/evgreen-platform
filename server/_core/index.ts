@@ -939,6 +939,7 @@ async function handleOCPP16Message(
       const pendingSessionForTx = findPendingOcpp(ocppIdentity, payload.connectorId);
       const txChargeMode = pendingSessionForTx?.session?.chargeMode || "full_charge";
       const txTargetValue = pendingSessionForTx?.session?.targetValue || 0;
+      const txPricePerKwh = pendingSessionForTx?.session?.pricePerKwh || (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
       
       const newTxId = await db.createTransaction({
         evseId: evse.id,
@@ -952,6 +953,7 @@ async function handleOCPP16Message(
         meterStart: String(payload.meterStart),
         chargeMode: txChargeMode,
         targetValue: String(txTargetValue),
+        appliedPricePerKwh: String(txPricePerKwh),
       });
       console.log(`[OCPP] StartTransaction - Created tx: dbId=${newTxId}, ocppNumericTxId=${transactionIdCounter}, internalId=${internalTransactionId}`);
       
@@ -963,10 +965,8 @@ async function handleOCPP16Message(
         try {
           const station = await db.getChargingStationById(resolvedStId);
           const stationName = station?.name || "Estación";
-          // Usar precio efectivo dinámico en vez del precio base de la tarifa
-          const effectivePrice = await db.getEffectiveStationPrice(resolvedStId);
-          const effectivePricePerKwh = effectivePrice.pricePerKwh;
-          const formattedPrice = Math.round(effectivePricePerKwh).toLocaleString("es-CO");
+          // Usar precio dinámico de la transacción (ya calculado al iniciar)
+          const formattedPrice = Math.round(txPricePerKwh).toLocaleString("es-CO");
           await db.createNotification({
             userId: userId,
             title: "Carga iniciada",
@@ -1065,7 +1065,10 @@ async function handleOCPP16Message(
       const meterStart = transaction.meterStart ? parseFloat(transaction.meterStart) : 0;
       const energyDelivered = (payload.meterStop - meterStart) / 1000;
       const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
-      const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+      // Priorizar precio dinámico guardado en la transacción
+      const pricePerKwh = (transaction as any).appliedPricePerKwh 
+        ? parseFloat(String((transaction as any).appliedPricePerKwh))
+        : (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
       const energyCost = energyDelivered * pricePerKwh;
       
       // Calcular duración y costos adicionales
@@ -1364,7 +1367,10 @@ async function handleOCPP16Message(
               console.log(`[OCPP] MeterValues - Auto-creating active session for transaction ${transaction.id}`);
               const tariffData = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
               const effectivePrice = stationId ? await db.getEffectiveStationPrice(stationId) : null;
-              const sessionPricePerKwh = effectivePrice?.pricePerKwh || (tariffData ? parseFloat(tariffData.pricePerKwh) : 1800);
+              // Priorizar precio dinámico guardado en la transacción
+              const sessionPricePerKwh = (transaction as any).appliedPricePerKwh 
+                ? parseFloat(String((transaction as any).appliedPricePerKwh))
+                : (effectivePrice?.pricePerKwh || (tariffData ? parseFloat(tariffData.pricePerKwh) : 1800));
               
               // Intentar precargar datos del vehículo del usuario para manualSoc
               let autoManualSoc: number | null = null;
@@ -1414,7 +1420,10 @@ async function handleOCPP16Message(
           
           // Calcular costo parcial (energía + tiempo + sesión)
           const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
-          const pricePerKwh = tariff ? parseFloat(tariff.pricePerKwh) : 1800;
+          // Priorizar precio dinámico guardado en la transacción
+          const pricePerKwh = (transaction as any).appliedPricePerKwh 
+            ? parseFloat(String((transaction as any).appliedPricePerKwh))
+            : (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
           const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
           const sessionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : 0;
           
@@ -1472,7 +1481,10 @@ async function handleOCPP16Message(
             console.log(`[OCPP] MeterValues - Session not found for txId=${transaction.id}, creating now`);
             const tariffData = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
             const effectivePrice = stationId ? await db.getEffectiveStationPrice(stationId) : null;
-            const sessionPricePerKwh = effectivePrice?.pricePerKwh || (tariffData ? parseFloat(tariffData.pricePerKwh) : 1800);
+            // Priorizar precio dinámico guardado en la transacción
+            const sessionPricePerKwh = (transaction as any).appliedPricePerKwh 
+              ? parseFloat(String((transaction as any).appliedPricePerKwh))
+              : (effectivePrice?.pricePerKwh || (tariffData ? parseFloat(tariffData.pricePerKwh) : 1800));
             
             // Intentar precargar datos del vehículo del usuario
             let autoManualSoc2: number | null = null;

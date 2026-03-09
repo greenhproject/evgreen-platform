@@ -49,6 +49,7 @@ const pendingChargeSessions = new Map<string, {
   chargeMode: ChargeMode;
   targetValue: number; // $ para fixed_amount, % para percentage, 100 para full_charge
   estimatedCost: number;
+  pricePerKwh: number; // Precio dinámico calculado al momento de iniciar la carga
   createdAt: Date;
   ocppIdentity: string;
 }>();
@@ -570,6 +571,7 @@ export const chargingRouter = router({
           chargeMode,
           targetValue,
           estimatedCost,
+          pricePerKwh,
           createdAt: new Date(),
           ocppIdentity: ocppIdentityForCommand,
         });
@@ -888,7 +890,9 @@ export const chargingRouter = router({
               currentKwh: lastCompleted.kwhConsumed ? parseFloat(lastCompleted.kwhConsumed) : 0,
               estimatedKwh: lastCompleted.kwhConsumed ? parseFloat(lastCompleted.kwhConsumed) : 0,
               currentCost: lastCompleted.totalCost ? parseFloat(lastCompleted.totalCost) : 0,
-              pricePerKwh: (await db.getEffectiveStationPrice(lastCompleted.stationId)).pricePerKwh,
+              pricePerKwh: lastCompleted.appliedPricePerKwh 
+                ? parseFloat(String(lastCompleted.appliedPricePerKwh)) 
+                : (await db.getEffectiveStationPrice(lastCompleted.stationId)).pricePerKwh,
               powerKw: 7,
               currentPower: 0,
               status: "COMPLETED",
@@ -924,7 +928,10 @@ export const chargingRouter = router({
       
       // Obtener tarifa para calcular costos
       const effectivePriceData = await db.getEffectiveStationPrice(activeTransaction.stationId);
-      let pricePerKwh = effectivePriceData.pricePerKwh;
+      // Prioridad: 1) precio dinámico guardado en la transacción, 2) precio base de la estación
+      let pricePerKwh = activeTransaction.appliedPricePerKwh 
+        ? parseFloat(String(activeTransaction.appliedPricePerKwh)) 
+        : effectivePriceData.pricePerKwh;
       const connectionFee = effectivePriceData.connectionFee || 0;
       
       // Priorizar datos en memoria (actualizados por MeterValues en tiempo real)
@@ -965,7 +972,8 @@ export const chargingRouter = router({
         // Calcular costo: energía + tiempo + tarifa de conexión
         const durationMinutes = (Date.now() - startTime.getTime()) / (1000 * 60);
         const tariff = activeTransaction.tariffId ? await db.getTariffById(activeTransaction.tariffId) : null;
-        if (tariff?.pricePerKwh) pricePerKwh = parseFloat(tariff.pricePerKwh);
+        // Solo usar tarifa base si no hay precio dinámico guardado en la transacción
+        if (!activeTransaction.appliedPricePerKwh && tariff?.pricePerKwh) pricePerKwh = parseFloat(tariff.pricePerKwh);
         const pricePerMinute = tariff ? parseFloat(tariff.pricePerMinute || "0") : 0;
         const sessionFee = tariff ? parseFloat(tariff.pricePerSession || "0") : connectionFee;
         
