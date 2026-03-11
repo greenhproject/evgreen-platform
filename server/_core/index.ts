@@ -48,14 +48,12 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   
-  // CRÍTICO: Configurar timeouts del servidor HTTP para conexiones WebSocket OCPP de larga duración
-  // El timeout por defecto de Node.js HTTP es 0 (sin timeout), pero los proxies intermedios
-  // (como el proxy de Manus) pueden tener timeouts de ~120-180 segundos.
-  // Configuramos el servidor para mantener las conexiones vivas el mayor tiempo posible.
-  server.timeout = 0; // Sin timeout para el servidor HTTP (permite WebSocket de larga duración)
-  server.keepAliveTimeout = 0; // Sin timeout de keep-alive
-  server.headersTimeout = 0; // Sin timeout de headers
-  server.requestTimeout = 0; // Sin timeout de request (Node 18+)
+  // HTTP timeouts: valores razonables para requests HTTP normales.
+  // WebSocket connections se manejan por separado vía upgrade handler con TCP keepalive.
+  server.timeout = 120_000; // 2 min para requests HTTP normales
+  server.keepAliveTimeout = 65_000; // 65s (sobre proxy timeout de 60s)
+  server.headersTimeout = 30_000; // 30s para recibir headers
+  server.requestTimeout = 60_000; // 60s para completar request
   
   // ============================================
   // SECURITY HEADERS - Aplicar a todas las respuestas
@@ -130,6 +128,39 @@ async function startServer() {
       createContext,
     })
   );
+  // ============================================
+  // HEALTH CHECK ENDPOINT - Monitoreo de estado del servidor
+  // ============================================
+  app.get("/api/health", async (_req, res) => {
+    try {
+      const { getPoolStats } = await import("../db");
+      const poolStats = getPoolStats();
+      let dbOk = false;
+      try {
+        const { getDb } = await import("../db");
+        const db = await getDb();
+        if (db) {
+          await (db as any).execute('SELECT 1');
+          dbOk = true;
+        }
+      } catch { dbOk = false; }
+      const mem = process.memoryUsage();
+      res.json({
+        status: dbOk ? 'healthy' : 'degraded',
+        uptime: Math.floor(process.uptime()),
+        database: { connected: dbOk, pool: poolStats },
+        memory: {
+          rss: Math.round(mem.rss / 1024 / 1024) + 'MB',
+          heapUsed: Math.round(mem.heapUsed / 1024 / 1024) + 'MB',
+          heapTotal: Math.round(mem.heapTotal / 1024 / 1024) + 'MB',
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      res.status(500).json({ status: 'error', error: error.message });
+    }
+  });
+
   // Endpoint de verificación OCPP (HTTP) - bajo /api/ para que funcione en producción
   app.get("/api/ocpp/status", (req, res) => {
     const host = req.headers.host || "localhost:3000";

@@ -1,5 +1,6 @@
 import { eq, and, desc, gte, lte, lt, gt, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2";
 import {
   InsertUser,
   users,
@@ -82,17 +83,148 @@ import {
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: mysql.Pool | null = null;
+let _dbInitPromise: Promise<ReturnType<typeof drizzle> | null> | null = null;
 
-export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+/**
+ * Create a resilient MySQL connection pool with:
+ * - Connection pooling (max 10 connections)
+ * - Automatic reconnection on ECONNRESET
+ * - TCP keepalive to detect dead connections
+ * - Configurable timeouts
+ */
+function createPool(): mysql.Pool {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error("DATABASE_URL not set");
+
+  const url = new URL(dbUrl);
+  const sslParam = url.searchParams.get('ssl');
+  let sslConfig: any = undefined;
+  if (sslParam) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
+      const parsed = JSON.parse(sslParam);
+      sslConfig = parsed.rejectUnauthorized !== undefined ? parsed : { rejectUnauthorized: true };
+    } catch {
+      sslConfig = { rejectUnauthorized: true };
     }
   }
-  return _db;
+  url.searchParams.delete('ssl');
+
+  const pool = mysql.createPool({
+    host: url.hostname,
+    port: parseInt(url.port) || 4000,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.slice(1),
+    ssl: sslConfig,
+    connectionLimit: 10,
+    maxIdle: 5,
+    idleTimeout: 60000,
+    waitForConnections: true,
+    queueLimit: 50,
+    connectTimeout: 10000,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 30000,
+  });
+
+  pool.on('connection', () => {
+    console.log('[Database] New pool connection created');
+  });
+
+  pool.on('error', (err: any) => {
+    console.error('[Database] Pool error:', err.code || err.message);
+    if (err.code === 'ECONNRESET' || err.code === 'PROTOCOL_CONNECTION_LOST') {
+      console.log('[Database] Connection lost, pool will auto-reconnect on next query');
+    }
+  });
+
+  return pool;
+}
+
+/** Get the database instance with resilient connection pool. */
+export async function getDb() {
+  if (_db) return _db;
+  if (_dbInitPromise) return _dbInitPromise;
+
+  _dbInitPromise = (async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn('[Database] DATABASE_URL not set');
+      return null;
+    }
+    try {
+      _pool = createPool();
+      _db = drizzle(_pool);
+      // Verify connection works
+      const promisePool = _pool.promise();
+      const conn = await promisePool.getConnection();
+      await conn.ping();
+      conn.release();
+      console.log('[Database] Pool initialized successfully');
+      return _db;
+    } catch (error: any) {
+      console.error('[Database] Failed to initialize pool:', error.message);
+      _db = null;
+      _pool = null;
+      _dbInitPromise = null;
+      return null;
+    }
+  })();
+
+  const result = await _dbInitPromise;
+  _dbInitPromise = null;
+  return result;
+}
+
+/**
+ * Execute a database operation with automatic retry on transient errors.
+ * Retries up to 3 times with exponential backoff for ECONNRESET, ETIMEDOUT, etc.
+ */
+export async function withRetry<T>(
+  operation: () => Promise<T>,
+  context: string = 'unknown',
+  maxRetries: number = 3
+): Promise<T> {
+  let lastError: any;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      const code = error?.cause?.code || error?.code || '';
+      const isTransient = [
+        'ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPIPE',
+        'PROTOCOL_CONNECTION_LOST', 'ER_CON_COUNT_ERROR'
+      ].includes(code);
+
+      if (isTransient && attempt < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        console.warn(`[Database] Transient error in ${context} (attempt ${attempt}/${maxRetries}): ${code}. Retrying in ${delay}ms...`);
+        if (code === 'ECONNRESET' || code === 'PROTOCOL_CONNECTION_LOST') {
+          try { if (_pool) _pool.end(() => {}); } catch {}
+          _db = null;
+          _pool = null;
+          _dbInitPromise = null;
+        }
+        await new Promise(resolve => setTimeout(resolve, delay));
+        await getDb();
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
+/** Get pool health statistics for monitoring */
+export function getPoolStats() {
+  if (!_pool) return { status: 'not_initialized' };
+  const p = _pool as any;
+  return {
+    status: 'active',
+    totalConnections: p._allConnections?.length || 0,
+    freeConnections: p._freeConnections?.length || 0,
+    queuedRequests: p._connectionQueue?.length || 0,
+  };
 }
 
 // ============================================================================
