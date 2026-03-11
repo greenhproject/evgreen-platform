@@ -1321,12 +1321,14 @@ export class DualCSMS {
     }
 
     // Enviar notificación push FCM
+    let userForEmail: any = null;
+    let stationForEmail: any = null;
     try {
-      const user = await db.getUserById(transaction.userId);
-      if (user?.fcmToken) {
-        const station = conn.stationId ? await db.getChargingStationById(conn.stationId) : null;
-        await sendChargingCompleteNotification(user.fcmToken, {
-          stationName: station?.name || "Estación EVGreen",
+      userForEmail = await db.getUserById(transaction.userId);
+      stationForEmail = conn.stationId ? await db.getChargingStationById(conn.stationId) : null;
+      if (userForEmail?.fcmToken) {
+        await sendChargingCompleteNotification(userForEmail.fcmToken, {
+          stationName: stationForEmail?.name || "Estación EVGreen",
           energyDelivered,
           totalCost: Math.round(totalCost),
           duration,
@@ -1335,6 +1337,39 @@ export class DualCSMS {
       }
     } catch (pushError) {
       console.error(`[CSMS-DUAL] Error sending push notification:`, pushError);
+    }
+
+    // Enviar recibo por email
+    try {
+      if (userForEmail?.email) {
+        const { sendChargingReceiptEmail } = await import("../email/receipt-email");
+        await sendChargingReceiptEmail({
+          transactionId: transaction.id,
+          userName: userForEmail.name || "Cliente",
+          userEmail: userForEmail.email,
+          userDocumentType: userForEmail.documentType || null,
+          userDocumentNumber: userForEmail.documentNumber || null,
+          stationName: stationForEmail?.name || "Estación EVGreen",
+          stationAddress: stationForEmail?.address || "",
+          stationCity: stationForEmail?.city || "Colombia",
+          startTime: startTime,
+          endTime: endTime,
+          kwhConsumed: energyDelivered,
+          appliedPricePerKwh: pricePerKwh,
+          energyCost,
+          timeCost,
+          sessionCost: connectionFee,
+          overstayCost: 0, // Se calcula después en overstay checker
+          totalCost,
+          chargeMode: activeSession?.chargeMode || transaction.chargeMode || "full_charge",
+          startMethod: transaction.startMethod || "APP",
+          stopReason: req.reason || "Unknown",
+          durationMinutes: durationMinutes,
+        });
+        console.log(`[CSMS-DUAL] Receipt email sent to ${userForEmail.email} for tx=${transaction.id}`);
+      }
+    } catch (emailError) {
+      console.error(`[CSMS-DUAL] Error sending receipt email:`, emailError);
     }
 
     // =========================================================================

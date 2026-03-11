@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, User, Mail, Phone, MapPin, Calendar, Camera, Loader2, Check, CreditCard, Copy } from "lucide-react";
+import { ArrowLeft, User, Mail, Phone, MapPin, Calendar, Camera, Loader2, Check, CreditCard, Copy, FileText } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -23,6 +23,8 @@ export default function PersonalInfo() {
     address: "",
     city: "",
     birthDate: "",
+    documentType: "" as string,
+    documentNumber: "",
   });
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -39,6 +41,8 @@ export default function PersonalInfo() {
         address: (user as any).address || "",
         city: (user as any).city || "",
         birthDate: (user as any).birthDate || "",
+        documentType: (user as any).documentType || "",
+        documentNumber: (user as any).documentNumber || "",
       });
       if ((user as any).avatarUrl) {
         setAvatarPreview((user as any).avatarUrl);
@@ -78,9 +82,17 @@ export default function PersonalInfo() {
     setHasChanges(true);
   }, []);
 
+  const handleSelectChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    setHasChanges(true);
+  }, []);
+
   const handleSave = () => {
     const { email, ...profileData } = formData;
-    updateProfileMutation.mutate(profileData);
+    const payload: any = { ...profileData };
+    // Only send documentType if it's a valid value
+    if (!payload.documentType) delete payload.documentType;
+    updateProfileMutation.mutate(payload);
   };
 
   const handleAvatarClick = () => {
@@ -279,6 +291,53 @@ export default function PersonalInfo() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Importante para recibir promociones de cumpleaños
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Documento de Identidad */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                Documento de Identidad
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="documentType">Tipo de documento</Label>
+                <select
+                  id="documentType"
+                  name="documentType"
+                  value={formData.documentType}
+                  onChange={handleSelectChange}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="">Seleccionar tipo...</option>
+                  <option value="CC">Cédula de Ciudadanía (CC)</option>
+                  <option value="NIT">NIT</option>
+                  <option value="CE">Cédula de Extranjería (CE)</option>
+                  <option value="PASAPORTE">Pasaporte</option>
+                  <option value="TI">Tarjeta de Identidad (TI)</option>
+                  <option value="PEP">PEP</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="documentNumber">Número de documento</Label>
+                <div className="relative">
+                  <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="documentNumber"
+                    name="documentNumber"
+                    value={formData.documentNumber}
+                    onChange={handleChange}
+                    placeholder="Ej: 1.234.567.890"
+                    className="pl-10"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Requerido para la emisión de facturas electrónicas
                 </p>
               </div>
             </CardContent>

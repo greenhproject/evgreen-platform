@@ -73,6 +73,9 @@ export const users = mysqlTable("users", {
   // Para inversionistas - información adicional
   companyName: varchar("companyName", { length: 255 }),
   taxId: varchar("taxId", { length: 50 }), // NIT en Colombia
+  // Documento de identidad del usuario (para facturación electrónica)
+  documentType: mysqlEnum("document_type", ["CC", "NIT", "CE", "PASAPORTE", "TI", "PEP"]),
+  documentNumber: varchar("documentNumber", { length: 50 }),
   bankAccount: varchar("bankAccount", { length: 100 }),
   bankName: varchar("bankName", { length: 100 }),
   // Tipo de inversionista y perfil público
