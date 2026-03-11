@@ -1372,6 +1372,66 @@ export class DualCSMS {
       console.error(`[CSMS-DUAL] Error sending receipt email:`, emailError);
     }
 
+    // Emitir factura electrónica via Alegra (si está configurado)
+    try {
+      const settings = await db.getPlatformSettings();
+      if (settings?.alegraEnabled && settings?.alegraEmail && settings?.alegraToken) {
+        const { createChargingInvoice } = await import("../alegra/invoice-builder");
+        const invoiceResult = await createChargingInvoice(
+          {
+            credentials: { email: settings.alegraEmail, token: settings.alegraToken },
+            defaultItemId: settings.alegraDefaultItemId || undefined,
+            defaultTaxId: settings.alegraDefaultTaxId || undefined,
+            autoInvoice: settings.alegraAutoInvoice ?? true,
+            paymentMethodId: settings.alegraPaymentMethodId || undefined,
+            paymentAccountId: settings.alegraPaymentAccountId || undefined,
+          },
+          {
+            transactionId: transaction.id,
+            userName: userForEmail?.name || "Cliente",
+            userEmail: userForEmail?.email || "",
+            userPhone: userForEmail?.phone || undefined,
+            userDocumentType: userForEmail?.documentType || undefined,
+            userDocumentNumber: userForEmail?.documentNumber || undefined,
+            userFiscalAddress: userForEmail?.fiscalAddress || undefined,
+            userFiscalCity: userForEmail?.fiscalCity || undefined,
+            userFiscalDepartment: userForEmail?.fiscalDepartment || undefined,
+            userKindOfPerson: userForEmail?.kindOfPerson || undefined,
+            userRegime: userForEmail?.regime || undefined,
+            userAlegraContactId: userForEmail?.alegraContactId || undefined,
+            energyDelivered,
+            appliedPricePerKwh: pricePerKwh,
+            energyCost,
+            timeCost,
+            sessionCost: connectionFee,
+            overstayCost: 0,
+            totalAmount: Math.round(totalCost),
+            stationName: stationForEmail?.name || "Estación EVGreen",
+            stationAddress: stationForEmail?.address || "",
+            stationCity: stationForEmail?.city || "Colombia",
+            connectorType: transaction.connectorType || undefined,
+            chargeType: transaction.chargeType || undefined,
+            startTime,
+            endTime,
+            durationMinutes,
+          }
+        );
+        if (invoiceResult.success) {
+          console.log(`[CSMS-DUAL] Alegra invoice created: ${invoiceResult.invoiceNumber} for tx=${transaction.id}`);
+          // Update user's Alegra contact ID if it was created/updated
+          if (invoiceResult.alegraContactId && userForEmail?.id) {
+            try {
+              await db.updateUser(userForEmail.id, { alegraContactId: invoiceResult.alegraContactId });
+            } catch (e) { /* ignore */ }
+          }
+        } else {
+          console.warn(`[CSMS-DUAL] Alegra invoice failed for tx=${transaction.id}: ${invoiceResult.error}`);
+        }
+      }
+    } catch (alegraError) {
+      console.error(`[CSMS-DUAL] Error creating Alegra invoice:`, alegraError);
+    }
+
     // =========================================================================
     // REGISTRO DE PRECISIÓN DE SOC
     // =========================================================================

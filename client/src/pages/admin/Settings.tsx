@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw, CalendarDays, MapPin, Phone, Mail, Navigation, ExternalLink } from "lucide-react";
+import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw, CalendarDays, MapPin, Phone, Mail, Navigation, ExternalLink, FileText, CheckCircle, XCircle, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
@@ -84,6 +84,40 @@ export default function AdminSettings() {
     precioVentaDefault: 1800,
     precioVentaMin: 1400,
     precioVentaMax: 2200,
+  });
+
+  const [alegraForm, setAlegraForm] = useState({
+    alegraEmail: "",
+    alegraToken: "",
+    alegraEnabled: false,
+    alegraTestMode: true,
+    alegraDefaultItemId: "",
+    alegraDefaultTaxId: "",
+    alegraAutoInvoice: true,
+    alegraPaymentMethodId: "",
+    alegraPaymentAccountId: "",
+    alegraResolutionNumber: "",
+  });
+  const [alegraTokenTouched, setAlegraTokenTouched] = useState(false);
+  const [alegraTokenSaved, setAlegraTokenSaved] = useState(false);
+  const [alegraConnectionStatus, setAlegraConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [alegraCompanyName, setAlegraCompanyName] = useState("");
+
+  const alegraTestMutation = trpc.settings.alegraTestConnection.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        setAlegraConnectionStatus("success");
+        setAlegraCompanyName(data.companyName || "");
+        toast.success(`Conexi\u00f3n exitosa con Alegra: ${data.companyName}`);
+      } else {
+        setAlegraConnectionStatus("error");
+        toast.error(`Error de conexi\u00f3n: ${data.error}`);
+      }
+    },
+    onError: (err) => {
+      setAlegraConnectionStatus("error");
+      toast.error(`Error: ${err.message}`);
+    },
   });
 
   const [eventForm, setEventForm] = useState({
@@ -168,6 +202,21 @@ export default function AdminSettings() {
         precioVentaMax: settings.precioVentaMax ?? 2200,
       });
 
+      setAlegraForm({
+        alegraEmail: settings.alegraEmail || "",
+        alegraToken: "",
+        alegraEnabled: settings.alegraEnabled ?? false,
+        alegraTestMode: settings.alegraTestMode ?? true,
+        alegraDefaultItemId: settings.alegraDefaultItemId || "",
+        alegraDefaultTaxId: settings.alegraDefaultTaxId || "",
+        alegraAutoInvoice: settings.alegraAutoInvoice ?? true,
+        alegraPaymentMethodId: settings.alegraPaymentMethodId || "",
+        alegraPaymentAccountId: settings.alegraPaymentAccountId || "",
+        alegraResolutionNumber: settings.alegraResolutionNumber || "",
+      });
+      setAlegraTokenSaved(!!settings.alegraToken);
+      setAlegraTokenTouched(false);
+
       setEventForm({
         eventName: settings.eventName || "Gran Lanzamiento Red de Carga EVGreen",
         eventDate: settings.eventDate || "Por confirmar",
@@ -231,6 +280,43 @@ export default function AdminSettings() {
     updateMutation.mutate(eventForm);
   };
 
+  const handleSaveAlegra = () => {
+    const payload: any = {
+      alegraEmail: alegraForm.alegraEmail,
+      alegraEnabled: alegraForm.alegraEnabled,
+      alegraTestMode: alegraForm.alegraTestMode,
+      alegraDefaultItemId: alegraForm.alegraDefaultItemId,
+      alegraDefaultTaxId: alegraForm.alegraDefaultTaxId,
+      alegraAutoInvoice: alegraForm.alegraAutoInvoice,
+      alegraPaymentMethodId: alegraForm.alegraPaymentMethodId,
+      alegraPaymentAccountId: alegraForm.alegraPaymentAccountId,
+      alegraResolutionNumber: alegraForm.alegraResolutionNumber,
+    };
+    if (alegraTokenTouched && alegraForm.alegraToken) {
+      payload.alegraToken = alegraForm.alegraToken;
+    }
+    updateMutation.mutate(payload);
+  };
+
+  const handleTestAlegraConnection = () => {
+    const email = alegraForm.alegraEmail;
+    const token = alegraTokenTouched ? alegraForm.alegraToken : "";
+    if (!email) {
+      toast.error("Ingresa el email de Alegra");
+      return;
+    }
+    if (!token && !alegraTokenSaved) {
+      toast.error("Ingresa el token de Alegra");
+      return;
+    }
+    if (!token && alegraTokenSaved) {
+      toast.info("Para probar la conexi\u00f3n, ingresa el token nuevamente");
+      return;
+    }
+    setAlegraConnectionStatus("testing");
+    alegraTestMutation.mutate({ email, token });
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
@@ -273,6 +359,10 @@ export default function AdminSettings() {
           <TabsTrigger value="event">
             <CalendarDays className="w-4 h-4 mr-2" />
             Evento
+          </TabsTrigger>
+          <TabsTrigger value="alegra">
+            <FileText className="w-4 h-4 mr-2" />
+            Facturación
           </TabsTrigger>
         </TabsList>
 
@@ -1066,6 +1156,173 @@ export default function AdminSettings() {
                 </>
               ) : (
                 "Guardar configuración del evento"
+              )}
+            </Button>
+          </Card>
+        </TabsContent>
+
+        {/* Alegra - Facturación Electrónica */}
+        <TabsContent value="alegra">
+          <Card className="p-6 space-y-6">
+            <div>
+              <h3 className="font-semibold mb-1 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary" />
+                Facturación Electrónica - Alegra
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Configura la integración con Alegra para emitir facturas electrónicas DIAN automáticamente al completar cada carga.
+              </p>
+            </div>
+
+            {/* Habilitar/Deshabilitar */}
+            <div className="flex items-center justify-between p-4 rounded-lg border border-border">
+              <div>
+                <Label className="text-base">Facturación automática</Label>
+                <p className="text-sm text-muted-foreground">Emitir factura electrónica al completar cada carga</p>
+              </div>
+              <Switch
+                checked={alegraForm.alegraEnabled}
+                onCheckedChange={(checked) => setAlegraForm(prev => ({ ...prev, alegraEnabled: checked }))}
+              />
+            </div>
+
+            {/* Credenciales */}
+            <div className="space-y-4">
+              <h4 className="font-medium">Credenciales de Alegra</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Email de Alegra</Label>
+                  <Input
+                    type="email"
+                    value={alegraForm.alegraEmail}
+                    onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraEmail: e.target.value }))}
+                    placeholder="tu-email@empresa.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Token API</Label>
+                  <Input
+                    type="password"
+                    value={alegraForm.alegraToken}
+                    onChange={(e) => {
+                      setAlegraForm(prev => ({ ...prev, alegraToken: e.target.value }));
+                      setAlegraTokenTouched(true);
+                    }}
+                    placeholder={alegraTokenSaved ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (guardado)" : "Token de API de Alegra"}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Obt\u00e9nlo en Alegra &gt; Configuraci\u00f3n &gt; Integraciones &gt; API
+                  </p>
+                </div>
+              </div>
+
+              {/* Test connection */}
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestAlegraConnection}
+                  disabled={alegraTestMutation.isPending}
+                >
+                  {alegraTestMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Probando...</>
+                  ) : (
+                    <><Zap className="w-4 h-4 mr-2" />Probar conexi\u00f3n</>
+                  )}
+                </Button>
+                {alegraConnectionStatus === "success" && (
+                  <span className="flex items-center gap-1 text-sm text-green-500">
+                    <CheckCircle className="w-4 h-4" />
+                    Conectado: {alegraCompanyName}
+                  </span>
+                )}
+                {alegraConnectionStatus === "error" && (
+                  <span className="flex items-center gap-1 text-sm text-red-500">
+                    <XCircle className="w-4 h-4" />
+                    Error de conexi\u00f3n
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Configuraci\u00f3n avanzada */}
+            <div className="space-y-4">
+              <h4 className="font-medium">Configuraci\u00f3n de facturaci\u00f3n</h4>
+              
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Emisi\u00f3n autom\u00e1tica</Label>
+                  <p className="text-xs text-muted-foreground">Crear factura autom\u00e1ticamente al completar carga</p>
+                </div>
+                <Switch
+                  checked={alegraForm.alegraAutoInvoice}
+                  onCheckedChange={(checked) => setAlegraForm(prev => ({ ...prev, alegraAutoInvoice: checked }))}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>N\u00famero de resoluci\u00f3n DIAN</Label>
+                  <Input
+                    value={alegraForm.alegraResolutionNumber}
+                    onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraResolutionNumber: e.target.value }))}
+                    placeholder="Ej: 18764002345678"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>ID \u00cdtem por defecto (Alegra)</Label>
+                  <Input
+                    value={alegraForm.alegraDefaultItemId}
+                    onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraDefaultItemId: e.target.value }))}
+                    placeholder="ID del servicio de carga en Alegra"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Crea un servicio \"Carga de VE\" en Alegra y copia su ID aqu\u00ed
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>ID Impuesto (Alegra)</Label>
+                  <Input
+                    value={alegraForm.alegraDefaultTaxId}
+                    onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraDefaultTaxId: e.target.value }))}
+                    placeholder="ID del impuesto (0 para excluido)"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Energ\u00eda para VE est\u00e1 excluida de IVA (Concepto DIAN 840)
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>ID M\u00e9todo de pago (Alegra)</Label>
+                  <Input
+                    value={alegraForm.alegraPaymentMethodId}
+                    onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraPaymentMethodId: e.target.value }))}
+                    placeholder="ID del m\u00e9todo de pago"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>ID Cuenta bancaria (Alegra)</Label>
+                <Input
+                  value={alegraForm.alegraPaymentAccountId}
+                  onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraPaymentAccountId: e.target.value }))}
+                  placeholder="ID de la cuenta bancaria para registrar pagos"
+                />
+              </div>
+            </div>
+
+            <Button
+              onClick={handleSaveAlegra}
+              disabled={updateMutation.isPending}
+              className="w-full"
+            >
+              {updateMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Guardando...</>
+              ) : (
+                "Guardar configuraci\u00f3n de facturaci\u00f3n"
               )}
             </Button>
           </Card>

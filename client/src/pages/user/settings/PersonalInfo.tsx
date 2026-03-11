@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, User, Mail, Phone, MapPin, Calendar, Camera, Loader2, Check, CreditCard, Copy, FileText } from "lucide-react";
+import { ArrowLeft, User, Mail, Phone, MapPin, Calendar, Camera, Loader2, Check, CreditCard, Copy, FileText, Building2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -25,6 +25,11 @@ export default function PersonalInfo() {
     birthDate: "",
     documentType: "" as string,
     documentNumber: "",
+    fiscalAddress: "",
+    fiscalCity: "",
+    fiscalDepartment: "",
+    kindOfPerson: "" as string,
+    regime: "" as string,
   });
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -43,6 +48,11 @@ export default function PersonalInfo() {
         birthDate: (user as any).birthDate || "",
         documentType: (user as any).documentType || "",
         documentNumber: (user as any).documentNumber || "",
+        fiscalAddress: (user as any).fiscalAddress || "",
+        fiscalCity: (user as any).fiscalCity || "",
+        fiscalDepartment: (user as any).fiscalDepartment || "",
+        kindOfPerson: (user as any).kindOfPerson || "",
+        regime: (user as any).regime || "",
       });
       if ((user as any).avatarUrl) {
         setAvatarPreview((user as any).avatarUrl);
@@ -90,8 +100,10 @@ export default function PersonalInfo() {
   const handleSave = () => {
     const { email, ...profileData } = formData;
     const payload: any = { ...profileData };
-    // Only send documentType if it's a valid value
+    // Only send enum fields if they have valid values
     if (!payload.documentType) delete payload.documentType;
+    if (!payload.kindOfPerson) delete payload.kindOfPerson;
+    if (!payload.regime) delete payload.regime;
     updateProfileMutation.mutate(payload);
   };
 
@@ -416,6 +428,82 @@ export default function PersonalInfo() {
                   onChange={handleChange}
                   placeholder="Tu ciudad"
                 />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Datos Fiscales (para facturación electrónica) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Building2 className="w-4 h-4" />
+                Datos Fiscales
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-muted-foreground -mt-2">
+                Requeridos para la emisión de factura electrónica DIAN
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="kindOfPerson">Tipo de persona</Label>
+                <select
+                  id="kindOfPerson"
+                  name="kindOfPerson"
+                  value={formData.kindOfPerson}
+                  onChange={handleSelectChange}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="">Seleccionar...</option>
+                  <option value="PERSON_ENTITY">Persona Natural</option>
+                  <option value="LEGAL_ENTITY">Persona Jurídica</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="regime">Régimen tributario</Label>
+                <select
+                  id="regime"
+                  name="regime"
+                  value={formData.regime}
+                  onChange={handleSelectChange}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="">Seleccionar...</option>
+                  <option value="SIMPLIFIED_REGIME">Régimen Simplificado</option>
+                  <option value="COMMON_REGIME">Régimen Común</option>
+                  <option value="NOT_RESPONSIBLE_FOR_IVA">No Responsable de IVA</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="fiscalAddress">Dirección fiscal</Label>
+                <Input
+                  id="fiscalAddress"
+                  name="fiscalAddress"
+                  value={formData.fiscalAddress}
+                  onChange={handleChange}
+                  placeholder="Dirección para facturación"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="fiscalCity">Ciudad</Label>
+                  <Input
+                    id="fiscalCity"
+                    name="fiscalCity"
+                    value={formData.fiscalCity}
+                    onChange={handleChange}
+                    placeholder="Ciudad"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fiscalDepartment">Departamento</Label>
+                  <Input
+                    id="fiscalDepartment"
+                    name="fiscalDepartment"
+                    value={formData.fiscalDepartment}
+                    onChange={handleChange}
+                    placeholder="Departamento"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

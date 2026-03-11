@@ -76,6 +76,13 @@ export const users = mysqlTable("users", {
   // Documento de identidad del usuario (para facturación electrónica)
   documentType: mysqlEnum("document_type", ["CC", "NIT", "CE", "PASAPORTE", "TI", "PEP"]),
   documentNumber: varchar("documentNumber", { length: 50 }),
+  // Campos fiscales para facturación electrónica
+  fiscalAddress: varchar("fiscalAddress", { length: 500 }),
+  fiscalCity: varchar("fiscalCity", { length: 100 }),
+  fiscalDepartment: varchar("fiscalDepartment", { length: 100 }),
+  kindOfPerson: mysqlEnum("kind_of_person", ["PERSON_ENTITY", "LEGAL_ENTITY"]),
+  regime: mysqlEnum("regime", ["SIMPLIFIED_REGIME", "COMMON_REGIME", "NOT_RESPONSIBLE_FOR_IVA"]),
+  alegraContactId: varchar("alegraContactId", { length: 50 }), // ID del contacto en Alegra
   bankAccount: varchar("bankAccount", { length: 100 }),
   bankName: varchar("bankName", { length: 100 }),
   // Tipo de inversionista y perfil público
@@ -1165,6 +1172,20 @@ export const platformSettings = mysqlTable("platform_settings", {
   eventDescription: text("eventDescription"),
   eventMaxGuests: int("eventMaxGuests").default(30),
   eventBgImageUrl: text("eventBgImageUrl"),
+
+  // ============================================================================
+  // Configuración de Alegra (Facturación Electrónica DIAN)
+  // ============================================================================
+  alegraEmail: varchar("alegraEmail", { length: 255 }), // Email de la cuenta Alegra
+  alegraToken: text("alegraToken"), // Token de API de Alegra
+  alegraEnabled: boolean("alegraEnabled").default(false).notNull(),
+  alegraTestMode: boolean("alegraTestMode").default(true).notNull(),
+  alegraDefaultItemId: varchar("alegraDefaultItemId", { length: 50 }), // ID del ítem "Servicio de carga EV" en Alegra
+  alegraDefaultTaxId: varchar("alegraDefaultTaxId", { length: 50 }), // ID del impuesto (IVA excluido)
+  alegraAutoInvoice: boolean("alegraAutoInvoice").default(true).notNull(), // Emitir factura automáticamente al completar carga
+  alegraPaymentMethodId: varchar("alegraPaymentMethodId", { length: 50 }), // ID del medio de pago en Alegra
+  alegraPaymentAccountId: varchar("alegraPaymentAccountId", { length: 50 }), // ID de la cuenta bancaria en Alegra
+  alegraResolutionNumber: varchar("alegraResolutionNumber", { length: 100 }), // Número de resolución DIAN
 
   // Metadata
   updatedBy: int("updatedBy"),

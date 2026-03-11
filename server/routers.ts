@@ -97,6 +97,11 @@ const authRouter = router({
       bankName: z.string().optional(),
       documentType: z.enum(["CC", "NIT", "CE", "PASAPORTE", "TI", "PEP"]).optional(),
       documentNumber: z.string().max(50).optional(),
+      fiscalAddress: z.string().max(500).optional(),
+      fiscalCity: z.string().max(100).optional(),
+      fiscalDepartment: z.string().max(100).optional(),
+      kindOfPerson: z.enum(["PERSON_ENTITY", "LEGAL_ENTITY"]).optional(),
+      regime: z.enum(["SIMPLIFIED_REGIME", "COMMON_REGIME", "NOT_RESPONSIBLE_FOR_IVA"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       await db.updateUser(ctx.user.id, input);
@@ -2558,6 +2563,17 @@ const settingsRouter = router({
         eventDescription: "",
         eventMaxGuests: 30,
         eventBgImageUrl: "",
+        // Alegra
+        alegraEmail: "",
+        alegraToken: "",
+        alegraEnabled: false,
+        alegraTestMode: true,
+        alegraDefaultItemId: "",
+        alegraDefaultTaxId: "",
+        alegraAutoInvoice: true,
+        alegraPaymentMethodId: "",
+        alegraPaymentAccountId: "",
+        alegraResolutionNumber: "",
       };
     }
     // Ocultar claves secretas parcialmente y retornar todos los campos explícitamente
@@ -2611,6 +2627,17 @@ const settingsRouter = router({
       eventDescription: settings.eventDescription || "",
       eventMaxGuests: settings.eventMaxGuests || 30,
       eventBgImageUrl: settings.eventBgImageUrl || "",
+      // Alegra - Facturación Electrónica
+      alegraEmail: settings.alegraEmail || "",
+      alegraToken: settings.alegraToken ? "****" + settings.alegraToken.slice(-4) : "",
+      alegraEnabled: settings.alegraEnabled ?? false,
+      alegraTestMode: settings.alegraTestMode ?? true,
+      alegraDefaultItemId: settings.alegraDefaultItemId || "",
+      alegraDefaultTaxId: settings.alegraDefaultTaxId || "",
+      alegraAutoInvoice: settings.alegraAutoInvoice ?? true,
+      alegraPaymentMethodId: settings.alegraPaymentMethodId || "",
+      alegraPaymentAccountId: settings.alegraPaymentAccountId || "",
+      alegraResolutionNumber: settings.alegraResolutionNumber || "",
     };
   }),
   
@@ -2665,6 +2692,17 @@ const settingsRouter = router({
       eventDescription: z.string().optional(),
       eventMaxGuests: z.number().min(1).optional(),
       eventBgImageUrl: z.string().optional(),
+      // Alegra - Facturación Electrónica
+      alegraEmail: z.string().optional(),
+      alegraToken: z.string().optional(),
+      alegraEnabled: z.boolean().optional(),
+      alegraTestMode: z.boolean().optional(),
+      alegraDefaultItemId: z.string().optional(),
+      alegraDefaultTaxId: z.string().optional(),
+      alegraAutoInvoice: z.boolean().optional(),
+      alegraPaymentMethodId: z.string().optional(),
+      alegraPaymentAccountId: z.string().optional(),
+      alegraResolutionNumber: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Filtrar campos vacíos o con valores de máscara
@@ -2675,10 +2713,82 @@ const settingsRouter = router({
       if (data.wompiIntegritySecret?.startsWith("****")) delete data.wompiIntegritySecret;
       if (data.wompiEventsSecret?.startsWith("****")) delete data.wompiEventsSecret;
       if (data.upmeToken?.startsWith("****")) delete data.upmeToken;
+      if (data.alegraToken?.startsWith("****")) delete data.alegraToken;
       
       await db.upsertPlatformSettings(data);
       return { success: true };
     }),
+
+  // Alegra: Test connection
+  alegraTestConnection: adminProcedure
+    .input(z.object({
+      email: z.string().email(),
+      token: z.string().min(1),
+    }))
+    .mutation(async ({ input }) => {
+      const { testConnection } = await import("./alegra/alegra-service");
+      return testConnection({ email: input.email, token: input.token });
+    }),
+
+  // Alegra: List items (products/services)
+  alegraListItems: adminProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    if (!settings?.alegraEmail || !settings?.alegraToken) {
+      return { items: [], error: "Alegra no configurado" };
+    }
+    try {
+      const { listItems } = await import("./alegra/alegra-service");
+      const items = await listItems({ email: settings.alegraEmail, token: settings.alegraToken });
+      return { items, error: null };
+    } catch (e: any) {
+      return { items: [], error: e.message };
+    }
+  }),
+
+  // Alegra: List taxes
+  alegraListTaxes: adminProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    if (!settings?.alegraEmail || !settings?.alegraToken) {
+      return { taxes: [], error: "Alegra no configurado" };
+    }
+    try {
+      const { listTaxes } = await import("./alegra/alegra-service");
+      const taxes = await listTaxes({ email: settings.alegraEmail, token: settings.alegraToken });
+      return { taxes, error: null };
+    } catch (e: any) {
+      return { taxes: [], error: e.message };
+    }
+  }),
+
+  // Alegra: List payment methods
+  alegraListPaymentMethods: adminProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    if (!settings?.alegraEmail || !settings?.alegraToken) {
+      return { methods: [], error: "Alegra no configurado" };
+    }
+    try {
+      const { listPaymentMethods } = await import("./alegra/alegra-service");
+      const methods = await listPaymentMethods({ email: settings.alegraEmail, token: settings.alegraToken });
+      return { methods, error: null };
+    } catch (e: any) {
+      return { methods: [], error: e.message };
+    }
+  }),
+
+  // Alegra: List bank accounts
+  alegraListBankAccounts: adminProcedure.query(async () => {
+    const settings = await db.getPlatformSettings();
+    if (!settings?.alegraEmail || !settings?.alegraToken) {
+      return { accounts: [], error: "Alegra no configurado" };
+    }
+    try {
+      const { listBankAccounts } = await import("./alegra/alegra-service");
+      const accounts = await listBankAccounts({ email: settings.alegraEmail, token: settings.alegraToken });
+      return { accounts, error: null };
+    } catch (e: any) {
+      return { accounts: [], error: e.message };
+    }
+  }),
 });
 
 // ============================================================================
