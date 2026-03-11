@@ -8,6 +8,7 @@ import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Onboarding, useOnboarding } from "@/components/Onboarding";
+import { LoadingGuard } from "@/components/LoadingGuard";
 
 // Páginas públicas (carga inmediata - landing)
 import Landing from "./pages/Landing";
@@ -153,7 +154,7 @@ function isPWAInstalled(): boolean {
 
 // Componente para redirigir según el rol
 function RoleBasedRedirect() {
-  const { user, isAuthenticated, loading } = useAuth();
+  const { user, isAuthenticated, loading, refresh } = useAuth();
   const [, setLocation] = useLocation();
   
   // Verificar si el usuario tiene una sesión de carga activa
@@ -165,13 +166,13 @@ function RoleBasedRedirect() {
     }
   );
 
+  const isStillLoading = loading || (isAuthenticated && user?.role === "user" && sessionLoading);
+
   useEffect(() => {
     if (loading) return;
-    // Para usuarios, esperar a que se resuelva la consulta de sesión activa
     if (isAuthenticated && user && user.role === "user" && sessionLoading) return;
     
     if (isAuthenticated && user) {
-      // Si es usuario y tiene sesión de carga activa, ir al monitor
       if (user.role === "user" && activeSession && activeSession.transactionId > 0 && activeSession.status !== "COMPLETED") {
         setLocation("/charging-monitor");
         return;
@@ -179,20 +180,27 @@ function RoleBasedRedirect() {
       const targetRoute = getHomeRouteByRole(user.role);
       setLocation(targetRoute);
     } else if (isPWAInstalled()) {
-      // PWA instalada: ir directo al mapa (mostrará login si no está autenticado)
       setLocation('/map');
     }
   }, [isAuthenticated, user, loading, setLocation, activeSession, sessionLoading]);
 
-  if (loading || (isAuthenticated && user?.role === "user" && sessionLoading)) {
-    return <LazySpinner />;
+  if (isStillLoading) {
+    return (
+      <LoadingGuard isLoading={true} timeoutMs={10000} onRetry={() => refresh()}>
+        <div />
+      </LoadingGuard>
+    );
   }
 
   if (!isAuthenticated && !isPWAInstalled()) {
     return <Landing />;
   }
 
-  return <LazySpinner />;
+  return (
+    <LoadingGuard isLoading={true} timeoutMs={10000} onRetry={() => refresh()}>
+      <div />
+    </LoadingGuard>
+  );
 }
 
 // Componente de protección de rutas por rol
@@ -203,11 +211,15 @@ function ProtectedRoute({
   children: React.ReactNode; 
   allowedRoles: string[];
 }) {
-  const { user, isAuthenticated, loading } = useAuth();
+  const { user, isAuthenticated, loading, refresh } = useAuth();
   const [, setLocation] = useLocation();
 
   if (loading) {
-    return <LazySpinner />;
+    return (
+      <LoadingGuard isLoading={true} timeoutMs={10000} onRetry={() => refresh()}>
+        <div />
+      </LoadingGuard>
+    );
   }
 
   if (!isAuthenticated) {
@@ -224,10 +236,14 @@ function ProtectedRoute({
 }
 
 function Router() {
-  const { loading } = useAuth();
+  const { loading, refresh } = useAuth();
 
   if (loading) {
-    return <LazySpinner />;
+    return (
+      <LoadingGuard isLoading={true} timeoutMs={10000} onRetry={() => refresh()}>
+        <div />
+      </LoadingGuard>
+    );
   }
 
   return (
@@ -624,8 +640,10 @@ function Router() {
 
 function App() {
   const { showOnboarding, isLoading: onboardingLoading, completeOnboarding } = useOnboarding();
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading, refresh } = useAuth();
 
+  // Protección principal: si auth tarda más de 10s, mostrar opciones de recuperación
+  const isInitialLoading = authLoading || onboardingLoading;
   const shouldShowOnboarding = !onboardingLoading && !authLoading && isAuthenticated && showOnboarding;
 
   return (
@@ -633,18 +651,24 @@ function App() {
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster position="top-center" richColors />
-          {shouldShowOnboarding ? (
-            <Onboarding onComplete={completeOnboarding} />
-          ) : (
-            <>
-              <Router />
-              <Suspense fallback={null}>
-                <ActiveChargingBanner />
-                <AIChatWidget />
-                <InstallBanner />
-              </Suspense>
-            </>
-          )}
+          <LoadingGuard 
+            isLoading={isInitialLoading} 
+            timeoutMs={10000} 
+            onRetry={() => refresh()}
+          >
+            {shouldShowOnboarding ? (
+              <Onboarding onComplete={completeOnboarding} />
+            ) : (
+              <>
+                <Router />
+                <Suspense fallback={null}>
+                  <ActiveChargingBanner />
+                  <AIChatWidget />
+                  <InstallBanner />
+                </Suspense>
+              </>
+            )}
+          </LoadingGuard>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

@@ -8,7 +8,21 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+// ============================================
+// QueryClient con defaults robustos
+// ============================================
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // No reintentar indefinidamente - máximo 2 reintentos
+      retry: 2,
+      // Timeout de 15 segundos para queries
+      staleTime: 30_000,
+      // No refetch agresivo que pueda causar loops
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
@@ -43,15 +57,25 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       fetch(input, init) {
+        // Agregar AbortController con timeout de 15s para evitar peticiones colgadas
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
+          signal: controller.signal,
+        }).finally(() => {
+          clearTimeout(timeoutId);
         });
       },
     }),
   ],
 });
 
+// ============================================
+// MONTAR REACT
+// ============================================
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>
     <QueryClientProvider client={queryClient}>
@@ -60,16 +84,17 @@ createRoot(document.getElementById("root")!).render(
   </trpc.Provider>
 );
 
+// ============================================
+// POST-MOUNT: Limpiar splash screen
+// ============================================
 // Cancelar el timeout de auto-recuperación del splash
 if ((window as any).__evgreenSplashTimeout) {
   clearTimeout((window as any).__evgreenSplashTimeout);
   delete (window as any).__evgreenSplashTimeout;
 }
-// Limpiar flag de recuperación ya que la app cargó exitosamente
 sessionStorage.removeItem('evgreen_recovery');
 
 // Eliminar splash screen con transición suave
-// Esperar un mínimo de 1.5s para que la animación se aprecie
 const splashMinTime = 1500;
 const splashStart = performance.now();
 
@@ -87,7 +112,9 @@ requestAnimationFrame(() => {
   }
 });
 
-// Manejar errores de dynamic import globalmente (para imports fuera del ErrorBoundary)
+// ============================================
+// ERROR HANDLING: Dynamic imports fallidos
+// ============================================
 window.addEventListener('unhandledrejection', (event) => {
   const msg = event.reason?.message || '';
   if (
@@ -95,41 +122,45 @@ window.addEventListener('unhandledrejection', (event) => {
     msg.includes('Loading chunk') ||
     msg.includes('Importing a module script failed')
   ) {
-    console.warn('[SW] Dynamic import failed globally, clearing cache and reloading...');
+    console.warn('[App] Dynamic import failed, reloading page...');
+    // Solo recargar si no lo hicimos recientemente (evitar loop)
     const lastReload = sessionStorage.getItem('evgreen_last_reload');
     const now = Date.now();
-    if (lastReload && (now - parseInt(lastReload)) < 10000) return;
+    if (lastReload && (now - parseInt(lastReload)) < 15000) return;
     sessionStorage.setItem('evgreen_last_reload', now.toString());
     event.preventDefault();
-    if ('caches' in window) {
-      caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n))))
-        .then(() => window.location.reload())
-        .catch(() => window.location.reload());
-    } else {
-      globalThis.location.reload();
-    }
+    globalThis.location.reload();
   }
 });
 
-// Detectar actualizaciones del Service Worker
+// ============================================
+// SERVICE WORKER: Registro simple, sin reload agresivo
+// ============================================
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.ready.then((registration) => {
-    registration.addEventListener('updatefound', () => {
-      const newWorker = registration.installing;
-      if (newWorker) {
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'activated') {
-            console.log('[SW] Nueva versión activada, recargando...');
-            // Limpiar cache viejo y recargar
-            if ('caches' in window) {
-              caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n))))
-                .then(() => window.location.reload());
-            }
+  // Registrar SW solo después de que la página cargue completamente
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.log('[SW] Registrado:', registration.scope);
+        
+        // Verificar actualizaciones periódicamente (cada 10 minutos)
+        setInterval(() => registration.update(), 10 * 60 * 1000);
+        
+        // Cuando hay una actualización, NO recargar automáticamente
+        // Solo notificar al usuario la próxima vez que abra la app
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'activated') {
+                console.log('[SW] Nueva versión disponible. Se aplicará en la próxima visita.');
+              }
+            });
           }
         });
-      }
-    });
-    // Verificar actualizaciones cada 5 minutos
-    setInterval(() => registration.update(), 5 * 60 * 1000);
+      })
+      .catch((error) => {
+        console.warn('[SW] Error al registrar:', error);
+      });
   });
 }
