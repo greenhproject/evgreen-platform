@@ -2129,3 +2129,4 @@
 - [x] Revisar XSS: innerHTML solo usa contenido estático (SVGs), no user input. Cookies httpOnly+secure+sameSite
 - [x] Revisar tokens: JWT con httpOnly cookies, verificación con jwtVerify, no expuesto al frontend
 - [x] Revisar exposición: X-Powered-By removido, rate limiting en /api/, no secrets en client code
+// Security & LoadingGuard update - Wed Mar 11 11:10:00 EDT 2026
