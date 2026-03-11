@@ -1,8 +1,0 @@
-{
-  "query": "SELECT s.id as station_id, s.name, e.id as evse_id, e.connectorType, e.status FROM charging_stations s LEFT JOIN evses e ON e.stationId = s.id LIMIT 20;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute SELECT s.id as station_id, s.name, e.id as evse_id, e.connectorType, e.status FROM charging_stations s LEFT JOIN evses e ON e.stationId = s.id LIMIT 20;",
-  "returncode": 1,
-  "logs": [
-    "ERROR 1054 (42S22) at line 1: Unknown column 'e.connectortype' in 'field list'"
-  ]
-}

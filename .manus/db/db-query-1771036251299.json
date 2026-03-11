@@ -1,9 +1,0 @@
-{
-  "query": "CREATE TABLE IF NOT EXISTS `firmware_updates` (\n  `id` int NOT NULL AUTO_INCREMENT,\n  `station_id` int NOT NULL,\n  `ocpp_identity` varchar(255) NOT NULL,\n  `file_name` varchar(500) NOT NULL,\n  `file_size` int NOT NULL,\n  `file_url` text NOT NULL,\n  `version` varchar(100),\n  `status` varchar(50) NOT NULL DEFAULT 'PENDING',\n  `progress` int NOT NULL DEFAULT 0,\n  `error_message` text,\n  `notes` text,\n  `initiated_by` int,\n  `started_at` timestamp NULL,\n  `completed_at` timestamp NULL,\n  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute CREATE TABLE IF NOT EXISTS `firmware_updates` (\n  `id` int NOT NULL AUTO_INCREMENT,\n  `station_id` int NOT NULL,\n  `ocpp_identity` varchar(255) NOT NULL,\n  `file_name` varchar(500) NOT NULL,\n  `file_size` int NOT NULL,\n  `file_url` text NOT NULL,\n  `version` varchar(100),\n  `status` varchar(50) NOT NULL DEFAULT 'PENDING',\n  `progress` int NOT NULL DEFAULT 0,\n  `error_message` text,\n  `notes` text,\n  `initiated_by` int,\n  `started_at` timestamp NULL,\n  `completed_at` timestamp NULL,\n  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 526
-}

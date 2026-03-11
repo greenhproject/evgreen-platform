@@ -111,3 +111,4 @@ run-*.mjs
 *.db
 *.sqlite
 *.sqlite3
+.manus/db/

@@ -1,9 +1,0 @@
-{
-  "query": "UPDATE transactions SET transaction_status = 'COMPLETED', endTime = NOW(), stopReason = 'SYSTEM_CLEANUP' WHERE transaction_status = 'IN_PROGRESS';",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute UPDATE transactions SET transaction_status = 'COMPLETED', endTime = NOW(), stopReason = 'SYSTEM_CLEANUP' WHERE transaction_status = 'IN_PROGRESS';",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 67
-}

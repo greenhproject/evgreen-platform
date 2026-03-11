@@ -1,9 +1,0 @@
-{
-  "query": "\nALTER TABLE platform_settings \n  CHANGE COLUMN stripePublicKey wompiPublicKey text,\n  CHANGE COLUMN stripeSecretKey wompiPrivateKey text,\n  CHANGE COLUMN stripeWebhookSecret wompiIntegritySecret text,\n  CHANGE COLUMN stripeTestMode wompiTestMode boolean NOT NULL DEFAULT true;\n",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute \nALTER TABLE platform_settings \n  CHANGE COLUMN stripePublicKey wompiPublicKey text,\n  CHANGE COLUMN stripeSecretKey wompiPrivateKey text,\n  CHANGE COLUMN stripeWebhookSecret wompiIntegritySecret text,\n  CHANGE COLUMN stripeTestMode wompiTestMode boolean NOT NULL DEFAULT true;\n",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 353
-}

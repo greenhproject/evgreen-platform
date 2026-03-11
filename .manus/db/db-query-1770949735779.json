@@ -1,9 +1,0 @@
-{
-  "query": "ALTER TABLE platform_settings \n  ADD COLUMN eventName VARCHAR(255) DEFAULT 'Gran Lanzamiento Red de Carga EVGreen',\n  ADD COLUMN eventDate VARCHAR(100) DEFAULT 'Por confirmar',\n  ADD COLUMN eventTime VARCHAR(100) DEFAULT 'Por confirmar',\n  ADD COLUMN eventVenueName VARCHAR(255) DEFAULT 'Por confirmar',\n  ADD COLUMN eventAddress VARCHAR(500) DEFAULT 'Bogotá, Colombia',\n  ADD COLUMN eventCity VARCHAR(100) DEFAULT 'Bogotá',\n  ADD COLUMN eventContactPhone VARCHAR(50),\n  ADD COLUMN eventContactEmail VARCHAR(255) DEFAULT 'evgreen@greenhproject.com',\n  ADD COLUMN eventGoogleMapsUrl TEXT,\n  ADD COLUMN eventWazeUrl TEXT,\n  ADD COLUMN eventDressCode VARCHAR(100) DEFAULT 'Business Casual',\n  ADD COLUMN eventDescription TEXT,\n  ADD COLUMN eventMaxGuests INT DEFAULT 30,\n  ADD COLUMN eventBgImageUrl TEXT;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute ALTER TABLE platform_settings \n  ADD COLUMN eventName VARCHAR(255) DEFAULT 'Gran Lanzamiento Red de Carga EVGreen',\n  ADD COLUMN eventDate VARCHAR(100) DEFAULT 'Por confirmar',\n  ADD COLUMN eventTime VARCHAR(100) DEFAULT 'Por confirmar',\n  ADD COLUMN eventVenueName VARCHAR(255) DEFAULT 'Por confirmar',\n  ADD COLUMN eventAddress VARCHAR(500) DEFAULT 'Bogotá, Colombia',\n  ADD COLUMN eventCity VARCHAR(100) DEFAULT 'Bogotá',\n  ADD COLUMN eventContactPhone VARCHAR(50),\n  ADD COLUMN eventContactEmail VARCHAR(255) DEFAULT 'evgreen@greenhproject.com',\n  ADD COLUMN eventGoogleMapsUrl TEXT,\n  ADD COLUMN eventWazeUrl TEXT,\n  ADD COLUMN eventDressCode VARCHAR(100) DEFAULT 'Business Casual',\n  ADD COLUMN eventDescription TEXT,\n  ADD COLUMN eventMaxGuests INT DEFAULT 30,\n  ADD COLUMN eventBgImageUrl TEXT;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 3798
-}

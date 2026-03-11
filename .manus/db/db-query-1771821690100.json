@@ -1,9 +1,0 @@
-{
-  "query": "CREATE TABLE IF NOT EXISTS `tariff_change_logs` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `tariffId` int,\n  `stationId` int,\n  `changedBy` int NOT NULL,\n  `changedByName` varchar(255),\n  `changedByRole` varchar(50),\n  `tariff_change_type` enum('CREATE','UPDATE','GLOBAL_UPDATE','DEACTIVATE') NOT NULL,\n  `previousValues` json,\n  `newValues` json,\n  `description` text,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `tariff_change_logs_id` PRIMARY KEY(`id`)\n)",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute CREATE TABLE IF NOT EXISTS `tariff_change_logs` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `tariffId` int,\n  `stationId` int,\n  `changedBy` int NOT NULL,\n  `changedByName` varchar(255),\n  `changedByRole` varchar(50),\n  `tariff_change_type` enum('CREATE','UPDATE','GLOBAL_UPDATE','DEACTIVATE') NOT NULL,\n  `previousValues` json,\n  `newValues` json,\n  `description` text,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `tariff_change_logs_id` PRIMARY KEY(`id`)\n)",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 297
-}

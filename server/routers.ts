@@ -1187,24 +1187,48 @@ const transactionsRouter = router({
       const endTime = transaction.endTime ? new Date(transaction.endTime) : new Date();
       const durationMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
       
+      // Obtener precios efectivos de la estación para referencia
+      const effectivePrice = await db.getEffectiveStationPrice(transaction.stationId);
+      
       return {
         id: transaction.id,
         stationId: transaction.stationId,
         stationName: station?.name || "Estación",
         stationAddress: station?.address || "",
+        stationCity: station?.city || "",
         connectorId: evse?.connectorId || 1,
         connectorType: evse?.connectorType || "TYPE_2",
+        chargeType: evse?.chargeType || "AC",
         startTime: transaction.startTime.toISOString(),
         endTime: transaction.endTime?.toISOString() || null,
         durationMinutes,
         kwhConsumed: transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed).toFixed(2) : "0.00",
-        pricePerKwh: tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : (await db.getEffectiveStationPrice(transaction.stationId)).pricePerKwh,
+        // Tarifa aplicada (la que se usó al momento de la carga)
+        appliedPricePerKwh: transaction.appliedPricePerKwh 
+          ? parseFloat(transaction.appliedPricePerKwh.toString()) 
+          : (tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : effectivePrice.pricePerKwh),
+        pricePerKwh: tariff?.pricePerKwh ? parseFloat(tariff.pricePerKwh) : effectivePrice.pricePerKwh,
+        // Costos desglosados
         energyCost: transaction.energyCost ? parseFloat(transaction.energyCost.toString()) : 0,
+        timeCost: transaction.timeCost ? parseFloat(transaction.timeCost.toString()) : 0,
         sessionCost: transaction.sessionCost ? parseFloat(transaction.sessionCost.toString()) : 0,
         overstayCost: transaction.overstayCost ? parseFloat(transaction.overstayCost.toString()) : 0,
         totalCost: transaction.totalCost ? parseFloat(transaction.totalCost) : 0,
+        // Distribución de ingresos
+        investorShare: transaction.investorShare ? parseFloat(transaction.investorShare.toString()) : 0,
+        platformFee: transaction.platformFee ? parseFloat(transaction.platformFee.toString()) : 0,
+        // Modo de carga
+        chargeMode: transaction.chargeMode || "full_charge",
+        targetValue: transaction.targetValue ? parseFloat(transaction.targetValue.toString()) : 0,
+        // Método de inicio y razón de parada
+        startMethod: transaction.startMethod || "APP",
+        stopReason: transaction.stopReason || "",
+        // Tarifas de referencia de la estación
+        connectionFee: effectivePrice.connectionFee,
+        overstayPenaltyPerMin: effectivePrice.overstayPenaltyPerMin,
+        // Estado y método de pago
         status: transaction.status,
-        paymentMethod: "wallet", // Por defecto wallet
+        paymentMethod: "wallet",
       };
     }),
   

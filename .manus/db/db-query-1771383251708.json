@@ -1,9 +1,0 @@
-{
-  "query": "ALTER TABLE subscriptions \nADD COLUMN IF NOT EXISTS autoRechargeEnabled BOOLEAN NOT NULL DEFAULT FALSE,\nADD COLUMN IF NOT EXISTS autoRechargeThreshold INT DEFAULT 10000,\nADD COLUMN IF NOT EXISTS autoRechargeAmount INT DEFAULT 20000,\nADD COLUMN IF NOT EXISTS lastAutoRechargeAt TIMESTAMP NULL,\nADD COLUMN IF NOT EXISTS autoRechargeFailCount INT DEFAULT 0;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute ALTER TABLE subscriptions \nADD COLUMN IF NOT EXISTS autoRechargeEnabled BOOLEAN NOT NULL DEFAULT FALSE,\nADD COLUMN IF NOT EXISTS autoRechargeThreshold INT DEFAULT 10000,\nADD COLUMN IF NOT EXISTS autoRechargeAmount INT DEFAULT 20000,\nADD COLUMN IF NOT EXISTS lastAutoRechargeAt TIMESTAMP NULL,\nADD COLUMN IF NOT EXISTS autoRechargeFailCount INT DEFAULT 0;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1676
-}

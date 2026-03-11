@@ -1,9 +1,0 @@
-{
-  "query": "CREATE TABLE IF NOT EXISTS `id_tags` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `id_tag` varchar(50) NOT NULL,\n  `user_id` int,\n  `id_tag_type` enum('APP','RFID','NFC','REMOTE') NOT NULL DEFAULT 'APP',\n  `id_tag_status` enum('ACTIVE','BLOCKED','EXPIRED','LOST') NOT NULL DEFAULT 'ACTIVE',\n  `label` varchar(100),\n  `serial_number` varchar(100),\n  `expires_at` timestamp NULL,\n  `parent_id_tag` varchar(50),\n  `max_active_transactions` int DEFAULT 1,\n  `last_used_at` timestamp NULL,\n  `last_used_station_id` int,\n  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `id_tags_id` PRIMARY KEY(`id`),\n  CONSTRAINT `id_tags_id_tag_unique` UNIQUE(`id_tag`)\n);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kTaiYRMPpnS3sR.17f9e41a6e58 --database UcUrociZeo4QVAHHN9vAuZ --execute CREATE TABLE IF NOT EXISTS `id_tags` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `id_tag` varchar(50) NOT NULL,\n  `user_id` int,\n  `id_tag_type` enum('APP','RFID','NFC','REMOTE') NOT NULL DEFAULT 'APP',\n  `id_tag_status` enum('ACTIVE','BLOCKED','EXPIRED','LOST') NOT NULL DEFAULT 'ACTIVE',\n  `label` varchar(100),\n  `serial_number` varchar(100),\n  `expires_at` timestamp NULL,\n  `parent_id_tag` varchar(50),\n  `max_active_transactions` int DEFAULT 1,\n  `last_used_at` timestamp NULL,\n  `last_used_station_id` int,\n  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `id_tags_id` PRIMARY KEY(`id`),\n  CONSTRAINT `id_tags_id_tag_unique` UNIQUE(`id_tag`)\n);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 225
-}
