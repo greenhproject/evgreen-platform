@@ -2,42 +2,44 @@
  * ChargingSummary - Pantalla de resumen post-carga
  * 
  * Muestra:
- * - Detalles completos de la transacción
- * - kWh totales, costo final, duración
+ * - Detalles completos de la transacción con conceptos discriminados
+ * - kWh totales, tarifa aplicada, costo energía, tarifa conexión, penalizaciones
  * - Información de la estación y conector
  * - Opciones para compartir (WhatsApp, Email)
- * - Opción de descargar recibo como PDF profesional
+ * - Descarga de recibo como PDF profesional con jsPDF + AutoTable
  */
 
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { 
   CheckCircle2, 
   Zap, 
   Clock, 
-  DollarSign, 
   Battery, 
   MapPin,
-  Share2,
   Download,
   MessageCircle,
   Mail,
   Home,
   Receipt,
-  Calendar,
   Loader2,
   AlertCircle,
-  FileText
+  FileText,
+  AlertTriangle,
+  Plug,
+  Timer,
+  Wallet
 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { EVGREEN_LOGO_BASE64 } from "@/assets/evgreen-logo-base64";
 
 // Componente de banner publicitario para el resumen
@@ -53,13 +55,12 @@ function ChargingSummaryBanner() {
     
     const interval = setInterval(() => {
       setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
-    }, 8000); // Rotar cada 8 segundos
+    }, 8000);
     
     return () => clearInterval(interval);
   }, [banners]);
   
   if (!banners || banners.length === 0) {
-    // Banner por defecto si no hay banners configurados
     return (
       <div className="w-full rounded-xl overflow-hidden shadow-lg bg-gradient-to-r from-emerald-500 to-teal-600 p-4">
         <div className="text-center text-white">
@@ -102,7 +103,7 @@ function formatDuration(minutes: number): string {
   if (hours > 0) {
     return `${hours}h ${mins}m`;
   }
-  return `${mins} minutos`;
+  return `${mins} min`;
 }
 
 // Formatear moneda COP
@@ -136,6 +137,64 @@ function formatDateShort(dateString: string): string {
   }).format(date);
 }
 
+// Traducir modo de carga
+function getChargeModeLabel(mode: string): string {
+  switch (mode) {
+    case "fixed_amount": return "Monto fijo";
+    case "percentage": return "Porcentaje de batería";
+    case "full_charge": return "Carga completa";
+    default: return "Carga completa";
+  }
+}
+
+// Traducir método de inicio
+function getStartMethodLabel(method: string): string {
+  switch (method) {
+    case "QR": return "Código QR";
+    case "NFC": return "Tarjeta NFC";
+    case "APP": return "Aplicación";
+    case "RFID": return "Tarjeta RFID";
+    default: return "Aplicación";
+  }
+}
+
+// Traducir razón de parada
+function getStopReasonLabel(reason: string): string {
+  switch (reason) {
+    case "REMOTE": return "Detenida desde la app";
+    case "LOCAL": return "Detenida en el cargador";
+    case "ENERGY_LIMIT": return "Límite de energía alcanzado";
+    case "AMOUNT_LIMIT": return "Monto máximo alcanzado";
+    case "SOC_LIMIT": return "Porcentaje de batería alcanzado";
+    case "TIMEOUT": return "Tiempo máximo alcanzado";
+    case "EV_DISCONNECTED": return "Vehículo desconectado";
+    default: return reason || "Completada";
+  }
+}
+
+// Tipo de conector legible
+function getConnectorLabel(type: string): string {
+  switch (type) {
+    case "TYPE_1": return "Tipo 1 (J1772)";
+    case "TYPE_2": return "Tipo 2 (Mennekes)";
+    case "CCS1": return "CCS Combo 1";
+    case "CCS2": return "CCS Combo 2";
+    case "CHADEMO": return "CHAdeMO";
+    case "TESLA": return "Tesla";
+    case "GB_T": return "GB/T";
+    default: return type;
+  }
+}
+
+// Interfaz para los conceptos del recibo
+interface ReceiptLineItem {
+  concept: string;
+  detail: string;
+  amount: number;
+  isWarning?: boolean;
+  isSubtotal?: boolean;
+}
+
 export default function ChargingSummary() {
   const { transactionId } = useParams<{ transactionId: string }>();
   const [, setLocation] = useLocation();
@@ -153,7 +212,6 @@ export default function ChargingSummary() {
       retry: 5,
       retryDelay: (attemptIndex) => Math.min(1000 * (attemptIndex + 1), 5000),
       refetchInterval: (query) => {
-        // Si la transacción está en progreso, refetch cada 3 segundos hasta que se complete
         const data = query.state.data as { status?: string } | undefined;
         if (data?.status === "IN_PROGRESS") return 3000;
         return false;
@@ -169,7 +227,6 @@ export default function ChargingSummary() {
     if (transaction && transaction.status !== "IN_PROGRESS" && !showConfetti) {
       setShowConfetti(true);
       
-      // Lanzar confetti de celebración
       const duration = 3000;
       const animationEnd = Date.now() + duration;
       const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 };
@@ -187,7 +244,6 @@ export default function ChargingSummary() {
         
         const particleCount = 50 * (timeLeft / duration);
         
-        // Confetti desde la izquierda
         confetti({
           ...defaults,
           particleCount,
@@ -195,7 +251,6 @@ export default function ChargingSummary() {
           colors: ['#22c55e', '#10b981', '#14b8a6', '#06b6d4', '#3b82f6']
         });
         
-        // Confetti desde la derecha
         confetti({
           ...defaults,
           particleCount,
@@ -204,21 +259,75 @@ export default function ChargingSummary() {
         });
       }, 250);
       
-      // Limpiar intervalo después de la duración
       setTimeout(() => clearInterval(interval), duration);
     }
   }, [transaction, showConfetti]);
+  
+  // Construir los conceptos del recibo
+  const buildLineItems = (): ReceiptLineItem[] => {
+    if (!transaction) return [];
+    
+    const items: ReceiptLineItem[] = [];
+    const kwhNum = parseFloat(transaction.kwhConsumed);
+    const appliedPrice = transaction.appliedPricePerKwh || transaction.pricePerKwh || 0;
+    
+    // 1. Energía consumida (concepto principal)
+    const calculatedEnergyCost = transaction.energyCost > 0 
+      ? transaction.energyCost 
+      : kwhNum * appliedPrice;
+    
+    items.push({
+      concept: "Energía consumida",
+      detail: `${transaction.kwhConsumed} kWh × ${formatCurrency(appliedPrice)}/kWh`,
+      amount: calculatedEnergyCost,
+    });
+    
+    // 2. Tarifa de tiempo (si aplica)
+    if (transaction.timeCost > 0) {
+      items.push({
+        concept: "Cargo por tiempo",
+        detail: `${formatDuration(transaction.durationMinutes)} de uso`,
+        amount: transaction.timeCost,
+      });
+    }
+    
+    // 3. Tarifa de conexión/sesión (si aplica)
+    if (transaction.sessionCost > 0) {
+      items.push({
+        concept: "Tarifa de conexión",
+        detail: "Cargo fijo por sesión de carga",
+        amount: transaction.sessionCost,
+      });
+    }
+    
+    // 4. Penalización por sobreestadía (si aplica)
+    if (transaction.overstayCost > 0) {
+      items.push({
+        concept: "Penalización por sobreestadía",
+        detail: `Cargo por permanecer conectado después de completar la carga`,
+        amount: transaction.overstayCost,
+        isWarning: true,
+      });
+    }
+    
+    return items;
+  };
   
   // Compartir por WhatsApp
   const shareWhatsApp = () => {
     if (!transaction) return;
     
-    const message = `🔋 *Resumen de Carga EVGreen*\n\n` +
-      `📍 Estación: ${transaction.stationName}\n` +
-      `⚡ Energía: ${transaction.kwhConsumed} kWh\n` +
-      `💰 Total: ${formatCurrency(transaction.totalCost || 0)}\n` +
-      `⏱️ Duración: ${formatDuration(transaction.durationMinutes)}\n` +
-      `📅 Fecha: ${formatDate(transaction.startTime)}\n\n` +
+    const items = buildLineItems();
+    let detailLines = items.map(i => 
+      `  • ${i.concept}: ${formatCurrency(i.amount)}`
+    ).join("\n");
+    
+    const message = `🔋 *Recibo de Carga EVGreen #${transaction.id}*\n\n` +
+      `📍 ${transaction.stationName}\n` +
+      `📅 ${formatDate(transaction.startTime)}\n\n` +
+      `*Detalle del cobro:*\n${detailLines}\n\n` +
+      `💰 *Total: ${formatCurrency(transaction.totalCost || 0)}*\n\n` +
+      `⚡ ${transaction.kwhConsumed} kWh | ⏱️ ${formatDuration(transaction.durationMinutes)}\n\n` +
       `¡Carga tu vehículo eléctrico con EVGreen! 🚗⚡`;
     
     const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
@@ -229,14 +338,21 @@ export default function ChargingSummary() {
   const shareEmail = () => {
     if (!transaction) return;
     
-    const subject = `Resumen de Carga EVGreen - ${formatDate(transaction.startTime)}`;
-    const body = `Resumen de Carga EVGreen\n\n` +
+    const items = buildLineItems();
+    let detailLines = items.map(i => 
+      `  - ${i.concept}: ${formatCurrency(i.amount)}`
+    ).join("\n");
+    
+    const subject = `Recibo de Carga EVGreen #${transaction.id} - ${formatDate(transaction.startTime)}`;
+    const body = `Recibo de Carga EVGreen #${transaction.id}\n\n` +
       `Estación: ${transaction.stationName}\n` +
-      `Energía consumida: ${transaction.kwhConsumed} kWh\n` +
-      `Total pagado: ${formatCurrency(transaction.totalCost || 0)}\n` +
-      `Duración: ${formatDuration(transaction.durationMinutes)}\n` +
       `Fecha: ${formatDate(transaction.startTime)}\n\n` +
-      `Gracias por usar EVGreen para cargar tu vehículo eléctrico.`;
+      `Detalle del cobro:\n${detailLines}\n\n` +
+      `Total pagado: ${formatCurrency(transaction.totalCost || 0)}\n\n` +
+      `Energía: ${transaction.kwhConsumed} kWh\n` +
+      `Duración: ${formatDuration(transaction.durationMinutes)}\n\n` +
+      `Gracias por usar EVGreen para cargar tu vehículo eléctrico.\n` +
+      `www.evgreen.lat`;
     
     const url = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.location.href = url;
@@ -257,193 +373,260 @@ export default function ChargingSummary() {
       });
       
       const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 20;
-      let y = margin;
+      let y = 0;
       
       // Colores de la marca
       const primaryColor: [number, number, number] = [16, 185, 129]; // emerald-500
       const darkColor: [number, number, number] = [31, 41, 55]; // gray-800
-      const lightGray: [number, number, number] = [156, 163, 175]; // gray-400
+      const lightGray: [number, number, number] = [107, 114, 128]; // gray-500
       const white: [number, number, number] = [255, 255, 255];
+      const warningColor: [number, number, number] = [220, 38, 38]; // red-600
       
-      // Header con gradiente simulado (rectángulo verde)
+      // ═══════════════════════════════════════════════
+      // HEADER - Barra verde con logo y datos del recibo
+      // ═══════════════════════════════════════════════
       doc.setFillColor(...primaryColor);
-      doc.rect(0, 0, pageWidth, 55, "F");
+      doc.rect(0, 0, pageWidth, 50, "F");
       
-      // Logo de EVGreen (imagen real)
+      // Logo
       try {
-        // Agregar logo en el header (45mm de ancho, proporcional)
-        doc.addImage(EVGREEN_LOGO_BASE64, "PNG", margin, 8, 45, 25);
-      } catch (logoError) {
-        // Fallback a texto si falla la imagen
-        console.warn("No se pudo cargar el logo, usando texto", logoError);
+        doc.addImage(EVGREEN_LOGO_BASE64, "PNG", margin, 6, 40, 22);
+      } catch {
         doc.setTextColor(...white);
-        doc.setFontSize(28);
+        doc.setFontSize(24);
         doc.setFont("helvetica", "bold");
-        doc.text("EVGreen", margin, 25);
+        doc.text("EVGreen", margin, 22);
       }
       
-      // Subtítulo (a la derecha del logo)
+      // Datos del recibo (esquina derecha)
       doc.setTextColor(...white);
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.text("Recibo de Carga Eléctrica", margin, 42);
-      
-      // Número de recibo (esquina superior derecha)
       doc.setFontSize(10);
-      doc.text(`Recibo #${transaction.id}`, pageWidth - margin, 20, { align: "right" });
-      doc.text(formatDateShort(transaction.startTime), pageWidth - margin, 30, { align: "right" });
-      
-      y = 70;
-      
-      // Sección: Información del cliente
-      doc.setTextColor(...darkColor);
-      doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text("Información del Cliente", margin, y);
-      y += 8;
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...lightGray);
-      doc.text("Nombre:", margin, y);
-      doc.setTextColor(...darkColor);
-      doc.text(user?.name || "Cliente EVGreen", margin + 25, y);
-      y += 6;
-      
-      doc.setTextColor(...lightGray);
-      doc.text("Email:", margin, y);
-      doc.setTextColor(...darkColor);
-      doc.text(user?.email || "-", margin + 25, y);
-      y += 12;
-      
-      // Línea separadora
-      doc.setDrawColor(229, 231, 235);
-      doc.setLineWidth(0.5);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 10;
-      
-      // Sección: Información de la estación
-      doc.setTextColor(...darkColor);
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("Estación de Carga", margin, y);
-      y += 8;
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...lightGray);
-      doc.text("Estación:", margin, y);
-      doc.setTextColor(...darkColor);
-      doc.text(transaction.stationName, margin + 25, y);
-      y += 6;
-      
-      doc.setTextColor(...lightGray);
-      doc.text("Conector:", margin, y);
-      doc.setTextColor(...darkColor);
-      doc.text(`#${transaction.connectorId} - ${transaction.connectorType || "Type 2"}`, margin + 25, y);
-      y += 12;
-      
-      // Línea separadora
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 10;
-      
-      // Sección: Detalles de la carga (en un recuadro)
-      doc.setFillColor(249, 250, 251); // gray-50
-      doc.roundedRect(margin, y, pageWidth - 2 * margin, 50, 3, 3, "F");
-      
-      doc.setTextColor(...darkColor);
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("Detalles de la Carga", margin + 5, y + 10);
-      
-      // Columna izquierda
-      const col1X = margin + 5;
-      const col2X = pageWidth / 2 + 5;
-      let detailY = y + 20;
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      
-      // Energía
-      doc.setTextColor(...lightGray);
-      doc.text("Energía consumida:", col1X, detailY);
-      doc.setTextColor(...primaryColor);
-      doc.setFont("helvetica", "bold");
-      doc.text(`${transaction.kwhConsumed} kWh`, col1X + 40, detailY);
-      
-      // Duración
-      doc.setTextColor(...lightGray);
-      doc.setFont("helvetica", "normal");
-      doc.text("Duración:", col2X, detailY);
-      doc.setTextColor(...darkColor);
-      doc.setFont("helvetica", "bold");
-      doc.text(formatDuration(transaction.durationMinutes), col2X + 25, detailY);
-      
-      detailY += 8;
-      
-      // Tarifa
-      doc.setTextColor(...lightGray);
-      doc.setFont("helvetica", "normal");
-      doc.text("Tarifa aplicada:", col1X, detailY);
-      doc.setTextColor(...darkColor);
-      doc.setFont("helvetica", "bold");
-      doc.text(`${formatCurrency(transaction.pricePerKwh || 800)}/kWh`, col1X + 40, detailY);
-      
-      // Fecha inicio
-      doc.setTextColor(...lightGray);
-      doc.setFont("helvetica", "normal");
-      doc.text("Fecha:", col2X, detailY);
-      doc.setTextColor(...darkColor);
-      doc.setFont("helvetica", "bold");
-      doc.text(formatDateShort(transaction.startTime), col2X + 25, detailY);
-      
-      y += 60;
-      
-      // Total a pagar (destacado)
-      doc.setFillColor(...primaryColor);
-      doc.roundedRect(margin, y, pageWidth - 2 * margin, 25, 3, 3, "F");
-      
-      doc.setTextColor(...white);
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "normal");
-      doc.text("TOTAL PAGADO", margin + 10, y + 10);
-      
-      doc.setFontSize(20);
-      doc.setFont("helvetica", "bold");
-      doc.text(formatCurrency(transaction.totalCost || 0), pageWidth - margin - 10, y + 16, { align: "right" });
-      
-      y += 35;
-      
-      // Información adicional
-      doc.setTextColor(...lightGray);
+      doc.text("RECIBO DE CARGA", pageWidth - margin, 14, { align: "right" });
+      doc.setFontSize(16);
+      doc.text(`#${transaction.id}`, pageWidth - margin, 24, { align: "right" });
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
-      doc.text("Este documento es un comprobante de pago por el servicio de carga eléctrica.", margin, y);
-      y += 5;
-      doc.text("Conserve este recibo para cualquier reclamación o consulta.", margin, y);
+      doc.text(formatDateShort(transaction.startTime), pageWidth - margin, 32, { align: "right" });
       
-      y += 15;
+      // Subtítulo
+      doc.setFontSize(8);
+      doc.text("Carga de Vehículo Eléctrico", margin, 35);
+      doc.text("www.evgreen.lat", margin, 40);
       
-      // Línea separadora
-      doc.setDrawColor(229, 231, 235);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 10;
+      y = 58;
       
-      // Footer
+      // ═══════════════════════════════════════════════
+      // SECCIÓN: Información del Cliente
+      // ═══════════════════════════════════════════════
+      doc.setFillColor(249, 250, 251);
+      doc.roundedRect(margin, y, pageWidth - 2 * margin, 22, 2, 2, "F");
+      
       doc.setTextColor(...darkColor);
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.setFont("helvetica", "bold");
-      doc.text("EVGreen - Movilidad Eléctrica Sostenible", pageWidth / 2, y, { align: "center" });
-      y += 5;
+      doc.text("CLIENTE", margin + 4, y + 6);
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(user?.name || "Cliente EVGreen", margin + 4, y + 13);
+      doc.setFontSize(8);
+      doc.setTextColor(...lightGray);
+      doc.text(user?.email || "", margin + 4, y + 18);
+      
+      // Método de pago (derecha)
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.text("MÉTODO DE PAGO", pageWidth - margin - 4, y + 6, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text("Billetera EVGreen", pageWidth - margin - 4, y + 13, { align: "right" });
+      
+      y += 28;
+      
+      // ═══════════════════════════════════════════════
+      // SECCIÓN: Información de la Estación
+      // ═══════════════════════════════════════════════
+      doc.setFillColor(249, 250, 251);
+      doc.roundedRect(margin, y, pageWidth - 2 * margin, 28, 2, 2, "F");
+      
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("ESTACIÓN DE CARGA", margin + 4, y + 6);
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(transaction.stationName, margin + 4, y + 13);
+      doc.setFontSize(8);
+      doc.setTextColor(...lightGray);
+      const address = [transaction.stationAddress, transaction.stationCity].filter(Boolean).join(", ");
+      if (address) doc.text(address, margin + 4, y + 18);
+      doc.text(`Conector #${transaction.connectorId} • ${getConnectorLabel(transaction.connectorType)} • ${transaction.chargeType}`, margin + 4, y + 23);
+      
+      y += 34;
+      
+      // ═══════════════════════════════════════════════
+      // SECCIÓN: Datos de la Sesión de Carga
+      // ═══════════════════════════════════════════════
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Datos de la Sesión", margin, y + 2);
+      y += 7;
+      
+      // Tabla de datos de sesión
+      const sessionData = [
+        ["Fecha y hora de inicio", formatDateShort(transaction.startTime)],
+        ["Fecha y hora de fin", transaction.endTime ? formatDateShort(transaction.endTime) : "-"],
+        ["Duración total", formatDuration(transaction.durationMinutes)],
+        ["Energía consumida", `${transaction.kwhConsumed} kWh`],
+        ["Modo de carga", getChargeModeLabel(transaction.chargeMode)],
+        ["Método de inicio", getStartMethodLabel(transaction.startMethod)],
+      ];
+      
+      if (transaction.stopReason) {
+        sessionData.push(["Razón de finalización", getStopReasonLabel(transaction.stopReason)]);
+      }
+      
+      autoTable(doc, {
+        startY: y,
+        head: [],
+        body: sessionData,
+        theme: "plain",
+        styles: {
+          fontSize: 9,
+          cellPadding: { top: 2, bottom: 2, left: 4, right: 4 },
+          textColor: darkColor,
+        },
+        columnStyles: {
+          0: { fontStyle: "normal", textColor: lightGray, cellWidth: 55 },
+          1: { fontStyle: "bold", halign: "right" },
+        },
+        margin: { left: margin, right: margin },
+      });
+      
+      y = (doc as any).lastAutoTable.finalY + 8;
+      
+      // ═══════════════════════════════════════════════
+      // SECCIÓN: Detalle del Cobro (TABLA PRINCIPAL)
+      // ═══════════════════════════════════════════════
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Detalle del Cobro", margin, y + 2);
+      y += 7;
+      
+      // Construir filas de la tabla de cobros
+      const lineItems = buildLineItems();
+      const chargeRows: (string | { content: string; styles: any })[][] = [];
+      
+      lineItems.forEach((item) => {
+        if (item.isWarning) {
+          chargeRows.push([
+            { content: `⚠ ${item.concept}`, styles: { textColor: warningColor, fontStyle: "bold" } },
+            { content: item.detail, styles: { textColor: warningColor, fontSize: 7 } },
+            { content: formatCurrency(item.amount), styles: { textColor: warningColor, fontStyle: "bold", halign: "right" } },
+          ]);
+        } else {
+          chargeRows.push([
+            item.concept,
+            { content: item.detail, styles: { fontSize: 7, textColor: lightGray } },
+            { content: formatCurrency(item.amount), styles: { halign: "right", fontStyle: "bold" } },
+          ]);
+        }
+      });
+      
+      autoTable(doc, {
+        startY: y,
+        head: [["Concepto", "Detalle", "Valor"]],
+        body: chargeRows,
+        theme: "striped",
+        headStyles: {
+          fillColor: [31, 41, 55],
+          textColor: white,
+          fontSize: 9,
+          fontStyle: "bold",
+          cellPadding: { top: 3, bottom: 3, left: 4, right: 4 },
+        },
+        styles: {
+          fontSize: 9,
+          cellPadding: { top: 3, bottom: 3, left: 4, right: 4 },
+          textColor: darkColor,
+        },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: "auto" },
+          2: { cellWidth: 35, halign: "right" },
+        },
+        alternateRowStyles: {
+          fillColor: [249, 250, 251],
+        },
+        margin: { left: margin, right: margin },
+      });
+      
+      y = (doc as any).lastAutoTable.finalY + 4;
+      
+      // ═══════════════════════════════════════════════
+      // TOTAL DESTACADO
+      // ═══════════════════════════════════════════════
+      doc.setFillColor(...primaryColor);
+      doc.roundedRect(margin, y, pageWidth - 2 * margin, 18, 2, 2, "F");
+      
+      doc.setTextColor(...white);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("TOTAL PAGADO", margin + 6, y + 11);
+      
+      doc.setFontSize(18);
+      doc.text(formatCurrency(transaction.totalCost || 0), pageWidth - margin - 6, y + 12, { align: "right" });
+      
+      y += 26;
+      
+      // ═══════════════════════════════════════════════
+      // NOTAS Y DISCLAIMER
+      // ═══════════════════════════════════════════════
+      doc.setDrawColor(229, 231, 235);
+      doc.setLineWidth(0.3);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 6;
       
       doc.setTextColor(...lightGray);
-      doc.setFontSize(8);
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "normal");
+      doc.text("Este documento es un comprobante de pago por el servicio de carga eléctrica.", margin, y);
+      y += 4;
+      doc.text("Conserve este recibo para cualquier reclamación o consulta.", margin, y);
+      y += 4;
+      doc.text(`Tarifa base de la estación: ${formatCurrency(transaction.pricePerKwh)}/kWh`, margin, y);
+      if (transaction.appliedPricePerKwh && transaction.appliedPricePerKwh !== transaction.pricePerKwh) {
+        y += 4;
+        doc.text(`Tarifa dinámica aplicada al momento de la carga: ${formatCurrency(transaction.appliedPricePerKwh)}/kWh`, margin, y);
+      }
+      
+      y += 10;
+      
+      // ═══════════════════════════════════════════════
+      // FOOTER
+      // ═══════════════════════════════════════════════
+      doc.setDrawColor(229, 231, 235);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 6;
+      
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("EVGreen - Movilidad Eléctrica Sostenible", pageWidth / 2, y, { align: "center" });
+      y += 4;
+      
+      doc.setTextColor(...lightGray);
+      doc.setFontSize(7);
       doc.setFont("helvetica", "normal");
       doc.text("www.evgreen.lat | soporte@evgreen.lat", pageWidth / 2, y, { align: "center" });
-      y += 4;
-      doc.text("Green House Project S.A.S. - NIT: 901.XXX.XXX-X", pageWidth / 2, y, { align: "center" });
+      y += 3;
+      doc.text("Green House Project S.A.S.", pageWidth / 2, y, { align: "center" });
       
       // Guardar PDF
       doc.save(`recibo-evgreen-${transaction.id}.pdf`);
@@ -451,7 +634,7 @@ export default function ChargingSummary() {
       toast.success("Recibo PDF descargado exitosamente");
     } catch (err) {
       console.error("Error generando PDF:", err);
-      toast.error("Error al generar el recibo PDF");
+      toast.error("Error al generar el recibo PDF. Intenta de nuevo.");
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -509,6 +692,11 @@ export default function ChargingSummary() {
     );
   }
   
+  const lineItems = buildLineItems();
+  const subtotalEnergy = lineItems.find(i => i.concept === "Energía consumida")?.amount || 0;
+  const hasExtraCharges = lineItems.length > 1;
+  const hasOverstay = transaction.overstayCost > 0;
+  
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-background dark:from-emerald-950/20 dark:to-background pb-24">
       {/* Header de éxito */}
@@ -543,84 +731,125 @@ export default function ChargingSummary() {
               <div className="p-2 rounded-full bg-emerald-100 dark:bg-emerald-900/30">
                 <MapPin className="w-5 h-5 text-emerald-600" />
               </div>
-              <div>
+              <div className="flex-1">
                 <p className="font-semibold">{transaction.stationName}</p>
                 <p className="text-sm text-muted-foreground">
-                  Conector {transaction.connectorId} • {transaction.connectorType || "Type 2"}
+                  Conector {transaction.connectorId} • {getConnectorLabel(transaction.connectorType)} • {transaction.chargeType}
                 </p>
+                {transaction.stationAddress && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {transaction.stationAddress}{transaction.stationCity ? `, ${transaction.stationCity}` : ""}
+                  </p>
+                )}
               </div>
             </div>
           </div>
           
           {/* Métricas principales */}
-          <div className="p-4 grid grid-cols-2 gap-4">
-            {/* Energía */}
+          <div className="p-4 grid grid-cols-3 gap-3">
             <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl">
-              <Battery className="w-6 h-6 text-blue-600 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-blue-600">
+              <Battery className="w-5 h-5 text-blue-600 mx-auto mb-1" />
+              <p className="text-xl font-bold text-blue-600">
                 {transaction.kwhConsumed}
               </p>
               <p className="text-xs text-muted-foreground">kWh</p>
             </div>
             
-            {/* Duración */}
             <div className="text-center p-3 bg-purple-50 dark:bg-purple-950/30 rounded-xl">
-              <Clock className="w-6 h-6 text-purple-600 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-purple-600">
+              <Clock className="w-5 h-5 text-purple-600 mx-auto mb-1" />
+              <p className="text-xl font-bold text-purple-600">
                 {formatDuration(transaction.durationMinutes)}
               </p>
               <p className="text-xs text-muted-foreground">Duración</p>
             </div>
+            
+            <div className="text-center p-3 bg-amber-50 dark:bg-amber-950/30 rounded-xl">
+              <Plug className="w-5 h-5 text-amber-600 mx-auto mb-1" />
+              <p className="text-xs font-bold text-amber-600 leading-tight">
+                {getChargeModeLabel(transaction.chargeMode)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">Modo</p>
+            </div>
           </div>
           
-          {/* Detalles de la transacción */}
+          {/* ═══════════════════════════════════════════ */}
+          {/* DETALLE DEL COBRO - Conceptos discriminados */}
+          {/* ═══════════════════════════════════════════ */}
           <div className="px-4 pb-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-muted-foreground" />
+              <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                Detalle del Cobro
+              </h3>
+            </div>
+            
             <Card className="border-dashed">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Fecha y hora</span>
-                  <span className="font-medium">{formatDate(transaction.startTime)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Tarifa aplicada</span>
-                  <span className="font-medium">{formatCurrency(transaction.pricePerKwh || 800)}/kWh</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Energía consumida</span>
-                  <span className="font-medium">{transaction.kwhConsumed} kWh</span>
-                </div>
-                {(transaction as any).energyCost > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Costo energía</span>
-                    <span className="font-medium">{formatCurrency((transaction as any).energyCost)}</span>
+              <CardContent className="p-0">
+                {/* Líneas de concepto */}
+                {lineItems.map((item, index) => (
+                  <div key={index}>
+                    <div className={`px-4 py-3 ${item.isWarning ? 'bg-red-50 dark:bg-red-950/20' : ''}`}>
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1 pr-3">
+                          <div className="flex items-center gap-1.5">
+                            {item.isWarning && <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />}
+                            <span className={`text-sm font-medium ${item.isWarning ? 'text-red-600 dark:text-red-400' : ''}`}>
+                              {item.concept}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">{item.detail}</p>
+                        </div>
+                        <span className={`text-sm font-semibold whitespace-nowrap ${item.isWarning ? 'text-red-600 dark:text-red-400' : ''}`}>
+                          {formatCurrency(item.amount)}
+                        </span>
+                      </div>
+                    </div>
+                    {index < lineItems.length - 1 && <Separator />}
                   </div>
-                )}
-                {(transaction as any).sessionCost > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Tarifa de conexión</span>
-                    <span className="font-medium">{formatCurrency((transaction as any).sessionCost)}</span>
-                  </div>
-                )}
-                {(transaction as any).overstayCost > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3 text-red-500" />
-                      Tarifa de ocupación
+                ))}
+                
+                {/* Separador antes del total */}
+                <div className="border-t-2 border-dashed" />
+                
+                {/* TOTAL */}
+                <div className="px-4 py-3 bg-emerald-50 dark:bg-emerald-950/20">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-base">Total pagado</span>
+                    <span className="text-2xl font-bold text-emerald-600">
+                      {formatCurrency(transaction.totalCost || 0)}
                     </span>
-                    <span className="font-medium text-red-600">{formatCurrency((transaction as any).overstayCost)}</span>
                   </div>
-                )}
-                
-                <Separator />
-                
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold">Total pagado</span>
-                  <span className="text-2xl font-bold text-emerald-600">
-                    {formatCurrency(transaction.totalCost || 0)}
-                  </span>
                 </div>
               </CardContent>
             </Card>
+          </div>
+          
+          {/* Información adicional de la sesión */}
+          <div className="px-4 pb-4">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Timer className="w-3 h-3" />
+                <span>Inicio: {formatDateShort(transaction.startTime)}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Timer className="w-3 h-3" />
+                <span>Fin: {transaction.endTime ? formatDateShort(transaction.endTime) : "-"}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Zap className="w-3 h-3" />
+                <span>Tarifa: {formatCurrency(transaction.appliedPricePerKwh || transaction.pricePerKwh)}/kWh</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Plug className="w-3 h-3" />
+                <span>Inicio: {getStartMethodLabel(transaction.startMethod)}</span>
+              </div>
+              {transaction.stopReason && (
+                <div className="col-span-2 flex items-center gap-1.5 text-muted-foreground">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>Fin: {getStopReasonLabel(transaction.stopReason)}</span>
+                </div>
+              )}
+            </div>
           </div>
           
           {/* Footer del recibo */}
@@ -672,9 +901,9 @@ export default function ChargingSummary() {
             {isGeneratingPdf ? (
               <Loader2 className="w-5 h-5 text-purple-600 animate-spin" />
             ) : (
-              <FileText className="w-5 h-5 text-purple-600" />
+              <Download className="w-5 h-5 text-purple-600" />
             )}
-            <span className="text-xs">PDF</span>
+            <span className="text-xs">Descargar PDF</span>
           </Button>
         </div>
         

@@ -2035,3 +2035,22 @@
 - [x] Corregir test idtag.test.ts que usaba fechas hardcodeadas expiradas
 - [x] Usar fechas relativas (daysAgo) en vez de fechas absolutas
 - [x] Todos los 1241 tests pasan correctamente
+
+
+## Mejora de Recibos de Carga - 10 Marzo 2026
+
+### Recibo con Conceptos Discriminados
+- [x] Mostrar kWh consumidos con tarifa aplicada
+- [x] Mostrar costo por energía (kWh x tarifa)
+- [x] Mostrar tarifa de conexión si aplica
+- [x] Mostrar tarifa de reserva si aplica
+- [x] Mostrar penalización por sobreestadía si aplica
+- [x] Mostrar subtotal y total claramente
+- [x] Mostrar duración de la carga
+- [x] Mostrar modo de carga utilizado
+
+### Descarga PDF
+- [x] Arreglar botón de descarga PDF que no funciona
+- [x] Generar PDF con diseño profesional y branding EVGreen
+- [x] Incluir todos los conceptos discriminados en el PDF
+- [x] Asegurar que no haya hojas en blanco innecesarias
