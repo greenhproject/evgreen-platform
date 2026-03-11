@@ -2078,3 +2078,35 @@
 - [x] Diseñar template HTML profesional para el email
 - [x] Enviar copia al remitente (admin@greenhproject.com) para trazabilidad
 - [x] Incluir todos los conceptos discriminados en el email
+
+## Integración Alegra - Facturación Electrónica DIAN - 10 Marzo 2026
+
+### Investigación API Alegra
+- [x] Investigar documentación API de Alegra (autenticación, endpoints)
+- [x] Identificar campos requeridos para factura electrónica DIAN
+- [x] Documentar flujo de creación de contactos y facturas
+
+### Campos Fiscales en BD
+- [x] Agregar campos fiscales al perfil de usuario (dirección, régimen tributario, etc.)
+- [x] Agregar tabla/campos para configuración de Alegra (API keys)
+- [x] Migrar schema a la BD
+
+### Módulo de Integración Alegra
+- [x] Crear servicio de integración con API de Alegra
+- [x] Implementar creación/actualización de contactos en Alegra
+- [x] Implementar creación de facturas electrónicas
+- [x] Manejar errores y reintentos
+
+### Emisión Automática de Factura
+- [x] Integrar emisión de factura al completar carga (StopTransaction)
+- [x] Incluir todos los conceptos discriminados en la factura
+- [x] Enviar factura por email al cliente
+
+### UI de Configuración
+- [x] Crear sección de configuración de Alegra en panel admin
+- [x] Agregar campos fiscales en perfil de usuario (dirección, régimen, etc.)
+- [ ] Mostrar estado de facturación en historial de cargas (pendiente para siguiente iteración)
+
+### Tests
+- [x] Escribir tests para el módulo de integración Alegra (1255 tests pasan)
+- [x] Verificar que todos los tests existentes siguen pasando
