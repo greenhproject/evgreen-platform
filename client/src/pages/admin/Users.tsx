@@ -235,7 +235,7 @@ export default function AdminUsers() {
           <div class="footer">Generado por EVGreen Platform - www.evgreen.lat</div>
         </body></html>
       `;
-      // Crear blob y descargar
+      // Crear blob y descargar (compatible iOS/Safari)
       const blob = new Blob([htmlContent], { type: "text/html" });
       const url = URL.createObjectURL(blob);
       const printWindow = window.open(url, "_blank");

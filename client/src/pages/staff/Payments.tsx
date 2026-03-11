@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { saveBlobCrossPlatform } from "@/lib/pdf-download";
 import {
   CreditCard,
   DollarSign,
@@ -135,12 +136,7 @@ export default function Payments() {
       }
       const byteArray = new Uint8Array(byteNumbers);
       const blob = new Blob([byteArray], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = data.filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      saveBlobCrossPlatform(blob, data.filename);
       toast.success("PDF de pagos descargado");
     },
     onError: (error) => toast.error(error.message),

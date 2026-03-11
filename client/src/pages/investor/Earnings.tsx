@@ -33,6 +33,7 @@ import {
   Loader2
 } from "lucide-react";
 import { toast } from "sonner";
+import { saveBlobCrossPlatform } from "@/lib/pdf-download";
 
 export default function InvestorEarnings() {
   const [period, setPeriod] = useState("month");
@@ -190,14 +191,7 @@ export default function InvestorEarnings() {
     }
     const byteArray = new Uint8Array(byteNumbers);
     const blob = new Blob([byteArray], { type: mimeType });
-    
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
+    saveBlobCrossPlatform(blob, filename);
   };
 
   // Función para exportar
