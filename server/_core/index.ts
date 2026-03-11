@@ -57,6 +57,61 @@ async function startServer() {
   server.headersTimeout = 0; // Sin timeout de headers
   server.requestTimeout = 0; // Sin timeout de request (Node 18+)
   
+  // ============================================
+  // SECURITY HEADERS - Aplicar a todas las respuestas
+  // ============================================
+  app.use((_req, res, next) => {
+    // Prevenir clickjacking
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    // Prevenir MIME type sniffing
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Prevenir XSS reflejado (navegadores legacy)
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    // Referrer policy - no enviar referrer a terceros
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    // Permissions policy - restringir APIs del navegador
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=(self), payment=(self)');
+    // HSTS - forzar HTTPS (1 año)
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    // Remover header que expone tecnología del servidor
+    res.removeHeader('X-Powered-By');
+    next();
+  });
+
+  // ============================================
+  // RATE LIMITING para API endpoints (protección contra brute force)
+  // ============================================
+  const apiRateLimits = new Map<string, { count: number; resetTime: number }>();
+  app.use('/api/', (req, res, next) => {
+    // No limitar webhooks ni OCPP
+    if (req.path.includes('/webhook') || req.path.includes('/ocpp')) return next();
+    
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const key = `${ip}:${req.path}`;
+    const now = Date.now();
+    const windowMs = 60000; // 1 minuto
+    const maxRequests = 120; // 120 requests por minuto por IP+path
+    
+    const entry = apiRateLimits.get(key);
+    if (!entry || now > entry.resetTime) {
+      apiRateLimits.set(key, { count: 1, resetTime: now + windowMs });
+    } else {
+      entry.count++;
+      if (entry.count > maxRequests) {
+        res.status(429).json({ error: 'Too many requests. Please try again later.' });
+        return;
+      }
+    }
+    
+    // Limpiar entradas viejas cada 5 minutos
+    if (Math.random() < 0.001) {
+      Array.from(apiRateLimits.entries()).forEach(([k, v]) => {
+        if (now > v.resetTime) apiRateLimits.delete(k);
+      });
+    }
+    next();
+  });
+
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));

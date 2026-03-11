@@ -1,81 +1,88 @@
-// EVGreen Service Worker v5.0.0 - Auto-recovery + improved cache management
-const CACHE_VERSION = 'v5';
-const CACHE_NAME = `evgreen-cache-${CACHE_VERSION}`;
-const OFFLINE_URL = '/offline.html';
+// EVGreen Service Worker v6.0.0 - Minimal: Push notifications + offline fallback only
+// CRITICAL: This SW does NOT cache any JS, CSS, or HTML to prevent stale content issues.
+// The browser's native HTTP cache handles asset caching efficiently.
+const SW_VERSION = 'v6';
 
-// Solo cachear recursos estáticos que NO cambian con cada build
-const PRECACHE_ASSETS = [
-  '/offline.html',
-  '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png',
-  '/icons/apple-touch-icon.png',
-  '/icons/badge-72x72.png'
-];
-
-// Patrones de archivos con hash
-function isHashedAsset(url) {
-  const pathname = new URL(url).pathname;
-  return pathname.startsWith('/assets/') && /[-\.][a-zA-Z0-9]{6,}\.(js|css)$/.test(pathname);
-}
-
-// Instalación del Service Worker
+// ============================================
+// INSTALLATION - Clean slate approach
+// ============================================
 self.addEventListener('install', (event) => {
-  console.log(`[SW ${CACHE_VERSION}] Instalando...`);
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log(`[SW ${CACHE_VERSION}] Cacheando recursos estáticos`);
-        return Promise.allSettled(
-          PRECACHE_ASSETS.map(url => 
-            cache.add(url).catch(err => {
-              console.warn(`[SW] Failed to cache ${url}:`, err.message);
-            })
-          )
-        );
-      })
-      .then(() => self.skipWaiting())
-  );
+  console.log(`[SW ${SW_VERSION}] Installing...`);
+  // Skip waiting to activate immediately
+  self.skipWaiting();
 });
 
-// Activación: limpiar TODOS los caches viejos
+// ============================================
+// ACTIVATION - Delete ALL old caches
+// ============================================
 self.addEventListener('activate', (event) => {
-  console.log(`[SW ${CACHE_VERSION}] Activando...`);
+  console.log(`[SW ${SW_VERSION}] Activating - clearing all old caches...`);
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => {
-            console.log(`[SW ${CACHE_VERSION}] Eliminando cache antiguo:`, name);
-            return caches.delete(name);
-          })
+        cacheNames.map((name) => {
+          console.log(`[SW ${SW_VERSION}] Deleting cache: ${name}`);
+          return caches.delete(name);
+        })
       );
     }).then(() => {
-      console.log(`[SW ${CACHE_VERSION}] Tomando control de clientes`);
+      console.log(`[SW ${SW_VERSION}] All caches cleared, claiming clients...`);
       return self.clients.claim();
     })
   );
 });
 
-// Estrategia de fetch
+// ============================================
+// FETCH - Minimal interception
+// Only intercept navigation requests for offline fallback
+// Let the browser handle everything else natively
+// ============================================
 self.addEventListener('fetch', (event) => {
-  // Ignorar peticiones que no sean GET
-  if (event.request.method !== 'GET') return;
-
-  // Ignorar peticiones a otros orígenes
-  if (!event.request.url.startsWith(self.location.origin)) return;
-
-  const pathname = new URL(event.request.url).pathname;
-
-  // Para peticiones de API: Network Only (nunca cachear)
-  if (pathname.startsWith('/api/')) {
+  // Only handle navigation requests (page loads)
+  if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() => {
+        // Offline: return a simple offline page
         return new Response(
-          JSON.stringify({ error: 'Sin conexión a internet' }),
+          `<!DOCTYPE html>
+          <html lang="es">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>EVGreen - Sin conexión</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { 
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: #0a0a0a; color: #fff; 
+                display: flex; align-items: center; justify-content: center;
+                min-height: 100vh; padding: 24px; text-align: center;
+              }
+              .container { max-width: 360px; }
+              .icon { font-size: 48px; margin-bottom: 16px; }
+              h1 { font-size: 20px; margin-bottom: 8px; font-weight: 600; }
+              p { font-size: 14px; color: #888; margin-bottom: 24px; line-height: 1.5; }
+              button {
+                padding: 12px 32px; border: none; border-radius: 12px;
+                background: linear-gradient(135deg, #22c55e, #06b6d4);
+                color: white; font-size: 14px; font-weight: 600;
+                cursor: pointer; width: 100%;
+              }
+              button:active { opacity: 0.8; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="icon">📡</div>
+              <h1>Sin conexión a internet</h1>
+              <p>Verifica tu conexión WiFi o datos móviles e intenta de nuevo.</p>
+              <button onclick="location.reload()">Reintentar</button>
+            </div>
+          </body>
+          </html>`,
           { 
-            status: 503,
-            headers: { 'Content-Type': 'application/json' }
+            status: 503, 
+            headers: { 'Content-Type': 'text/html; charset=utf-8' } 
           }
         );
       })
@@ -83,99 +90,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Para Vite dev server resources: let browser handle directly
-  if (pathname.startsWith('/@') || pathname.startsWith('/src/') || pathname.startsWith('/node_modules/')) {
-    return;
-  }
-
-  // Para navegación (páginas HTML): Network First, NO cachear index.html
-  // Esto previene que el SW sirva una versión vieja del HTML que referencia JS con hashes viejos
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          // No cachear la página principal para evitar versiones stale
-          return response;
-        })
-        .catch(() => {
-          return caches.match(OFFLINE_URL).then(r => r || new Response('Offline', { status: 503 }));
-        })
-    );
-    return;
-  }
-
-  // Para assets con hash (JS/CSS de Vite build): Network First
-  if (isHashedAsset(event.request.url)) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const contentType = response.headers.get('content-type') || '';
-            if (contentType.includes('javascript') || contentType.includes('css')) {
-              const responseClone = response.clone();
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(event.request, responseClone);
-              });
-            }
-          }
-          return response;
-        })
-        .catch(() => {
-          return caches.match(event.request).then((cached) => {
-            if (cached) return cached;
-            return new Response('Asset not available offline', { 
-              status: 503, 
-              headers: { 'Content-Type': 'text/plain' }
-            });
-          });
-        })
-    );
-    return;
-  }
-
-  // Para recursos estáticos (imágenes, fuentes, iconos): Cache First con revalidación
-  event.respondWith(
-    caches.match(event.request)
-      .then((cachedResponse) => {
-        if (cachedResponse) {
-          fetch(event.request).then((response) => {
-            if (response.ok) {
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(event.request, response);
-              });
-            }
-          }).catch(() => {});
-          return cachedResponse;
-        }
-
-        return fetch(event.request).then((response) => {
-          if (response.ok) {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return response;
-        });
-      })
-  );
+  // For ALL other requests (JS, CSS, images, API calls):
+  // Do NOT intercept. Let the browser handle them natively.
+  // This prevents stale cache issues that cause the "Cargando..." freeze.
 });
 
-// Escuchar mensaje de actualización forzada desde la app
-self.addEventListener('message', (event) => {
-  if (event.data === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-  if (event.data === 'CLEAR_CACHE') {
-    caches.keys().then((names) => {
-      names.forEach((name) => caches.delete(name));
-    }).then(() => {
-      console.log(`[SW ${CACHE_VERSION}] Cache limpiado por solicitud de la app`);
-    });
-  }
-});
-
-// Manejar notificaciones push (FCM y genéricas)
+// ============================================
+// PUSH NOTIFICATIONS
+// ============================================
 self.addEventListener('push', (event) => {
   if (!event.data) return;
 
@@ -229,7 +151,9 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Rutas válidas de la app para validar redirecciones
+// ============================================
+// NOTIFICATION CLICK HANDLING
+// ============================================
 const VALID_ROUTES = [
   '/', '/map', '/wallet', '/history', '/profile', '/reservations',
   '/support', '/assistant', '/scan', '/start-charge', '/overstay',
@@ -272,7 +196,6 @@ function getRouteForNotificationType(type) {
   return typeRouteMap[type] || '/';
 }
 
-// Manejar click en notificaciones
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
@@ -290,7 +213,6 @@ self.addEventListener('notificationclick', (event) => {
   if (!targetPath || !isValidRoute(targetPath)) {
     const notifType = notifData.type || 'general';
     targetPath = getRouteForNotificationType(notifType);
-    console.log(`[SW] Invalid route "${notifData.url || notifData.clickAction}", redirecting to ${targetPath} based on type "${notifType}"`);
   }
 
   const urlToOpen = self.location.origin + targetPath;
@@ -310,13 +232,26 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Sincronización en background
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-pending-charges') {
-    event.waitUntil(syncPendingCharges());
+// ============================================
+// MESSAGE HANDLING
+// ============================================
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  // Clear cache command - delete everything
+  if (event.data === 'CLEAR_CACHE') {
+    caches.keys().then((names) => {
+      names.forEach((name) => caches.delete(name));
+    });
   }
 });
 
-async function syncPendingCharges() {
-  console.log(`[SW ${CACHE_VERSION}] Sincronizando cargas pendientes...`);
-}
+// ============================================
+// BACKGROUND SYNC (placeholder)
+// ============================================
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-pending-charges') {
+    console.log(`[SW ${SW_VERSION}] Background sync triggered`);
+  }
+});

@@ -2110,3 +2110,22 @@
 ### Tests
 - [x] Escribir tests para el módulo de integración Alegra (1255 tests pasan)
 - [x] Verificar que todos los tests existentes siguen pasando
+
+## CRÍTICO: App se queda en "Cargando..." - Solución Definitiva - 11 Marzo 2026
+
+### Diagnóstico Profundo
+- [x] Analizar Service Worker completo y su ciclo de vida
+- [x] Analizar index.html splash screen y mecanismo de recuperación
+- [x] Analizar main.tsx y flujo de montaje de React
+- [x] Identificar causa raíz definitiva: LazySpinner de useAuth sin timeout
+
+### Solución Definitiva
+- [x] Implementar solución robusta anti-bloqueo (LoadingGuard con timeout 10s)
+- [x] Reescribir SW v6: solo push notifications + offline fallback, CERO cache de JS/CSS/HTML
+- [x] Garantizar que React siempre monte: LoadingGuard en App, Router, ProtectedRoute, RoleBasedRedirect
+
+### Revisión de Seguridad
+- [x] Agregar headers: X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy, Permissions-Policy
+- [x] Revisar XSS: innerHTML solo usa contenido estático (SVGs), no user input. Cookies httpOnly+secure+sameSite
+- [x] Revisar tokens: JWT con httpOnly cookies, verificación con jwtVerify, no expuesto al frontend
+- [x] Revisar exposición: X-Powered-By removido, rate limiting en /api/, no secrets en client code
