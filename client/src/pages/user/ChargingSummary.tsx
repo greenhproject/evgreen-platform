@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { savePdfCrossPlatform } from "@/lib/pdf-download";
 import { EVGREEN_LOGO_BASE64 } from "@/assets/evgreen-logo-base64";
 
 // Componente de banner publicitario para el resumen
@@ -628,8 +629,8 @@ export default function ChargingSummary() {
       y += 3;
       doc.text("Green House Project S.A.S.", pageWidth / 2, y, { align: "center" });
       
-      // Guardar PDF
-      doc.save(`recibo-evgreen-${transaction.id}.pdf`);
+      // Guardar PDF (compatible iOS/Safari)
+      savePdfCrossPlatform(doc, `recibo-evgreen-${transaction.id}.pdf`);
       
       toast.success("Recibo PDF descargado exitosamente");
     } catch (err) {

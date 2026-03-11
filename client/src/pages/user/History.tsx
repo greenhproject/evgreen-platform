@@ -36,6 +36,7 @@ import { AIInsightCard } from "@/components/AIInsightCard";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { savePdfCrossPlatform } from "@/lib/pdf-download";
 
 // Tipo para transacción con estación (extendido con campos de costos)
 interface TransactionWithStation {
@@ -388,7 +389,7 @@ export default function UserHistory() {
       y += 4;
       doc.text("Energ\u00eda para recarga de VE excluida de IVA (Concepto DIAN 840 de 2021)", 15, y);
       
-      doc.save(`recibo-evgreen-${tx.id}.pdf`);
+      savePdfCrossPlatform(doc, `recibo-evgreen-${tx.id}.pdf`);
       toast.success("Recibo PDF descargado");
     } catch (err) {
       toast.error("Error al generar el PDF");

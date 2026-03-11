@@ -2130,3 +2130,10 @@
 - [x] Revisar tokens: JWT con httpOnly cookies, verificación con jwtVerify, no expuesto al frontend
 - [x] Revisar exposición: X-Powered-By removido, rate limiting en /api/, no secrets en client code
 // Security & LoadingGuard update - Wed Mar 11 11:10:00 EDT 2026
+
+## Bug: PDFs se ven en blanco en iPhone/iOS - 11 Marzo 2026
+- [x] Diagnosticar por qué los PDFs generados con jsPDF se ven en blanco en iPhone/Safari
+- [x] Los PDFs funcionan correctamente en Android
+- [x] Investigar compatibilidad jsPDF con Safari/iOS (blob URLs, data URIs, fonts)
+- [x] Implementar solución compatible con iOS/Safari
+- [x] Verificar que la descarga/visualización funcione en ambas plataformas

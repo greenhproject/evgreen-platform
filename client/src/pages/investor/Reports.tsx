@@ -52,6 +52,7 @@ import {
   Legend,
 } from "recharts";
 import { toast } from "sonner";
+import { saveBlobCrossPlatform } from "@/lib/pdf-download";
 
 const COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 
@@ -291,7 +292,7 @@ export default function InvestorReports() {
     return maxDay;
   }, [weekdayAnalysis]);
 
-  // Función para descargar el archivo
+  // Función para descargar el archivo (compatible iOS/Safari)
   const downloadFile = (base64: string, filename: string, mimeType: string) => {
     const byteCharacters = atob(base64);
     const byteNumbers = new Array(byteCharacters.length);
@@ -300,14 +301,7 @@ export default function InvestorReports() {
     }
     const byteArray = new Uint8Array(byteNumbers);
     const blob = new Blob([byteArray], { type: mimeType });
-    
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
+    saveBlobCrossPlatform(blob, filename);
   };
 
   const handleExport = async (format: "excel" | "pdf") => {
