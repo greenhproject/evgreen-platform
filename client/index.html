@@ -218,15 +218,72 @@
       src="%VITE_ANALYTICS_ENDPOINT%/umami"
       data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
     
-    <!-- Registro del Service Worker -->
+    <!-- Registro del Service Worker + Auto-recuperación del splash screen -->
     <script>
+      // Auto-recovery: si React no monta en 12 segundos, limpiar cache y recargar
+      (function() {
+        var splashTimeout = setTimeout(function() {
+          var splash = document.getElementById('splash-screen');
+          if (splash) {
+            console.warn('[EVGreen] React no montó en 12s, intentando recuperación...');
+            // Mostrar mensaje al usuario
+            var banner = document.getElementById('splash-banner');
+            if (banner) {
+              banner.innerHTML = '<div style="text-align:center;width:100%">' +
+                '<div style="color:rgba(255,255,255,0.85);font-family:Inter,sans-serif;font-size:12px;font-weight:600;">Actualizando la app...</div>' +
+                '<div style="color:rgba(255,255,255,0.5);font-family:Inter,sans-serif;font-size:11px;margin-top:4px;">Limpiando caché para cargar la última versión</div>' +
+              '</div>';
+            }
+            // Limpiar Service Worker y caches
+            var cleanupPromises = [];
+            if ('caches' in window) {
+              cleanupPromises.push(
+                caches.keys().then(function(names) {
+                  return Promise.all(names.map(function(n) { return caches.delete(n); }));
+                })
+              );
+            }
+            if ('serviceWorker' in navigator) {
+              cleanupPromises.push(
+                navigator.serviceWorker.getRegistrations().then(function(regs) {
+                  return Promise.all(regs.map(function(r) { return r.unregister(); }));
+                })
+              );
+            }
+            // Verificar si ya intentamos recuperación recientemente
+            var lastRecovery = sessionStorage.getItem('evgreen_recovery');
+            var now = Date.now();
+            if (lastRecovery && (now - parseInt(lastRecovery)) < 30000) {
+              // Ya intentamos hace menos de 30s, mostrar botón manual
+              if (banner) {
+                banner.innerHTML = '<div style="text-align:center;width:100%">' +
+                  '<div style="color:rgba(255,255,255,0.85);font-family:Inter,sans-serif;font-size:12px;font-weight:600;">Error al cargar la app</div>' +
+                  '<div style="color:rgba(255,255,255,0.5);font-family:Inter,sans-serif;font-size:11px;margin-top:4px;">Verifica tu conexión a internet</div>' +
+                  '<button onclick="sessionStorage.removeItem(\'evgreen_recovery\');location.reload()" style="margin-top:10px;padding:8px 20px;background:linear-gradient(135deg,#22c55e,#06b6d4);border:none;border-radius:8px;color:white;font-family:Inter,sans-serif;font-size:12px;font-weight:600;cursor:pointer;">Reintentar</button>' +
+                '</div>';
+              }
+              return;
+            }
+            sessionStorage.setItem('evgreen_recovery', now.toString());
+            Promise.all(cleanupPromises).then(function() {
+              setTimeout(function() { location.reload(); }, 500);
+            }).catch(function() {
+              location.reload();
+            });
+          }
+        }, 12000);
+        // Cancelar timeout si React monta exitosamente
+        window.__evgreenSplashTimeout = splashTimeout;
+      })();
+
+      // Registrar Service Worker
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
+        window.addEventListener('load', function() {
           navigator.serviceWorker.register('/sw.js')
-            .then((registration) => {
+            .then(function(registration) {
               console.log('SW registrado:', registration.scope);
             })
-            .catch((error) => {
+            .catch(function(error) {
               console.log('Error al registrar SW:', error);
             });
         });
