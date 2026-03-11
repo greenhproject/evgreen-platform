@@ -96,20 +96,20 @@ describe("Anti-Proxy-Timeout Strategy", () => {
   });
   
   describe("Servidor HTTP timeouts", () => {
-    it("debe tener server.timeout = 0", () => {
-      expect(indexTs).toContain("server.timeout = 0");
+    it("debe tener server.timeout razonable para HTTP (2min)", () => {
+      expect(indexTs).toContain("server.timeout = 120_000");
     });
     
-    it("debe tener server.keepAliveTimeout = 0", () => {
-      expect(indexTs).toContain("server.keepAliveTimeout = 0");
+    it("debe tener server.keepAliveTimeout de 65s", () => {
+      expect(indexTs).toContain("server.keepAliveTimeout = 65_000");
     });
     
-    it("debe tener server.headersTimeout = 0", () => {
-      expect(indexTs).toContain("server.headersTimeout = 0");
+    it("debe tener server.headersTimeout de 30s", () => {
+      expect(indexTs).toContain("server.headersTimeout = 30_000");
     });
     
-    it("debe tener server.requestTimeout = 0", () => {
-      expect(indexTs).toContain("server.requestTimeout = 0");
+    it("debe tener server.requestTimeout de 60s", () => {
+      expect(indexTs).toContain("server.requestTimeout = 60_000");
     });
   });
   
