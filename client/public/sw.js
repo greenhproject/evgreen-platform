@@ -1,28 +1,20 @@
-// EVGreen Service Worker v4.0.0 - Fix: Notification click routing + URL validation
-const CACHE_VERSION = 'v4';
+// EVGreen Service Worker v5.0.0 - Auto-recovery + improved cache management
+const CACHE_VERSION = 'v5';
 const CACHE_NAME = `evgreen-cache-${CACHE_VERSION}`;
 const OFFLINE_URL = '/offline.html';
 
 // Solo cachear recursos estáticos que NO cambian con cada build
 const PRECACHE_ASSETS = [
   '/offline.html',
-  '/icons/icon-72x72.png',
-  '/icons/icon-96x96.png',
-  '/icons/icon-128x128.png',
-  '/icons/icon-144x144.png',
-  '/icons/icon-152x152.png',
   '/icons/icon-192x192.png',
-  '/icons/icon-384x384.png',
   '/icons/icon-512x512.png',
   '/icons/apple-touch-icon.png',
   '/icons/badge-72x72.png'
 ];
 
-// Patrones de archivos con hash que NO deben cachearse con Cache First
-// Estos archivos cambian de nombre con cada build (ej: Payouts-CAlPAeIf.js)
+// Patrones de archivos con hash
 function isHashedAsset(url) {
   const pathname = new URL(url).pathname;
-  // Archivos en /assets/ con hash en el nombre (ej: Payouts-CAlPAeIf.js, index-D9rVYooB.css)
   return pathname.startsWith('/assets/') && /[-\.][a-zA-Z0-9]{6,}\.(js|css)$/.test(pathname);
 }
 
@@ -33,9 +25,15 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log(`[SW ${CACHE_VERSION}] Cacheando recursos estáticos`);
-        return cache.addAll(PRECACHE_ASSETS);
+        return Promise.allSettled(
+          PRECACHE_ASSETS.map(url => 
+            cache.add(url).catch(err => {
+              console.warn(`[SW] Failed to cache ${url}:`, err.message);
+            })
+          )
+        );
       })
-      .then(() => self.skipWaiting()) // Activar inmediatamente
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -67,8 +65,10 @@ self.addEventListener('fetch', (event) => {
   // Ignorar peticiones a otros orígenes
   if (!event.request.url.startsWith(self.location.origin)) return;
 
+  const pathname = new URL(event.request.url).pathname;
+
   // Para peticiones de API: Network Only (nunca cachear)
-  if (event.request.url.includes('/api/')) {
+  if (pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(event.request).catch(() => {
         return new Response(
@@ -83,51 +83,46 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Para navegación (páginas HTML): Network First
+  // Para Vite dev server resources: let browser handle directly
+  if (pathname.startsWith('/@') || pathname.startsWith('/src/') || pathname.startsWith('/node_modules/')) {
+    return;
+  }
+
+  // Para navegación (páginas HTML): Network First, NO cachear index.html
+  // Esto previene que el SW sirva una versión vieja del HTML que referencia JS con hashes viejos
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          // Cachear la respuesta exitosa
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
+          // No cachear la página principal para evitar versiones stale
           return response;
         })
         .catch(() => {
-          return caches.match(event.request)
-            .then((cachedResponse) => {
-              if (cachedResponse) return cachedResponse;
-              return caches.match(OFFLINE_URL);
-            });
+          return caches.match(OFFLINE_URL).then(r => r || new Response('Offline', { status: 503 }));
         })
     );
     return;
   }
 
-  // Para assets con hash (JS/CSS de Vite): Network First
-  // Estos archivos cambian de nombre con cada build, así que SIEMPRE
-  // debemos intentar obtener la versión más reciente del servidor
+  // Para assets con hash (JS/CSS de Vite build): Network First
   if (isHashedAsset(event.request.url)) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          // Solo cachear si la respuesta es válida (no un HTML fallback)
-          if (response.ok && response.headers.get('content-type')?.includes('javascript') || 
-              response.headers.get('content-type')?.includes('css')) {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
+          if (response.ok) {
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('javascript') || contentType.includes('css')) {
+              const responseClone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(event.request, responseClone);
+              });
+            }
           }
           return response;
         })
         .catch(() => {
-          // Solo usar cache como fallback offline
           return caches.match(event.request).then((cached) => {
             if (cached) return cached;
-            // Si no hay cache, devolver error para que el error boundary lo maneje
             return new Response('Asset not available offline', { 
               status: 503, 
               headers: { 'Content-Type': 'text/plain' }
@@ -143,7 +138,6 @@ self.addEventListener('fetch', (event) => {
     caches.match(event.request)
       .then((cachedResponse) => {
         if (cachedResponse) {
-          // Revalidar en background
           fetch(event.request).then((response) => {
             if (response.ok) {
               caches.open(CACHE_NAME).then((cache) => {
@@ -189,17 +183,12 @@ self.addEventListener('push', (event) => {
   try {
     data = event.data.json();
   } catch (e) {
-    // Si no es JSON, usar como texto plano
     data = { title: 'EVGreen', body: event.data.text() };
   }
 
-  // FCM envía datos en data.notification y data.data
-  // El formato puede variar: { notification: {title, body}, data: {...} } o { title, body, data: {...} }
   const title = data.notification?.title || data.title || 'EVGreen';
   const body = data.notification?.body || data.body || 'Nueva notificación de EVGreen';
   const image = data.notification?.image || data.notification?.imageUrl || data.imageUrl;
-  
-  // Extraer actionUrl/clickAction de los datos
   const clickAction = data.data?.clickAction || data.data?.actionUrl || data.fcmOptions?.link || data.url || '/';
 
   const options = {
@@ -207,9 +196,9 @@ self.addEventListener('push', (event) => {
     icon: '/icons/icon-192x192.png',
     badge: '/icons/badge-72x72.png',
     vibrate: [200, 100, 200],
-    tag: data.data?.type || 'evgreen-notification', // Agrupar por tipo
-    renotify: true, // Vibrar incluso si reemplaza una notificación existente
-    requireInteraction: data.data?.type === 'low_balance' || data.data?.type === 'charging_error', // No auto-cerrar para alertas críticas
+    tag: data.data?.type || 'evgreen-notification',
+    renotify: true,
+    requireInteraction: data.data?.type === 'low_balance' || data.data?.type === 'charging_error',
     data: {
       url: clickAction,
       type: data.data?.type || 'general',
@@ -218,7 +207,6 @@ self.addEventListener('push', (event) => {
     actions: data.actions || [],
   };
 
-  // Agregar imagen si existe
   if (image) {
     options.image = image;
   }
@@ -226,7 +214,6 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(title, options)
       .then(() => {
-        // Notificar a la app en primer plano si está abierta
         return self.clients.matchAll({ type: 'window', includeUncontrolled: true })
           .then((clientList) => {
             clientList.forEach((client) => {
@@ -251,10 +238,9 @@ const VALID_ROUTES = [
   '/settings/payment', '/settings/config', '/vehicles',
   '/investor', '/investor/stations', '/investor/transactions',
   '/investor/reports', '/investor/settings', '/investor/earnings',
-  '/admin'
+  '/admin', '/soc-accuracy'
 ];
 
-// Rutas dinámicas válidas (con parámetros)
 const VALID_DYNAMIC_ROUTES = [
   /^\/station\/\d+$/,
   /^\/charging\/\d+$/,
@@ -267,7 +253,6 @@ function isValidRoute(path) {
   return VALID_DYNAMIC_ROUTES.some(regex => regex.test(path));
 }
 
-// Mapeo de rutas tipo notificación a rutas válidas de la app
 function getRouteForNotificationType(type) {
   const typeRouteMap = {
     'test': '/settings/notifications',
@@ -291,11 +276,9 @@ function getRouteForNotificationType(type) {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  // Determinar URL a abrir desde múltiples fuentes posibles
   const notifData = event.notification.data || {};
   let targetPath = notifData.url || notifData.actionUrl || notifData.clickAction || '';
   
-  // Si la URL es completa, extraer solo el path
   try {
     if (targetPath.startsWith('http')) {
       targetPath = new URL(targetPath).pathname;
@@ -304,9 +287,7 @@ self.addEventListener('notificationclick', (event) => {
     targetPath = '/';
   }
 
-  // Validar que la ruta existe en la app
   if (!targetPath || !isValidRoute(targetPath)) {
-    // Usar el tipo de notificación para determinar la ruta correcta
     const notifType = notifData.type || 'general';
     targetPath = getRouteForNotificationType(notifType);
     console.log(`[SW] Invalid route "${notifData.url || notifData.clickAction}", redirecting to ${targetPath} based on type "${notifType}"`);
@@ -317,14 +298,11 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
-        // Intentar reusar una ventana existente
         for (const client of clientList) {
           if (client.url.includes(self.location.origin) && 'focus' in client) {
-            // Navegar a la URL deseada y enfocar
             return client.navigate(urlToOpen).then(() => client.focus());
           }
         }
-        // Si no hay ventana abierta, abrir una nueva
         if (clients.openWindow) {
           return clients.openWindow(urlToOpen);
         }

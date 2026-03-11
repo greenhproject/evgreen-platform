@@ -60,6 +60,14 @@ createRoot(document.getElementById("root")!).render(
   </trpc.Provider>
 );
 
+// Cancelar el timeout de auto-recuperación del splash
+if ((window as any).__evgreenSplashTimeout) {
+  clearTimeout((window as any).__evgreenSplashTimeout);
+  delete (window as any).__evgreenSplashTimeout;
+}
+// Limpiar flag de recuperación ya que la app cargó exitosamente
+sessionStorage.removeItem('evgreen_recovery');
+
 // Eliminar splash screen con transición suave
 // Esperar un mínimo de 1.5s para que la animación se aprecie
 const splashMinTime = 1500;

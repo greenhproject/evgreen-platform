@@ -2004,3 +2004,34 @@
 - [x] Agregar columna appliedPricePerKwh a transactions para persistir precio dinámico
 - [x] Propagar pricePerKwh desde pending session a transacción y sesión activa
 - [x] Usar precio dinámico en StopTransaction, MeterValues y getActiveSession
+
+## Diagnóstico Servidor - 10 Marzo 2026
+- [ ] Diagnosticar y corregir problemas en el servidor
+- [ ] Hacer db:push si es necesario para sincronizar schema
+
+
+## Fix: Splash Screen Pegado + Sincronización BD - 10 Marzo 2026
+
+### Splash Screen Auto-Recuperación
+- [x] Diagnosticar causa raíz del splash screen pegado
+- [x] Agregar mecanismo de auto-recuperación (12s timeout)
+- [x] Limpiar caché del Service Worker automáticamente si React no monta
+- [x] Mostrar botón "Reintentar" si la recuperación automática falla
+- [x] Cancelar timeout cuando React monta exitosamente
+
+### Service Worker v5
+- [x] Actualizar SW a v5 con mejor gestión de caché
+- [x] NO cachear index.html para evitar versiones stale
+- [x] Reducir assets pre-cacheados (solo los esenciales)
+- [x] Validar content-type antes de cachear assets con hash
+- [x] Manejar errores individuales de pre-caché sin bloquear instalación
+
+### Sincronización Base de Datos
+- [x] Registrar migraciones 0015-0018 en tabla __drizzle_migrations
+- [x] Agregar índice único faltante en event_guests.qrCode
+- [x] Verificar que todas las tablas y columnas del esquema existen en BD
+
+### Test Corregido
+- [x] Corregir test idtag.test.ts que usaba fechas hardcodeadas expiradas
+- [x] Usar fechas relativas (daysAgo) en vez de fechas absolutas
+- [x] Todos los 1241 tests pasan correctamente

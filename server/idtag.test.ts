@@ -114,10 +114,13 @@ describe("Price Alert System", () => {
   
   describe("User Notification Targeting", () => {
     it("should identify users who charged at station recently", () => {
+      // Use dates relative to now to avoid test failures as time passes
+      const now = new Date();
+      const daysAgo = (n: number) => { const d = new Date(now); d.setDate(d.getDate() - n); return d; };
       const mockTransactions = [
-        { userId: 1, stationId: 100, date: new Date("2026-01-25") },
-        { userId: 2, stationId: 100, date: new Date("2026-01-20") },
-        { userId: 3, stationId: 200, date: new Date("2026-01-28") },
+        { userId: 1, stationId: 100, date: daysAgo(5) },
+        { userId: 2, stationId: 100, date: daysAgo(10) },
+        { userId: 3, stationId: 200, date: daysAgo(2) },
       ];
       
       const getUsersForStation = (stationId: number, daysBack: number = 30) => {
