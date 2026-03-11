@@ -95,6 +95,8 @@ const authRouter = router({
       taxId: z.string().optional(),
       bankAccount: z.string().optional(),
       bankName: z.string().optional(),
+      documentType: z.enum(["CC", "NIT", "CE", "PASAPORTE", "TI", "PEP"]).optional(),
+      documentNumber: z.string().max(50).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       await db.updateUser(ctx.user.id, input);

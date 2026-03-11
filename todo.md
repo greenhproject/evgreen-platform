@@ -2054,3 +2054,27 @@
 - [x] Generar PDF con diseño profesional y branding EVGreen
 - [x] Incluir todos los conceptos discriminados en el PDF
 - [x] Asegurar que no haya hojas en blanco innecesarias
+
+## Facturación Electrónica y Mejoras de Recibo - 10 Marzo 2026
+
+### Investigación Facturación Electrónica
+- [x] Investigar si Wompi emite factura electrónica automáticamente
+- [x] Determinar si se necesita integrar un proveedor de facturación electrónica DIAN
+- [x] Documentar hallazgos y recomendaciones
+
+### Campos NIT/Cédula en Perfil
+- [x] Agregar campo tipoDocumento (CC, NIT, CE, Pasaporte) al schema de users
+- [x] Agregar campo numeroDocumento al schema de users
+- [x] Actualizar UI del perfil para capturar NIT/Cédula
+- [x] Incluir NIT/Cédula en los recibos y facturas
+
+### Actualizar Modal de Recibo del Historial
+- [x] Actualizar modal de recibo en historial de cargas con conceptos discriminados
+- [x] Mostrar energía, tarifa conexión, penalizaciones, total desglosado
+- [x] Mantener consistencia con el recibo de ChargingSummary
+
+### Envío Automático de Recibo por Email
+- [x] Implementar envío de recibo por email al finalizar carga
+- [x] Diseñar template HTML profesional para el email
+- [x] Enviar copia al remitente (admin@greenhproject.com) para trazabilidad
+- [x] Incluir todos los conceptos discriminados en el email
