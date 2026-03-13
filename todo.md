@@ -2159,3 +2159,10 @@
 - [x] Implementar mecanismo de auto-ping que haga request a /api/health cada 4 minutos
 - [x] Registrar logs de keep-alive para monitoreo
 - [x] Agregar tests unitarios (18 tests pasan)
+
+## URGENTE: Servicio sigue cayendo en producción - 13 Marzo 2026
+- [ ] Verificar si los cambios anteriores fueron publicados en producción
+- [ ] Diagnosticar por qué el servicio se cae durante la noche (503 Service Disabled)
+- [ ] Investigar si el problema es del hosting (Manus) o del código
+- [ ] Hacer que el frontend NO se quede en "Cargando..." cuando el backend está caído - mostrar error y botón de reintentar
+- [ ] Implementar solución definitiva
