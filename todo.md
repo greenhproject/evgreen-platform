@@ -2168,6 +2168,6 @@
 - [x] Implementar solución definitiva: SW detecta 503, muestra recovery UI con auto-retry cada 10s
 
 ## SEO: Correcciones en Landing Page - 13 Marzo 2026
-- [ ] Título: cambiar de 16 chars a 30-60 chars (usar document.title)
-- [ ] Meta description: reducir de 175 chars a 50-160 chars
-- [ ] Agregar alt text a las 2 imágenes que no lo tienen
+- [x] Título: cambiar de 16 chars a 30-60 chars (usar document.title) - 60 chars
+- [x] Meta description: reducir de 175 chars a 50-160 chars - 139 chars
+- [x] Agregar alt text a las 2 imágenes hero (desktop y móvil) que tenían alt=""
