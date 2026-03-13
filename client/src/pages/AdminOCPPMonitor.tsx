@@ -103,6 +103,17 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
   const [statusFilter, setStatusFilter] = useState<"all" | "connected" | "disconnected">("all");
   const [sortBy, setSortBy] = useState<"name" | "status" | "lastActivity">("status");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [ocppEndpoints, setOcppEndpoints] = useState<{primary: string, alternative: string} | null>(null);
+
+  // Fetch real OCPP WebSocket URL from server
+  useEffect(() => {
+    fetch('/api/ocpp/status')
+      .then(r => r.json())
+      .then(data => {
+        if (data?.endpoints) setOcppEndpoints(data.endpoints);
+      })
+      .catch(() => {});
+  }, []);
 
   // Debounce search
   useEffect(() => {
@@ -167,7 +178,7 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
       {/* WebSocket URL Card */}
       <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
         <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex flex-col gap-4">
             <div className="flex items-start gap-3">
               <div className="p-2 bg-primary/10 rounded-lg">
                 <Link className="h-5 w-5 text-primary" />
@@ -175,26 +186,65 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
               <div>
                 <h3 className="font-semibold text-sm">URL de Conexión OCPP WebSocket</h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Use esta URL para configurar cargadores. Reemplace <code className="bg-muted px-1 rounded">{'{ID}'}</code> con el identificador del cargador.
+                  Use esta URL para configurar cargadores. Reemplace <code className="bg-muted px-1 rounded">{'{CHARGE_POINT_ID}'}</code> con el identificador del cargador.
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 bg-background border rounded-lg px-3 py-2">
-              <code className="text-sm font-mono text-primary select-all">
-                wss://www.evgreen.lat/api/ocpp/ws/{'{CHARGE_POINT_ID}'}
-              </code>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                onClick={() => {
-                  navigator.clipboard.writeText('wss://www.evgreen.lat/api/ocpp/ws/');
-                  toast.success('URL copiada al portapapeles');
-                }}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
+            
+            {/* URL Principal - Cloud Run directa (funciona con WebSocket) */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge variant="default" className="bg-green-600 text-xs">Recomendada</Badge>
+                <span className="text-xs text-muted-foreground">Conexión directa (WebSocket funcional)</span>
+              </div>
+              <div className="flex items-center gap-2 bg-background border border-green-500/30 rounded-lg px-3 py-2">
+                <code className="text-sm font-mono text-primary select-all break-all">
+                  {ocppEndpoints?.primary || 'Cargando...'}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => {
+                    const url = ocppEndpoints?.primary?.replace('{chargePointId}', '') || '';
+                    navigator.clipboard.writeText(url);
+                    toast.success('URL directa copiada al portapapeles');
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
+
+            {/* URL Alternativa */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-xs">Alternativa</Badge>
+                <span className="text-xs text-muted-foreground">Ruta /api/ (si la primaria falla)</span>
+              </div>
+              <div className="flex items-center gap-2 bg-background border rounded-lg px-3 py-2">
+                <code className="text-sm font-mono text-muted-foreground select-all break-all">
+                  {ocppEndpoints?.alternative || 'Cargando...'}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => {
+                    const url = ocppEndpoints?.alternative?.replace('{chargePointId}', '') || '';
+                    navigator.clipboard.writeText(url);
+                    toast.success('URL alternativa copiada al portapapeles');
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-xs text-amber-500 flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              El dominio evgreen.lat pasa por Cloudflare que no soporta WebSocket. Use la URL directa de Cloud Run.
+            </p>
           </div>
         </CardContent>
       </Card>

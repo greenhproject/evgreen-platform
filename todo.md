@@ -2179,3 +2179,8 @@
 - [x] Revisar cambios recientes que pudieron romper la conexión - commit 36106b0 del 11 marzo
 - [x] Implementar corrección - restaurado server.timeout/keepAliveTimeout/headersTimeout/requestTimeout a 0
 - [x] Verificar conectividad OCPP - WebSocket upgrade 101 exitoso, 1317 tests pasan
+
+## Feature: URL OCPP en panel admin + subdominio ocpp.evgreen.lat - 13 Marzo 2026
+- [x] Actualizar panel admin OCPP para mostrar URL directa de Cloud Run (copiable)
+- [x] Mostrar URL de WebSocket OCPP en sección visible del panel admin (con badge Recomendada + Alternativa)
+- [ ] Preparar instrucciones para configurar subdominio ocpp.evgreen.lat → Cloud Run
