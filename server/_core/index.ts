@@ -101,14 +101,23 @@ async function startServer() {
       }
     }
     
-    // Limpiar entradas viejas cada 5 minutos
-    if (Math.random() < 0.001) {
-      Array.from(apiRateLimits.entries()).forEach(([k, v]) => {
-        if (now > v.resetTime) apiRateLimits.delete(k);
-      });
-    }
     next();
   });
+
+  // Limpiar rate limits de forma determinista cada 5 minutos (evita memory leak)
+  setInterval(() => {
+    const now = Date.now();
+    let cleaned = 0;
+    for (const [k, v] of Array.from(apiRateLimits.entries())) {
+      if (now > v.resetTime) {
+        apiRateLimits.delete(k);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) {
+      console.log(`[RateLimit] Cleaned ${cleaned} expired entries, ${apiRateLimits.size} remaining`);
+    }
+  }, 5 * 60 * 1000);
 
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
@@ -1790,4 +1799,73 @@ async function handleOCPP201Message(
   }
 }
 
-startServer().catch(console.error);
+// ============================================
+// CRITICAL: Process-level error handlers
+// Without these, ANY uncaught error kills the process silently
+// and the hosting marks the service as "disabled" (503)
+// ============================================
+
+// Catch unhandled promise rejections (e.g., failed DB queries in background jobs)
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[PROCESS] Unhandled Promise Rejection:', reason);
+  console.error('[PROCESS] Promise:', promise);
+  // Do NOT exit - keep the server running
+});
+
+// Catch uncaught exceptions (e.g., thrown errors in setInterval callbacks)
+process.on('uncaughtException', (error) => {
+  console.error('[PROCESS] Uncaught Exception:', error);
+  console.error('[PROCESS] Stack:', error.stack);
+  // Do NOT exit - keep the server running
+  // The error is logged and the process continues
+});
+
+// Graceful shutdown on SIGTERM (hosting sends this before killing)
+let isShuttingDown = false;
+process.on('SIGTERM', () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log('[PROCESS] SIGTERM received. Graceful shutdown starting...');
+  // Give 10 seconds for in-flight requests to complete
+  setTimeout(() => {
+    console.log('[PROCESS] Graceful shutdown complete. Exiting.');
+    process.exit(0);
+  }, 10000);
+});
+
+process.on('SIGINT', () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log('[PROCESS] SIGINT received. Shutting down...');
+  setTimeout(() => process.exit(0), 5000);
+});
+
+// ============================================
+// Memory monitoring - log warnings when heap grows too large
+// ============================================
+setInterval(() => {
+  const mem = process.memoryUsage();
+  const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
+  const rssMB = Math.round(mem.rss / 1024 / 1024);
+  
+  if (heapMB > 400) {
+    console.warn(`[PROCESS] HIGH MEMORY WARNING: heap=${heapMB}MB, rss=${rssMB}MB`);
+    // Force garbage collection if available
+    if (global.gc) {
+      console.log('[PROCESS] Running forced garbage collection...');
+      global.gc();
+    }
+  }
+}, 5 * 60 * 1000); // Check every 5 minutes
+
+startServer().catch((err) => {
+  console.error('[PROCESS] Failed to start server:', err);
+  // Retry after 5 seconds
+  setTimeout(() => {
+    console.log('[PROCESS] Retrying server start...');
+    startServer().catch((err2) => {
+      console.error('[PROCESS] Second start attempt failed:', err2);
+      process.exit(1);
+    });
+  }, 5000);
+});
