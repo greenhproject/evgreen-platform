@@ -1,14 +1,14 @@
-// EVGreen Service Worker v6.0.0 - Minimal: Push notifications + offline fallback only
+// EVGreen Service Worker v7.0.0 - Push notifications + offline/503 recovery
 // CRITICAL: This SW does NOT cache any JS, CSS, or HTML to prevent stale content issues.
 // The browser's native HTTP cache handles asset caching efficiently.
-const SW_VERSION = 'v6';
+// v7: Added 503 "Service Disabled" detection and recovery UI
+const SW_VERSION = 'v7';
 
 // ============================================
 // INSTALLATION - Clean slate approach
 // ============================================
 self.addEventListener('install', (event) => {
   console.log(`[SW ${SW_VERSION}] Installing...`);
-  // Skip waiting to activate immediately
   self.skipWaiting();
 });
 
@@ -33,66 +33,191 @@ self.addEventListener('activate', (event) => {
 });
 
 // ============================================
-// FETCH - Minimal interception
-// Only intercept navigation requests for offline fallback
-// Let the browser handle everything else natively
+// RECOVERY HTML - Shown when server returns 503 or is unreachable
+// ============================================
+function getRecoveryHTML(reason) {
+  const isOffline = reason === 'offline';
+  const icon = isOffline ? '📡' : '🔧';
+  const title = isOffline ? 'Sin conexión a internet' : 'Servicio en mantenimiento';
+  const message = isOffline 
+    ? 'Verifica tu conexión WiFi o datos móviles e intenta de nuevo.'
+    : 'El servidor está reiniciándose. Esto suele tomar menos de 1 minuto. La página se recargará automáticamente.';
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>EVGreen</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a; color: #fff; 
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; min-height: 100dvh; padding: 24px; text-align: center;
+    }
+    .container { max-width: 360px; width: 100%; }
+    .icon { font-size: 48px; margin-bottom: 16px; }
+    h1 { font-size: 20px; margin-bottom: 8px; font-weight: 600; }
+    p { font-size: 14px; color: #888; margin-bottom: 24px; line-height: 1.5; }
+    .btn-primary {
+      padding: 14px 32px; border: none; border-radius: 12px;
+      background: linear-gradient(135deg, #22c55e, #06b6d4);
+      color: white; font-size: 14px; font-weight: 600;
+      cursor: pointer; width: 100%; margin-bottom: 12px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-primary:active { opacity: 0.8; transform: scale(0.98); }
+    .btn-secondary {
+      padding: 12px 32px; border: 1px solid #333; border-radius: 12px;
+      background: transparent; color: #888; font-size: 13px;
+      cursor: pointer; width: 100%;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-secondary:active { opacity: 0.8; }
+    .status { font-size: 12px; color: #555; margin-top: 20px; }
+    .spinner {
+      display: none; width: 24px; height: 24px;
+      border: 3px solid #333; border-top: 3px solid #22c55e;
+      border-radius: 50%; animation: spin 1s linear infinite;
+      margin: 16px auto 8px;
+    }
+    .auto-retry .spinner { display: block; }
+    .auto-retry .status-text { display: block; }
+    .status-text { display: none; font-size: 12px; color: #22c55e; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="container" id="main">
+    <div class="icon">${icon}</div>
+    <h1>${title}</h1>
+    <p>${message}</p>
+    <button class="btn-primary" onclick="retryNow()">Reintentar</button>
+    <button class="btn-secondary" onclick="clearAndReload()">Limpiar caché y recargar</button>
+    <div class="spinner" id="spinner"></div>
+    <div class="status-text" id="statusText">Reintentando automáticamente...</div>
+    <div class="status" id="status">Verificando conexión...</div>
+  </div>
+  <script>
+    var retryCount = 0;
+    var maxRetries = 60;
+    var retryInterval = ${isOffline ? '5000' : '10000'};
+    var statusEl = document.getElementById('status');
+    var mainEl = document.getElementById('main');
+
+    function updateStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    function retryNow() {
+      updateStatus('Recargando...');
+      window.location.reload();
+    }
+
+    function clearAndReload() {
+      updateStatus('Limpiando caché...');
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          return Promise.all(names.map(function(n) { return caches.delete(n); }));
+        }).then(function() {
+          window.location.reload();
+        }).catch(function() {
+          window.location.reload();
+        });
+      } else {
+        window.location.reload();
+      }
+    }
+
+    // Auto-retry: check if server is back
+    function autoRetry() {
+      if (retryCount >= maxRetries) {
+        updateStatus('El servidor no responde. Intenta más tarde.');
+        return;
+      }
+      retryCount++;
+      mainEl.classList.add('auto-retry');
+      updateStatus('Intento ' + retryCount + '/' + maxRetries + '...');
+
+      fetch('/api/health', { cache: 'no-store' })
+        .then(function(resp) {
+          if (resp.ok) {
+            updateStatus('Servidor disponible. Recargando...');
+            setTimeout(function() { window.location.reload(); }, 500);
+          } else {
+            updateStatus('Servidor aún no disponible (HTTP ' + resp.status + '). Reintentando en ' + (retryInterval/1000) + 's...');
+            setTimeout(autoRetry, retryInterval);
+          }
+        })
+        .catch(function() {
+          updateStatus('Sin respuesta del servidor. Reintentando en ' + (retryInterval/1000) + 's...');
+          setTimeout(autoRetry, retryInterval);
+        });
+    }
+
+    // Start auto-retry after 3 seconds
+    setTimeout(autoRetry, 3000);
+
+    // Also retry when connection comes back
+    window.addEventListener('online', function() {
+      updateStatus('Conexión detectada. Verificando servidor...');
+      setTimeout(autoRetry, 1000);
+    });
+  </script>
+</body>
+</html>`;
+}
+
+// ============================================
+// FETCH - Handle navigation with 503 detection
 // ============================================
 self.addEventListener('fetch', (event) => {
   // Only handle navigation requests (page loads)
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => {
-        // Offline: return a simple offline page
-        return new Response(
-          `<!DOCTYPE html>
-          <html lang="es">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>EVGreen - Sin conexión</title>
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: #0a0a0a; color: #fff; 
-                display: flex; align-items: center; justify-content: center;
-                min-height: 100vh; padding: 24px; text-align: center;
+      fetch(event.request)
+        .then((response) => {
+          // CRITICAL: Detect 503 "Service Disabled" from hosting platform
+          // When hosting disables the service, it returns 503 with its own HTML
+          // which is NOT our app - this causes a blank/broken page
+          if (response.status === 503 || response.status === 502) {
+            console.warn(`[SW ${SW_VERSION}] Server returned ${response.status} - showing recovery UI`);
+            return new Response(
+              getRecoveryHTML('maintenance'),
+              { 
+                status: 200, // Return 200 so browser renders it properly
+                headers: { 
+                  'Content-Type': 'text/html; charset=utf-8',
+                  'Cache-Control': 'no-store, no-cache'
+                } 
               }
-              .container { max-width: 360px; }
-              .icon { font-size: 48px; margin-bottom: 16px; }
-              h1 { font-size: 20px; margin-bottom: 8px; font-weight: 600; }
-              p { font-size: 14px; color: #888; margin-bottom: 24px; line-height: 1.5; }
-              button {
-                padding: 12px 32px; border: none; border-radius: 12px;
-                background: linear-gradient(135deg, #22c55e, #06b6d4);
-                color: white; font-size: 14px; font-weight: 600;
-                cursor: pointer; width: 100%;
-              }
-              button:active { opacity: 0.8; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="icon">📡</div>
-              <h1>Sin conexión a internet</h1>
-              <p>Verifica tu conexión WiFi o datos móviles e intenta de nuevo.</p>
-              <button onclick="location.reload()">Reintentar</button>
-            </div>
-          </body>
-          </html>`,
-          { 
-            status: 503, 
-            headers: { 'Content-Type': 'text/html; charset=utf-8' } 
+            );
           }
-        );
-      })
+          return response;
+        })
+        .catch(() => {
+          // Network error (offline)
+          console.warn(`[SW ${SW_VERSION}] Network error - showing offline UI`);
+          return new Response(
+            getRecoveryHTML('offline'),
+            { 
+              status: 200,
+              headers: { 
+                'Content-Type': 'text/html; charset=utf-8',
+                'Cache-Control': 'no-store, no-cache'
+              } 
+            }
+          );
+        })
     );
     return;
   }
 
   // For ALL other requests (JS, CSS, images, API calls):
   // Do NOT intercept. Let the browser handle them natively.
-  // This prevents stale cache issues that cause the "Cargando..." freeze.
 });
 
 // ============================================
@@ -239,7 +364,6 @@ self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') {
     self.skipWaiting();
   }
-  // Clear cache command - delete everything
   if (event.data === 'CLEAR_CACHE') {
     caches.keys().then((names) => {
       names.forEach((name) => caches.delete(name));

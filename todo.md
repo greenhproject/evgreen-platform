@@ -2161,8 +2161,13 @@
 - [x] Agregar tests unitarios (18 tests pasan)
 
 ## URGENTE: Servicio sigue cayendo en producción - 13 Marzo 2026
-- [ ] Verificar si los cambios anteriores fueron publicados en producción
-- [ ] Diagnosticar por qué el servicio se cae durante la noche (503 Service Disabled)
-- [ ] Investigar si el problema es del hosting (Manus) o del código
-- [ ] Hacer que el frontend NO se quede en "Cargando..." cuando el backend está caído - mostrar error y botón de reintentar
-- [ ] Implementar solución definitiva
+- [x] Verificar si los cambios anteriores fueron publicados en producción (no estaban publicados)
+- [x] Diagnosticar por qué el servicio se cae durante la noche (503 Service Disabled) - hosting desactiva el servicio
+- [x] Investigar si el problema es del hosting (Manus) o del código - es del hosting
+- [x] Hacer que el frontend NO se quede en "Cargando..." cuando el backend está caído - SW v7 + LoadingGuard v2
+- [x] Implementar solución definitiva: SW detecta 503, muestra recovery UI con auto-retry cada 10s
+
+## SEO: Correcciones en Landing Page - 13 Marzo 2026
+- [ ] Título: cambiar de 16 chars a 30-60 chars (usar document.title)
+- [ ] Meta description: reducir de 175 chars a 50-160 chars
+- [ ] Agregar alt text a las 2 imágenes que no lo tienen
