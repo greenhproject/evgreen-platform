@@ -95,21 +95,27 @@ describe("Anti-Proxy-Timeout Strategy", () => {
     });
   });
   
-  describe("Servidor HTTP timeouts", () => {
-    it("debe tener server.timeout razonable para HTTP (2min)", () => {
-      expect(indexTs).toContain("server.timeout = 120_000");
+  describe("Servidor HTTP timeouts - DEBEN ser 0 para OCPP WebSocket", () => {
+    it("debe tener server.timeout = 0 para permitir WebSocket OCPP de larga duración", () => {
+      expect(indexTs).toContain("server.timeout = 0");
     });
     
-    it("debe tener server.keepAliveTimeout de 65s", () => {
-      expect(indexTs).toContain("server.keepAliveTimeout = 65_000");
+    it("debe tener server.keepAliveTimeout = 0 para OCPP", () => {
+      expect(indexTs).toContain("server.keepAliveTimeout = 0");
     });
     
-    it("debe tener server.headersTimeout de 30s", () => {
-      expect(indexTs).toContain("server.headersTimeout = 30_000");
+    it("debe tener server.headersTimeout = 0", () => {
+      expect(indexTs).toContain("server.headersTimeout = 0");
     });
     
-    it("debe tener server.requestTimeout de 60s", () => {
-      expect(indexTs).toContain("server.requestTimeout = 60_000");
+    it("debe tener server.requestTimeout = 0", () => {
+      expect(indexTs).toContain("server.requestTimeout = 0");
+    });
+    
+    it("NO debe tener timeouts mayores a 0 que maten conexiones OCPP", () => {
+      // Asegurar que nadie vuelva a poner timeouts > 0 que rompan OCPP
+      expect(indexTs).not.toContain("server.timeout = 120_000");
+      expect(indexTs).not.toContain("server.timeout = 60_000");
     });
   });
   

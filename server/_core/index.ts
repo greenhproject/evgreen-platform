@@ -48,12 +48,15 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   
-  // HTTP timeouts: valores razonables para requests HTTP normales.
-  // WebSocket connections se manejan por separado vía upgrade handler con TCP keepalive.
-  server.timeout = 120_000; // 2 min para requests HTTP normales
-  server.keepAliveTimeout = 65_000; // 65s (sobre proxy timeout de 60s)
-  server.headersTimeout = 30_000; // 30s para recibir headers
-  server.requestTimeout = 60_000; // 60s para completar request
+  // CRÍTICO: server.timeout DEBE ser 0 para permitir conexiones WebSocket OCPP de larga duración.
+  // El timeout del servidor HTTP de Node.js aplica a TODAS las conexiones, incluyendo WebSocket.
+  // Si se establece un timeout > 0, Node.js cierra las conexiones WebSocket OCPP después de ese tiempo,
+  // causando desconexiones del cargador. Esto se rompió el 11 de marzo cuando se cambió de 0 a 120s.
+  // Los timeouts de requests HTTP normales se manejan a nivel de middleware (rate limiter, express).
+  server.timeout = 0; // Sin timeout - REQUERIDO para WebSocket OCPP de larga duración
+  server.keepAliveTimeout = 0; // Sin timeout de keep-alive - REQUERIDO para OCPP
+  server.headersTimeout = 0; // Sin timeout de headers
+  server.requestTimeout = 0; // Sin timeout de request
   
   // ============================================
   // SECURITY HEADERS - Aplicar a todas las respuestas
