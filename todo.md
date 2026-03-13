@@ -2137,3 +2137,20 @@
 - [x] Investigar compatibilidad jsPDF con Safari/iOS (blob URLs, data URIs, fonts)
 - [x] Implementar solución compatible con iOS/Safari
 - [x] Verificar que la descarga/visualización funcione en ambas plataformas
+
+## Bug: App pegada en "Cargando..." (splash screen) - 12 Marzo 2026
+- [ ] Diagnosticar por qué la app se queda en splash screen "Cargando..."
+- [ ] Revisar logs del servidor y errores de la app
+- [ ] Identificar causa raíz (posible problema con auth, BD, o Service Worker)
+- [ ] Corregir el problema
+- [ ] Verificar que la app carga correctamente
+
+## Bug: Servicio de producción se cae repetidamente - 12 Marzo 2026
+- [x] Investigar causa raíz de caídas recurrentes (503 Service Unavailable)
+- [x] Revisar consumo de memoria y posibles memory leaks
+- [x] Revisar conexiones de BD (pool exhaustion)
+- [x] Revisar Service Worker que pueda estar cacheando errores
+- [x] Implementar graceful shutdown y auto-recovery
+- [x] Agregar manejo robusto de errores que no crashee el proceso
+- [x] Verificar que uncaughtException y unhandledRejection estén manejados
+- [ ] Publicar correcciones y verificar estabilidad (pendiente: usuario debe hacer Publish)
