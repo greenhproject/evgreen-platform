@@ -2171,3 +2171,11 @@
 - [x] Título: cambiar de 16 chars a 30-60 chars (usar document.title) - 60 chars
 - [x] Meta description: reducir de 175 chars a 50-160 chars - 139 chars
 - [x] Agregar alt text a las 2 imágenes hero (desktop y móvil) que tenían alt=""
+
+## URGENTE: Servidor OCPP no conecta con cargador - 13 Marzo 2026
+- [x] Diagnosticar por qué el cargador no conecta al servidor OCPP (hace ~4 días) - server.timeout cambiado de 0 a 120s el 11 marzo
+- [x] Revisar logs del WebSocket OCPP
+- [x] Verificar código del servidor OCPP (upgrade handler, rutas ws)
+- [x] Revisar cambios recientes que pudieron romper la conexión - commit 36106b0 del 11 marzo
+- [x] Implementar corrección - restaurado server.timeout/keepAliveTimeout/headersTimeout/requestTimeout a 0
+- [x] Verificar conectividad OCPP - WebSocket upgrade 101 exitoso, 1317 tests pasan
