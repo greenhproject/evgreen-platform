@@ -3,6 +3,9 @@ import { getLoginUrl } from "@/const";
 import { Link } from "wouter";
 import { motion, useScroll, useTransform, useInView } from "framer-motion";
 import { useRef, useState, useEffect, useCallback } from "react";
+
+// SEO title for the landing page (30-60 chars)
+const SEO_TITLE = "EVGreen - Red de Carga para Vehículos Eléctricos en Colombia";
 import { 
   Zap, 
   MapPin, 
@@ -62,6 +65,12 @@ function AnimatedCounter({ value, suffix = "", prefix = "" }: { value: number; s
 }
 
 export default function Landing() {
+  // Set SEO-optimized document.title (60 chars, within 30-60 range)
+  useEffect(() => {
+    document.title = SEO_TITLE;
+    return () => { document.title = SEO_TITLE; };
+  }, []);
+
   const heroRef = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll({
     target: heroRef,
@@ -84,7 +93,7 @@ export default function Landing() {
             animate={{ opacity: 1 }}
             transition={{ duration: 1.2 }}
             src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/UzuNvoZDAYcFYnrV.webp" 
-            alt="" 
+            alt="Estación de carga EVGreen para vehículos eléctricos en Colombia" 
             className="w-full h-full object-cover object-center"
           />
         </motion.div>
@@ -98,7 +107,7 @@ export default function Landing() {
             animate={{ opacity: 1 }}
             transition={{ duration: 1.2 }}
             src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/aBzFRXnbBhAjtyOP.webp" 
-            alt="" 
+            alt="Estación de carga EVGreen vista móvil con cargadores eléctricos" 
             className="w-full h-full object-cover object-top"
           />
         </motion.div>
