@@ -86,4 +86,40 @@ describe("Process Stability Handlers", () => {
       expect(serverCode).toContain("Retrying server start");
     });
   });
+
+  describe("Internal Keep-Alive mechanism", () => {
+    it("should have startKeepAlive function", () => {
+      expect(serverCode).toContain("function startKeepAlive()");
+    });
+
+    it("should ping /api/health endpoint", () => {
+      expect(serverCode).toContain("/api/health");
+      expect(serverCode).toContain("X-Keep-Alive");
+    });
+
+    it("should have a 4-minute interval", () => {
+      expect(serverCode).toContain("4 * 60 * 1000");
+    });
+
+    it("should have failure tracking with max failures threshold", () => {
+      expect(serverCode).toContain("keepAliveFailures");
+      expect(serverCode).toContain("KEEP_ALIVE_MAX_FAILURES");
+    });
+
+    it("should have a timeout for the fetch request", () => {
+      expect(serverCode).toContain("AbortController");
+      expect(serverCode).toContain("controller.abort()");
+    });
+
+    it("should delay start to let server initialize first", () => {
+      // Keep-alive should start after a delay, not immediately
+      expect(serverCode).toContain("setTimeout(() => {");
+      expect(serverCode).toContain("startKeepAlive();");
+    });
+
+    it("should log sparingly to avoid log spam", () => {
+      // Only logs once per hour approximately
+      expect(serverCode).toContain("getMinutes()");
+    });
+  });
 });

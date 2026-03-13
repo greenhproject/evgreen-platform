@@ -1858,6 +1858,63 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000); // Check every 5 minutes
 
+// ============================================
+// Internal Auto-Ping Keep-Alive
+// Pings /api/health every 4 minutes to prevent the hosting
+// platform from marking the service as inactive/sleeping.
+// This generates regular HTTP traffic that resets inactivity timers.
+// ============================================
+let keepAliveFailures = 0;
+const KEEP_ALIVE_INTERVAL = 4 * 60 * 1000; // 4 minutes
+const KEEP_ALIVE_MAX_FAILURES = 5;
+
+function startKeepAlive() {
+  const port = process.env.PORT || 3000;
+  const keepAliveUrl = `http://localhost:${port}/api/health`;
+  
+  setInterval(async () => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      
+      const response = await fetch(keepAliveUrl, {
+        signal: controller.signal,
+        headers: { 'X-Keep-Alive': 'internal' },
+      });
+      clearTimeout(timeout);
+      
+      if (response.ok) {
+        keepAliveFailures = 0;
+        // Log only every 15th ping (~1 hour) to avoid log spam
+        const now = new Date();
+        if (now.getMinutes() % 60 < 4) {
+          const mem = process.memoryUsage();
+          console.log(`[KeepAlive] OK - uptime=${Math.round(process.uptime())}s, heap=${Math.round(mem.heapUsed / 1024 / 1024)}MB, rss=${Math.round(mem.rss / 1024 / 1024)}MB`);
+        }
+      } else {
+        keepAliveFailures++;
+        console.warn(`[KeepAlive] WARN: Health check returned ${response.status} (failure ${keepAliveFailures}/${KEEP_ALIVE_MAX_FAILURES})`);
+      }
+    } catch (error: any) {
+      keepAliveFailures++;
+      console.error(`[KeepAlive] ERROR: ${error.message || error} (failure ${keepAliveFailures}/${KEEP_ALIVE_MAX_FAILURES})`);
+      
+      // If too many consecutive failures, the server might be in a bad state
+      if (keepAliveFailures >= KEEP_ALIVE_MAX_FAILURES) {
+        console.error(`[KeepAlive] CRITICAL: ${KEEP_ALIVE_MAX_FAILURES} consecutive failures. Server may be unresponsive.`);
+        keepAliveFailures = 0; // Reset counter to keep trying
+      }
+    }
+  }, KEEP_ALIVE_INTERVAL);
+  
+  console.log(`[KeepAlive] Internal keep-alive started (every ${KEEP_ALIVE_INTERVAL / 1000}s → ${keepAliveUrl})`);
+}
+
+// Start keep-alive after server is up (delay 30s to let everything initialize)
+setTimeout(() => {
+  startKeepAlive();
+}, 30000);
+
 startServer().catch((err) => {
   console.error('[PROCESS] Failed to start server:', err);
   // Retry after 5 seconds

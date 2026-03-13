@@ -2154,3 +2154,8 @@
 - [x] Agregar manejo robusto de errores que no crashee el proceso
 - [x] Verificar que uncaughtException y unhandledRejection estén manejados
 - [ ] Publicar correcciones y verificar estabilidad (pendiente: usuario debe hacer Publish)
+
+## Feature: Auto-ping interno keep-alive - 12 Marzo 2026
+- [x] Implementar mecanismo de auto-ping que haga request a /api/health cada 4 minutos
+- [x] Registrar logs de keep-alive para monitoreo
+- [x] Agregar tests unitarios (18 tests pasan)
