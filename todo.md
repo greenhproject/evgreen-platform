@@ -2208,3 +2208,11 @@
 - [ ] DIAGNÓSTICO: App publicada se queda en "Cargando..." indefinidamente
 - [ ] Evaluar si el problema es del proxy/hosting de Manus o del código
 - [ ] Solución definitiva o migración a hosting externo si es necesario
+
+## Migración a Railway (2026-03-14)
+- [ ] Analizar estructura del proyecto y dependencias para Railway
+- [ ] Crear Dockerfile y configuración de build para Railway
+- [ ] Exportar código a GitHub usando conector
+- [ ] Desplegar en Railway con todas las variables de entorno
+- [ ] Configurar dominio evgreen.lat en Railway
+- [ ] Verificar que la app funciona correctamente en Railway
