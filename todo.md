@@ -2203,3 +2203,8 @@
 - [ ] Logs OCPP solo muestran Heartbeat y StatusNotification, NINGÚN RemoteStartTransaction
 - [ ] Investigar flujo completo de startCharge → RemoteStartTransaction
 - [ ] Resolver de forma robusta y definitiva
+
+## Bug Crítico - App se queda en "Cargando..." (2026-03-14)
+- [ ] DIAGNÓSTICO: App publicada se queda en "Cargando..." indefinidamente
+- [ ] Evaluar si el problema es del proxy/hosting de Manus o del código
+- [ ] Solución definitiva o migración a hosting externo si es necesario
