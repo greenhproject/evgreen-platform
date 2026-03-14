@@ -2725,6 +2725,118 @@ export class DualCSMS {
 
     return { status: response?.status || "Accepted" };
   }
+
+  // ============================================================================
+  // BRIDGE: Registrar conexiones externas (desde index.ts WebSocket handler)
+  // ============================================================================
+
+  /**
+   * Registra una conexión WebSocket que fue aceptada por el servidor principal (index.ts)
+   * en el mapa de conexiones de dualCSMS, permitiendo que requestStartTransaction,
+   * requestStopTransaction y otros comandos funcionen correctamente.
+   * 
+   * CRÍTICO: Sin esto, dualCSMS.connections está vacío porque dualCSMS.start() nunca se llama,
+   * y el charger se conecta al WebSocket del servidor principal (puerto 3000), no al de dualCSMS.
+   */
+  registerExternalConnection(
+    ocppIdentity: string,
+    ws: WebSocket,
+    ocppVersion: OCPPVersion,
+    stationId: number | null = null
+  ): void {
+    // Si ya existe una conexión para esta identidad, limpiar primero
+    const existing = this.connections.get(ocppIdentity);
+    if (existing) {
+      existing.pendingCalls.forEach((pending) => {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error("Connection replaced by new external connection"));
+      });
+    }
+
+    const connection: ChargingStationConnection = {
+      ws,
+      stationId,
+      ocppIdentity,
+      ocppVersion,
+      connectedAt: new Date(),
+      lastHeartbeat: new Date(),
+      messageIdCounter: 0,
+      pendingCalls: new Map(),
+    };
+    this.connections.set(ocppIdentity, connection);
+    console.log(`[CSMS-DUAL] Registered external connection: ${ocppIdentity} (ocppVersion=${ocppVersion}, stationId=${stationId}, wsReadyState=${ws.readyState})`);
+    console.log(`[CSMS-DUAL] Active connections after register: [${Array.from(this.connections.keys()).join(', ')}]`);
+  }
+
+  /**
+   * Actualiza el stationId de una conexión existente.
+   * Llamado desde index.ts cuando se resuelve el stationId después de BootNotification.
+   */
+  updateExternalConnectionStationId(ocppIdentity: string, stationId: number): void {
+    const conn = this.connections.get(ocppIdentity);
+    if (conn) {
+      conn.stationId = stationId;
+      console.log(`[CSMS-DUAL] Updated external connection stationId: ${ocppIdentity} -> stationId=${stationId}`);
+    }
+  }
+
+  /**
+   * Enruta un CALLRESULT recibido por el WebSocket principal (index.ts) al sistema
+   * de pendingCalls de dualCSMS. Esto permite que sendCall() resuelva sus Promises
+   * cuando el charger responde a comandos como RemoteStartTransaction.
+   * 
+   * CRÍTICO: Sin esto, sendCall() siempre hace timeout porque las respuestas
+   * llegan a index.ts pero nunca se reenvían a dualCSMS.handleCallResult().
+   */
+  routeCallResult(ocppIdentity: string, messageId: string, payload: any): boolean {
+    const conn = this.connections.get(ocppIdentity);
+    if (!conn) return false;
+    
+    const pending = conn.pendingCalls.get(messageId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      conn.pendingCalls.delete(messageId);
+      pending.resolve(payload);
+      console.log(`[CSMS-DUAL] Routed CALLRESULT to pending call: ${ocppIdentity} [${messageId}]`);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Enruta un CALLERROR recibido por el WebSocket principal (index.ts) al sistema
+   * de pendingCalls de dualCSMS.
+   */
+  routeCallError(ocppIdentity: string, messageId: string, errorCode: string, errorDescription: string): boolean {
+    const conn = this.connections.get(ocppIdentity);
+    if (!conn) return false;
+    
+    const pending = conn.pendingCalls.get(messageId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      conn.pendingCalls.delete(messageId);
+      pending.reject(new Error(`${errorCode}: ${errorDescription}`));
+      console.log(`[CSMS-DUAL] Routed CALLERROR to pending call: ${ocppIdentity} [${messageId}] ${errorCode}`);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Elimina una conexión externa (cuando el WebSocket se cierra en index.ts).
+   * Limpia pendingCalls pendientes.
+   */
+  removeExternalConnection(ocppIdentity: string): void {
+    const conn = this.connections.get(ocppIdentity);
+    if (conn) {
+      conn.pendingCalls.forEach((pending) => {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error("External connection closed"));
+      });
+      this.connections.delete(ocppIdentity);
+      console.log(`[CSMS-DUAL] Removed external connection: ${ocppIdentity}. Remaining: [${Array.from(this.connections.keys()).join(', ')}]`);
+    }
+  }
 }
 
 // Singleton instance

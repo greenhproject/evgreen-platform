@@ -314,19 +314,44 @@ export const chargingRouter = router({
         });
       }
       
-      // Calcular precio dinámico actual
-      // Obtener primer EVSE para calcular precio dinámico
+      // Calcular precio usando la MISMA lógica que startCharge para evitar discrepancias
       const evsesForPrice = await db.getEvsesByStationId(stationId);
       const firstEvse = evsesForPrice[0];
-      let dynamicPrice: dynamicPricing.DynamicPrice;
-      if (firstEvse) {
-        dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, firstEvse.id);
+      
+      // Obtener tarifa de la estación para verificar si usa precio automático
+      const tariff = await db.getActiveTariffByStationId(stationId);
+      const useAutoPricing = tariff?.autoPricing || false;
+      
+      // Obtener el conector seleccionado para determinar tipo AC/DC
+      const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;
+      const evseId = selectedConnector?.id || firstEvse?.id;
+      
+      let pricePerKwh: number;
+      let dynamicMultiplier = 1;
+      
+      if (useAutoPricing && evseId) {
+        // Usar precio dinámico calculado por IA
+        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+        dynamicMultiplier = dynamicPrice.factors?.finalMultiplier || 1;
+        
+        // Aplicar diferenciación AC/DC si está habilitada
+        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice);
+        pricePerKwh = priceByType.price;
+        console.log(`[validateAndEstimate] Using dynamic pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, multiplier: ${dynamicMultiplier.toFixed(2)})`);
       } else {
-        // Sin EVSE, usar precio efectivo de la estación (global si no tiene tarifa propia)
-        const effectivePrice = await db.getEffectiveStationPrice(stationId);
-        dynamicPrice = { finalPrice: effectivePrice.pricePerKwh, factors: { finalMultiplier: 1 } } as dynamicPricing.DynamicPrice;
+        // Usar precio fijo configurado por el inversionista
+        // Aplicar diferenciación AC/DC si está habilitada
+        const effectivePriceData = await db.getEffectiveStationPrice(stationId);
+        const basePrice = effectivePriceData.pricePerKwh;
+        if (evseId) {
+          const priceByType = await db.getPriceByConnectorType(evseId, basePrice);
+          pricePerKwh = priceByType.price;
+          console.log(`[validateAndEstimate] Using fixed pricing with AC/DC differentiation: $${pricePerKwh}/kWh (${priceByType.chargeType})`);
+        } else {
+          pricePerKwh = basePrice;
+          console.log(`[validateAndEstimate] Using fixed pricing: $${pricePerKwh}/kWh`);
+        }
       }
-      const pricePerKwh = dynamicPrice.finalPrice;
       
       // Calcular estimación según modo de carga
       let estimatedKwh = 0;
@@ -375,8 +400,8 @@ export const chargingRouter = router({
         estimatedTime: Math.round(estimatedTime),
         hasSufficientBalance,
         shortfall: hasSufficientBalance ? 0 : Math.ceil(estimatedCost - balance),
-        dynamicMultiplier: dynamicPrice.factors?.finalMultiplier || 1,
-        demandLevel: dynamicPricing.getDemandLevel(dynamicPrice.factors?.finalMultiplier || 1),
+        dynamicMultiplier,
+        demandLevel: dynamicPricing.getDemandLevel(dynamicMultiplier),
       };
     }),
 
@@ -582,6 +607,18 @@ export const chargingRouter = router({
         
         let sent = false;
         let remoteStartResponse: { status: string } | null = null;
+        
+        // LOG DIAGNÓSTICO: Estado de conexiones antes de enviar
+        const dualConnStatus = dualCSMS.isStationConnected(ocppIdentityForCommand);
+        const dualDiag = dualCSMS.getDetailedDiagnostics();
+        const connMgrConn = ocppConnection;
+        console.log(`[startCharge] ===== PRE-SEND DIAGNOSTICS =====`);
+        console.log(`[startCharge] ocppIdentity: ${ocppIdentityForCommand}`);
+        console.log(`[startCharge] dualCSMS.isStationConnected: ${dualConnStatus}`);
+        console.log(`[startCharge] dualCSMS connections: ${dualDiag.map(c => `${c.ocppIdentity}(ws=${c.wsReadyStateLabel})`).join(', ') || 'NONE'}`);
+        console.log(`[startCharge] connection-manager: ${connMgrConn ? `${connMgrConn.ocppIdentity}(ws=${connMgrConn.ws.readyState})` : 'NOT FOUND'}`);
+        console.log(`[startCharge] pricePerKwh: ${pricePerKwh}, chargeMode: ${chargeMode}, targetValue: ${targetValue}`);
+        console.log(`[startCharge] ================================`);
         
         // Intentar enviar con requestStartTransaction (async, espera respuesta, registra logs)
         // Retry hasta 3 veces con backoff de 2s entre intentos

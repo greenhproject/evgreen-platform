@@ -78,6 +78,11 @@
 - [ ] Configuración de prioridad y segmentación
 
 
+## Bugs Críticos (2026-03-13)
+- [x] FIX: RemoteStartTransaction no llega al cargador - dos sistemas de conexión desincronizados (connection-manager.ts vs csms-dual.ts)
+- [x] FIX: Precio dinámico no se aplica correctamente - app muestra precio con descuento pero sesión inicia con precio más alto
+- [x] Agregar logging comprehensivo al flujo de carga
+
 ## Bugs y Mejoras Reportadas - 17 Enero 2026
 
 - [x] BUG: Formulario de nueva estación no incluye campo para tipos de conectores/cargadores
@@ -2191,3 +2196,10 @@
 - [x] Investigar flujo de startCharging para ver dónde obtiene el precio - getActiveSession línea 855
 - [x] Corregido: getActiveSession ahora usa session.pricePerKwh (dinámico) en vez de effectivePrice (base)
 - [x] Verificado: también corregido fallback en setManualSoc para usar appliedPricePerKwh de la transacción
+
+## CRÍTICO: RemoteStartTransaction no se envía + precio incorrecto - 13 Marzo 2026
+- [ ] RemoteStartTransaction nunca se envía al cargador - usuario queda en "Conectando" indefinidamente
+- [ ] Precio cambia de $1,157 (dinámico en página estación) a $1,500 al iniciar carga
+- [ ] Logs OCPP solo muestran Heartbeat y StatusNotification, NINGÚN RemoteStartTransaction
+- [ ] Investigar flujo completo de startCharge → RemoteStartTransaction
+- [ ] Resolver de forma robusta y definitiva
