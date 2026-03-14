@@ -19,6 +19,7 @@ import { startOverstayMonitor, onChargingFinished, onCableDisconnected } from ".
 import { reservationJobs } from "../notifications/reservation-notifications";
 import * as ocppManager from "../ocpp/connection-manager";
 import * as alertsService from "../ocpp/alerts-service";
+import { dualCSMS } from "../ocpp/csms-dual";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -459,6 +460,14 @@ async function startServer() {
       remoteAddress: req.socket?.remoteAddress,
     });
 
+    // BRIDGE CRÍTICO: Registrar la conexión en dualCSMS para que requestStartTransaction funcione.
+    // El charger se conecta al WebSocket del servidor principal (puerto 3000),
+    // pero startCharge usa dualCSMS.requestStartTransaction() que busca en dualCSMS.connections.
+    // Sin este registro, dualCSMS.connections está vacío y los comandos nunca llegan al charger.
+    const ocppVersionForDual = ocppVersion === "2.0.1" ? "2.0.1" : "1.6";
+    dualCSMS.registerExternalConnection(ocppIdentity, ws, ocppVersionForDual as any);
+    console.log(`[OCPP] Registered connection in dualCSMS bridge: ${ocppIdentity} (${ocppVersionForDual})`);
+
     // Delegar al manejador del CSMS
     handleOCPPConnection(ws, ocppIdentity, ocppVersion);
   });
@@ -577,6 +586,13 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
             return;
           }
           console.log(`[OCPP] ${ocppIdentity} -> CALLRESULT [${messageId}]:`, JSON.stringify(payload).substring(0, 200));
+          // BRIDGE CRÍTICO: Enrutar CALLRESULT a dualCSMS para resolver pendingCalls
+          // Esto permite que sendCall() (usado por requestStartTransaction, requestStopTransaction, etc.)
+          // reciba la respuesta del cargador y resuelva su Promise.
+          const routed = dualCSMS.routeCallResult(ocppIdentity, messageId, payload);
+          if (routed) {
+            console.log(`[OCPP] CALLRESULT [${messageId}] routed to dualCSMS pending call for ${ocppIdentity}`);
+          }
           return;
         }
 
@@ -589,6 +605,11 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
             return;
           }
           console.log(`[OCPP] ${ocppIdentity} -> CALLERROR [${messageId}]: ${errorCode} - ${errorDescription}`);
+          // BRIDGE: Enrutar CALLERROR a dualCSMS para rechazar pendingCalls
+          const errorRouted = dualCSMS.routeCallError(ocppIdentity, messageId, errorCode, errorDescription);
+          if (errorRouted) {
+            console.log(`[OCPP] CALLERROR [${messageId}] routed to dualCSMS pending call for ${ocppIdentity}`);
+          }
           return;
         }
 
@@ -645,6 +666,11 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
               firmwareVersion: payload.chargingStation?.firmwareVersion,
             };
             ocppManager.updateBootInfo(ocppIdentity, bootInfo, stationId);
+            
+            // BRIDGE: Actualizar stationId en dualCSMS para que requestStartTransaction pueda encontrar la conexión
+            if (stationId) {
+              dualCSMS.updateExternalConnectionStationId(ocppIdentity, stationId);
+            }
             
             // CAPA 3: Después de BootNotification, configurar HeartbeatInterval agresivo
             // para generar tráfico de datos bidireccional frecuente que resetee el proxy timeout
@@ -722,6 +748,9 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
     });
 
     ws.on("close", async (code: number, reason: Buffer) => {
+      // BRIDGE: Limpiar conexión en dualCSMS cuando el WebSocket se cierra
+      dualCSMS.removeExternalConnection(ocppIdentity);
+      
       const connectedAt = (ws as any)._connectedAt || 0;
       const durationSec = connectedAt ? Math.round((Date.now() - connectedAt) / 1000) : 0;
       const reasonStr = reason?.toString() || '';
