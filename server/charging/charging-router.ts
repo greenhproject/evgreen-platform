@@ -838,8 +838,8 @@ export const chargingRouter = router({
             // Obtener tipo de conector real desde la BD
             const evses = await db.getEvsesByStationId(session.stationId);
             const evse = evses.find((e: any) => e.evseIdLocal === session.connectorId || e.connectorId === session.connectorId);
-            // Obtener tarifa real de la estación
-            const effectivePrice = await db.getEffectiveStationPrice(session.stationId);
+            // CORREGIDO: Usar el precio dinámico de la sesión pendiente (calculado en startCharge)
+            // En vez del precio base fijo de la estación
             return {
               transactionId: 0,
               stationId: session.stationId,
@@ -852,7 +852,7 @@ export const chargingRouter = router({
               currentKwh: 0,
               estimatedKwh: 0,
               currentCost: 0,
-              pricePerKwh: effectivePrice.pricePerKwh,
+              pricePerKwh: session.pricePerKwh,
               powerKw: evse?.powerKw ? parseFloat(String(evse.powerKw)) : 7,
               currentPower: 0,
               status: "CONNECTING",
@@ -1197,8 +1197,11 @@ export const chargingRouter = router({
         // Si no hay sesión en memoria, crear una básica con el SoC manual
         // Esto ocurre cuando el cargador inició la transacción por OCPP sin pasar por startCharge del frontend
         console.log(`[setManualSoc] No active session in memory for transaction ${activeTransaction.id}, creating one now`);
+        // Priorizar precio dinámico guardado en la transacción, luego precio base
         const effectivePrice = await db.getEffectiveStationPrice(activeTransaction.stationId);
-        const pricePerKwh = effectivePrice?.pricePerKwh || 1800;
+        const pricePerKwh = activeTransaction.appliedPricePerKwh 
+          ? parseFloat(String(activeTransaction.appliedPricePerKwh)) 
+          : (effectivePrice?.pricePerKwh || 1800);
         const startTime = new Date(activeTransaction.startTime);
         const currentKwh = activeTransaction.kwhConsumed ? parseFloat(activeTransaction.kwhConsumed) : 0;
         const currentCost = activeTransaction.totalCost ? parseFloat(activeTransaction.totalCost) : 0;
