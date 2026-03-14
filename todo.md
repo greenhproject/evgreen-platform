@@ -2183,4 +2183,11 @@
 ## Feature: URL OCPP en panel admin + subdominio ocpp.evgreen.lat - 13 Marzo 2026
 - [x] Actualizar panel admin OCPP para mostrar URL directa de Cloud Run (copiable)
 - [x] Mostrar URL de WebSocket OCPP en sección visible del panel admin (con badge Recomendada + Alternativa)
-- [ ] Preparar instrucciones para configurar subdominio ocpp.evgreen.lat → Cloud Run
+- [x] Preparar instrucciones para configurar subdominio ocpp.evgreen.lat → Cloud Run (entregadas al usuario)
+
+## Bug: Precio dinámico no se aplica al iniciar carga - 13 Marzo 2026
+- [x] La página de estación muestra tarifa dinámica ($1,157/kWh con descuento baja demanda)
+- [x] Al iniciar carga, se usa precio base estándar ($1,300/kWh) en vez del dinámico - CORREGIDO
+- [x] Investigar flujo de startCharging para ver dónde obtiene el precio - getActiveSession línea 855
+- [x] Corregido: getActiveSession ahora usa session.pricePerKwh (dinámico) en vez de effectivePrice (base)
+- [x] Verificado: también corregido fallback en setManualSoc para usar appliedPricePerKwh de la transacción
