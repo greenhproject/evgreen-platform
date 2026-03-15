@@ -4,11 +4,8 @@ import type { AppRouter } from "../../../server/routers";
 export const trpc = createTRPCReact<AppRouter>();
 
 /**
- * Obtener la URL de login de OAuth
+ * Obtener la URL de login - apunta a la ruta de Auth0 en el servidor
  */
 export function getLoginUrl(): string {
-  const portalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL || "https://manus.im";
-  const appId = import.meta.env.VITE_APP_ID || "";
-  const redirectUrl = `${window.location.origin}/api/oauth/callback`;
-  return `${portalUrl}/oauth/authorize?app_id=${appId}&redirect_url=${encodeURIComponent(redirectUrl)}`;
+  return `${window.location.origin}/api/auth/login`;
 }

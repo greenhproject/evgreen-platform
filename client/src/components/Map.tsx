@@ -69,9 +69,9 @@
  *
  * -------------------------------
  * ✅ SUMMARY
- * - “map-attached” → AdvancedMarkerElement, DirectionsRenderer, Layers.
- * - “standalone” → Geocoder, DirectionsService, DistanceMatrixService, ElevationService.
- * - “data-only” → Place, Geometry utilities.
+ * - "map-attached" → AdvancedMarkerElement, DirectionsRenderer, Layers.
+ * - "standalone" → Geocoder, DirectionsService, DistanceMatrixService, ElevationService.
+ * - "data-only" → Place, Geometry utilities.
  */
 
 /// <reference types="@types/google.maps" />
@@ -86,24 +86,25 @@ declare global {
   }
 }
 
-const API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
-const FORGE_BASE_URL =
-  import.meta.env.VITE_FRONTEND_FORGE_API_URL ||
-  "https://forge.butterfly-effect.dev";
-const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
+// Use Google Maps API Key directly (set via VITE_GOOGLE_MAPS_API_KEY env var)
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
 function loadMapScript() {
   return new Promise(resolve => {
+    // If Google Maps is already loaded, resolve immediately
+    if (window.google?.maps) {
+      resolve(null);
+      return;
+    }
     const script = document.createElement("script");
-    script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
     script.async = true;
-    script.crossOrigin = "anonymous";
     script.onload = () => {
       resolve(null);
-      script.remove(); // Clean up immediately
     };
     script.onerror = () => {
       console.error("Failed to load Google Maps script");
+      resolve(null);
     };
     document.head.appendChild(script);
   });
@@ -159,6 +160,10 @@ export function MapView({
     await loadMapScript();
     if (!mapContainer.current) {
       console.error("Map container not found");
+      return;
+    }
+    if (!window.google?.maps) {
+      console.error("Google Maps failed to load - check API key");
       return;
     }
     map.current = new window.google.maps.Map(mapContainer.current, {

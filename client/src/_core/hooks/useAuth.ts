@@ -26,18 +26,22 @@ export function useAuth(options?: UseAuthOptions) {
 
   const logout = useCallback(async () => {
     try {
+      // Clear the tRPC cookie via the tRPC mutation
       await logoutMutation.mutateAsync();
     } catch (error: unknown) {
       if (
         error instanceof TRPCClientError &&
         error.data?.code === "UNAUTHORIZED"
       ) {
-        return;
+        // Already logged out, continue
+      } else {
+        console.error("[Auth] Logout error:", error);
       }
-      throw error;
     } finally {
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
+      // Redirect to Auth0 logout to clear Auth0 session
+      window.location.href = `${window.location.origin}/api/auth/logout`;
     }
   }, [logoutMutation, utils]);
 
@@ -67,7 +71,7 @@ export function useAuth(options?: UseAuthOptions) {
     if (typeof window === "undefined") return;
     if (window.location.pathname === redirectPath) return;
 
-    window.location.href = redirectPath
+    window.location.href = redirectPath;
   }, [
     redirectOnUnauthenticated,
     redirectPath,

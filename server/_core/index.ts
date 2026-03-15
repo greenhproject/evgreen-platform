@@ -5,7 +5,8 @@ import net from "net";
 import path from "path";
 import fs from "fs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
+import { registerAuth0Routes } from "./auth0";
+import cookieParser from "cookie-parser";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -123,6 +124,8 @@ async function startServer() {
     }
   }, 5 * 60 * 1000);
 
+  // Cookie parser (needed for Auth0 state cookie)
+  app.use(cookieParser());
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -131,8 +134,8 @@ async function startServer() {
   // Wompi webhook
   app.post("/api/wompi/webhook", express.json(), handleWompiWebhook);
   
-  // OAuth callback under /api/oauth/callback
-  registerOAuthRoutes(app);
+  // Auth0 authentication routes
+  registerAuth0Routes(app);
   // tRPC API
   app.use(
     "/api/trpc",
@@ -234,7 +237,11 @@ async function startServer() {
   // Servir archivos críticos del Service Worker ANTES de Vite/static
   // Esto garantiza que sw.js, manifest.json y offline.html siempre estén disponibles
   // incluso a través de proxies (Cloudflare, Manus) que podrían interceptar las peticiones
-  const publicDir = path.resolve(import.meta.dirname, "../..", "client", "public");
+  // En producción (Docker): import.meta.dirname = /app/dist, archivos en /app/dist/public
+  // En desarrollo: import.meta.dirname = server/_core, archivos en client/public
+  const publicDir = process.env.NODE_ENV === "development"
+    ? path.resolve(import.meta.dirname, "../..", "client", "public")
+    : path.resolve(import.meta.dirname, "public");
   
   app.get("/sw.js", (_req, res) => {
     const swPath = path.resolve(publicDir, "sw.js");

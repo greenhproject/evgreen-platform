@@ -99,12 +99,11 @@ describe("Componentes de UI - Validación de archivos", () => {
       expect(content).toContain("export function getLoginUrl");
     });
 
-    it("debe construir URL con parámetros correctos", () => {
+    it("debe construir URL de login correctamente", () => {
       const filePath = path.join(clientSrcPath, "lib/trpc.ts");
       const content = fs.readFileSync(filePath, "utf-8");
-      expect(content).toContain("VITE_OAUTH_PORTAL_URL");
-      expect(content).toContain("VITE_APP_ID");
-      expect(content).toContain("redirect_url");
+      // After Auth0 migration, getLoginUrl points to /api/auth/login
+      expect(content).toContain("/api/auth/login");
     });
   });
 });

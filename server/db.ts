@@ -3621,12 +3621,26 @@ export async function getEffectiveStationPrice(stationId: number): Promise<{
 
 export async function getPriceByConnectorType(
   evseId: number,
-  basePrice: number
+  basePrice: number,
+  /** Si la tarifa viene de una estación específica ('station'), NO sobreescribir con precios globales AC/DC.
+   *  Solo aplicar precios globales AC/DC cuando la fuente es 'global' (fallback sin tarifa de estación). */
+  tariffSource?: 'station' | 'global'
 ): Promise<{ price: number; connectorType: string; chargeType: string }> {
   // Obtener información del EVSE
   const evse = await getEvseById(evseId);
   if (!evse) {
     return { price: basePrice, connectorType: "UNKNOWN", chargeType: "AC" };
+  }
+  
+  // Si la tarifa viene de una estación específica, respetar el precio calculado
+  // (ya sea dinámico o fijo del inversionista) y NO sobreescribir con precios globales AC/DC.
+  // La diferenciación AC/DC global solo aplica cuando se usa el fallback global.
+  if (tariffSource === 'station') {
+    return {
+      price: basePrice,
+      connectorType: evse.connectorType,
+      chargeType: evse.chargeType,
+    };
   }
   
   // Obtener configuración de precios diferenciados
@@ -3641,7 +3655,7 @@ export async function getPriceByConnectorType(
     };
   }
   
-  // Determinar precio según tipo de carga (AC o DC)
+  // Determinar precio según tipo de carga (AC o DC) - solo para tarifa global
   const price = evse.chargeType === "DC" 
     ? priceRanges.defaultPricePerKwhDC 
     : priceRanges.defaultPricePerKwhAC;
