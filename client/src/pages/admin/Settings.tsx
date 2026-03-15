@@ -108,10 +108,10 @@ export default function AdminSettings() {
       if (data.success) {
         setAlegraConnectionStatus("success");
         setAlegraCompanyName(data.companyName || "");
-        toast.success(`Conexi\u00f3n exitosa con Alegra: ${data.companyName}`);
+        toast.success(`Conexión exitosa con Alegra: ${data.companyName}`);
       } else {
         setAlegraConnectionStatus("error");
-        toast.error(`Error de conexi\u00f3n: ${data.error}`);
+        toast.error(`Error de conexión: ${data.error}`);
       }
     },
     onError: (err) => {
@@ -310,7 +310,7 @@ export default function AdminSettings() {
       return;
     }
     if (!token && alegraTokenSaved) {
-      toast.info("Para probar la conexi\u00f3n, ingresa el token nuevamente");
+      toast.info("Para probar la conexión, ingresa el token nuevamente");
       return;
     }
     setAlegraConnectionStatus("testing");
@@ -1103,7 +1103,7 @@ export default function AdminSettings() {
                 <h4 className="text-sm font-semibold text-green-400 mb-3">Vista previa (datos de la invitación)</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-start gap-2">
-                    <span className="text-green-500">\ud83d\udcc5</span>
+                    <span className="text-green-500">📅</span>
                     <div>
                       <p className="font-medium">{eventForm.eventDate}</p>
                       {eventForm.eventTime && eventForm.eventTime !== "Por confirmar" && (
@@ -1112,7 +1112,7 @@ export default function AdminSettings() {
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
-                    <span className="text-green-500">\ud83d\udccd</span>
+                    <span className="text-green-500">📍</span>
                     <div>
                       <p className="font-medium">{eventForm.eventVenueName}</p>
                       <p className="text-muted-foreground">{eventForm.eventAddress}</p>
@@ -1120,12 +1120,12 @@ export default function AdminSettings() {
                         <div className="flex gap-3 mt-1">
                           {eventForm.eventGoogleMapsUrl && (
                             <a href={eventForm.eventGoogleMapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline text-xs">
-                              Abrir en Google Maps \u2197
+                              Abrir en Google Maps ↗
                             </a>
                           )}
                           {eventForm.eventWazeUrl && (
                             <a href={eventForm.eventWazeUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline text-xs">
-                              Abrir en Waze \u2197
+                              Abrir en Waze ↗
                             </a>
                           )}
                         </div>
@@ -1134,13 +1134,13 @@ export default function AdminSettings() {
                   </div>
                   {eventForm.eventDressCode && (
                     <div className="flex items-start gap-2">
-                      <span className="text-green-500">\ud83d\udc54</span>
+                      <span className="text-green-500">👔</span>
                       <p className="font-medium">{eventForm.eventDressCode}</p>
                     </div>
                   )}
                   {eventForm.eventContactPhone && (
                     <div className="flex items-start gap-2">
-                      <span className="text-green-500">\ud83d\udcde</span>
+                      <span className="text-green-500">📞</span>
                       <p>{eventForm.eventContactPhone}</p>
                     </div>
                   )}
@@ -1208,10 +1208,10 @@ export default function AdminSettings() {
                       setAlegraForm(prev => ({ ...prev, alegraToken: e.target.value }));
                       setAlegraTokenTouched(true);
                     }}
-                    placeholder={alegraTokenSaved ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (guardado)" : "Token de API de Alegra"}
+                    placeholder={alegraTokenSaved ? "•••••••• (guardado)" : "Token de API de Alegra"}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Obt\u00e9nlo en Alegra &gt; Configuraci\u00f3n &gt; Integraciones &gt; API
+                    Obténlo en Alegra &gt; Configuración &gt; Integraciones &gt; API
                   </p>
                 </div>
               </div>
@@ -1227,7 +1227,7 @@ export default function AdminSettings() {
                   {alegraTestMutation.isPending ? (
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Probando...</>
                   ) : (
-                    <><Zap className="w-4 h-4 mr-2" />Probar conexi\u00f3n</>
+                    <><Zap className="w-4 h-4 mr-2" />Probar conexión</>
                   )}
                 </Button>
                 {alegraConnectionStatus === "success" && (
@@ -1239,20 +1239,20 @@ export default function AdminSettings() {
                 {alegraConnectionStatus === "error" && (
                   <span className="flex items-center gap-1 text-sm text-red-500">
                     <XCircle className="w-4 h-4" />
-                    Error de conexi\u00f3n
+                    Error de conexión
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Configuraci\u00f3n avanzada */}
+            {/* Configuración avanzada */}
             <div className="space-y-4">
-              <h4 className="font-medium">Configuraci\u00f3n de facturaci\u00f3n</h4>
+              <h4 className="font-medium">Configuración de facturación</h4>
               
               <div className="flex items-center justify-between">
                 <div>
-                  <Label>Emisi\u00f3n autom\u00e1tica</Label>
-                  <p className="text-xs text-muted-foreground">Crear factura autom\u00e1ticamente al completar carga</p>
+                  <Label>Emisión automática</Label>
+                  <p className="text-xs text-muted-foreground">Crear factura automáticamente al completar carga</p>
                 </div>
                 <Switch
                   checked={alegraForm.alegraAutoInvoice}
@@ -1262,7 +1262,7 @@ export default function AdminSettings() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>N\u00famero de resoluci\u00f3n DIAN</Label>
+                  <Label>Número de resolución DIAN</Label>
                   <Input
                     value={alegraForm.alegraResolutionNumber}
                     onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraResolutionNumber: e.target.value }))}
@@ -1270,14 +1270,14 @@ export default function AdminSettings() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>ID \u00cdtem por defecto (Alegra)</Label>
+                  <Label>ID Ítem por defecto (Alegra)</Label>
                   <Input
                     value={alegraForm.alegraDefaultItemId}
                     onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraDefaultItemId: e.target.value }))}
                     placeholder="ID del servicio de carga en Alegra"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Crea un servicio \"Carga de VE\" en Alegra y copia su ID aqu\u00ed
+                    Crea un servicio \"Carga de VE\" en Alegra y copia su ID aquí
                   </p>
                 </div>
               </div>
@@ -1291,15 +1291,15 @@ export default function AdminSettings() {
                     placeholder="ID del impuesto (0 para excluido)"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Energ\u00eda para VE est\u00e1 excluida de IVA (Concepto DIAN 840)
+                    Energía para VE está excluida de IVA (Concepto DIAN 840)
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>ID M\u00e9todo de pago (Alegra)</Label>
+                  <Label>ID Método de pago (Alegra)</Label>
                   <Input
                     value={alegraForm.alegraPaymentMethodId}
                     onChange={(e) => setAlegraForm(prev => ({ ...prev, alegraPaymentMethodId: e.target.value }))}
-                    placeholder="ID del m\u00e9todo de pago"
+                    placeholder="ID del método de pago"
                   />
                 </div>
               </div>
@@ -1322,7 +1322,7 @@ export default function AdminSettings() {
               {updateMutation.isPending ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Guardando...</>
               ) : (
-                "Guardar configuraci\u00f3n de facturaci\u00f3n"
+                "Guardar configuración de facturación"
               )}
             </Button>
           </Card>
