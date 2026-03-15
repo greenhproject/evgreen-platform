@@ -2216,3 +2216,14 @@
 - [ ] Desplegar en Railway con todas las variables de entorno
 - [ ] Configurar dominio evgreen.lat en Railway
 - [ ] Verificar que la app funciona correctamente en Railway
+
+
+## Bug Crítico: Precio dinámico no se aplica al iniciar carga (2026-03-15)
+- [x] Estación muestra $1,216/kWh (dinámico -6%) pero sesión de carga muestra $1,500/kWh
+- [x] Investigar por qué getStationByCode muestra precio base $1,300 pero startCharge usa $1,500
+  - Causa raíz: getPriceByConnectorType ignoraba el precio dinámico y usaba defaultPricePerKwhAC ($1,500) cuando enableDifferentiatedPricing=true
+- [x] Verificar fuente de la tarifa de conexión $2,000 (viene de tariff.pricePerSession, correcto)
+- [x] Corregir para que el precio dinámico se aplique consistentemente
+  - Fix: Agregar parámetro tariffSource a getPriceByConnectorType
+  - Cuando source='station', respetar el precio calculado (dinámico o fijo del inversionista)
+  - Solo aplicar precios globales AC/DC cuando source='global'

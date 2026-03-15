@@ -7,6 +7,10 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // Auth0 configuration
+  auth0Domain: process.env.AUTH0_DOMAIN ?? "",
+  auth0ClientId: process.env.AUTH0_CLIENT_ID ?? "",
+  auth0ClientSecret: process.env.AUTH0_CLIENT_SECRET ?? "",
 };
 
 // Alias para compatibilidad

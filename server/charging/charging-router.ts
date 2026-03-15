@@ -326,6 +326,10 @@ export const chargingRouter = router({
       const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;
       const evseId = selectedConnector?.id || firstEvse?.id;
       
+      // Obtener el precio efectivo de la estación (tarifa propia o global)
+      const effectivePriceData = await db.getEffectiveStationPrice(stationId);
+      const tariffSource = effectivePriceData.source; // 'station' o 'global'
+      
       let pricePerKwh: number;
       let dynamicMultiplier = 1;
       
@@ -334,22 +338,21 @@ export const chargingRouter = router({
         const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
         dynamicMultiplier = dynamicPrice.factors?.finalMultiplier || 1;
         
-        // Aplicar diferenciación AC/DC si está habilitada
-        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice);
+        // CORREGIDO: Pasar tariffSource para NO sobreescribir con precios globales AC/DC
+        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
         pricePerKwh = priceByType.price;
-        console.log(`[validateAndEstimate] Using dynamic pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, multiplier: ${dynamicMultiplier.toFixed(2)})`);
+        console.log(`[validateAndEstimate] Using dynamic pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, source: ${tariffSource}, multiplier: ${dynamicMultiplier.toFixed(2)})`);
       } else {
         // Usar precio fijo configurado por el inversionista
-        // Aplicar diferenciación AC/DC si está habilitada
-        const effectivePriceData = await db.getEffectiveStationPrice(stationId);
         const basePrice = effectivePriceData.pricePerKwh;
         if (evseId) {
-          const priceByType = await db.getPriceByConnectorType(evseId, basePrice);
+          // CORREGIDO: Pasar tariffSource para respetar tarifa de estación
+          const priceByType = await db.getPriceByConnectorType(evseId, basePrice, tariffSource);
           pricePerKwh = priceByType.price;
-          console.log(`[validateAndEstimate] Using fixed pricing with AC/DC differentiation: $${pricePerKwh}/kWh (${priceByType.chargeType})`);
+          console.log(`[validateAndEstimate] Using fixed pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, source: ${tariffSource})`);
         } else {
           pricePerKwh = basePrice;
-          console.log(`[validateAndEstimate] Using fixed pricing: $${pricePerKwh}/kWh`);
+          console.log(`[validateAndEstimate] Using fixed pricing: $${pricePerKwh}/kWh (source: ${tariffSource})`);
         }
       }
       
@@ -434,28 +437,32 @@ export const chargingRouter = router({
       const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;
       const evseId = selectedConnector?.id || firstEvse?.id;
       
+      // Obtener el precio efectivo de la estación (tarifa propia o global)
+      const effectivePriceData = await db.getEffectiveStationPrice(stationId);
+      const tariffSource = effectivePriceData.source; // 'station' o 'global'
+      
       let pricePerKwh: number;
       if (useAutoPricing && evseId) {
         // Usar precio dinámico calculado por IA
+        // calculateDynamicPrice ya usa getEffectiveStationPrice internamente
         const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
         
-        // Aplicar diferenciación AC/DC si está habilitada
-        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice);
+        // CORREGIDO: Pasar tariffSource para que NO sobreescriba el precio dinámico
+        // con el precio global AC/DC cuando la estación tiene tarifa propia
+        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
         pricePerKwh = priceByType.price;
-        console.log(`[Charging] Using dynamic pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, multiplier: ${dynamicPrice.factors.finalMultiplier.toFixed(2)})`);
+        console.log(`[Charging] Using dynamic pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, source: ${tariffSource}, multiplier: ${dynamicPrice.factors.finalMultiplier.toFixed(2)})`);
       } else {
         // Usar precio fijo configurado por el inversionista
-        // Pero aplicar diferenciación AC/DC si está habilitada
-        // Usar precio efectivo (tarifa de estación o global)
-        const effectivePriceData = await db.getEffectiveStationPrice(stationId);
         const basePrice = effectivePriceData.pricePerKwh;
         if (evseId) {
-          const priceByType = await db.getPriceByConnectorType(evseId, basePrice);
+          // CORREGIDO: Pasar tariffSource para respetar tarifa de estación
+          const priceByType = await db.getPriceByConnectorType(evseId, basePrice, tariffSource);
           pricePerKwh = priceByType.price;
-          console.log(`[Charging] Using fixed pricing with AC/DC differentiation: $${pricePerKwh}/kWh (${priceByType.chargeType})`);
+          console.log(`[Charging] Using fixed pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, source: ${tariffSource})`);
         } else {
           pricePerKwh = basePrice;
-          console.log(`[Charging] Using fixed pricing: $${pricePerKwh}/kWh`);
+          console.log(`[Charging] Using fixed pricing: $${pricePerKwh}/kWh (source: ${tariffSource})`);
         }
       }
       
