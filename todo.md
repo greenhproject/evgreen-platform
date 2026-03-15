@@ -2227,3 +2227,7 @@
   - Fix: Agregar parámetro tariffSource a getPriceByConnectorType
   - Cuando source='station', respetar el precio calculado (dinámico o fijo del inversionista)
   - Solo aplicar precios globales AC/DC cuando source='global'
+
+## Bug: Configuración de Alegra - 15 Marzo 2026
+- [x] Caracteres Unicode escapados en la UI - Corregidos todos los \u00XX a UTF-8 nativo
+- [x] Los datos de configuración sí se guardan (confirmado por usuario) - solo era problema de texto
