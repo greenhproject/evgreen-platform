@@ -1186,6 +1186,11 @@ export const platformSettings = mysqlTable("platform_settings", {
   alegraPaymentMethodId: varchar("alegraPaymentMethodId", { length: 50 }), // ID del medio de pago en Alegra
   alegraPaymentAccountId: varchar("alegraPaymentAccountId", { length: 50 }), // ID de la cuenta bancaria en Alegra
   alegraResolutionNumber: varchar("alegraResolutionNumber", { length: 100 }), // Número de resolución DIAN
+  
+  // Configuración de Soporte
+  supportEmail: varchar("supportEmail", { length: 255 }).default("soporte@greenhproject.com"), // Email buzón de soporte
+  supportPhone: varchar("supportPhone", { length: 50 }).default("+573001234567"), // Teléfono de soporte
+  supportAutoAssign: boolean("supportAutoAssign").default(true).notNull(), // Asignar tickets automáticamente
 
   // Metadata
   updatedBy: int("updatedBy"),
@@ -2076,4 +2081,88 @@ export const socAccuracyLogRelations = relations(socAccuracyLog, ({ one }) => ({
   user: one(users, { fields: [socAccuracyLog.userId], references: [users.id] }),
   transaction: one(transactions, { fields: [socAccuracyLog.transactionId], references: [transactions.id] }),
   vehicle: one(userVehicles, { fields: [socAccuracyLog.vehicleId], references: [userVehicles.id] }),
+}));
+
+
+// ============================================================================
+// SUPPORT MESSAGES TABLE (Chat en vivo)
+// ============================================================================
+
+export const supportMessages = mysqlTable("support_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  ticketId: int("ticketId").notNull(), // FK a support_tickets
+  senderId: int("senderId").notNull(), // FK a users (puede ser usuario o agente)
+  senderRole: varchar("senderRole", { length: 20 }).notNull(), // 'user', 'agent', 'system'
+  message: text("message").notNull(),
+  attachmentUrl: text("attachmentUrl"), // URL de archivo adjunto (S3)
+  readAt: timestamp("readAt"), // Cuándo fue leído por el destinatario
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type SupportMessage = typeof supportMessages.$inferSelect;
+export type InsertSupportMessage = typeof supportMessages.$inferInsert;
+
+// ============================================================================
+// SUPPORT AGENTS TABLE (Agentes/Técnicos de soporte)
+// ============================================================================
+
+export const supportAgents = mysqlTable("support_agents", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK a users
+  isOnline: boolean("isOnline").default(false).notNull(),
+  isAvailable: boolean("isAvailable").default(true).notNull(), // Disponible para nuevas asignaciones
+  // Horario de trabajo (formato HH:mm, ej: "08:00")
+  scheduleStart: varchar("scheduleStart", { length: 10 }).default("08:00"),
+  scheduleEnd: varchar("scheduleEnd", { length: 10 }).default("17:00"),
+  // Días laborales (JSON array, ej: [1,2,3,4,5] = Lun-Vie)
+  workDays: json("workDays").$type<number[]>().default([1, 2, 3, 4, 5]),
+  maxConcurrentTickets: int("maxConcurrentTickets").default(5).notNull(),
+  activeTicketCount: int("activeTicketCount").default(0).notNull(),
+  lastAssignedAt: timestamp("lastAssignedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SupportAgent = typeof supportAgents.$inferSelect;
+export type InsertSupportAgent = typeof supportAgents.$inferInsert;
+
+// ============================================================================
+// CHARGER PROBLEM REPORTS TABLE (Reportes de problemas con cargadores)
+// ============================================================================
+
+export const chargerProblemReports = mysqlTable("charger_problem_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK a users
+  stationId: int("stationId"), // FK a charging_stations
+  stationName: varchar("stationName", { length: 255 }).notNull(),
+  connectorId: int("connectorId"), // Número de conector
+  // Tipo de problema
+  problemType: varchar("problemType", { length: 50 }).notNull(),
+  // CONNECTOR_DAMAGED, SCREEN_BROKEN, NO_POWER, CABLE_DAMAGED, 
+  // PAYMENT_ERROR, SLOW_CHARGING, APP_CONNECTION, OTHER
+  description: text("description"),
+  // Estado
+  status: varchar("status", { length: 20 }).default("PENDING"), // PENDING, REVIEWING, IN_REPAIR, RESOLVED, DISMISSED
+  // Vinculación con ticket de soporte (se crea automáticamente)
+  supportTicketId: int("supportTicketId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ChargerProblemReport = typeof chargerProblemReports.$inferSelect;
+export type InsertChargerProblemReport = typeof chargerProblemReports.$inferInsert;
+
+// Relations for support messages
+export const supportMessagesRelations = relations(supportMessages, ({ one }) => ({
+  ticket: one(supportTickets, { fields: [supportMessages.ticketId], references: [supportTickets.id] }),
+  sender: one(users, { fields: [supportMessages.senderId], references: [users.id] }),
+}));
+
+// Relations for support agents
+export const supportAgentsRelations = relations(supportAgents, ({ one }) => ({
+  user: one(users, { fields: [supportAgents.userId], references: [users.id] }),
+}));
+
+// Relations for charger problem reports
+export const chargerProblemReportsRelations = relations(chargerProblemReports, ({ one }) => ({
+  user: one(users, { fields: [chargerProblemReports.userId], references: [users.id] }),
+  station: one(chargingStations, { fields: [chargerProblemReports.stationId], references: [chargingStations.id] }),
+  supportTicket: one(supportTickets, { fields: [chargerProblemReports.supportTicketId], references: [supportTickets.id] }),
 }));

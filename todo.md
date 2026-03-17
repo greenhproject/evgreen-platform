@@ -2237,3 +2237,17 @@
   - Causa raíz: Permissions-Policy header bloqueaba camera=() en server/_core/index.ts
 - [x] Corregido: camera=(self) permite acceso desde el mismo origen
 - [x] Mejorado manejo de errores con mensajes específicos por tipo de error
+
+## Sistema de Soporte Completo - 16 Marzo 2026
+- [x] Chat con IA como primer nivel de atención (intenta resolver primero)
+- [x] Escalación a agente humano si la IA no puede resolver
+- [x] Asignación de técnicos por disponibilidad/horario
+- [x] Buzón de mensajes con notificación por email configurable desde Configuración
+- [x] Panel admin para ver y responder mensajes/tickets de soporte
+- [x] Formulario de reporte de problemas con cargador (tipo de daño, descripción, nombre estación)
+- [x] Esquema BD: tickets, mensajes chat, agentes soporte, reportes problemas
+- [x] Asignación automática de tickets según disponibilidad de técnicos
+- [x] Envío de email al buzón configurable cuando usuario envía mensaje
+- [x] Vista de soporte en panel admin con lista de tickets y chat de respuesta
+- [x] Pestaña de configuración de soporte en Settings (supportEmail, supportPhone)
+- [x] Tests unitarios del sistema de soporte (20 tests)

@@ -102,6 +102,7 @@ const AdminOCPPMonitor = lazy(() => import("./pages/AdminOCPPMonitor"));
 const AdminOverstayHistory = lazy(() => import("./pages/admin/OverstayHistory"));
 const AdminInvestorManagement = lazy(() => import("./pages/admin/InvestorManagement"));
 const AdminDebts = lazy(() => import("./pages/admin/Debts"));
+const AdminSupport = lazy(() => import("./pages/admin/Support"));
 
 // Páginas de Staff (Evento)
 const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
@@ -587,6 +588,13 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin"]}>
             <AdminLayout>
               <AdminDebts />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/support">
+          <ProtectedRoute allowedRoles={["admin", "engineer", "technician"]}>
+            <AdminLayout>
+              <AdminSupport />
             </AdminLayout>
           </ProtectedRoute>
         </Route>

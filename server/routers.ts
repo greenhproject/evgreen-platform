@@ -21,6 +21,7 @@ import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } 
 import { checkAndNotifyMilestones } from "./crowdfunding/progress-notifications";
 import { eventRouter } from "./event/event-router";
 import { idTagRouter } from "./idtags/idtag-router";
+import { supportRouterV2 } from "./support/support-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -2574,6 +2575,9 @@ const settingsRouter = router({
         alegraPaymentMethodId: "",
         alegraPaymentAccountId: "",
         alegraResolutionNumber: "",
+        // Soporte
+        supportEmail: "soporte@greenhproject.com",
+        supportPhone: "",
       };
     }
     // Ocultar claves secretas parcialmente y retornar todos los campos explícitamente
@@ -2638,6 +2642,9 @@ const settingsRouter = router({
       alegraPaymentMethodId: settings.alegraPaymentMethodId || "",
       alegraPaymentAccountId: settings.alegraPaymentAccountId || "",
       alegraResolutionNumber: settings.alegraResolutionNumber || "",
+      // Soporte
+      supportEmail: settings.supportEmail || "soporte@greenhproject.com",
+      supportPhone: settings.supportPhone || "",
     };
   }),
   
@@ -2703,6 +2710,9 @@ const settingsRouter = router({
       alegraPaymentMethodId: z.string().optional(),
       alegraPaymentAccountId: z.string().optional(),
       alegraResolutionNumber: z.string().optional(),
+      // Soporte
+      supportEmail: z.string().optional(),
+      supportPhone: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Filtrar campos vacíos o con valores de máscara
@@ -4625,7 +4635,7 @@ export const appRouter = router({
   wallet: walletRouter,
   maintenance: maintenanceRouter,
   notifications: notificationsRouter,
-  support: supportRouter,
+  support: supportRouterV2,
   investorStats: investorStatsRouter,
   platformStats: platformStatsRouter,
   banners: bannersRouter,
