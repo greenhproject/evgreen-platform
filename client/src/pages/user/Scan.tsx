@@ -52,6 +52,37 @@ export default function ScanPage() {
     setIsScanning(true);
 
     try {
+      // Primero verificar si el navegador soporta getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("UNSUPPORTED");
+      }
+
+      // Solicitar permiso de cámara explícitamente antes de iniciar html5-qrcode
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        // Detener el stream inmediatamente - solo queríamos el permiso
+        stream.getTracks().forEach(track => track.stop());
+      } catch (permErr: any) {
+        console.error("Error de permisos de cámara:", permErr.name, permErr.message);
+        if (permErr.name === "NotAllowedError" || permErr.name === "PermissionDeniedError") {
+          throw new Error("PERMISSION_DENIED");
+        } else if (permErr.name === "NotFoundError" || permErr.name === "DevicesNotFoundError") {
+          throw new Error("NOT_FOUND");
+        } else if (permErr.name === "NotReadableError" || permErr.name === "TrackStartError") {
+          throw new Error("IN_USE");
+        } else if (permErr.name === "OverconstrainedError") {
+          // Intentar sin facingMode constraint
+          try {
+            const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            fallbackStream.getTracks().forEach(track => track.stop());
+          } catch {
+            throw new Error("NOT_FOUND");
+          }
+        } else {
+          throw permErr;
+        }
+      }
+
       // Importar dinámicamente html5-qrcode
       const { Html5Qrcode } = await import("html5-qrcode");
       
@@ -73,15 +104,20 @@ export default function ScanPage() {
         onScanFailure
       );
     } catch (err: any) {
-      console.error("Error al iniciar escáner:", err);
+      console.error("Error al iniciar escáner:", err?.name, err?.message);
       setIsScanning(false);
       
-      if (err.message?.includes("Permission denied") || err.name === "NotAllowedError") {
-        setCameraError("Permiso de cámara denegado. Por favor, permite el acceso a la cámara en la configuración de tu navegador.");
-      } else if (err.message?.includes("NotFoundError") || err.name === "NotFoundError") {
+      const msg = err?.message || "";
+      if (msg === "PERMISSION_DENIED" || msg.includes("Permission denied") || err?.name === "NotAllowedError") {
+        setCameraError("Permiso de cámara denegado. Ve a la configuración de tu navegador y permite el acceso a la cámara para este sitio.");
+      } else if (msg === "NOT_FOUND" || msg.includes("NotFoundError") || err?.name === "NotFoundError") {
         setCameraError("No se encontró ninguna cámara en tu dispositivo.");
+      } else if (msg === "IN_USE") {
+        setCameraError("La cámara está siendo usada por otra aplicación. Cierra otras apps que usen la cámara e intenta de nuevo.");
+      } else if (msg === "UNSUPPORTED") {
+        setCameraError("Tu navegador no soporta acceso a la cámara. Asegúrate de usar HTTPS y un navegador actualizado (Chrome, Safari, Firefox).");
       } else {
-        setCameraError("No se pudo acceder a la cámara. Intenta con el código manual.");
+        setCameraError(`No se pudo acceder a la cámara (${err?.name || 'Error desconocido'}). Intenta con el código manual.`);
       }
     }
   };

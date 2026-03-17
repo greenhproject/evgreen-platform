@@ -73,7 +73,7 @@ async function startServer() {
     // Referrer policy - no enviar referrer a terceros
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     // Permissions policy - restringir APIs del navegador
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=(self), payment=(self)');
+    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=(self), payment=(self)');
     // HSTS - forzar HTTPS (1 año)
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     // Remover header que expone tecnología del servidor
