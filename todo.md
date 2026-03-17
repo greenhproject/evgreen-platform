@@ -2231,3 +2231,9 @@
 ## Bug: Configuración de Alegra - 15 Marzo 2026
 - [x] Caracteres Unicode escapados en la UI - Corregidos todos los \u00XX a UTF-8 nativo
 - [x] Los datos de configuración sí se guardan (confirmado por usuario) - solo era problema de texto
+
+## Bug: Cámara QR no abre en producción (Railway) - 16 Marzo 2026
+- [x] Error de cámara al intentar escanear QR en "Iniciar Carga"
+  - Causa raíz: Permissions-Policy header bloqueaba camera=() en server/_core/index.ts
+- [x] Corregido: camera=(self) permite acceso desde el mismo origen
+- [x] Mejorado manejo de errores con mensajes específicos por tipo de error
