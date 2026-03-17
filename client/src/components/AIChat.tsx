@@ -794,6 +794,10 @@ export function AIChatWidget() {
     setStreamingMessageId(null);
   };
 
+  const [currentLocation] = useLocation();
+  // Hide the floating button on support and assistant pages to avoid overlap
+  const hideFloatingButton = currentLocation === "/support" || currentLocation === "/assistant";
+
   if (!isAuthenticated) {
     return null;
   }
@@ -802,16 +806,18 @@ export function AIChatWidget() {
 
   return (
     <>
-      {/* Botón flotante */}
-      <button
-        data-ai-chat-trigger
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-24 sm:bottom-6 right-4 sm:right-6 z-40 h-12 w-12 sm:h-14 sm:w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all hover:scale-105 flex items-center justify-center"
-        aria-label="Abrir asistente de IA"
-      >
-        <Bot className="h-5 w-5 sm:h-6 sm:w-6" />
-        <span className="absolute -top-1 -right-1 h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-green-500 border-2 border-background" />
-      </button>
+      {/* Botón flotante - hidden on support page */}
+      {!hideFloatingButton && (
+        <button
+          data-ai-chat-trigger
+          onClick={() => setIsOpen(true)}
+          className="fixed bottom-24 sm:bottom-6 right-4 sm:right-6 z-40 h-12 w-12 sm:h-14 sm:w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all hover:scale-105 flex items-center justify-center"
+          aria-label="Abrir asistente de IA"
+        >
+          <Bot className="h-5 w-5 sm:h-6 sm:w-6" />
+          <span className="absolute -top-1 -right-1 h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-green-500 border-2 border-background" />
+        </button>
+      )}
 
       {/* Panel de chat */}
       <Sheet open={isOpen} onOpenChange={setIsOpen}>

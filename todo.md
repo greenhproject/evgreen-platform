@@ -2251,3 +2251,7 @@
 - [x] Vista de soporte en panel admin con lista de tickets y chat de respuesta
 - [x] Pestaña de configuración de soporte en Settings (supportEmail, supportPhone)
 - [x] Tests unitarios del sistema de soporte (20 tests)
+
+## Bugs Soporte - 17 Marzo 2026
+- [x] BUG: Error al enviar mensaje en chat de soporte (usuario) - tablas faltantes en BD creadas
+- [x] BUG: Botón de enviar se tapa con el botón flotante de EV Assistant - ocultar FAB en /support
