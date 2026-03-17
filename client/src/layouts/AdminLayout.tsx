@@ -41,7 +41,8 @@ import {
   Building2,
   Timer,
   Crown,
-  Banknote
+  Banknote,
+  Headphones
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -63,6 +64,7 @@ const adminMenuItems = [
   { icon: BarChart3, label: "Reportes", path: "/admin/reports" },
   { icon: Image, label: "Banners", path: "/admin/banners" },
   { icon: Bell, label: "Notificaciones", path: "/admin/notifications" },
+  { icon: Headphones, label: "Soporte", path: "/admin/support" },
   { icon: Bot, label: "Asistente IA", path: "/admin/ai-settings" },
   { icon: Settings, label: "Configuración", path: "/admin/settings" },
 ];

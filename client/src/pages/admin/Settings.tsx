@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw, CalendarDays, MapPin, Phone, Mail, Navigation, ExternalLink, FileText, CheckCircle, XCircle, Zap } from "lucide-react";
+import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw, CalendarDays, MapPin, Phone, Mail, Navigation, ExternalLink, FileText, CheckCircle, XCircle, Zap, Headphones } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
@@ -100,6 +100,11 @@ export default function AdminSettings() {
   });
   const [alegraTokenTouched, setAlegraTokenTouched] = useState(false);
   const [alegraTokenSaved, setAlegraTokenSaved] = useState(false);
+
+  const [supportForm, setSupportForm] = useState({
+    supportEmail: "soporte@greenhproject.com",
+    supportPhone: "",
+  });
   const [alegraConnectionStatus, setAlegraConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [alegraCompanyName, setAlegraCompanyName] = useState("");
 
@@ -217,6 +222,11 @@ export default function AdminSettings() {
       setAlegraTokenSaved(!!settings.alegraToken);
       setAlegraTokenTouched(false);
 
+      setSupportForm({
+        supportEmail: settings.supportEmail || "soporte@greenhproject.com",
+        supportPhone: settings.supportPhone || "",
+      });
+
       setEventForm({
         eventName: settings.eventName || "Gran Lanzamiento Red de Carga EVGreen",
         eventDate: settings.eventDate || "Por confirmar",
@@ -278,6 +288,10 @@ export default function AdminSettings() {
 
   const handleSaveEvent = () => {
     updateMutation.mutate(eventForm);
+  };
+
+  const handleSaveSupport = () => {
+    updateMutation.mutate(supportForm);
   };
 
   const handleSaveAlegra = () => {
@@ -363,6 +377,10 @@ export default function AdminSettings() {
           <TabsTrigger value="alegra">
             <FileText className="w-4 h-4 mr-2" />
             Facturación
+          </TabsTrigger>
+          <TabsTrigger value="soporte">
+            <Headphones className="w-4 h-4 mr-2" />
+            Soporte
           </TabsTrigger>
         </TabsList>
 
@@ -1323,6 +1341,73 @@ export default function AdminSettings() {
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Guardando...</>
               ) : (
                 "Guardar configuración de facturación"
+              )}
+            </Button>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="soporte">
+          <Card className="p-6 space-y-6">
+            <div>
+              <h3 className="font-semibold mb-1">Configuración de Soporte</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Configura el email y teléfono de contacto del equipo de soporte. Estos datos se usan para notificaciones de tickets y se muestran a los usuarios.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Email de soporte</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="email"
+                    className="pl-10"
+                    value={supportForm.supportEmail}
+                    onChange={(e) => setSupportForm({ ...supportForm, supportEmail: e.target.value })}
+                    placeholder="soporte@greenhproject.com"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Los tickets de soporte y reportes de problemas se enviarán a este email.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Teléfono de soporte</Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="tel"
+                    className="pl-10"
+                    value={supportForm.supportPhone}
+                    onChange={(e) => setSupportForm({ ...supportForm, supportPhone: e.target.value })}
+                    placeholder="+57 300 000 0000"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Número de contacto visible para los usuarios en la sección de soporte.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t">
+              <h4 className="font-medium text-sm mb-2">Información del sistema de soporte</h4>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• El chat con IA es el primer nivel de atención y resuelve consultas frecuentes automáticamente.</li>
+                <li>• Si la IA no puede resolver, el usuario puede escalar a un agente humano.</li>
+                <li>• Los reportes de problemas en estaciones generan tickets que se asignan al equipo técnico.</li>
+                <li>• Las notificaciones de nuevos tickets se envían al email configurado arriba.</li>
+              </ul>
+            </div>
+
+            <Button
+              onClick={handleSaveSupport}
+              disabled={updateMutation.isPending}
+            >
+              {updateMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Guardando...</>
+              ) : (
+                "Guardar configuración de soporte"
               )}
             </Button>
           </Card>
