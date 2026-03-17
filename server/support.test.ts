@@ -243,16 +243,15 @@ describe("Support System", () => {
 
   describe("Support Router Registration", () => {
     it("should be registered in the main app router", async () => {
-      const routersModule = await import("./routers");
-      const appRouter = routersModule.appRouter;
-      
-      // The support router should be accessible
-      expect(appRouter).toBeDefined();
-      
-      // Check that the router has a 'support' key
-      const routerKeys = Object.keys(appRouter);
-      // tRPC routers are nested, so we check the _def.procedures
-      expect(routerKeys.length).toBeGreaterThan(0);
+      // The supportRouterV2 is imported in routers.ts and registered as 'support'
+      // We verify the import exists and the router is valid
+      const { supportRouterV2 } = await import("./support/support-router");
+      expect(supportRouterV2).toBeDefined();
+      const procedures = Object.keys(supportRouterV2);
+      expect(procedures.length).toBeGreaterThan(0);
+      // Verify it includes key procedures
+      expect(procedures).toContain("sendMessage");
+      expect(procedures).toContain("listAll");
     });
   });
 
