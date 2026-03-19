@@ -2255,3 +2255,6 @@
 ## Bugs Soporte - 17 Marzo 2026
 - [x] BUG: Error al enviar mensaje en chat de soporte (usuario) - tablas faltantes en BD creadas
 - [x] BUG: Botón de enviar se tapa con el botón flotante de EV Assistant - ocultar FAB en /support
+
+## Bugs Pagos - 18 Marzo 2026
+- [x] BUG: Sistema de pagos Wompi muestra "Pagos en configuración" - columnas support faltantes en BD causaban fallo en SELECT de platform_settings
