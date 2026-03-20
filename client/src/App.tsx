@@ -472,6 +472,41 @@ function Router() {
             </TechnicianLayout>
           </ProtectedRoute>
         </Route>
+        <Route path="/technician/ocpp-monitor">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianOCPPMonitor />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/logs">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianLogs />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/ocpp-logs">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianOCPPLogs />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/diagnostics">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianDiagnostics />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/firmware">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianFirmware />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
 
         {/* ============================================
             RUTAS DE ADMINISTRACIÓN (con layout)

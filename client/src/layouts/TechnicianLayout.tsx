@@ -31,7 +31,11 @@ import {
   AlertTriangle,
   Settings,
   Zap,
-  ClipboardList
+  ClipboardList,
+  Terminal,
+  FileText,
+  Activity,
+  Cpu
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -43,7 +47,11 @@ const technicianMenuItems = [
   { icon: ClipboardList, label: "Mis Tickets", path: "/technician/tickets" },
   { icon: MapPin, label: "Estaciones", path: "/technician/stations" },
   { icon: AlertTriangle, label: "Alertas", path: "/technician/alerts" },
+  { icon: Terminal, label: "Monitor OCPP", path: "/technician/ocpp-monitor" },
+  { icon: FileText, label: "Logs OCPP", path: "/technician/ocpp-logs" },
+  { icon: Activity, label: "Diagnóstico", path: "/technician/diagnostics" },
   { icon: Wrench, label: "Mantenimiento", path: "/technician/maintenance" },
+  { icon: Cpu, label: "Firmware", path: "/technician/firmware" },
   { icon: Settings, label: "Configuración", path: "/technician/settings" },
 ];
 
