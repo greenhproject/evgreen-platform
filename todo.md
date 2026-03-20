@@ -2277,3 +2277,8 @@
 - [x] Eliminar cargadores de test de la BD (CP001, CP001CP001, TEST_DIAG, TEST_DIAG_001, TEST_PROD_001, TEST_TRANSACTION_001, TEST001, TEST003)
 - [x] Unificar Monitor OCPP y Logs OCPP en un solo módulo (eliminar duplicado del sidebar)
 - [x] Limpiar sidebar técnico de ítems redundantes
+
+## Bug Módulo Diagnóstico - 20 Marzo 2026
+
+- [x] BUG: Módulo Diagnóstico muestra "Desconectado" y "Sin datos" cuando el cargador está realmente conectado y generando logs
+- [x] Verificar coherencia entre datos de conexión OCPP y lo que muestra el diagnóstico
