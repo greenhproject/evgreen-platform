@@ -2282,3 +2282,10 @@
 
 - [x] BUG: Módulo Diagnóstico muestra "Desconectado" y "Sin datos" cuando el cargador está realmente conectado y generando logs
 - [x] Verificar coherencia entre datos de conexión OCPP y lo que muestra el diagnóstico
+
+## Módulo Chat Soporte Técnico - 20 Marzo 2026
+
+- [x] Crear módulo de chat de soporte para técnicos (contactar soporte para reportar problemas)
+- [x] Implementar lógica de asignación por zonas según ubicación de cargadores
+- [x] Agregar "Soporte" al sidebar del técnico
+- [x] Integrar con sistema de tickets existente (support-router.ts)
