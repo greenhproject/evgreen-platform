@@ -157,12 +157,12 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Terminal className="h-6 w-6" />
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+            <Terminal className="h-5 w-5 sm:h-6 sm:w-6" />
             Monitor OCPP
           </h1>
           <p className="text-muted-foreground">
@@ -198,7 +198,7 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
                 <span className="text-xs text-muted-foreground">Conexión directa (WebSocket funcional)</span>
               </div>
               <div className="flex items-center gap-2 bg-background border border-green-500/30 rounded-lg px-3 py-2">
-                <code className="text-sm font-mono text-primary select-all break-all">
+                <code className="text-[10px] sm:text-sm font-mono text-primary select-all break-all">
                   {ocppEndpoints?.primary || 'Cargando...'}
                 </code>
                 <Button
@@ -223,7 +223,7 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
                 <span className="text-xs text-muted-foreground">Ruta /api/ (si la primaria falla)</span>
               </div>
               <div className="flex items-center gap-2 bg-background border rounded-lg px-3 py-2">
-                <code className="text-sm font-mono text-muted-foreground select-all break-all">
+                <code className="text-[10px] sm:text-sm font-mono text-muted-foreground select-all break-all">
                   {ocppEndpoints?.alternative || 'Cargando...'}
                 </code>
                 <Button
@@ -250,7 +250,7 @@ function ChargerGridView({ onSelectCharger }: { onSelectCharger: (id: string) =>
       </Card>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -550,7 +550,7 @@ function ChargerDetailView({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header con botón volver */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3">
@@ -558,9 +558,9 @@ function ChargerDetailView({
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Zap className="h-6 w-6 text-primary" />
-              {station?.name || ocppIdentity}
+            <h1 className="text-lg sm:text-2xl font-bold flex items-center gap-2 flex-wrap">
+              <Zap className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+              <span className="break-all">{station?.name || ocppIdentity}</span>
               {isConnected ? (
                 conn?.wsReadyState === 1 ? (
                   <Badge className="bg-green-500 text-white">Conectado</Badge>
@@ -583,7 +583,7 @@ function ChargerDetailView({
       </div>
 
       {/* Info cards row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-3">
         <Card>
           <CardContent className="pt-4 pb-3 text-center">
             <p className="text-xs text-muted-foreground">WebSocket</p>
@@ -649,26 +649,30 @@ function ChargerDetailView({
 
       {/* Tabs */}
       <Tabs defaultValue="monitor" className="space-y-4">
-        <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="monitor">
-            <Monitor className="h-4 w-4 mr-2" />
-            Monitor
+        <TabsList className="flex-wrap h-auto gap-1">
+          <TabsTrigger value="monitor" className="text-xs sm:text-sm">
+            <Monitor className="h-4 w-4 mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Monitor</span>
+            <span className="sm:hidden">Mon.</span>
           </TabsTrigger>
-          <TabsTrigger value="logs">
-            <Terminal className="h-4 w-4 mr-2" />
+          <TabsTrigger value="logs" className="text-xs sm:text-sm">
+            <Terminal className="h-4 w-4 mr-1 sm:mr-2" />
             Logs
           </TabsTrigger>
-          <TabsTrigger value="commands">
-            <Send className="h-4 w-4 mr-2" />
-            Comandos
+          <TabsTrigger value="commands" className="text-xs sm:text-sm">
+            <Send className="h-4 w-4 mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Comandos</span>
+            <span className="sm:hidden">Cmd</span>
           </TabsTrigger>
-          <TabsTrigger value="config">
-            <Settings className="h-4 w-4 mr-2" />
-            Configuración
+          <TabsTrigger value="config" className="text-xs sm:text-sm">
+            <Settings className="h-4 w-4 mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Configuración</span>
+            <span className="sm:hidden">Config</span>
           </TabsTrigger>
-          <TabsTrigger value="stability">
-            <Signal className="h-4 w-4 mr-2" />
-            Estabilidad
+          <TabsTrigger value="stability" className="text-xs sm:text-sm">
+            <Signal className="h-4 w-4 mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Estabilidad</span>
+            <span className="sm:hidden">Estab.</span>
           </TabsTrigger>
         </TabsList>
 
@@ -745,7 +749,7 @@ function ChargerDetailView({
                   {chargerDetail.recentLogs.slice(0, 20).map((log: any) => (
                     <div
                       key={log.id}
-                      className={`flex items-center gap-2 text-xs font-mono py-1.5 px-2 rounded ${
+                      className={`flex flex-wrap items-center gap-1 sm:gap-2 text-xs font-mono py-1.5 px-2 rounded ${
                         log.direction === 'IN'
                           ? 'bg-green-500/5 text-green-700 dark:text-green-400'
                           : 'bg-blue-500/5 text-blue-700 dark:text-blue-400'
@@ -757,11 +761,11 @@ function ChargerDetailView({
                       >
                         {log.direction === 'IN' ? '← IN' : '→ OUT'}
                       </Badge>
-                      <span className="text-muted-foreground shrink-0">
+                      <span className="text-muted-foreground shrink-0 text-[10px] sm:text-xs">
                         {new Date(log.createdAt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </span>
                       <Badge variant="outline" className="text-[10px] shrink-0">{log.messageType}</Badge>
-                      <span className="truncate text-muted-foreground">
+                      <span className="truncate text-muted-foreground w-full sm:w-auto">
                         {typeof log.payload === 'string' ? log.payload : JSON.stringify(log.payload)}
                       </span>
                     </div>
@@ -850,8 +854,63 @@ function ChargerDetailView({
             </CardContent>
           </Card>
 
-          {/* Tabla de Logs */}
-          <Card>
+          {/* Logs - Mobile card view */}
+          <div className="sm:hidden space-y-2">
+            {logsData?.logs && logsData.logs.length > 0 ? (
+              logsData.logs.map((log: any) => {
+                const isExpanded = expandedLogId === log.id;
+                let formattedPayload = '';
+                try {
+                  const parsed = typeof log.payload === 'string' ? JSON.parse(log.payload) : log.payload;
+                  formattedPayload = JSON.stringify(parsed, null, 2);
+                } catch { formattedPayload = String(log.payload); }
+                return (
+                  <Card key={log.id} className="cursor-pointer" onClick={() => setExpandedLogId(isExpanded ? null : log.id)}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={log.direction === "IN" ? "default" : "secondary"} className="text-[10px] px-1.5 py-0">
+                            {log.direction === "IN" ? "← IN" : "→ OUT"}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px]">{log.messageType}</Badge>
+                        </div>
+                        <span className="text-[10px] font-mono text-muted-foreground">
+                          {new Date(log.createdAt).toLocaleString('es-CO', {
+                            month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      <pre className="text-[10px] font-mono text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+                        {JSON.stringify(log.payload)}
+                      </pre>
+                      {isExpanded && (
+                        <div className="mt-2 pt-2 border-t">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Payload</span>
+                            <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(formattedPayload); toast.success("Copiado"); }}>
+                              <Copy className="h-3 w-3 mr-1" /> Copiar
+                            </Button>
+                          </div>
+                          <pre className="text-[10px] font-mono bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap break-all">
+                            {formattedPayload}
+                          </pre>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            ) : (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  No hay logs para este cargador
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Logs - Desktop table view */}
+          <Card className="hidden sm:block">
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <Table>
@@ -948,9 +1007,9 @@ function ChargerDetailView({
 
           {/* Paginación */}
           {logsData && logsData.total > logFilters.limit && (
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Mostrando {logFilters.offset + 1} - {Math.min(logFilters.offset + logFilters.limit, logsData.total)} de {logsData.total}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                {logFilters.offset + 1}-{Math.min(logFilters.offset + logFilters.limit, logsData.total)} de {logsData.total}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -960,7 +1019,7 @@ function ChargerDetailView({
                   onClick={() => setLogFilters(prev => ({ ...prev, offset: Math.max(0, prev.offset - prev.limit) }))}
                 >
                   <ChevronLeft className="h-4 w-4" />
-                  Anterior
+                  <span className="hidden sm:inline">Anterior</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -968,7 +1027,7 @@ function ChargerDetailView({
                   disabled={logFilters.offset + logFilters.limit >= logsData.total}
                   onClick={() => setLogFilters(prev => ({ ...prev, offset: prev.offset + prev.limit }))}
                 >
-                  Siguiente
+                  <span className="hidden sm:inline">Siguiente</span>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
@@ -989,7 +1048,7 @@ function ChargerDetailView({
             </Card>
           )}
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
             {/* Reset */}
             <Card>
               <CardHeader className="pb-3">
@@ -1677,36 +1736,36 @@ function ConnectionStabilityOverview({ formatUptime }: { formatUptime: (s: numbe
   return (
     <Card>
       <CardHeader className="pb-2 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Signal className="h-4 w-4 text-primary" />
-            <CardTitle className="text-base">Estabilidad de Conexiones</CardTitle>
-            <Badge variant="outline" className="ml-2">
-              {stabilityReport.length} estaciones
+            <Signal className="h-4 w-4 text-primary shrink-0" />
+            <CardTitle className="text-sm sm:text-base">Estabilidad de Conexiones</CardTitle>
+            <Badge variant="outline" className="ml-1 sm:ml-2 text-xs">
+              {stabilityReport.length}
             </Badge>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Score promedio:</span>
-              <span className={`font-bold ${getScoreColor(avgScore)}`}>{avgScore}/100</span>
+          <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+            <div className="flex items-center gap-1 sm:gap-2">
+              <span className="text-[10px] sm:text-xs text-muted-foreground">Score:</span>
+              <span className={`font-bold text-sm ${getScoreColor(avgScore)}`}>{avgScore}/100</span>
             </div>
             {totalSeamless > 0 && (
-              <Badge variant="outline" className="text-xs border-green-500 text-green-500">
-                ⚡ {totalSeamless} transparentes
+              <Badge variant="outline" className="text-[10px] sm:text-xs border-green-500 text-green-500">
+                ⚡ {totalSeamless}
               </Badge>
             )}
             {totalRealReconnections > 0 && (
-              <Badge variant={totalRealReconnections > 5 ? "destructive" : "secondary"} className="text-xs">
-                {totalRealReconnections} desc. reales (24h)
+              <Badge variant={totalRealReconnections > 5 ? "destructive" : "secondary"} className="text-[10px] sm:text-xs">
+                {totalRealReconnections} desc.
               </Badge>
             )}
             {reconnectingStations.length > 0 && (
-              <Badge variant="outline" className="text-xs border-yellow-500 text-yellow-500 animate-pulse">
-                {reconnectingStations.length} reconectando
+              <Badge variant="outline" className="text-[10px] sm:text-xs border-yellow-500 text-yellow-500 animate-pulse">
+                {reconnectingStations.length} reconect.
               </Badge>
             )}
             {unstableStations.length > 0 && (
-              <Badge variant="destructive" className="text-xs">
+              <Badge variant="destructive" className="text-[10px] sm:text-xs">
                 {unstableStations.length} inestable{unstableStations.length > 1 ? 's' : ''}
               </Badge>
             )}

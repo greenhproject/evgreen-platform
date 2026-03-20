@@ -2269,3 +2269,11 @@
 
 ## Bug Panel Técnico - 20 Marzo 2026
 - [x] BUG: Botón "Ver monitor OCPP" en panel técnico da 404 - rutas faltantes en App.tsx + menú sidebar actualizado
+
+## Mejoras Módulo Logs OCPP - 20 Marzo 2026
+
+- [x] Fix responsive en módulo Logs OCPP (contenido cortado en móvil)
+- [x] Reemplazar selector de cargadores (chips) por dropdown con búsqueda para escalar a 100+ cargadores
+- [x] Eliminar cargadores de test de la BD (CP001, CP001CP001, TEST_DIAG, TEST_DIAG_001, TEST_PROD_001, TEST_TRANSACTION_001, TEST001, TEST003)
+- [x] Unificar Monitor OCPP y Logs OCPP en un solo módulo (eliminar duplicado del sidebar)
+- [x] Limpiar sidebar técnico de ítems redundantes
