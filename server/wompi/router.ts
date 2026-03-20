@@ -833,26 +833,34 @@ export const wompiRouter = router({
           console.warn("[Wompi] Error guardando transacción de recarga rápida:", dbErr);
         }
 
-        // Si la transacción está PENDING, esperar 2s y volver a consultar
-        // Muchas transacciones con payment source se aprueban en <2s
+        // Si la transacción está PENDING, hacer múltiples reintentos
+        // Las transacciones con payment source pueden tardar entre 2-30 segundos
         let finalStatus = tx.status;
         let finalTxId = tx.id;
         if (tx.status === "PENDING" && tx.id) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          try {
-            const recheckResult = await getTransactionStatus(tx.id, keys);
-            if (recheckResult?.data?.status) {
-              finalStatus = recheckResult.data.status;
-              console.log(`[Wompi] Recarga r\u00e1pida - Recheck: ${finalStatus}`);
-              if (finalStatus !== "PENDING") {
-                await db.updateWompiTransactionByReference(reference, {
-                  status: finalStatus,
-                  processedAt: new Date(),
-                });
+          const recheckDelays = [2000, 5000, 10000]; // 2s, 5s, 10s
+          for (let i = 0; i < recheckDelays.length; i++) {
+            await new Promise(resolve => setTimeout(resolve, recheckDelays[i]));
+            try {
+              const recheckResult = await getTransactionStatus(tx.id, keys);
+              if (recheckResult?.data?.status) {
+                finalStatus = recheckResult.data.status;
+                console.log(`[Wompi] Recarga rápida - Recheck #${i + 1} (${recheckDelays[i] / 1000}s): ${finalStatus}`);
+                if (finalStatus !== "PENDING") {
+                  await db.updateWompiTransactionByReference(reference, {
+                    status: finalStatus,
+                    processedAt: new Date(),
+                  });
+                  break; // Salir del loop si ya no está PENDING
+                }
               }
+            } catch (recheckErr) {
+              console.warn(`[Wompi] Error en recheck #${i + 1} de transacción:`, recheckErr);
             }
-          } catch (recheckErr) {
-            console.warn("[Wompi] Error en recheck de transacci\u00f3n:", recheckErr);
+          }
+          // Si después de todos los reintentos sigue PENDING, loguear para seguimiento
+          if (finalStatus === "PENDING") {
+            console.warn(`[Wompi] Transacción ${tx.id} sigue PENDING después de ${recheckDelays.length} reintentos. El webhook o la reconciliación automática se encargarán.`);
           }
         }
 
