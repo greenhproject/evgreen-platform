@@ -77,6 +77,7 @@ const TechnicianOCPPMonitor = lazy(() => import("./pages/technician/OCPPMonitor"
 const TechnicianMaintenance = lazy(() => import("./pages/technician/Maintenance"));
 const TechnicianSettings = lazy(() => import("./pages/technician/Settings"));
 const TechnicianFirmware = lazy(() => import("./pages/technician/Firmware"));
+const TechnicianSupport = lazy(() => import("./pages/technician/Support"));
 
 // Páginas de ingeniero (jefe técnico)
 const EngineerDashboard = lazy(() => import("./pages/engineer/Dashboard"));
@@ -484,6 +485,13 @@ function Router() {
           <ProtectedRoute allowedRoles={["technician", "admin"]}>
             <TechnicianLayout>
               <TechnicianFirmware />
+            </TechnicianLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/technician/support">
+          <ProtectedRoute allowedRoles={["technician", "admin"]}>
+            <TechnicianLayout>
+              <TechnicianSupport />
             </TechnicianLayout>
           </ProtectedRoute>
         </Route>

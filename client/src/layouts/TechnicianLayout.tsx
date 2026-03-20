@@ -34,7 +34,8 @@ import {
   ClipboardList,
   Terminal,
   Activity,
-  Cpu
+  Cpu,
+  Headphones
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -50,6 +51,7 @@ const technicianMenuItems = [
   { icon: Activity, label: "Diagnóstico", path: "/technician/diagnostics" },
   { icon: Wrench, label: "Mantenimiento", path: "/technician/maintenance" },
   { icon: Cpu, label: "Firmware", path: "/technician/firmware" },
+  { icon: Headphones, label: "Soporte", path: "/technician/support" },
   { icon: Settings, label: "Configuración", path: "/technician/settings" },
 ];
 
