@@ -29,7 +29,6 @@ import {
   MapPin,
   Wrench,
   AlertTriangle,
-  FileText,
   Settings,
   Zap,
   ClipboardList,
@@ -52,7 +51,6 @@ const engineerMenuItems = [
   { icon: AlertTriangle, label: "Alertas", path: "/engineer/alerts", section: "operaciones" },
   { icon: Activity, label: "Diagnóstico", path: "/engineer/diagnostics", section: "operaciones" },
   { icon: Terminal, label: "Monitor OCPP", path: "/engineer/ocpp-monitor", section: "operaciones" },
-  { icon: FileText, label: "Logs OCPP", path: "/engineer/ocpp-logs", section: "operaciones" },
   { icon: Wrench, label: "Mantenimiento", path: "/engineer/maintenance", section: "operaciones" },
   { icon: Cpu, label: "Firmware", path: "/engineer/firmware", section: "operaciones" },
   { icon: Settings, label: "Configuración", path: "/engineer/settings", section: "config" },
@@ -346,7 +344,7 @@ function EngineerLayoutContent({
             </div>
           </div>
         )}
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-3 sm:p-6">{children}</main>
       </SidebarInset>
     </>
   );

@@ -33,7 +33,6 @@ import {
   Zap,
   ClipboardList,
   Terminal,
-  FileText,
   Activity,
   Cpu
 } from "lucide-react";
@@ -48,7 +47,6 @@ const technicianMenuItems = [
   { icon: MapPin, label: "Estaciones", path: "/technician/stations" },
   { icon: AlertTriangle, label: "Alertas", path: "/technician/alerts" },
   { icon: Terminal, label: "Monitor OCPP", path: "/technician/ocpp-monitor" },
-  { icon: FileText, label: "Logs OCPP", path: "/technician/ocpp-logs" },
   { icon: Activity, label: "Diagnóstico", path: "/technician/diagnostics" },
   { icon: Wrench, label: "Mantenimiento", path: "/technician/maintenance" },
   { icon: Cpu, label: "Firmware", path: "/technician/firmware" },
@@ -308,7 +306,7 @@ function TechnicianLayoutContent({
             </div>
           </div>
         )}
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-3 sm:p-6">{children}</main>
       </SidebarInset>
     </>
   );

@@ -71,10 +71,8 @@ const InvestorSettlements = lazy(() => import("./pages/investor/Settlements"));
 const TechnicianDashboard = lazy(() => import("./pages/technician/Dashboard"));
 const TechnicianTickets = lazy(() => import("./pages/technician/Tickets"));
 const TechnicianStations = lazy(() => import("./pages/technician/Stations"));
-const TechnicianLogs = lazy(() => import("./pages/technician/Logs"));
 const TechnicianAlerts = lazy(() => import("./pages/technician/Alerts"));
 const TechnicianDiagnostics = lazy(() => import("./pages/technician/Diagnostics"));
-const TechnicianOCPPLogs = lazy(() => import("./pages/technician/OCPPLogs"));
 const TechnicianOCPPMonitor = lazy(() => import("./pages/technician/OCPPMonitor"));
 const TechnicianMaintenance = lazy(() => import("./pages/technician/Maintenance"));
 const TechnicianSettings = lazy(() => import("./pages/technician/Settings"));
@@ -398,13 +396,7 @@ function Router() {
             </EngineerLayout>
           </ProtectedRoute>
         </Route>
-        <Route path="/engineer/ocpp-logs">
-          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
-            <EngineerLayout>
-              <TechnicianOCPPLogs />
-            </EngineerLayout>
-          </ProtectedRoute>
-        </Route>
+
         <Route path="/engineer/maintenance">
           <ProtectedRoute allowedRoles={["engineer", "admin"]}>
             <EngineerLayout>
@@ -479,20 +471,8 @@ function Router() {
             </TechnicianLayout>
           </ProtectedRoute>
         </Route>
-        <Route path="/technician/logs">
-          <ProtectedRoute allowedRoles={["technician", "admin"]}>
-            <TechnicianLayout>
-              <TechnicianLogs />
-            </TechnicianLayout>
-          </ProtectedRoute>
-        </Route>
-        <Route path="/technician/ocpp-logs">
-          <ProtectedRoute allowedRoles={["technician", "admin"]}>
-            <TechnicianLayout>
-              <TechnicianOCPPLogs />
-            </TechnicianLayout>
-          </ProtectedRoute>
-        </Route>
+
+
         <Route path="/technician/diagnostics">
           <ProtectedRoute allowedRoles={["technician", "admin"]}>
             <TechnicianLayout>
