@@ -2289,3 +2289,10 @@
 - [x] Implementar lógica de asignación por zonas según ubicación de cargadores
 - [x] Agregar "Soporte" al sidebar del técnico
 - [x] Integrar con sistema de tickets existente (support-router.ts)
+
+## Rediseño Módulo Soporte Técnico - 20 Marzo 2026
+
+- [x] Rediseñar Support.tsx como panel de agente (bandeja de tickets, no contactar soporte)
+- [x] Bandeja de tickets asignados al técnico con filtros por estado/prioridad
+- [x] Chat de respuesta para que el técnico conteste a los usuarios
+- [x] Gestión de tickets (cambiar estado, asignar, resolver)
