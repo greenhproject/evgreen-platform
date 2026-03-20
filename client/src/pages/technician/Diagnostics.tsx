@@ -44,9 +44,34 @@ export default function TechnicianDiagnostics() {
     refetchInterval: 10000,
   });
 
+  /**
+   * Busca la conexión OCPP activa para una estación.
+   * Intenta hacer match por stationId (numérico) Y por ocppIdentity (string).
+   * El backend puede devolver stationId como number o como string, así que
+   * comparamos ambos. También comparamos con el ocppIdentity de la estación.
+   */
   const getStationOCPPInfo = (stationId: number) => {
     if (!ocppConnections) return null;
-    return ocppConnections.find((c: any) => c.stationId === stationId);
+    
+    // Obtener la estación para saber su ocppIdentity
+    const station = stations?.find((s: any) => s.id === stationId);
+    const stationOcppIdentity = station?.ocppIdentity;
+    
+    // Buscar por stationId (comparando como string y como number)
+    let conn = ocppConnections.find((c: any) => {
+      if (c.stationId === stationId) return true;
+      if (c.stationId && String(c.stationId) === String(stationId)) return true;
+      return false;
+    });
+    
+    // Si no se encontró por stationId, buscar por ocppIdentity
+    if (!conn && stationOcppIdentity) {
+      conn = ocppConnections.find((c: any) => 
+        c.ocppIdentity === stationOcppIdentity
+      );
+    }
+    
+    return conn || null;
   };
 
   const runDiagnostics = async () => {
@@ -77,7 +102,9 @@ export default function TechnicianDiagnostics() {
         delay: 800,
         check: () => {
           if (!ocppInfo) return { status: "error" as const, value: "Desconectado", details: "No hay conexión WebSocket activa con el cargador" };
-          return { status: "ok" as const, value: `Conectado (OCPP ${ocppInfo.ocppVersion || "1.6"})`, details: `Vendor: ${ocppInfo.vendor || "N/A"}, Model: ${ocppInfo.model || "N/A"}` };
+          const vendor = ocppInfo.bootInfo?.vendor || ocppInfo.vendor || "N/A";
+          const model = ocppInfo.bootInfo?.model || ocppInfo.model || "N/A";
+          return { status: "ok" as const, value: `Conectado (OCPP ${ocppInfo.ocppVersion || "1.6"})`, details: `Vendor: ${vendor}, Model: ${model}` };
         }
       },
       { 
@@ -87,6 +114,8 @@ export default function TechnicianDiagnostics() {
           if (!ocppInfo?.lastHeartbeat) return { status: "warning" as const, value: "Sin datos", details: "No se ha recibido heartbeat" };
           const diff = Date.now() - new Date(ocppInfo.lastHeartbeat).getTime();
           const minutes = Math.floor(diff / 60000);
+          const seconds = Math.floor(diff / 1000);
+          if (seconds < 60) return { status: "ok" as const, value: `Hace ${seconds}s`, details: `Último: ${new Date(ocppInfo.lastHeartbeat).toLocaleString("es-CO")}` };
           if (minutes > 5) return { status: "warning" as const, value: `Hace ${minutes} min`, details: "El heartbeat es antiguo, posible problema de conexión" };
           return { status: "ok" as const, value: `Hace ${minutes} min`, details: `Último: ${new Date(ocppInfo.lastHeartbeat).toLocaleString("es-CO")}` };
         }
@@ -107,7 +136,9 @@ export default function TechnicianDiagnostics() {
         delay: 500,
         check: () => {
           if (!ocppInfo) return { status: "warning" as const, value: "Sin datos", details: "No se puede verificar sin conexión OCPP" };
-          return { status: "ok" as const, value: ocppInfo.firmwareVersion || "Versión actual", details: `Serial: ${ocppInfo.serialNumber || "N/A"}` };
+          const fw = ocppInfo.bootInfo?.firmwareVersion || ocppInfo.firmwareVersion || "Versión actual";
+          const serial = ocppInfo.bootInfo?.serialNumber || ocppInfo.serialNumber || "N/A";
+          return { status: "ok" as const, value: fw, details: `Serial: ${serial}` };
         }
       },
       { 
@@ -115,7 +146,8 @@ export default function TechnicianDiagnostics() {
         delay: 700,
         check: () => {
           if (!ocppInfo) return { status: "error" as const, value: "Sin conexión", details: "El cargador no está conectado al servidor OCPP" };
-          return { status: "ok" as const, value: "Conectado", details: `ChargePoint ID: ${ocppInfo.chargePointId}` };
+          const cpId = ocppInfo.ocppIdentity || ocppInfo.chargePointId || station?.ocppIdentity || "N/A";
+          return { status: "ok" as const, value: "Conectado", details: `ChargePoint ID: ${cpId}` };
         }
       },
     ];
@@ -162,17 +194,17 @@ export default function TechnicianDiagnostics() {
   const errorCount = results.filter(r => r.status === "error").length;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Diagnósticos</h1>
-        <p className="text-muted-foreground">
+        <h1 className="text-xl sm:text-2xl font-bold">Diagnóstico</h1>
+        <p className="text-sm text-muted-foreground">
           Ejecuta diagnósticos en las estaciones de carga
         </p>
       </div>
 
       {/* Selector de estación y botón */}
-      <Card className="p-6">
-        <div className="flex items-end gap-4">
+      <Card className="p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
           <div className="flex-1 space-y-2">
             <label className="text-sm font-medium">Estación a diagnosticar</label>
             <Select value={selectedStation} onValueChange={setSelectedStation}>
@@ -191,7 +223,7 @@ export default function TechnicianDiagnostics() {
           <Button 
             onClick={runDiagnostics} 
             disabled={isRunning || !selectedStation}
-            className="gradient-primary"
+            className="gradient-primary w-full sm:w-auto"
           >
             {isRunning ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -215,42 +247,42 @@ export default function TechnicianDiagnostics() {
 
       {/* Resumen de resultados */}
       {results.length > 0 && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                  <CheckCircle className="w-6 h-6 text-green-500" />
+            <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+              <div className="flex items-center gap-2 sm:gap-4">
+                <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
+                  <CheckCircle className="w-4 h-4 sm:w-6 sm:h-6 text-green-500" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{okCount}</p>
-                  <p className="text-sm text-muted-foreground">Correctos</p>
+                  <p className="text-lg sm:text-2xl font-bold">{okCount}</p>
+                  <p className="text-[10px] sm:text-sm text-muted-foreground">Correctos</p>
                 </div>
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
-                  <AlertTriangle className="w-6 h-6 text-yellow-500" />
+            <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+              <div className="flex items-center gap-2 sm:gap-4">
+                <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-4 h-4 sm:w-6 sm:h-6 text-yellow-500" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{warningCount}</p>
-                  <p className="text-sm text-muted-foreground">Advertencias</p>
+                  <p className="text-lg sm:text-2xl font-bold">{warningCount}</p>
+                  <p className="text-[10px] sm:text-sm text-muted-foreground">Advertencias</p>
                 </div>
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                  <XCircle className="w-6 h-6 text-red-500" />
+            <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+              <div className="flex items-center gap-2 sm:gap-4">
+                <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+                  <XCircle className="w-4 h-4 sm:w-6 sm:h-6 text-red-500" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{errorCount}</p>
-                  <p className="text-sm text-muted-foreground">Errores</p>
+                  <p className="text-lg sm:text-2xl font-bold">{errorCount}</p>
+                  <p className="text-[10px] sm:text-sm text-muted-foreground">Errores</p>
                 </div>
               </div>
             </CardContent>
@@ -262,24 +294,26 @@ export default function TechnicianDiagnostics() {
       {results.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="w-5 h-5" />
+            <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+              <Activity className="w-4 h-4 sm:w-5 sm:h-5" />
               Resultados del diagnóstico
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {results.map((result, index) => (
-                <div key={index} className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
-                  {getStatusIcon(result.status)}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{result.name}</span>
+                <div key={index} className="flex items-start sm:items-center gap-3 sm:gap-4 p-3 bg-muted/50 rounded-lg">
+                  <div className="shrink-0 mt-0.5 sm:mt-0">
+                    {getStatusIcon(result.status)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-sm sm:text-base">{result.name}</span>
                       {getStatusBadge(result.status)}
                     </div>
-                    <div className="text-sm text-muted-foreground">{result.value}</div>
+                    <div className="text-xs sm:text-sm text-muted-foreground truncate">{result.value}</div>
                     {result.details && (
-                      <div className="text-xs text-muted-foreground mt-1">{result.details}</div>
+                      <div className="text-[10px] sm:text-xs text-muted-foreground mt-1 break-words">{result.details}</div>
                     )}
                   </div>
                 </div>
@@ -291,11 +325,11 @@ export default function TechnicianDiagnostics() {
 
       {/* Estado vacío */}
       {results.length === 0 && !isRunning && (
-        <Card className="p-8">
+        <Card className="p-6 sm:p-8">
           <div className="flex flex-col items-center text-center">
-            <Server className="w-12 h-12 text-muted-foreground mb-4" />
-            <h3 className="font-semibold">Sin diagnósticos</h3>
-            <p className="text-sm text-muted-foreground">
+            <Server className="w-10 h-10 sm:w-12 sm:h-12 text-muted-foreground mb-4" />
+            <h3 className="font-semibold text-sm sm:text-base">Sin diagnósticos</h3>
+            <p className="text-xs sm:text-sm text-muted-foreground">
               Selecciona una estación y ejecuta un diagnóstico para ver los resultados
             </p>
           </div>
