@@ -2266,3 +2266,6 @@
   - Fix 2: Reconciliación automática cada 5 min (cron job server/wompi/reconciliation-cron.ts)
   - Fix 3: Polling frontend progresivo (~120s total con delays crecientes)
   - Fix 4: Webhook configurado en Wompi Dashboard -> https://app.evgreen.lat/api/wompi/webhook
+
+## Bug Panel Técnico - 20 Marzo 2026
+- [x] BUG: Botón "Ver monitor OCPP" en panel técnico da 404 - rutas faltantes en App.tsx + menú sidebar actualizado
