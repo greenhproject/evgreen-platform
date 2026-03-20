@@ -2258,3 +2258,11 @@
 
 ## Bugs Pagos - 18 Marzo 2026
 - [x] BUG: Sistema de pagos Wompi muestra "Pagos en configuración" - columnas support faltantes en BD causaban fallo en SELECT de platform_settings
+
+## Bug Crítico Wompi - 20 Marzo 2026
+- [x] BUG CRÍTICO: Wompi cobra el pago ($100,000 COP) pero el saldo de la billetera no se actualiza automáticamente
+  - Causa: webhook no configurado en Wompi + recheck insuficiente (1 intento a 2s)
+  - Fix 1: Recheck mejorado con 3 intentos (2s, 5s, 10s) en backend
+  - Fix 2: Reconciliación automática cada 5 min (cron job server/wompi/reconciliation-cron.ts)
+  - Fix 3: Polling frontend progresivo (~120s total con delays crecientes)
+  - Fix 4: Webhook configurado en Wompi Dashboard -> https://app.evgreen.lat/api/wompi/webhook

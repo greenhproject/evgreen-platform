@@ -448,7 +448,11 @@ export default function UserWallet() {
   const pollingCountRef = useRef(0);
   const utils = trpc.useUtils();
 
-  // Polling robusto con setInterval - consulta Wompi cada 3s hasta APPROVED o timeout
+  // Polling robusto con intervalos progresivos - consulta Wompi hasta APPROVED o timeout
+  // Fase 1: cada 3s por 30s (10 intentos) - para transacciones rápidas
+  // Fase 2: cada 5s por 30s (6 intentos) - espera moderada
+  // Fase 3: cada 10s por 60s (6 intentos) - espera larga
+  // Total: ~120 segundos de polling antes de confiar en webhook/reconciliación
   useEffect(() => {
     if (!pendingReference) {
       if (pollingRef.current) {
@@ -459,9 +463,21 @@ export default function UserWallet() {
       return;
     }
 
+    let cancelled = false;
+
+    const getDelay = (attempt: number): number => {
+      if (attempt <= 10) return 3000;  // Primeros 10: cada 3s
+      if (attempt <= 16) return 5000;  // Siguientes 6: cada 5s
+      return 10000;                     // Últimos 6: cada 10s
+    };
+
+    const MAX_ATTEMPTS = 22;
+
     const pollStatus = async () => {
+      if (cancelled) return;
       pollingCountRef.current += 1;
-      console.log(`[Polling] Intento ${pollingCountRef.current} para ${pendingReference}`);
+      const attempt = pollingCountRef.current;
+      console.log(`[Polling] Intento ${attempt}/${MAX_ATTEMPTS} para ${pendingReference}`);
 
       try {
         const result = await utils.wompi.checkQuickRechargeStatus.fetch({ reference: pendingReference });
@@ -481,27 +497,41 @@ export default function UserWallet() {
           return;
         }
 
-        // Timeout después de 20 intentos (60 segundos)
-        if (pollingCountRef.current >= 20) {
-          toast.info("El cobro sigue en proceso. Tu billetera se actualizará automáticamente cuando se confirme.");
+        if (attempt >= MAX_ATTEMPTS) {
+          toast.info("El cobro está siendo procesado. Tu billetera se actualizará automáticamente en unos minutos.");
           setPendingReference(null);
+          // Hacer un último refetch después de 30s por si el webhook ya llegó
+          setTimeout(() => {
+            refetchWallet();
+            refetchTransactions();
+          }, 30000);
           return;
         }
+
+        // Programar siguiente intento con delay progresivo
+        setTimeout(pollStatus, getDelay(attempt));
       } catch (err) {
         console.warn("[Polling] Error consultando estado:", err);
-        if (pollingCountRef.current >= 20) {
-          toast.info("No pudimos verificar el estado del cobro. Tu billetera se actualizará cuando se confirme.");
+        if (attempt >= MAX_ATTEMPTS) {
+          toast.info("Tu billetera se actualizará automáticamente cuando se confirme el pago.");
           setPendingReference(null);
+          setTimeout(() => {
+            refetchWallet();
+            refetchTransactions();
+          }, 30000);
+        } else {
+          // Reintentar con delay progresivo incluso en error
+          setTimeout(pollStatus, getDelay(attempt));
         }
       }
     };
 
-    // Primera consulta inmediata
-    pollStatus();
-    // Luego cada 3 segundos
-    pollingRef.current = setInterval(pollStatus, 3000);
+    // Primera consulta después de 2s (dar tiempo al backend para hacer sus rechecks)
+    const initialTimeout = setTimeout(pollStatus, 2000);
 
     return () => {
+      cancelled = true;
+      clearTimeout(initialTimeout);
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
