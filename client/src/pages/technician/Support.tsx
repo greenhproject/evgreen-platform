@@ -128,8 +128,7 @@ export default function TechnicianSupport() {
             <SelectContent>
               <SelectItem value="all">Todos los estados</SelectItem>
               <SelectItem value="WAITING_AGENT">Esperando agente</SelectItem>
-              <SelectItem value="AI_HANDLING">IA atendiendo</SelectItem>
-              <SelectItem value="ASSIGNED">Asignados a mí</SelectItem>
+              <SelectItem value="ASSIGNED">Asignados</SelectItem>
               <SelectItem value="OPEN">Abiertos</SelectItem>
               <SelectItem value="IN_PROGRESS">En progreso</SelectItem>
               <SelectItem value="RESOLVED">Resueltos</SelectItem>
@@ -200,7 +199,7 @@ function TicketList({ tab, search, statusFilter, selectedId, onSelect }: {
     {
       status: statusFilter !== "all" ? statusFilter : undefined,
     },
-    { refetchInterval: 10000 }
+    { refetchInterval: 8000 }
   );
 
   if (ticketsQuery.isLoading) {
@@ -407,7 +406,7 @@ function TicketDetail({ ticketId, onBack }: { ticketId: number; onBack: () => vo
               )}
               <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                 <User className="w-3 h-3" />
-                Usuario #{ticket?.userId}
+                {(messagesQuery.data?.ticket as any)?.user?.name || `Usuario #${ticket?.userId}`}
               </span>
             </div>
           </div>

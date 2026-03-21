@@ -242,32 +242,36 @@ const AI_SUPPORT_SYSTEM_PROMPT = `Eres el asistente de soporte técnico de EVGre
 
 Tu rol es ayudar a los usuarios a resolver problemas técnicos y responder preguntas sobre la plataforma.
 
-=== TEMAS QUE PUEDES RESOLVER ===
-1. Problemas de conexión con cargadores (reiniciar sesión, verificar estado)
-2. Preguntas sobre tarifas, precios y facturación
-3. Problemas con la billetera (recargas, saldo, transacciones)
-4. Cómo usar la aplicación (escanear QR, iniciar carga, ver historial)
-5. Información sobre estaciones de carga (ubicación, disponibilidad, tipos de conector)
-6. Problemas con reservas y programación de cargas
-7. Preguntas sobre vehículos eléctricos y compatibilidad
-8. Problemas con la cuenta del usuario (perfil, notificaciones)
+=== TEMAS QUE PUEDES RESOLVER (sin escalar) ===
+1. Preguntas generales sobre cómo usar la app (escanear QR, iniciar carga, ver historial)
+2. Información básica sobre tarifas y precios
+3. Cómo recargar la billetera
+4. Información general sobre tipos de conector y compatibilidad
+5. Preguntas frecuentes sobre vehículos eléctricos
+
+=== TEMAS QUE DEBES ESCALAR INMEDIATAMENTE ===
+1. Cualquier problema con un cargador (no enciende, no carga, cable dañado, pantalla rota, error)
+2. Problemas de cobro, facturación o reembolsos
+3. Problemas con transacciones o pagos
+4. Problemas de acceso a la cuenta
+5. Cualquier falla técnica reportada por el usuario
+6. Cuando el usuario dice que algo "no funciona" o "no sirve"
+7. Cuando el usuario pide hablar con un humano o agente
+8. Cuando el problema persiste después de tu primera sugerencia
+9. Cuando el usuario muestra frustración o urgencia
 
 === REGLAS ===
 - Responde siempre en español
 - Sé amable, profesional y conciso
-- Si puedes resolver el problema, hazlo directamente
-- Si NO puedes resolver el problema (requiere acceso a sistemas internos, es un problema técnico complejo, o el usuario necesita atención personalizada), responde EXACTAMENTE con el prefijo "[ESCALAR]" seguido de tu mensaje
-- Ejemplos de cuándo escalar:
-  * El usuario reporta un cargador dañado o fuera de servicio
-  * El usuario tiene un cobro incorrecto que necesita reembolso
-  * El usuario no puede acceder a su cuenta
-  * El problema persiste después de tus sugerencias
-  * El usuario pide explícitamente hablar con un humano
+- Si puedes resolver el problema con información general, hazlo directamente
+- Si el problema requiere acción técnica, acceso a sistemas, o atención personalizada, DEBES escalar
+- Para escalar, responde EXACTAMENTE con el prefijo "[ESCALAR]" al inicio de tu mensaje, seguido de una explicación amable al usuario de que lo conectarás con un técnico
+- IMPORTANTE: Después de 2 intercambios de mensajes sin resolver el problema, DEBES escalar automáticamente
 - NO inventes información técnica específica sobre el estado de cargadores o transacciones
-- Si no tienes suficiente información, pregunta al usuario antes de escalar
+- Ante la duda, ES MEJOR ESCALAR que dejar al usuario sin solución
 
 === FORMATO ===
-- Usa respuestas cortas y directas (máximo 3-4 párrafos)
+- Usa respuestas cortas y directas (máximo 2-3 párrafos)
 - Usa emojis moderadamente para ser amigable
 - Ofrece pasos numerados cuando sea apropiado`;
 
@@ -318,15 +322,23 @@ export const supportRouterV2 = router({
       if (ticket.status === "AI_HANDLING") {
         // Get conversation history for context
         const messages = await supportDb.getMessagesByTicketId(ticketId);
+        const userMessageCount = messages.filter(m => m.senderRole === "user").length;
         const conversationHistory = messages.map(m => ({
           role: m.senderRole === "user" ? "user" as const : "assistant" as const,
           content: m.message,
         }));
 
+        // Auto-escalate after 3+ user messages without resolution
+        const forceEscalate = userMessageCount >= 3;
+
         try {
+          const systemPrompt = forceEscalate
+            ? AI_SUPPORT_SYSTEM_PROMPT + "\n\nIMPORTANTE: El usuario ya ha enviado varios mensajes sin resolver su problema. DEBES responder con [ESCALAR] al inicio para transferirlo a un agente humano. Explica amablemente que lo conectarás con un técnico."
+            : AI_SUPPORT_SYSTEM_PROMPT;
+
           const aiResponse = await invokeLLM({
             messages: [
-              { role: "system", content: AI_SUPPORT_SYSTEM_PROMPT },
+              { role: "system", content: systemPrompt },
               ...conversationHistory,
             ],
           });
@@ -335,8 +347,8 @@ export const supportRouterV2 = router({
             ? aiResponse.choices[0].message.content
             : "";
 
-          // Check if AI wants to escalate
-          const shouldEscalate = aiContent.startsWith("[ESCALAR]");
+          // Check if AI wants to escalate (or force escalation)
+          const shouldEscalate = aiContent.startsWith("[ESCALAR]") || forceEscalate;
           const cleanContent = shouldEscalate
             ? aiContent.replace("[ESCALAR]", "").trim()
             : aiContent;
@@ -598,15 +610,23 @@ export const supportRouterV2 = router({
     }),
 
   // ========================================================================
-  // ADMIN/TECH: List all tickets
+  // ADMIN/TECH: List all tickets (excludes AI_HANDLING by default)
   // ========================================================================
   listAll: techProcedure
     .input(z.object({
       status: z.string().optional(),
       category: z.string().optional(),
+      includeAiHandling: z.boolean().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return supportDb.getAllTickets(input);
+    .query(async ({ ctx, input }) => {
+      // Auto-register technician as support agent on first access
+      await supportDb.ensureAgentRegistered(ctx.user.id);
+      
+      return supportDb.getAllTickets({
+        status: input?.status,
+        category: input?.category,
+        excludeAiHandling: !input?.includeAiHandling,
+      });
     }),
 
   // ========================================================================
