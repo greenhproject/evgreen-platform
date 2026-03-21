@@ -63,6 +63,10 @@ export type NotificationType =
   | "station_available"      // Estación disponible
   | "reservation_reminder"   // Recordatorio de reserva
   | "overstay_alert"          // Alerta de ocupación (overstay)
+  | "support_new_ticket"     // Nuevo ticket de soporte
+  | "support_user_reply"     // Usuario respondió en ticket
+  | "support_agent_reply"    // Agente/técnico respondió en ticket
+  | "support_ticket_resolved" // Ticket resuelto
   | "system_alert";          // Alerta del sistema
 
 // Interfaz para datos de notificación
@@ -86,6 +90,10 @@ const notificationStyles: Record<NotificationType, { icon: string; color: string
   station_available: { icon: "📍", color: "#06b6d4" },
   reservation_reminder: { icon: "⏰", color: "#f97316" },
   overstay_alert: { icon: "🚨", color: "#dc2626" },
+  support_new_ticket: { icon: "🎫", color: "#8b5cf6" },
+  support_user_reply: { icon: "💬", color: "#3b82f6" },
+  support_agent_reply: { icon: "🛠️", color: "#059669" },
+  support_ticket_resolved: { icon: "✅", color: "#22c55e" },
   system_alert: { icon: "🔔", color: "#64748b" },
 };
 

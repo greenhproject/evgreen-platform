@@ -2296,3 +2296,10 @@
 - [x] Bandeja de tickets asignados al técnico con filtros por estado/prioridad
 - [x] Chat de respuesta para que el técnico conteste a los usuarios
 - [x] Gestión de tickets (cambiar estado, asignar, resolver)
+
+## Notificaciones Push Soporte - 20 Marzo 2026
+
+- [x] Notificación push a técnicos cuando un usuario crea un nuevo ticket
+- [x] Notificación push a técnicos cuando un usuario responde en un chat activo
+- [x] Notificación push al usuario cuando un técnico responde su ticket
+- [x] Copia de notificación al remitente para trazabilidad

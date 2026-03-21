@@ -10,6 +10,11 @@ import { invokeLLM } from "../_core/llm";
 import { Resend } from "resend";
 import { buildEmailParams } from "../utils/email-helper";
 import * as supportDb from "./support-db";
+import { sendPushNotification, sendPushNotificationToMultiple } from "../firebase/fcm";
+import { getActiveTechnicians } from "../notifications/technician-notification-service";
+import { getUserById } from "../db";
+import { notifications } from "../../drizzle/schema";
+import { getDb } from "../db";
 
 // Role-based procedures (replicate from main routers)
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -29,6 +34,205 @@ const techProcedure = protectedProcedure.use(({ ctx, next }) => {
 // Resend for email notifications
 const resendApiKey = process.env.RESEND_API_KEY || "";
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
+
+// ============================================================================
+// PUSH NOTIFICATION HELPERS FOR SUPPORT
+// ============================================================================
+
+/**
+ * Notificar a técnicos/agentes cuando un usuario crea un nuevo ticket o responde
+ * Envía push FCM + notificación in-app + copia al remitente para trazabilidad
+ */
+async function notifyTechniciansOfSupportTicket(
+  ticketId: number,
+  subject: string,
+  userMessage: string,
+  userName: string,
+  type: "new_ticket" | "user_reply"
+): Promise<void> {
+  try {
+    const ticket = await supportDb.getTicketById(ticketId);
+    if (!ticket) return;
+
+    // If ticket is assigned, only notify the assigned agent
+    // Otherwise notify all active technicians
+    let targetUsers: { id: number; fcmToken: string | null; name: string | null }[] = [];
+
+    if (ticket.assignedToId) {
+      const assignedUser = await getUserById(ticket.assignedToId);
+      if (assignedUser) {
+        targetUsers = [{ id: assignedUser.id, fcmToken: assignedUser.fcmToken, name: assignedUser.name }];
+      }
+    } else {
+      const technicians = await getActiveTechnicians();
+      targetUsers = technicians
+        .filter(t => t.techNotifyNewTickets !== false)
+        .map(t => ({ id: t.id, fcmToken: t.fcmToken, name: t.name }));
+    }
+
+    if (targetUsers.length === 0) return;
+
+    const pushType = type === "new_ticket" ? "support_new_ticket" as const : "support_user_reply" as const;
+    const title = type === "new_ticket"
+      ? `Nuevo ticket de soporte #${ticketId}`
+      : `Respuesta en ticket #${ticketId}`;
+    const body = type === "new_ticket"
+      ? `${userName}: ${subject.substring(0, 120)}`
+      : `${userName}: ${userMessage.substring(0, 120)}`;
+
+    const database = await getDb();
+
+    for (const target of targetUsers) {
+      // Push notification via FCM
+      if (target.fcmToken && !target.fcmToken.startsWith("local_")) {
+        await sendPushNotification(target.fcmToken, {
+          type: pushType,
+          title,
+          body,
+          clickAction: "/technician/support",
+          data: { ticketId: String(ticketId) },
+        }).catch(err => console.error(`[SupportPush] FCM error for tech ${target.id}:`, err));
+      }
+
+      // In-app notification
+      if (database) {
+        await database.insert(notifications).values({
+          userId: target.id,
+          title,
+          message: body,
+          type: "SYSTEM",
+          referenceType: "support_ticket",
+          referenceId: ticketId,
+          isRead: false,
+          pushSent: !!target.fcmToken && !target.fcmToken?.startsWith("local_"),
+          pushSentAt: target.fcmToken ? new Date() : undefined,
+          data: JSON.stringify({ ticketId, type: pushType, userName }),
+        }).catch(err => console.error(`[SupportPush] In-app notification error for tech ${target.id}:`, err));
+      }
+    }
+
+    console.log(`[SupportPush] ${type} notification sent to ${targetUsers.length} technicians for ticket #${ticketId}`);
+  } catch (error) {
+    console.error("[SupportPush] Error notifying technicians:", error);
+  }
+}
+
+/**
+ * Notificar al usuario cuando un técnico/agente responde su ticket
+ * Envía push FCM + notificación in-app
+ */
+async function notifyUserOfAgentReply(
+  ticketId: number,
+  userId: number,
+  agentName: string,
+  agentMessage: string
+): Promise<void> {
+  try {
+    const user = await getUserById(userId);
+    if (!user) return;
+
+    const title = `Respuesta de soporte - Ticket #${ticketId}`;
+    const body = `${agentName}: ${agentMessage.substring(0, 120)}`;
+
+    // Push notification via FCM
+    if (user.fcmToken && !user.fcmToken.startsWith("local_")) {
+      await sendPushNotification(user.fcmToken, {
+        type: "support_agent_reply",
+        title,
+        body,
+        clickAction: "/support",
+        data: { ticketId: String(ticketId) },
+      }).catch(err => console.error(`[SupportPush] FCM error for user ${userId}:`, err));
+    }
+
+    // In-app notification
+    const database = await getDb();
+    if (database) {
+      await database.insert(notifications).values({
+        userId,
+        title,
+        message: body,
+        type: "SYSTEM",
+        referenceType: "support_ticket",
+        referenceId: ticketId,
+        isRead: false,
+        pushSent: !!user.fcmToken && !user.fcmToken.startsWith("local_"),
+        pushSentAt: user.fcmToken ? new Date() : undefined,
+        data: JSON.stringify({ ticketId, type: "support_agent_reply", agentName }),
+      }).catch(err => console.error(`[SupportPush] In-app notification error for user ${userId}:`, err));
+    }
+
+    // Copia al remitente (agente) para trazabilidad
+    const ticket = await supportDb.getTicketById(ticketId);
+    if (ticket?.assignedToId && database) {
+      await database.insert(notifications).values({
+        userId: ticket.assignedToId,
+        title: `[Copia] Respuesta enviada - Ticket #${ticketId}`,
+        message: `Tu respuesta a ${user.name || 'usuario'}: ${agentMessage.substring(0, 120)}`,
+        type: "SYSTEM",
+        referenceType: "support_ticket",
+        referenceId: ticketId,
+        isRead: true, // Mark as read since it's a copy
+        data: JSON.stringify({ ticketId, type: "support_agent_reply_copy" }),
+      }).catch(err => console.error(`[SupportPush] Copy notification error:`, err));
+    }
+
+    console.log(`[SupportPush] Agent reply notification sent to user ${userId} for ticket #${ticketId}`);
+  } catch (error) {
+    console.error("[SupportPush] Error notifying user of agent reply:", error);
+  }
+}
+
+/**
+ * Notificar al usuario cuando su ticket es resuelto
+ */
+async function notifyUserOfTicketResolved(
+  ticketId: number,
+  userId: number,
+  resolution?: string
+): Promise<void> {
+  try {
+    const user = await getUserById(userId);
+    if (!user) return;
+
+    const title = `Ticket #${ticketId} resuelto`;
+    const body = resolution
+      ? `Tu ticket ha sido resuelto: ${resolution.substring(0, 120)}`
+      : "Tu ticket de soporte ha sido resuelto. Gracias por contactarnos.";
+
+    // Push notification
+    if (user.fcmToken && !user.fcmToken.startsWith("local_")) {
+      await sendPushNotification(user.fcmToken, {
+        type: "support_ticket_resolved",
+        title,
+        body,
+        clickAction: "/support",
+        data: { ticketId: String(ticketId) },
+      }).catch(err => console.error(`[SupportPush] FCM error for resolved ticket:`, err));
+    }
+
+    // In-app notification
+    const database = await getDb();
+    if (database) {
+      await database.insert(notifications).values({
+        userId,
+        title,
+        message: body,
+        type: "SYSTEM",
+        referenceType: "support_ticket",
+        referenceId: ticketId,
+        isRead: false,
+        pushSent: !!user.fcmToken && !user.fcmToken.startsWith("local_"),
+        pushSentAt: user.fcmToken ? new Date() : undefined,
+        data: JSON.stringify({ ticketId, type: "support_ticket_resolved" }),
+      }).catch(err => console.error(`[SupportPush] Resolved notification error:`, err));
+    }
+
+    console.log(`[SupportPush] Ticket resolved notification sent to user ${userId} for ticket #${ticketId}`);
+  } catch (error) {
+    console.error("[SupportPush] Error notifying ticket resolved:", error);
+  }
+}
 
 // ============================================================================
 // AI SUPPORT CHAT SYSTEM PROMPT
@@ -85,6 +289,7 @@ export const supportRouterV2 = router({
       let ticketId = input.ticketId;
 
       // Create ticket if new conversation
+      let isNewTicket = false;
       if (!ticketId) {
         ticketId = await supportDb.createTicket({
           userId: ctx.user.id,
@@ -94,6 +299,7 @@ export const supportRouterV2 = router({
           status: "AI_HANDLING",
           priority: "medium",
         });
+        isNewTicket = true;
       }
 
       // Save user message
@@ -163,6 +369,14 @@ export const supportRouterV2 = router({
 
               // Send email notification
               await sendSupportEmailNotification(ticketId, input.message, ctx.user.name || "Usuario");
+              // Push notification to assigned agent
+              notifyTechniciansOfSupportTicket(
+                ticketId,
+                input.message.substring(0, 100),
+                input.message,
+                ctx.user.name || "Usuario",
+                "new_ticket"
+              ).catch(err => console.error("[Support] Escalation push error:", err));
             } else {
               await supportDb.updateTicket(ticketId, { status: "WAITING_AGENT" });
               await supportDb.createMessage({
@@ -173,6 +387,14 @@ export const supportRouterV2 = router({
               });
               // Still send email
               await sendSupportEmailNotification(ticketId, input.message, ctx.user.name || "Usuario");
+              // Push notification to all technicians
+              notifyTechniciansOfSupportTicket(
+                ticketId,
+                input.message.substring(0, 100),
+                input.message,
+                ctx.user.name || "Usuario",
+                "new_ticket"
+              ).catch(err => console.error("[Support] Waiting agent push error:", err));
             }
           }
 
@@ -210,6 +432,16 @@ export const supportRouterV2 = router({
 
       // If already assigned to human agent, just save message and notify
       await sendSupportEmailNotification(ticketId, input.message, ctx.user.name || "Usuario");
+
+      // Push notification to assigned agent
+      notifyTechniciansOfSupportTicket(
+        ticketId,
+        ticket.subject || input.message.substring(0, 100),
+        input.message,
+        ctx.user.name || "Usuario",
+        "user_reply"
+      ).catch(err => console.error("[Support] Push notification error:", err));
+
       return {
         ticketId,
         aiResponse: null,
@@ -250,6 +482,16 @@ export const supportRouterV2 = router({
       }
 
       await sendSupportEmailNotification(input.ticketId, "Usuario solicita agente humano", ctx.user.name || "Usuario");
+
+      // Push notification to technicians
+      notifyTechniciansOfSupportTicket(
+        input.ticketId,
+        ticket.subject || "Solicitud de agente humano",
+        "El usuario solicita hablar con un agente humano",
+        ctx.user.name || "Usuario",
+        "new_ticket"
+      ).catch(err => console.error("[Support] Human agent request push error:", err));
+
       return { success: true, hasAgent: !!agent };
     }),
 
@@ -343,6 +585,15 @@ export const supportRouterV2 = router({
       // Send email notification
       await sendProblemReportEmail(input, ctx.user.name || "Usuario");
 
+      // Push notification to technicians about the problem report
+      notifyTechniciansOfSupportTicket(
+        ticketId,
+        `Reporte: ${getProblemTypeLabel(input.problemType)} - ${input.stationName}`,
+        input.description || getProblemTypeLabel(input.problemType),
+        ctx.user.name || "Usuario",
+        "new_ticket"
+      ).catch(err => console.error("[Support] Problem report push error:", err));
+
       return { reportId, ticketId, success: true };
     }),
 
@@ -395,7 +646,13 @@ export const supportRouterV2 = router({
         });
       }
 
-      // TODO: Send push notification to user
+      // Send push notification to user
+      notifyUserOfAgentReply(
+        input.ticketId,
+        ticket.userId,
+        ctx.user.name || "Soporte EVGreen",
+        input.message
+      ).catch(err => console.error("[Support] Agent reply push error:", err));
 
       return { success: true };
     }),
@@ -422,12 +679,20 @@ export const supportRouterV2 = router({
       }
       await supportDb.updateTicket(input.ticketId, data);
 
-      // If resolved, decrement agent ticket count
+      // If resolved, decrement agent ticket count and notify user
       if (input.status === "RESOLVED") {
         const ticket = await supportDb.getTicketById(input.ticketId);
         if (ticket?.assignedToId) {
           const agent = await supportDb.getAgentByUserId(ticket.assignedToId);
           if (agent) await supportDb.decrementAgentTicketCount(agent.id);
+        }
+        // Notify user that ticket is resolved
+        if (ticket) {
+          notifyUserOfTicketResolved(
+            input.ticketId,
+            ticket.userId,
+            input.resolution
+          ).catch(err => console.error("[Support] Ticket resolved push error:", err));
         }
       }
 
