@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
-import { Bell, Zap, Calendar, AlertTriangle, Gift, Info, CheckCircle, X, Loader2, BellOff, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { Bell, Zap, Calendar, AlertTriangle, Gift, Info, CheckCircle, X, Loader2, BellOff, ExternalLink, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,7 +14,7 @@ import { openExternalUrl, isExternalUrl } from "@/lib/openExternal";
 
 interface Notification {
   id: number;
-  type: "CHARGING" | "RESERVATION" | "PROMO" | "SYSTEM" | "ALERT" | "LOW_BALANCE" | "CHARGE_COMPLETE";
+  type: "CHARGING" | "RESERVATION" | "PROMO" | "SYSTEM" | "ALERT" | "LOW_BALANCE" | "CHARGE_COMPLETE" | "SUPPORT";
   title: string;
   message: string;
   read: boolean;
@@ -27,6 +27,8 @@ const getNotificationIcon = (type: Notification["type"]) => {
     case "CHARGING":
     case "CHARGE_COMPLETE":
       return <Zap className="w-4 h-4 text-primary" />;
+    case "SUPPORT":
+      return <MessageSquare className="w-4 h-4 text-blue-500" />;
     case "RESERVATION":
       return <Calendar className="w-4 h-4 text-blue-400" />;
     case "PROMO":
@@ -73,9 +75,23 @@ export function NotificationPanel({ buttonClassName }: NotificationPanelProps = 
         actionUrl = parsed?.actionUrl;
       } catch {}
     }
+    // Map support-related notifications to SUPPORT type
+    let mappedType = n.type as Notification["type"];
+    if (n.referenceType === "support_ticket" || n.type === "SYSTEM") {
+      try {
+        const parsed = typeof n.data === 'string' ? JSON.parse(n.data) : n.data;
+        if (parsed?.type?.startsWith('support_')) {
+          mappedType = "SUPPORT";
+          // Auto-set actionUrl for support notifications
+          if (!actionUrl && parsed?.ticketId) {
+            actionUrl = "/support";
+          }
+        }
+      } catch {}
+    }
     return {
       id: n.id,
-      type: n.type as Notification["type"],
+      type: mappedType,
       title: n.title,
       message: n.message,
       read: n.isRead ?? n.read ?? false,
