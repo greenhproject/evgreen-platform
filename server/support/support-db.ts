@@ -43,20 +43,45 @@ export async function getTicketsByUserId(userId: number) {
     .orderBy(desc(supportTickets.createdAt));
 }
 
-export async function getAllTickets(filters?: { status?: string; category?: string; assignedToId?: number }) {
+export async function getAllTickets(filters?: { status?: string; category?: string; assignedToId?: number; excludeAiHandling?: boolean }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
   if (filters?.status) conditions.push(eq(supportTickets.status, filters.status));
   if (filters?.category) conditions.push(eq(supportTickets.category, filters.category));
   if (filters?.assignedToId) conditions.push(eq(supportTickets.assignedToId, filters.assignedToId));
+  if (filters?.excludeAiHandling) {
+    conditions.push(sql`${supportTickets.status} != 'AI_HANDLING'`);
+  }
+
+  const selectFields = {
+    id: supportTickets.id,
+    userId: supportTickets.userId,
+    stationId: supportTickets.stationId,
+    transactionId: supportTickets.transactionId,
+    subject: supportTickets.subject,
+    description: supportTickets.description,
+    category: supportTickets.category,
+    priority: supportTickets.priority,
+    status: supportTickets.status,
+    assignedToId: supportTickets.assignedToId,
+    resolution: supportTickets.resolution,
+    resolvedAt: supportTickets.resolvedAt,
+    createdAt: supportTickets.createdAt,
+    updatedAt: supportTickets.updatedAt,
+    userName: users.name,
+    userEmail: users.email,
+  };
 
   if (conditions.length > 0) {
-    return db.select().from(supportTickets)
+    return db.select(selectFields).from(supportTickets)
+      .leftJoin(users, eq(supportTickets.userId, users.id))
       .where(and(...conditions))
       .orderBy(desc(supportTickets.createdAt));
   }
-  return db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
+  return db.select(selectFields).from(supportTickets)
+    .leftJoin(users, eq(supportTickets.userId, users.id))
+    .orderBy(desc(supportTickets.createdAt));
 }
 
 export async function updateTicket(id: number, data: Partial<InsertSupportTicket>) {
@@ -288,6 +313,33 @@ export async function getAgentByUserId(userId: number) {
   if (!db) return null;
   const rows = await db.select().from(supportAgents).where(eq(supportAgents.userId, userId));
   return rows[0] || null;
+}
+
+// ============================================================================
+// AUTO-REGISTER TECHNICIAN AS SUPPORT AGENT
+// ============================================================================
+
+export async function ensureAgentRegistered(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await db.select().from(supportAgents).where(eq(supportAgents.userId, userId));
+  if (existing.length === 0) {
+    await db.insert(supportAgents).values({
+      userId,
+      isOnline: true,
+      isAvailable: true,
+      scheduleStart: "00:00",
+      scheduleEnd: "23:59",
+      workDays: [0, 1, 2, 3, 4, 5, 6],
+      maxConcurrentTickets: 10,
+      activeTicketCount: 0,
+    });
+    console.log(`[Support] Auto-registered user ${userId} as support agent`);
+  } else {
+    await db.update(supportAgents)
+      .set({ isOnline: true })
+      .where(eq(supportAgents.userId, userId));
+  }
 }
 
 // ============================================================================

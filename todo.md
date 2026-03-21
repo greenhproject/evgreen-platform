@@ -2307,3 +2307,16 @@
 ## Bug Chat Soporte Usuario - 20 Marzo 2026
 
 - [x] BUG: Chat de soporte del usuario solo permite enviar el primer mensaje, no deja continuar la conversación
+
+## Bug Bandeja Soporte Técnico - Tickets Pendientes - 21 Marzo 2026
+
+- [x] BUG: Tickets creados por usuarios no aparecen en "Pendientes" del técnico
+- [x] La IA debe escalar automáticamente a soporte humano cuando detecte que el problema requiere técnico
+- [x] Solo tickets escalados (no ai_handling) deben aparecer en bandeja del técnico como pendientes
+- [x] Backend: getAllTickets con JOIN users para mostrar userName y userEmail
+- [x] Backend: Auto-registro de técnicos como agentes de soporte al acceder al panel
+- [x] Backend: AI_HANDLING tickets excluidos por defecto del listAll del técnico
+- [x] Backend: Auto-escalamiento forzado después de 3+ mensajes del usuario sin resolución
+- [x] Backend: Prompt de IA mejorado con criterios más claros de escalamiento
+- [x] Frontend: Removido filtro AI_HANDLING del dropdown del técnico
+- [x] 23 tests unitarios para lógica de filtrado y escalamiento
