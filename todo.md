@@ -2303,3 +2303,7 @@
 - [x] Notificación push a técnicos cuando un usuario responde en un chat activo
 - [x] Notificación push al usuario cuando un técnico responde su ticket
 - [x] Copia de notificación al remitente para trazabilidad
+
+## Bug Chat Soporte Usuario - 20 Marzo 2026
+
+- [x] BUG: Chat de soporte del usuario solo permite enviar el primer mensaje, no deja continuar la conversación

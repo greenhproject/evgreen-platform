@@ -303,13 +303,14 @@ function ChatView({ ticketId, onBack }: { ticketId: number | null; onBack: () =>
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [ticketStatus, setTicketStatus] = useState<string>("AI_HANDLING");
+  const [pendingLocalIds, setPendingLocalIds] = useState<Set<number>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Load existing messages if ticket exists
   const messagesQuery = trpc.support.getMessages.useQuery(
     { ticketId: currentTicketId! },
-    { enabled: !!currentTicketId, refetchInterval: ticketStatus !== "AI_HANDLING" ? 5000 : false }
+    { enabled: !!currentTicketId, refetchInterval: ticketStatus !== "AI_HANDLING" ? 5000 : 10000 }
   );
 
   // Send message mutation
@@ -319,23 +320,29 @@ function ChatView({ ticketId, onBack }: { ticketId: number | null; onBack: () =>
       if (result.status) setTicketStatus(result.status);
 
       if (result.aiResponse) {
+        const aiMsgId = Date.now();
         setLocalMessages(prev => [...prev, {
-          id: Date.now(),
-          senderRole: result.escalated ? "system" : "ai",
+          id: aiMsgId,
+          senderRole: result.escalated ? "system" as const : "ai" as const,
           message: result.aiResponse!,
           createdAt: new Date().toISOString(),
         }]);
+        setPendingLocalIds(prev => new Set(prev).add(aiMsgId));
         // If escalated, add the system message too
         if (result.escalated && result.status === "ASSIGNED") {
+          const sysMsgId = Date.now() + 1;
           setLocalMessages(prev => [...prev, {
-            id: Date.now() + 1,
+            id: sysMsgId,
             senderRole: "system",
             message: "Tu conversación ha sido transferida a un agente de soporte. Te responderá en breve.",
             createdAt: new Date().toISOString(),
           }]);
+          setPendingLocalIds(prev => new Set(prev).add(sysMsgId));
         }
       }
       setIsAiTyping(false);
+      // Refetch server messages to sync
+      messagesQuery.refetch();
     },
     onError: () => {
       setIsAiTyping(false);
@@ -355,13 +362,36 @@ function ChatView({ ticketId, onBack }: { ticketId: number | null; onBack: () =>
     },
   });
 
-  // Merge server messages with local ones
+  // Merge server messages with local pending ones
+  // Once server data arrives, use it as source of truth and only append local messages
+  // that haven't been synced yet (pending ones added optimistically)
   const allMessages = useMemo(() => {
-    if (messagesQuery.data?.messages) {
-      return messagesQuery.data.messages as unknown as ChatMessage[];
+    const serverMessages = messagesQuery.data?.messages as unknown as ChatMessage[] | undefined;
+    if (serverMessages && serverMessages.length > 0) {
+      // Server has messages - use them as base
+      // Only append local messages that are newer than the last server message
+      const lastServerTime = new Date(serverMessages[serverMessages.length - 1].createdAt).getTime();
+      const pendingLocal = localMessages.filter(lm => {
+        const localTime = new Date(lm.createdAt).getTime();
+        return localTime > lastServerTime && pendingLocalIds.has(lm.id);
+      });
+      return [...serverMessages, ...pendingLocal];
     }
+    // No server data yet - show local messages
     return localMessages;
-  }, [messagesQuery.data, localMessages]);
+  }, [messagesQuery.data, localMessages, pendingLocalIds]);
+
+  // When server messages update, clear synced local messages
+  useEffect(() => {
+    if (messagesQuery.data?.messages && (messagesQuery.data.messages as unknown as ChatMessage[]).length > 0) {
+      // Clear local messages that are now on the server
+      const serverCount = (messagesQuery.data.messages as unknown as ChatMessage[]).length;
+      if (serverCount > 0) {
+        // Keep only truly pending local messages
+        setPendingLocalIds(new Set());
+      }
+    }
+  }, [messagesQuery.data]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -381,13 +411,15 @@ function ChatView({ ticketId, onBack }: { ticketId: number | null; onBack: () =>
     const msg = inputMessage.trim();
     if (!msg || sendMutation.isPending) return;
 
-    // Add user message locally
+    // Add user message locally for optimistic display
+    const localId = Date.now();
     setLocalMessages(prev => [...prev, {
-      id: Date.now(),
+      id: localId,
       senderRole: "user",
       message: msg,
       createdAt: new Date().toISOString(),
     }]);
+    setPendingLocalIds(prev => new Set(prev).add(localId));
 
     setInputMessage("");
     setIsAiTyping(ticketStatus === "AI_HANDLING");
