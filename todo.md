@@ -2320,3 +2320,12 @@
 - [x] Backend: Prompt de IA mejorado con criterios más claros de escalamiento
 - [x] Frontend: Removido filtro AI_HANDLING del dropdown del técnico
 - [x] 23 tests unitarios para lógica de filtrado y escalamiento
+
+## Notificación Email al Técnico por Ticket Asignado - 22 Marzo 2026
+
+- [x] Enviar email al técnico cuando se le asigna un ticket escalado por la IA
+- [x] Enviar email al técnico cuando se le asigna un ticket manualmente
+- [x] Enviar email al técnico cuando el usuario solicita agente humano
+- [x] Incluir detalles del ticket en el email (asunto, categoría, prioridad, nombre del usuario)
+- [x] Enviar copia al email de soporte para trazabilidad
+- [x] 18 tests unitarios para la función de notificación por email
