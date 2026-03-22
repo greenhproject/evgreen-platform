@@ -379,8 +379,18 @@ export const supportRouterV2 = router({
                 message: "Tu conversación ha sido transferida a un agente de soporte. Te responderá en breve.",
               });
 
-              // Send email notification
+              // Send email notification to support
               await sendSupportEmailNotification(ticketId, input.message, ctx.user.name || "Usuario");
+              // Send email notification to assigned technician
+              sendTicketAssignedEmailToTechnician(ticketId, agent.userId, {
+                subject: ticket.subject,
+                category: ticket.category,
+                priority: ticket.priority,
+                description: ticket.description,
+                userName: ctx.user.name || "Usuario",
+                userEmail: ctx.user.email,
+                escalationReason: "Escalado automáticamente por la IA de soporte",
+              }).catch(err => console.error("[Support] Technician assignment email error:", err));
               // Push notification to assigned agent
               notifyTechniciansOfSupportTicket(
                 ticketId,
@@ -494,6 +504,19 @@ export const supportRouterV2 = router({
       }
 
       await sendSupportEmailNotification(input.ticketId, "Usuario solicita agente humano", ctx.user.name || "Usuario");
+
+      // Send email to assigned technician if one was found
+      if (agent) {
+        sendTicketAssignedEmailToTechnician(input.ticketId, agent.userId, {
+          subject: ticket.subject,
+          category: ticket.category,
+          priority: ticket.priority,
+          description: ticket.description,
+          userName: ctx.user.name || "Usuario",
+          userEmail: ctx.user.email,
+          escalationReason: "El usuario solicitó hablar con un agente humano",
+        }).catch(err => console.error("[Support] Human agent assignment email error:", err));
+      }
 
       // Push notification to technicians
       notifyTechniciansOfSupportTicket(
@@ -699,6 +722,23 @@ export const supportRouterV2 = router({
       }
       await supportDb.updateTicket(input.ticketId, data);
 
+      // If a technician was assigned manually, send email notification
+      if (input.assignedToId !== undefined && input.assignedToId > 0) {
+        const ticket = await supportDb.getTicketById(input.ticketId);
+        if (ticket) {
+          const ticketUser = await getUserById(ticket.userId);
+          sendTicketAssignedEmailToTechnician(input.ticketId, input.assignedToId, {
+            subject: ticket.subject,
+            category: ticket.category,
+            priority: ticket.priority,
+            description: ticket.description,
+            userName: ticketUser?.name || `Usuario #${ticket.userId}`,
+            userEmail: ticketUser?.email,
+            escalationReason: "Asignado manualmente por administrador",
+          }).catch(err => console.error("[Support] Manual assignment email error:", err));
+        }
+      }
+
       // If resolved, decrement agent ticket count and notify user
       if (input.status === "RESOLVED") {
         const ticket = await supportDb.getTicketById(input.ticketId);
@@ -816,6 +856,152 @@ function getProblemTypeLabel(type: string): string {
     OTRO: "Otro problema",
   };
   return labels[type] || type;
+}
+
+/**
+ * Enviar email al técnico cuando se le asigna un ticket escalado o manualmente.
+ * Incluye detalles del ticket y enlace directo a la plataforma.
+ * También envía copia al email de soporte para trazabilidad.
+ */
+async function sendTicketAssignedEmailToTechnician(
+  ticketId: number,
+  technicianUserId: number,
+  ticketData: {
+    subject?: string | null;
+    category?: string | null;
+    priority?: string | null;
+    description?: string | null;
+    userName: string;
+    userEmail?: string | null;
+    escalationReason?: string;
+  }
+) {
+  try {
+    if (!resend) {
+      console.log("[Support] No Resend API key, skipping technician assignment email");
+      return;
+    }
+
+    // Get technician info
+    const technician = await getUserById(technicianUserId);
+    if (!technician || !technician.email) {
+      console.log(`[Support] Technician ${technicianUserId} has no email, skipping`);
+      return;
+    }
+
+    const categoryLabels: Record<string, string> = {
+      GENERAL: "General", general: "General",
+      CHARGING: "Carga", charging: "Carga",
+      BILLING: "Facturación", billing: "Facturación",
+      TECHNICAL: "Técnico", technical: "Técnico",
+      ACCOUNT: "Cuenta", account: "Cuenta",
+      CHARGER_PROBLEM: "Problema de cargador", charger_problem: "Problema de cargador",
+    };
+
+    const priorityLabels: Record<string, string> = {
+      LOW: "Baja", MEDIUM: "Media", HIGH: "Alta", URGENT: "Urgente",
+    };
+
+    const priorityColors: Record<string, string> = {
+      LOW: "#22c55e", MEDIUM: "#f59e0b", HIGH: "#f97316", URGENT: "#dc2626",
+    };
+
+    const category = ticketData.category ? (categoryLabels[ticketData.category] || ticketData.category) : "Sin categoría";
+    const priority = ticketData.priority || "MEDIUM";
+    const priorityLabel = priorityLabels[priority] || priority;
+    const priorityColor = priorityColors[priority] || "#f59e0b";
+    const subject = ticketData.subject || `Ticket #${ticketId}`;
+    const platformUrl = "https://evgreen.lat/technician/support";
+
+    const emailHtml = `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff;">
+        <div style="background: linear-gradient(135deg, #0a5c36 0%, #0d7a4a 100%); color: white; padding: 24px 28px; border-radius: 8px 8px 0 0;">
+          <h2 style="margin: 0; font-size: 20px; font-weight: 600;">&#9889; Ticket de Soporte Asignado</h2>
+          <p style="margin: 6px 0 0; opacity: 0.9; font-size: 14px;">Se te ha asignado un nuevo ticket para atender</p>
+        </div>
+        
+        <div style="padding: 24px 28px; border: 1px solid #e5e7eb; border-top: none;">
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+            <p style="margin: 0; font-size: 14px; color: #166534;">
+              <strong>Hola ${technician.name || "Técnico"},</strong><br/>
+              Se te ha asignado el ticket <strong>#${ticketId}</strong>. Por favor revísalo y responde al usuario lo antes posible.
+            </p>
+          </div>
+
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <tr>
+              <td style="padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb; font-size: 13px; color: #6b7280; width: 130px;">Ticket</td>
+              <td style="padding: 10px 12px; border: 1px solid #e5e7eb; font-size: 14px; font-weight: 600;">#${ticketId} - ${subject}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb; font-size: 13px; color: #6b7280;">Categoría</td>
+              <td style="padding: 10px 12px; border: 1px solid #e5e7eb; font-size: 14px;">${category}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb; font-size: 13px; color: #6b7280;">Prioridad</td>
+              <td style="padding: 10px 12px; border: 1px solid #e5e7eb; font-size: 14px;">
+                <span style="display: inline-block; background: ${priorityColor}; color: white; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;">${priorityLabel}</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb; font-size: 13px; color: #6b7280;">Usuario</td>
+              <td style="padding: 10px 12px; border: 1px solid #e5e7eb; font-size: 14px;">${ticketData.userName}${ticketData.userEmail ? ` (${ticketData.userEmail})` : ""}</td>
+            </tr>
+            ${ticketData.escalationReason ? `
+            <tr>
+              <td style="padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb; font-size: 13px; color: #6b7280;">Motivo</td>
+              <td style="padding: 10px 12px; border: 1px solid #e5e7eb; font-size: 14px;">${ticketData.escalationReason}</td>
+            </tr>` : ""}
+            ${ticketData.description ? `
+            <tr>
+              <td style="padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb; font-size: 13px; color: #6b7280;">Descripción</td>
+              <td style="padding: 10px 12px; border: 1px solid #e5e7eb; font-size: 14px;">${ticketData.description.substring(0, 300)}${ticketData.description.length > 300 ? "..." : ""}</td>
+            </tr>` : ""}
+          </table>
+
+          <div style="text-align: center; margin-top: 24px;">
+            <a href="${platformUrl}" 
+               style="display: inline-block; background: linear-gradient(135deg, #0a5c36 0%, #0d7a4a 100%); color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+              Atender Ticket en la Plataforma
+            </a>
+          </div>
+        </div>
+
+        <div style="padding: 16px 28px; background: #f9fafb; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+          <p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center;">
+            Este email fue enviado automáticamente por EVGreen. No responder a este correo.
+          </p>
+        </div>
+      </div>
+    `;
+
+    // Send to technician
+    await resend.emails.send(buildEmailParams({
+      from: "EVGreen Soporte <soporte@evgreen.lat>",
+      to: technician.email,
+      subject: `[Ticket #${ticketId}] Te han asignado un ticket de soporte - ${ticketData.userName}`,
+      html: emailHtml,
+      replyTo: "soporte@greenhproject.com",
+    }));
+
+    console.log(`[Support] Assignment email sent to technician ${technician.email} for ticket #${ticketId}`);
+
+    // Send copy to support email for traceability
+    const settings = await supportDb.getSupportSettings();
+    const supportEmail = settings.supportEmail || "soporte@greenhproject.com";
+    if (supportEmail !== technician.email) {
+      await resend.emails.send(buildEmailParams({
+        from: "EVGreen Soporte <soporte@evgreen.lat>",
+        to: supportEmail,
+        subject: `[Copia] Ticket #${ticketId} asignado a ${technician.name || "Técnico"} - ${ticketData.userName}`,
+        html: emailHtml,
+        replyTo: technician.email,
+      }));
+      console.log(`[Support] Assignment copy sent to ${supportEmail} for ticket #${ticketId}`);
+    }
+  } catch (error) {
+    console.error("[Support] Technician assignment email error:", error);
+  }
 }
 
 async function sendSupportEmailNotification(ticketId: number, userMessage: string, userName: string) {
