@@ -2329,3 +2329,14 @@
 - [x] Incluir detalles del ticket en el email (asunto, categoría, prioridad, nombre del usuario)
 - [x] Enviar copia al email de soporte para trazabilidad
 - [x] 18 tests unitarios para la función de notificación por email
+
+## Bug: Tickets no aparecen en bandeja del técnico - 23 Marzo 2026
+
+- [x] BUG: Bandeja Pendientes del técnico muestra vacío a pesar de badge "5 sin leer"
+- [x] Investigar status de tickets en BD y lógica de filtrado
+- [x] Verificar que tickets escalados/asignados aparezcan correctamente
+- [x] Registrar técnicos y admin como agentes de soporte en BD
+- [x] Migrar tickets AI_HANDLING con 3+ mensajes a WAITING_AGENT
+- [x] Agregar autoRegisterAllTechnicians() para registrar técnicos automáticamente en escalación
+- [x] Llamar autoRegisterAllTechnicians() antes de getAvailableAgent() en escalación IA y requestHumanAgent
+- [x] Fix TypeScript: remover 'superadmin' del enum de roles (no existe en schema)
