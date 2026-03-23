@@ -789,18 +789,32 @@ export const ocppRouter = router({
   // ============================================================================
 
   /**
-   * Obtener alertas OCPP
+   * Obtener alertas OCPP activas (no resueltas)
    */
   getAlerts: ocppProcedure
     .input(z.object({
       limit: z.number().min(1).max(200).default(50),
       offset: z.number().min(0).default(0),
       includeAcknowledged: z.boolean().default(false),
+      includeResolved: z.boolean().default(false),
       ocppIdentity: z.string().optional(),
       severity: z.string().optional(),
     }))
     .query(async ({ input }) => {
       return db.getOcppAlerts(input);
+    }),
+
+  /**
+   * Obtener historial de alertas resueltas/reconocidas
+   */
+  getAlertHistory: ocppProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(200).default(100),
+      offset: z.number().min(0).default(0),
+      ocppIdentity: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getAlertHistory(input);
     }),
 
   /**

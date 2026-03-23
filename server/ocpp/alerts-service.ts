@@ -84,8 +84,9 @@ function determineSeverity(alertType: OcppAlertType, payload?: Record<string, un
     case "BOOT_REJECTED":
     case "TRANSACTION_ERROR":
       return "critical";
-    case "ERROR":
     case "DISCONNECTION":
+      return "critical";
+    case "ERROR":
       return "warning";
     case "OFFLINE_TIMEOUT":
       return "warning";
@@ -144,7 +145,7 @@ export async function handleDisconnection(
     ocppIdentity,
     stationId,
     alertType: "DISCONNECTION",
-    severity: reconnInfo.count >= 5 ? "critical" : "warning",
+    severity: "critical",
     title: `Cargador ${ocppIdentity} desconectado`,
     message,
     payload: { disconnectionCount: reconnInfo.count, windowHours: 1 },
@@ -158,14 +159,22 @@ export async function handleDisconnection(
 
 /**
  * Registra que un cargador se reconectó exitosamente
- * Llamar cuando el cargador vuelve a conectarse para limpiar contadores
+ * Auto-resuelve alertas de desconexión activas y las deja en historial
  */
-export function handleReconnection(ocppIdentity: string): void {
-  // No limpiar el contador de reconexiones aquí - lo necesitamos para detectar inestabilidad
-  // Solo registrar en log
+export async function handleReconnection(ocppIdentity: string): Promise<void> {
   const reconnInfo = reconnectionCounts.get(ocppIdentity);
   if (reconnInfo) {
     console.log(`[OCPP Alert] ${ocppIdentity} reconnected (${reconnInfo.count} disconnections in current window)`);
+  }
+  
+  // Auto-resolver alertas de desconexión activas para este cargador
+  try {
+    const resolvedCount = await db.autoResolveDisconnectionAlerts(ocppIdentity);
+    if (resolvedCount > 0) {
+      console.log(`[OCPP Alert] Auto-resolved ${resolvedCount} disconnection alert(s) for ${ocppIdentity} (charger reconnected)`);
+    }
+  } catch (error) {
+    console.error(`[OCPP Alert] Error auto-resolving alerts for ${ocppIdentity}:`, error);
   }
 }
 
