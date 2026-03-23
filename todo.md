@@ -2361,3 +2361,17 @@
 - [x] Frontend usuario: botón Paperclip, preview de imagen, indicador de escribiendo del agente
 - [x] Frontend técnico: botón Paperclip, preview de imagen, indicador de escribiendo del usuario
 - [x] Ambos frontends: MessageBubble muestra imágenes adjuntas con click para abrir
+
+## Bug Centro de Alertas - 23 Marzo 2026
+
+- [x] BUG: Severidad incorrecta - "Cargador desconectado" aparece como warning, debería ser critical
+- [x] BUG: Contadores (Críticas, Advertencias, Informativas) muestran 0 - no cuentan correctamente
+- [x] BUG: Alertas duplicadas de desconexión sin auto-resolución cuando el cargador se reconecta
+- [x] Implementar auto-resolución: si el cargador se reconecta, la alerta se resuelve automáticamente
+- [x] Las alertas auto-resueltas deben quedar en historial como "resuelta automáticamente"
+- [x] Los indicadores de severidad deben tener colores correctos (rojo=crítica, amarillo=advertencia, azul=informativa)
+- [x] Agregar columnas resolvedAt, autoResolved, resolvedReason a tabla ocpp_alerts
+- [x] Prevención de alertas duplicadas en createOcppAlert (verifica si ya existe una activa)
+- [x] Nuevo endpoint getAlertHistory para historial de alertas resueltas
+- [x] Frontend: tabs Alertas Activas / Historial con indicadores de auto-resolución
+- [x] 12 tests unitarios para el Centro de Alertas

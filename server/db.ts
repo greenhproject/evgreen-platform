@@ -2434,6 +2434,24 @@ export async function createOcppAlert(alert: OcppAlertInput): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
+  // Prevenir alertas duplicadas: verificar si ya existe una alerta activa del mismo tipo para el mismo cargador
+  const existing = await db.select({ id: ocppAlerts.id })
+    .from(ocppAlerts)
+    .where(
+      and(
+        eq(ocppAlerts.ocppIdentity, alert.ocppIdentity),
+        eq(ocppAlerts.alertType, alert.alertType),
+        eq(ocppAlerts.acknowledged, false),
+        isNull(ocppAlerts.resolvedAt)
+      )
+    )
+    .limit(1);
+  
+  if (existing.length > 0) {
+    console.log(`[OCPP Alert] Duplicate alert prevented: ${alert.alertType} for ${alert.ocppIdentity} (existing alert #${existing[0].id})`);
+    return existing[0].id; // Retornar ID de la alerta existente
+  }
+  
   const result = await db.insert(ocppAlerts).values({
     ocppIdentity: alert.ocppIdentity,
     stationId: alert.stationId,
@@ -2452,6 +2470,7 @@ export async function getOcppAlerts(options: {
   limit?: number;
   offset?: number;
   includeAcknowledged?: boolean;
+  includeResolved?: boolean;
   ocppIdentity?: string;
   severity?: string;
   alertType?: string;
@@ -2465,6 +2484,52 @@ export async function getOcppAlerts(options: {
     conditions.push(eq(ocppAlerts.acknowledged, false));
   }
   
+  // Por defecto excluir alertas resueltas automáticamente de la lista activa
+  if (!options.includeResolved) {
+    conditions.push(isNull(ocppAlerts.resolvedAt));
+  }
+  
+  if (options.ocppIdentity) {
+    conditions.push(eq(ocppAlerts.ocppIdentity, options.ocppIdentity));
+  }
+  
+  if (options.severity) {
+    conditions.push(eq(ocppAlerts.severity, options.severity as any));
+  }
+  
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const alerts = await db.select()
+    .from(ocppAlerts)
+    .where(whereClause)
+    .orderBy(desc(ocppAlerts.createdAt))
+    .limit(options.limit || 50)
+    .offset(options.offset || 0);
+  
+  return alerts;
+}
+
+/**
+ * Obtener historial de alertas resueltas (auto-resueltas y reconocidas)
+ */
+export async function getAlertHistory(options: {
+  limit?: number;
+  offset?: number;
+  ocppIdentity?: string;
+}): Promise<OcppAlert[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [];
+  
+  // Solo alertas que han sido resueltas o reconocidas
+  conditions.push(
+    or(
+      not(isNull(ocppAlerts.resolvedAt)),
+      eq(ocppAlerts.acknowledged, true)
+    )!
+  );
+  
   if (options.ocppIdentity) {
     conditions.push(eq(ocppAlerts.ocppIdentity, options.ocppIdentity));
   }
@@ -2475,7 +2540,7 @@ export async function getOcppAlerts(options: {
     .from(ocppAlerts)
     .where(whereClause)
     .orderBy(desc(ocppAlerts.createdAt))
-    .limit(options.limit || 50)
+    .limit(options.limit || 100)
     .offset(options.offset || 0);
   
   return alerts;
@@ -2494,11 +2559,39 @@ export async function acknowledgeOcppAlert(alertId: number, userId?: number): Pr
     .where(eq(ocppAlerts.id, alertId));
 }
 
+/**
+ * Auto-resuelve alertas de desconexión activas cuando un cargador se reconecta
+ */
+export async function autoResolveDisconnectionAlerts(ocppIdentity: string): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  
+  const result = await db.update(ocppAlerts)
+    .set({
+      resolvedAt: new Date(),
+      autoResolved: true,
+      resolvedReason: "Cargador reconectado automáticamente",
+      acknowledged: true,
+      acknowledgedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(ocppAlerts.ocppIdentity, ocppIdentity),
+        eq(ocppAlerts.alertType, "DISCONNECTION"),
+        eq(ocppAlerts.acknowledged, false),
+        isNull(ocppAlerts.resolvedAt)
+      )
+    );
+  
+  return result[0]?.affectedRows || 0;
+}
+
 export async function getOcppAlertStats(): Promise<{
   total: number;
   unacknowledged: number;
   bySeverity: Record<string, number>;
   byType: Record<string, number>;
+  autoResolved: number;
 }> {
   const db = await getDb();
   if (!db) {
@@ -2507,6 +2600,7 @@ export async function getOcppAlertStats(): Promise<{
       unacknowledged: 0,
       bySeverity: {},
       byType: {},
+      autoResolved: 0,
     };
   }
   
@@ -2514,18 +2608,19 @@ export async function getOcppAlertStats(): Promise<{
   const totalResult = await db.select({ count: count() }).from(ocppAlerts);
   const total = totalResult[0]?.count || 0;
   
-  // Alertas no reconocidas
+  // Alertas no reconocidas (activas)
   const unackResult = await db.select({ count: count() })
     .from(ocppAlerts)
-    .where(eq(ocppAlerts.acknowledged, false));
+    .where(and(eq(ocppAlerts.acknowledged, false), isNull(ocppAlerts.resolvedAt)));
   const unacknowledged = unackResult[0]?.count || 0;
   
-  // Por severidad
+  // Por severidad - solo alertas activas (no resueltas automáticamente)
   const bySeverityResult = await db.select({
     severity: ocppAlerts.severity,
     count: count(),
   })
     .from(ocppAlerts)
+    .where(and(eq(ocppAlerts.acknowledged, false), isNull(ocppAlerts.resolvedAt)))
     .groupBy(ocppAlerts.severity);
   
   const bySeverity: Record<string, number> = {};
@@ -2541,6 +2636,7 @@ export async function getOcppAlertStats(): Promise<{
     count: count(),
   })
     .from(ocppAlerts)
+    .where(and(eq(ocppAlerts.acknowledged, false), isNull(ocppAlerts.resolvedAt)))
     .groupBy(ocppAlerts.alertType);
   
   const byType: Record<string, number> = {};
@@ -2550,11 +2646,18 @@ export async function getOcppAlertStats(): Promise<{
     }
   }
   
+  // Auto-resueltas
+  const autoResolvedResult = await db.select({ count: count() })
+    .from(ocppAlerts)
+    .where(eq(ocppAlerts.autoResolved, true));
+  const autoResolved = autoResolvedResult[0]?.count || 0;
+  
   return {
     total,
     unacknowledged,
     bySeverity,
     byType,
+    autoResolved,
   };
 }
 

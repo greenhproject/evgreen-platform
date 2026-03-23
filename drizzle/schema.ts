@@ -547,6 +547,9 @@ export const ocppAlerts = mysqlTable("ocpp_alerts", {
   acknowledged: boolean("acknowledged").default(false).notNull(),
   acknowledgedAt: timestamp("acknowledgedAt"),
   acknowledgedBy: int("acknowledgedBy"), // FK a users
+  resolvedAt: timestamp("resolvedAt"),
+  autoResolved: boolean("autoResolved").default(false).notNull(),
+  resolvedReason: varchar("resolvedReason", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
