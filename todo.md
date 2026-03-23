@@ -2340,3 +2340,9 @@
 - [x] Agregar autoRegisterAllTechnicians() para registrar técnicos automáticamente en escalación
 - [x] Llamar autoRegisterAllTechnicians() antes de getAvailableAgent() en escalación IA y requestHumanAgent
 - [x] Fix TypeScript: remover 'superadmin' del enum de roles (no existe en schema)
+
+## Bug: Spinner infinito en bandeja soporte técnico - 23 Marzo 2026
+
+- [ ] BUG: La lista de tickets muestra spinner infinito (API listAll falla)
+- [ ] Investigar logs del servidor para encontrar el error exacto
+- [ ] Corregir la query getAllTickets
