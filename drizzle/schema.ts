@@ -2135,17 +2135,20 @@ export const chargerProblemReports = mysqlTable("charger_problem_reports", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(), // FK a users
   stationId: int("stationId"), // FK a charging_stations
-  stationName: varchar("stationName", { length: 255 }).notNull(),
-  connectorId: int("connectorId"), // Número de conector
+  stationName: varchar("stationName", { length: 255 }),
+  connectorId: varchar("connectorId", { length: 50 }), // varchar en BD real
   // Tipo de problema
   problemType: varchar("problemType", { length: 50 }).notNull(),
   // CONNECTOR_DAMAGED, SCREEN_BROKEN, NO_POWER, CABLE_DAMAGED, 
   // PAYMENT_ERROR, SLOW_CHARGING, APP_CONNECTION, OTHER
   description: text("description"),
+  photoUrl: varchar("photoUrl", { length: 500 }),
   // Estado
-  status: varchar("status", { length: 20 }).default("PENDING"), // PENDING, REVIEWING, IN_REPAIR, RESOLVED, DISMISSED
-  // Vinculación con ticket de soporte (se crea automáticamente)
-  supportTicketId: int("supportTicketId"),
+  status: varchar("status", { length: 20 }).default("PENDING").notNull(), // PENDING, REVIEWING, IN_REPAIR, RESOLVED, DISMISSED
+  priority: varchar("priority", { length: 20 }).default("MEDIUM").notNull(),
+  assignedToId: int("assignedToId"),
+  resolution: text("resolution"),
+  resolvedAt: timestamp("resolvedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -2167,5 +2170,4 @@ export const supportAgentsRelations = relations(supportAgents, ({ one }) => ({
 export const chargerProblemReportsRelations = relations(chargerProblemReports, ({ one }) => ({
   user: one(users, { fields: [chargerProblemReports.userId], references: [users.id] }),
   station: one(chargingStations, { fields: [chargerProblemReports.stationId], references: [chargingStations.id] }),
-  supportTicket: one(supportTickets, { fields: [chargerProblemReports.supportTicketId], references: [supportTickets.id] }),
 }));

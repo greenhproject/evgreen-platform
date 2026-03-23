@@ -606,7 +606,7 @@ export const supportRouterV2 = router({
         userId: ctx.user.id,
         stationId: input.stationId,
         stationName: input.stationName,
-        connectorId: input.connectorId || null,
+        connectorId: input.connectorId ? String(input.connectorId) : null,
         problemType: input.problemType,
         description: input.description || null,
         status: "PENDING",
