@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import UserLayout from "@/layouts/UserLayout";
@@ -26,6 +26,9 @@ import {
   UserCheck,
   History,
   ChevronDown,
+  Paperclip,
+  Image as ImageIcon,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
@@ -40,6 +43,7 @@ interface ChatMessage {
   message: string;
   createdAt: string;
   senderName?: string;
+  attachmentUrl?: string | null;
 }
 
 // ============================================================================
@@ -304,8 +308,12 @@ function ChatView({ ticketId, onBack }: { ticketId: number | null; onBack: () =>
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [ticketStatus, setTicketStatus] = useState<string>("AI_HANDLING");
   const [pendingLocalIds, setPendingLocalIds] = useState<Set<number>>(new Set());
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load existing messages if ticket exists
   const messagesQuery = trpc.support.getMessages.useQuery(
@@ -349,6 +357,74 @@ function ChatView({ ticketId, onBack }: { ticketId: number | null; onBack: () =>
       toast.error("Error al enviar mensaje. Intenta de nuevo.");
     },
   });
+
+  // Upload attachment mutation
+  const uploadMutation = trpc.support.uploadAttachment.useMutation({
+    onSuccess: () => {
+      setImagePreview(null);
+      setImageFile(null);
+      setIsUploading(false);
+      messagesQuery.refetch();
+      toast.success("Imagen enviada");
+    },
+    onError: () => {
+      setIsUploading(false);
+      toast.error("Error al subir la imagen");
+    },
+  });
+
+  // Typing indicator
+  const setTypingMutation = trpc.support.setTyping.useMutation();
+  const typingQuery = trpc.support.getTypingStatus.useQuery(
+    { ticketId: currentTicketId! },
+    { enabled: !!currentTicketId && ticketStatus !== "AI_HANDLING", refetchInterval: 2000 }
+  );
+
+  // Debounced typing indicator
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleTypingStart = useCallback(() => {
+    if (!currentTicketId || ticketStatus === "AI_HANDLING") return;
+    setTypingMutation.mutate({ ticketId: currentTicketId, isTyping: true });
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      if (currentTicketId) setTypingMutation.mutate({ ticketId: currentTicketId, isTyping: false });
+    }, 3000);
+  }, [currentTicketId, ticketStatus]);
+
+  // Handle image selection
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("La imagen no puede superar 10MB");
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
+      toast.error("Solo se permiten im\u00e1genes JPEG, PNG, WebP o GIF");
+      return;
+    }
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  // Send image
+  const handleSendImage = async () => {
+    if (!imageFile || !currentTicketId || isUploading) return;
+    setIsUploading(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      uploadMutation.mutate({
+        ticketId: currentTicketId,
+        fileName: imageFile.name,
+        fileBase64: base64,
+        contentType: imageFile.type,
+      });
+    };
+    reader.readAsDataURL(imageFile);
+  };
 
   // Request human agent
   const requestHumanMutation = trpc.support.requestHumanAgent.useMutation({
@@ -522,13 +598,69 @@ function ChatView({ ticketId, onBack }: { ticketId: number | null; onBack: () =>
         )}
       </div>
 
+      {/* Typing indicator from agent */}
+      {typingQuery.data && typingQuery.data.length > 0 && (
+        <div className="px-4 pb-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex gap-1">
+              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+            </div>
+            <span>{typingQuery.data[0].userName} est\u00e1 escribiendo...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Image preview */}
+      {imagePreview && (
+        <div className="border-t border-border px-4 pt-3 bg-background">
+          <div className="relative inline-block">
+            <img src={imagePreview} alt="Preview" className="h-20 rounded-lg object-cover" />
+            <button
+              onClick={() => { setImagePreview(null); setImageFile(null); }}
+              className="absolute -top-2 -right-2 bg-destructive text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+          <Button
+            onClick={handleSendImage}
+            disabled={isUploading}
+            size="sm"
+            className="ml-2 gradient-primary text-white"
+          >
+            {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Enviar imagen"}
+          </Button>
+        </div>
+      )}
+
       {/* Input area */}
       <div className="border-t border-border p-4 bg-background">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={handleImageSelect}
+        />
         <div className="flex gap-2 items-end">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 flex-shrink-0 text-muted-foreground hover:text-emerald-400"
+            onClick={() => fileInputRef.current?.click()}
+            title="Adjuntar imagen"
+          >
+            <Paperclip className="w-5 h-5" />
+          </Button>
           <Textarea
             ref={inputRef}
             value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
+            onChange={(e) => {
+              setInputMessage(e.target.value);
+              handleTypingStart();
+            }}
             onKeyDown={handleKeyDown}
             placeholder={ticketStatus === "AI_HANDLING" ? "Escribe tu pregunta..." : "Escribe tu mensaje..."}
             className="min-h-[44px] max-h-[120px] resize-none"
@@ -589,13 +721,25 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             {isAi ? "Asistente IA" : "Agente de soporte"}
           </div>
         )}
-        <div className={`text-sm ${isUser ? "text-white" : ""}`}>
-          {isAi ? (
-            <Streamdown>{message.message}</Streamdown>
-          ) : (
-            <span className="whitespace-pre-wrap">{message.message}</span>
-          )}
-        </div>
+        {message.attachmentUrl && (
+          <div className="mb-2">
+            <img
+              src={message.attachmentUrl}
+              alt="Adjunto"
+              className="max-w-full max-h-48 rounded-lg cursor-pointer object-contain"
+              onClick={() => window.open(message.attachmentUrl!, "_blank")}
+            />
+          </div>
+        )}
+        {message.message && (
+          <div className={`text-sm ${isUser ? "text-white" : ""}`}>
+            {isAi ? (
+              <Streamdown>{message.message}</Streamdown>
+            ) : (
+              <span className="whitespace-pre-wrap">{message.message}</span>
+            )}
+          </div>
+        )}
         <div className={`text-[10px] mt-1 ${isUser ? "text-white/60" : "text-muted-foreground"}`}>
           {new Date(message.createdAt).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
         </div>

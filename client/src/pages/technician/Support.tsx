@@ -3,7 +3,7 @@
  * Bandeja de tickets de usuarios para que el técnico responda como agente de soporte.
  * El técnico ES el soporte: ve tickets, responde chats, gestiona estados.
  */
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,8 @@ import {
   Zap,
   Inbox,
   MailOpen,
+  Paperclip,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -313,7 +315,11 @@ function TicketList({ tab, search, statusFilter, selectedId, onSelect }: {
 
 function TicketDetail({ ticketId, onBack }: { ticketId: number; onBack: () => void }) {
   const [replyMessage, setReplyMessage] = useState("");
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesQuery = trpc.support.getMessages.useQuery(
     { ticketId },
@@ -330,6 +336,73 @@ function TicketDetail({ ticketId, onBack }: { ticketId: number; onBack: () => vo
       toast.error("Error al enviar respuesta");
     },
   });
+
+  // Upload attachment mutation
+  const uploadMutation = trpc.support.uploadAttachment.useMutation({
+    onSuccess: () => {
+      setImagePreview(null);
+      setImageFile(null);
+      setIsUploading(false);
+      messagesQuery.refetch();
+      toast.success("Imagen enviada");
+    },
+    onError: () => {
+      setIsUploading(false);
+      toast.error("Error al subir la imagen");
+    },
+  });
+
+  // Typing indicator
+  const setTypingMutation = trpc.support.setTyping.useMutation();
+  const typingQuery = trpc.support.getTypingStatus.useQuery(
+    { ticketId },
+    { refetchInterval: 2000 }
+  );
+
+  // Debounced typing indicator
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleTypingStart = useCallback(() => {
+    setTypingMutation.mutate({ ticketId, isTyping: true });
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      setTypingMutation.mutate({ ticketId, isTyping: false });
+    }, 3000);
+  }, [ticketId]);
+
+  // Handle image selection
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("La imagen no puede superar 10MB");
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
+      toast.error("Solo se permiten im\u00e1genes JPEG, PNG, WebP o GIF");
+      return;
+    }
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  // Send image
+  const handleSendImage = async () => {
+    if (!imageFile || isUploading) return;
+    setIsUploading(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      uploadMutation.mutate({
+        ticketId,
+        fileName: imageFile.name,
+        fileBase64: base64,
+        contentType: imageFile.type,
+      });
+    };
+    reader.readAsDataURL(imageFile);
+  };
 
   const assignMutation = trpc.support.updateTicket.useMutation({
     onSuccess: () => {
@@ -460,13 +533,69 @@ function TicketDetail({ ticketId, onBack }: { ticketId: number; onBack: () => vo
         )}
       </div>
 
+      {/* Typing indicator from user */}
+      {typingQuery.data && typingQuery.data.length > 0 && (
+        <div className="px-4 pb-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex gap-1">
+              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+            </div>
+            <span>{typingQuery.data[0].userName} est\u00e1 escribiendo...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Image preview */}
+      {imagePreview && (
+        <div className="border-t border-border px-4 pt-3 bg-background">
+          <div className="relative inline-block">
+            <img src={imagePreview} alt="Preview" className="h-20 rounded-lg object-cover" />
+            <button
+              onClick={() => { setImagePreview(null); setImageFile(null); }}
+              className="absolute -top-2 -right-2 bg-destructive text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+          <Button
+            onClick={handleSendImage}
+            disabled={isUploading}
+            size="sm"
+            className="ml-2 bg-green-600 hover:bg-green-700 text-white"
+          >
+            {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Enviar imagen"}
+          </Button>
+        </div>
+      )}
+
       {/* Reply input */}
       {ticket?.status !== "RESOLVED" && ticket?.status !== "CLOSED" ? (
         <div className="border-t border-border p-3 sm:p-4">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="hidden"
+            onChange={handleImageSelect}
+          />
           <div className="flex gap-2 items-end">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 flex-shrink-0 text-muted-foreground hover:text-green-400"
+              onClick={() => fileInputRef.current?.click()}
+              title="Adjuntar imagen"
+            >
+              <Paperclip className="w-5 h-5" />
+            </Button>
             <Textarea
               value={replyMessage}
-              onChange={(e) => setReplyMessage(e.target.value)}
+              onChange={(e) => {
+                setReplyMessage(e.target.value);
+                handleTypingStart();
+              }}
               onKeyDown={handleKeyDown}
               placeholder="Escribe tu respuesta al usuario..."
               className="min-h-[44px] max-h-[120px] resize-none text-sm"
@@ -485,7 +614,7 @@ function TicketDetail({ ticketId, onBack }: { ticketId: number; onBack: () => vo
             </Button>
           </div>
           <p className="text-[10px] text-muted-foreground mt-1.5">
-            Presiona Enter para enviar, Shift+Enter para nueva línea
+            Presiona Enter para enviar, Shift+Enter para nueva l\u00ednea
           </p>
         </div>
       ) : (
@@ -546,9 +675,21 @@ function MessageBubble({ message }: { message: any }) {
         <div className={`text-[10px] font-medium mb-0.5 ${isRight ? "text-white/70" : "text-muted-foreground"}`}>
           {isUser ? (message.senderName || "Usuario") : isAi ? "Asistente IA" : (message.senderName || "Tú (Agente)")}
         </div>
-        <div className={`text-sm whitespace-pre-wrap leading-relaxed ${isRight ? "text-white" : ""}`}>
-          {message.message}
-        </div>
+        {message.attachmentUrl && (
+          <div className="mb-2">
+            <img
+              src={message.attachmentUrl}
+              alt="Adjunto"
+              className="max-w-full max-h-48 rounded-lg cursor-pointer object-contain"
+              onClick={() => window.open(message.attachmentUrl, "_blank")}
+            />
+          </div>
+        )}
+        {message.message && (
+          <div className={`text-sm whitespace-pre-wrap leading-relaxed ${isRight ? "text-white" : ""}`}>
+            {message.message}
+          </div>
+        )}
         <div className={`text-[10px] mt-1 ${isRight ? "text-white/60" : "text-muted-foreground"}`}>
           {new Date(message.createdAt).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
         </div>
