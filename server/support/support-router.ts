@@ -10,6 +10,8 @@ import { invokeLLM } from "../_core/llm";
 import { Resend } from "resend";
 import { buildEmailParams } from "../utils/email-helper";
 import * as supportDb from "./support-db";
+import { createMaintenanceTicket } from "../db";
+import { storagePut } from "../storage";
 import { sendPushNotification, sendPushNotificationToMultiple } from "../firebase/fcm";
 import { getActiveTechnicians } from "../notifications/technician-notification-service";
 import { getUserById } from "../db";
@@ -34,6 +36,9 @@ const techProcedure = protectedProcedure.use(({ ctx, next }) => {
 // Resend for email notifications
 const resendApiKey = process.env.RESEND_API_KEY || "";
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
+
+// In-memory typing state (simple approach, works for single-server)
+const typingState = new Map<string, { userId: number; userName: string; role: string; timestamp: number }>();
 
 // ============================================================================
 // PUSH NOTIFICATION HELPERS FOR SUPPORT
@@ -393,6 +398,8 @@ export const supportRouterV2 = router({
                 userEmail: ctx.user.email,
                 escalationReason: "Escalado automáticamente por la IA de soporte",
               }).catch(err => console.error("[Support] Technician assignment email error:", err));
+              // Auto-create maintenance ticket for the technician
+              autoCreateMaintenanceTicket(ticketId, ticket, agent.userId).catch(err => console.error("[Support] Auto-create maintenance ticket error:", err));
               // Push notification to assigned agent
               notifyTechniciansOfSupportTicket(
                 ticketId,
@@ -520,6 +527,8 @@ export const supportRouterV2 = router({
           userEmail: ctx.user.email,
           escalationReason: "El usuario solicitó hablar con un agente humano",
         }).catch(err => console.error("[Support] Human agent assignment email error:", err));
+        // Auto-create maintenance ticket for the technician
+        autoCreateMaintenanceTicket(input.ticketId, ticket, agent.userId).catch(err => console.error("[Support] Auto-create maintenance ticket error:", err));
       }
 
       // Push notification to technicians
@@ -637,6 +646,122 @@ export const supportRouterV2 = router({
     }),
 
   // ========================================================================
+  // SHARED: Upload attachment for support chat
+  // ========================================================================
+  uploadAttachment: protectedProcedure
+    .input(z.object({
+      ticketId: z.number(),
+      fileName: z.string(),
+      fileBase64: z.string(),
+      contentType: z.string().refine(
+        (ct) => ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(ct),
+        { message: "Solo se permiten imágenes JPEG, PNG, WebP o GIF" }
+      ),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const ticket = await supportDb.getTicketById(input.ticketId);
+      if (!ticket) throw new TRPCError({ code: "NOT_FOUND" });
+
+      // Verify access: user owns ticket or is tech/admin
+      const isOwner = ticket.userId === ctx.user.id;
+      const isAgent = ["admin", "staff", "superadmin", "technician", "engineer"].includes(ctx.user.role);
+      if (!isOwner && !isAgent) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      if (buffer.length > 10 * 1024 * 1024) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La imagen no puede superar 10MB" });
+      }
+
+      // Compress with sharp
+      const sharp = (await import("sharp")).default;
+      const compressedBuffer = await sharp(buffer)
+        .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toBuffer();
+
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const fileKey = `support/ticket-${input.ticketId}/${timestamp}-${randomSuffix}.webp`;
+      const { url } = await storagePut(fileKey, compressedBuffer, "image/webp");
+
+      // Save as message with attachment
+      await supportDb.createMessage({
+        ticketId: input.ticketId,
+        senderId: ctx.user.id,
+        senderRole: isOwner ? "user" : "agent",
+        message: "📷 Imagen adjunta",
+        attachmentUrl: url,
+      });
+
+      // If user sends image and ticket is assigned, notify technician
+      if (isOwner && ticket.assignedToId) {
+        notifyTechniciansOfSupportTicket(
+          input.ticketId,
+          ticket.subject || "Imagen adjunta",
+          "El usuario envió una imagen adjunta",
+          ctx.user.name || "Usuario",
+          "user_reply"
+        ).catch(err => console.error("[Support] Image upload push error:", err));
+      }
+
+      // If agent sends image, notify user
+      if (isAgent) {
+        notifyUserOfAgentReply(
+          input.ticketId,
+          ticket.userId,
+          ctx.user.name || "Soporte EVGreen",
+          "Te envió una imagen"
+        ).catch(err => console.error("[Support] Agent image push error:", err));
+      }
+
+      return { url, success: true };
+    }),
+
+  // ========================================================================
+  // SHARED: Typing indicator (polling-based)
+  // ========================================================================
+  setTyping: protectedProcedure
+    .input(z.object({
+      ticketId: z.number(),
+      isTyping: z.boolean(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Store typing state in memory (simple approach)
+      const key = `typing:${input.ticketId}:${ctx.user.id}`;
+      if (input.isTyping) {
+        typingState.set(key, {
+          userId: ctx.user.id,
+          userName: ctx.user.name || "Usuario",
+          role: ["admin", "staff", "superadmin", "technician", "engineer"].includes(ctx.user.role) ? "agent" : "user",
+          timestamp: Date.now(),
+        });
+      } else {
+        typingState.delete(key);
+      }
+      return { success: true };
+    }),
+
+  getTypingStatus: protectedProcedure
+    .input(z.object({ ticketId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const now = Date.now();
+      const result: { userId: number; userName: string; role: string }[] = [];
+      // Check all typing entries for this ticket
+      const entries = Array.from(typingState.entries());
+      for (const [key, value] of entries) {
+        if (key.startsWith(`typing:${input.ticketId}:`) && value.userId !== ctx.user.id) {
+          // Expire after 5 seconds
+          if (now - value.timestamp < 5000) {
+            result.push({ userId: value.userId, userName: value.userName, role: value.role });
+          } else {
+            typingState.delete(key);
+          }
+        }
+      }
+      return result;
+    }),
+
+  // ========================================================================
   // ADMIN/TECH: List all tickets (excludes AI_HANDLING by default)
   // ========================================================================
   listAll: techProcedure
@@ -740,6 +865,18 @@ export const supportRouterV2 = router({
             userEmail: ticketUser?.email,
             escalationReason: "Asignado manualmente por administrador",
           }).catch(err => console.error("[Support] Manual assignment email error:", err));
+        }
+      }
+
+      // Auto-create maintenance ticket when support ticket is ASSIGNED
+      if (input.status === "ASSIGNED" || (input.assignedToId !== undefined && input.assignedToId > 0)) {
+        const ticket = await supportDb.getTicketById(input.ticketId);
+        if (ticket) {
+          try {
+            await autoCreateMaintenanceTicket(input.ticketId, ticket, input.assignedToId || ticket.assignedToId || undefined);
+          } catch (err) {
+            console.error("[Support] Auto-create maintenance ticket error:", err);
+          }
         }
       }
 
@@ -860,6 +997,46 @@ function getProblemTypeLabel(type: string): string {
     OTRO: "Otro problema",
   };
   return labels[type] || type;
+}
+
+/**
+ * Auto-crear ticket de mantenimiento cuando un ticket de soporte se asigna a un técnico.
+ * Esto hace que el ticket aparezca en "Mis Tickets" del técnico.
+ */
+async function autoCreateMaintenanceTicket(
+  supportTicketId: number,
+  ticket: { subject?: string | null; description?: string | null; category?: string | null; priority?: string | null; userId: number },
+  technicianId?: number
+) {
+  try {
+    // Map support priority to maintenance priority
+    const priorityMap: Record<string, string> = {
+      low: "LOW", medium: "MEDIUM", high: "HIGH", urgent: "CRITICAL",
+    };
+    const maintenancePriority = priorityMap[ticket.priority || "medium"] || "MEDIUM";
+
+    // Map support category to maintenance category
+    const categoryMap: Record<string, string> = {
+      TECHNICAL: "HARDWARE", BILLING: "SOFTWARE", GENERAL: "SOFTWARE",
+      ACCOUNT: "SOFTWARE", CHARGER: "HARDWARE", CONNECTIVITY: "CONNECTIVITY",
+    };
+    const maintenanceCategory = categoryMap[ticket.category || "GENERAL"] || "SOFTWARE";
+
+    await createMaintenanceTicket({
+      stationId: 1, // Default station - will be updated by technician
+      technicianId: technicianId || null,
+      reportedById: ticket.userId,
+      title: `[Soporte #${supportTicketId}] ${ticket.subject || "Ticket de soporte"}`,
+      description: ticket.description || `Ticket de soporte #${supportTicketId} escalado para atención técnica.`,
+      priority: maintenancePriority,
+      category: maintenanceCategory,
+      status: "PENDING",
+    } as any);
+
+    console.log(`[Support] Auto-created maintenance ticket for support ticket #${supportTicketId}`);
+  } catch (err) {
+    console.error(`[Support] Failed to auto-create maintenance ticket for #${supportTicketId}:`, err);
+  }
 }
 
 /**

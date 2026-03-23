@@ -2343,6 +2343,21 @@
 
 ## Bug: Spinner infinito en bandeja soporte técnico - 23 Marzo 2026
 
-- [ ] BUG: La lista de tickets muestra spinner infinito (API listAll falla)
-- [ ] Investigar logs del servidor para encontrar el error exacto
-- [ ] Corregir la query getAllTickets
+- [x] BUG: La lista de tickets muestra spinner infinito (API listAll falla)
+- [x] Investigar logs del servidor para encontrar el error exacto
+- [x] Causa raíz: columna updatedAt faltante en support_agents en producción
+- [x] ALTER TABLE support_agents ADD COLUMN updatedAt ejecutado en BD
+- [x] workDays NULL corregido a [0,1,2,3,4,5,6] para agentes existentes
+- [x] Push a GitHub para redeploy en Railway
+
+## Mejoras Chat de Soporte - 23 Marzo 2026
+
+- [x] Subir fotos/evidencias del daño en el chat del usuario y del técnico
+- [x] Indicador de "escribiendo..." cuando el agente o usuario está redactando
+- [x] Crear ticket automáticamente en "Mis Tickets" del técnico al asignarse
+- [x] Backend: endpoint uploadAttachment para subir imágenes al S3
+- [x] Backend: endpoints setTyping y getTypingStatus para indicador de escritura
+- [x] Backend: autoCreateMaintenanceTicket integrado en 3 puntos (IA, requestHumanAgent, updateTicket)
+- [x] Frontend usuario: botón Paperclip, preview de imagen, indicador de escribiendo del agente
+- [x] Frontend técnico: botón Paperclip, preview de imagen, indicador de escribiendo del usuario
+- [x] Ambos frontends: MessageBubble muestra imágenes adjuntas con click para abrir
