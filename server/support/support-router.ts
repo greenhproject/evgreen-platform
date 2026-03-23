@@ -362,6 +362,8 @@ export const supportRouterV2 = router({
           });
 
           if (shouldEscalate) {
+            // Ensure technicians are registered as agents before trying to assign
+            await supportDb.autoRegisterAllTechnicians();
             // Try to assign to available agent
             const agent = await supportDb.getAvailableAgent();
             if (agent) {
@@ -483,6 +485,8 @@ export const supportRouterV2 = router({
         throw new TRPCError({ code: "NOT_FOUND" });
       }
 
+      // Ensure technicians are registered as agents
+      await supportDb.autoRegisterAllTechnicians();
       const agent = await supportDb.getAvailableAgent();
       if (agent) {
         await supportDb.updateTicket(input.ticketId, { status: "ASSIGNED", assignedToId: agent.userId });

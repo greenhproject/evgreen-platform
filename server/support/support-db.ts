@@ -319,6 +319,42 @@ export async function getAgentByUserId(userId: number) {
 // AUTO-REGISTER TECHNICIAN AS SUPPORT AGENT
 // ============================================================================
 
+/**
+ * Auto-register ALL technicians/engineers as support agents if no agents exist.
+ * Called during escalation to ensure there's always an agent available.
+ */
+export async function autoRegisterAllTechnicians(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const existingAgents = await db.select().from(supportAgents);
+  if (existingAgents.length > 0) return; // Already have agents
+
+  // Find all technicians and engineers
+  const techUsers = await db.select({ id: users.id, name: users.name })
+    .from(users)
+    .where(
+      or(
+        eq(users.role, "technician"),
+        eq(users.role, "engineer"),
+        eq(users.role, "admin"),
+      )
+    );
+
+  for (const user of techUsers) {
+    await db.insert(supportAgents).values({
+      userId: user.id,
+      isOnline: true,
+      isAvailable: true,
+      scheduleStart: "00:00",
+      scheduleEnd: "23:59",
+      workDays: [0, 1, 2, 3, 4, 5, 6],
+      maxConcurrentTickets: 10,
+      activeTicketCount: 0,
+    });
+    console.log(`[Support] Auto-registered ${user.name} (id:${user.id}) as support agent`);
+  }
+}
+
 export async function ensureAgentRegistered(userId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
