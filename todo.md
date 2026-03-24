@@ -2375,3 +2375,6 @@
 - [x] Nuevo endpoint getAlertHistory para historial de alertas resueltas
 - [x] Frontend: tabs Alertas Activas / Historial con indicadores de auto-resolución
 - [x] 12 tests unitarios para el Centro de Alertas
+
+## Bug: Formato de tiempo estimado en sesión de carga
+- [x] BUG: "Est: 695 min" debería mostrar "Est: 11h 35min" — formato amigable en horas y minutos cuando >= 60 min, solo minutos cuando < 60 min
