@@ -725,7 +725,9 @@ export default function ChargingMonitor() {
                 {formatDuration(elapsedSeconds)}
               </p>
               <p className="text-xs text-muted-foreground">
-                Est: {session.estimatedMinutes} min
+                Est: {session.estimatedMinutes >= 60 
+                  ? `${Math.floor(session.estimatedMinutes / 60)}h ${session.estimatedMinutes % 60}min`
+                  : `${session.estimatedMinutes} min`}
               </p>
             </CardContent>
           </Card>
