@@ -1771,7 +1771,11 @@ export async function getAllBanners(status?: string) {
   return db.select().from(banners).orderBy(desc(banners.priority), desc(banners.createdAt));
 }
 
-export async function getActiveBanners(type?: string, location?: string) {
+export async function getActiveBanners(
+  type?: string,
+  location?: string,
+  userContext?: { role?: string; city?: string; stationId?: number }
+) {
   const db = await getDb();
   if (!db) return [];
   
@@ -1785,7 +1789,46 @@ export async function getActiveBanners(type?: string, location?: string) {
     conditions.push(eq(banners.type, type as any));
   }
   
-  return db.select().from(banners).where(and(...conditions)).orderBy(desc(banners.priority));
+  // Fetch all active banners first, then filter by targeting in JS
+  // (JSON columns can't be efficiently filtered in SQL with Drizzle)
+  const allBanners = await db.select().from(banners).where(and(...conditions)).orderBy(desc(banners.priority));
+  
+  if (!userContext) return allBanners;
+  
+  return allBanners.filter(banner => {
+    // Filter by targetRoles: if set, user's role must be in the list
+    if (banner.targetRoles) {
+      const roles = banner.targetRoles as string[];
+      if (Array.isArray(roles) && roles.length > 0) {
+        if (!userContext.role || !roles.includes(userContext.role)) {
+          return false;
+        }
+      }
+    }
+    
+    // Filter by targetCities: if set, user's city must be in the list
+    if ((banner as any).targetCities) {
+      const cities = (banner as any).targetCities as string[];
+      if (Array.isArray(cities) && cities.length > 0) {
+        if (!userContext.city) return false;
+        const userCityLower = userContext.city.toLowerCase();
+        const match = cities.some(c => c.toLowerCase() === userCityLower);
+        if (!match) return false;
+      }
+    }
+    
+    // Filter by targetStations: if set, user's current station must be in the list
+    if ((banner as any).targetStations) {
+      const stations = (banner as any).targetStations as number[];
+      if (Array.isArray(stations) && stations.length > 0) {
+        if (!userContext.stationId || !stations.includes(userContext.stationId)) {
+          return false;
+        }
+      }
+    }
+    
+    return true;
+  });
 }
 
 export async function updateBanner(id: number, data: Partial<InsertBanner>) {

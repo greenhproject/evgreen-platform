@@ -2378,3 +2378,9 @@
 
 ## Bug: Formato de tiempo estimado en sesión de carga
 - [x] BUG: "Est: 695 min" debería mostrar "Est: 11h 35min" — formato amigable en horas y minutos cuando >= 60 min, solo minutos cuando < 60 min
+
+## Fase 1 — Inteligencia IA: Quick Wins
+- [x] Activar segmentación de banners: filtrar por targetRoles, targetCities, targetStations del usuario en getActiveBanners()
+- [x] Conectar ubicaciones frecuentes al prompt del LLM (getUserFrequentLocations → context-service)
+- [x] Activar upsertRoutePattern() al finalizar cada sesión de carga (OCPP 1.6 y 2.0.1)
+- [x] Tests unitarios para segmentación de banners, ubicaciones frecuentes en LLM, y detección de rutas (18 tests)

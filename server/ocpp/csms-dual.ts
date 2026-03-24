@@ -1487,6 +1487,40 @@ export class DualCSMS {
 
     // Limpiar mapeo OCPP 1.6
     this.ocpp16Transactions.delete(req.transactionId);
+
+    // =========================================================================
+    // INTELIGENCIA: Registrar patrón de ruta (origen → estación de carga)
+    // Esto permite que la IA aprenda los hábitos de desplazamiento del usuario
+    // =========================================================================
+    if (transaction.userId && conn.stationId) {
+      try {
+        const lastLocation = await db.getLastUserLocation(transaction.userId);
+        const station = await db.getChargingStationById(conn.stationId);
+        if (lastLocation && station && station.latitude && station.longitude) {
+          const originLat = Number(lastLocation.latitude);
+          const originLng = Number(lastLocation.longitude);
+          const destLat = Number(station.latitude);
+          const destLng = Number(station.longitude);
+          // Solo registrar si origen y destino están a más de 500m de distancia
+          const distKm = Math.sqrt(Math.pow((destLat - originLat) * 111, 2) + Math.pow((destLng - originLng) * 111 * Math.cos(originLat * Math.PI / 180), 2));
+          if (distKm > 0.5) {
+            await db.upsertRoutePattern({
+              userId: transaction.userId,
+              originLat,
+              originLng,
+              destinationLat: destLat,
+              destinationLng: destLng,
+              destinationName: station.name,
+              estimatedDistanceKm: Math.round(distKm * 10) / 10,
+              departureHour: new Date(transaction.startTime || Date.now()).getHours(),
+            });
+            console.log(`[CSMS-DUAL] Route pattern recorded: user=${transaction.userId}, dist=${distKm.toFixed(1)}km to ${station.name}`);
+          }
+        }
+      } catch (routeErr) {
+        console.error(`[CSMS-DUAL] Error recording route pattern:`, routeErr);
+      }
+    }
     
     console.log(`[CSMS-DUAL] StopTransaction completed: tx=${transaction.id}, user=${transaction.userId}, ${energyDelivered.toFixed(2)} kWh, $${Math.round(totalCost)} COP`);
 
@@ -2124,6 +2158,36 @@ export class DualCSMS {
             }
           } catch (pushErr201) {
             console.error(`[CSMS-DUAL] 2.0.1 Error sending push:`, pushErr201);
+          }
+
+          // INTELIGENCIA: Registrar patrón de ruta (2.0.1)
+          if (transaction.userId && conn.stationId) {
+            try {
+              const lastLoc201 = await db.getLastUserLocation(transaction.userId);
+              const station201Route = conn.stationId ? await db.getChargingStationById(conn.stationId) : null;
+              if (lastLoc201 && station201Route && station201Route.latitude && station201Route.longitude) {
+                const oLat = Number(lastLoc201.latitude);
+                const oLng = Number(lastLoc201.longitude);
+                const dLat = Number(station201Route.latitude);
+                const dLng = Number(station201Route.longitude);
+                const dist = Math.sqrt(Math.pow((dLat - oLat) * 111, 2) + Math.pow((dLng - oLng) * 111 * Math.cos(oLat * Math.PI / 180), 2));
+                if (dist > 0.5) {
+                  await db.upsertRoutePattern({
+                    userId: transaction.userId,
+                    originLat: oLat,
+                    originLng: oLng,
+                    destinationLat: dLat,
+                    destinationLng: dLng,
+                    destinationName: station201Route.name,
+                    estimatedDistanceKm: Math.round(dist * 10) / 10,
+                    departureHour: new Date(transaction.startTime || Date.now()).getHours(),
+                  });
+                  console.log(`[CSMS-DUAL] 2.0.1 Route pattern recorded: user=${transaction.userId}, dist=${dist.toFixed(1)}km`);
+                }
+              }
+            } catch (routeErr201) {
+              console.error(`[CSMS-DUAL] 2.0.1 Error recording route pattern:`, routeErr201);
+            }
           }
 
           // Limpiar sesión activa

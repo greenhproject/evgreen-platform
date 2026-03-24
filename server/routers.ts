@@ -2330,9 +2330,18 @@ const bannersRouter = router({
     }),
   
   getActive: publicProcedure
-    .input(z.object({ type: z.string().optional(), location: z.string().optional() }).optional())
+    .input(z.object({
+      type: z.string().optional(),
+      location: z.string().optional(),
+      userRole: z.string().optional(),
+      userCity: z.string().optional(),
+      stationId: z.number().optional(),
+    }).optional())
     .query(async ({ input }) => {
-      return db.getActiveBanners(input?.type, input?.location);
+      const userContext = (input?.userRole || input?.userCity || input?.stationId)
+        ? { role: input?.userRole, city: input?.userCity, stationId: input?.stationId }
+        : undefined;
+      return db.getActiveBanners(input?.type, input?.location, userContext);
     }),
   
   create: adminProcedure

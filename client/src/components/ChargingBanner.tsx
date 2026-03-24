@@ -1,20 +1,28 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { X, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ChargingBannerProps {
   className?: string;
+  stationId?: number;
 }
 
-export function ChargingBanner({ className = "" }: ChargingBannerProps) {
+export function ChargingBanner({ className = "", stationId }: ChargingBannerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [dismissed, setDismissed] = useState(false);
+  const { user } = useAuth();
   
-  // Obtener banners activos de tipo CHARGING
+  // Obtener banners activos de tipo CHARGING con segmentación por usuario
   const { data: banners, isLoading } = trpc.banners.getActive.useQuery(
-    { type: "CHARGING" },
+    {
+      type: "CHARGING",
+      userRole: user?.role ?? undefined,
+      userCity: (user as any)?.city ?? undefined,
+      stationId: stationId ?? undefined,
+    },
     { refetchOnWindowFocus: false }
   );
   
