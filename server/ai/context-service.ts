@@ -578,6 +578,40 @@ ${user.lastChargeDate ? `- Última carga: ${user.lastChargeDate}` : ''}
     }
   }
 
+  // Agregar ubicaciones frecuentes del usuario (hábitos detectados)
+  if (context.frequentLocations && context.frequentLocations.length > 0) {
+    systemPrompt += `## Ubicaciones Frecuentes del Usuario (Hábitos Detectados)
+`;
+    for (const loc of context.frequentLocations) {
+      systemPrompt += `- **${loc.label}** (${loc.count} visitas, horarios típicos: ${loc.typicalHours})
+  - Coordenadas: ${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}
+`;
+    }
+    systemPrompt += `
+Usa esta información para personalizar recomendaciones. Por ejemplo:
+- Si el usuario está cerca de su casa/trabajo, sugiere estaciones cercanas a esos puntos
+- Si suele cargar a cierta hora, anticipa sus necesidades
+- Ofrece rutas optimizadas basadas en sus desplazamientos habituales
+
+`;
+  }
+
+  // Agregar rutas frecuentes del usuario
+  if (context.frequentRoutes && context.frequentRoutes.length > 0) {
+    systemPrompt += `## Rutas Frecuentes del Usuario
+`;
+    for (const route of context.frequentRoutes) {
+      const distText = route.estimatedDistanceKm ? ` (~${route.estimatedDistanceKm} km)` : '';
+      const hourText = route.typicalDepartureHour !== null ? ` a las ${route.typicalDepartureHour}:00` : '';
+      systemPrompt += `- ${route.originName} → ${route.destinationName}${distText}: ${route.frequency} viajes${hourText}
+`;
+    }
+    systemPrompt += `
+Usa estas rutas para sugerir estaciones de carga en el camino y planificar paradas óptimas.
+
+`;
+  }
+
   // Agregar estaciones cercanas
   if (nearbyStations.length > 0) {
     systemPrompt += `## Estaciones Disponibles
