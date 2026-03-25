@@ -1522,6 +1522,26 @@ export class DualCSMS {
       }
     }
     
+    // =========================================================================
+    // INTELIGENCIA FASE 2: Actualizar perfil de consumo del usuario
+    // =========================================================================
+    try {
+      const { updateConsumptionProfile } = await import("../ai/consumption-profile-service");
+      await updateConsumptionProfile({
+        userId: transaction.userId,
+        transactionId: transaction.id,
+        stationId: conn.stationId || transaction.stationId,
+        kwhConsumed: energyDelivered,
+        totalCost,
+        durationMinutes: durationMinutes,
+        startTime: startTime,
+        endTime: endTime,
+        hadOverstay: Number(transaction.overstayCost || 0) > 0,
+      });
+    } catch (profileErr) {
+      console.error(`[CSMS-DUAL] Error updating consumption profile:`, profileErr);
+    }
+
     console.log(`[CSMS-DUAL] StopTransaction completed: tx=${transaction.id}, user=${transaction.userId}, ${energyDelivered.toFixed(2)} kWh, $${Math.round(totalCost)} COP`);
 
     return {
@@ -2188,6 +2208,24 @@ export class DualCSMS {
             } catch (routeErr201) {
               console.error(`[CSMS-DUAL] 2.0.1 Error recording route pattern:`, routeErr201);
             }
+          }
+
+          // INTELIGENCIA FASE 2: Actualizar perfil de consumo del usuario (2.0.1)
+          try {
+            const { updateConsumptionProfile } = await import("../ai/consumption-profile-service");
+            await updateConsumptionProfile({
+              userId: transaction.userId,
+              transactionId: transaction.id,
+              stationId: conn.stationId || transaction.stationId,
+              kwhConsumed: energyDelivered,
+              totalCost,
+              durationMinutes: durationMinutes201,
+              startTime: startTime201,
+              endTime: endTime201,
+              hadOverstay: Number(transaction.overstayCost || 0) > 0,
+            });
+          } catch (profileErr201) {
+            console.error(`[CSMS-DUAL] 2.0.1 Error updating consumption profile:`, profileErr201);
           }
 
           // Limpiar sesión activa

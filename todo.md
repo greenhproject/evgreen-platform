@@ -2384,3 +2384,15 @@
 - [x] Conectar ubicaciones frecuentes al prompt del LLM (getUserFrequentLocations → context-service)
 - [x] Activar upsertRoutePattern() al finalizar cada sesión de carga (OCPP 1.6 y 2.0.1)
 - [x] Tests unitarios para segmentación de banners, ubicaciones frecuentes en LLM, y detección de rutas (18 tests)
+
+## Fase 2 — Inteligencia IA: Perfil de Consumo Inteligente
+- [x] Crear tabla user_consumption_profile en schema.ts (kWh promedio, gasto mensual, horarios preferidos, estaciones top 3, tipo de carga preferido, score de usuario)
+- [x] Función updateConsumptionProfile() que recalcula el perfil post-carga
+- [x] Hook en csms-dual.ts para llamar updateConsumptionProfile() al completar cada sesión OCPP 1.6 y 2.0.1
+- [x] Motor de recomendaciones inteligentes basado en perfil real (reemplazar reglas estáticas)
+- [x] Inyectar perfil de consumo al prompt del LLM en context-service.ts
+- [x] Notificaciones proactivas: alerta cuando precio baja en estación favorita
+- [x] Notificaciones proactivas: recordatorio en hora habitual de carga
+- [x] Sugerencias de suscripción personalizadas basadas en consumo real
+- [x] Tests unitarios para perfil de consumo, recomendaciones y notificaciones (36 tests pasando)
+- [ ] Push a GitHub y deploy (pendiente)
