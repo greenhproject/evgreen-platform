@@ -241,18 +241,25 @@ export function calculateDayMultiplier(
 }
 
 // Calcular multiplicador basado en historial de demanda
+// Fase 3: Ahora usa el modelo predictivo real basado en historial de transacciones
 export async function calculateDemandMultiplier(
   stationId: number,
   targetDate: Date = new Date()
 ): Promise<number> {
-  // Obtener transacciones de la última semana en el mismo horario
-  const dayOfWeek = targetDate.getDay();
-  const hour = targetDate.getHours();
+  try {
+    const { getDemandForecast } = await import("../ai/demand-forecast-service");
+    const forecast = await getDemandForecast(stationId, targetDate);
+    
+    if (forecast && forecast.confidence >= 30) {
+      // Usar el multiplicador del modelo predictivo si tiene suficiente confianza
+      console.log(`[DynamicPricing] Using forecast demand multiplier: ${forecast.multiplier.toFixed(3)} (confidence: ${forecast.confidence}%, trend: ${forecast.trend})`);
+      return forecast.multiplier;
+    }
+  } catch (err) {
+    console.error("[DynamicPricing] Error fetching demand forecast, using fallback:", err);
+  }
   
-  // Aquí se podría implementar un análisis más sofisticado
-  // Por ahora, retornamos 1.0 (neutral)
-  // En producción, se analizaría el historial de transacciones
-  
+  // Fallback: multiplicador neutral si no hay datos suficientes
   return 1.0;
 }
 

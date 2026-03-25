@@ -1984,6 +1984,49 @@ export const userConsumptionProfileRelations = relations(userConsumptionProfile,
 }));
 
 // ============================================================================
+// STATION DEMAND FORECAST TABLE — Fase 3 IA Predictiva
+// ============================================================================
+
+/**
+ * Predicciones de demanda por estación, hora del día y día de la semana.
+ * Se recalcula periódicamente a partir del historial real de transacciones.
+ * Permite al pricing dinámico usar datos reales en vez de estimaciones hardcodeadas.
+ */
+export const stationDemandForecast = mysqlTable("station_demand_forecast", {
+  id: int("id").primaryKey().autoincrement(),
+  stationId: int("stationId").notNull(),
+  dayOfWeek: int("dayOfWeek").notNull(), // 0=Domingo, 6=Sábado
+  hourOfDay: int("hourOfDay").notNull(), // 0-23
+  // Estadísticas calculadas del historial
+  avgSessionsPerSlot: decimal("avgSessionsPerSlot", { precision: 8, scale: 4 }).default("0"),
+  avgOccupancyRate: decimal("avgOccupancyRate", { precision: 5, scale: 2 }).default("0"), // 0-100%
+  avgKwhPerSlot: decimal("avgKwhPerSlot", { precision: 10, scale: 4 }).default("0"),
+  avgRevenuePerSlot: decimal("avgRevenuePerSlot", { precision: 12, scale: 2 }).default("0"),
+  // Tendencia (comparando últimas 4 semanas vs 4 semanas anteriores)
+  trend: varchar("trend", { length: 20 }).default("STABLE"), // RISING, STABLE, DECLINING
+  trendPercent: decimal("trendPercent", { precision: 6, scale: 2 }).default("0"), // % cambio
+  // Multiplicador de demanda sugerido para pricing dinámico
+  suggestedDemandMultiplier: decimal("suggestedDemandMultiplier", { precision: 4, scale: 3 }).default("1.000"),
+  // Confianza de la predicción (0-100, basada en cantidad de datos)
+  confidenceScore: int("confidenceScore").default(0),
+  // Datos de muestra
+  sampleSize: int("sampleSize").default(0), // Número de semanas con datos
+  lastCalculatedAt: timestamp("lastCalculatedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type StationDemandForecast = typeof stationDemandForecast.$inferSelect;
+export type InsertStationDemandForecast = typeof stationDemandForecast.$inferInsert;
+
+export const stationDemandForecastRelations = relations(stationDemandForecast, ({ one }) => ({
+  station: one(chargingStations, {
+    fields: [stationDemandForecast.stationId],
+    references: [chargingStations.id],
+  }),
+}));
+
+// ============================================================================
 // HISTORIAL DE UBICACIÓN Y PATRONES DE USO DEL USUARIO
 // ============================================================================
 

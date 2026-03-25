@@ -26,6 +26,8 @@ import {
   DEFAULT_PRICING_CONFIG 
 } from "../pricing/dynamic-pricing";
 import { getConsumptionProfile, formatProfileForLLM } from "./consumption-profile-service";
+import { formatDemandForecastForLLM } from "./demand-forecast-service";
+import { formatPredictiveSubscriptionForLLM } from "./subscription-predictor";
 
 export interface EvseContext {
   id: number;
@@ -123,6 +125,7 @@ export interface AIContext {
   frequentRoutes: RoutePatternContext[];
   frequentLocations: FrequentLocationContext[];
   consumptionProfileText?: string | null;
+  demandForecastText?: string | null;
 }
 
 /**
@@ -179,6 +182,16 @@ export async function getAIContext(
       const profile = await getConsumptionProfile(userId);
       if (profile && profile.totalSessions > 0) {
         consumptionProfileText = formatProfileForLLM(profile);
+        
+        // Fase 3: Agregar análisis predictivo de suscripción al perfil
+        try {
+          const subPrediction = await formatPredictiveSubscriptionForLLM(userId);
+          if (subPrediction) {
+            consumptionProfileText += "\n" + subPrediction;
+          }
+        } catch (subErr) {
+          console.error('[AIContext] Error getting subscription prediction:', subErr);
+        }
       }
     } catch (error) {
       console.error('[AIContext] Error getting consumption profile:', error);
@@ -199,6 +212,19 @@ export async function getAIContext(
     }
   }
 
+  // Fase 3: Obtener predicción de demanda de la estación más cercana
+  let demandForecastText: string | null = null;
+  if (nearbyStations.length > 0) {
+    try {
+      demandForecastText = await formatDemandForecastForLLM(nearbyStations[0].id);
+      if (demandForecastText && demandForecastText.trim().length < 10) {
+        demandForecastText = null;
+      }
+    } catch (error) {
+      console.error('[AIContext] Error getting demand forecast:', error);
+    }
+  }
+
   return {
     user: userContext,
     nearbyStations,
@@ -211,6 +237,7 @@ export async function getAIContext(
     frequentRoutes,
     frequentLocations,
     consumptionProfileText,
+    demandForecastText,
   };
 }
 
@@ -661,6 +688,13 @@ ${context.consumptionProfileText}
 `;
   }
 
+  // Fase 3: Inyectar predicción de demanda
+  if (context.demandForecastText) {
+    systemPrompt += `
+${context.demandForecastText}
+`;
+  }
+
   systemPrompt += `## Instrucciones
 1. Cuando el usuario pregunte por estaciones, usa los datos reales de arriba
 2. Recomienda estaciones con mejor precio y disponibilidad
@@ -673,6 +707,8 @@ ${context.consumptionProfileText}
 9. Si el perfil de consumo indica que el usuario está retrasado en su frecuencia de carga, menciónalo proactivamente
 10. Si detectas que una suscripción superior le ahorraría dinero, explica el ahorro concreto con números
 11. Compara precios actuales con el promedio histórico del usuario para indicar si es buen momento para cargar
+12. Usa las predicciones de demanda para recomendar el mejor horario para cargar en las próximas horas
+13. Si la tendencia de demanda es CRECIENTE, sugiere cargar pronto antes de que suba el precio
 
 ## Funciones que puedes sugerir
 - Reservar un cargador

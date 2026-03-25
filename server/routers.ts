@@ -1628,6 +1628,23 @@ const reservationsRouter = router({
       );
     }),
   
+  // Fase 3: Obtener predicción de demanda basada en historial real (24h)
+  getDemandForecast: publicProcedure
+    .input(z.object({
+      stationId: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const { get24HourForecast } = await import("./ai/demand-forecast-service");
+      return get24HourForecast(input.stationId);
+    }),
+
+  // Fase 3: Obtener recomendación predictiva de suscripción
+  getSubscriptionPrediction: protectedProcedure
+    .query(async ({ ctx }) => {
+      const { getPredictiveSubscriptionRecommendation } = await import("./ai/subscription-predictor");
+      return getPredictiveSubscriptionRecommendation(ctx.user.id);
+    }),
+
   // Obtener ocupación de la zona
   getZoneOccupancy: publicProcedure
     .input(z.object({
@@ -2336,12 +2353,30 @@ const bannersRouter = router({
       userRole: z.string().optional(),
       userCity: z.string().optional(),
       stationId: z.number().optional(),
+      userId: z.number().optional(), // Fase 3: para ranking por relevancia
     }).optional())
     .query(async ({ input }) => {
       const userContext = (input?.userRole || input?.userCity || input?.stationId)
         ? { role: input?.userRole, city: input?.userCity, stationId: input?.stationId }
         : undefined;
-      return db.getActiveBanners(input?.type, input?.location, userContext);
+      const activeBanners = await db.getActiveBanners(input?.type, input?.location, userContext);
+      
+      // Fase 3 IA: Si hay userId, rankear por relevancia personalizada
+      if (input?.userId && activeBanners.length > 1) {
+        try {
+          const { rankBannersByRelevance, getUserAdProfile } = await import("./ai/ad-relevance-service");
+          const adProfile = await getUserAdProfile(input.userId, {
+            city: input.userCity,
+            stationId: input.stationId,
+            role: input.userRole,
+          });
+          const ranked = await rankBannersByRelevance(activeBanners, adProfile);
+          return ranked;
+        } catch (err) {
+          console.error("[Banners] Error ranking by relevance, returning default order:", err);
+        }
+      }
+      return activeBanners;
     }),
   
   create: adminProcedure

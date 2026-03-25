@@ -18,6 +18,7 @@ import { startReconciliationCron } from "../wompi/reconciliation-cron";
 import { startTransactionCleanupJob } from "../jobs/transaction-cleanup";
 import { startBalanceMonitor } from "../charging/balance-monitor";
 import { startProactiveNotifications } from "../ai/proactive-notifications";
+import { startDemandForecastJob } from "../ai/demand-forecast-service";
 import { startOverstayMonitor, onChargingFinished, onCableDisconnected } from "../charging/overstay-monitor";
 import { reservationJobs } from "../notifications/reservation-notifications";
 import * as ocppManager from "../ocpp/connection-manager";
@@ -502,6 +503,9 @@ async function startServer() {
     
     // Fase 2 IA: Iniciar notificaciones proactivas basadas en perfil de consumo (cada 30 min)
     startProactiveNotifications();
+    
+    // Fase 3 IA: Iniciar predicción de demanda por estación (cada 6h)
+    startDemandForecastJob();
     
     // Iniciar procesamiento de reservas vencidas (no-show) cada 60 segundos
     setInterval(async () => {

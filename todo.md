@@ -2395,4 +2395,16 @@
 - [x] Notificaciones proactivas: recordatorio en hora habitual de carga
 - [x] Sugerencias de suscripción personalizadas basadas en consumo real
 - [x] Tests unitarios para perfil de consumo, recomendaciones y notificaciones (36 tests pasando)
-- [ ] Push a GitHub y deploy (pendiente)
+- [x] Push a GitHub y deploy
+
+## Fase 3 — IA Predictiva
+- [x] Modelo de predicción de demanda por estación (hora/día/semana) para anticipar ocupación
+- [x] Tabla station_demand_forecast con predicciones horarias por estación
+- [x] Integrar predicción de demanda al pricing dinámico y al contexto del LLM
+- [x] Algoritmo de relevancia publicitaria: scoring usuario-campaña con matching multi-criterio
+- [x] Campos de targeting avanzado en banners: metadata embebida en description con targeting JSON
+- [x] Ranking de banners por relevancia personalizada (no solo por prioridad estática)
+- [x] Sugerencias de suscripción predictivas: proyección de ahorro a 3/6/12 meses basada en tendencia de consumo
+- [x] Endpoint tRPC para consultar predicción de demanda y recomendación de suscripción predictiva
+- [x] Tests unitarios para predicción de demanda, relevancia publicitaria y suscripciones predictivas (43 tests pasando)
+- [ ] Push a GitHub (pendiente)
