@@ -1928,6 +1928,62 @@ export const tariffChangeLogsRelations = relations(tariffChangeLogs, ({ one }) =
 
 
 // ============================================================================
+// USER CONSUMPTION PROFILE - Perfil de consumo inteligente (Fase 2 IA)
+// ============================================================================
+
+/**
+ * Perfil de consumo calculado del usuario. Se actualiza automáticamente
+ * después de cada sesión de carga para que la IA aprenda progresivamente.
+ */
+export const userConsumptionProfile = mysqlTable("user_consumption_profile", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull().unique(),
+  // Estadísticas de energía
+  totalSessions: int("totalSessions").default(0).notNull(),
+  totalKwh: decimal("totalKwh", { precision: 12, scale: 4 }).default("0").notNull(),
+  totalSpentCop: decimal("totalSpentCop", { precision: 15, scale: 2 }).default("0").notNull(),
+  avgKwhPerSession: decimal("avgKwhPerSession", { precision: 8, scale: 4 }).default("0").notNull(),
+  avgCostPerSession: decimal("avgCostPerSession", { precision: 12, scale: 2 }).default("0").notNull(),
+  avgSessionDurationMin: int("avgSessionDurationMin").default(0).notNull(),
+  // Gasto mensual promedio (últimos 3 meses)
+  monthlyAvgSpent: decimal("monthlyAvgSpent", { precision: 12, scale: 2 }).default("0").notNull(),
+  monthlyAvgKwh: decimal("monthlyAvgKwh", { precision: 10, scale: 4 }).default("0").notNull(),
+  monthlyAvgSessions: decimal("monthlyAvgSessions", { precision: 6, scale: 2 }).default("0").notNull(),
+  // Horarios preferidos (JSON: {"preferredHours": [18, 19, 20], "preferredDays": [1,2,3,4,5]})
+  preferredHours: json("preferredHours").$type<number[]>().default([]),
+  preferredDays: json("preferredDays").$type<number[]>().default([]),
+  // Estaciones favoritas top 3 (JSON: [{stationId, name, visits, lastVisit}])
+  topStations: json("topStations").$type<Array<{stationId: number; name: string; visits: number; lastVisit: string}>>().default([]),
+  // Tipo de carga preferido
+  preferredChargeType: varchar("preferredChargeType", { length: 10 }), // AC o DC
+  preferredConnectorType: varchar("preferredConnectorType", { length: 20 }), // CCS_2, TYPE_2, etc.
+  avgChargePowerKw: decimal("avgChargePowerKw", { precision: 8, scale: 2 }).default("0"),
+  // Patrones de comportamiento
+  typicalChargeFrequencyDays: decimal("typicalChargeFrequencyDays", { precision: 6, scale: 2 }), // cada cuántos días carga
+  lastChargeAt: timestamp("lastChargeAt"),
+  nextPredictedChargeAt: timestamp("nextPredictedChargeAt"), // predicción basada en frecuencia
+  // Score de usuario (0-100): combina frecuencia, gasto, puntualidad, antigüedad
+  userScore: int("userScore").default(0).notNull(),
+  scoreBreakdown: json("scoreBreakdown").$type<{frequency: number; spending: number; punctuality: number; loyalty: number}>(),
+  // Suscripción recomendada basada en consumo
+  recommendedTier: varchar("recommendedTier", { length: 20 }), // FREE, BASIC, PREMIUM, ENTERPRISE
+  estimatedMonthlySavingsWithUpgrade: decimal("estimatedMonthlySavingsWithUpgrade", { precision: 10, scale: 2 }).default("0"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserConsumptionProfile = typeof userConsumptionProfile.$inferSelect;
+export type InsertUserConsumptionProfile = typeof userConsumptionProfile.$inferInsert;
+
+export const userConsumptionProfileRelations = relations(userConsumptionProfile, ({ one }) => ({
+  user: one(users, {
+    fields: [userConsumptionProfile.userId],
+    references: [users.id],
+  }),
+}));
+
+// ============================================================================
 // HISTORIAL DE UBICACIÓN Y PATRONES DE USO DEL USUARIO
 // ============================================================================
 

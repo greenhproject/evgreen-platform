@@ -25,6 +25,7 @@ import {
   getDemandLevel,
   DEFAULT_PRICING_CONFIG 
 } from "../pricing/dynamic-pricing";
+import { getConsumptionProfile, formatProfileForLLM } from "./consumption-profile-service";
 
 export interface EvseContext {
   id: number;
@@ -121,6 +122,7 @@ export interface AIContext {
   userLocation: { latitude: number; longitude: number } | null;
   frequentRoutes: RoutePatternContext[];
   frequentLocations: FrequentLocationContext[];
+  consumptionProfileText?: string | null;
 }
 
 /**
@@ -154,9 +156,10 @@ export async function getAIContext(
   // Obtener contexto general de la plataforma
   const platformContext = await getPlatformContext();
 
-  // Obtener rutas frecuentes y ubicaciones frecuentes del usuario
+  // Obtener rutas frecuentes, ubicaciones frecuentes y perfil de consumo
   let frequentRoutes: RoutePatternContext[] = [];
   let frequentLocations: FrequentLocationContext[] = [];
+  let consumptionProfileText: string | null = null;
   if (userId) {
     try {
       const routePatterns = await dbOps.getUserRoutePatterns(userId, 5);
@@ -170,6 +173,15 @@ export async function getAIContext(
       frequentLocations = await dbOps.getUserFrequentLocations(userId);
     } catch (error) {
       console.error('[AIContext] Error getting route patterns:', error);
+    }
+    // Fase 2: Obtener perfil de consumo inteligente
+    try {
+      const profile = await getConsumptionProfile(userId);
+      if (profile && profile.totalSessions > 0) {
+        consumptionProfileText = formatProfileForLLM(profile);
+      }
+    } catch (error) {
+      console.error('[AIContext] Error getting consumption profile:', error);
     }
 
     // Guardar ubicación actual si se proporcionó
@@ -198,6 +210,7 @@ export async function getAIContext(
     userLocation: userLat && userLng ? { latitude: userLat, longitude: userLng } : null,
     frequentRoutes,
     frequentLocations,
+    consumptionProfileText,
   };
 }
 
@@ -641,6 +654,13 @@ ${evseList}
     }
   }
 
+  // Fase 2: Inyectar perfil de consumo inteligente
+  if (context.consumptionProfileText) {
+    systemPrompt += `
+${context.consumptionProfileText}
+`;
+  }
+
   systemPrompt += `## Instrucciones
 1. Cuando el usuario pregunte por estaciones, usa los datos reales de arriba
 2. Recomienda estaciones con mejor precio y disponibilidad
@@ -650,6 +670,9 @@ ${evseList}
 6. Para técnicos, enfócate en estado de equipos
 7. Siempre menciona precios en COP (pesos colombianos)
 8. Si no tienes información específica, indícalo claramente
+9. Si el perfil de consumo indica que el usuario está retrasado en su frecuencia de carga, menciónalo proactivamente
+10. Si detectas que una suscripción superior le ahorraría dinero, explica el ahorro concreto con números
+11. Compara precios actuales con el promedio histórico del usuario para indicar si es buen momento para cargar
 
 ## Funciones que puedes sugerir
 - Reservar un cargador
@@ -657,7 +680,8 @@ ${evseList}
 - Consultar historial de cargas
 - Recargar billetera
 - Planificar un viaje con paradas de carga
-- Ver análisis de consumo`;
+- Ver análisis de consumo
+- Ver mi perfil de consumo`;
 
   return systemPrompt;
 }

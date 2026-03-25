@@ -79,6 +79,9 @@ import {
   userDebts,
   UserDebt,
   InsertUserDebt,
+  userConsumptionProfile,
+  UserConsumptionProfile,
+  InsertUserConsumptionProfile,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
