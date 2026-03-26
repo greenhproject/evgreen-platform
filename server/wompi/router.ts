@@ -416,6 +416,8 @@ export const wompiRouter = router({
 
   // ========================================================================
   // Crear checkout para suscripción mensual
+  // Si el usuario tiene tarjeta inscrita, intentar cobro directo primero.
+  // Solo abrir pasarela de Wompi si no hay tarjeta o el cobro directo falla.
   // ========================================================================
   createSubscriptionPayment: protectedProcedure
     .input(
@@ -443,6 +445,159 @@ export const wompiRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Plan inválido" });
       }
 
+      // ====== INTENTO 1: Cobro directo con tarjeta inscrita ======
+      const existingSub = await db.getUserSubscription(ctx.user.id);
+      if (existingSub?.wompiPaymentSourceId && existingSub.cardLastFour) {
+        console.log(`[Wompi] Intentando cobro directo de suscripción ${input.planId} con tarjeta ****${existingSub.cardLastFour} (PS: ${existingSub.wompiPaymentSourceId})`);
+        
+        const directRef = generatePaymentReference("SUB");
+        const amountInCents = amount * 100;
+        const currency = "COP";
+
+        try {
+          // Obtener acceptance token
+          const acceptanceData = await getAcceptanceToken();
+          if (!acceptanceData?.acceptanceToken) {
+            throw new Error("No se pudo obtener acceptance token");
+          }
+
+          // Generar firma de integridad
+          const directSignature = generateIntegritySignature(
+            directRef,
+            amountInCents,
+            currency,
+            keys.integritySecret
+          );
+
+          // Crear transacción directa con payment source
+          const response = await fetch(`${keys.apiUrl}/transactions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${keys.privateKey}`,
+            },
+            body: JSON.stringify({
+              amount_in_cents: amountInCents,
+              currency,
+              payment_source_id: parseInt(existingSub.wompiPaymentSourceId),
+              reference: directRef,
+              customer_email: ctx.user.email || "",
+              signature: directSignature,
+              acceptance_token: acceptanceData.acceptanceToken,
+              payment_method: {
+                type: "CARD",
+                installments: 1,
+              },
+            }),
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            const tx = result.data;
+            console.log(`[Wompi] Cobro directo suscripción - Transacción: ${tx.id}, Estado: ${tx.status}`);
+
+            // Guardar transacción en BD
+            try {
+              await db.createWompiTransaction({
+                userId: ctx.user.id,
+                reference: directRef,
+                amountInCents,
+                currency,
+                type: "SUBSCRIPTION",
+                customerEmail: ctx.user.email || "",
+                description: `Suscripción Plan ${input.planId === "premium" ? "Premium" : "Básico"} (cobro con tarjeta ****${existingSub.cardLastFour})`,
+                integritySignature: directSignature,
+              });
+              await db.updateWompiTransactionByReference(directRef, {
+                wompiTransactionId: tx.id,
+                status: tx.status,
+                paymentMethodType: tx.payment_method_type || "CARD",
+                processedAt: new Date(),
+              });
+            } catch (dbErr) {
+              console.warn("[Wompi] Error guardando transacción de suscripción directa:", dbErr);
+            }
+
+            // Polling si está PENDING
+            let finalStatus = tx.status;
+            if (tx.status === "PENDING" && tx.id) {
+              const recheckDelays = [2000, 5000, 10000];
+              for (let i = 0; i < recheckDelays.length; i++) {
+                await new Promise(resolve => setTimeout(resolve, recheckDelays[i]));
+                try {
+                  const recheckResult = await getTransactionStatus(tx.id, keys);
+                  if (recheckResult?.data?.status) {
+                    finalStatus = recheckResult.data.status;
+                    console.log(`[Wompi] Suscripción directa - Recheck #${i + 1}: ${finalStatus}`);
+                    if (finalStatus !== "PENDING") {
+                      await db.updateWompiTransactionByReference(directRef, {
+                        status: finalStatus,
+                        processedAt: new Date(),
+                      });
+                      break;
+                    }
+                  }
+                } catch (recheckErr) {
+                  console.warn(`[Wompi] Error en recheck suscripción #${i + 1}:`, recheckErr);
+                }
+              }
+            }
+
+            // Si fue aprobada, activar suscripción directamente
+            if (finalStatus === "APPROVED" || finalStatus === "PENDING") {
+              if (finalStatus === "APPROVED") {
+                await db.updateUserSubscription(ctx.user.id, {
+                  planId: input.planId,
+                  status: "active",
+                  monthlyAmountCents: amountInCents,
+                  lastPaymentDate: new Date(),
+                  lastPaymentReference: directRef,
+                  cardBrand: existingSub.cardBrand || tx.payment_method?.brand,
+                  cardLastFour: existingSub.cardLastFour || tx.payment_method?.last_four,
+                });
+
+                // Notificación de éxito
+                try {
+                  await db.createNotification({
+                    userId: ctx.user.id,
+                    title: "¡Suscripción activada!",
+                    message: `Tu plan ${input.planId === "premium" ? "Premium" : "Básico"} fue activado con tu tarjeta ****${existingSub.cardLastFour}. ¡Disfruta tus beneficios!`,
+                    type: "PAYMENT",
+                    data: JSON.stringify({
+                      key: `sub-direct-${directRef}`,
+                      planId: input.planId,
+                      reference: directRef,
+                    }),
+                  });
+                } catch (notifErr) {
+                  console.warn("[Wompi] Error creando notificación:", notifErr);
+                }
+              }
+
+              return {
+                directCharge: true,
+                success: finalStatus === "APPROVED",
+                status: finalStatus,
+                reference: directRef,
+                planId: input.planId,
+                message: finalStatus === "APPROVED"
+                  ? `¡Plan ${input.planId === "premium" ? "Premium" : "Básico"} activado con tu tarjeta ****${existingSub.cardLastFour}!`
+                  : "El cobro está siendo procesado. Tu plan se activará en unos momentos.",
+                checkoutUrl: null,
+              };
+            }
+            // Si fue DECLINED/ERROR, caer al checkout normal
+            console.log(`[Wompi] Cobro directo rechazado (${finalStatus}), abriendo checkout...`);
+          } else {
+            const errorBody = await response.text();
+            console.warn(`[Wompi] Error en cobro directo de suscripción (${response.status}):`, errorBody);
+          }
+        } catch (directErr) {
+          console.warn("[Wompi] Error en cobro directo de suscripción, cayendo a checkout:", directErr);
+        }
+      }
+
+      // ====== FALLBACK: Checkout de Wompi ======
       const reference = generatePaymentReference("SUB");
       const amountInCents = amount * 100;
       const currency = "COP";
@@ -484,9 +639,13 @@ export const wompiRouter = router({
       }
 
       return {
+        directCharge: false,
+        success: false,
+        status: "REDIRECT",
         checkoutUrl,
         reference,
         planId: input.planId,
+        message: "Redirigiendo a Wompi para completar el pago...",
       };
     }),
 

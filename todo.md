@@ -2407,4 +2407,9 @@
 - [x] Sugerencias de suscripción predictivas: proyección de ahorro a 3/6/12 meses basada en tendencia de consumo
 - [x] Endpoint tRPC para consultar predicción de demanda y recomendación de suscripción predictiva
 - [x] Tests unitarios para predicción de demanda, relevancia publicitaria y suscripciones predictivas (43 tests pasando)
-- [ ] Push a GitHub (pendiente)
+- [x] Push a GitHub
+
+## Bugs de Suscripciones (reportados por usuario)
+- [x] BUG: Perfil muestra "Plan Gratuito" aunque la suscripción está activa (Plan Básico)
+- [x] BUG: Al activar suscripción debe debitar automáticamente de tarjeta inscrita, no abrir pasarela Wompi
+- [x] BUG: Verificar que descuentos de suscripción (3% desc. kWh) se apliquen en transacciones de carga
