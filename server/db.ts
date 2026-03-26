@@ -3347,7 +3347,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
             let finalBalance = currentBalance;
             if (currentBalance < totalCost) {
               try {
-                const { autoChargeIfNeeded } = await import("../wompi/auto-charge");
+                const { autoChargeIfNeeded } = await import("./wompi/auto-charge");
                 const autoResult = await autoChargeIfNeeded(t.userId, totalCost);
                 if (autoResult?.success) {
                   finalBalance = autoResult.newBalance;
