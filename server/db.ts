@@ -3309,7 +3309,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
   const cutoffTime = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
   
   // Encontrar transacciones IN_PROGRESS cuya última actualización sea anterior al cutoff
-  const orphaned = await db.select({ id: transactions.id, userId: transactions.userId, stationId: transactions.stationId, startTime: transactions.startTime, updatedAt: transactions.updatedAt })
+  const orphaned = await db.select()
     .from(transactions)
     .where(
       and(
@@ -3320,23 +3320,113 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
   
   if (orphaned.length === 0) return 0;
   
-  const orphanedIds = orphaned.map(t => t.id);
+  let cleanedCount = 0;
   
-  // Marcar como CANCELLED
-  await db.update(transactions)
-    .set({
-      status: "CANCELLED",
-      endTime: new Date(),
-      stopReason: `AUTO_CLEANUP: Sin actividad por más de ${maxAgeMinutes} minutos`,
-    })
-    .where(inArray(transactions.id, orphanedIds));
-  
-  // Log de auditoría
   for (const t of orphaned) {
-    console.log(`[Cleanup] Transacción huérfana cerrada: id=${t.id}, userId=${t.userId}, stationId=${t.stationId}, startTime=${t.startTime?.toISOString()}, lastUpdate=${t.updatedAt?.toISOString()}`);
+    const kwhConsumed = parseFloat(t.kwhConsumed || "0");
+    const totalCost = parseFloat(t.totalCost || "0");
+    
+    if (kwhConsumed > 0 && totalCost > 0) {
+      // Transacción con energía consumida real: COMPLETAR y cobrar, no cancelar
+      await db.update(transactions)
+        .set({
+          status: "COMPLETED",
+          endTime: new Date(),
+          stopReason: `AUTO_COMPLETE: Sesión finalizada automáticamente (sin actividad por ${maxAgeMinutes} min)`,
+        })
+        .where(eq(transactions.id, t.id));
+      
+      // Descontar saldo de la billetera del usuario
+      if (t.userId && totalCost > 0) {
+        try {
+          const wallet = await db.select().from(wallets).where(eq(wallets.userId, t.userId)).limit(1);
+          if (wallet.length > 0) {
+            const currentBalance = parseFloat(wallet[0].balance);
+            
+            // Auto-cobro si saldo insuficiente
+            let finalBalance = currentBalance;
+            if (currentBalance < totalCost) {
+              try {
+                const { autoChargeIfNeeded } = await import("../wompi/auto-charge");
+                const autoResult = await autoChargeIfNeeded(t.userId, totalCost);
+                if (autoResult?.success) {
+                  finalBalance = autoResult.newBalance;
+                  console.log(`[Cleanup] Auto-cobro exitoso para tx ${t.id}: $${autoResult.amountCharged}`);
+                }
+              } catch (autoErr) {
+                console.warn(`[Cleanup] Error en auto-cobro para tx ${t.id}:`, autoErr);
+              }
+            }
+            
+            const newBalance = Math.max(0, finalBalance - totalCost);
+            await db.update(wallets)
+              .set({ balance: newBalance.toString() })
+              .where(eq(wallets.userId, t.userId));
+            
+            await db.insert(walletTransactions).values({
+              walletId: wallet[0].id,
+              userId: t.userId,
+              type: "CHARGE_PAYMENT",
+              amount: (-totalCost).toString(),
+              balanceBefore: finalBalance.toString(),
+              balanceAfter: newBalance.toString(),
+              referenceId: t.id,
+              referenceType: "TRANSACTION",
+              status: "COMPLETED",
+              description: `Pago por carga de ${kwhConsumed.toFixed(2)} kWh (auto-completada)`,
+            });
+            
+            console.log(`[Cleanup] Transacción ${t.id} COMPLETADA y cobrada: $${totalCost.toFixed(0)} COP, ${kwhConsumed.toFixed(2)} kWh. Balance: $${finalBalance.toFixed(0)} -> $${newBalance.toFixed(0)}`);
+            
+            // Registrar deuda si el saldo quedó en 0 y no alcanzó
+            if (finalBalance < totalCost) {
+              const debt = totalCost - finalBalance;
+              console.warn(`[Cleanup] Usuario ${t.userId} tiene deuda de $${debt.toFixed(0)} COP por tx ${t.id}`);
+            }
+          }
+        } catch (walletErr) {
+          console.error(`[Cleanup] Error descontando billetera para tx ${t.id}:`, walletErr);
+        }
+      }
+      
+      // Notificar al usuario
+      if (t.userId) {
+        try {
+          let stationName = "Estación";
+          try {
+            const station = await db.select().from(chargingStations).where(eq(chargingStations.id, t.stationId)).limit(1);
+            if (station.length > 0) stationName = station[0].name || "Estación";
+          } catch {} 
+          
+          await db.insert(notifications).values({
+            userId: t.userId,
+            title: "⚡ Carga completada automáticamente",
+            message: `Tu carga en ${stationName} fue completada automáticamente. Consumiste ${kwhConsumed.toFixed(2)} kWh por un total de $${totalCost.toLocaleString()} COP.`,
+            type: "CHARGE_COMPLETE",
+            referenceId: t.id,
+            referenceType: "transaction",
+          });
+        } catch (notifErr) {
+          console.warn(`[Cleanup] Error enviando notificación para tx ${t.id}:`, notifErr);
+        }
+      }
+    } else {
+      // Transacción sin energía consumida: cancelar normalmente
+      await db.update(transactions)
+        .set({
+          status: "CANCELLED",
+          endTime: new Date(),
+          stopReason: `AUTO_CLEANUP: Sin actividad por más de ${maxAgeMinutes} minutos`,
+        })
+        .where(eq(transactions.id, t.id));
+      
+      console.log(`[Cleanup] Transacción huérfana cancelada: id=${t.id}, userId=${t.userId}, stationId=${t.stationId}, kWh=${kwhConsumed}`);
+    }
+    
+    cleanedCount++;
   }
   
-  return orphaned.length;
+  return cleanedCount;
 }
 
 /**
