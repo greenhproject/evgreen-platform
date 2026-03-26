@@ -1718,47 +1718,56 @@ async function handleOCPP16Message(
             }
           }
           
-          // Verificar saldo bajo del usuario
+          // Verificar saldo bajo del usuario usando la tabla wallets (no user.walletBalance que no existe)
           if (transaction.userId && energyWh !== null) {
-            const user = await db.getUserById(transaction.userId);
-            if (user) {
-              const userBalance = parseFloat(user.walletBalance || "0");
-              const remainingBalance = userBalance - currentTotalCost;
-              
-              // Si el saldo restante es menor al 20% del costo actual, enviar alerta
-              if (remainingBalance < currentTotalCost * 0.2 && remainingBalance > 0) {
-                const notificationKey = `low_balance_${transaction.id}`;
-                const existingNotification = await db.getNotificationByKey(user.id, notificationKey);
+            try {
+              const userWallet = await db.getWalletByUserId(transaction.userId);
+              if (userWallet) {
+                const walletBalance = parseFloat(userWallet.balance) || 0;
+                const remainingBalance = walletBalance - currentTotalCost;
                 
-                if (!existingNotification) {
-                  await db.createNotification({
-                    userId: user.id,
-                    type: "low_balance",
-                    title: "⚠️ Saldo bajo durante la carga",
-                    message: `Tu saldo restante es $${remainingBalance.toFixed(0)} COP. Considera recargar para evitar interrupciones.`,
-                    data: JSON.stringify({ 
-                      transactionId: transaction.id,
-                      remainingBalance,
-                      currentCost: currentTotalCost,
-                      key: notificationKey
-                    }),
-                  });
-                  console.log(`[OCPP] Low balance alert sent to user ${user.id}: $${remainingBalance.toFixed(0)} remaining`);
+                // Si el saldo restante es menor al 20% del costo actual, enviar alerta (una sola vez)
+                if (remainingBalance < currentTotalCost * 0.2 && remainingBalance > 0) {
+                  const notificationKey = `low_balance_${transaction.id}`;
+                  const existingNotification = await db.getNotificationByKey(transaction.userId, notificationKey);
+                  
+                  if (!existingNotification) {
+                    await db.createNotification({
+                      userId: transaction.userId,
+                      type: "low_balance",
+                      title: "⚠️ Saldo bajo durante la carga",
+                      message: `Tu saldo restante es $${remainingBalance.toFixed(0)} COP. Considera recargar para evitar interrupciones.`,
+                      data: JSON.stringify({ 
+                        transactionId: transaction.id,
+                        remainingBalance,
+                        currentCost: currentTotalCost,
+                        key: notificationKey
+                      }),
+                    });
+                    console.log(`[OCPP] Low balance alert sent to user ${transaction.userId}: $${remainingBalance.toFixed(0)} remaining`);
+                  }
+                }
+                
+                // Si el saldo llega a 0, enviar alerta (una sola vez, el BalanceMonitor se encarga de detener la carga)
+                if (remainingBalance <= 0) {
+                  const depletedKey = `balance_depleted_${transaction.id}`;
+                  const existingDepleted = await db.getNotificationByKey(transaction.userId, depletedKey);
+                  
+                  if (!existingDepleted) {
+                    console.log(`[OCPP] User ${transaction.userId} balance depleted (wallet: $${walletBalance}, cost: $${currentTotalCost.toFixed(0)})`);
+                    await db.createNotification({
+                      userId: transaction.userId,
+                      type: "balance_depleted",
+                      title: "⚠️ Saldo insuficiente",
+                      message: `Tu saldo de $${walletBalance.toLocaleString()} COP no cubre el costo actual de $${currentTotalCost.toFixed(0)} COP. Recarga tu billetera para evitar interrupciones.`,
+                      data: JSON.stringify({ transactionId: transaction.id, key: depletedKey }),
+                    });
+                  }
+                  // El BalanceMonitor (cada 30s) se encarga de intentar auto-recarga y detener si es necesario
                 }
               }
-              
-              // Si el saldo llega a 0, detener la carga
-              if (remainingBalance <= 0) {
-                console.log(`[OCPP] User ${user.id} balance depleted, stopping charge`);
-                await db.createNotification({
-                  userId: user.id,
-                  type: "balance_depleted",
-                  title: "🛑 Carga detenida - Saldo agotado",
-                  message: `Tu saldo se ha agotado. La carga se detuvo automáticamente. Recarga tu billetera para continuar.`,
-                  data: JSON.stringify({ transactionId: transaction.id }),
-                });
-                // TODO: Enviar RemoteStopTransaction al cargador
-              }
+            } catch (balanceErr) {
+              console.warn(`[OCPP] Error checking balance for user ${transaction.userId}:`, balanceErr);
             }
           }
         }

@@ -2413,3 +2413,8 @@
 - [x] BUG: Perfil muestra "Plan Gratuito" aunque la suscripción está activa (Plan Básico)
 - [x] BUG: Al activar suscripción debe debitar automáticamente de tarjeta inscrita, no abrir pasarela Wompi
 - [x] BUG: Verificar que descuentos de suscripción (3% desc. kWh) se apliquen en transacciones de carga
+
+## Bugs Críticos de Cobro (reportados 26 marzo 2026)
+- [x] BUG: Saldo de billetera NO se descuenta al completar carga (corregido: cleanup ahora COMPLETA y cobra txs con kWh > 0, tx #630001 corregida manualmente)
+- [x] BUG: Notificaciones falsas de "Saldo agotado" (corregido: MeterValues ahora usa wallet table real + deduplicación por notificationKey)
+- [x] BUG: Estado "Cancelada" en transacción con consumo real (corregido: cleanup distingue kWh>0 → COMPLETE vs kWh=0 → CANCEL)
