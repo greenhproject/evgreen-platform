@@ -39,6 +39,15 @@ export default function UserProfile() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Obtener suscripción real del usuario
+  const { data: subscription } = trpc.wompi.getMySubscription.useQuery(undefined, {
+    staleTime: 30 * 1000,
+  });
+
+  const isSubscribed = subscription?.isActive && subscription?.tier !== "FREE";
+  const planName = subscription?.tier === "PREMIUM" ? "Plan Premium" : subscription?.tier === "BASIC" ? "Plan Básico" : "Plan Gratuito";
+  const planColor = subscription?.tier === "PREMIUM" ? "bg-yellow-500/10 text-yellow-500" : subscription?.tier === "BASIC" ? "bg-blue-500/10 text-blue-500" : "bg-primary/10 text-primary";
+
   const copyIdTag = () => {
     if (user?.idTag) {
       navigator.clipboard.writeText(user.idTag);
@@ -96,20 +105,31 @@ export default function UserProfile() {
               <div className="flex-1 min-w-0">
                 <h2 className="text-lg sm:text-xl font-bold truncate">{user?.name || "Usuario"}</h2>
                 <p className="text-muted-foreground text-xs sm:text-sm truncate">{user?.email}</p>
-                <Badge className="mt-2 bg-primary/10 text-primary">
+                <Badge className={`mt-2 ${planColor}`}>
                   <Crown className="w-3 h-3 mr-1" />
-                  Plan Gratuito
+                  {planName}
                 </Badge>
               </div>
             </div>
-            <Button
-              variant="outline"
-              className="w-full mt-4"
-              onClick={() => setLocation("/subscription")}
-            >
-              <Crown className="w-4 h-4 mr-2 text-yellow-500" />
-              Actualizar a Premium
-            </Button>
+            {isSubscribed ? (
+              <Button
+                variant="outline"
+                className="w-full mt-4"
+                onClick={() => setLocation("/subscription")}
+              >
+                <Crown className="w-4 h-4 mr-2 text-yellow-500" />
+                Gestionar mi suscripción
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="w-full mt-4"
+                onClick={() => setLocation("/subscription")}
+              >
+                <Crown className="w-4 h-4 mr-2 text-yellow-500" />
+                Actualizar a Premium
+              </Button>
+            )}
           </Card>
         </motion.div>
 

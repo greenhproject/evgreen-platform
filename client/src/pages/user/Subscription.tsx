@@ -54,7 +54,17 @@ export default function UserSubscription() {
 
   const createSubscription = trpc.wompi.createSubscriptionPayment.useMutation({
     onSuccess: (data) => {
-      if (data.checkoutUrl) {
+      if (data.directCharge && data.success) {
+        // Cobro directo exitoso con tarjeta inscrita
+        toast.success(data.message || "¡Suscripción activada con tu tarjeta!");
+        refetchSubscription();
+      } else if (data.directCharge && data.status === "PENDING") {
+        // Cobro directo pendiente
+        toast.info(data.message || "El cobro está siendo procesado...");
+        // Hacer polling después de unos segundos
+        setTimeout(() => refetchSubscription(), 5000);
+      } else if (data.checkoutUrl) {
+        // Fallback: abrir pasarela de Wompi
         toast.info("Redirigiendo a Wompi para completar el pago...");
         window.open(data.checkoutUrl, "_blank");
       }

@@ -356,6 +356,23 @@ export const chargingRouter = router({
         }
       }
       
+      // ====== APLICAR DESCUENTO DE SUSCRIPCIÓN ======
+      let subscriptionDiscount = 0;
+      try {
+        const userSub = await db.getUserSubscription(ctx.user.id);
+        if (userSub?.isActive && userSub.discountPercentage) {
+          const discountPct = parseFloat(userSub.discountPercentage);
+          if (discountPct > 0) {
+            subscriptionDiscount = discountPct;
+            const originalPrice = pricePerKwh;
+            pricePerKwh = Math.round(pricePerKwh * (1 - discountPct / 100));
+            console.log(`[validateAndEstimate] Subscription discount: ${discountPct}% off. Price: $${originalPrice} -> $${pricePerKwh}/kWh`);
+          }
+        }
+      } catch (subErr) {
+        console.warn(`[validateAndEstimate] Error checking subscription:`, subErr);
+      }
+      
       // Calcular estimación según modo de carga
       let estimatedKwh = 0;
       let estimatedCost = 0;
@@ -405,6 +422,7 @@ export const chargingRouter = router({
         shortfall: hasSufficientBalance ? 0 : Math.ceil(estimatedCost - balance),
         dynamicMultiplier,
         demandLevel: dynamicPricing.getDemandLevel(dynamicMultiplier),
+        subscriptionDiscount, // % de descuento aplicado por suscripción (0 si no tiene)
       };
     }),
 
@@ -464,6 +482,24 @@ export const chargingRouter = router({
           pricePerKwh = basePrice;
           console.log(`[Charging] Using fixed pricing: $${pricePerKwh}/kWh (source: ${tariffSource})`);
         }
+      }
+      
+      // ====== APLICAR DESCUENTO DE SUSCRIPCIÓN ======
+      // Si el usuario tiene una suscripción activa, aplicar el descuento en kWh
+      let subscriptionDiscount = 0;
+      try {
+        const userSub = await db.getUserSubscription(ctx.user.id);
+        if (userSub?.isActive && userSub.discountPercentage) {
+          const discountPct = parseFloat(userSub.discountPercentage);
+          if (discountPct > 0) {
+            subscriptionDiscount = discountPct;
+            const originalPrice = pricePerKwh;
+            pricePerKwh = Math.round(pricePerKwh * (1 - discountPct / 100));
+            console.log(`[Charging] Subscription discount applied: ${discountPct}% off. Price: $${originalPrice} -> $${pricePerKwh}/kWh (Plan: ${userSub.tier})`);
+          }
+        }
+      } catch (subErr) {
+        console.warn(`[Charging] Error checking subscription discount:`, subErr);
       }
       
       // Usar el conector ya obtenido arriba (selectedConnector) para cálculos de potencia
