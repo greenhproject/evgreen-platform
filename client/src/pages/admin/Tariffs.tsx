@@ -642,7 +642,7 @@ export default function AdminTariffs() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-32 flex items-end gap-1">
+          <div className="h-40 flex items-end gap-0.5">
             {Array.from({ length: 24 }, (_, hour) => {
               let mult = 1.0;
               const isPeak = (hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 20);
@@ -651,27 +651,30 @@ export default function AdminTariffs() {
               else if (isNight) mult = 0.85;
               else if (isWeekend) mult = 0.9;
               
-              const height = (mult / dynamicConfig.maxMultiplier) * 100;
+              // Calcular altura en píxeles directamente (max container = 160px, reservar 20px para label)
+              const maxBarHeight = 120; // px
+              const barHeight = Math.max(8, (mult / dynamicConfig.maxMultiplier) * maxBarHeight);
               const isCurrentHour = hour === currentHour;
               
               return (
                 <div
                   key={hour}
-                  className="flex-1 flex flex-col items-center gap-1"
+                  className="flex-1 flex flex-col items-center justify-end"
+                  style={{ height: '100%' }}
                 >
                   <div
-                    className={`w-full rounded-t transition-all ${
+                    className={`w-full rounded-t-sm ${
                       isCurrentHour
                         ? "bg-primary"
                         : mult > 1
-                        ? "bg-orange-500/50"
+                        ? "bg-orange-500/70"
                         : mult < 1
-                        ? "bg-green-500/50"
-                        : "bg-muted"
+                        ? "bg-green-500/60"
+                        : "bg-muted-foreground/40"
                     }`}
-                    style={{ height: `${height}%` }}
+                    style={{ height: `${barHeight}px`, minWidth: '4px' }}
                   />
-                  <span className={`text-[10px] ${isCurrentHour ? "font-bold text-primary" : "text-muted-foreground"}`}>
+                  <span className={`text-[9px] mt-1 leading-none ${isCurrentHour ? "font-bold text-primary" : "text-muted-foreground"}`}>
                     {hour}
                   </span>
                 </div>
