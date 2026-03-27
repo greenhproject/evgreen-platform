@@ -654,13 +654,22 @@ export async function getTransactionsByUserId(userId: number, limit = 50) {
   return db.select().from(transactions).where(eq(transactions.userId, userId)).orderBy(desc(transactions.startTime)).limit(limit);
 }
 
-export async function getAllTransactions(filters?: { startDate?: Date; endDate?: Date; limit?: number }) {
+export async function getAllTransactions(filters?: { startDate?: Date; endDate?: Date; limit?: number; offset?: number; status?: string }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return { data: [], total: 0 };
   
-  const conditions = [];
+  const conditions: any[] = [];
   if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
   if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  if (filters?.status) conditions.push(eq(transactions.status, filters.status as any));
+  
+  // Count total
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const countResult = await db.select({ count: sql<number>`COUNT(*)` }).from(transactions).where(whereClause);
+  const total = Number(countResult[0]?.count || 0);
+  
+  const limit = filters?.limit || 20;
+  const offset = filters?.offset || 0;
   
   const query = db
     .select({
@@ -681,14 +690,13 @@ export async function getAllTransactions(filters?: { startDate?: Date; endDate?:
     .from(transactions)
     .leftJoin(users, eq(transactions.userId, users.id))
     .leftJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(whereClause)
     .orderBy(desc(transactions.startTime))
-    .limit(filters?.limit || 100);
+    .limit(limit)
+    .offset(offset);
   
-  if (conditions.length > 0) {
-    return query.where(and(...conditions));
-  }
-  
-  return query;
+  const data = await query;
+  return { data, total };
 }
 
 export async function getOverstayTransactions(filters?: {
@@ -742,17 +750,45 @@ export async function getTransactionsByStationId(stationId: number, filters?: { 
   return db.select().from(transactions).where(and(...conditions)).orderBy(desc(transactions.startTime));
 }
 
-export async function getTransactionsByInvestor(investorId: number, filters?: { startDate?: Date; endDate?: Date }) {
+export async function getTransactionsByInvestor(investorId: number, filters?: { startDate?: Date; endDate?: Date; limit?: number; offset?: number; status?: string }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return { data: [], total: 0 };
   
   // Primero obtener las estaciones del inversionista
   const investorStations = await db.select({ id: chargingStations.id }).from(chargingStations).where(eq(chargingStations.ownerId, investorId));
   const stationIds = investorStations.map(s => s.id);
   
+  if (stationIds.length === 0) return { data: [], total: 0 };
+  
+  const conditions: any[] = [inArray(transactions.stationId, stationIds)];
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  if (filters?.status) conditions.push(eq(transactions.status, filters.status as any));
+  
+  const whereClause = and(...conditions);
+  
+  // Count total
+  const countResult = await db.select({ count: sql<number>`COUNT(*)` }).from(transactions).where(whereClause);
+  const total = Number(countResult[0]?.count || 0);
+  
+  const limit = filters?.limit || 20;
+  const offset = filters?.offset || 0;
+  
+  const data = await db.select().from(transactions).where(whereClause).orderBy(desc(transactions.startTime)).limit(limit).offset(offset);
+  return { data, total };
+}
+
+// Versión sin paginación para exportar todas las transacciones del inversionista
+export async function getAllTransactionsByInvestor(investorId: number, filters?: { startDate?: Date; endDate?: Date }) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const investorStations = await db.select({ id: chargingStations.id }).from(chargingStations).where(eq(chargingStations.ownerId, investorId));
+  const stationIds = investorStations.map(s => s.id);
+  
   if (stationIds.length === 0) return [];
   
-  const conditions = [inArray(transactions.stationId, stationIds)];
+  const conditions: any[] = [inArray(transactions.stationId, stationIds)];
   if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
   if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
   
@@ -2220,34 +2256,7 @@ export async function addUserWalletBalance(userId: number, amount: number) {
   }
 }
 
-export async function createPaymentRecord(data: {
-  userId: number;
-  stripeSessionId: string;
-  stripePaymentIntentId: string;
-  type: string;
-  amount: number;
-  currency: string;
-  status: string;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  // Por ahora registramos en wallet_transactions
-  const wallet = await db.select().from(wallets).where(eq(wallets.userId, data.userId)).limit(1);
-  if (wallet[0]) {
-    await db.insert(walletTransactions).values({
-      walletId: wallet[0].id,
-      userId: data.userId,
-      type: "STRIPE_PAYMENT",
-      amount: data.amount.toString(),
-      balanceBefore: wallet[0].balance,
-      balanceAfter: wallet[0].balance,
-      referenceType: data.type,
-      description: `Pago Stripe: ${data.stripeSessionId}`,
-      stripePaymentIntentId: data.stripePaymentIntentId,
-    });
-  }
-}
+// createPaymentRecord eliminado - era exclusivo de Stripe, ahora se usa Wompi
 
 export async function updateUserSubscription(userId: number, data: {
   planId?: string;
@@ -2379,18 +2388,7 @@ export async function incrementSubscriptionFailedPayments(subscriptionId: number
   }).where(eq(subscriptions.id, subscriptionId));
 }
 
-export async function updateTransactionPaymentStatus(transactionId: string, data: {
-  stripeSessionId: string;
-  stripePaymentIntentId: string;
-  paymentStatus: string;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  // Actualizar el estado de pago de la transacción de carga
-  // Por ahora solo registramos en logs ya que la tabla transactions no tiene campos de Stripe
-  console.log(`[DB] Transaction ${transactionId} payment updated:`, data);
-}
+// updateTransactionPaymentStatus eliminado - era exclusivo de Stripe, ahora se usa Wompi
 
 export async function getUserWallet(userId: number) {
   const db = await getDb();
@@ -3948,7 +3946,7 @@ export interface CrowdfundingParticipation {
   participationPercent: string;
   paymentStatus: string;
   paymentDate: Date | null;
-  stripePaymentIntentId: string | null;
+  paymentReference: string | null;
   contractSigned: boolean;
   contractSignedAt: Date | null;
   contractUrl: string | null;
@@ -4234,7 +4232,6 @@ export async function createCrowdfundingParticipation(data: {
   paymentStatus?: string;
   paymentDate?: Date;
   paymentReference?: string;
-  stripePaymentIntentId?: string;
 }): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -4249,7 +4246,7 @@ export async function createCrowdfundingParticipation(data: {
       ${data.participationPercent},
       ${data.paymentStatus || 'PENDING'},
       ${data.paymentDate || null},
-      ${data.stripePaymentIntentId || data.paymentReference || null}
+      ${data.paymentReference || null}
     )
   `);
   
@@ -4289,7 +4286,7 @@ export async function updateCrowdfundingParticipation(
   data: Partial<{
     paymentStatus: string;
     paymentDate: Date;
-    stripePaymentIntentId: string;
+    paymentReference: string;
     contractSigned: boolean;
     contractSignedAt: Date;
     contractUrl: string;

@@ -1253,40 +1253,80 @@ const transactionsRouter = router({
       return db.getTransactionsByUserId(ctx.user.id, input?.limit || 50);
     }),
   
-  // Admin: todas las transacciones
+  // Admin: todas las transacciones (paginado)
   listAll: adminProcedure
     .input(z.object({
       stationId: z.number().optional(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
-      limit: z.number().min(1).max(500).default(100),
+      status: z.string().optional(),
+      limit: z.number().min(1).max(100).default(20),
+      page: z.number().min(1).default(1),
     }).optional())
     .query(async ({ input }) => {
+      const limit = input?.limit || 20;
+      const page = input?.page || 1;
+      const offset = (page - 1) * limit;
+      
       if (input?.stationId) {
-        return db.getTransactionsByStationId(input.stationId, {
+        const stationTxs = await db.getTransactionsByStationId(input.stationId, {
           startDate: input.startDate,
           endDate: input.endDate,
         });
+        // Wrap in paginated format for consistent return type
+        const sliced = stationTxs.slice(offset, offset + limit);
+        return {
+          data: sliced,
+          total: stationTxs.length,
+          page,
+          pageSize: limit,
+          totalPages: Math.ceil(stationTxs.length / limit),
+        };
       }
-      // Obtener todas las transacciones con información de usuario y estación
-      return db.getAllTransactions({
+      const result = await db.getAllTransactions({
         startDate: input?.startDate,
         endDate: input?.endDate,
-        limit: input?.limit || 100,
+        status: input?.status,
+        limit,
+        offset,
       });
+      return {
+        data: result.data,
+        total: result.total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(result.total / limit),
+      };
     }),
   
-  // Inversionista: transacciones de sus estaciones
+  // Inversionista: transacciones de sus estaciones (paginado)
   investorTransactions: investorProcedure
     .input(z.object({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      status: z.string().optional(),
+      limit: z.number().min(1).max(100).default(20),
+      page: z.number().min(1).default(1),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return db.getTransactionsByInvestor(ctx.user.id, {
+      const limit = input?.limit || 20;
+      const page = input?.page || 1;
+      const offset = (page - 1) * limit;
+      
+      const result = await db.getTransactionsByInvestor(ctx.user.id, {
         startDate: input?.startDate,
         endDate: input?.endDate,
+        status: input?.status,
+        limit,
+        offset,
       });
+      return {
+        data: result.data,
+        total: result.total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(result.total / limit),
+      };
     }),
 
   // Exportar transacciones del inversionista en Excel o PDF
@@ -1297,7 +1337,7 @@ const transactionsRouter = router({
       endDate: z.date().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const transactions = await db.getTransactionsByInvestor(ctx.user.id, {
+      const transactions = await db.getAllTransactionsByInvestor(ctx.user.id, {
         startDate: input.startDate,
         endDate: input.endDate,
       });

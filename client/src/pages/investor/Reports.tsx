@@ -65,8 +65,9 @@ export default function InvestorReports() {
   // Obtener estaciones del inversionista
   const { data: stations } = trpc.stations.listOwned.useQuery();
   
-  // Obtener transacciones del inversionista
-  const { data: transactions, isLoading } = trpc.transactions.investorTransactions.useQuery();
+  // Obtener transacciones del inversionista (sin paginación para reportes, traer muchas)
+  const { data: txResult, isLoading } = trpc.transactions.investorTransactions.useQuery({ limit: 100, page: 1 });
+  const transactions = txResult?.data || [];
   
   // Obtener configuración de porcentajes
   const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();

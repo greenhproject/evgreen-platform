@@ -34,9 +34,11 @@ export default function AdminReports() {
   });
 
   // Obtener todas las transacciones para calcular datos históricos
-  const { data: allTransactions, isLoading: transactionsLoading } = trpc.transactions.listAll.useQuery({
-    limit: 500,
+  const { data: txResult, isLoading: transactionsLoading } = trpc.transactions.listAll.useQuery({
+    limit: 100,
+    page: 1,
   });
+  const allTransactions = txResult?.data || [];
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-CO", {

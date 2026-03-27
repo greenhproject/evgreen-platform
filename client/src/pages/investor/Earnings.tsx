@@ -41,7 +41,8 @@ export default function InvestorEarnings() {
   const [isExporting, setIsExporting] = useState(false);
   
   // Obtener transacciones reales del inversionista
-  const { data: transactions, isLoading } = trpc.transactions.investorTransactions.useQuery();
+  const { data: txResult, isLoading } = trpc.transactions.investorTransactions.useQuery({ limit: 100, page: 1 });
+  const transactions = txResult?.data || [];
   
   // Obtener el porcentaje del inversionista desde la configuración
   const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();

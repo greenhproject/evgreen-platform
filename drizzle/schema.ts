@@ -380,8 +380,6 @@ export const wallets = mysqlTable("wallets", {
   userId: int("userId").notNull().unique(), // FK a users
   balance: decimal("balance", { precision: 12, scale: 2 }).default("0").notNull(),
   currency: varchar("currency", { length: 3 }).default("COP").notNull(),
-  // Legacy - ya no se usa (era Stripe customer ID)
-  stripeCustomerId: varchar("stripeCustomerId", { length: 100 }),
   // Límites
   creditLimit: decimal("creditLimit", { precision: 12, scale: 2 }).default("0"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -408,8 +406,6 @@ export const walletTransactions = mysqlTable("wallet_transactions", {
   // Referencia
   referenceId: int("referenceId"), // ID de la transacción de carga, reserva, etc.
   referenceType: varchar("referenceType", { length: 50 }), // TRANSACTION, RESERVATION, SUBSCRIPTION
-  // Legacy - ya no se usa (era Stripe payment intent ID)
-  stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 100 }),
   // Estado
   status: paymentStatusEnum.default("PENDING").notNull(),
   description: text("description"),
@@ -1315,7 +1311,7 @@ export const crowdfundingParticipations = mysqlTable("crowdfunding_participation
   // Estado del pago
   paymentStatus: paymentStatusEnum.default("PENDING").notNull(),
   paymentDate: timestamp("paymentDate"),
-  stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }), // Legacy - ahora se usa como paymentReference general
+  paymentReference: varchar("stripePaymentIntentId", { length: 255 }), // Referencia de pago (Wompi, transferencia, etc.)
   
   // Contrato y documentos
   contractSigned: boolean("contractSigned").default(false).notNull(),
