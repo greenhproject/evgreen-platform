@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,12 +52,21 @@ export default function InvestorTransactions() {
     }).format(num);
   };
 
+  const formatDate = (dateString: string | Date | null) => {
+    if (!dateString) return "-";
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat("es-CO", {
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(date);
+  };
+
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
-      COMPLETED: "bg-green-100 text-green-700",
-      IN_PROGRESS: "bg-blue-100 text-blue-700",
-      PENDING: "bg-yellow-100 text-yellow-700",
-      FAILED: "bg-red-100 text-red-700",
+      COMPLETED: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+      IN_PROGRESS: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+      PENDING: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+      FAILED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
     };
     const labels: Record<string, string> = {
       COMPLETED: "Completada",
@@ -109,31 +118,34 @@ export default function InvestorTransactions() {
     }
   };
 
-  const filteredTransactions = transactions?.filter((tx: any) => {
-    const matchesSearch = searchQuery === "" || 
-      tx.id.toString().includes(searchQuery) ||
-      tx.stationId.toString().includes(searchQuery);
-    const matchesStatus = statusFilter === "all" || tx.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredTransactions = useMemo(() => {
+    return transactions?.filter((tx: any) => {
+      const matchesSearch = searchQuery === "" || 
+        tx.id.toString().includes(searchQuery) ||
+        tx.stationId.toString().includes(searchQuery);
+      const matchesStatus = statusFilter === "all" || tx.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    }) || [];
+  }, [transactions, searchQuery, statusFilter]);
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Transacciones</h1>
-          <p className="text-muted-foreground">
+    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 max-w-full overflow-x-hidden">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold truncate">Transacciones</h1>
+          <p className="text-sm text-muted-foreground">
             Historial de cargas en tus estaciones
           </p>
         </div>
         <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
           <DialogTrigger asChild>
-            <Button variant="outline">
-              <Download className="w-4 h-4 mr-2" />
+            <Button variant="outline" size="sm" className="text-xs sm:text-sm flex-shrink-0">
+              <Download className="w-4 h-4 mr-1 sm:mr-2" />
               Exportar
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md mx-4">
             <DialogHeader>
               <DialogTitle>Exportar Transacciones</DialogTitle>
               <DialogDescription>
@@ -143,7 +155,7 @@ export default function InvestorTransactions() {
             <div className="grid gap-4 py-4">
               <Button
                 variant="outline"
-                className="h-20 flex flex-col items-center justify-center gap-2 hover:bg-green-50 hover:border-green-500"
+                className="h-20 flex flex-col items-center justify-center gap-2 hover:bg-green-50 hover:border-green-500 dark:hover:bg-green-950 dark:hover:border-green-700"
                 onClick={() => handleExport("excel")}
                 disabled={isExporting}
               >
@@ -157,7 +169,7 @@ export default function InvestorTransactions() {
               </Button>
               <Button
                 variant="outline"
-                className="h-20 flex flex-col items-center justify-center gap-2 hover:bg-red-50 hover:border-red-500"
+                className="h-20 flex flex-col items-center justify-center gap-2 hover:bg-red-50 hover:border-red-500 dark:hover:bg-red-950 dark:hover:border-red-700"
                 onClick={() => handleExport("pdf")}
                 disabled={isExporting}
               >
@@ -178,67 +190,67 @@ export default function InvestorTransactions() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-green-600" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+              <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
             </div>
-            <div>
-              <div className="text-2xl font-bold">{formatCurrency(myShare)}</div>
-              <div className="text-sm text-muted-foreground">Mis ingresos ({investorPercentage}%)</div>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold">{formatCurrency(totalRevenue)}</div>
-              <div className="text-sm text-muted-foreground">Ingresos brutos</div>
+            <div className="min-w-0">
+              <div className="text-base sm:text-2xl font-bold truncate">{formatCurrency(myShare)}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Mis ingresos ({investorPercentage}%)</div>
             </div>
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Zap className="w-5 h-5 text-primary" />
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+              <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
             </div>
-            <div>
-              <div className="text-2xl font-bold">{totalEnergy.toFixed(1)} kWh</div>
-              <div className="text-sm text-muted-foreground">Energía vendida</div>
+            <div className="min-w-0">
+              <div className="text-base sm:text-2xl font-bold truncate">{formatCurrency(totalRevenue)}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Ingresos brutos</div>
             </div>
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-              <Calendar className="w-5 h-5 text-purple-600" />
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
             </div>
-            <div>
-              <div className="text-2xl font-bold">{transactions?.length || 0}</div>
-              <div className="text-sm text-muted-foreground">Total cargas</div>
+            <div className="min-w-0">
+              <div className="text-base sm:text-2xl font-bold truncate">{totalEnergy.toFixed(1)} kWh</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Energía vendida</div>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
+              <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-lg sm:text-2xl font-bold">{transactions?.length || 0}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Total cargas</div>
             </div>
           </div>
         </Card>
       </div>
 
       {/* Filtros */}
-      <Card className="p-4">
-        <div className="flex items-center gap-4">
+      <Card className="p-3 sm:p-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Buscar por estación o ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="pl-10 text-sm"
             />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-full sm:w-48 text-sm">
               <SelectValue placeholder="Estado" />
             </SelectTrigger>
             <SelectContent>
@@ -251,44 +263,45 @@ export default function InvestorTransactions() {
         </div>
       </Card>
 
-      {/* Tabla */}
-      <Card>
+      {/* Desktop table */}
+      <Card className="hidden md:block overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Estación</TableHead>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Energía</TableHead>
-              <TableHead>Monto bruto</TableHead>
-              <TableHead>Mi parte ({investorPercentage}%)</TableHead>
-              <TableHead>Estado</TableHead>
+              <TableHead className="whitespace-nowrap">ID</TableHead>
+              <TableHead className="whitespace-nowrap">Estación</TableHead>
+              <TableHead className="whitespace-nowrap">Fecha</TableHead>
+              <TableHead className="whitespace-nowrap">Energía</TableHead>
+              <TableHead className="whitespace-nowrap">Monto bruto</TableHead>
+              <TableHead className="whitespace-nowrap">Mi parte ({investorPercentage}%)</TableHead>
+              <TableHead className="whitespace-nowrap">Estado</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-8">
-                  Cargando transacciones...
+                  <div className="flex items-center justify-center gap-2">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Cargando transacciones...</span>
+                  </div>
                 </TableCell>
               </TableRow>
-            ) : filteredTransactions?.length === 0 ? (
+            ) : filteredTransactions.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   No hay transacciones registradas
                 </TableCell>
               </TableRow>
             ) : (
-              filteredTransactions?.map((tx: any) => (
+              filteredTransactions.map((tx: any) => (
                 <TableRow key={tx.id}>
                   <TableCell className="font-mono text-sm">#{tx.id}</TableCell>
-                  <TableCell>ID: {tx.stationId}</TableCell>
-                  <TableCell>
-                    {new Date(tx.startTime).toLocaleDateString("es-CO")}
-                  </TableCell>
-                  <TableCell>{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</TableCell>
-                  <TableCell>{formatCurrency(tx.totalCost || 0)}</TableCell>
-                  <TableCell className="text-green-600 font-medium">
+                  <TableCell className="max-w-[150px] truncate">ID: {tx.stationId}</TableCell>
+                  <TableCell className="text-sm whitespace-nowrap">{formatDate(tx.startTime)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</TableCell>
+                  <TableCell className="whitespace-nowrap">{formatCurrency(tx.totalCost || 0)}</TableCell>
+                  <TableCell className="text-green-500 font-medium whitespace-nowrap">
                     {formatCurrency(parseFloat(tx.totalCost || "0") * (investorPercentage / 100))}
                   </TableCell>
                   <TableCell>{getStatusBadge(tx.status)}</TableCell>
@@ -298,6 +311,63 @@ export default function InvestorTransactions() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-3">
+        {isLoading ? (
+          <Card className="p-4 text-center">
+            <div className="flex items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Cargando transacciones...</span>
+            </div>
+          </Card>
+        ) : filteredTransactions.length === 0 ? (
+          <Card className="p-4 text-center text-muted-foreground">
+            No hay transacciones registradas
+          </Card>
+        ) : (
+          filteredTransactions.map((tx: any) => (
+            <Card key={tx.id} className="p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-mono text-sm font-semibold">#{tx.id}</span>
+                {getStatusBadge(tx.status)}
+              </div>
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Estación</span>
+                  <span className="font-medium">ID: {tx.stationId}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Energía</span>
+                  <span className="font-medium">{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Monto bruto</span>
+                  <span className="font-medium">{formatCurrency(tx.totalCost || 0)}</span>
+                </div>
+                <div className="flex justify-between border-t border-border pt-1.5 mt-1.5">
+                  <span className="text-muted-foreground">Mi parte ({investorPercentage}%)</span>
+                  <span className="font-bold text-green-500">
+                    {formatCurrency(parseFloat(tx.totalCost || "0") * (investorPercentage / 100))}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Fecha</span>
+                  <span className="text-xs text-muted-foreground">{formatDate(tx.startTime)}</span>
+                </div>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* Resumen al pie */}
+      {!isLoading && filteredTransactions.length > 0 && (
+        <div className="text-xs sm:text-sm text-muted-foreground text-center">
+          Mostrando {filteredTransactions.length} transacción{filteredTransactions.length !== 1 ? "es" : ""}
+          {statusFilter !== "all" && ` (filtro: ${statusFilter})`}
+        </div>
+      )}
     </div>
   );
 }
