@@ -9,7 +9,6 @@ import { getDb } from "./db";
 import { users, userVehicles, favoriteStations, notifications } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import { aiRouter } from "./ai/ai-router";
-import { stripeRouter } from "./stripe/router";
 import { wompiRouter } from "./wompi/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
 import { dualCSMS } from "./ocpp/csms-dual";
@@ -4684,7 +4683,6 @@ export const appRouter = router({
   platformStats: platformStatsRouter,
   banners: bannersRouter,
   ai: aiRouter,
-  stripe: stripeRouter,
   wompi: wompiRouter,
   settings: settingsRouter,
   ocpp: ocppRouter,

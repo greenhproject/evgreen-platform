@@ -36,7 +36,7 @@ interface PaymentMethodSelectorProps {
   onSuccess?: () => void;
 }
 
-type PaymentProvider = "stripe" | "wompi";
+type PaymentProvider = "wompi";
 type WompiMethod = "CARD" | "PSE" | "NEQUI" | "BANCOLOMBIA_QR" | "EFECTY";
 
 const wompiMethods = [

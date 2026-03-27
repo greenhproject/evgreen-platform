@@ -25,15 +25,15 @@
 - [x] Estadísticas y gráficos
 - [x] Configuración de precios
 - [ ] Configuración de horarios
-- [ ] Reportes exportables
+- [x] Reportes exportables (Excel/PDF)
 
-## Sistema de Pagos (Stripe)
-- [ ] Integración Stripe
-- [ ] Billetera digital recargable
-- [ ] Tarjetas de crédito
-- [ ] Modelo de suscripción con beneficios
-- [ ] Liquidación automática 80/20
-- [ ] Historial de pagos
+## Sistema de Pagos (Wompi - migrado desde Stripe)
+- [x] Integración Wompi (reemplazó Stripe)
+- [x] Billetera digital recargable
+- [x] Tarjetas de crédito (via Wompi)
+- [x] Modelo de suscripción con beneficios
+- [x] Liquidación automática 80/20
+- [x] Historial de pagos
 
 ## Métodos de Ingreso Configurables
 - [ ] Venta de energía ($/kWh)
@@ -2418,3 +2418,24 @@
 - [x] BUG: Saldo de billetera NO se descuenta al completar carga (corregido: cleanup ahora COMPLETA y cobra txs con kWh > 0, tx #630001 corregida manualmente)
 - [x] BUG: Notificaciones falsas de "Saldo agotado" (corregido: MeterValues ahora usa wallet table real + deduplicación por notificationKey)
 - [x] BUG: Estado "Cancelada" en transacción con consumo real (corregido: cleanup distingue kWh>0 → COMPLETE vs kWh=0 → CANCEL)
+
+## Bug Última Conexión (reportado 27 marzo 2026)
+- [x] BUG: Estación conectada muestra "Nunca" en columna "Última conexión" — corregido: usaba lastHeartbeat (inexistente) en vez de lastBootNotification
+
+## Bugs Transacciones Admin (reportado 27 marzo 2026)
+- [x] BUG: Botón "Exportar" en sección Transacciones — implementado export CSV con BOM UTF-8, nombre con fecha, escape de comas
+- [x] BUG: Responsive roto en Transacciones — reescrito con mobile cards, stats responsivos, filtros apilados en mobile
+
+## Limpieza Stripe y Responsive Transacciones - 27 Marzo 2026
+
+- [x] Eliminar directorio server/stripe/ (config.ts, router.ts, webhook.ts)
+- [x] Remover dependencias npm: stripe, @stripe/stripe-js
+- [x] Eliminar import stripeRouter de routers.ts
+- [x] Eliminar import handleStripeWebhook de _core/index.ts
+- [x] Eliminar ruta /api/stripe/webhook
+- [x] Limpiar tipo PaymentProvider en PaymentMethodSelector.tsx (solo "wompi")
+- [x] Marcar campos stripeCustomerId y stripePaymentIntentId como legacy en schema.ts
+- [x] Responsive admin Transactions: mobile cards + desktop table, stat cards grid 2col mobile
+- [x] Responsive investor Transactions: mobile cards + desktop table, stat cards grid 2col mobile
+- [x] Export CSV funcional en admin Transactions (ya existía, verificado)
+- [x] Export Excel/PDF funcional en investor Transactions (ya existía, verificado)

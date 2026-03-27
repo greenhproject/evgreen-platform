@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,21 +20,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Download, Filter, Zap, DollarSign, Clock, Battery, Loader2, Trash2 } from "lucide-react";
+import { Search, Download, Filter, Zap, DollarSign, Clock, Battery, Loader2, Trash2, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AdminTransactions() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [showFilters, setShowFilters] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const utils = trpc.useUtils();
 
-  // Obtener métricas del dashboard para las estadísticas
   const { data: metrics, isLoading: metricsLoading } = trpc.dashboard.adminMetrics.useQuery(undefined, {
     refetchInterval: 30000,
   });
 
-  // Obtener todas las transacciones
   const { data: allTransactions, isLoading: transactionsLoading } = trpc.transactions.listAll.useQuery({
     limit: 100,
   });
@@ -84,21 +84,20 @@ export default function AdminTransactions() {
     return <Badge className={styles[status] || "bg-gray-100"}>{labels[status] || status}</Badge>;
   };
 
-  // Filtrar transacciones
-  const filteredTransactions = allTransactions?.filter((tx: any) => {
-    const matchesStatus = statusFilter === "all" || tx.status === statusFilter;
-    const matchesSearch = searchQuery === "" || 
-      tx.id.toString().includes(searchQuery) ||
-      tx.userName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.stationName?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesStatus && matchesSearch;
-  }) || [];
+  const filteredTransactions = useMemo(() => {
+    return allTransactions?.filter((tx: any) => {
+      const matchesStatus = statusFilter === "all" || tx.status === statusFilter;
+      const matchesSearch = searchQuery === "" || 
+        tx.id.toString().includes(searchQuery) ||
+        tx.userName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tx.stationName?.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesStatus && matchesSearch;
+    }) || [];
+  }, [allTransactions, statusFilter, searchQuery]);
 
-  // Mutation para limpiar transacciones huérfanas
   const cleanupMutation = trpc.transactions.cleanupOrphaned.useMutation({
     onSuccess: (data) => {
       toast.success(data.message);
-      // Refrescar datos
       utils.transactions.listAll.invalidate();
       utils.dashboard.adminMetrics.invalidate();
     },
@@ -107,147 +106,244 @@ export default function AdminTransactions() {
     },
   });
 
+  // ========== EXPORT TO CSV ==========
+  const handleExport = () => {
+    if (!filteredTransactions.length) {
+      toast.error("No hay transacciones para exportar");
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const headers = [
+        "ID",
+        "Usuario",
+        "Estación",
+        "Energía (kWh)",
+        "Duración",
+        "Total (COP)",
+        "Estado",
+        "Fecha inicio",
+        "Fecha fin",
+        "Tarifa ($/kWh)",
+        "Método de inicio",
+      ];
+
+      const statusLabels: Record<string, string> = {
+        COMPLETED: "Completada",
+        IN_PROGRESS: "En progreso",
+        FAILED: "Fallida",
+        CANCELLED: "Cancelada",
+      };
+
+      const rows = filteredTransactions.map((tx: any) => [
+        tx.id,
+        tx.userName || "N/A",
+        tx.stationName || "N/A",
+        parseFloat(tx.kwhConsumed || 0).toFixed(2),
+        formatDuration(tx.startTime, tx.endTime),
+        typeof tx.totalCost === "string" ? parseFloat(tx.totalCost).toFixed(2) : (tx.totalCost || 0).toFixed(2),
+        statusLabels[tx.status] || tx.status,
+        tx.startTime ? new Date(tx.startTime).toLocaleString("es-CO") : "-",
+        tx.endTime ? new Date(tx.endTime).toLocaleString("es-CO") : "-",
+        tx.appliedPricePerKwh ? parseFloat(tx.appliedPricePerKwh).toFixed(2) : "-",
+        tx.startMethod || "-",
+      ]);
+
+      // BOM for Excel UTF-8 compatibility
+      const BOM = "\uFEFF";
+      const csvContent = BOM + [
+        headers.join(","),
+        ...rows.map((row: any[]) =>
+          row.map((cell: any) => {
+            const str = String(cell);
+            // Escape commas and quotes
+            if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+              return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+          }).join(",")
+        ),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      link.href = url;
+      link.download = `EVGreen_Transacciones_${dateStr}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success(`${filteredTransactions.length} transacciones exportadas correctamente`);
+    } catch (error) {
+      toast.error("Error al exportar transacciones");
+      console.error("Export error:", error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const isLoading = metricsLoading || transactionsLoading;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Transacciones</h1>
-          <p className="text-muted-foreground">
+    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 max-w-full overflow-x-hidden">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold truncate">Transacciones</h1>
+          <p className="text-sm text-muted-foreground">
             Gestiona todas las transacciones de carga de la plataforma
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <Button
             variant="outline"
             size="sm"
             onClick={() => cleanupMutation.mutate()}
             disabled={cleanupMutation.isPending}
-            className="text-orange-600 border-orange-200 hover:bg-orange-50 dark:border-orange-800 dark:hover:bg-orange-950"
+            className="text-orange-600 border-orange-200 hover:bg-orange-50 dark:border-orange-800 dark:hover:bg-orange-950 text-xs sm:text-sm"
           >
             {cleanupMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-4 h-4 mr-1 sm:mr-2 animate-spin" />
             ) : (
-              <Trash2 className="w-4 h-4 mr-2" />
+              <Trash2 className="w-4 h-4 mr-1 sm:mr-2" />
             )}
-            Limpiar huérfanas
+            <span className="hidden sm:inline">Limpiar huérfanas</span>
+            <span className="sm:hidden">Limpiar</span>
           </Button>
-          <Button variant="outline">
-            <Download className="w-4 h-4 mr-2" />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={exporting || !filteredTransactions.length}
+            className="text-xs sm:text-sm"
+          >
+            {exporting ? (
+              <Loader2 className="w-4 h-4 mr-1 sm:mr-2 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4 mr-1 sm:mr-2" />
+            )}
             Exportar
           </Button>
         </div>
       </div>
 
       {/* Estadísticas rápidas */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Zap className="w-5 h-5 text-primary" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
             </div>
-            <div>
+            <div className="min-w-0">
               {metricsLoading ? (
-                <Skeleton className="h-8 w-16" />
+                <Skeleton className="h-6 sm:h-8 w-12 sm:w-16" />
               ) : (
-                <div className="text-2xl font-bold">{metrics?.today?.transactions || 0}</div>
+                <div className="text-lg sm:text-2xl font-bold">{metrics?.today?.transactions || 0}</div>
               )}
-              <div className="text-sm text-muted-foreground">Hoy</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Hoy</div>
             </div>
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-green-600" />
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+              <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
             </div>
-            <div>
+            <div className="min-w-0">
               {metricsLoading ? (
-                <Skeleton className="h-8 w-24" />
+                <Skeleton className="h-6 sm:h-8 w-16 sm:w-24" />
               ) : (
-                <div className="text-2xl font-bold">{formatCurrency(metrics?.today?.revenue || 0)}</div>
+                <div className="text-base sm:text-2xl font-bold truncate">{formatCurrency(metrics?.today?.revenue || 0)}</div>
               )}
-              <div className="text-sm text-muted-foreground">Ingresos hoy</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Ingresos hoy</div>
             </div>
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-              <Battery className="w-5 h-5 text-blue-600" />
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+              <Battery className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
             </div>
-            <div>
+            <div className="min-w-0">
               {metricsLoading ? (
-                <Skeleton className="h-8 w-20" />
+                <Skeleton className="h-6 sm:h-8 w-14 sm:w-20" />
               ) : (
-                <div className="text-2xl font-bold">{(metrics?.today?.kwhSold || 0).toFixed(1)} kWh</div>
+                <div className="text-base sm:text-2xl font-bold truncate">{(metrics?.today?.kwhSold || 0).toFixed(1)} kWh</div>
               )}
-              <div className="text-sm text-muted-foreground">Energía hoy</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Energía hoy</div>
             </div>
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-orange-600" />
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center flex-shrink-0">
+              <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
             </div>
-            <div>
+            <div className="min-w-0">
               {metricsLoading ? (
-                <Skeleton className="h-8 w-12" />
+                <Skeleton className="h-6 sm:h-8 w-8 sm:w-12" />
               ) : (
-                <div className="text-2xl font-bold">{metrics?.activeTransactions || 0}</div>
+                <div className="text-lg sm:text-2xl font-bold">{metrics?.activeTransactions || 0}</div>
               )}
-              <div className="text-sm text-muted-foreground">En progreso</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">En progreso</div>
             </div>
           </div>
         </Card>
       </div>
 
       {/* Filtros */}
-      <Card className="p-4">
-        <div className="flex items-center gap-4">
+      <Card className="p-3 sm:p-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar por ID, usuario o estación..."
+              placeholder="Buscar por nombre, dirección o código..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="pl-10 text-sm"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los estados</SelectItem>
-              <SelectItem value="COMPLETED">Completadas</SelectItem>
-              <SelectItem value="IN_PROGRESS">En progreso</SelectItem>
-              <SelectItem value="FAILED">Fallidas</SelectItem>
-              <SelectItem value="CANCELLED">Canceladas</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline">
-            <Filter className="w-4 h-4 mr-2" />
-            Más filtros
-          </Button>
+          <div className="flex items-center gap-2">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-48 text-sm">
+                <SelectValue placeholder="Estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los estados</SelectItem>
+                <SelectItem value="COMPLETED">Completadas</SelectItem>
+                <SelectItem value="IN_PROGRESS">En progreso</SelectItem>
+                <SelectItem value="FAILED">Fallidas</SelectItem>
+                <SelectItem value="CANCELLED">Canceladas</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="flex-shrink-0">
+              <Filter className="w-4 h-4 mr-1 sm:mr-2" />
+              <span className="hidden sm:inline">Más filtros</span>
+              <span className="sm:hidden">Filtros</span>
+            </Button>
+          </div>
         </div>
       </Card>
 
-      {/* Tabla de transacciones */}
-      <Card>
+      {/* Tabla de transacciones — mobile cards + desktop table */}
+      {/* Desktop table */}
+      <Card className="hidden md:block overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Usuario</TableHead>
-              <TableHead>Estación</TableHead>
-              <TableHead>Energía</TableHead>
-              <TableHead>Duración</TableHead>
-              <TableHead>Total</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>Fecha</TableHead>
+              <TableHead className="whitespace-nowrap">ID</TableHead>
+              <TableHead className="whitespace-nowrap">Usuario</TableHead>
+              <TableHead className="whitespace-nowrap">Estación</TableHead>
+              <TableHead className="whitespace-nowrap">Energía</TableHead>
+              <TableHead className="whitespace-nowrap">Duración</TableHead>
+              <TableHead className="whitespace-nowrap">Total</TableHead>
+              <TableHead className="whitespace-nowrap">Estado</TableHead>
+              <TableHead className="whitespace-nowrap">Fecha</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -269,20 +365,79 @@ export default function AdminTransactions() {
             ) : (
               filteredTransactions.map((tx: any) => (
                 <TableRow key={tx.id}>
-                  <TableCell className="font-mono">#{tx.id}</TableCell>
-                  <TableCell>{tx.userName || "Usuario"}</TableCell>
-                  <TableCell>{tx.stationName || "Estación"}</TableCell>
-                  <TableCell>{parseFloat(tx.kwhConsumed || 0).toFixed(2)} kWh</TableCell>
-                  <TableCell>{formatDuration(tx.startTime, tx.endTime)}</TableCell>
-                  <TableCell className="font-semibold">{formatCurrency(tx.totalCost)}</TableCell>
+                  <TableCell className="font-mono text-sm">#{tx.id}</TableCell>
+                  <TableCell className="max-w-[150px] truncate">{tx.userName || "Usuario"}</TableCell>
+                  <TableCell className="max-w-[150px] truncate">{tx.stationName || "Estación"}</TableCell>
+                  <TableCell className="whitespace-nowrap">{parseFloat(tx.kwhConsumed || 0).toFixed(2)} kWh</TableCell>
+                  <TableCell className="whitespace-nowrap">{formatDuration(tx.startTime, tx.endTime)}</TableCell>
+                  <TableCell className="font-semibold whitespace-nowrap">{formatCurrency(tx.totalCost)}</TableCell>
                   <TableCell>{getStatusBadge(tx.status)}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{formatDate(tx.startTime)}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm whitespace-nowrap">{formatDate(tx.startTime)}</TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
       </Card>
+
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-3">
+        {transactionsLoading ? (
+          <Card className="p-4 text-center">
+            <div className="flex items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Cargando transacciones...</span>
+            </div>
+          </Card>
+        ) : filteredTransactions.length === 0 ? (
+          <Card className="p-4 text-center text-muted-foreground">
+            No hay transacciones registradas
+          </Card>
+        ) : (
+          filteredTransactions.map((tx: any) => (
+            <Card key={tx.id} className="p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-mono text-sm font-semibold">#{tx.id}</span>
+                {getStatusBadge(tx.status)}
+              </div>
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Usuario</span>
+                  <span className="font-medium truncate max-w-[60%] text-right">{tx.userName || "N/A"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Estación</span>
+                  <span className="font-medium truncate max-w-[60%] text-right">{tx.stationName || "N/A"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Energía</span>
+                  <span className="font-medium">{parseFloat(tx.kwhConsumed || 0).toFixed(2)} kWh</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Duración</span>
+                  <span className="font-medium">{formatDuration(tx.startTime, tx.endTime)}</span>
+                </div>
+                <div className="flex justify-between border-t border-border pt-1.5 mt-1.5">
+                  <span className="text-muted-foreground">Total</span>
+                  <span className="font-bold text-green-500">{formatCurrency(tx.totalCost)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Fecha</span>
+                  <span className="text-xs text-muted-foreground">{formatDate(tx.startTime)}</span>
+                </div>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* Resumen al pie */}
+      {!transactionsLoading && filteredTransactions.length > 0 && (
+        <div className="text-xs sm:text-sm text-muted-foreground text-center">
+          Mostrando {filteredTransactions.length} transacción{filteredTransactions.length !== 1 ? "es" : ""}
+          {statusFilter !== "all" && ` (filtro: ${statusFilter})`}
+        </div>
+      )}
     </div>
   );
 }

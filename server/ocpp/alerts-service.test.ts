@@ -39,7 +39,6 @@ describe("OCPP Alerts Service", () => {
           ocppIdentity: "CP001",
           stationId: 1,
           alertType: "DISCONNECTION",
-          severity: "warning",
         })
       );
     });
