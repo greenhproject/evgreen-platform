@@ -27,7 +27,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Search, Download, Zap, DollarSign, Calendar, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
+import { Search, Download, Zap, DollarSign, Calendar, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { saveBlobCrossPlatform } from "@/lib/pdf-download";
 
@@ -36,12 +36,31 @@ export default function InvestorTransactions() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
+  // Filtros de fecha
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [showDateFilters, setShowDateFilters] = useState(false);
 
-  const { data: transactions, isLoading } = trpc.transactions.investorTransactions.useQuery();
+  // Construir input para la query paginada
+  const queryInput = useMemo(() => ({
+    limit: pageSize,
+    page,
+    status: statusFilter !== "all" ? statusFilter : undefined,
+    startDate: startDate ? new Date(startDate + "T00:00:00") : undefined,
+    endDate: endDate ? new Date(endDate + "T23:59:59") : undefined,
+  }), [page, pageSize, statusFilter, startDate, endDate]);
+
+  const { data: paginatedResult, isLoading } = trpc.transactions.investorTransactions.useQuery(queryInput);
   const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();
   const exportMutation = trpc.transactions.exportInvestorTransactions.useMutation();
   
   const investorPercentage = platformSettings?.investorPercentage ?? 80;
+
+  const transactions = paginatedResult?.data || [];
+  const totalPages = paginatedResult?.totalPages || 1;
+  const totalCount = paginatedResult?.total || 0;
 
   const formatCurrency = (amount: string | number) => {
     const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -77,20 +96,21 @@ export default function InvestorTransactions() {
     return <Badge className={styles[status] || "bg-gray-100"}>{labels[status] || status}</Badge>;
   };
 
-  const totalRevenue = transactions?.reduce((sum: number, t: any) => {
+  // Calcular KPIs sobre la página actual (los totales globales vendrán del server)
+  const pageRevenue = transactions.reduce((sum: number, t: any) => {
     if (t.status === "COMPLETED") {
       return sum + parseFloat(t.totalCost || "0");
     }
     return sum;
-  }, 0) || 0;
+  }, 0);
 
-  const myShare = totalRevenue * (investorPercentage / 100);
-  const totalEnergy = transactions?.reduce((sum: number, t: any) => {
+  const myShare = pageRevenue * (investorPercentage / 100);
+  const pageEnergy = transactions.reduce((sum: number, t: any) => {
     if (t.status === "COMPLETED") {
       return sum + parseFloat(t.kwhConsumed || "0");
     }
     return sum;
-  }, 0) || 0;
+  }, 0);
 
   const downloadFile = (base64: string, filename: string, mimeType: string) => {
     const byteCharacters = atob(base64);
@@ -106,7 +126,11 @@ export default function InvestorTransactions() {
   const handleExport = async (format: "excel" | "pdf") => {
     setIsExporting(true);
     try {
-      const result = await exportMutation.mutateAsync({ format });
+      const result = await exportMutation.mutateAsync({
+        format,
+        startDate: startDate ? new Date(startDate + "T00:00:00") : undefined,
+        endDate: endDate ? new Date(endDate + "T23:59:59") : undefined,
+      });
       downloadFile(result.data, result.filename, result.mimeType);
       toast.success(`Reporte ${format.toUpperCase()} descargado exitosamente`);
       setExportDialogOpen(false);
@@ -118,15 +142,26 @@ export default function InvestorTransactions() {
     }
   };
 
+  // Filtro de búsqueda local sobre resultados paginados
   const filteredTransactions = useMemo(() => {
-    return transactions?.filter((tx: any) => {
-      const matchesSearch = searchQuery === "" || 
-        tx.id.toString().includes(searchQuery) ||
+    if (!searchQuery) return transactions;
+    return transactions.filter((tx: any) => {
+      return tx.id.toString().includes(searchQuery) ||
         tx.stationId.toString().includes(searchQuery);
-      const matchesStatus = statusFilter === "all" || tx.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    }) || [];
-  }, [transactions, searchQuery, statusFilter]);
+    });
+  }, [transactions, searchQuery]);
+
+  // Resetear a página 1 cuando cambian los filtros
+  const handleStatusChange = (value: string) => {
+    setStatusFilter(value);
+    setPage(1);
+  };
+
+  const handleClearDates = () => {
+    setStartDate("");
+    setEndDate("");
+    setPage(1);
+  };
 
   return (
     <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 max-w-full overflow-x-hidden">
@@ -208,7 +243,7 @@ export default function InvestorTransactions() {
               <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
             </div>
             <div className="min-w-0">
-              <div className="text-base sm:text-2xl font-bold truncate">{formatCurrency(totalRevenue)}</div>
+              <div className="text-base sm:text-2xl font-bold truncate">{formatCurrency(pageRevenue)}</div>
               <div className="text-xs sm:text-sm text-muted-foreground">Ingresos brutos</div>
             </div>
           </div>
@@ -219,7 +254,7 @@ export default function InvestorTransactions() {
               <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
             </div>
             <div className="min-w-0">
-              <div className="text-base sm:text-2xl font-bold truncate">{totalEnergy.toFixed(1)} kWh</div>
+              <div className="text-base sm:text-2xl font-bold truncate">{pageEnergy.toFixed(1)} kWh</div>
               <div className="text-xs sm:text-sm text-muted-foreground">Energía vendida</div>
             </div>
           </div>
@@ -230,7 +265,7 @@ export default function InvestorTransactions() {
               <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />
             </div>
             <div className="min-w-0">
-              <div className="text-lg sm:text-2xl font-bold">{transactions?.length || 0}</div>
+              <div className="text-lg sm:text-2xl font-bold">{totalCount}</div>
               <div className="text-xs sm:text-sm text-muted-foreground">Total cargas</div>
             </div>
           </div>
@@ -239,27 +274,62 @@ export default function InvestorTransactions() {
 
       {/* Filtros */}
       <Card className="p-3 sm:p-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por estación o ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 text-sm"
-            />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por estación o ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={statusFilter} onValueChange={handleStatusChange}>
+                <SelectTrigger className="w-full sm:w-48 text-sm">
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="COMPLETED">Completadas</SelectItem>
+                  <SelectItem value="IN_PROGRESS">En progreso</SelectItem>
+                  <SelectItem value="FAILED">Fallidas</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={() => setShowDateFilters(!showDateFilters)} className="flex-shrink-0">
+                <Calendar className="w-4 h-4 mr-1 sm:mr-2" />
+                <span className="hidden sm:inline">Fechas</span>
+              </Button>
+            </div>
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-48 text-sm">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="COMPLETED">Completadas</SelectItem>
-              <SelectItem value="IN_PROGRESS">En progreso</SelectItem>
-              <SelectItem value="FAILED">Fallidas</SelectItem>
-            </SelectContent>
-          </Select>
+
+          {/* Filtro de rango de fechas */}
+          {showDateFilters && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 sm:gap-3 pt-2 border-t border-border">
+              <div className="flex-1">
+                <label className="text-xs text-muted-foreground mb-1 block">Desde</label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+                  className="text-sm"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-muted-foreground mb-1 block">Hasta</label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+                  className="text-sm"
+                />
+              </div>
+              <Button size="sm" variant="outline" onClick={handleClearDates} className="flex-shrink-0">
+                Limpiar
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -361,11 +431,39 @@ export default function InvestorTransactions() {
         )}
       </div>
 
-      {/* Resumen al pie */}
-      {!isLoading && filteredTransactions.length > 0 && (
-        <div className="text-xs sm:text-sm text-muted-foreground text-center">
-          Mostrando {filteredTransactions.length} transacción{filteredTransactions.length !== 1 ? "es" : ""}
-          {statusFilter !== "all" && ` (filtro: ${statusFilter})`}
+      {/* Paginación */}
+      {!isLoading && totalCount > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+          <div className="text-xs sm:text-sm text-muted-foreground">
+            Mostrando {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, totalCount)} de {totalCount} transacción{totalCount !== 1 ? "es" : ""}
+            {statusFilter !== "all" && ` (filtro: ${statusFilter})`}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page <= 1}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1">Anterior</span>
+            </Button>
+            <div className="flex items-center gap-1 text-sm">
+              <span className="text-muted-foreground">Pág.</span>
+              <span className="font-medium">{page}</span>
+              <span className="text-muted-foreground">de</span>
+              <span className="font-medium">{totalPages}</span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              <span className="hidden sm:inline mr-1">Siguiente</span>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       )}
     </div>

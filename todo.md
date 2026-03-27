@@ -2439,3 +2439,16 @@
 - [x] Responsive investor Transactions: mobile cards + desktop table, stat cards grid 2col mobile
 - [x] Export CSV funcional en admin Transactions (ya existía, verificado)
 - [x] Export Excel/PDF funcional en investor Transactions (ya existía, verificado)
+
+## Mejoras Transacciones - 27 Marzo 2026 (Parte 2)
+
+- [x] Eliminar columnas legacy de Stripe del schema (stripeCustomerId, stripePaymentIntentId)
+- [x] Migrar schema sin columnas Stripe a la BD
+- [x] Agregar filtro por rango de fechas en backend (admin + investor transactions)
+- [x] Implementar paginación server-side en backend (admin + investor transactions)
+- [x] Actualizar página admin Transactions con filtro de fechas y paginación
+- [x] Actualizar página investor Transactions con filtro de fechas y paginación
+- [x] Escribir tests para las nuevas funcionalidades
+- [x] Actualizar investor/Reports.tsx y investor/Earnings.tsx para formato paginado
+- [x] Actualizar admin/Reports.tsx para formato paginado
+- [x] Corregir listAll para retornar formato paginado consistente (branch stationId)

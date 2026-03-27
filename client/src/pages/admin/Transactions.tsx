@@ -20,14 +20,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Download, Filter, Zap, DollarSign, Clock, Battery, Loader2, Trash2, FileSpreadsheet } from "lucide-react";
+import { Search, Download, Filter, Zap, DollarSign, Clock, Battery, Loader2, Trash2, FileSpreadsheet, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AdminTransactions() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [showFilters, setShowFilters] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
+  // Filtros de fecha
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [showDateFilters, setShowDateFilters] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -35,9 +40,20 @@ export default function AdminTransactions() {
     refetchInterval: 30000,
   });
 
-  const { data: allTransactions, isLoading: transactionsLoading } = trpc.transactions.listAll.useQuery({
-    limit: 100,
-  });
+  // Construir input para la query paginada
+  const queryInput = useMemo(() => ({
+    limit: pageSize,
+    page,
+    status: statusFilter !== "all" ? statusFilter : undefined,
+    startDate: startDate ? new Date(startDate + "T00:00:00") : undefined,
+    endDate: endDate ? new Date(endDate + "T23:59:59") : undefined,
+  }), [page, pageSize, statusFilter, startDate, endDate]);
+
+  const { data: paginatedResult, isLoading: transactionsLoading } = trpc.transactions.listAll.useQuery(queryInput);
+
+  const transactions = paginatedResult?.data || [];
+  const totalPages = paginatedResult?.totalPages || 1;
+  const totalCount = paginatedResult?.total || 0;
 
   const formatCurrency = (amount: string | number | null) => {
     const num = typeof amount === "string" ? parseFloat(amount) : (amount || 0);
@@ -84,16 +100,15 @@ export default function AdminTransactions() {
     return <Badge className={styles[status] || "bg-gray-100"}>{labels[status] || status}</Badge>;
   };
 
+  // Filtro de búsqueda local (sobre los resultados ya paginados del server)
   const filteredTransactions = useMemo(() => {
-    return allTransactions?.filter((tx: any) => {
-      const matchesStatus = statusFilter === "all" || tx.status === statusFilter;
-      const matchesSearch = searchQuery === "" || 
-        tx.id.toString().includes(searchQuery) ||
+    if (!searchQuery) return transactions;
+    return transactions.filter((tx: any) => {
+      return tx.id.toString().includes(searchQuery) ||
         tx.userName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         tx.stationName?.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesStatus && matchesSearch;
-    }) || [];
-  }, [allTransactions, statusFilter, searchQuery]);
+    });
+  }, [transactions, searchQuery]);
 
   const cleanupMutation = trpc.transactions.cleanupOrphaned.useMutation({
     onSuccess: (data) => {
@@ -125,8 +140,6 @@ export default function AdminTransactions() {
         "Estado",
         "Fecha inicio",
         "Fecha fin",
-        "Tarifa ($/kWh)",
-        "Método de inicio",
       ];
 
       const statusLabels: Record<string, string> = {
@@ -146,8 +159,6 @@ export default function AdminTransactions() {
         statusLabels[tx.status] || tx.status,
         tx.startTime ? new Date(tx.startTime).toLocaleString("es-CO") : "-",
         tx.endTime ? new Date(tx.endTime).toLocaleString("es-CO") : "-",
-        tx.appliedPricePerKwh ? parseFloat(tx.appliedPricePerKwh).toFixed(2) : "-",
-        tx.startMethod || "-",
       ]);
 
       // BOM for Excel UTF-8 compatibility
@@ -157,7 +168,6 @@ export default function AdminTransactions() {
         ...rows.map((row: any[]) =>
           row.map((cell: any) => {
             const str = String(cell);
-            // Escape commas and quotes
             if (str.includes(",") || str.includes('"') || str.includes("\n")) {
               return `"${str.replace(/"/g, '""')}"`;
             }
@@ -185,6 +195,22 @@ export default function AdminTransactions() {
     } finally {
       setExporting(false);
     }
+  };
+
+  // Resetear a página 1 cuando cambian los filtros
+  const handleStatusChange = (value: string) => {
+    setStatusFilter(value);
+    setPage(1);
+  };
+
+  const handleDateApply = () => {
+    setPage(1);
+  };
+
+  const handleClearDates = () => {
+    setStartDate("");
+    setEndDate("");
+    setPage(1);
   };
 
   const isLoading = metricsLoading || transactionsLoading;
@@ -298,39 +324,71 @@ export default function AdminTransactions() {
 
       {/* Filtros */}
       <Card className="p-3 sm:p-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por nombre, dirección o código..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 text-sm"
-            />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nombre, estación o ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={statusFilter} onValueChange={handleStatusChange}>
+                <SelectTrigger className="w-full sm:w-48 text-sm">
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los estados</SelectItem>
+                  <SelectItem value="COMPLETED">Completadas</SelectItem>
+                  <SelectItem value="IN_PROGRESS">En progreso</SelectItem>
+                  <SelectItem value="FAILED">Fallidas</SelectItem>
+                  <SelectItem value="CANCELLED">Canceladas</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={() => setShowDateFilters(!showDateFilters)} className="flex-shrink-0">
+                <Calendar className="w-4 h-4 mr-1 sm:mr-2" />
+                <span className="hidden sm:inline">Fechas</span>
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-48 text-sm">
-                <SelectValue placeholder="Estado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los estados</SelectItem>
-                <SelectItem value="COMPLETED">Completadas</SelectItem>
-                <SelectItem value="IN_PROGRESS">En progreso</SelectItem>
-                <SelectItem value="FAILED">Fallidas</SelectItem>
-                <SelectItem value="CANCELLED">Canceladas</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="flex-shrink-0">
-              <Filter className="w-4 h-4 mr-1 sm:mr-2" />
-              <span className="hidden sm:inline">Más filtros</span>
-              <span className="sm:hidden">Filtros</span>
-            </Button>
-          </div>
+
+          {/* Filtro de rango de fechas */}
+          {showDateFilters && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 sm:gap-3 pt-2 border-t border-border">
+              <div className="flex-1">
+                <label className="text-xs text-muted-foreground mb-1 block">Desde</label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="text-sm"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-muted-foreground mb-1 block">Hasta</label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="text-sm"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleDateApply} className="flex-1 sm:flex-none">
+                  Aplicar
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleClearDates} className="flex-1 sm:flex-none">
+                  Limpiar
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </Card>
 
-      {/* Tabla de transacciones — mobile cards + desktop table */}
       {/* Desktop table */}
       <Card className="hidden md:block overflow-x-auto">
         <Table>
@@ -431,11 +489,39 @@ export default function AdminTransactions() {
         )}
       </div>
 
-      {/* Resumen al pie */}
-      {!transactionsLoading && filteredTransactions.length > 0 && (
-        <div className="text-xs sm:text-sm text-muted-foreground text-center">
-          Mostrando {filteredTransactions.length} transacción{filteredTransactions.length !== 1 ? "es" : ""}
-          {statusFilter !== "all" && ` (filtro: ${statusFilter})`}
+      {/* Paginación */}
+      {!transactionsLoading && totalCount > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+          <div className="text-xs sm:text-sm text-muted-foreground">
+            Mostrando {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, totalCount)} de {totalCount} transacción{totalCount !== 1 ? "es" : ""}
+            {statusFilter !== "all" && ` (filtro: ${statusFilter})`}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page <= 1}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1">Anterior</span>
+            </Button>
+            <div className="flex items-center gap-1 text-sm">
+              <span className="text-muted-foreground">Pág.</span>
+              <span className="font-medium">{page}</span>
+              <span className="text-muted-foreground">de</span>
+              <span className="font-medium">{totalPages}</span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              <span className="hidden sm:inline mr-1">Siguiente</span>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       )}
     </div>
