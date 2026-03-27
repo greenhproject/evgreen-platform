@@ -2452,3 +2452,7 @@
 - [x] Actualizar investor/Reports.tsx y investor/Earnings.tsx para formato paginado
 - [x] Actualizar admin/Reports.tsx para formato paginado
 - [x] Corregir listAll para retornar formato paginado consistente (branch stationId)
+
+## Bug Fix - Gráfica Variación de Precios por Hora (27 Marzo 2026)
+
+- [x] Corregir gráfica de barras en sección Tarifas que no muestra datos
