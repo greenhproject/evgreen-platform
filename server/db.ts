@@ -3968,6 +3968,7 @@ export async function getCrowdfundingProjects(options?: {
     let query = `
       SELECT 
         p.*,
+        p.crowdfunding_status AS status,
         (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
       FROM crowdfunding_projects p
     `;
@@ -3975,9 +3976,9 @@ export async function getCrowdfundingProjects(options?: {
     const conditions = [];
     
     if (options?.status) {
-      conditions.push(`status = '${options.status}'`);
+      conditions.push(`p.crowdfunding_status = '${options.status}'`);
     } else if (!options?.includePrivate) {
-      conditions.push(`status != 'DRAFT'`);
+      conditions.push(`p.crowdfunding_status != 'DRAFT'`);
     }
     
     if (conditions.length > 0) {
@@ -4003,6 +4004,7 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
     const result = await db.execute(sql.raw(`
       SELECT 
         p.*,
+        p.crowdfunding_status AS status,
         (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
       FROM crowdfunding_projects p
       WHERE p.id = ${projectId}
@@ -4045,7 +4047,7 @@ export async function createCrowdfundingProject(data: {
       name, description, city, zone, address,
       targetAmount, minimumInvestment, totalPowerKw, chargerCount, chargerPowerKw,
       hasSolarPanels, estimatedRoiPercent, estimatedPaybackMonths,
-      status, targetDate, priority, createdById
+      crowdfunding_status, targetDate, priority, createdById
     ) VALUES (
       ${data.name},
       ${data.description || null},
@@ -4100,12 +4102,16 @@ export async function updateCrowdfundingProject(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
+  // Map JS property names to actual DB column names where they differ
+  const crowdfundingColumnMap: Record<string, string> = { status: 'crowdfunding_status' };
+  
   const updates: string[] = [];
   const values: any[] = [];
   
   Object.entries(data).forEach(([key, value]) => {
     if (value !== undefined) {
-      updates.push(`${key} = ?`);
+      const col = crowdfundingColumnMap[key] || key;
+      updates.push(`${col} = ?`);
       values.push(value);
     }
   });
@@ -4116,14 +4122,15 @@ export async function updateCrowdfundingProject(
   const setClause = Object.entries(data)
     .filter(([_, v]) => v !== undefined)
     .map(([key, value]) => {
+      const col = crowdfundingColumnMap[key] || key;
       if (value instanceof Date) {
-        return `${key} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+        return `${col} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
       } else if (typeof value === 'string') {
-        return `${key} = '${value.replace(/'/g, "''")}'`;
+        return `${col} = '${value.replace(/'/g, "''")}'`;
       } else if (typeof value === 'boolean') {
-        return `${key} = ${value ? 1 : 0}`;
+        return `${col} = ${value ? 1 : 0}`;
       } else {
-        return `${key} = ${value}`;
+        return `${col} = ${value}`;
       }
     })
     .join(', ');
@@ -4180,7 +4187,7 @@ export async function getInvestorParticipations(investorId: number): Promise<any
         p.name as projectName,
         p.city as projectCity,
         p.zone as projectZone,
-        p.status as projectStatus,
+        p.crowdfunding_status as projectStatus,
         p.targetAmount as projectTargetAmount,
         p.raisedAmount as projectRaisedAmount,
         p.totalPowerKw as projectTotalPowerKw,
@@ -4271,12 +4278,16 @@ export async function updateProjectRaisedAmount(projectId: number): Promise<void
   
   // Verificar si se alcanzó la meta
   const project = await getCrowdfundingProjectById(projectId);
-  if (project && project.raisedAmount >= project.targetAmount && project.status === 'IN_PROGRESS') {
-    await db.execute(sql`
-      UPDATE crowdfunding_projects
-      SET status = 'FUNDED', fundedDate = NOW()
-      WHERE id = ${projectId}
-    `);
+  if (project && project.raisedAmount >= project.targetAmount) {
+    // Use crowdfunding_status from p.* result (may come as crowdfunding_status from DB)
+    const projectStatus = (project as any).crowdfunding_status || project.status;
+    if (projectStatus === 'IN_PROGRESS') {
+      await db.execute(sql`
+        UPDATE crowdfunding_projects
+        SET crowdfunding_status = 'FUNDED', fundedDate = NOW()
+        WHERE id = ${projectId}
+      `);
+    }
   }
 }
 

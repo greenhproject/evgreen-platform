@@ -2456,3 +2456,11 @@
 ## Bug Fix - Gráfica Variación de Precios por Hora (27 Marzo 2026)
 
 - [x] Corregir gráfica de barras en sección Tarifas que no muestra datos
+
+## Bug Fix - Admin Crowdfunding no muestra proyectos (27 Marzo 2026)
+
+- [x] Investigar por qué admin crowdfunding muestra 0 proyectos (causa: columna BD es crowdfunding_status, queries usaban status)
+- [x] Corregir todas las queries SQL raw en db.ts para usar crowdfunding_status
+- [x] Agregar alias crowdfunding_status AS status en SELECT queries para compatibilidad con frontend
+- [x] Corregir INSERT, UPDATE y verificación de meta alcanzada para usar crowdfunding_status
+- [x] Corregir JOIN query de participaciones del inversionista
