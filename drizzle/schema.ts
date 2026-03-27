@@ -1236,7 +1236,7 @@ export type InsertPriceHistory = typeof priceHistory.$inferInsert;
 // CROWDFUNDING - PROYECTOS DE INVERSIÓN COLECTIVA
 // ============================================================================
 
-export const crowdfundingStatusEnum = mysqlEnum("crowdfunding_status", [
+export const crowdfundingStatusEnum = mysqlEnum("status", [
   "DRAFT",           // Borrador, no visible
   "OPEN",            // Abierto para inversiones
   "IN_PROGRESS",     // En financiamiento activo
@@ -1309,9 +1309,9 @@ export const crowdfundingParticipations = mysqlTable("crowdfunding_participation
   participationPercent: decimal("participationPercent", { precision: 6, scale: 4 }).notNull(), // % de participación
   
   // Estado del pago
-  paymentStatus: paymentStatusEnum.default("PENDING").notNull(),
+  paymentStatus: mysqlEnum("paymentStatus", ["PENDING", "COMPLETED", "FAILED", "REFUNDED"]).default("PENDING").notNull(),
   paymentDate: timestamp("paymentDate"),
-  paymentReference: varchar("stripePaymentIntentId", { length: 255 }), // Referencia de pago (Wompi, transferencia, etc.)
+  paymentReference: varchar("paymentReference", { length: 255 }), // Referencia de pago (Wompi, transferencia, etc.)
   
   // Contrato y documentos
   contractSigned: boolean("contractSigned").default(false).notNull(),

@@ -3968,17 +3968,16 @@ export async function getCrowdfundingProjects(options?: {
     let query = `
       SELECT 
         p.*,
-        p.crowdfunding_status AS status,
-        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND payment_status = 'COMPLETED') as investorCount
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
       FROM crowdfunding_projects p
     `;
     
     const conditions = [];
     
     if (options?.status) {
-      conditions.push(`p.crowdfunding_status = '${options.status}'`);
+      conditions.push(`p.status = '${options.status}'`);
     } else if (!options?.includePrivate) {
-      conditions.push(`p.crowdfunding_status != 'DRAFT'`);
+      conditions.push(`p.status != 'DRAFT'`);
     }
     
     if (conditions.length > 0) {
@@ -4004,8 +4003,7 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
     const result = await db.execute(sql.raw(`
       SELECT 
         p.*,
-        p.crowdfunding_status AS status,
-        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND payment_status = 'COMPLETED') as investorCount
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
       FROM crowdfunding_projects p
       WHERE p.id = ${projectId}
       LIMIT 1
@@ -4047,7 +4045,7 @@ export async function createCrowdfundingProject(data: {
       name, description, city, zone, address,
       targetAmount, minimumInvestment, totalPowerKw, chargerCount, chargerPowerKw,
       hasSolarPanels, estimatedRoiPercent, estimatedPaybackMonths,
-      crowdfunding_status, targetDate, priority, createdById
+      status, targetDate, priority, createdById
     ) VALUES (
       ${data.name},
       ${data.description || null},
@@ -4102,16 +4100,13 @@ export async function updateCrowdfundingProject(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  // Map JS property names to actual DB column names where they differ
-  const crowdfundingColumnMap: Record<string, string> = { status: 'crowdfunding_status' };
   
   const updates: string[] = [];
   const values: any[] = [];
   
   Object.entries(data).forEach(([key, value]) => {
     if (value !== undefined) {
-      const col = crowdfundingColumnMap[key] || key;
-      updates.push(`${col} = ?`);
+      updates.push(`${key} = ?`);
       values.push(value);
     }
   });
@@ -4122,15 +4117,14 @@ export async function updateCrowdfundingProject(
   const setClause = Object.entries(data)
     .filter(([_, v]) => v !== undefined)
     .map(([key, value]) => {
-      const col = crowdfundingColumnMap[key] || key;
       if (value instanceof Date) {
-        return `${col} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+        return `${key} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
       } else if (typeof value === 'string') {
-        return `${col} = '${value.replace(/'/g, "''")}'`;
+        return `${key} = '${value.replace(/'/g, "''")}'`;
       } else if (typeof value === 'boolean') {
-        return `${col} = ${value ? 1 : 0}`;
+        return `${key} = ${value ? 1 : 0}`;
       } else {
-        return `${col} = ${value}`;
+        return `${key} = ${value}`;
       }
     })
     .join(', ');
@@ -4181,13 +4175,13 @@ export async function getInvestorParticipations(investorId: number): Promise<any
         cp.investorId,
         cp.amount,
         cp.participationPercent,
-        cp.payment_status as paymentStatus,
+        cp.paymentStatus,
         cp.paymentDate,
         cp.createdAt,
         p.name as projectName,
         p.city as projectCity,
         p.zone as projectZone,
-        p.crowdfunding_status as projectStatus,
+        p.status as projectStatus,
         p.targetAmount as projectTargetAmount,
         p.raisedAmount as projectRaisedAmount,
         p.totalPowerKw as projectTotalPowerKw,
@@ -4245,7 +4239,7 @@ export async function createCrowdfundingParticipation(data: {
   
   const result = await db.execute(sql`
     INSERT INTO crowdfunding_participations (
-      projectId, investorId, amount, participationPercent, payment_status, paymentDate, stripePaymentIntentId
+      projectId, investorId, amount, participationPercent, paymentStatus, paymentDate, paymentReference
     ) VALUES (
       ${data.projectId},
       ${data.investorId},
@@ -4271,7 +4265,7 @@ export async function updateProjectRaisedAmount(projectId: number): Promise<void
     SET raisedAmount = (
       SELECT COALESCE(SUM(amount), 0)
       FROM crowdfunding_participations
-      WHERE projectId = ${projectId} AND payment_status = 'COMPLETED'
+      WHERE projectId = ${projectId} AND paymentStatus = 'COMPLETED'
     )
     WHERE p.id = ${projectId}
   `);
@@ -4279,12 +4273,10 @@ export async function updateProjectRaisedAmount(projectId: number): Promise<void
   // Verificar si se alcanzó la meta
   const project = await getCrowdfundingProjectById(projectId);
   if (project && project.raisedAmount >= project.targetAmount) {
-    // Use crowdfunding_status from p.* result (may come as crowdfunding_status from DB)
-    const projectStatus = (project as any).crowdfunding_status || project.status;
-    if (projectStatus === 'IN_PROGRESS') {
+    if (project.status === 'IN_PROGRESS') {
       await db.execute(sql`
         UPDATE crowdfunding_projects
-        SET crowdfunding_status = 'FUNDED', fundedDate = NOW()
+        SET status = 'FUNDED', fundedDate = NOW()
         WHERE id = ${projectId}
       `);
     }
@@ -4306,16 +4298,13 @@ export async function updateCrowdfundingParticipation(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  // Map JS property names to actual DB column names
-  const participationColumnMap: Record<string, string> = { paymentStatus: 'payment_status' };
   
   const updates: string[] = [];
   const values: any[] = [];
   
   Object.entries(data).forEach(([key, value]) => {
     if (value !== undefined) {
-      const col = participationColumnMap[key] || key;
-      updates.push(`${col} = ?`);
+      updates.push(`${key} = ?`);
       values.push(value);
     }
   });
@@ -4326,15 +4315,14 @@ export async function updateCrowdfundingParticipation(
   const setClause = Object.entries(data)
     .filter(([_, v]) => v !== undefined)
     .map(([key, value]) => {
-      const col = participationColumnMap[key] || key;
       if (value instanceof Date) {
-        return `${col} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+        return `${key} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
       } else if (typeof value === 'string') {
-        return `${col} = '${value.replace(/'/g, "''")}'`;
+        return `${key} = '${value.replace(/'/g, "''")}'`;
       } else if (typeof value === 'boolean') {
-        return `${col} = ${value ? 1 : 0}`;
+        return `${key} = ${value ? 1 : 0}`;
       } else {
-        return `${col} = ${value}`;
+        return `${key} = ${value}`;
       }
     })
     .join(', ');
