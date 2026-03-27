@@ -2459,8 +2459,13 @@
 
 ## Bug Fix - Admin Crowdfunding no muestra proyectos (27 Marzo 2026)
 
-- [x] Investigar por qué admin crowdfunding muestra 0 proyectos (causa: columna BD es crowdfunding_status, queries usaban status)
-- [x] Corregir todas las queries SQL raw en db.ts para usar crowdfunding_status
-- [x] Agregar alias crowdfunding_status AS status en SELECT queries para compatibilidad con frontend
-- [x] Corregir INSERT, UPDATE y verificación de meta alcanzada para usar crowdfunding_status
-- [x] Corregir JOIN query de participaciones del inversionista
+- [x] Investigar por qué admin crowdfunding muestra 0 proyectos
+- [x] Causa raíz: columna BD es crowdfunding_status (no status) y payment_status (no paymentStatus)
+- [x] Corregir getCrowdfundingProjects: crowdfunding_status AS status + payment_status en subquery
+- [x] Corregir getCrowdfundingProjectById: crowdfunding_status AS status + payment_status
+- [x] Corregir createCrowdfundingProject INSERT: crowdfunding_status + payment_status
+- [x] Corregir updateCrowdfundingProject: columnMap status -> crowdfunding_status
+- [x] Corregir updateCrowdfundingParticipation: columnMap paymentStatus -> payment_status
+- [x] Corregir getInvestorParticipations: cp.payment_status as paymentStatus
+- [x] Corregir updateProjectRaisedAmount: payment_status en SUM query
+- [x] Verificado con SQL directo: 5 proyectos retornados correctamente

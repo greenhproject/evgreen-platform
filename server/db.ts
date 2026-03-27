@@ -3969,7 +3969,7 @@ export async function getCrowdfundingProjects(options?: {
       SELECT 
         p.*,
         p.crowdfunding_status AS status,
-        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND payment_status = 'COMPLETED') as investorCount
       FROM crowdfunding_projects p
     `;
     
@@ -4005,7 +4005,7 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
       SELECT 
         p.*,
         p.crowdfunding_status AS status,
-        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND payment_status = 'COMPLETED') as investorCount
       FROM crowdfunding_projects p
       WHERE p.id = ${projectId}
       LIMIT 1
@@ -4181,7 +4181,7 @@ export async function getInvestorParticipations(investorId: number): Promise<any
         cp.investorId,
         cp.amount,
         cp.participationPercent,
-        cp.paymentStatus,
+        cp.payment_status as paymentStatus,
         cp.paymentDate,
         cp.createdAt,
         p.name as projectName,
@@ -4245,7 +4245,7 @@ export async function createCrowdfundingParticipation(data: {
   
   const result = await db.execute(sql`
     INSERT INTO crowdfunding_participations (
-      projectId, investorId, amount, participationPercent, paymentStatus, paymentDate, stripePaymentIntentId
+      projectId, investorId, amount, participationPercent, payment_status, paymentDate, stripePaymentIntentId
     ) VALUES (
       ${data.projectId},
       ${data.investorId},
@@ -4271,7 +4271,7 @@ export async function updateProjectRaisedAmount(projectId: number): Promise<void
     SET raisedAmount = (
       SELECT COALESCE(SUM(amount), 0)
       FROM crowdfunding_participations
-      WHERE projectId = ${projectId} AND paymentStatus = 'COMPLETED'
+      WHERE projectId = ${projectId} AND payment_status = 'COMPLETED'
     )
     WHERE p.id = ${projectId}
   `);
@@ -4306,12 +4306,16 @@ export async function updateCrowdfundingParticipation(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
+  // Map JS property names to actual DB column names
+  const participationColumnMap: Record<string, string> = { paymentStatus: 'payment_status' };
+  
   const updates: string[] = [];
   const values: any[] = [];
   
   Object.entries(data).forEach(([key, value]) => {
     if (value !== undefined) {
-      updates.push(`${key} = ?`);
+      const col = participationColumnMap[key] || key;
+      updates.push(`${col} = ?`);
       values.push(value);
     }
   });
@@ -4322,14 +4326,15 @@ export async function updateCrowdfundingParticipation(
   const setClause = Object.entries(data)
     .filter(([_, v]) => v !== undefined)
     .map(([key, value]) => {
+      const col = participationColumnMap[key] || key;
       if (value instanceof Date) {
-        return `${key} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+        return `${col} = '${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
       } else if (typeof value === 'string') {
-        return `${key} = '${value.replace(/'/g, "''")}'`;
+        return `${col} = '${value.replace(/'/g, "''")}'`;
       } else if (typeof value === 'boolean') {
-        return `${key} = ${value ? 1 : 0}`;
+        return `${col} = ${value ? 1 : 0}`;
       } else {
-        return `${key} = ${value}`;
+        return `${col} = ${value}`;
       }
     })
     .join(', ');
