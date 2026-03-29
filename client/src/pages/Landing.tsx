@@ -1,3 +1,9 @@
+/**
+ * EVGreen - Landing Page Pública
+ * Hero con parallax, estadísticas animadas, showcase estaciones, IA, PWA
+ * Optimizado para móviles con imágenes WebP y framer-motion
+ * @author Green House Project
+ */
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import { Link } from "wouter";

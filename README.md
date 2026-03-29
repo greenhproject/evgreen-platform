@@ -6,535 +6,275 @@
   <img src="https://img.shields.io/badge/TailwindCSS-4.0-06B6D4?style=for-the-badge&logo=tailwindcss" alt="Tailwind CSS">
   <img src="https://img.shields.io/badge/tRPC-11.0-2596BE?style=for-the-badge&logo=trpc" alt="tRPC">
   <img src="https://img.shields.io/badge/MySQL-8.0-4479A1?style=for-the-badge&logo=mysql" alt="MySQL">
+  <img src="https://img.shields.io/badge/OCPP-2.0.1-00B894?style=for-the-badge" alt="OCPP 2.0.1">
+  <img src="https://img.shields.io/badge/Wompi-Pagos-FF6B35?style=for-the-badge" alt="Wompi">
+  <img src="https://img.shields.io/badge/Tests-1571_passing-22C55E?style=for-the-badge" alt="Tests">
 </p>
 
 <p align="center">
-  <strong>by Green House Project</strong>
+  <strong>by Green House Project</strong><br>
+  <em>Impulsando la movilidad eléctrica en Colombia</em>
 </p>
 
 ---
 
-## 📋 Descripción General
+## Descripción General
 
-**EVGreen** es una plataforma integral de gestión de estaciones de carga para vehículos eléctricos (EV) desarrollada por Green House Project. La plataforma ofrece una solución completa que incluye:
+**EVGreen** es una plataforma integral de gestión de estaciones de carga para vehículos eléctricos (EV) desarrollada por **Green House Project**. La plataforma ofrece una solución completa que abarca todo el ecosistema de carga eléctrica:
 
-- **Panel de Administración**: Gestión centralizada de estaciones, usuarios, tarifas y reportes
-- **Aplicación de Usuario**: Mapa interactivo, reservas, billetera digital y asistente de IA
-- **Dashboard de Inversionistas**: Métricas de rendimiento, ingresos y análisis predictivo
-- **Panel de Técnicos**: Monitoreo de cargadores, diagnósticos y mantenimiento
-- **Servidor CSMS**: Compatible con protocolos **OCPP 1.6J y 2.0.1** para máxima compatibilidad con cargadores
-- **Reporte UPME**: Integración con OCPI 2.2.1 para reportes regulatorios en Colombia
+- **Panel de Administración (Staff)**: Gestión centralizada de estaciones, usuarios, tarifas, reportes, crowdfunding y configuración del sistema.
+- **Aplicación de Usuario**: Mapa interactivo con geolocalización, reservas, billetera digital, suscripciones, asistente de IA y soporte.
+- **Dashboard de Inversionistas**: Métricas de rendimiento en tiempo real, ingresos (modelo 80/20), análisis predictivo con IA y crowdfunding.
+- **Panel de Técnicos**: Monitoreo de cargadores, diagnósticos OCPP, gestión de alertas, tickets de mantenimiento y firmware.
+- **Servidor CSMS**: Compatible con protocolos **OCPP 1.6J y 2.0.1** para máxima compatibilidad con cargadores.
+- **Reporte UPME**: Integración con OCPI 2.2.1 para reportes regulatorios en Colombia (Resolución 40559/2025).
+- **Sistema de Pagos Wompi**: Pasarela de pagos colombiana con billetera digital, tarjetas de crédito, cobros recurrentes y suscripciones.
+
+### Modelo de Negocio
+
+| Concepto | Porcentaje | Descripción |
+|----------|-----------|-------------|
+| **Inversionista** | 80% | Ingresos por venta de energía en sus estaciones |
+| **Green House Project** | 20% | Fee operativo por uso de la plataforma |
 
 ---
 
-## 🏗️ Arquitectura del Sistema
+## Arquitectura del Sistema
 
 ### Stack Tecnológico
 
 | Capa | Tecnología | Versión | Descripción |
 |------|------------|---------|-------------|
-| **Frontend** | React | 19.0 | Interfaz de usuario con componentes modernos |
-| **Estilos** | Tailwind CSS | 4.0 | Framework CSS utility-first |
+| **Frontend** | React | 19.0 | Interfaz con lazy loading de 55+ componentes |
+| **Estilos** | Tailwind CSS | 4.0 | Framework CSS utility-first con tema oscuro/claro |
 | **Componentes UI** | shadcn/ui | Latest | Componentes accesibles y personalizables |
-| **Backend** | Express | 4.x | Servidor HTTP y API REST |
-| **API** | tRPC | 11.0 | API type-safe end-to-end |
-| **Base de Datos** | MySQL/TiDB | 8.0 | Base de datos relacional |
-| **ORM** | Drizzle | Latest | ORM TypeScript con migraciones |
-| **Autenticación** | Manus OAuth | - | Sistema de autenticación OAuth 2.0 |
-| **IA** | Multi-proveedor | - | OpenAI, Anthropic, Google AI, Manus LLM |
+| **Backend** | Express | 4.x | Servidor HTTP, API REST y WebSocket OCPP |
+| **API** | tRPC | 11.0 | API type-safe end-to-end con SuperJSON |
+| **Base de Datos** | MySQL/TiDB | 8.0 | Base de datos relacional con Drizzle ORM |
+| **Pagos** | Wompi | v1 | Pasarela de pagos colombiana |
+| **IA** | Multi-proveedor | - | Manus LLM, OpenAI, Anthropic, Google AI |
+| **Push** | Firebase FCM | - | Notificaciones push para web y móvil |
+| **Email** | Resend | - | Servicio de email transaccional |
+| **Almacenamiento** | S3 | - | Almacenamiento de archivos e imágenes |
+| **Facturación** | Alegra | - | Facturación electrónica colombiana |
 
 ### Diagrama de Arquitectura
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        CLIENTE (React 19)                        │
-├─────────────┬─────────────┬─────────────┬─────────────┬─────────┤
-│   Usuario   │    Admin    │ Inversionista│   Técnico   │ Landing │
-└──────┬──────┴──────┬──────┴──────┬──────┴──────┬──────┴────┬────┘
-       │             │             │             │           │
-       └─────────────┴─────────────┴─────────────┴───────────┘
-                                   │
-                            ┌──────▼──────┐
-                            │   tRPC API  │
-                            │  (Express)  │
-                            └──────┬──────┘
-                                   │
-       ┌───────────────────────────┼───────────────────────────┐
-       │                           │                           │
-┌──────▼──────┐           ┌────────▼────────┐         ┌───────▼───────┐
-│   MySQL/    │           │   Servicios IA  │         │  Almacenamiento│
-│   TiDB      │           │  (Multi-prov.)  │         │      S3        │
-└─────────────┘           └─────────────────┘         └────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        CLIENTE (React 19 + Vite)                        │
+├──────────┬──────────┬──────────────┬──────────────┬─────────┬──────────┤
+│ Usuario  │  Admin   │ Inversionista│   Técnico    │ Landing │   PWA    │
+└────┬─────┴────┬─────┴──────┬───────┴──────┬───────┴────┬────┴────┬─────┘
+     └──────────┴────────────┴──────────────┴────────────┴─────────┘
+                                    │
+                             ┌──────▼──────┐
+                             │   tRPC API  │
+                             │  (Express)  │
+                             └──────┬──────┘
+                                    │
+     ┌──────────────────────────────┼──────────────────────────────┐
+     │              │               │              │               │
+┌────▼────┐  ┌─────▼─────┐  ┌──────▼──────┐ ┌────▼────┐  ┌───────▼───────┐
+│ MySQL/  │  │ Servicios │  │   OCPP WS   │ │  Wompi  │  │     S3        │
+│ TiDB    │  │    IA     │  │ 1.6J/2.0.1  │ │  Pagos  │  │ Almacenamiento│
+└─────────┘  └───────────┘  └─────────────┘ └─────────┘  └───────────────┘
 ```
 
 ---
 
-## 📁 Estructura del Proyecto
+## Estructura del Proyecto
 
 ```
 green-ev-platform/
-├── client/                      # Aplicación frontend React
-│   ├── public/                  # Archivos estáticos públicos
+├── client/                          # ── FRONTEND (React 19 + Vite) ──
+│   ├── public/                      # Archivos estáticos (favicon, manifest, SW)
 │   ├── src/
-│   │   ├── components/          # Componentes reutilizables
-│   │   │   ├── ui/              # Componentes shadcn/ui
-│   │   │   ├── AIChat.tsx       # Widget de chat con IA
-│   │   │   ├── AIChatBox.tsx    # Caja de chat completa
-│   │   │   ├── AIInsightCard.tsx # Tarjetas de sugerencias IA
-│   │   │   ├── ChargingBanner.tsx # Banners publicitarios
-│   │   │   ├── DashboardLayout.tsx # Layout de dashboards
-│   │   │   ├── Map.tsx          # Componente de Google Maps
-│   │   │   └── NotificationPanel.tsx # Panel de notificaciones
-│   │   ├── contexts/            # Contextos de React
-│   │   │   └── AuthContext.tsx  # Contexto de autenticación
-│   │   ├── hooks/               # Hooks personalizados
-│   │   ├── layouts/             # Layouts por rol de usuario
-│   │   │   ├── AdminLayout.tsx  # Layout para administradores
-│   │   │   ├── UserLayout.tsx   # Layout para usuarios finales
-│   │   │   ├── InvestorLayout.tsx # Layout para inversionistas
-│   │   │   └── TechnicianLayout.tsx # Layout para técnicos
-│   │   ├── lib/                 # Utilidades y configuraciones
-│   │   │   ├── trpc.ts          # Cliente tRPC
-│   │   │   └── utils.ts         # Funciones utilitarias
-│   │   ├── pages/               # Páginas de la aplicación
-│   │   │   ├── admin/           # Páginas del panel de admin
-│   │   │   ├── investor/        # Páginas del dashboard inversionista
-│   │   │   ├── technician/      # Páginas del panel técnico
-│   │   │   ├── user/            # Páginas de la app de usuario
-│   │   │   └── Landing.tsx      # Página de inicio
-│   │   ├── App.tsx              # Componente raíz con rutas
-│   │   ├── main.tsx             # Punto de entrada
-│   │   └── index.css            # Estilos globales
-│   └── index.html               # HTML principal
-├── server/                      # Backend Express + tRPC
-│   ├── _core/                   # Módulos core del servidor
-│   │   ├── context.ts           # Contexto de tRPC
-│   │   ├── env.ts               # Variables de entorno
-│   │   ├── llm.ts               # Integración con LLM
-│   │   ├── notification.ts      # Sistema de notificaciones
-│   │   └── oauth.ts             # Autenticación OAuth
-│   ├── ai/                      # Servicios de IA
-│   │   ├── ai-service.ts        # Servicio principal de IA
-│   │   ├── context-service.ts   # Servicio de contexto para IA
-│   │   └── providers/           # Proveedores de IA
-│   │       ├── anthropic.ts     # Proveedor Anthropic
-│   │       ├── google.ts        # Proveedor Google AI
-│   │       ├── manus.ts         # Proveedor Manus LLM
-│   │       └── openai.ts        # Proveedor OpenAI
-│   ├── db.ts                    # Funciones de base de datos
-│   ├── routers.ts               # Definición de rutas tRPC
-│   ├── storage.ts               # Funciones de almacenamiento S3
-│   └── *.test.ts                # Tests unitarios
-├── drizzle/                     # Esquemas y migraciones de BD
-│   ├── schema.ts                # Definición de tablas
-│   └── migrations/              # Archivos de migración
-├── shared/                      # Código compartido
-│   └── types.ts                 # Tipos TypeScript compartidos
-├── storage/                     # Helpers de almacenamiento
-├── package.json                 # Dependencias del proyecto
-├── tsconfig.json                # Configuración TypeScript
-├── vite.config.ts               # Configuración de Vite
-├── drizzle.config.ts            # Configuración de Drizzle
-└── README.md                    # Este archivo
+│   │   ├── components/              # Componentes reutilizables
+│   │   │   ├── ui/                  # Componentes shadcn/ui
+│   │   │   ├── AIChat.tsx           # Widget flotante de chat con IA
+│   │   │   ├── AIChatBox.tsx        # Caja de chat completa con streaming
+│   │   │   ├── AIInsightCard.tsx    # Tarjetas de sugerencias IA en el mapa
+│   │   │   ├── ChargingBanner.tsx   # Banners publicitarios con targeting
+│   │   │   ├── DashboardLayout.tsx  # Layout base para dashboards
+│   │   │   ├── Map.tsx              # Componente de Google Maps
+│   │   │   └── NotificationPanel.tsx # Panel de notificaciones in-app
+│   │   ├── contexts/                # Contextos de React
+│   │   ├── hooks/                   # Hooks personalizados
+│   │   ├── layouts/                 # Layouts específicos por rol
+│   │   │   ├── AdminLayout.tsx      # Layout para administradores/staff
+│   │   │   ├── UserLayout.tsx       # Layout para usuarios finales
+│   │   │   ├── InvestorLayout.tsx   # Layout para inversionistas
+│   │   │   └── TechnicianLayout.tsx # Layout para técnicos operativos
+│   │   ├── pages/                   # ── PÁGINAS POR ROL ──
+│   │   │   ├── admin/               # Panel de administración (10+ páginas)
+│   │   │   ├── investor/            # Dashboard inversionista (6+ páginas)
+│   │   │   ├── technician/          # Panel técnico (6+ páginas)
+│   │   │   ├── user/                # App usuario final (10+ páginas)
+│   │   │   ├── Landing.tsx          # Página de inicio pública
+│   │   │   └── Home.tsx             # Página home post-login
+│   │   ├── App.tsx                  # Componente raíz con rutas y lazy loading
+│   │   ├── main.tsx                 # Punto de entrada
+│   │   └── index.css                # Estilos globales y tema
+│   └── index.html                   # HTML principal con meta tags y PWA
+│
+├── server/                          # ── BACKEND (Express + tRPC) ──
+│   ├── _core/                       # Módulos core del framework (NO EDITAR)
+│   ├── ai/                          # Servicios de IA multi-proveedor
+│   ├── alegra/                      # Facturación electrónica (Alegra)
+│   ├── charging/                    # Lógica de sesiones de carga
+│   ├── crowdfunding/                # Notificaciones de crowdfunding
+│   ├── email/                       # Templates de email (Resend)
+│   ├── firebase/                    # Push notifications (FCM)
+│   ├── notifications/               # Sistema de notificaciones multi-canal
+│   ├── ocpp/                        # Protocolo OCPP 1.6J + 2.0.1 (CSMS)
+│   ├── pricing/                     # Tarifa dinámica (algoritmo tipo Uber)
+│   ├── push/                        # Web Push (VAPID)
+│   ├── reports/                     # Exportación de reportes (CSV/Excel)
+│   ├── security/                    # 2FA TOTP, sesiones, seguridad
+│   ├── support/                     # Tickets de soporte
+│   ├── wompi/                       # ── PASARELA DE PAGOS WOMPI ──
+│   │   ├── config.ts               #   Configuración de Wompi
+│   │   ├── router.ts               #   Router tRPC para pagos
+│   │   ├── webhook.ts              #   Webhook para eventos Wompi
+│   │   ├── auto-charge.ts          #   Cobro automático con tarjeta
+│   │   ├── recurring-billing.ts    #   Cobros recurrentes (suscripciones)
+│   │   └── reconciliation-cron.ts  #   Reconciliación automática
+│   ├── db.ts                        # *** Funciones de base de datos ***
+│   ├── routers.ts                   # *** Rutas tRPC principales ***
+│   ├── storage.ts                   # Almacenamiento S3
+│   └── *.test.ts                    # Tests unitarios (1571 tests)
+│
+├── drizzle/                         # Esquema y migraciones de BD
+│   ├── schema.ts                    # Definición de TODAS las tablas
+│   └── migrations/                  # Archivos de migración SQL
+│
+├── shared/                          # Código compartido frontend/backend
+├── package.json                     # Dependencias del proyecto
+├── tsconfig.json                    # Configuración TypeScript
+├── vite.config.ts                   # Configuración de Vite
+├── vitest.config.ts                 # Configuración de Vitest
+├── drizzle.config.ts                # Configuración de Drizzle ORM
+├── todo.md                          # Lista de tareas y progreso
+└── README.md                        # Este archivo
 ```
 
 ---
 
-## 🗄️ Modelo de Base de Datos
+## Modelo de Base de Datos (30+ tablas)
 
 ### Tablas Principales
 
-#### Usuarios (`users`)
-Almacena la información de todos los usuarios del sistema con sus diferentes roles.
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | INT | Identificador único auto-incremental |
-| `open_id` | VARCHAR(255) | ID único de OAuth |
-| `email` | VARCHAR(255) | Correo electrónico del usuario |
-| `name` | VARCHAR(255) | Nombre completo |
-| `avatar` | TEXT | URL del avatar |
-| `role` | ENUM | Rol: 'staff', 'technician', 'investor', 'user' |
-| `created_at` | TIMESTAMP | Fecha de creación |
-| `updated_at` | TIMESTAMP | Fecha de última actualización |
-
-#### Estaciones de Carga (`charging_stations`)
-Información de las estaciones de carga físicas.
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | INT | Identificador único |
-| `name` | VARCHAR(255) | Nombre de la estación |
-| `ocpp_id` | VARCHAR(100) | ID único para protocolo OCPP |
-| `address` | TEXT | Dirección física |
-| `city` | VARCHAR(100) | Ciudad |
-| `state` | VARCHAR(100) | Departamento/Estado |
-| `latitude` | DECIMAL(10,8) | Coordenada de latitud |
-| `longitude` | DECIMAL(11,8) | Coordenada de longitud |
-| `status` | ENUM | Estado: 'active', 'inactive', 'maintenance' |
-| `is_public` | BOOLEAN | Si es de acceso público |
-| `owner_id` | INT | ID del propietario/inversionista |
-
-#### Conectores/EVSEs (`evses`)
-Puntos de carga individuales dentro de cada estación.
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | INT | Identificador único |
-| `station_id` | INT | FK a charging_stations |
-| `connector_id` | INT | Número de conector en la estación |
-| `connector_type` | ENUM | Tipo: 'TYPE_1', 'TYPE_2', 'CCS_1', 'CCS_2', 'CHADEMO', 'TESLA', 'GBT_AC', 'GBT_DC' |
-| `power_kw` | DECIMAL(10,2) | Potencia máxima en kW |
-| `status` | ENUM | Estado OCPI: 'AVAILABLE', 'CHARGING', 'UNAVAILABLE', 'FAULTED' |
-
-#### Transacciones (`transactions`)
-Registro de todas las sesiones de carga.
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | INT | Identificador único |
-| `user_id` | INT | FK al usuario |
-| `evse_id` | INT | FK al conector |
-| `start_time` | TIMESTAMP | Inicio de la carga |
-| `end_time` | TIMESTAMP | Fin de la carga |
-| `energy_kwh` | DECIMAL(10,3) | Energía entregada en kWh |
-| `total_cost` | DECIMAL(10,2) | Costo total en COP |
-| `price_multiplier` | DECIMAL(5,2) | Multiplicador de tarifa dinámica |
-| `status` | ENUM | Estado: 'in_progress', 'completed', 'failed' |
-
-#### Tarifas (`tariffs`)
-Configuración de precios por estación.
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | INT | Identificador único |
-| `station_id` | INT | FK a la estación |
-| `price_per_kwh` | DECIMAL(10,2) | Precio base por kWh en COP |
-| `reservation_fee` | DECIMAL(10,2) | Tarifa de reserva |
-| `idle_fee_per_min` | DECIMAL(10,2) | Penalización por ocupación |
-| `connection_fee` | DECIMAL(10,2) | Tarifa de conexión |
-| `is_active` | BOOLEAN | Si la tarifa está activa |
-
-#### Reservas (`reservations`)
-Sistema de reservas de conectores.
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | INT | Identificador único |
-| `user_id` | INT | FK al usuario |
-| `evse_id` | INT | FK al conector |
-| `start_time` | TIMESTAMP | Hora de inicio reservada |
-| `end_time` | TIMESTAMP | Hora de fin reservada |
-| `status` | ENUM | Estado: 'pending', 'confirmed', 'cancelled', 'completed', 'no_show' |
-| `estimated_cost` | DECIMAL(10,2) | Costo estimado |
-| `price_multiplier` | DECIMAL(5,2) | Multiplicador aplicado |
-
-#### Billeteras (`wallets`)
-Billetera digital de cada usuario.
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | INT | Identificador único |
-| `user_id` | INT | FK al usuario |
-| `balance` | DECIMAL(12,2) | Saldo disponible en COP |
-| `currency` | VARCHAR(3) | Moneda (COP) |
+| Tabla | Descripción |
+|-------|-------------|
+| `users` | Usuarios con roles (staff, technician, investor, user) |
+| `charging_stations` | Estaciones de carga con geolocalización |
+| `evses` | Conectores/puntos de carga por estación |
+| `transactions` | Sesiones de carga con paginación server-side |
+| `wallets` / `wallet_transactions` | Billetera digital |
+| `tariffs` | Tarifas por estación con precio dinámico |
+| `reservations` | Reservas de conectores |
+| `subscriptions` | Suscripciones Básico/Premium |
+| `crowdfunding_projects` / `crowdfunding_participations` | Crowdfunding |
+| `maintenance_tickets` | Tickets de mantenimiento con workflow |
+| `notifications` | Notificaciones in-app |
+| `support_tickets` | Soporte al usuario |
+| `investor_payouts` | Liquidaciones a inversionistas (80/20) |
+| `ocpp_logs` / `ocpp_alerts` | Logs y alertas OCPP |
+| `banners` / `banner_views` | Publicidad con targeting |
+| `wompi_transactions` | Pagos con Wompi |
+| `vehicles` | Vehículos de usuarios |
+| `station_demand_forecast` | Predicción de demanda por estación |
 
 ---
 
-## 🔌 API - Endpoints tRPC
+## Sistema de Tarifa Dinámica
 
-### Autenticación (`auth`)
-
-| Procedimiento | Tipo | Descripción |
-|---------------|------|-------------|
-| `auth.me` | Query | Obtiene el usuario autenticado actual |
-| `auth.logout` | Mutation | Cierra la sesión del usuario |
-
-### Estaciones (`stations`)
-
-| Procedimiento | Tipo | Descripción |
-|---------------|------|-------------|
-| `stations.listPublic` | Query | Lista estaciones públicas con filtros |
-| `stations.listAll` | Query | Lista todas las estaciones (admin) |
-| `stations.getById` | Query | Obtiene detalles de una estación |
-| `stations.create` | Mutation | Crea una nueva estación |
-| `stations.update` | Mutation | Actualiza una estación existente |
-| `stations.delete` | Mutation | Elimina una estación |
-
-### Conectores (`evses`)
-
-| Procedimiento | Tipo | Descripción |
-|---------------|------|-------------|
-| `evses.listByStation` | Query | Lista conectores de una estación |
-| `evses.create` | Mutation | Crea un nuevo conector |
-| `evses.update` | Mutation | Actualiza estado de un conector |
-| `evses.delete` | Mutation | Elimina un conector |
-
-### Transacciones (`transactions`)
-
-| Procedimiento | Tipo | Descripción |
-|---------------|------|-------------|
-| `transactions.list` | Query | Lista transacciones del usuario |
-| `transactions.listAll` | Query | Lista todas las transacciones (admin) |
-| `transactions.start` | Mutation | Inicia una sesión de carga |
-| `transactions.stop` | Mutation | Detiene una sesión de carga |
-
-### Reservas (`reservations`)
-
-| Procedimiento | Tipo | Descripción |
-|---------------|------|-------------|
-| `reservations.myReservations` | Query | Lista reservas del usuario |
-| `reservations.create` | Mutation | Crea una nueva reserva |
-| `reservations.cancel` | Mutation | Cancela una reserva |
-| `reservations.calculatePrice` | Query | Calcula precio dinámico |
-
-### Billetera (`wallet`)
-
-| Procedimiento | Tipo | Descripción |
-|---------------|------|-------------|
-| `wallet.getBalance` | Query | Obtiene saldo de la billetera |
-| `wallet.getTransactions` | Query | Historial de movimientos |
-| `wallet.topUp` | Mutation | Recarga la billetera |
-
-### Tarifas (`tariffs`)
-
-| Procedimiento | Tipo | Descripción |
-|---------------|------|-------------|
-| `tariffs.getByStation` | Query | Obtiene tarifa de una estación |
-| `tariffs.update` | Mutation | Actualiza tarifa (admin) |
-| `tariffs.getDynamicPrice` | Query | Calcula precio dinámico actual |
-
-### Asistente IA (`ai`)
-
-| Procedimiento | Tipo | Descripción |
-|---------------|------|-------------|
-| `ai.chat` | Mutation | Envía mensaje al asistente IA |
-| `ai.getConfig` | Query | Obtiene configuración de IA |
-| `ai.updateConfig` | Mutation | Actualiza configuración (admin) |
-
----
-
-## ⚡ Sistema de Tarifa Dinámica
-
-EVGreen implementa un sistema de tarifa dinámica similar a Uber que ajusta los precios según la demanda:
-
-### Factores de Cálculo
-
-1. **Ocupación de Zona** (40%): Basado en la disponibilidad de conectores en la zona
-2. **Horario** (30%): Precios más altos en horas pico (7-9am, 5-8pm)
-3. **Día de la Semana** (15%): Ajustes para fines de semana
-4. **Historial de Demanda** (15%): Predicción basada en patrones históricos
-
-### Fórmula
+| Factor | Peso | Descripción |
+|--------|------|-------------|
+| **Ocupación de Zona** | 40% | Disponibilidad de conectores en la zona |
+| **Horario** | 30% | Precios más altos en horas pico (7-9am, 5-8pm) |
+| **Día de la Semana** | 15% | Ajustes para fines de semana |
+| **Historial de Demanda** | 15% | Predicción basada en patrones históricos |
 
 ```
-Precio Final = Precio Base × Multiplicador Dinámico
-
-Multiplicador = 1 + (Factor Ocupación × 0.4) + (Factor Horario × 0.3) 
-                  + (Factor Día × 0.15) + (Factor Histórico × 0.15)
-
-Límites: 0.7 ≤ Multiplicador ≤ 2.5
+Precio Final = Precio Base × Multiplicador (0.7 ≤ M ≤ 2.5)
 ```
 
 ---
 
-## 🤖 Sistema de Inteligencia Artificial
+## Sistema de Pagos (Wompi)
 
-### Proveedores Soportados
+Wompi es la pasarela de pagos exclusiva. Stripe fue completamente eliminado.
 
-| Proveedor | Modelo Default | Características |
-|-----------|----------------|-----------------|
-| **Manus LLM** | claude-sonnet-4-20250514 | Proveedor por defecto, sin configuración |
-| **OpenAI** | gpt-4o | Requiere API key |
-| **Anthropic** | claude-3-5-sonnet-20241022 | Requiere API key |
-| **Google AI** | gemini-1.5-pro | Requiere API key |
-
-### Funcionalidades de IA
-
-1. **Chat Conversacional**: Asistente virtual para usuarios
-2. **Recomendaciones de Carga**: Sugiere mejores estaciones y horarios
-3. **Planificación de Viajes**: Calcula rutas con paradas de carga
-4. **Análisis Predictivo**: Proyecciones de ingresos para inversionistas
-5. **Insights de Red**: Análisis de rendimiento para administradores
+| Flujo | Descripción |
+|-------|-------------|
+| **Recarga de Billetera** | Recarga vía widget Wompi |
+| **Pago por Carga** | Descuento automático de billetera |
+| **Suscripciones** | Cobro recurrente mensual |
+| **Crowdfunding** | Inversión con referencia de pago |
+| **Liquidaciones** | Pago al inversionista (80%) |
 
 ---
 
-## 🔧 Configuración e Instalación
+## Protocolo OCPP (CSMS)
 
-### Requisitos Previos
+Soporte dual OCPP 1.6J + 2.0.1 con detección automática de protocolo. Reporte UPME vía OCPI 2.2.1.
 
-- Node.js 22.x o superior
-- pnpm 8.x o superior
-- MySQL 8.0 o TiDB
-- Cuenta de Manus para OAuth (opcional)
+---
 
-### Variables de Entorno
-
-```env
-# Base de datos
-DATABASE_URL=mysql://user:password@host:port/database
-
-# Autenticación
-JWT_SECRET=your-jwt-secret
-VITE_APP_ID=your-manus-app-id
-OAUTH_SERVER_URL=https://api.manus.im
-VITE_OAUTH_PORTAL_URL=https://manus.im/login
-
-# Propietario
-OWNER_OPEN_ID=owner-open-id
-OWNER_NAME=Green House Project
-
-# APIs de Manus
-BUILT_IN_FORGE_API_URL=https://api.manus.im
-BUILT_IN_FORGE_API_KEY=your-api-key
-VITE_FRONTEND_FORGE_API_KEY=your-frontend-key
-VITE_FRONTEND_FORGE_API_URL=https://api.manus.im
-
-# Configuración de la App
-VITE_APP_TITLE=EVGreen
-VITE_APP_LOGO=/logo.svg
-```
-
-### Instalación
+## Instalación
 
 ```bash
-# 1. Clonar el repositorio
 git clone https://github.com/greenhproject/evgreen-platform.git
 cd evgreen-platform
-
-# 2. Instalar dependencias
 pnpm install
-
-# 3. Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus valores
-
-# 4. Ejecutar migraciones de base de datos
+cp .env.example .env  # Configurar variables
 pnpm db:push
-
-# 5. Iniciar servidor de desarrollo
 pnpm dev
 ```
 
-### Scripts Disponibles
+### Scripts
 
 | Script | Descripción |
 |--------|-------------|
-| `pnpm dev` | Inicia servidor de desarrollo |
-| `pnpm build` | Compila para producción |
-| `pnpm test` | Ejecuta tests unitarios |
-| `pnpm db:push` | Aplica migraciones de BD |
-| `pnpm db:studio` | Abre Drizzle Studio |
+| `pnpm dev` | Servidor de desarrollo |
+| `pnpm build` | Compilar para producción |
+| `pnpm test` | Ejecutar 1571 tests |
+| `pnpm db:push` | Aplicar migraciones |
 
 ---
 
-## 🧪 Testing
+## Testing (1571 tests)
 
-El proyecto incluye tests unitarios con Vitest:
-
-```bash
-# Ejecutar todos los tests
-pnpm test
-
-# Ejecutar tests con cobertura
-pnpm test:coverage
-
-# Ejecutar tests en modo watch
-pnpm test:watch
-```
-
-### Cobertura de Tests
-
-- **74 tests** en total
-- Autenticación y autorización
-- Operaciones CRUD de estaciones
-- Sistema de reservas
-- Tarifa dinámica
-- Proveedores de IA
+| Área | Tests |
+|------|-------|
+| OCPP | 50+ |
+| IA | 43+ |
+| Estaciones | 40+ |
+| Transacciones | 30+ |
+| Wompi | 25+ |
+| Crowdfunding | 20+ |
+| Soporte | 20+ |
+| Autenticación | 15+ |
+| Suscripciones | 15+ |
+| Seguridad | 11+ |
 
 ---
 
-## 📱 Roles de Usuario
+## Roles
 
-### Staff (Administrador)
-- Acceso completo al panel de administración
-- Gestión de estaciones, usuarios y tarifas
-- Visualización de reportes y estadísticas
-- Configuración del sistema
-
-### Inversionista
-- Dashboard con métricas de sus estaciones
-- Visualización de ingresos (80% del total)
-- Configuración de precios
-- Análisis predictivo con IA
-
-### Técnico
-- Lista de cargadores asignados
-- Gestión de alertas y fallas
-- Logs de comunicación OCPP
-- Historial de mantenimiento
-
-### Usuario Final
-- Mapa interactivo de estaciones
-- Sistema de reservas
-- Billetera digital
-- Historial de cargas
-- Asistente de IA
+- **Staff**: Acceso completo al panel de administración
+- **Inversionista**: Dashboard con métricas, ingresos 80%, crowdfunding, IA predictiva
+- **Técnico**: Cargadores, alertas, tickets, logs OCPP, firmware
+- **Usuario**: Mapa, reservas, billetera Wompi, suscripciones, IA, soporte
 
 ---
 
-## 🌐 Integraciones
+## App Móvil
 
-### OCPP 1.6J y 2.0.1 (Soporte Dual)
-
-EVGreen implementa un servidor CSMS con soporte dual para maximizar la compatibilidad con cargadores de diferentes fabricantes y generaciones.
-
-**OCPP 1.6J** (para cargadores legacy):
-- BootNotification, Heartbeat, StatusNotification
-- Authorize, StartTransaction, StopTransaction
-- MeterValues, DataTransfer
-- RemoteStartTransaction, RemoteStopTransaction
-- ReserveNow, CancelReservation, Reset, UnlockConnector
-
-**OCPP 2.0.1** (para cargadores modernos):
-- BootNotification, Heartbeat, StatusNotification
-- TransactionEvent (Started, Updated, Ended)
-- MeterValues, Authorize
-- RequestStartTransaction, RequestStopTransaction
-- ReserveNow, CancelReservation, Reset, UnlockConnector
-
-**Detección automática de protocolo**: El servidor detecta la versión del protocolo mediante el subprotocolo WebSocket negociado durante la conexión.
-
-### OCPI 2.2.1
-Protocolo para reporte a UPME (Colombia):
-- Reporte automático cada 60 segundos
-- Estado de conectores
-- Ubicación GPS
-- Tipos de conectores y potencias
-- Energía suministrada
+Repositorio separado: `greenhproject/evgreen-mobile` (React Native + Expo SDK 54, 13 pantallas)
 
 ---
 
-## 📄 Licencia
-
-Este proyecto es propiedad de **Green House Project**. Todos los derechos reservados.
-
----
-
-## 👥 Equipo
-
-**Green House Project**
-- Email: greenhproject@gmail.com
-- Ubicación: Mosquera, Cundinamarca, Colombia
-
----
-
-## 🔗 Enlaces
-
-- [Sitio Web](https://greenhproject.com)
-- [Documentación API](./docs/api.md)
-- [Guía de Contribución](./CONTRIBUTING.md)
-
----
-
-*Desarrollado con ❤️ por Green House Project - Impulsando la movilidad eléctrica en Colombia*
+**Green House Project** - greenhproject@gmail.com - Mosquera, Cundinamarca, Colombia - [evgreen.lat](https://evgreen.lat)

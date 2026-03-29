@@ -1,4 +1,15 @@
 import { COOKIE_NAME } from "@shared/const";
+/**
+ * ============================================================================
+ * EVGreen Platform - Rutas tRPC (routers.ts)
+ * ============================================================================
+ * Define TODOS los endpoints de la API usando tRPC v11.
+ * Procedimientos protegidos por rol: staff, technician, investor, user.
+ * 
+ * @author Green House Project
+ * @version 2.0.0 (Marzo 2026)
+ * ============================================================================
+ */
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
