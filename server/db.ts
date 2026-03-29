@@ -1,4 +1,19 @@
 import { eq, and, desc, gte, lte, lt, gt, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
+/**
+ * ============================================================================
+ * EVGreen Platform - Funciones de Base de Datos (db.ts)
+ * ============================================================================
+ * Archivo principal de acceso a datos (~6000 líneas).
+ * Contiene TODAS las queries SQL organizadas por dominio.
+ * 
+ * NOTA: columnas BD usan snake_case, código usa camelCase.
+ * En queries raw usar: crowdfunding_status, payment_status, payment_reference
+ * 
+ * @author Green House Project
+ * @version 2.0.0 (Marzo 2026)
+ * @see ARCHITECTURE.md
+ * ============================================================================
+ */
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
 import {

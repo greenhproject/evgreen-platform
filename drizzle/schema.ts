@@ -1,3 +1,8 @@
+/**
+ * EVGreen Platform - Esquema de Base de Datos (schema.ts)
+ * Define TODAS las tablas usando Drizzle ORM. Para aplicar cambios: pnpm db:push
+ * @author Green House Project | @version 2.0.0 (Marzo 2026)
+ */
 import {
   int,
   mysqlEnum,

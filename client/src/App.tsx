@@ -1,3 +1,9 @@
+/**
+ * EVGreen Platform - Componente Raíz (App.tsx)
+ * Enrutamiento por rol, lazy loading de 55+ componentes, tema oscuro/claro
+ * Rutas: /admin/*, /technician/*, /investor/*, /user/*, / (landing)
+ * @author Green House Project
+ */
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
