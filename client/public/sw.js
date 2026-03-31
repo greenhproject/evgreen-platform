@@ -1,8 +1,8 @@
-// EVGreen Service Worker v7.0.0 - Push notifications + offline/503 recovery
+// EVGreen Service Worker v8.0.0 - Push notifications fix + offline/503 recovery
 // CRITICAL: This SW does NOT cache any JS, CSS, or HTML to prevent stale content issues.
 // The browser's native HTTP cache handles asset caching efficiently.
-// v7: Added 503 "Service Disabled" detection and recovery UI
-const SW_VERSION = 'v7';
+// v8: Fixed push notifications showing as generic Chrome notifications without title/body
+const SW_VERSION = 'v8';
 
 // ============================================
 // INSTALLATION - Clean slate approach
@@ -222,36 +222,76 @@ self.addEventListener('fetch', (event) => {
 
 // ============================================
 // PUSH NOTIFICATIONS
+// v8: Enhanced payload extraction to handle all FCM message formats
+// FCM can deliver data in multiple nested structures depending on
+// foreground/background state and platform (webpush vs generic).
+// This handler normalizes all formats into a consistent notification.
 // ============================================
 self.addEventListener('push', (event) => {
-  if (!event.data) return;
-
-  let data;
-  try {
-    data = event.data.json();
-  } catch (e) {
-    data = { title: 'EVGreen', body: event.data.text() };
+  console.log(`[SW ${SW_VERSION}] Push event received`);
+  
+  if (!event.data) {
+    console.warn(`[SW ${SW_VERSION}] Push event has no data, ignoring`);
+    return;
   }
 
-  const title = data.notification?.title || data.title || 'EVGreen';
-  const body = data.notification?.body || data.body || 'Nueva notificación de EVGreen';
-  const image = data.notification?.image || data.notification?.imageUrl || data.imageUrl;
-  const clickAction = data.data?.clickAction || data.data?.actionUrl || data.fcmOptions?.link || data.url || '/';
+  let rawData;
+  try {
+    rawData = event.data.json();
+  } catch (e) {
+    // Fallback: plain text payload
+    rawData = { title: 'EVGreen', body: event.data.text() };
+  }
+
+  console.log(`[SW ${SW_VERSION}] Push payload:`, JSON.stringify(rawData).substring(0, 500));
+
+  // ── Normalize title ──
+  // FCM may place title in: notification.title, data.title, or top-level title
+  const title = rawData.notification?.title 
+    || rawData.data?.title 
+    || rawData.title 
+    || 'EVGreen';
+
+  // ── Normalize body ──
+  const body = rawData.notification?.body 
+    || rawData.data?.body 
+    || rawData.body 
+    || 'Nueva notificación';
+
+  // ── Normalize image ──
+  const image = rawData.notification?.image 
+    || rawData.notification?.imageUrl 
+    || rawData.data?.imageUrl 
+    || rawData.imageUrl;
+
+  // ── Normalize click action URL ──
+  const clickAction = rawData.data?.clickAction 
+    || rawData.data?.url 
+    || rawData.data?.actionUrl 
+    || rawData.fcmOptions?.link 
+    || rawData.notification?.click_action 
+    || rawData.url 
+    || '/';
+
+  // ── Notification type for tag/routing ──
+  const notifType = rawData.data?.type || 'general';
+
+  console.log(`[SW ${SW_VERSION}] Showing notification: title="${title}", body="${body}", type=${notifType}`);
 
   const options = {
     body,
     icon: '/icons/icon-192x192.png',
     badge: '/icons/badge-72x72.png',
     vibrate: [200, 100, 200],
-    tag: data.data?.type || 'evgreen-notification',
+    tag: notifType,
     renotify: true,
-    requireInteraction: data.data?.type === 'low_balance' || data.data?.type === 'charging_error',
+    requireInteraction: ['low_balance', 'charging_error', 'overstay_alert'].includes(notifType),
     data: {
       url: clickAction,
-      type: data.data?.type || 'general',
-      ...data.data,
+      type: notifType,
+      ...(rawData.data || {}),
     },
-    actions: data.actions || [],
+    actions: rawData.actions || [],
   };
 
   if (image) {
@@ -261,6 +301,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(title, options)
       .then(() => {
+        // Forward to any open app windows for in-app notification display
         return self.clients.matchAll({ type: 'window', includeUncontrolled: true })
           .then((clientList) => {
             clientList.forEach((client) => {
@@ -268,7 +309,7 @@ self.addEventListener('push', (event) => {
                 type: 'PUSH_NOTIFICATION',
                 title,
                 body,
-                data: data.data || {},
+                data: rawData.data || {},
               });
             });
           });

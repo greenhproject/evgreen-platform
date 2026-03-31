@@ -17,7 +17,7 @@
 import * as db from "../db";
 import { transactions, evses, tariffs } from "../../drizzle/schema";
 import { eq, and, or, desc } from "drizzle-orm";
-import { sendPushNotification } from "../firebase/fcm";
+import { sendUserPush } from "../push/unified-push";
 import { autoChargeIfNeeded } from "../wompi/auto-charge";
 
 // ============================================================================
@@ -621,17 +621,14 @@ async function sendOverstayNotification(
       type: "CHARGING",
     });
 
-    // Send push notification via FCM
-    const user = await db.getUserById(userId);
-    if (user?.fcmToken) {
-      await sendPushNotification(user.fcmToken, {
-        type: type === "finishing" ? "charging_complete" : "overstay_alert",
-        title,
-        body: message,
-        clickAction: "/overstay",
-        data: { overstayType: type },
-      });
-    }
+    // Send push notification via unified push (Web Push + FCM)
+    await sendUserPush(userId, {
+      type: type === "finishing" ? "charging_complete" : "overstay_alert",
+      title,
+      body: message,
+      clickAction: "/overstay",
+      data: { overstayType: type },
+    });
 
     console.log(`[OverstayMonitor] Notification sent: type=${type}, userId=${userId}, title="${title}"`);
   } catch (error) {

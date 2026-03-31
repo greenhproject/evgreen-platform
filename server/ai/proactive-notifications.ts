@@ -139,18 +139,12 @@ async function checkLowPriceAtFavoriteStations(): Promise<void> {
 
             // Enviar push si tiene FCM token
             try {
-              const [user] = await db.select({ fcmToken: users.fcmToken })
-                .from(users)
-                .where(eq(users.id, profile.userId))
-                .limit(1);
-              if (user?.fcmToken) {
-                const { sendPushNotification } = await import("../firebase/fcm");
-                await sendPushNotification(user.fcmToken, {
-                  type: 'promotion',
-                  title: "💰 Precio bajo en tu estación favorita",
-                  body: `${favStation.name}: $${dynamicPrice.toLocaleString('es-CO')}/kWh (${Math.round(savingsPercent)}% menos). ¡Buen momento para cargar!`,
-                });
-              }
+              const { sendUserPush } = await import("../push/unified-push");
+              await sendUserPush(profile.userId, {
+                type: 'promotion',
+                title: "💰 Precio bajo en tu estación favorita",
+                body: `${favStation.name}: $${dynamicPrice.toLocaleString('es-CO')}/kWh (${Math.round(savingsPercent)}% menos). ¡Buen momento para cargar!`,
+              });
             } catch (_) { /* push optional */ }
 
             markAsSent(profile.userId, 'low_price');
@@ -220,20 +214,14 @@ async function checkHabitualChargingTime(): Promise<void> {
         type: "CHARGING",
       });
 
-      // Push notification
+      // Push notification (Web Push + FCM)
       try {
-        const [user] = await db.select({ fcmToken: users.fcmToken })
-          .from(users)
-          .where(eq(users.id, profile.userId))
-          .limit(1);
-        if (user?.fcmToken) {
-          const { sendPushNotification } = await import("../firebase/fcm");
-          await sendPushNotification(user.fcmToken, {
-            type: 'station_available',
-            title: "⚡ Es tu hora habitual de carga",
-            body: `Normalmente cargas a las ${currentHour}:00.${stationHint}`,
-          });
-        }
+        const { sendUserPush } = await import("../push/unified-push");
+        await sendUserPush(profile.userId, {
+          type: 'station_available',
+          title: "⚡ Es tu hora habitual de carga",
+          body: `Normalmente cargas a las ${currentHour}:00.${stationHint}`,
+        });
       } catch (_) { /* push optional */ }
 
       markAsSent(profile.userId, 'habitual_time');

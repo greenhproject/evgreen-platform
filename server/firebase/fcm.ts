@@ -133,10 +133,24 @@ export async function sendPushNotification(
         },
       },
       webpush: {
+        headers: {
+          Urgency: "high",
+          TTL: "86400",
+        },
         notification: {
+          title: `${style.icon} ${notification.title}`,
+          body: notification.body,
           icon: "/icons/icon-192x192.png",
           badge: "/icons/badge-72x72.png",
-          vibrate: [100, 50, 100],
+          vibrate: [200, 100, 200] as any,
+          tag: notification.type,
+          renotify: true,
+          requireInteraction: notification.type === "low_balance" || notification.type === "charging_error" || notification.type === "overstay_alert",
+          data: {
+            type: notification.type,
+            url: notification.clickAction || "/",
+            ...notification.data,
+          },
         },
         fcmOptions: {
           link: notification.clickAction || "/",
@@ -200,9 +214,26 @@ export async function sendPushNotificationToMultiple(
         },
       },
       webpush: {
+        headers: {
+          Urgency: "high",
+          TTL: "86400",
+        },
         notification: {
+          title: `${style.icon} ${notification.title}`,
+          body: notification.body,
           icon: "/icons/icon-192x192.png",
           badge: "/icons/badge-72x72.png",
+          vibrate: [200, 100, 200] as any,
+          tag: notification.type,
+          renotify: true,
+          data: {
+            type: notification.type,
+            url: notification.clickAction || "/",
+            ...notification.data,
+          },
+        },
+        fcmOptions: {
+          link: notification.clickAction || "/",
         },
       },
     };
