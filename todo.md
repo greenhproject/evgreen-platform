@@ -2469,3 +2469,15 @@
 - [x] Corregir getInvestorParticipations: cp.payment_status as paymentStatus
 - [x] Corregir updateProjectRaisedAmount: payment_status en SUM query
 - [x] Verificado con SQL directo: 5 proyectos retornados correctamente
+
+## Bug Push Notifications - 31 Marzo 2026
+- [x] Fix push notifications showing as generic Chrome notifications without title/body/details (should show full info like in-app notifications)
+- [x] Created unified-push.ts service (Web Push first, FCM fallback)
+- [x] Updated FCM webpush.notification to include title and body
+- [x] Updated service worker to v8 with enhanced payload extraction
+- [x] Migrated charging-router.ts to unified push
+- [x] Migrated overstay-monitor.ts to unified push
+- [x] Migrated balance-monitor.ts to unified push (also checks pushSubscription)
+- [x] Migrated proactive-notifications.ts to unified push
+- [x] Migrated routers.ts investor notifications to unified push
+- [x] Added 21 tests for unified push service and SW v8

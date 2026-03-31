@@ -1115,7 +1115,7 @@ const tariffsRouter = router({
       if (rangesChanged) {
         try {
           const investors = await db.getInvestorsWithActiveStations();
-          const { sendPushNotification } = await import("./firebase/fcm");
+          const { sendUserPush } = await import("./push/unified-push");
           
           for (const investor of investors) {
             // Crear notificación in-app
@@ -1127,14 +1127,12 @@ const tariffsRouter = router({
               data: JSON.stringify({ previousMin: previousRanges.minPrice, previousMax: previousRanges.maxPrice, newMin: input.minPrice, newMax: input.maxPrice }),
             });
             
-            // Enviar push notification si tiene token FCM
-            if (investor.fcmToken) {
-              await sendPushNotification(investor.fcmToken, {
-                type: "system_alert",
-                title: "Rangos de precio actualizados",
-                body: `Nuevo rango: $${input.minPrice.toLocaleString("es-CO")} - $${input.maxPrice.toLocaleString("es-CO")} COP/kWh`,
-              }).catch(() => {});
-            }
+            // Enviar push notification (Web Push + FCM)
+            await sendUserPush(investor.userId, {
+              type: "system_alert",
+              title: "Rangos de precio actualizados",
+              body: `Nuevo rango: $${input.minPrice.toLocaleString("es-CO")} - $${input.maxPrice.toLocaleString("es-CO")} COP/kWh`,
+            }).catch(() => {});
           }
           console.log(`[Notifications] Notificados ${investors.length} inversionistas sobre cambio de rangos globales`);
         } catch (e) { console.error('[Notifications] Error notifying investors:', e); }

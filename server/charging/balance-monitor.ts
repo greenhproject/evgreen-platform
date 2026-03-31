@@ -20,7 +20,7 @@ import {
 import { getAcceptanceToken } from "../wompi/recurring-billing";
 import { subscriptions, transactions } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
-import { sendPushNotification } from "../firebase/fcm";
+import { sendUserPush } from "../push/unified-push";
 import type { NotificationType } from "../firebase/fcm";
 
 // Track which users we've already attempted auto-recharge for in this cycle
@@ -512,16 +512,11 @@ async function sendBalancePush(
 ): Promise<void> {
   try {
     const user = await db.getUserById(userId);
-    if (!user?.fcmToken) {
-      return; // User has no push token registered
+    if (!user?.fcmToken && !user?.pushSubscription) {
+      return; // User has no push token or subscription registered
     }
 
-    // Skip local tokens (they don't work with FCM server-side)
-    if (user.fcmToken.startsWith("local_")) {
-      return;
-    }
-
-    const sent = await sendPushNotification(user.fcmToken, {
+    const sent = await sendUserPush(userId, {
       type,
       title,
       body,
@@ -535,7 +530,7 @@ async function sendBalancePush(
     if (sent) {
       console.log(`[BalanceMonitor] Push notification sent to user ${userId}: ${title}`);
     } else {
-      console.log(`[BalanceMonitor] Push notification failed for user ${userId} (token may be invalid)`);
+      console.log(`[BalanceMonitor] Push notification failed for user ${userId}`);
     }
   } catch (err) {
     // Push failures should never block the balance monitor flow

@@ -16,7 +16,7 @@ import {
 import { dualCSMS } from "../ocpp/csms-dual";
 import { v4 as uuidv4 } from "uuid";
 import * as simulator from "./charging-simulator";
-import { sendPushNotification } from "../firebase/fcm";
+import { sendUserPush } from "../push/unified-push";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 function getConnectionByStationId(stationId: number) {
@@ -1737,23 +1737,19 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
           session.chargeCompleteNotified = true;
           const kwhDelivered = session.currentKwh.toFixed(2);
           const cost = Math.round(session.currentCost).toLocaleString();
-          // Enviar notificación push al usuario
-          db.getUserById(session.userId).then(user => {
-            if (user?.fcmToken) {
-              sendPushNotification(user.fcmToken, {
-                type: "charging_complete",
-                title: "⚡ ¡Batería llena!",
-                body: `Tu vehículo ha completado la carga. ${kwhDelivered} kWh entregados por $${cost} COP. Desconecta para evitar tarifa de ocupación.`,
-                clickAction: "/charging-monitor",
-                data: {
-                  transactionId: transactionId.toString(),
-                  kwhDelivered,
-                  totalCost: cost,
-                  detectionMethod: "power_drop",
-                },
-              }).catch(err => console.error(`[SoC] Push notification error:`, err));
-            }
-          }).catch(err => console.error(`[SoC] Error fetching user for notification:`, err));
+          // Enviar notificación push al usuario (Web Push + FCM)
+          sendUserPush(session.userId, {
+            type: "charging_complete",
+            title: "⚡ ¡Batería llena!",
+            body: `Tu vehículo ha completado la carga. ${kwhDelivered} kWh entregados por $${cost} COP. Desconecta para evitar tarifa de ocupación.`,
+            clickAction: "/charging-monitor",
+            data: {
+              transactionId: transactionId.toString(),
+              kwhDelivered,
+              totalCost: cost,
+              detectionMethod: "power_drop",
+            },
+          }).catch(err => console.error(`[SoC] Push notification error:`, err));
           // También crear notificación in-app
           db.createNotification({
             userId: session.userId,
