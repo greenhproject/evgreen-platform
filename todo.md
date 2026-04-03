@@ -2481,3 +2481,9 @@
 - [x] Migrated proactive-notifications.ts to unified push
 - [x] Migrated routers.ts investor notifications to unified push
 - [x] Added 21 tests for unified push service and SW v8
+
+## Bug Contraste Transacciones Canceladas - 02 Abril 2026
+- [x] Fix: Badge de estado "Cancelada" en transacciones del inversionista se ve blanco sin texto legible (falta contraste)
+- [x] Agregado estilo CANCELLED/CANCELED con dark:bg-red-950/50 dark:text-red-400
+- [x] Mejorado fallback para estados desconocidos (bg-gray-800/50 text-gray-300)
+- [x] Agregado filtro "Canceladas" en dropdown de estado
