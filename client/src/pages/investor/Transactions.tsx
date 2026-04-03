@@ -86,14 +86,18 @@ export default function InvestorTransactions() {
       IN_PROGRESS: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
       PENDING: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
       FAILED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+      CANCELLED: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400",
+      CANCELED: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400",
     };
     const labels: Record<string, string> = {
       COMPLETED: "Completada",
       IN_PROGRESS: "En progreso",
       PENDING: "Pendiente",
       FAILED: "Fallida",
+      CANCELLED: "Cancelada",
+      CANCELED: "Cancelada",
     };
-    return <Badge className={styles[status] || "bg-gray-100"}>{labels[status] || status}</Badge>;
+    return <Badge className={styles[status] || "bg-gray-800/50 text-gray-300"}>{labels[status] || status}</Badge>;
   };
 
   // Calcular KPIs sobre la página actual (los totales globales vendrán del server)
@@ -295,6 +299,7 @@ export default function InvestorTransactions() {
                   <SelectItem value="COMPLETED">Completadas</SelectItem>
                   <SelectItem value="IN_PROGRESS">En progreso</SelectItem>
                   <SelectItem value="FAILED">Fallidas</SelectItem>
+                  <SelectItem value="CANCELLED">Canceladas</SelectItem>
                 </SelectContent>
               </Select>
               <Button variant="outline" size="sm" onClick={() => setShowDateFilters(!showDateFilters)} className="flex-shrink-0">
