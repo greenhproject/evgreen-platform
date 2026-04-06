@@ -97,8 +97,13 @@ const activeChargeSessions = new Map<number, {
 }>();
 
 /**
- * Deferred RemoteStartTransaction: reintenta enviar el comando cada 5 segundos
- * durante 60 segundos cuando no hay conexión OCPP activa al momento del inicio.
+ * Deferred RemoteStartTransaction: reintenta enviar el comando con backoff adaptativo.
+ * 
+ * Fase 1 (0-30s): Intenta cada 3 segundos (agresivo, para reconexiones rápidas)
+ * Fase 2 (30-120s): Intenta cada 10 segundos (más espaciado)
+ * 
+ * También se usa cuando el comando se envió pero la conexión murió antes de
+ * recibir la respuesta (el cargador pudo haber recibido el comando).
  */
 const deferredRetryTimers = new Map<string, NodeJS.Timeout>();
 
@@ -106,42 +111,80 @@ function startDeferredRemoteStart(
   sessionId: string,
   ocppIdentity: string,
   connectorId: number,
-  idTag: string
+  idTag: string,
+  options?: { commandMaySentAlready?: boolean }
 ): void {
   let attempts = 0;
-  const maxAttempts = 12; // 12 * 5s = 60 segundos
+  const startTime = Date.now();
+  const MAX_DURATION_MS = 120_000; // 2 minutos máximo
+  const PHASE1_DURATION_MS = 30_000; // Primeros 30s: agresivo
+  const PHASE1_INTERVAL = 3_000; // Cada 3s en fase 1
+  const PHASE2_INTERVAL = 10_000; // Cada 10s en fase 2
   
-  const timer = setInterval(async () => {
-    attempts++;
-    
-    // Verificar si la sesión pendiente aún existe
-    const session = pendingChargeSessions.get(sessionId);
-    if (!session) {
-      console.log(`[DeferredStart] Session ${sessionId} no longer pending. Stopping retry.`);
-      clearInterval(timer);
+  if (options?.commandMaySentAlready) {
+    console.log(`[DeferredStart] Command may have been sent already to ${ocppIdentity}. Will check for StatusNotification before resending.`);
+  }
+  
+  const scheduleNext = () => {
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= MAX_DURATION_MS) {
+      console.log(`[DeferredStart] Max duration (${MAX_DURATION_MS / 1000}s) reached for session ${sessionId}. Giving up.`);
       deferredRetryTimers.delete(sessionId);
       return;
     }
     
-    if (attempts > maxAttempts) {
-      console.log(`[DeferredStart] Max attempts reached for session ${sessionId}. Giving up.`);
-      clearInterval(timer);
-      deferredRetryTimers.delete(sessionId);
-      return;
-    }
+    const interval = elapsed < PHASE1_DURATION_MS ? PHASE1_INTERVAL : PHASE2_INTERVAL;
+    const phase = elapsed < PHASE1_DURATION_MS ? 1 : 2;
     
-    try {
-      console.log(`[DeferredStart] Attempt ${attempts}/${maxAttempts}: Sending RemoteStartTransaction to ${ocppIdentity} for session ${sessionId}`);
-      const response = await dualCSMS.requestStartTransaction(ocppIdentity, connectorId, idTag);
-      console.log(`[DeferredStart] SUCCESS! RemoteStartTransaction sent to ${ocppIdentity}: ${JSON.stringify(response)}`);
-      clearInterval(timer);
-      deferredRetryTimers.delete(sessionId);
-    } catch (error: any) {
-      console.log(`[DeferredStart] Attempt ${attempts}/${maxAttempts} failed for ${ocppIdentity}: ${error.message}`);
-    }
-  }, 5000);
+    const timer = setTimeout(async () => {
+      attempts++;
+      
+      // Verificar si la sesión pendiente aún existe (puede haber sido promovida por StartTransaction)
+      const session = pendingChargeSessions.get(sessionId);
+      if (!session) {
+        console.log(`[DeferredStart] Session ${sessionId} no longer pending (charger may have started). Stopping retry.`);
+        deferredRetryTimers.delete(sessionId);
+        return;
+      }
+      
+      // Si el comando pudo haberse enviado, verificar si el EVSE ya está en CHARGING/PREPARING
+      // (el cargador recibió el comando y empezó a cargar sin que el servidor lo supiera)
+      if (options?.commandMaySentAlready) {
+        try {
+          const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+          if (station) {
+            const evses = await db.getEvsesByStationId(station.id);
+            const targetEvse = evses.find((e: any) => e.evseIdLocal === connectorId);
+            if (targetEvse && (targetEvse.status === "CHARGING" || targetEvse.status === "PREPARING" || targetEvse.status === "SUSPENDED_EV")) {
+              console.log(`[DeferredStart] EVSE ${targetEvse.id} already in ${targetEvse.status} state. Charger received the command. Stopping retry.`);
+              deferredRetryTimers.delete(sessionId);
+              return;
+            }
+          }
+        } catch (e) {
+          // No crítico, continuar con el retry
+        }
+      }
+      
+      try {
+        console.log(`[DeferredStart] Phase ${phase}, Attempt ${attempts}: Sending RemoteStartTransaction to ${ocppIdentity} for session ${sessionId}`);
+        const response = await dualCSMS.requestStartTransaction(ocppIdentity, connectorId, idTag);
+        console.log(`[DeferredStart] SUCCESS! RemoteStartTransaction sent to ${ocppIdentity}: ${JSON.stringify(response)}`);
+        deferredRetryTimers.delete(sessionId);
+        return; // Éxito, no programar más reintentos
+      } catch (error: any) {
+        console.log(`[DeferredStart] Phase ${phase}, Attempt ${attempts} failed for ${ocppIdentity}: ${error.message}`);
+      }
+      
+      // Programar siguiente intento
+      scheduleNext();
+    }, interval);
+    
+    deferredRetryTimers.set(sessionId, timer);
+  };
   
-  deferredRetryTimers.set(sessionId, timer);
+  // Iniciar el primer intento
+  scheduleNext();
 }
 
 export const chargingRouter = router({
@@ -665,6 +708,9 @@ export const chargingRouter = router({
         
         // Intentar enviar con requestStartTransaction (async, espera respuesta, registra logs)
         // Retry hasta 3 veces con backoff de 2s entre intentos
+        // Track si el comando pudo haberse enviado pero la conexión murió antes de la respuesta
+        let commandMaySentAlready = false;
+        
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
             console.log(`[startCharge] Attempt ${attempt}/3: Sending RemoteStartTransaction to ${ocppIdentityForCommand}, connectorId=${connectorId}, idTag=${idTag}`);
@@ -679,14 +725,20 @@ export const chargingRouter = router({
             // Verificar si el cargador aceptó el comando
             if (remoteStartResponse?.status === "Rejected") {
               console.warn(`[startCharge] Charger ${ocppIdentityForCommand} REJECTED RemoteStartTransaction`);
-              // No reintentar si fue rechazado explícitamente
               break;
             }
             break; // Éxito, salir del loop
           } catch (error: any) {
             console.error(`[startCharge] Attempt ${attempt}/3 failed for ${ocppIdentityForCommand}: ${error.message}`);
+            
+            // Detectar si la conexión murió después de enviar ("Connection closed" o "Timeout")
+            // En este caso, el cargador PUDO haber recibido el comando
+            if (attempt === 1 && (error.message?.includes("Connection closed") || error.message?.includes("Timeout"))) {
+              commandMaySentAlready = true;
+              console.warn(`[startCharge] Connection died after sending command on attempt 1. Charger may have received it.`);
+            }
+            
             if (attempt < 3) {
-              // Esperar antes de reintentar (2s, 4s)
               await new Promise(resolve => setTimeout(resolve, attempt * 2000));
             }
           }
@@ -709,19 +761,22 @@ export const chargingRouter = router({
         
         if (!sent) {
           // El comando no se pudo enviar por ningún medio.
-          if (hasOcppConnection || isConnectedByIdentity) {
-            // Había conexión pero el envío falló - error temporal
-            pendingChargeSessions.delete(sessionId);
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "Error temporal al comunicarse con el cargador. Espera unos segundos e intenta de nuevo.",
-            });
-          }
+          // PERO si commandMaySentAlready=true, el cargador pudo haberlo recibido
+          // en el primer intento antes de que la conexión muriera.
+          // En ese caso, NO lanzar error: iniciar deferred retry que verifica el estado del EVSE.
           
-          // No hay conexión OCPP pero la estación tiene conector AVAILABLE en BD.
-          // Iniciar deferred retry: intentar enviar el comando cada 5 segundos durante 60 segundos
-          console.log(`[startCharge] No OCPP connection available. Starting deferred retry for session ${sessionId}`);
-          startDeferredRemoteStart(sessionId, ocppIdentityForCommand, connectorId, idTag);
+          if (commandMaySentAlready) {
+            console.log(`[startCharge] Command may have been sent before connection died. Starting deferred retry with EVSE status check.`);
+            startDeferredRemoteStart(sessionId, ocppIdentityForCommand, connectorId, idTag, { commandMaySentAlready: true });
+          } else if (hasOcppConnection || isConnectedByIdentity) {
+            // Había conexión pero el envío falló completamente - iniciar deferred retry en vez de error
+            console.log(`[startCharge] Connection existed but send failed. Starting deferred retry for session ${sessionId}`);
+            startDeferredRemoteStart(sessionId, ocppIdentityForCommand, connectorId, idTag);
+          } else {
+            // No hay conexión OCPP pero la estación tiene conector AVAILABLE en BD.
+            console.log(`[startCharge] No OCPP connection available. Starting deferred retry for session ${sessionId}`);
+            startDeferredRemoteStart(sessionId, ocppIdentityForCommand, connectorId, idTag);
+          }
         }
         
         // Si el cargador rechazó explícitamente, limpiar y notificar

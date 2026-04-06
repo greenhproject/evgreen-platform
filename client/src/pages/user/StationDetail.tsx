@@ -125,6 +125,16 @@ function DynamicPricingCard({ stationId }: { stationId: number }) {
             </div>
           )}
 
+          {/* Descuento de suscripción */}
+          {kwhPrice && (kwhPrice as any).subscriptionDiscount > 0 && (
+            <div className="flex items-center gap-2 text-sm text-green-400">
+              <span>Descuento suscripción: -{(kwhPrice as any).subscriptionDiscount}%</span>
+              <span className="line-through text-muted-foreground text-xs">
+                ${(kwhPrice as any).priceBeforeDiscount?.toLocaleString()}
+              </span>
+            </div>
+          )}
+
           {/* Detalles de factores */}
           {kwhPrice && (
             <div className="pt-3 border-t border-border/50 space-y-2">

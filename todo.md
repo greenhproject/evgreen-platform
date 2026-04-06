@@ -2487,3 +2487,10 @@
 - [x] Agregado estilo CANCELLED/CANCELED con dark:bg-red-950/50 dark:text-red-400
 - [x] Mejorado fallback para estados desconocidos (bg-gray-800/50 text-gray-300)
 - [x] Agregado filtro "Canceladas" en dropdown de estado
+
+## Bugs Carga 05 Abril 2026
+- [x] Bug 1: Precio inconsistente - getDynamicKwhPrice ahora aplica descuento de suscripción cuando el usuario está autenticado
+- [x] Bug 1: Agregado indicador de descuento de suscripción en tarjeta de precios de estación
+- [x] Bug 2: Mejorado deferred retry con backoff adaptativo (3s fase 1, 10s fase 2, 2min total)
+- [x] Bug 2: Detectar cuando comando se envió pero conexión murió (commandMaySentAlready) - verificar estado EVSE antes de reenviar
+- [x] Bug 2: No lanzar error cuando la conexión existía pero falló - usar deferred retry en vez de error inmediato
