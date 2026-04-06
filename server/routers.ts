@@ -1407,17 +1407,45 @@ const transactionsRouter = router({
     }),
   
   // Obtener precio dinámico actual del kWh para una estación
+  // Incluye descuento de suscripción si el usuario está autenticado
   getDynamicKwhPrice: publicProcedure
     .input(z.object({
       stationId: z.number(),
       evseId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const pricing = await dynamicPricing.calculateDynamicKwhPrice(
         input.stationId,
         input.evseId
       );
-      return pricing;
+      
+      // Si el usuario está autenticado, aplicar descuento de suscripción al precio mostrado
+      let subscriptionDiscount = 0;
+      let discountedPrice = pricing.dynamicPricePerKwh;
+      try {
+        const userId = (ctx as any)?.user?.id;
+        if (userId) {
+          const userSub = await db.getUserSubscription(userId);
+          if (userSub?.isActive && userSub.discountPercentage) {
+            const discountPct = parseFloat(userSub.discountPercentage);
+            if (discountPct > 0) {
+              subscriptionDiscount = discountPct;
+              discountedPrice = Math.round(pricing.dynamicPricePerKwh * (1 - discountPct / 100));
+            }
+          }
+        }
+      } catch (e) {
+        // Si no hay usuario autenticado, se muestra el precio sin descuento
+      }
+      
+      return {
+        ...pricing,
+        // Precio con descuento de suscripción (si aplica)
+        dynamicPricePerKwh: discountedPrice,
+        // Precio sin descuento (para mostrar comparación)
+        priceBeforeDiscount: subscriptionDiscount > 0 ? pricing.dynamicPricePerKwh : undefined,
+        subscriptionDiscount,
+      };
     }),
   
   // Estimar costo de carga basado en kWh objetivo
