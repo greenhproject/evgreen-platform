@@ -18,7 +18,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { getDb } from "./db";
 import { users, userVehicles, favoriteStations, notifications } from "../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { aiRouter } from "./ai/ai-router";
 import { wompiRouter } from "./wompi/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
@@ -3388,9 +3388,30 @@ const crowdfundingRouter = router({
         }
       }
       
+      // Conexión crowdfunding → módulo de inversionistas:
+      // Actualizar investorTypes para incluir 'collective' automáticamente
+      try {
+        const database = await getDb();
+        if (database) {
+          // Obtener tipos actuales
+          const [userRows] = await database.execute(sql`SELECT investorTypes FROM users WHERE id = ${investorId}`);
+          const currentTypes: string[] = (userRows as any)?.[0]?.investorTypes || [];
+          if (!currentTypes.includes('collective')) {
+            const newTypes = [...currentTypes, 'collective'];
+            await database.execute(sql`UPDATE users SET investorTypes = ${JSON.stringify(newTypes)} WHERE id = ${investorId}`);
+          }
+          // Actualizar investorTotalInvested
+          await database.execute(sql`UPDATE users SET investorTotalInvested = COALESCE(investorTotalInvested, 0) + ${input.amount} WHERE id = ${investorId}`);
+          // Establecer investorJoinedAt si no existe
+          await database.execute(sql`UPDATE users SET investorJoinedAt = NOW() WHERE id = ${investorId} AND investorJoinedAt IS NULL`);
+        }
+        console.log(`[Crowdfunding] Inversionista ${investorId} actualizado con tipo 'collective' y monto ${input.amount}`);
+      } catch (e) {
+        console.error('[Crowdfunding] Error updating investor types:', e);
+      }
+      
       // Si el proyecto tiene estación asignada, vincular al inversionista
       if (project.stationId) {
-        // Aquí podríamos agregar lógica adicional para vincular al inversionista con la estación
         console.log(`[Crowdfunding] Inversionista ${investorId} vinculado a estación ${project.stationId}`);
       }
       
@@ -4397,21 +4418,43 @@ const investorManagementRouter = router({
       allUsers.map(async (user: any) => {
         const participations = await db.getInvestorParticipations(user.id);
         const stations = await db.getAllChargingStations({ ownerId: user.id });
+        // Normalizar investorTypes: usar el nuevo campo JSON o derivar del legacy
+        let investorTypes: string[] = [];
+        if (user.investorTypes && Array.isArray(user.investorTypes) && user.investorTypes.length > 0) {
+          investorTypes = user.investorTypes;
+        } else if (user.investorType) {
+          investorTypes = [user.investorType];
+        }
+        // Asegurar que 'founder' esté en los tipos si isFounder es true
+        if (user.isFounder && !investorTypes.includes('founder')) {
+          investorTypes.push('founder');
+        }
+        // Determinar tipo automáticamente basado en datos reales
+        if (stations.length > 0 && !investorTypes.includes('individual')) {
+          investorTypes.push('individual');
+        }
+        if (participations.length > 0 && !investorTypes.includes('collective')) {
+          investorTypes.push('collective');
+        }
         return {
           ...user,
+          investorTypes, // Array de tipos NO excluyentes
           participations,
           ownedStations: stations,
-          totalInvested: participations.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0),
+          totalInvested: participations.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0) + (user.investorTotalInvested || 0),
         };
       })
     );
     return investorsWithData;
   }),
 
-  // Admin: actualizar perfil de inversionista (tipo, fundador, frase, bio, badge, etc)
+  // Admin: actualizar perfil de inversionista (tipos múltiples, fundador, frase, bio, badge, etc)
   updateProfile: adminProcedure
     .input(z.object({
       userId: z.number(),
+      // Nuevo: array de tipos NO excluyentes
+      investorTypes: z.array(z.enum(['individual', 'collective', 'founder'])).optional(),
+      // Legacy: tipo único (se mantiene por compatibilidad)
       investorType: z.enum(['individual', 'collective', 'founder']).optional(),
       isFounder: z.boolean().optional(),
       founderTitle: z.string().max(100).optional().nullable(),
@@ -4423,8 +4466,27 @@ const investorManagementRouter = router({
       investorShowInWall: z.boolean().optional(),
     }))
     .mutation(async ({ input }) => {
-      const { userId, ...data } = input;
-      await db.updateUser(userId, data as any);
+      const { userId, investorTypes, ...data } = input;
+      // Si se envían investorTypes (array), actualizar el campo JSON y sincronizar legacy
+      const updateData: any = { ...data };
+      if (investorTypes !== undefined) {
+        updateData.investorTypes = JSON.stringify(investorTypes);
+        // Sincronizar campo legacy con el primer tipo del array
+        if (investorTypes.length > 0) {
+          updateData.investorType = investorTypes[0];
+        }
+        // Sincronizar isFounder con la presencia de 'founder' en los tipos
+        updateData.isFounder = investorTypes.includes('founder');
+      }
+      // Actualizar investorTypes via SQL directo para JSON
+      if (investorTypes !== undefined) {
+        const database = await getDb();
+        if (database) {
+          await database.execute(sql`UPDATE users SET investorTypes = ${JSON.stringify(investorTypes)} WHERE id = ${userId}`);
+        }
+        delete updateData.investorTypes; // No pasar JSON string al updateUser genérico
+      }
+      await db.updateUser(userId, updateData);
       return { success: true };
     }),
 
@@ -4487,12 +4549,26 @@ const investorManagementRouter = router({
     return founders;
   }),
 
-  // Inversionista: obtener su propio perfil de inversionista
+  // Inversionista: obtener su propio perfil completo
   getMyProfile: investorProcedure.query(async ({ ctx }) => {
     const user = await db.getUserById(ctx.user.id);
     if (!user) throw new TRPCError({ code: 'NOT_FOUND' });
+    // Obtener participaciones y estaciones propias
+    const participations = await db.getInvestorParticipations(ctx.user.id);
+    const ownedStations = await db.getAllChargingStations({ ownerId: ctx.user.id });
+    // Normalizar investorTypes
+    let investorTypes: string[] = [];
+    if ((user as any).investorTypes && Array.isArray((user as any).investorTypes)) {
+      investorTypes = (user as any).investorTypes;
+    } else if (user.investorType) {
+      investorTypes = [user.investorType];
+    }
+    if (user.isFounder && !investorTypes.includes('founder')) investorTypes.push('founder');
+    if (ownedStations.length > 0 && !investorTypes.includes('individual')) investorTypes.push('individual');
+    if (participations.length > 0 && !investorTypes.includes('collective')) investorTypes.push('collective');
     return {
       investorType: user.investorType,
+      investorTypes, // Array de tipos NO excluyentes
       isFounder: user.isFounder,
       founderTitle: user.founderTitle,
       investorPhotoUrl: user.investorPhotoUrl,
@@ -4502,6 +4578,21 @@ const investorManagementRouter = router({
       investorJoinedAt: user.investorJoinedAt,
       investorTotalInvested: user.investorTotalInvested,
       companyName: user.companyName,
+      // Perfil completo: estaciones propias + participaciones colectivas
+      ownedStations: ownedStations.map((s: any) => ({
+        id: s.id, name: s.name, city: s.city, address: s.address, isOnline: s.isOnline,
+      })),
+      participations: participations.map((p: any) => ({
+        id: p.id,
+        amount: Number(p.amount || 0),
+        participationPercent: Number(p.participationPercent || 0),
+        paymentStatus: p.paymentStatus,
+        project: p.project ? {
+          id: p.project.id, name: p.project.name, city: p.project.city,
+          targetAmount: p.project.targetAmount, raisedAmount: p.project.raisedAmount,
+        } : null,
+      })),
+      totalInvested: participations.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0) + (user.investorTotalInvested || 0),
     };
   }),
 });

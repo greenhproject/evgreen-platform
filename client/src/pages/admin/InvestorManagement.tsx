@@ -12,14 +12,13 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Search, Crown, Star, Building2, Users, Camera, Upload, Pencil,
   Award, Gem, Shield, TrendingUp, MapPin, DollarSign, Eye, EyeOff,
+  Percent, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,9 +30,9 @@ const BADGE_OPTIONS = [
 ];
 
 const TYPE_OPTIONS = [
-  { value: "individual", label: "Dueño Individual", desc: "Propietario de estación completa" },
-  { value: "collective", label: "Participación Colectiva", desc: "Dueño de participación en estación" },
-  { value: "founder", label: "Fundador", desc: "Inversionista fundador del proyecto" },
+  { value: "individual", label: "Dueño Individual", desc: "Propietario de estación completa", icon: Building2, color: "text-blue-500" },
+  { value: "collective", label: "Participación Colectiva", desc: "Participación en estación colectiva", icon: Users, color: "text-purple-500" },
+  { value: "founder", label: "Fundador", desc: "Inversionista fundador del proyecto", icon: Crown, color: "text-amber-500" },
 ];
 
 export default function InvestorManagement() {
@@ -61,9 +60,9 @@ export default function InvestorManagement() {
     onError: (e) => toast.error(e.message),
   });
 
-  // Form state
+  // Form state - ahora con investorTypes como array (checkboxes múltiples)
   const [editForm, setEditForm] = useState({
-    investorType: "" as string,
+    investorTypes: [] as string[],
     isFounder: false,
     founderTitle: "",
     founderOrder: 0,
@@ -75,9 +74,18 @@ export default function InvestorManagement() {
 
   const openEditModal = (investor: any) => {
     setSelectedInvestor(investor);
+    // Normalizar investorTypes del backend
+    let types: string[] = [];
+    if (investor.investorTypes && Array.isArray(investor.investorTypes) && investor.investorTypes.length > 0) {
+      types = [...investor.investorTypes];
+    } else if (investor.investorType) {
+      types = [investor.investorType];
+    }
+    if (investor.isFounder && !types.includes("founder")) types.push("founder");
+    
     setEditForm({
-      investorType: investor.investorType || "",
-      isFounder: investor.isFounder || false,
+      investorTypes: types,
+      isFounder: types.includes("founder") || investor.isFounder || false,
       founderTitle: investor.founderTitle || "",
       founderOrder: investor.founderOrder || 0,
       investorQuote: investor.investorQuote || "",
@@ -88,12 +96,25 @@ export default function InvestorManagement() {
     setShowEditModal(true);
   };
 
+  const toggleType = (type: string) => {
+    setEditForm((f) => {
+      const newTypes = f.investorTypes.includes(type)
+        ? f.investorTypes.filter((t) => t !== type)
+        : [...f.investorTypes, type];
+      return {
+        ...f,
+        investorTypes: newTypes,
+        isFounder: newTypes.includes("founder"),
+      };
+    });
+  };
+
   const handleSave = () => {
     if (!selectedInvestor) return;
     updateProfile.mutate({
       userId: selectedInvestor.id,
-      investorType: editForm.investorType as any || undefined,
-      isFounder: editForm.isFounder,
+      investorTypes: editForm.investorTypes as any,
+      isFounder: editForm.investorTypes.includes("founder"),
       founderTitle: editForm.founderTitle || null,
       founderOrder: editForm.founderOrder || null,
       investorQuote: editForm.investorQuote || null,
@@ -134,8 +155,27 @@ export default function InvestorManagement() {
   const getBadgeInfo = (badge: string | null) =>
     BADGE_OPTIONS.find((b) => b.value === badge) || null;
 
-  const getTypeLabel = (type: string | null) =>
-    TYPE_OPTIONS.find((t) => t.value === type)?.label || "Sin asignar";
+  // Obtener labels de tipos múltiples
+  const getTypeLabels = (investor: any) => {
+    const types: string[] = investor.investorTypes && Array.isArray(investor.investorTypes) && investor.investorTypes.length > 0
+      ? investor.investorTypes
+      : investor.investorType ? [investor.investorType] : [];
+    if (investor.isFounder && !types.includes("founder")) types.push("founder");
+    return types;
+  };
+
+  const getTypeBadgeColor = (type: string) => {
+    switch (type) {
+      case "individual": return "bg-blue-100 text-blue-700 border-blue-200";
+      case "collective": return "bg-purple-100 text-purple-700 border-purple-200";
+      case "founder": return "bg-amber-100 text-amber-700 border-amber-200";
+      default: return "bg-gray-100 text-gray-700";
+    }
+  };
+
+  const getTypeLabel = (type: string) => {
+    return TYPE_OPTIONS.find((t) => t.value === type)?.label || type;
+  };
 
   const filtered = investors?.filter((inv: any) => {
     if (!searchQuery) return true;
@@ -147,17 +187,26 @@ export default function InvestorManagement() {
     );
   });
 
-  // Stats
+  // Stats - ahora basados en investorTypes (array)
   const totalInvestors = investors?.length || 0;
-  const founders = investors?.filter((i: any) => i.isFounder)?.length || 0;
-  const individualOwners = investors?.filter((i: any) => i.investorType === "individual")?.length || 0;
-  const collectiveOwners = investors?.filter((i: any) => i.investorType === "collective")?.length || 0;
+  const founders = investors?.filter((i: any) => {
+    const types = getTypeLabels(i);
+    return types.includes("founder");
+  })?.length || 0;
+  const individualOwners = investors?.filter((i: any) => {
+    const types = getTypeLabels(i);
+    return types.includes("individual");
+  })?.length || 0;
+  const collectiveOwners = investors?.filter((i: any) => {
+    const types = getTypeLabels(i);
+    return types.includes("collective");
+  })?.length || 0;
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Gestión de Inversionistas</h1>
-        <p className="text-muted-foreground">Administra perfiles, tipos, insignias y el muro de fundadores</p>
+        <p className="text-muted-foreground">Administra perfiles, tipos (no excluyentes), insignias y el muro de fundadores</p>
       </div>
 
       {/* KPIs */}
@@ -226,9 +275,9 @@ export default function InvestorManagement() {
             <TableHeader>
               <TableRow>
                 <TableHead>Inversionista</TableHead>
-                <TableHead>Tipo</TableHead>
+                <TableHead>Tipos</TableHead>
                 <TableHead>Insignia</TableHead>
-                <TableHead>Estaciones</TableHead>
+                <TableHead>Estaciones / Participaciones</TableHead>
                 <TableHead>Invertido</TableHead>
                 <TableHead>Muro</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
@@ -250,6 +299,7 @@ export default function InvestorManagement() {
               ) : (
                 filtered?.map((inv: any) => {
                   const badgeInfo = getBadgeInfo(inv.investorBadge);
+                  const types = getTypeLabels(inv);
                   return (
                     <TableRow key={inv.id}>
                       <TableCell>
@@ -261,7 +311,7 @@ export default function InvestorManagement() {
                                 {inv.name?.charAt(0)?.toUpperCase() || "I"}
                               </AvatarFallback>
                             </Avatar>
-                            {inv.isFounder && (
+                            {types.includes("founder") && (
                               <div className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
                                 <Crown className="w-3 h-3 text-white" />
                               </div>
@@ -277,14 +327,15 @@ export default function InvestorManagement() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {getTypeLabel(inv.investorType)}
-                        </Badge>
-                        {inv.isFounder && (
-                          <Badge className="ml-1 bg-amber-500/10 text-amber-600 text-xs">
-                            {inv.founderTitle || "Fundador"}
-                          </Badge>
-                        )}
+                        <div className="flex flex-wrap gap-1">
+                          {types.length > 0 ? types.map((type) => (
+                            <Badge key={type} variant="outline" className={`text-xs ${getTypeBadgeColor(type)}`}>
+                              {getTypeLabel(type)}
+                            </Badge>
+                          )) : (
+                            <span className="text-xs text-muted-foreground">Sin asignar</span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {badgeInfo ? (
@@ -297,9 +348,22 @@ export default function InvestorManagement() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1 text-sm">
-                          <MapPin className="w-3 h-3 text-muted-foreground" />
-                          {inv.ownedStations?.length || 0}
+                        <div className="space-y-1">
+                          {(inv.ownedStations?.length || 0) > 0 && (
+                            <div className="flex items-center gap-1 text-xs">
+                              <Building2 className="w-3 h-3 text-blue-500" />
+                              <span>{inv.ownedStations.length} estación(es) propia(s)</span>
+                            </div>
+                          )}
+                          {(inv.participations?.length || 0) > 0 && (
+                            <div className="flex items-center gap-1 text-xs">
+                              <Users className="w-3 h-3 text-purple-500" />
+                              <span>{inv.participations.length} participación(es)</span>
+                            </div>
+                          )}
+                          {(inv.ownedStations?.length || 0) === 0 && (inv.participations?.length || 0) === 0 && (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -363,40 +427,48 @@ export default function InvestorManagement() {
           </DialogHeader>
 
           <div className="space-y-6 py-4">
-            {/* Tipo de inversionista */}
+            {/* Tipos de inversionista - CHECKBOXES MÚLTIPLES (no excluyentes) */}
             <div className="space-y-2">
-              <Label className="text-sm font-semibold">Tipo de Inversionista</Label>
+              <Label className="text-sm font-semibold">Tipos de Inversionista (no excluyentes)</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Un inversionista puede tener múltiples tipos simultáneamente
+              </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {TYPE_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setEditForm((f) => ({ ...f, investorType: opt.value }))}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${
-                      editForm.investorType === opt.value
-                        ? "border-emerald-500 bg-emerald-500/5"
-                        : "border-border hover:border-emerald-500/30"
-                    }`}
-                  >
-                    <p className="font-medium text-sm">{opt.label}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
-                  </button>
-                ))}
+                {TYPE_OPTIONS.map((opt) => {
+                  const isChecked = editForm.investorTypes.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => toggleType(opt.value)}
+                      className={`p-3 rounded-xl border-2 text-left transition-all ${
+                        isChecked
+                          ? "border-emerald-500 bg-emerald-500/5"
+                          : "border-border hover:border-emerald-500/30"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={() => toggleType(opt.value)}
+                          className="data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
+                        />
+                        <opt.icon className={`w-4 h-4 ${opt.color}`} />
+                        <p className="font-medium text-sm">{opt.label}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground ml-8">{opt.desc}</p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Fundador */}
-            <Card className="p-4 bg-amber-500/5 border-amber-500/20">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
+            {/* Fundador - solo si está seleccionado el tipo fundador */}
+            {editForm.investorTypes.includes("founder") && (
+              <Card className="p-4 bg-amber-500/5 border-amber-500/20">
+                <div className="flex items-center gap-2 mb-4">
                   <Crown className="w-5 h-5 text-amber-500" />
-                  <Label className="text-sm font-semibold">Fundador</Label>
+                  <Label className="text-sm font-semibold">Configuración de Fundador</Label>
                 </div>
-                <Switch
-                  checked={editForm.isFounder}
-                  onCheckedChange={(v) => setEditForm((f) => ({ ...f, isFounder: v }))}
-                />
-              </div>
-              {editForm.isFounder && (
                 <div className="space-y-3">
                   <div>
                     <Label className="text-xs">Título de Fundador</Label>
@@ -416,8 +488,8 @@ export default function InvestorManagement() {
                     />
                   </div>
                 </div>
-              )}
-            </Card>
+              </Card>
+            )}
 
             {/* Insignia */}
             <div className="space-y-2">
@@ -481,25 +553,46 @@ export default function InvestorManagement() {
               />
             </div>
 
-            {/* Info de participaciones */}
+            {/* Participaciones en proyectos colectivos (crowdfunding) */}
             {selectedInvestor?.participations?.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-sm font-semibold">Participaciones</Label>
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <Users className="w-4 h-4 text-purple-500" />
+                  Participaciones Colectivas (Crowdfunding)
+                </Label>
                 <div className="space-y-2">
                   {selectedInvestor.participations.map((p: any) => (
-                    <div key={p.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                      <div>
+                    <div key={p.id} className="p-3 bg-purple-500/5 border border-purple-500/20 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
                         <p className="text-sm font-medium">{p.project?.name || "Proyecto"}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {p.project?.city} • {Number(p.participationPercent).toFixed(1)}% participación
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold">{formatCurrency(Number(p.amount))}</p>
-                        <Badge variant="outline" className="text-xs">
+                        <Badge variant="outline" className={`text-xs ${
+                          p.paymentStatus === "COMPLETED" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+                        }`}>
                           {p.paymentStatus === "COMPLETED" ? "Pagado" : "Pendiente"}
                         </Badge>
                       </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <p className="text-muted-foreground">Inversión</p>
+                          <p className="font-bold text-sm">{formatCurrency(Number(p.amount))}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">% Participación</p>
+                          <p className="font-bold text-sm flex items-center gap-1">
+                            <Percent className="w-3 h-3" />
+                            {Number(p.participationPercent).toFixed(2)}%
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Meta del Proyecto</p>
+                          <p className="font-bold text-sm">{formatCurrency(Number(p.project?.targetAmount || 0))}</p>
+                        </div>
+                      </div>
+                      {p.project?.city && (
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                          <MapPin className="w-3 h-3" /> {p.project.city}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -509,12 +602,15 @@ export default function InvestorManagement() {
             {/* Estaciones propias */}
             {selectedInvestor?.ownedStations?.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-sm font-semibold">Estaciones Propias</Label>
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-blue-500" />
+                  Estaciones Propias (Individual)
+                </Label>
                 <div className="space-y-2">
                   {selectedInvestor.ownedStations.map((s: any) => (
-                    <div key={s.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <div key={s.id} className="flex items-center justify-between p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
                       <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-emerald-500" />
+                        <Zap className="w-4 h-4 text-blue-500" />
                         <div>
                           <p className="text-sm font-medium">{s.name}</p>
                           <p className="text-xs text-muted-foreground">{s.city} - {s.address}</p>

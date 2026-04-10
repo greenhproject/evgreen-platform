@@ -49,7 +49,8 @@ import {
   Bolt,
   Flame,
   Timer,
-  TrendingDown
+  TrendingDown,
+  Crown
 } from "lucide-react";
 
 // ============================================================================
@@ -759,6 +760,109 @@ export default function Investors() {
                 </div>
               </CardContent>
             </Card>
+          </div>
+        </div>
+      </section>
+    );
+  };
+
+  // ============================================================================
+  // MURO DE FUNDADORES - Sección pública en la landing de inversión
+  // ============================================================================
+  
+  const FoundersWallSection = () => {
+    const { data: founders, isLoading } = trpc.investorManagement.getFoundersWall.useQuery();
+    
+    if (isLoading || !founders || founders.length === 0) return null;
+    
+    return (
+      <section className="py-20 bg-gradient-to-b from-slate-900/50 to-black">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 mb-4">
+              <Crown className="w-4 h-4 text-amber-400" />
+              <span className="text-amber-400 text-sm font-medium">Nuestros Fundadores</span>
+            </div>
+            <h2 className="text-4xl font-bold mb-4">
+              Muro de{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-yellow-500">
+                Fundadores
+              </span>
+            </h2>
+            <p className="text-white/60 text-lg max-w-2xl mx-auto">
+              Los visionarios que hicieron posible la revolución de la movilidad eléctrica en Colombia
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {founders.map((founder: any, index: number) => {
+              const badgeConfig: Record<string, { label: string; gradient: string }> = {
+                emerald: { label: "Esmeralda", gradient: "from-emerald-500 to-emerald-700" },
+                gold: { label: "Oro", gradient: "from-yellow-400 to-amber-600" },
+                platinum: { label: "Platino", gradient: "from-slate-300 to-slate-500" },
+                diamond: { label: "Diamante", gradient: "from-cyan-300 to-blue-500" },
+              };
+              const badgeInfo = founder.investorBadge ? badgeConfig[founder.investorBadge] : null;
+              
+              return (
+                <div
+                  key={founder.id}
+                  className="relative group"
+                >
+                  <div className="p-6 rounded-2xl bg-gradient-to-br from-amber-500/10 via-slate-800/50 to-slate-900/50 border border-amber-500/20 hover:border-amber-500/40 transition-all duration-300">
+                    {/* Decoración superior */}
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/30">
+                        <Crown className="w-5 h-5 text-white" />
+                      </div>
+                    </div>
+                    
+                    <div className="text-center pt-4">
+                      {/* Avatar */}
+                      <div className="relative inline-block mb-4">
+                        <div className="w-20 h-20 rounded-full overflow-hidden ring-3 ring-amber-500/30 ring-offset-4 ring-offset-slate-900 mx-auto">
+                          {founder.investorPhotoUrl ? (
+                            <img src={founder.investorPhotoUrl} alt={founder.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+                              <span className="text-white font-bold text-2xl">
+                                {founder.name?.charAt(0)?.toUpperCase() || "F"}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Nombre y título */}
+                      <h3 className="text-lg font-bold text-white mb-1">{founder.name}</h3>
+                      {founder.founderTitle && (
+                        <p className="text-amber-400 text-sm font-medium mb-1">{founder.founderTitle}</p>
+                      )}
+                      {founder.companyName && (
+                        <p className="text-white/40 text-xs mb-3">{founder.companyName}</p>
+                      )}
+                      
+                      {/* Insignia */}
+                      {badgeInfo && (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r ${badgeInfo.gradient} text-white text-xs font-medium mb-3">
+                          <Sparkles className="w-3 h-3" />
+                          {badgeInfo.label}
+                        </div>
+                      )}
+                      
+                      {/* Frase */}
+                      {founder.investorQuote && (
+                        <div className="mt-3 pt-3 border-t border-white/10">
+                          <p className="text-white/60 text-sm italic leading-relaxed">
+                            “{founder.investorQuote}”
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -1859,6 +1963,9 @@ export default function Investors() {
           </div>
         </div>
       </section>
+
+      {/* Muro de Fundadores */}
+      <FoundersWallSection />
 
       {/* Sección de contacto */}
       <section id="contacto" className="py-20 bg-gradient-to-b from-slate-900 to-black">
