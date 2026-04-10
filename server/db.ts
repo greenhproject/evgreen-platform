@@ -4002,7 +4002,9 @@ export async function getCrowdfundingProjects(options?: {
     query += ` ORDER BY p.priority ASC, p.createdAt DESC`;
     
     const result = await db.execute(sql.raw(query));
-    return ((result as any)[0] as CrowdfundingProject[]) || [];
+    const rows = ((result as any)[0] as CrowdfundingProject[]) || [];
+    // Normalizar hasSolarPanels de tinyint(1) a boolean
+    return rows.map(r => ({ ...r, hasSolarPanels: !!r.hasSolarPanels }));
   } catch (error) {
     console.error('[DB] Error getting crowdfunding projects:', error);
     return [];
@@ -4025,7 +4027,10 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
     `));
     
     const rows = (result as any)[0] as CrowdfundingProject[];
-    return rows[0] || null;
+    const row = rows[0] || null;
+    // Normalizar hasSolarPanels de tinyint(1) a boolean
+    if (row) row.hasSolarPanels = !!row.hasSolarPanels;
+    return row;
   } catch (error) {
     console.error('[DB] Error getting crowdfunding project:', error);
     return null;
@@ -4228,7 +4233,7 @@ export async function getInvestorParticipations(investorId: number): Promise<any
         targetAmount: row.projectTargetAmount,
         raisedAmount: row.projectRaisedAmount,
         totalPowerKw: row.projectTotalPowerKw,
-        hasSolarPanels: row.projectHasSolarPanels,
+        hasSolarPanels: !!row.projectHasSolarPanels,
         stationId: row.projectStationId,
         estimatedRoiPercent: row.projectEstimatedRoiPercent,
       }

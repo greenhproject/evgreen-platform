@@ -2494,3 +2494,45 @@
 - [x] Bug 2: Mejorado deferred retry con backoff adaptativo (3s fase 1, 10s fase 2, 2min total)
 - [x] Bug 2: Detectar cuando comando se envió pero conexión murió (commandMaySentAlready) - verificar estado EVSE antes de reenviar
 - [x] Bug 2: No lanzar error cuando la conexión existía pero falló - usar deferred retry en vez de error inmediato
+
+## Refactorización Módulo Inversionistas - 10 Abril 2026
+- [ ] Tipos de inversionista NO excluyentes (un mismo inversionista puede ser Fundador + Dueño Individual + Participación Colectiva simultáneamente)
+- [ ] Campo de inversión para estación colectiva conectado con crowdfunding para calcular % de participación automáticamente
+- [ ] Perfil del inversionista debe mostrar estaciones propias Y estaciones donde tiene participación
+- [ ] Liquidación automática de ingresos según % de participación del inversionista
+- [ ] Conexión crowdfunding → inversionistas: cuando alguien invierte en crowdfunding debe aparecer automáticamente en módulo de inversionistas
+- [ ] Muro de fundadores visible en landing de inversión
+- [ ] Fix bug: hasSolarPanels espera boolean pero recibe number en editar proyecto crowdfunding
+
+
+## Mejoras Módulo Inversionistas - 10 Abril 2026
+
+### Tipos de Inversionista No Excluyentes
+- [x] Agregar campo investorTypes (JSON array) al schema de DB
+- [x] Migrar datos existentes de investorType (enum) a investorTypes (array)
+- [x] Actualizar backend: investorManagementRouter.list normaliza investorTypes
+- [x] Actualizar backend: investorManagementRouter.updateProfile acepta investorTypes array
+- [x] Actualizar backend: investorManagementRouter.getMyProfile incluye investorTypes
+- [x] Actualizar frontend admin: InvestorManagement.tsx usa checkboxes múltiples en vez de selector exclusivo
+- [x] Un inversionista puede ser fundador + individual + colectivo simultáneamente
+
+### Conexión Crowdfunding → Módulo Inversionistas
+- [x] Cuando se registra un inversionista en crowdfunding, se actualiza automáticamente investorTypes con 'collective'
+- [x] Se actualiza investorTotalInvested automáticamente al registrar participación
+- [x] Se establece investorJoinedAt automáticamente
+- [x] Inversionistas registrados en crowdfunding aparecen en el módulo de inversionistas
+
+### Perfil del Inversionista Completo
+- [x] Perfil muestra estaciones propias (individual) Y participaciones colectivas
+- [x] Participaciones muestran monto invertido, % de participación y meta del proyecto
+- [x] % de participación se calcula automáticamente basado en inversión / meta del proyecto
+
+### Muro de Fundadores en Landing de Inversión
+- [x] Agregar sección de Muro de Fundadores en la landing de inversión (/inversores)
+- [x] Diseño con tarjetas elegantes, foto, nombre, título, insignia y frase
+- [x] Se muestra entre la sección de beneficios de IA y la sección de contacto
+
+### Bug Fix: hasSolarPanels
+- [x] Corregir normalización de hasSolarPanels de tinyint(1) a boolean en getCrowdfundingProjects
+- [x] Corregir normalización en getCrowdfundingProjectById
+- [x] Corregir normalización en getInvestorParticipations

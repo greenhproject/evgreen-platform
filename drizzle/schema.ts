@@ -90,7 +90,10 @@ export const users = mysqlTable("users", {
   alegraContactId: varchar("alegraContactId", { length: 50 }), // ID del contacto en Alegra
   bankAccount: varchar("bankAccount", { length: 100 }),
   bankName: varchar("bankName", { length: 100 }),
-  // Tipo de inversionista y perfil público
+  // Tipo de inversionista y perfil público (JSON array para tipos NO excluyentes)
+  // Permite múltiples tipos simultáneos: ["individual", "collective", "founder"]
+  investorTypes: json("investorTypes").$type<string[]>().default([]),
+  // Campo legacy para compatibilidad (se mantiene pero se prefiere investorTypes)
   investorType: mysqlEnum("investor_type", ["individual", "collective", "founder"]),
   isFounder: boolean("isFounder").default(false),
   founderTitle: varchar("founderTitle", { length: 100 }), // Ej: "Fundador Visionario", "Co-Fundador"
