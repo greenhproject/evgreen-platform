@@ -5998,3 +5998,88 @@ export async function adminManualPayDebt(debtId: number, paymentReference: strin
 
   console.log(`[Debt] Admin manual payment for debt #${debtId}: $${debt.originalAmount} COP (ref: ${paymentReference})`);
 }
+
+
+// ============================================================================
+// CROWDFUNDING - FUNCIONES ADICIONALES
+// ============================================================================
+
+// Buscar usuarios por nombre o email (para vincular inversionistas)
+export async function searchUsers(query: string, limit: number = 10): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  try {
+    const searchTerm = `%${query}%`;
+    const result = await db.execute(sql`
+      SELECT id, name, email, role, phone, companyName, taxId, bankAccount, bankName, avatar
+      FROM users
+      WHERE (name LIKE ${searchTerm} OR email LIKE ${searchTerm})
+      ORDER BY name ASC
+      LIMIT ${limit}
+    `);
+    return ((result as any)[0] as any[]) || [];
+  } catch (error) {
+    console.error('[DB] Error searching users:', error);
+    return [];
+  }
+}
+
+// Eliminar participación de crowdfunding
+export async function deleteCrowdfundingParticipation(participationId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.execute(sql`
+    DELETE FROM crowdfunding_participations WHERE id = ${participationId}
+  `);
+}
+
+// Actualizar participación de crowdfunding (campos extendidos: monto, estado, etc.)
+export async function updateCrowdfundingParticipationFull(
+  participationId: number,
+  data: {
+    amount?: number;
+    participationPercent?: number;
+    paymentStatus?: string;
+    paymentDate?: Date | null;
+    paymentReference?: string;
+    investorId?: number;
+  }
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const setClauses: string[] = [];
+  
+  if (data.amount !== undefined) {
+    setClauses.push(`amount = ${data.amount}`);
+  }
+  if (data.participationPercent !== undefined) {
+    setClauses.push(`participationPercent = ${data.participationPercent}`);
+  }
+  if (data.paymentStatus !== undefined) {
+    setClauses.push(`paymentStatus = '${data.paymentStatus.replace(/'/g, "''")}'`);
+  }
+  if (data.paymentDate !== undefined) {
+    if (data.paymentDate === null) {
+      setClauses.push(`paymentDate = NULL`);
+    } else {
+      setClauses.push(`paymentDate = '${data.paymentDate.toISOString().slice(0, 19).replace('T', ' ')}'`);
+    }
+  }
+  if (data.paymentReference !== undefined) {
+    setClauses.push(`paymentReference = '${data.paymentReference.replace(/'/g, "''")}'`);
+  }
+  if (data.investorId !== undefined) {
+    setClauses.push(`investorId = ${data.investorId}`);
+  }
+  
+  if (setClauses.length === 0) return;
+  
+  await db.execute(sql.raw(`
+    UPDATE crowdfunding_participations 
+    SET ${setClauses.join(', ')}
+    WHERE id = ${participationId}
+  `));
+}
