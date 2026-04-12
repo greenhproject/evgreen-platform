@@ -2554,3 +2554,9 @@
 - [x] Fix: Agregar segundo eje Y (derecho) para Energía (kWh) con escala independiente de Potencia (kW)
 - [x] Eje izquierdo (naranja): Potencia kW | Eje derecho (azul): Energía kWh
 - [x] Ticks coloreados para identificar cada eje visualmente
+
+## Tabla de Participaciones - Bugs y Mejoras (12 Abril 2026)
+- [x] Fix: Tabla de participaciones - responsive pésimo en móvil
+- [x] Fix: Nombre del inversionista no se graba (muestra N/A)
+- [x] Feature: Agregar botones de editar y eliminar en tabla de participaciones
+- [x] Feature: Vincular inversionista con usuario registrado (buscar por correo) y asignar rol de inversionista desde el panel

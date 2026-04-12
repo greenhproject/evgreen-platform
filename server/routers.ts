@@ -3235,7 +3235,15 @@ const crowdfundingRouter = router({
   getParticipations: adminProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ input }) => {
-      return db.getCrowdfundingParticipations(input.projectId);
+      const raw = await db.getCrowdfundingParticipations(input.projectId);
+      return raw.map((p: any) => ({
+        ...p,
+        investor: {
+          id: p.investorId,
+          name: p.investorName || p.name || 'N/A',
+          email: p.investorEmail || p.email || '',
+        },
+      }));
     }),
   
   // Inversionista: Obtener mis participaciones
@@ -3424,6 +3432,72 @@ const crowdfundingRouter = router({
           ? 'Participación registrada para inversionista existente' 
           : 'Nuevo inversionista creado y participación registrada'
       };
+    }),
+
+  // Admin: Buscar usuarios para vincular como inversionistas
+  searchUsers: adminProcedure
+    .input(z.object({ query: z.string().min(1) }))
+    .query(async ({ input }) => {
+      return db.searchUsers(input.query, 15);
+    }),
+
+  // Admin: Editar participación existente
+  editParticipation: adminProcedure
+    .input(z.object({
+      participationId: z.number(),
+      amount: z.number().positive().optional(),
+      paymentStatus: z.enum(['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED']).optional(),
+      paymentReference: z.string().optional(),
+      investorId: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const participation = await db.getCrowdfundingParticipationById(input.participationId);
+      if (!participation) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Participación no encontrada' });
+      }
+      const project = await db.getCrowdfundingProjectById(participation.projectId);
+      if (!project) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Proyecto no encontrado' });
+      }
+      const updateData: any = {};
+      if (input.amount !== undefined) {
+        updateData.amount = input.amount;
+        updateData.participationPercent = (input.amount / Number(project.targetAmount)) * 100;
+      }
+      if (input.paymentStatus !== undefined) {
+        updateData.paymentStatus = input.paymentStatus;
+        if (input.paymentStatus === 'COMPLETED' && participation.paymentStatus !== 'COMPLETED') {
+          updateData.paymentDate = new Date();
+        }
+      }
+      if (input.paymentReference !== undefined) {
+        updateData.paymentReference = input.paymentReference;
+      }
+      if (input.investorId !== undefined) {
+        updateData.investorId = input.investorId;
+        // Update the linked user's role to investor if needed
+        const user = await db.getUserById(input.investorId);
+        if (user && user.role !== 'investor' && user.role !== 'admin') {
+          await db.updateUser(input.investorId, { role: 'investor' });
+        }
+      }
+      await db.updateCrowdfundingParticipationFull(input.participationId, updateData);
+      await db.updateProjectRaisedAmountByParticipation(input.participationId);
+      return { success: true };
+    }),
+
+  // Admin: Eliminar participación
+  deleteParticipation: adminProcedure
+    .input(z.object({ participationId: z.number() }))
+    .mutation(async ({ input }) => {
+      const participation = await db.getCrowdfundingParticipationById(input.participationId);
+      if (!participation) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Participación no encontrada' });
+      }
+      const projectId = participation.projectId;
+      await db.deleteCrowdfundingParticipation(input.participationId);
+      await db.updateProjectRaisedAmount(projectId);
+      return { success: true };
     }),
 
   // Admin: Confirmar pago de participación

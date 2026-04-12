@@ -66,131 +66,22 @@
     
     <!-- Preload crítico -->
     <link rel="preload" href="/icons/icon-192x192.png" as="image" />
+    
+    <!-- Splash Screen Styles (injected via script to bypass Vite CSS proxy) -->
+    <script>
+      (function(){
+        var s=document.createElement('style');
+        s.textContent='[data-splash]::before{content:\'\';position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 50%,rgba(34,197,94,.08) 0%,transparent 70%),radial-gradient(circle at 20% 80%,rgba(6,182,212,.05) 0%,transparent 50%),radial-gradient(circle at 80% 20%,rgba(74,222,128,.04) 0%,transparent 50%);animation:splash-bg-pulse 4s ease-in-out infinite}@keyframes splash-bg-pulse{0%,100%{opacity:.6}50%{opacity:1}}[data-splash] .splash-ring{position:relative;width:160px;height:160px;display:flex;align-items:center;justify-content:center;animation:splash-scale-in .6s cubic-bezier(.34,1.56,.64,1) both}@keyframes splash-scale-in{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:scale(1)}}[data-splash] .splash-ring::before{content:\'\';position:absolute;inset:-4px;border-radius:50%;border:2px solid transparent;border-top-color:#22c55e;border-right-color:rgba(34,197,94,.3);animation:splash-ring-spin 2s linear infinite}[data-splash] .splash-ring::after{content:\'\';position:absolute;inset:-12px;border-radius:50%;border:1px solid transparent;border-bottom-color:rgba(6,182,212,.4);border-left-color:rgba(6,182,212,.15);animation:splash-ring-spin 3s linear infinite reverse}@keyframes splash-ring-spin{to{transform:rotate(360deg)}}[data-splash] .splash-ring img{width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 0 20px rgba(74,222,128,.4));animation:splash-logo-glow 2.5s ease-in-out infinite}@keyframes splash-logo-glow{0%,100%{filter:drop-shadow(0 0 15px rgba(74,222,128,.3))}50%{filter:drop-shadow(0 0 40px rgba(74,222,128,.6)) drop-shadow(0 0 80px rgba(34,197,94,.2))}}[data-splash] .splash-brand{margin-top:28px;text-align:center;animation:splash-fade-up .7s ease-out .3s both}[data-splash] .splash-brand-name{font-family:Montserrat,sans-serif;font-size:28px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;background:linear-gradient(135deg,#4ade80 0%,#22c55e 40%,#06b6d4 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}[data-splash] .splash-tagline{margin-top:8px;font-family:Inter,sans-serif;font-size:13px;color:rgba(255,255,255,.45);letter-spacing:.15em;text-transform:uppercase;animation:splash-fade-up .7s ease-out .5s both}@keyframes splash-fade-up{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}[data-splash] .splash-loader{margin-top:40px;width:180px;height:3px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;animation:splash-fade-up .7s ease-out .6s both}[data-splash] .splash-loader-bar{width:40%;height:100%;border-radius:2px;background:linear-gradient(90deg,#22c55e,#06b6d4);animation:splash-loader-move 1.5s ease-in-out infinite}@keyframes splash-loader-move{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}[data-splash] .splash-banner{position:absolute;bottom:50px;left:50%;transform:translateX(-50%);width:88%;max-width:340px;background:rgba(255,255,255,.04);border:1px solid rgba(74,222,128,.12);border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:12px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:splash-fade-up .7s ease-out .8s both}[data-splash] .splash-banner-icon{width:38px;height:38px;border-radius:10px;flex-shrink:0;background:linear-gradient(135deg,rgba(34,197,94,.2),rgba(6,182,212,.2));border:1px solid rgba(74,222,128,.2);display:flex;align-items:center;justify-content:center;font-size:18px}[data-splash] .splash-banner-text{flex:1;min-width:0}[data-splash] .splash-banner-title{color:rgba(255,255,255,.85);font-family:Montserrat,sans-serif;font-size:11px;font-weight:600;letter-spacing:.02em}[data-splash] .splash-banner-desc{color:rgba(255,255,255,.4);font-family:Inter,sans-serif;font-size:10px;margin-top:3px;line-height:1.4}[data-splash] .splash-powered{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.18);font-family:Inter,sans-serif;font-size:9px;letter-spacing:.06em;animation:splash-fade-up .7s ease-out 1s both}';
+        document.head.appendChild(s);
+      })();
+    </script>
   </head>
 
   <body>
     <div id="root">
       <!-- Splash Screen - se elimina automáticamente cuando React monta -->
-      <div id="splash-screen" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030a06;overflow:hidden;">
-        <style>
-          /* Fondo con partículas de energía */
-          #splash-screen::before {
-            content:''; position:absolute; inset:0;
-            background:
-              radial-gradient(ellipse 80% 60% at 50% 50%, rgba(34,197,94,0.08) 0%, transparent 70%),
-              radial-gradient(circle at 20% 80%, rgba(6,182,212,0.05) 0%, transparent 50%),
-              radial-gradient(circle at 80% 20%, rgba(74,222,128,0.04) 0%, transparent 50%);
-            animation: splash-bg-pulse 4s ease-in-out infinite;
-          }
-          @keyframes splash-bg-pulse {
-            0%, 100% { opacity: 0.6; }
-            50% { opacity: 1; }
-          }
-          /* Anillo de energía alrededor del logo */
-          #splash-screen .splash-ring {
-            position: relative; width: 160px; height: 160px;
-            display: flex; align-items: center; justify-content: center;
-            animation: splash-scale-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-          }
-          @keyframes splash-scale-in {
-            from { opacity: 0; transform: scale(0.5); }
-            to { opacity: 1; transform: scale(1); }
-          }
-          #splash-screen .splash-ring::before {
-            content:''; position:absolute; inset:-4px;
-            border-radius:50%; border:2px solid transparent;
-            border-top-color: #22c55e; border-right-color: rgba(34,197,94,0.3);
-            animation: splash-ring-spin 2s linear infinite;
-          }
-          #splash-screen .splash-ring::after {
-            content:''; position:absolute; inset:-12px;
-            border-radius:50%; border:1px solid transparent;
-            border-bottom-color: rgba(6,182,212,0.4); border-left-color: rgba(6,182,212,0.15);
-            animation: splash-ring-spin 3s linear infinite reverse;
-          }
-          @keyframes splash-ring-spin {
-            to { transform: rotate(360deg); }
-          }
-          /* Glow pulsante del logo */
-          #splash-screen .splash-ring img {
-            width: 110px; height: 110px; object-fit: contain;
-            filter: drop-shadow(0 0 20px rgba(74,222,128,0.4));
-            animation: splash-logo-glow 2.5s ease-in-out infinite;
-          }
-          @keyframes splash-logo-glow {
-            0%, 100% { filter: drop-shadow(0 0 15px rgba(74,222,128,0.3)); }
-            50% { filter: drop-shadow(0 0 40px rgba(74,222,128,0.6)) drop-shadow(0 0 80px rgba(34,197,94,0.2)); }
-          }
-          /* Nombre de marca */
-          #splash-screen .splash-brand {
-            margin-top: 28px; text-align: center;
-            animation: splash-fade-up 0.7s ease-out 0.3s both;
-          }
-          #splash-screen .splash-brand-name {
-            font-family: 'Montserrat', sans-serif; font-size: 28px; font-weight: 800;
-            letter-spacing: 0.08em; text-transform: uppercase;
-            background: linear-gradient(135deg, #4ade80 0%, #22c55e 40%, #06b6d4 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            background-clip: text;
-          }
-          #splash-screen .splash-tagline {
-            margin-top: 8px; font-family: 'Inter', sans-serif; font-size: 13px;
-            color: rgba(255,255,255,0.45); letter-spacing: 0.15em; text-transform: uppercase;
-            animation: splash-fade-up 0.7s ease-out 0.5s both;
-          }
-          @keyframes splash-fade-up {
-            from { opacity: 0; transform: translateY(12px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-          /* Barra de carga animada */
-          #splash-screen .splash-loader {
-            margin-top: 40px; width: 180px; height: 3px;
-            background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;
-            animation: splash-fade-up 0.7s ease-out 0.6s both;
-          }
-          #splash-screen .splash-loader-bar {
-            width: 40%; height: 100%; border-radius: 2px;
-            background: linear-gradient(90deg, #22c55e, #06b6d4);
-            animation: splash-loader-move 1.5s ease-in-out infinite;
-          }
-          @keyframes splash-loader-move {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(350%); }
-          }
-          /* Banner informativo */
-          #splash-screen .splash-banner {
-            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
-            width: 88%; max-width: 340px;
-            background: rgba(255,255,255,0.04); border: 1px solid rgba(74,222,128,0.12);
-            border-radius: 14px; padding: 14px 16px;
-            display: flex; align-items: center; gap: 12px;
-            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-            animation: splash-fade-up 0.7s ease-out 0.8s both;
-          }
-          #splash-screen .splash-banner-icon {
-            width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
-            background: linear-gradient(135deg, rgba(34,197,94,0.2), rgba(6,182,212,0.2));
-            border: 1px solid rgba(74,222,128,0.2);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 18px;
-          }
-          #splash-screen .splash-banner-text { flex: 1; min-width: 0; }
-          #splash-screen .splash-banner-title {
-            color: rgba(255,255,255,0.85); font-family: 'Montserrat', sans-serif;
-            font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
-          }
-          #splash-screen .splash-banner-desc {
-            color: rgba(255,255,255,0.4); font-family: 'Inter', sans-serif;
-            font-size: 10px; margin-top: 3px; line-height: 1.4;
-          }
-          /* Powered by */
-          #splash-screen .splash-powered {
-            position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-            color: rgba(255,255,255,0.18); font-family: 'Inter', sans-serif;
-            font-size: 9px; letter-spacing: 0.06em;
-            animation: splash-fade-up 0.7s ease-out 1s both;
-          }
-        </style>
+      <div id="splash-screen" data-splash style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030a06;overflow:hidden;">
+
         <div class="splash-ring">
           <img src="/icons/icon-192x192.png" alt="EVGreen" />
         </div>
