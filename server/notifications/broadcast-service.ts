@@ -8,6 +8,8 @@ import { getDb } from "../db";
 import { users, notifications } from "../../drizzle/schema";
 import { eq, and, isNotNull, inArray, sql } from "drizzle-orm";
 import { sendPushNotificationToMultiple, NotificationType } from "../firebase/fcm";
+import { sendUserPush } from "../push/unified-push";
+import { sendWebPush, isWebPushAvailable, type PushSubscriptionData } from "../push/web-push-service";
 import { buildEmailParams } from "../utils/email-helper";
 
 // Inicializar Resend con la API key
@@ -151,35 +153,47 @@ export async function sendBroadcastNotification(
       console.log("[Broadcast] Created " + result.inAppCreated + " in-app notifications");
     }
 
-    // 2. Enviar notificaciones push
+    // 2. Enviar notificaciones push (Web Push nativo + FCM)
     if (input.sendPush !== false) {
-      // Filtrar usuarios con token FCM y que aceptan promociones (si es promoción)
-      const usersWithPush = targetUsers.filter((user) => {
-        if (!user.fcmToken) return false;
+      // Filtrar usuarios que aceptan notificaciones (si es promoción, verificar preferencia)
+      const eligibleUsers = targetUsers.filter((user) => {
         if (input.type === "PROMOTION" && !user.notifyPromotions) return false;
         return true;
       });
 
-      if (usersWithPush.length > 0) {
-        const fcmTokens = usersWithPush.map((u) => u.fcmToken!);
-        
-        // Enviar en lotes de 500 (límite de FCM)
-        const fcmBatchSize = 500;
-        for (let i = 0; i < fcmTokens.length; i += fcmBatchSize) {
-          const batch = fcmTokens.slice(i, i + fcmBatchSize);
-          const pushResult = await sendPushNotificationToMultiple(batch, {
-            type: typeToFcmType[input.type],
-            title: input.title,
-            body: input.message,
-            clickAction: input.linkUrl || "/notifications",
-          });
-          
-          result.pushSent += pushResult.success;
-          result.pushFailed += pushResult.failure;
-          result.invalidTokens.push(...pushResult.invalidTokens);
+      // Usar sendUserPush unificado para cada usuario (intenta Web Push primero, luego FCM)
+      const pushBatchSize = 50;
+      for (let i = 0; i < eligibleUsers.length; i += pushBatchSize) {
+        const batch = eligibleUsers.slice(i, i + pushBatchSize);
+        const pushResults = await Promise.allSettled(
+          batch.map((user) =>
+            sendUserPush(user.id, {
+              type: typeToFcmType[input.type],
+              title: input.title,
+              body: input.message,
+              clickAction: input.linkUrl || "/notifications",
+              data: {
+                broadcastType: input.type,
+                linkUrl: input.linkUrl || "",
+              },
+            })
+          )
+        );
+
+        for (const r of pushResults) {
+          if (r.status === "fulfilled" && r.value) {
+            result.pushSent++;
+          } else {
+            result.pushFailed++;
+          }
         }
-        console.log("[Broadcast] Push notifications: " + result.pushSent + " sent, " + result.pushFailed + " failed");
+
+        // Pequeña pausa entre lotes para no saturar
+        if (i + pushBatchSize < eligibleUsers.length) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
       }
+      console.log("[Broadcast] Push notifications (unified): " + result.pushSent + " sent, " + result.pushFailed + " failed");
     }
 
     // 3. Enviar emails
