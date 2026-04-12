@@ -2,9 +2,9 @@
  * PowerChart - Gráfico de potencia en tiempo real durante la sesión de carga
  * 
  * Muestra una línea de tiempo con:
- * - Potencia (kW) en el eje Y principal
- * - SoC (%) en el eje Y secundario (si disponible)
- * - Energía acumulada (kWh) como área bajo la curva
+ * - Potencia (kW) en el eje Y izquierdo (naranja)
+ * - Energía acumulada (kWh) en el eje Y derecho (azul) - escala independiente
+ * - SoC (%) en el eje Y derecho secundario (si disponible)
  * 
  * Se actualiza automáticamente con los datos del endpoint getActiveSession
  */
@@ -88,14 +88,14 @@ export function PowerChart({ powerHistory, startTime, nominalPower = 7 }: PowerC
         label: "Energía (kWh)",
         data: powerHistory.map((p) => Math.round(p.energy * 100) / 100),
         borderColor: "rgb(59, 130, 246)",
-        backgroundColor: "rgba(59, 130, 246, 0.05)",
-        borderWidth: 1.5,
+        backgroundColor: "rgba(59, 130, 246, 0.08)",
+        borderWidth: 2,
         pointRadius: 0,
         pointHoverRadius: 3,
         tension: 0.3,
-        fill: false,
+        fill: true,
         borderDash: [4, 4],
-        yAxisID: "y",
+        yAxisID: "yEnergy",
       },
     ];
 
@@ -110,7 +110,7 @@ export function PowerChart({ powerHistory, startTime, nominalPower = 7 }: PowerC
         pointHoverRadius: 4,
         tension: 0.3,
         fill: false,
-        yAxisID: "y1",
+        yAxisID: "ySoc",
       });
     }
 
@@ -122,6 +122,10 @@ export function PowerChart({ powerHistory, startTime, nominalPower = 7 }: PowerC
     const maxPower = powerHistory?.length
       ? Math.max(...powerHistory.map((p) => p.power), nominalPower) * 1.2
       : nominalPower * 1.2;
+
+    const maxEnergy = powerHistory?.length
+      ? Math.max(...powerHistory.map((p) => p.energy)) * 1.2
+      : 10;
 
     return {
       responsive: true,
@@ -174,6 +178,7 @@ export function PowerChart({ powerHistory, startTime, nominalPower = 7 }: PowerC
             maxRotation: 0,
           },
         },
+        // Eje Y izquierdo: Potencia (kW) - naranja
         y: {
           type: "linear",
           display: true,
@@ -185,17 +190,38 @@ export function PowerChart({ powerHistory, startTime, nominalPower = 7 }: PowerC
           },
           ticks: {
             font: { size: 9 },
+            color: "rgb(245, 158, 11)",
             callback: (value) => `${value} kW`,
           },
           title: {
             display: false,
           },
         },
+        // Eje Y derecho: Energía acumulada (kWh) - azul
+        yEnergy: {
+          type: "linear" as const,
+          display: true,
+          position: "right" as const,
+          min: 0,
+          max: Math.ceil(maxEnergy) || 10,
+          grid: {
+            drawOnChartArea: false,
+          },
+          ticks: {
+            font: { size: 9 },
+            color: "rgb(59, 130, 246)",
+            callback: (value: string | number) => `${value} kWh`,
+          },
+          title: {
+            display: false,
+          },
+        },
+        // Eje Y derecho secundario: SoC (%) - verde (solo si hay datos de batería)
         ...(hasSoc
           ? {
-              y1: {
+              ySoc: {
                 type: "linear" as const,
-                display: true,
+                display: false, // Ocultar para no sobrecargar - se muestra en tooltip
                 position: "right" as const,
                 min: 0,
                 max: 100,

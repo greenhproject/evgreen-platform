@@ -2549,3 +2549,8 @@
 - [x] Fix: Migrar support-router.ts de FCM directo a unified push
 - [x] Service worker (sw.js v8) ya procesaba correctamente los payloads - el problema era el backend
 - [x] Ahora todas las notificaciones incluyen título descriptivo, cuerpo con detalles y clickAction
+
+## Bug: Gráfica de carga - Energía (kWh) se pierde (12 Abril 2026)
+- [x] Fix: Agregar segundo eje Y (derecho) para Energía (kWh) con escala independiente de Potencia (kW)
+- [x] Eje izquierdo (naranja): Potencia kW | Eje derecho (azul): Energía kWh
+- [x] Ticks coloreados para identificar cada eje visualmente
