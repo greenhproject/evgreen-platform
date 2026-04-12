@@ -13,6 +13,7 @@ import * as supportDb from "./support-db";
 import { createMaintenanceTicket } from "../db";
 import { storagePut } from "../storage";
 import { sendPushNotification, sendPushNotificationToMultiple } from "../firebase/fcm";
+import { sendUserPush } from "../push/unified-push";
 import { getActiveTechnicians } from "../notifications/technician-notification-service";
 import { getUserById } from "../db";
 import { notifications } from "../../drizzle/schema";
@@ -88,16 +89,14 @@ async function notifyTechniciansOfSupportTicket(
     const database = await getDb();
 
     for (const target of targetUsers) {
-      // Push notification via FCM
-      if (target.fcmToken && !target.fcmToken.startsWith("local_")) {
-        await sendPushNotification(target.fcmToken, {
-          type: pushType,
-          title,
-          body,
-          clickAction: "/technician/support",
-          data: { ticketId: String(ticketId) },
-        }).catch(err => console.error(`[SupportPush] FCM error for tech ${target.id}:`, err));
-      }
+      // Push notification via unified push (Web Push + FCM)
+      await sendUserPush(target.id, {
+        type: pushType,
+        title,
+        body,
+        clickAction: "/technician/support",
+        data: { ticketId: String(ticketId) },
+      }).catch(err => console.error(`[SupportPush] Push error for tech ${target.id}:`, err));
 
       // In-app notification
       if (database) {
@@ -139,16 +138,14 @@ async function notifyUserOfAgentReply(
     const title = `Respuesta de soporte - Ticket #${ticketId}`;
     const body = `${agentName}: ${agentMessage.substring(0, 120)}`;
 
-    // Push notification via FCM
-    if (user.fcmToken && !user.fcmToken.startsWith("local_")) {
-      await sendPushNotification(user.fcmToken, {
-        type: "support_agent_reply",
-        title,
-        body,
-        clickAction: "/support",
-        data: { ticketId: String(ticketId) },
-      }).catch(err => console.error(`[SupportPush] FCM error for user ${userId}:`, err));
-    }
+    // Push notification via unified push (Web Push + FCM)
+    await sendUserPush(userId, {
+      type: "support_agent_reply",
+      title,
+      body,
+      clickAction: "/support",
+      data: { ticketId: String(ticketId) },
+    }).catch(err => console.error(`[SupportPush] Push error for user ${userId}:`, err));
 
     // In-app notification
     const database = await getDb();
@@ -205,16 +202,14 @@ async function notifyUserOfTicketResolved(
       ? `Tu ticket ha sido resuelto: ${resolution.substring(0, 120)}`
       : "Tu ticket de soporte ha sido resuelto. Gracias por contactarnos.";
 
-    // Push notification
-    if (user.fcmToken && !user.fcmToken.startsWith("local_")) {
-      await sendPushNotification(user.fcmToken, {
-        type: "support_ticket_resolved",
-        title,
-        body,
-        clickAction: "/support",
-        data: { ticketId: String(ticketId) },
-      }).catch(err => console.error(`[SupportPush] FCM error for resolved ticket:`, err));
-    }
+    // Push notification via unified push (Web Push + FCM)
+    await sendUserPush(userId, {
+      type: "support_ticket_resolved",
+      title,
+      body,
+      clickAction: "/support",
+      data: { ticketId: String(ticketId) },
+    }).catch(err => console.error(`[SupportPush] Push error for resolved ticket:`, err));
 
     // In-app notification
     const database = await getDb();

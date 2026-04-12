@@ -2542,3 +2542,10 @@
 - [x] Race condition fix: removeExternalConnection ahora verifica que el WS cerrado sea el mismo del mapa
 - [x] Auto-recovery: requestStartTransaction y requestStopTransaction buscan en wss.clients como fallback
 - [x] setMainWss: dualCSMS ahora tiene referencia al WSS principal para auto-recovery
+
+## Bug: Notificaciones push sin detalle (12 Abril 2026)
+- [x] Fix: Migrar broadcast-service.ts de FCM directo a unified push (Web Push + FCM)
+- [x] Fix: Migrar charging-simulator.ts de FCM directo a unified push con detalles completos
+- [x] Fix: Migrar support-router.ts de FCM directo a unified push
+- [x] Service worker (sw.js v8) ya procesaba correctamente los payloads - el problema era el backend
+- [x] Ahora todas las notificaciones incluyen título descriptivo, cuerpo con detalles y clickAction
