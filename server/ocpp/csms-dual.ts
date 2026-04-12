@@ -232,6 +232,7 @@ interface OCPP201MeterValuesRequest {
 
 export class DualCSMS {
   private wss: WebSocketServer | null = null;
+  private mainWss: WebSocketServer | null = null; // Referencia al WSS del servidor principal (index.ts)
   private connections: Map<string, ChargingStationConnection> = new Map();
   private heartbeatInterval: number = 30; // segundos (reducido de 60 para mantener proxy activo)
   private isRunning: boolean = false;
@@ -244,6 +245,15 @@ export class DualCSMS {
 
   constructor() {
     // Initialize
+  }
+
+  /**
+   * Registra el WebSocketServer principal del servidor Express (index.ts)
+   * para permitir auto-recovery de conexiones perdidas por race conditions.
+   */
+  setMainWss(wss: WebSocketServer): void {
+    this.mainWss = wss;
+    console.log(`[CSMS-DUAL] Main WSS registered for auto-recovery`);
   }
 
   /**
@@ -2390,7 +2400,14 @@ export class DualCSMS {
     connectorId: number,
     idTag: string
   ): Promise<{ status: string }> {
-    const conn = this.connections.get(ocppIdentity);
+    let conn = this.connections.get(ocppIdentity);
+    
+    // AUTO-RECOVERY: Si no hay conexión en el mapa, buscar en los WebSocketServers
+    if (!conn) {
+      console.log(`[CSMS-DUAL] requestStartTransaction: No connection for ${ocppIdentity} in map. Attempting auto-recovery...`);
+      conn = await this.autoRecoverConnection(ocppIdentity);
+    }
+    
     if (!conn) {
       console.log(`[CSMS-DUAL] requestStartTransaction: No connection for ${ocppIdentity}. Active connections: [${Array.from(this.connections.keys()).join(', ')}]`);
       throw new Error(`Charging station ${ocppIdentity} not connected. Active: [${Array.from(this.connections.keys()).join(', ')}]`);
@@ -2428,13 +2445,60 @@ export class DualCSMS {
   }
 
   /**
+   * Auto-recovery: busca una conexión activa en los WebSocketServers y la re-registra.
+   * Cubre la race condition donde el close del WS viejo eliminó la conexión nueva del mapa.
+   */
+  private async autoRecoverConnection(ocppIdentity: string): Promise<ChargingStationConnection | undefined> {
+    // Buscar en el WSS propio de dualCSMS
+    if (this.wss) {
+      for (const client of Array.from(this.wss.clients)) {
+        if ((client as any)._ocppIdentity === ocppIdentity && client.readyState === WebSocket.OPEN) {
+          console.log(`[CSMS-DUAL] AUTO-RECOVERY: Found active WS for ${ocppIdentity} in wss.clients! Re-registering...`);
+          const protocol = (client as any).protocol || 'ocpp1.6';
+          const ocppVersion: OCPPVersion = protocol.includes('2.0') ? '2.0.1' : '1.6';
+          let stationId: number | null = null;
+          try {
+            const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+            if (station) stationId = station.id;
+          } catch (e) { /* ignore */ }
+          this.registerExternalConnection(ocppIdentity, client, ocppVersion, stationId);
+          return this.connections.get(ocppIdentity);
+        }
+      }
+    }
+    // Buscar en el WSS principal (index.ts)
+    if (this.mainWss) {
+      for (const client of Array.from(this.mainWss.clients)) {
+        if ((client as any)._ocppIdentity === ocppIdentity && client.readyState === WebSocket.OPEN) {
+          console.log(`[CSMS-DUAL] AUTO-RECOVERY: Found active WS for ${ocppIdentity} in mainWss.clients! Re-registering...`);
+          const protocol = (client as any).protocol || 'ocpp1.6';
+          const ocppVersion: OCPPVersion = protocol.includes('2.0') ? '2.0.1' : '1.6';
+          let stationId: number | null = null;
+          try {
+            const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+            if (station) stationId = station.id;
+          } catch (e) { /* ignore */ }
+          this.registerExternalConnection(ocppIdentity, client, ocppVersion, stationId);
+          return this.connections.get(ocppIdentity);
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Detiene una transacción remotamente
    */
   async requestStopTransaction(
     ocppIdentity: string,
     transactionId: string | number
   ): Promise<{ status: string }> {
-    const conn = this.connections.get(ocppIdentity);
+    let conn = this.connections.get(ocppIdentity);
+    
+    // AUTO-RECOVERY: misma lógica que requestStartTransaction
+    if (!conn) {
+      conn = await this.autoRecoverConnection(ocppIdentity);
+    }
     if (!conn) {
       throw new Error("Charging station not connected");
     }
@@ -2928,9 +2992,18 @@ export class DualCSMS {
    * Elimina una conexión externa (cuando el WebSocket se cierra en index.ts).
    * Limpia pendingCalls pendientes.
    */
-  removeExternalConnection(ocppIdentity: string): void {
+  removeExternalConnection(ocppIdentity: string, closedWs?: WebSocket): void {
     const conn = this.connections.get(ocppIdentity);
     if (conn) {
+      // RACE CONDITION FIX: Si se proporciona el WebSocket que se cerró,
+      // solo eliminar si es el MISMO que está en el mapa.
+      // Cuando hay reconexión rápida, el close del WS viejo llega DESPUÉS
+      // de que el nuevo WS ya fue registrado. Sin esta verificación,
+      // el close del viejo elimina la conexión nueva.
+      if (closedWs && conn.ws !== closedWs) {
+        console.log(`[CSMS-DUAL] Skipping removeExternalConnection for ${ocppIdentity}: closed WS is stale (map has newer connection)`);
+        return;
+      }
       conn.pendingCalls.forEach((pending) => {
         clearTimeout(pending.timeout);
         pending.reject(new Error("External connection closed"));

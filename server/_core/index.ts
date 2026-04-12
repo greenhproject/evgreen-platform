@@ -306,6 +306,9 @@ async function startServer() {
     }
   });
 
+  // Registrar el WSS principal en dualCSMS para auto-recovery de conexiones
+  dualCSMS.setMainWss(wss);
+
   // ============================================================================
   // ESTRATEGIA ANTI-PROXY-TIMEOUT (3 capas)
   // ============================================================================
@@ -765,7 +768,8 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
 
     ws.on("close", async (code: number, reason: Buffer) => {
       // BRIDGE: Limpiar conexión en dualCSMS cuando el WebSocket se cierra
-      dualCSMS.removeExternalConnection(ocppIdentity);
+      // Pasar el ws que se cerró para evitar race condition con reconexiones rápidas
+      dualCSMS.removeExternalConnection(ocppIdentity, ws);
       
       const connectedAt = (ws as any)._connectedAt || 0;
       const durationSec = connectedAt ? Math.round((Date.now() - connectedAt) / 1000) : 0;
