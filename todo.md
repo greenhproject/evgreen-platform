@@ -2536,3 +2536,9 @@
 - [x] Corregir normalización de hasSolarPanels de tinyint(1) a boolean en getCrowdfundingProjects
 - [x] Corregir normalización en getCrowdfundingProjectById
 - [x] Corregir normalización en getInvestorParticipations
+
+## Bug: Estación de carga no conecta - CSMS-DUAL connections vacío (11 Abril 2026)
+- [x] Fix: dualCSMS.connections se vacía después de reconexión proxy - requestStartTransaction falla con "Active connections: []"
+- [x] Race condition fix: removeExternalConnection ahora verifica que el WS cerrado sea el mismo del mapa
+- [x] Auto-recovery: requestStartTransaction y requestStopTransaction buscan en wss.clients como fallback
+- [x] setMainWss: dualCSMS ahora tiene referencia al WSS principal para auto-recovery
