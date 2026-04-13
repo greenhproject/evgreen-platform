@@ -4475,10 +4475,300 @@ const overstayRouter = router({
           count: data.count,
           total: Math.round(data.total),
         })),
+       };
+    }),
+
+  // Admin: cancelar/condonar penalización por overstay (falso positivo, corte de luz, etc.)
+  cancelPenalty: adminProcedure
+    .input(z.object({
+      transactionId: z.number(),
+      reason: z.string().min(3, "Debe indicar un motivo"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+      
+      const overstayCost = parseFloat(transaction.overstayCost?.toString() || "0");
+      if (overstayCost <= 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Esta transacción no tiene penalización por overstay" });
+      
+      // Guardar el costo original antes de cancelar
+      const originalOverstayCost = overstayCost;
+      const originalTotalCost = parseFloat(transaction.totalCost?.toString() || "0");
+      const newTotalCost = Math.max(0, originalTotalCost - originalOverstayCost);
+      
+      // Actualizar transacción: poner overstayCost en 0
+      await db.updateTransaction(input.transactionId, {
+        overstayCost: "0",
+        totalCost: newTotalCost.toString(),
+      });
+      
+      // Reembolsar al usuario en su billetera
+      const wallet = await db.getWalletByUserId(transaction.userId);
+      if (wallet) {
+        const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+        const newBalance = currentBalance + originalOverstayCost;
+        await db.updateWalletBalance(transaction.userId, newBalance.toString());
+        await db.createWalletTransaction({
+          walletId: wallet.id,
+          userId: transaction.userId,
+          type: "ADMIN_REFUND",
+          amount: originalOverstayCost.toString(),
+          balanceBefore: currentBalance.toString(),
+          balanceAfter: newBalance.toString(),
+          referenceId: input.transactionId,
+          referenceType: "TRANSACTION",
+          status: "COMPLETED",
+          description: `[Admin: ${ctx.user.name || ctx.user.email}] Cancelación de penalización por overstay. Motivo: ${input.reason}`,
+        });
+      }
+      
+      // Condonar deudas asociadas a esta transacción
+      const debts = await db.getUserPendingDebts(transaction.userId);
+      for (const debt of debts) {
+        if (debt.transactionId === input.transactionId) {
+          await db.waiveUserDebt(debt.id);
+        }
+      }
+      
+      // Notificar al usuario
+      await db.createNotification({
+        userId: transaction.userId,
+        title: "✅ Penalización cancelada",
+        message: `Se ha cancelado la penalización de $${originalOverstayCost.toLocaleString("es-CO")} COP de tu última sesión de carga. Se ha reembolsado el monto a tu billetera. Motivo: ${input.reason}`,
+        type: "PAYMENT",
+        isRead: false,
+      });
+      
+      console.log(`[Overstay] Admin ${ctx.user.name} cancelled penalty of $${originalOverstayCost} for tx #${input.transactionId}. Reason: ${input.reason}`);
+      
+      return {
+        success: true,
+        refundedAmount: originalOverstayCost,
+        newTotalCost,
+      };
+    }),
+
+  // Admin: ajustar monto de penalización (reducir parcialmente)
+  adjustPenalty: adminProcedure
+    .input(z.object({
+      transactionId: z.number(),
+      newOverstayCost: z.number().min(0, "El monto no puede ser negativo"),
+      reason: z.string().min(3, "Debe indicar un motivo"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+      
+      const currentOverstayCost = parseFloat(transaction.overstayCost?.toString() || "0");
+      if (currentOverstayCost <= 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Esta transacción no tiene penalización" });
+      if (input.newOverstayCost >= currentOverstayCost) throw new TRPCError({ code: "BAD_REQUEST", message: "El nuevo monto debe ser menor al actual" });
+      
+      const refundAmount = currentOverstayCost - input.newOverstayCost;
+      const originalTotalCost = parseFloat(transaction.totalCost?.toString() || "0");
+      const newTotalCost = originalTotalCost - refundAmount;
+      
+      // Actualizar transacción
+      await db.updateTransaction(input.transactionId, {
+        overstayCost: input.newOverstayCost.toString(),
+        totalCost: Math.max(0, newTotalCost).toString(),
+      });
+      
+      // Reembolsar la diferencia al usuario
+      const wallet = await db.getWalletByUserId(transaction.userId);
+      if (wallet) {
+        const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+        const newBalance = currentBalance + refundAmount;
+        await db.updateWalletBalance(transaction.userId, newBalance.toString());
+        await db.createWalletTransaction({
+          walletId: wallet.id,
+          userId: transaction.userId,
+          type: "ADMIN_REFUND",
+          amount: refundAmount.toString(),
+          balanceBefore: currentBalance.toString(),
+          balanceAfter: newBalance.toString(),
+          referenceId: input.transactionId,
+          referenceType: "TRANSACTION",
+          status: "COMPLETED",
+          description: `[Admin: ${ctx.user.name || ctx.user.email}] Ajuste de penalización: $${currentOverstayCost.toLocaleString("es-CO")} → $${input.newOverstayCost.toLocaleString("es-CO")}. Motivo: ${input.reason}`,
+        });
+      }
+      
+      // Ajustar deudas asociadas si existen
+      const debts = await db.getUserPendingDebts(transaction.userId);
+      for (const debt of debts) {
+        if (debt.transactionId === input.transactionId) {
+          const debtRemaining = parseFloat(debt.remainingAmount?.toString() || "0");
+          if (debtRemaining > refundAmount) {
+            // Reducir deuda parcialmente
+            const dbInstance = await db.getDb();
+            if (dbInstance) {
+              const { userDebts: userDebtsTable } = await import("../drizzle/schema");
+              const { eq: eqOp } = await import("drizzle-orm");
+              await dbInstance.update(userDebtsTable).set({
+                remainingAmount: (debtRemaining - refundAmount).toFixed(2),
+                updatedAt: new Date(),
+              }).where(eqOp(userDebtsTable.id, debt.id));
+            }
+          } else {
+            // Condonar deuda completamente
+            await db.waiveUserDebt(debt.id);
+          }
+        }
+      }
+      
+      // Notificar al usuario
+      await db.createNotification({
+        userId: transaction.userId,
+        title: "💰 Penalización ajustada",
+        message: `Se ha ajustado la penalización de tu sesión de carga de $${currentOverstayCost.toLocaleString("es-CO")} a $${input.newOverstayCost.toLocaleString("es-CO")} COP. Se reembolsaron $${refundAmount.toLocaleString("es-CO")} COP a tu billetera. Motivo: ${input.reason}`,
+        type: "PAYMENT",
+        isRead: false,
+      });
+      
+      console.log(`[Overstay] Admin ${ctx.user.name} adjusted penalty for tx #${input.transactionId}: $${currentOverstayCost} → $${input.newOverstayCost}. Refund: $${refundAmount}`);
+      
+      return {
+        success: true,
+        previousAmount: currentOverstayCost,
+        newAmount: input.newOverstayCost,
+        refundedAmount: refundAmount,
+      };
+    }),
+
+  // Admin: finalizar sesión fantasma remotamente (corte de luz, cargador colgado)
+  forceEndSession: adminProcedure
+    .input(z.object({
+      evseId: z.number(),
+      transactionId: z.number().optional(),
+      reason: z.string().min(3, "Debe indicar un motivo"),
+      cancelPenalty: z.boolean().default(true), // Por defecto cancela la penalización (es un falso positivo)
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const evse = await db.getEvseById(input.evseId);
+      if (!evse) throw new TRPCError({ code: "NOT_FOUND", message: "EVSE no encontrado" });
+      
+      const station = await db.getChargingStationById(evse.stationId || 0);
+      if (!station) throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+      
+      const results: string[] = [];
+      
+      // 1. Detener el tracking de overstay en memoria
+      const { onCableDisconnected, getOverstayInfo } = await import("./charging/overstay-monitor");
+      const overstayInfo = getOverstayInfo(input.evseId);
+      if (overstayInfo) {
+        // Si se debe cancelar la penalización, limpiar la sesión sin cobrar
+        if (input.cancelPenalty) {
+          // Importar el mapa de sesiones directamente para limpiar sin cobrar
+          const overstayModule = await import("./charging/overstay-monitor");
+          // Usar onCableDisconnected que hace el cobro final, luego reembolsamos
+          await onCableDisconnected(input.evseId);
+          results.push("Sesión de overstay finalizada");
+        } else {
+          await onCableDisconnected(input.evseId);
+          results.push("Sesión de overstay finalizada (con cobro)");
+        }
+      }
+      
+      // 2. Intentar enviar RemoteStop al cargador
+      try {
+        if (station.ocppIdentity) {
+          // Buscar transacción activa para el EVSE
+          const activeTx = await db.getActiveTransaction(input.evseId);
+          if (activeTx) {
+            const ocppTxId = (activeTx as any).ocppNumericTxId || activeTx.id;
+            await dualCSMS.requestStopTransaction(station.ocppIdentity, ocppTxId);
+            results.push("RemoteStop enviado al cargador");
+          }
+        }
+      } catch (err: any) {
+        results.push(`RemoteStop falló: ${err.message}`);
+      }
+      
+      // 3. Intentar Reset Soft del cargador
+      try {
+        if (station.ocppIdentity) {
+          await dualCSMS.reset(station.ocppIdentity, "Soft");
+          results.push("Reset Soft enviado al cargador");
+        }
+      } catch (err: any) {
+        results.push(`Reset falló: ${err.message}`);
+      }
+      
+      // 4. Actualizar estado del EVSE a AVAILABLE
+      await db.updateEvseStatus(input.evseId, "AVAILABLE");
+      results.push("EVSE marcado como AVAILABLE");
+      
+      // 5. Si hay transacción activa, completarla
+      const activeTx = await db.getActiveTransaction(input.evseId);
+      if (activeTx) {
+        await db.updateTransaction(activeTx.id, {
+          status: "COMPLETED",
+          endTime: new Date(),
+        });
+        results.push(`Transacción #${activeTx.id} completada`);
+      }
+      
+      // 6. Si se pidió cancelar la penalización y hay una transacción con overstay
+      if (input.cancelPenalty && input.transactionId) {
+        const tx = await db.getTransactionById(input.transactionId);
+        if (tx) {
+          const overstayCost = parseFloat(tx.overstayCost?.toString() || "0");
+          if (overstayCost > 0) {
+            const originalTotal = parseFloat(tx.totalCost?.toString() || "0");
+            await db.updateTransaction(input.transactionId, {
+              overstayCost: "0",
+              totalCost: Math.max(0, originalTotal - overstayCost).toString(),
+            });
+            
+            // Reembolsar
+            const wallet = await db.getWalletByUserId(tx.userId);
+            if (wallet) {
+              const bal = parseFloat(wallet.balance?.toString() || "0");
+              await db.updateWalletBalance(tx.userId, (bal + overstayCost).toString());
+              await db.createWalletTransaction({
+                walletId: wallet.id,
+                userId: tx.userId,
+                type: "ADMIN_REFUND",
+                amount: overstayCost.toString(),
+                balanceBefore: bal.toString(),
+                balanceAfter: (bal + overstayCost).toString(),
+                referenceId: input.transactionId,
+                referenceType: "TRANSACTION",
+                status: "COMPLETED",
+                description: `[Admin: ${ctx.user.name}] Reembolso por sesión fantasma. Motivo: ${input.reason}`,
+              });
+            }
+            
+            // Condonar deudas
+            const debts = await db.getUserPendingDebts(tx.userId);
+            for (const debt of debts) {
+              if (debt.transactionId === input.transactionId) {
+                await db.waiveUserDebt(debt.id);
+              }
+            }
+            
+            // Notificar
+            await db.createNotification({
+              userId: tx.userId,
+              title: "✅ Sesión corregida",
+              message: `Se detectó un problema con tu sesión de carga (posible corte de energía). La penalización de $${overstayCost.toLocaleString("es-CO")} COP ha sido cancelada y reembolsada. Motivo: ${input.reason}`,
+              type: "PAYMENT",
+              isRead: false,
+            });
+            
+            results.push(`Penalización de $${overstayCost} cancelada y reembolsada`);
+          }
+        }
+      }
+      
+      console.log(`[Overstay] Admin ${ctx.user.name} force-ended session on EVSE ${input.evseId}. Actions: ${results.join(", ")}. Reason: ${input.reason}`);
+      
+      return {
+        success: true,
+        actions: results,
       };
     }),
 });
-
 // ============================================================================
 // INVESTOR MANAGEMENT ROUTER (Admin)
 // ============================================================================

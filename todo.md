@@ -2560,3 +2560,10 @@
 - [x] Fix: Nombre del inversionista no se graba (muestra N/A)
 - [x] Feature: Agregar botones de editar y eliminar en tabla de participaciones
 - [x] Feature: Vincular inversionista con usuario registrado (buscar por correo) y asignar rol de inversionista desde el panel
+
+## Sistema de Gestión de Penalizaciones (Admin + Soporte) - 12 Abril 2026
+- [x] Feature: Panel de gestión de penalizaciones - cancelar/ajustar/reembolsar penalizaciones falsas (cortes de luz)
+- [x] Feature: Finalizar sesiones fantasma remotamente desde admin/soporte (liberar conector ocupado erróneamente)
+- [x] Feature: Ejecutar transacciones remotas desde panel admin/soporte para resolver problemas con clientes
+- [x] Feature: Historial de acciones administrativas sobre penalizaciones (audit log)
+- [x] Feature: Acceso al sistema de penalizaciones desde rol soporte además de admin
