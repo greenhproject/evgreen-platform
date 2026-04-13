@@ -5323,7 +5323,7 @@ const adminRemoteStartRouter = router({
       userId: z.number(),
       stationId: z.number(),
       connectorId: z.number(),
-      chargeMode: z.enum(["fixed_amount", "percentage", "full_charge"]),
+      chargeMode: z.enum(["fixed_amount", "percentage", "full_charge", "by_kwh", "by_amount"]),
       targetValue: z.number(),
       reason: z.string().min(3, "Debe indicar un motivo para la asistencia remota"),
     }))
@@ -5381,17 +5381,28 @@ const adminRemoteStartRouter = router({
 
       // 4. Calcular costo estimado
       let estimatedCost = 0;
+      let estimatedKwhTotal = 0;
+      const avgBatteryCapacity = 60; // kWh promedio de batería EV
       switch (chargeMode) {
         case "fixed_amount":
           estimatedCost = targetValue;
+          estimatedKwhTotal = targetValue / pricePerKwh;
+          break;
+        case "by_amount":
+          estimatedCost = targetValue;
+          estimatedKwhTotal = targetValue / pricePerKwh;
+          break;
+        case "by_kwh":
+          estimatedKwhTotal = targetValue;
+          estimatedCost = targetValue * pricePerKwh;
           break;
         case "percentage":
-          const batteryCapacity = 60;
-          const estimatedKwh = ((targetValue - 20) / 100) * batteryCapacity;
-          estimatedCost = estimatedKwh * pricePerKwh;
+          estimatedKwhTotal = ((targetValue - 20) / 100) * avgBatteryCapacity;
+          estimatedCost = estimatedKwhTotal * pricePerKwh;
           break;
         case "full_charge":
-          estimatedCost = 0.8 * 60 * pricePerKwh;
+          estimatedKwhTotal = 0.8 * avgBatteryCapacity;
+          estimatedCost = estimatedKwhTotal * pricePerKwh;
           break;
       }
 

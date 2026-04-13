@@ -2576,4 +2576,14 @@
 - [x] Frontend: Interfaz profesional de Inicio Remoto de Carga (buscar usuario, seleccionar estación/conector, modo de carga)
 - [x] Integrar accesos estratégicos: botón en panel admin/soporte sidebar "Inicio Remoto"
 - [x] Fix: searchUsers usando Drizzle ORM en lugar de raw SQL para compatibilidad
-- [ ] Push a GitHub después de implementar
+- [x] Push a GitHub después de implementar
+
+## Modos de Carga Avanzados en Inicio Remoto - 12 Abril 2026
+- [x] Backend: Agregar modos by_kwh y by_amount al enum de chargeMode y lógica de estimación
+- [x] Frontend: Selector visual con tarjetas para 4 modos de carga (completa, kWh, monto, porcentaje)
+- [x] Frontend: Campos dinámicos con estimaciones en tiempo real (costo, energía, tiempo)
+- [x] Frontend: Botones rápidos de montos ($5k, $10k, $20k, $50k) y porcentajes (50%, 60%, 80%, 100%)
+- [x] Frontend: Alertas dinámicas de saldo insuficiente según configuración seleccionada
+- [x] Actualizar diálogo de confirmación con todos los modos de carga y estimaciones
+- [x] Fix: Permitir seleccionar conectores en estado CHARGING (admin override)
+- [x] Push a GitHub después de implementar

@@ -51,6 +51,11 @@ import {
   ChevronRight,
   XCircle,
   Clock,
+  Battery,
+  DollarSign,
+  Gauge,
+  Info,
+  TrendingUp,
 } from "lucide-react";
 
 // Tipos
@@ -81,7 +86,7 @@ type Station = {
   connectors: StationConnector[];
 };
 
-type ChargeMode = "fixed_amount" | "percentage" | "full_charge";
+type ChargeMode = "full_charge" | "by_kwh" | "by_amount" | "fixed_amount" | "percentage";
 
 // Componente de estado del conector
 function ConnectorStatusBadge({ status }: { status: string }) {
@@ -141,6 +146,52 @@ export default function AdminRemoteStart() {
       enabled: !!selectedStation && !!selectedConnector && !!selectedUser,
     }
   );
+
+  // Cálculos dinámicos de estimación según modo de carga
+  const estimation = useMemo(() => {
+    if (!priceQuery?.data) return null;
+    const price = priceQuery.data.pricePerKwh;
+    const balance = priceQuery.data.userBalance;
+    const avgBattery = 60; // kWh promedio
+    let estKwh = 0;
+    let estCost = 0;
+    let estTime = 0;
+    const maxPower = priceQuery.data.maxPowerKw || 7;
+
+    switch (chargeMode) {
+      case "full_charge":
+        estKwh = 0.8 * avgBattery;
+        estCost = estKwh * price;
+        break;
+      case "by_kwh":
+        estKwh = targetValue;
+        estCost = targetValue * price;
+        break;
+      case "by_amount":
+        estCost = targetValue;
+        estKwh = price > 0 ? targetValue / price : 0;
+        break;
+      case "fixed_amount":
+        estCost = targetValue;
+        estKwh = price > 0 ? targetValue / price : 0;
+        break;
+      case "percentage":
+        estKwh = ((targetValue - 20) / 100) * avgBattery;
+        estCost = estKwh * price;
+        break;
+    }
+    estTime = maxPower > 0 ? (estKwh / maxPower) * 60 : 0; // minutos
+    const balanceSufficient = balance >= estCost;
+    const maxKwhWithBalance = price > 0 ? balance / price : 0;
+    return {
+      estKwh: Math.round(estKwh * 100) / 100,
+      estCost: Math.round(estCost),
+      estTime: Math.round(estTime),
+      balanceSufficient,
+      maxKwhWithBalance: Math.round(maxKwhWithBalance * 100) / 100,
+      maxAmountWithBalance: Math.round(balance),
+    };
+  }, [chargeMode, targetValue, priceQuery?.data]);
 
   const startMutation = trpc.adminRemoteStart.startRemoteCharge.useMutation({
     onSuccess: (data) => {
@@ -485,7 +536,7 @@ export default function AdminRemoteStart() {
                           <button
                             key={connector.id}
                             onClick={() => handleSelectConnector(connector)}
-                            disabled={connector.status === "CHARGING" || connector.status === "FAULTED"}
+                            disabled={connector.status === "FAULTED"}
                             className={`flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${
                               selectedConnector?.id === connector.id
                                 ? "border-primary bg-primary/10"
@@ -581,52 +632,196 @@ export default function AdminRemoteStart() {
               </div>
             )}
 
-            {/* Modo de carga */}
-            <div className="space-y-4">
+            {/* Modo de carga - Selector visual con tarjetas */}
+            <div className="space-y-5">
               <div>
-                <Label className="text-sm font-medium mb-2 block">Modo de carga</Label>
-                <Select value={chargeMode} onValueChange={(v) => setChargeMode(v as ChargeMode)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="full_charge">Carga completa (100%)</SelectItem>
-                    <SelectItem value="fixed_amount">Monto fijo (COP)</SelectItem>
-                    <SelectItem value="percentage">Porcentaje de batería</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label className="text-sm font-medium mb-3 block">Modo de carga</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { value: "full_charge" as ChargeMode, label: "Carga completa", desc: "100% bater\u00eda", icon: Battery },
+                    { value: "by_kwh" as ChargeMode, label: "Por kWh", desc: "L\u00edmite de energ\u00eda", icon: Gauge },
+                    { value: "by_amount" as ChargeMode, label: "Por monto", desc: "L\u00edmite en COP", icon: DollarSign },
+                    { value: "percentage" as ChargeMode, label: "Porcentaje", desc: "% de bater\u00eda", icon: TrendingUp },
+                  ].map((mode) => (
+                    <button
+                      key={mode.value}
+                      onClick={() => {
+                        setChargeMode(mode.value);
+                        if (mode.value === "full_charge") setTargetValue(100);
+                        else if (mode.value === "by_kwh") setTargetValue(10);
+                        else if (mode.value === "by_amount") setTargetValue(20000);
+                        else if (mode.value === "percentage") setTargetValue(80);
+                      }}
+                      className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all text-center ${
+                        chargeMode === mode.value
+                          ? "border-primary bg-primary/10 shadow-md shadow-primary/10"
+                          : "border-border hover:border-primary/40 hover:bg-accent/30"
+                      }`}
+                    >
+                      <mode.icon className={`h-6 w-6 ${
+                        chargeMode === mode.value ? "text-primary" : "text-muted-foreground"
+                      }`} />
+                      <span className={`text-sm font-medium ${
+                        chargeMode === mode.value ? "text-primary" : ""
+                      }`}>{mode.label}</span>
+                      <span className="text-xs text-muted-foreground">{mode.desc}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {chargeMode === "fixed_amount" && (
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Monto a cargar (COP)</Label>
-                  <Input
-                    type="number"
-                    min={1000}
-                    step={1000}
-                    value={targetValue}
-                    onChange={(e) => setTargetValue(Number(e.target.value))}
-                    placeholder="Ej: 20000"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Mínimo $1,000 COP
-                  </p>
+              {/* Campo din\u00e1mico seg\u00fan modo seleccionado */}
+              {chargeMode === "by_kwh" && (
+                <div className="p-4 rounded-lg border border-primary/20 bg-primary/5">
+                  <Label className="text-sm font-medium mb-2 block flex items-center gap-2">
+                    <Gauge className="h-4 w-4 text-primary" />
+                    Energ\u00eda a entregar (kWh)
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={200}
+                      step={1}
+                      value={targetValue}
+                      onChange={(e) => setTargetValue(Number(e.target.value))}
+                      placeholder="Ej: 10"
+                      className="text-lg font-bold"
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">kWh</span>
+                  </div>
+                  {estimation && (
+                    <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                      <span>Costo est.: <strong className="text-foreground">${estimation.estCost.toLocaleString("es-CO")} COP</strong></span>
+                      <span>Tiempo est.: <strong className="text-foreground">~{estimation.estTime} min</strong></span>
+                    </div>
+                  )}
+                  {estimation && (
+                    <p className="text-xs text-muted-foreground/70 mt-2 flex items-center gap-1">
+                      <Info className="h-3 w-3" />
+                      M\u00e1x. con saldo del usuario: {estimation.maxKwhWithBalance} kWh
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {(chargeMode === "by_amount" || chargeMode === "fixed_amount") && (
+                <div className="p-4 rounded-lg border border-primary/20 bg-primary/5">
+                  <Label className="text-sm font-medium mb-2 block flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-primary" />
+                    Monto m\u00e1ximo a cobrar (COP)
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-bold text-muted-foreground">$</span>
+                    <Input
+                      type="number"
+                      min={1000}
+                      step={1000}
+                      value={targetValue}
+                      onChange={(e) => setTargetValue(Number(e.target.value))}
+                      placeholder="Ej: 20000"
+                      className="text-lg font-bold"
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">COP</span>
+                  </div>
+                  {/* Botones r\u00e1pidos de monto */}
+                  <div className="flex gap-2 mt-3">
+                    {[5000, 10000, 20000, 50000].map((amount) => (
+                      <button
+                        key={amount}
+                        onClick={() => setTargetValue(amount)}
+                        className={`px-3 py-1 rounded-md text-xs font-medium border transition-all ${
+                          targetValue === amount
+                            ? "border-primary bg-primary/20 text-primary"
+                            : "border-border hover:border-primary/40 text-muted-foreground"
+                        }`}
+                      >
+                        ${amount.toLocaleString("es-CO")}
+                      </button>
+                    ))}
+                  </div>
+                  {estimation && (
+                    <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                      <span>Energ\u00eda est.: <strong className="text-foreground">~{estimation.estKwh} kWh</strong></span>
+                      <span>Tiempo est.: <strong className="text-foreground">~{estimation.estTime} min</strong></span>
+                    </div>
+                  )}
+                  {estimation && (
+                    <p className="text-xs text-muted-foreground/70 mt-2 flex items-center gap-1">
+                      <Info className="h-3 w-3" />
+                      Saldo disponible del usuario: ${estimation.maxAmountWithBalance.toLocaleString("es-CO")} COP
+                    </p>
+                  )}
                 </div>
               )}
 
               {chargeMode === "percentage" && (
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Porcentaje objetivo (%)</Label>
-                  <Input
-                    type="number"
-                    min={20}
-                    max={100}
-                    value={targetValue}
-                    onChange={(e) => setTargetValue(Number(e.target.value))}
-                    placeholder="Ej: 80"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Cargar hasta el {targetValue}% de la batería
+                <div className="p-4 rounded-lg border border-primary/20 bg-primary/5">
+                  <Label className="text-sm font-medium mb-2 block flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    Porcentaje objetivo de bater\u00eda
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      min={20}
+                      max={100}
+                      step={5}
+                      value={targetValue}
+                      onChange={(e) => setTargetValue(Number(e.target.value))}
+                      placeholder="Ej: 80"
+                      className="text-lg font-bold"
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">%</span>
+                  </div>
+                  {/* Botones r\u00e1pidos de porcentaje */}
+                  <div className="flex gap-2 mt-3">
+                    {[50, 60, 80, 100].map((pct) => (
+                      <button
+                        key={pct}
+                        onClick={() => setTargetValue(pct)}
+                        className={`px-3 py-1 rounded-md text-xs font-medium border transition-all ${
+                          targetValue === pct
+                            ? "border-primary bg-primary/20 text-primary"
+                            : "border-border hover:border-primary/40 text-muted-foreground"
+                        }`}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                  {estimation && (
+                    <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                      <span>Energ\u00eda est.: <strong className="text-foreground">~{estimation.estKwh} kWh</strong></span>
+                      <span>Costo est.: <strong className="text-foreground">${estimation.estCost.toLocaleString("es-CO")} COP</strong></span>
+                      <span>Tiempo est.: <strong className="text-foreground">~{estimation.estTime} min</strong></span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {chargeMode === "full_charge" && estimation && (
+                <div className="p-4 rounded-lg border border-border bg-accent/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Battery className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Estimaci\u00f3n de carga completa</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <p className="text-lg font-bold text-primary">~{estimation.estKwh} kWh</p>
+                      <p className="text-xs text-muted-foreground">Energ\u00eda</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold">${estimation.estCost.toLocaleString("es-CO")}</p>
+                      <p className="text-xs text-muted-foreground">Costo COP</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold">~{estimation.estTime} min</p>
+                      <p className="text-xs text-muted-foreground">Tiempo</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground/60 mt-3 text-center">
+                    Basado en bater\u00eda promedio de 60 kWh (20%\u219280%)
                   </p>
                 </div>
               )}
@@ -640,30 +835,44 @@ export default function AdminRemoteStart() {
                 <Textarea
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="Describe el motivo por el cual inicias esta carga en nombre del usuario (ej: usuario reporta error en la app, asistencia telefónica, etc.)"
+                  placeholder="Describe el motivo por el cual inicias esta carga en nombre del usuario (ej: usuario reporta error en la app, asistencia telef\u00f3nica, etc.)"
                   rows={3}
                   className="resize-none"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Este motivo queda registrado en la auditoría del sistema
+                  Este motivo queda registrado en la auditor\u00eda del sistema
                 </p>
               </div>
 
-              {/* Advertencia de saldo insuficiente */}
-              {priceQuery.data && priceQuery.data.userBalance < 5000 && (
+              {/* Advertencia de saldo insuficiente din\u00e1mica */}
+              {estimation && !estimation.balanceSufficient && (
                 <div className="flex items-start gap-3 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
                   <AlertTriangle className="h-5 w-5 text-yellow-400 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium text-yellow-400">Saldo bajo</p>
+                    <p className="text-sm font-medium text-yellow-400">Saldo insuficiente para esta configuraci\u00f3n</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      El usuario tiene un saldo de ${priceQuery.data.userBalance.toLocaleString("es-CO")} COP.
-                      La carga se detendrá cuando se agote el saldo disponible.
+                      El usuario tiene <strong>${estimation.maxAmountWithBalance.toLocaleString("es-CO")} COP</strong> disponibles,
+                      pero el costo estimado es <strong>${estimation.estCost.toLocaleString("es-CO")} COP</strong>.
+                      La carga se detendr\u00e1 cuando se agote el saldo.
                     </p>
                   </div>
                 </div>
               )}
 
-              {/* Botón de continuar */}
+              {estimation && estimation.balanceSufficient && priceQuery.data && priceQuery.data.userBalance < estimation.estCost * 1.2 && (
+                <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                  <Info className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-400">Saldo ajustado</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      El saldo del usuario cubre esta carga pero con poco margen.
+                      Saldo: ${estimation.maxAmountWithBalance.toLocaleString("es-CO")} COP | Costo est.: ${estimation.estCost.toLocaleString("es-CO")} COP
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Bot\u00f3n de continuar */}
               <div className="flex justify-end pt-4">
                 <Button
                   size="lg"
@@ -728,12 +937,19 @@ export default function AdminRemoteStart() {
                   <p className="text-xs text-muted-foreground">Modo de carga</p>
                   <p className="text-sm font-medium">
                     {chargeMode === "full_charge" && "Carga completa (100%)"}
+                    {chargeMode === "by_kwh" && `L\u00edmite: ${targetValue} kWh`}
+                    {chargeMode === "by_amount" && `L\u00edmite: $${targetValue.toLocaleString("es-CO")} COP`}
                     {chargeMode === "fixed_amount" && `Monto fijo: $${targetValue.toLocaleString("es-CO")} COP`}
-                    {chargeMode === "percentage" && `Hasta ${targetValue}% de batería`}
+                    {chargeMode === "percentage" && `Hasta ${targetValue}% de bater\u00eda`}
                   </p>
                   {priceQuery.data && (
                     <p className="text-xs text-muted-foreground">
                       Tarifa: ${priceQuery.data.pricePerKwh.toLocaleString("es-CO")} COP/kWh
+                    </p>
+                  )}
+                  {estimation && (
+                    <p className="text-xs text-muted-foreground">
+                      Est.: ~{estimation.estKwh} kWh | ~${estimation.estCost.toLocaleString("es-CO")} COP | ~{estimation.estTime} min
                     </p>
                   )}
                 </div>
