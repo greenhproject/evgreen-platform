@@ -108,6 +108,7 @@ const AdminOverstayHistory = lazy(() => import("./pages/admin/OverstayHistory"))
 const AdminInvestorManagement = lazy(() => import("./pages/admin/InvestorManagement"));
 const AdminDebts = lazy(() => import("./pages/admin/Debts"));
 const AdminSupport = lazy(() => import("./pages/admin/Support"));
+const AdminRemoteStart = lazy(() => import("./pages/admin/RemoteStart"));
 
 // Páginas de Staff (Evento)
 const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
@@ -624,6 +625,13 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin", "engineer", "technician"]}>
             <AdminLayout>
               <AdminSupport />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/remote-start">
+          <ProtectedRoute allowedRoles={["admin", "engineer", "technician"]}>
+            <AdminLayout>
+              <AdminRemoteStart />
             </AdminLayout>
           </ProtectedRoute>
         </Route>

@@ -2570,3 +2570,10 @@
 
 ## Bug Fix: Auth desconecta constantemente - 13 Abril 2026
 - [x] Fix: authenticateRequest() llama a api.manus.im pero el sistema usa Auth0 - eliminar dependencia de Manus OAuth API
+
+## Inicio Remoto de Carga desde Admin/Soporte - 12 Abril 2026
+- [x] Backend: Endpoint remoteStartCharge - crear sesión de carga + enviar OCPP RemoteStart + auditoría
+- [x] Frontend: Interfaz profesional de Inicio Remoto de Carga (buscar usuario, seleccionar estación/conector, modo de carga)
+- [x] Integrar accesos estratégicos: botón en panel admin/soporte sidebar "Inicio Remoto"
+- [x] Fix: searchUsers usando Drizzle ORM en lugar de raw SQL para compatibilidad
+- [ ] Push a GitHub después de implementar

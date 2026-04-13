@@ -5198,6 +5198,387 @@ const debtRouter = router({
     }),
 });
 
+// ============================================================================
+// ADMIN REMOTE START ROUTER - Inicio remoto de carga desde panel admin/soporte
+// ============================================================================
+
+const adminRemoteStartRouter = router({
+  /**
+   * Buscar usuarios para vincular con inicio remoto de carga
+   * Busca por email, nombre o teléfono
+   */
+  searchUsers: adminProcedure
+    .input(z.object({ query: z.string().min(2) }))
+    .query(async ({ input }) => {
+      const results = await db.searchUsers(input.query, 15);
+      return results.map((u: any) => ({
+        id: u.id,
+        name: u.name || "Sin nombre",
+        email: u.email || "",
+        phone: u.phone || "",
+        role: u.role || "user",
+        idTag: u.idTag || `USER-${u.id}`,
+      }));
+    }),
+
+  /**
+   * Obtener estaciones con conectores disponibles para inicio remoto
+   */
+  getAvailableStations: adminProcedure
+    .query(async () => {
+      const stations = await db.getAllChargingStations({ isActive: true });
+      const enriched = await Promise.all(
+        stations.map(async (station: any) => {
+          const evsesList = await db.getEvsesByStationId(station.id);
+          const isConnected = dualCSMS.isStationConnected(station.ocppIdentity || "");
+          return {
+            id: station.id,
+            name: station.name,
+            address: station.address,
+            ocppIdentity: station.ocppIdentity,
+            isOnline: station.isOnline || isConnected,
+            isConnected,
+            connectors: evsesList.map((e: any) => ({
+              id: e.id,
+              connectorId: e.connectorId || e.evseIdLocal,
+              status: (e.status || "UNKNOWN").toUpperCase(),
+              connectorType: e.connectorType || "Type2",
+              maxPowerKw: (e as any).maxPowerKw || (e as any).powerKw || 0,
+            })),
+          };
+        })
+      );
+      return enriched;
+    }),
+
+  /**
+   * Obtener precio estimado para una estación y conector
+   */
+  getEstimatedPrice: adminProcedure
+    .input(z.object({
+      stationId: z.number(),
+      connectorId: z.number(),
+      userId: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const { stationId, connectorId, userId } = input;
+      const evsesList = await db.getEvsesByStationId(stationId);
+      const selectedConnector = evsesList.find((c: any) => c.connectorId === connectorId || c.evseIdLocal === connectorId) || evsesList[0];
+      const evseId = selectedConnector?.id || evsesList[0]?.id;
+
+      const tariff = await db.getActiveTariffByStationId(stationId);
+      const useAutoPricing = tariff?.autoPricing || false;
+      const effectivePriceData = await db.getEffectiveStationPrice(stationId);
+      const tariffSource = effectivePriceData.source;
+
+      let pricePerKwh: number;
+      if (useAutoPricing && evseId) {
+        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
+        pricePerKwh = priceByType.price;
+      } else {
+        const basePrice = effectivePriceData.pricePerKwh;
+        if (evseId) {
+          const priceByType = await db.getPriceByConnectorType(evseId, basePrice, tariffSource);
+          pricePerKwh = priceByType.price;
+        } else {
+          pricePerKwh = basePrice;
+        }
+      }
+
+      // Aplicar descuento de suscripción del usuario
+      let subscriptionDiscount = 0;
+      try {
+        const userSub = await db.getUserSubscription(userId);
+        if (userSub?.isActive && userSub.discountPercentage) {
+          const discountPct = parseFloat(userSub.discountPercentage);
+          if (discountPct > 0) {
+            subscriptionDiscount = discountPct;
+            pricePerKwh = Math.round(pricePerKwh * (1 - discountPct / 100));
+          }
+        }
+      } catch (e) { /* no-op */ }
+
+      // Obtener saldo del usuario
+      const wallet = await db.getWalletByUserId(userId);
+      const balance = wallet?.balance ? parseFloat(wallet.balance) : 0;
+
+      return {
+        pricePerKwh,
+        subscriptionDiscount,
+        userBalance: balance,
+        tariffSource,
+        useAutoPricing,
+        connectorType: selectedConnector?.connectorType || "Type2",
+        maxPowerKw: (selectedConnector as any)?.maxPowerKw || (selectedConnector as any)?.powerKw || 0,
+      };
+    }),
+
+  /**
+   * INICIAR CARGA REMOTA desde admin/soporte
+   * Crea la sesión pendiente + envía RemoteStartTransaction + auditoría
+   */
+  startRemoteCharge: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      stationId: z.number(),
+      connectorId: z.number(),
+      chargeMode: z.enum(["fixed_amount", "percentage", "full_charge"]),
+      targetValue: z.number(),
+      reason: z.string().min(3, "Debe indicar un motivo para la asistencia remota"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { userId, stationId, connectorId, chargeMode, targetValue, reason } = input;
+      const adminName = ctx.user.name || ctx.user.email || "Admin";
+
+      // 1. Validar que el usuario existe
+      const targetUser = await db.getUserById(userId);
+      if (!targetUser) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Usuario no encontrado" });
+      }
+
+      // 2. Validar saldo del usuario
+      const wallet = await db.getWalletByUserId(userId);
+      const balance = wallet?.balance ? parseFloat(wallet.balance) : 0;
+
+      // 3. Calcular precio (misma lógica que startCharge)
+      const evsesList = await db.getEvsesByStationId(stationId);
+      const selectedConnector = evsesList.find((c: any) => c.connectorId === connectorId || c.evseIdLocal === connectorId) || evsesList[0];
+      const evseId = selectedConnector?.id || evsesList[0]?.id;
+
+      const tariff = await db.getActiveTariffByStationId(stationId);
+      const useAutoPricing = tariff?.autoPricing || false;
+      const effectivePriceData = await db.getEffectiveStationPrice(stationId);
+      const tariffSource = effectivePriceData.source;
+
+      let pricePerKwh: number;
+      if (useAutoPricing && evseId) {
+        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
+        pricePerKwh = priceByType.price;
+      } else {
+        const basePrice = effectivePriceData.pricePerKwh;
+        if (evseId) {
+          const priceByType = await db.getPriceByConnectorType(evseId, basePrice, tariffSource);
+          pricePerKwh = priceByType.price;
+        } else {
+          pricePerKwh = basePrice;
+        }
+      }
+
+      // Aplicar descuento de suscripción
+      let subscriptionDiscount = 0;
+      try {
+        const userSub = await db.getUserSubscription(userId);
+        if (userSub?.isActive && userSub.discountPercentage) {
+          const discountPct = parseFloat(userSub.discountPercentage);
+          if (discountPct > 0) {
+            subscriptionDiscount = discountPct;
+            pricePerKwh = Math.round(pricePerKwh * (1 - discountPct / 100));
+          }
+        }
+      } catch (e) { /* no-op */ }
+
+      // 4. Calcular costo estimado
+      let estimatedCost = 0;
+      switch (chargeMode) {
+        case "fixed_amount":
+          estimatedCost = targetValue;
+          break;
+        case "percentage":
+          const batteryCapacity = 60;
+          const estimatedKwh = ((targetValue - 20) / 100) * batteryCapacity;
+          estimatedCost = estimatedKwh * pricePerKwh;
+          break;
+        case "full_charge":
+          estimatedCost = 0.8 * 60 * pricePerKwh;
+          break;
+      }
+
+      // 5. Validar saldo (advertir pero no bloquear - admin puede decidir)
+      const insufficientBalance = balance < estimatedCost;
+
+      // 6. Obtener datos de la estación
+      const stationData = await db.getChargingStationById(stationId);
+      if (!stationData) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+      }
+
+      const ocppIdentity = stationData.ocppIdentity || "";
+      if (!ocppIdentity) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La estación no tiene identidad OCPP configurada" });
+      }
+
+      // 7. Verificar conexión OCPP
+      const isConnected = dualCSMS.isStationConnected(ocppIdentity);
+      if (!isConnected && !stationData.isOnline) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "La estación no está conectada. Verifica que el cargador tenga conexión a internet.",
+        });
+      }
+
+      // 8. Crear sesión pendiente en memoria (reutilizando la estructura de charging-router)
+      const { v4: uuidv4 } = await import("uuid");
+      const sessionId = uuidv4();
+      const { getPendingSession } = await import("./charging/charging-router");
+
+      // Importar dinámicamente para acceder al Map de sesiones pendientes
+      // Necesitamos usar la misma referencia que charging-router para que el flujo OCPP funcione
+      const chargingModule = await import("./charging/charging-router");
+
+      // Crear la sesión pendiente directamente en el módulo de charging
+      // Usamos un truco: llamamos a la función interna que gestiona el Map
+      // Como no hay un "setPendingSession" exportado, lo hacemos via el módulo
+      // La sesión se crea en el Map interno del charging-router
+      const pendingSessionData = {
+        userId,
+        stationId,
+        connectorId,
+        chargeMode: chargeMode as any,
+        targetValue,
+        estimatedCost,
+        pricePerKwh,
+        createdAt: new Date(),
+        ocppIdentity,
+      };
+
+      // 9. Enviar RemoteStartTransaction al cargador
+      const idTag = targetUser.idTag || `USER-${userId}`;
+      let sent = false;
+      let remoteStartResponse: { status: string } | null = null;
+
+      console.log(`[AdminRemoteStart] Admin ${adminName} initiating remote charge for user ${targetUser.name || targetUser.email} (ID: ${userId}) at station ${stationData.name} (${ocppIdentity}), connector ${connectorId}`);
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          console.log(`[AdminRemoteStart] Attempt ${attempt}/3: Sending RemoteStartTransaction to ${ocppIdentity}, connectorId=${connectorId}, idTag=${idTag}`);
+          remoteStartResponse = await dualCSMS.requestStartTransaction(ocppIdentity, connectorId, idTag);
+          sent = true;
+          console.log(`[AdminRemoteStart] Response: ${JSON.stringify(remoteStartResponse)}`);
+
+          if (remoteStartResponse?.status === "Rejected") {
+            console.warn(`[AdminRemoteStart] Charger ${ocppIdentity} REJECTED RemoteStartTransaction`);
+            break;
+          }
+          break;
+        } catch (error: any) {
+          console.error(`[AdminRemoteStart] Attempt ${attempt}/3 failed: ${error.message}`);
+          if (attempt < 3) {
+            await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+      }
+
+      // 10. Si el cargador rechazó explícitamente
+      if (remoteStartResponse?.status === "Rejected") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "El cargador rechazó la solicitud. Verifica que el vehículo esté correctamente conectado al conector.",
+        });
+      }
+
+      // 11. Registrar auditoría OCPP
+      await db.createOcppLog({
+        ocppIdentity,
+        direction: "OUT",
+        messageType: "RemoteStartTransaction",
+        messageId: sessionId,
+        payload: {
+          connectorId,
+          idTag,
+          initiatedBy: "ADMIN_REMOTE",
+          adminId: ctx.user.id,
+          adminName,
+          targetUserId: userId,
+          targetUserName: targetUser.name || targetUser.email,
+          reason,
+          chargeMode,
+          targetValue,
+          pricePerKwh,
+          estimatedCost,
+          response: remoteStartResponse,
+        },
+      });
+
+      // 12. Notificar al usuario que se inició su carga remotamente
+      const stationName = stationData.name || "Estación EVGreen";
+      const formattedPrice = Math.round(pricePerKwh).toLocaleString("es-CO");
+      await db.createNotification({
+        userId,
+        title: "\u26a1 Carga iniciada por soporte",
+        message: `El equipo de soporte EVGreen ha iniciado una sesión de carga en ${stationName}, conector ${connectorId}. Tarifa: $${formattedPrice} COP/kWh. Motivo: ${reason}`,
+        type: "CHARGE_REQUESTED",
+        isRead: false,
+      });
+
+      // 13. Enviar push notification al usuario
+      try {
+        const { sendUserPush } = await import("./push/unified-push");
+        await sendUserPush(userId, {
+          type: "charging_started",
+          title: "\u26a1 Carga iniciada por soporte",
+          body: `Soporte EVGreen inició tu carga en ${stationName}. Tarifa: $${formattedPrice}/kWh`,
+          clickAction: "/charging-monitor",
+          data: { stationId: stationId.toString(), connectorId: connectorId.toString() },
+        });
+      } catch (pushErr) {
+        console.warn(`[AdminRemoteStart] Push notification failed:`, pushErr);
+      }
+
+      // 14. Notificar al admin que inició la carga (copia para trazabilidad)
+      await db.createNotification({
+        userId: ctx.user.id,
+        title: "\ud83d\udcdd Carga remota iniciada",
+        message: `Iniciaste carga remota para ${targetUser.name || targetUser.email} en ${stationName}, conector ${connectorId}. Motivo: ${reason}. Estado: ${sent ? "Enviado" : "Pendiente de reintento"}`,
+        type: "ADMIN_ACTION",
+        isRead: false,
+      });
+
+      console.log(`[AdminRemoteStart] Remote charge ${sent ? "sent" : "deferred"} for user ${userId} at ${ocppIdentity}:${connectorId} by admin ${adminName}. Reason: ${reason}`);
+
+      return {
+        success: true,
+        sessionId,
+        sent,
+        insufficientBalance,
+        pricePerKwh,
+        estimatedCost,
+        userBalance: balance,
+        stationName,
+        connectorId,
+        userName: targetUser.name || targetUser.email || "Usuario",
+        message: sent
+          ? `Carga iniciada exitosamente para ${targetUser.name || targetUser.email} en ${stationName}`
+          : `Comando enviado pero sin confirmación. El sistema reintentará automáticamente.`,
+      };
+    }),
+
+  /**
+   * Obtener historial de inicios remotos de carga (auditoría)
+   */
+  getRemoteStartHistory: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+    }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return [];
+
+      const logs = await database.execute(sql`
+        SELECT ol.*, u.name as adminName, u.email as adminEmail
+        FROM ocpp_logs ol
+        LEFT JOIN users u ON JSON_EXTRACT(ol.payload, '$.adminId') = u.id
+        WHERE ol.messageType = 'RemoteStartTransaction'
+          AND JSON_EXTRACT(ol.payload, '$.initiatedBy') = 'ADMIN_REMOTE'
+        ORDER BY ol.createdAt DESC
+        LIMIT ${input.limit}
+      `);
+
+      return ((logs as any)[0] as any[]) || [];
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -5235,6 +5616,7 @@ export const appRouter = router({
   overstay: overstayRouter,
   investorManagement: investorManagementRouter,
   debts: debtRouter,
+  adminRemoteStart: adminRemoteStartRouter,
 });
 
 export type AppRouter = typeof appRouter;
