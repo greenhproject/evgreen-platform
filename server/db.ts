@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, lt, gt, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
 /**
  * ============================================================================
  * EVGreen Platform - Funciones de Base de Datos (db.ts)
@@ -6011,14 +6011,18 @@ export async function searchUsers(query: string, limit: number = 10): Promise<an
   
   try {
     const searchTerm = `%${query}%`;
-    const result = await db.execute(sql`
-      SELECT id, name, email, role, phone, companyName, taxId, bankAccount, bankName, avatar
-      FROM users
-      WHERE (name LIKE ${searchTerm} OR email LIKE ${searchTerm})
-      ORDER BY name ASC
-      LIMIT ${limit}
-    `);
-    return ((result as any)[0] as any[]) || [];
+    const results = await db.select().from(users)
+      .where(
+        or(
+          like(users.name, searchTerm),
+          like(users.email, searchTerm),
+          like(users.phone, searchTerm),
+          like(users.idTag, searchTerm),
+        )
+      )
+      .orderBy(asc(users.name))
+      .limit(limit);
+    return results;
   } catch (error) {
     console.error('[DB] Error searching users:', error);
     return [];
