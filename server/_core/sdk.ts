@@ -270,36 +270,28 @@ class SDKServer {
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
 
-    // If user not in DB by openId, try to find by email and link the account
+    // If user not in DB by openId, create from local JWT session data
+    // NOTE: Auth0 handles the OAuth flow and user creation happens in the Auth0 callback.
+    // This block only runs if a user somehow has a valid JWT but no DB record.
+    // We do NOT call Manus API (getUserInfoWithJwt) since auth is handled by Auth0.
     if (!user) {
       try {
-        const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-        
-        // First, check if user exists by email (pre-created accounts)
-        if (userInfo.email) {
-          const existingUserByEmail = await db.getUserByEmail(userInfo.email);
-          if (existingUserByEmail) {
-            // Link the existing user with the new openId from Manus OAuth
-            console.log(`[Auth] Linking existing user ${userInfo.email} with openId ${userInfo.openId}`);
-            await db.linkUserOpenId(existingUserByEmail.id, userInfo.openId);
-            user = await db.getUserByOpenId(userInfo.openId);
-          }
-        }
-        
-        // If still no user, create a new one
-        if (!user) {
-          await db.upsertUser({
-            openId: userInfo.openId,
-            name: userInfo.name || null,
-            email: userInfo.email ?? null,
-            loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-            lastSignedIn: signedInAt,
-          });
-          user = await db.getUserByOpenId(userInfo.openId);
-        }
+        // Use the session data from the locally-signed JWT (openId + name are in the token)
+        const sessionOpenId = session.openId;
+        const sessionName = session.name;
+
+        // Create the user from session data (Auth0 callback should have created them,
+        // but this is a safety net for edge cases)
+        console.log(`[Auth] User not found for openId ${sessionOpenId}, creating from session data`);
+        await db.upsertUser({
+          openId: sessionOpenId,
+          name: sessionName || null,
+          lastSignedIn: signedInAt,
+        });
+        user = await db.getUserByOpenId(sessionOpenId);
       } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
+        console.error("[Auth] Failed to create user from session:", error);
+        throw ForbiddenError("Failed to create user from session");
       }
     }
 

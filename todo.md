@@ -2567,3 +2567,6 @@
 - [x] Feature: Ejecutar transacciones remotas desde panel admin/soporte para resolver problemas con clientes
 - [x] Feature: Historial de acciones administrativas sobre penalizaciones (audit log)
 - [x] Feature: Acceso al sistema de penalizaciones desde rol soporte además de admin
+
+## Bug Fix: Auth desconecta constantemente - 13 Abril 2026
+- [x] Fix: authenticateRequest() llama a api.manus.im pero el sistema usa Auth0 - eliminar dependencia de Manus OAuth API
