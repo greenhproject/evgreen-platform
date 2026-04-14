@@ -257,7 +257,7 @@ export default function InvestorSettings() {
             <div>
               <h3 className="font-semibold mb-2">Datos bancarios para pagos</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Aquí recibirás el 80% de los ingresos generados por tus estaciones.
+                Aquí recibirás tu porcentaje correspondiente de los ingresos generados por tus estaciones, según la configuración de cada activo.
                 Estos datos se usarán automáticamente al solicitar liquidaciones.
               </p>
               

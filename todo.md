@@ -2694,3 +2694,10 @@
 ## Bug Fix - Insignia Muro de Fundadores (Abril 2026)
 - [x] BUG: La insignia de "Muro de Fundadores" se superpone al menú lateral del inversionista, tapando opciones de navegación
 - [x] Reubicar la insignia para que no interfiera con el sidebar (creada versión compacta FoundersWallCompact)
+
+## Mejoras Financieras - Abril 2026 (Ronda 2)
+- [x] Quitar "80%" hardcodeado en datos bancarios, usar texto dinámico genérico
+- [x] Fondo de mantenimiento 5% dentro del 30% de EVGreen para estaciones colectivas
+- [x] Tabla maintenance_fund_records + endpoints (resumen, historial, retiro admin)
+- [x] Actualizar waterfall engine para calcular fondo de mantenimiento automáticamente
+- [x] Bloquear configuración de tarifas en estaciones colectivas para inversionistas (solo admin)

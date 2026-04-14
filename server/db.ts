@@ -112,6 +112,8 @@ import {
   operationalMetrics,
   OperationalMetric,
   InsertOperationalMetric,
+  maintenanceFundRecords,
+  InsertMaintenanceFundRecord,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -6678,4 +6680,110 @@ export async function getHostSettlementHistory(hostUserId: number, limit = 50) {
     platformTotalAmount: Number(r.platformTotalAmount || 0),
     status: r.status,
   }));
+}
+
+
+// --- MAINTENANCE FUND HELPERS ---
+
+/**
+ * Get current balance of the maintenance fund for a station
+ */
+export async function getMaintenanceFundBalance(stationId: number): Promise<number> {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT balanceAfter FROM maintenance_fund_records
+    WHERE stationId = ${stationId}
+    ORDER BY id DESC LIMIT 1
+  `));
+  const row = (results as any)[0]?.[0];
+  return row ? Number(row.balanceAfter) : 0;
+}
+
+/**
+ * Create a maintenance fund record (deposit or withdrawal)
+ */
+export async function createMaintenanceFundRecord(data: {
+  stationId: number;
+  type: 'deposit' | 'withdrawal';
+  amount: number;
+  description: string;
+  maintenanceType?: string;
+  maintenanceDetail?: string;
+  technicianName?: string;
+  invoiceNumber?: string;
+  settlementId?: number;
+  balanceAfter: number;
+  createdBy?: number;
+}): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(maintenanceFundRecords).values({
+    stationId: data.stationId,
+    type: data.type,
+    amount: data.amount,
+    description: data.description,
+    maintenanceType: data.maintenanceType || null,
+    maintenanceDetail: data.maintenanceDetail || null,
+    technicianName: data.technicianName || null,
+    invoiceNumber: data.invoiceNumber || null,
+    settlementId: data.settlementId || null,
+    balanceAfter: data.balanceAfter,
+    createdBy: data.createdBy || null,
+  });
+  return Number(result[0].insertId);
+}
+
+/**
+ * Get maintenance fund records for a station (history)
+ */
+export async function getMaintenanceFundRecords(stationId: number, limit = 50) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT mfr.*, u.name as creatorName
+    FROM maintenance_fund_records mfr
+    LEFT JOIN users u ON u.id = mfr.createdBy
+    WHERE mfr.stationId = ${stationId}
+    ORDER BY mfr.id DESC
+    LIMIT ${limit}
+  `));
+  return ((results as any)[0] || []).map((r: any) => ({
+    id: Number(r.id),
+    stationId: Number(r.stationId),
+    type: r.maintenance_fund_type,
+    amount: Number(r.amount),
+    description: r.description,
+    maintenanceType: r.maintenanceType,
+    maintenanceDetail: r.maintenanceDetail,
+    technicianName: r.technicianName,
+    invoiceNumber: r.invoiceNumber,
+    settlementId: r.settlementId ? Number(r.settlementId) : null,
+    balanceAfter: Number(r.balanceAfter),
+    creatorName: r.creatorName || 'Sistema',
+    createdAt: r.createdAt,
+  }));
+}
+
+/**
+ * Get maintenance fund summary for a station
+ */
+export async function getMaintenanceFundSummary(stationId: number) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      COALESCE(SUM(CASE WHEN maintenance_fund_type = 'deposit' THEN amount ELSE 0 END), 0) as totalDeposits,
+      COALESCE(SUM(CASE WHEN maintenance_fund_type = 'withdrawal' THEN amount ELSE 0 END), 0) as totalWithdrawals,
+      COUNT(CASE WHEN maintenance_fund_type = 'deposit' THEN 1 END) as depositCount,
+      COUNT(CASE WHEN maintenance_fund_type = 'withdrawal' THEN 1 END) as withdrawalCount
+    FROM maintenance_fund_records
+    WHERE stationId = ${stationId}
+  `));
+  const row = (results as any)[0]?.[0] || {};
+  const totalDeposits = Number(row.totalDeposits || 0);
+  const totalWithdrawals = Number(row.totalWithdrawals || 0);
+  return {
+    totalDeposits,
+    totalWithdrawals,
+    currentBalance: totalDeposits - totalWithdrawals,
+    depositCount: Number(row.depositCount || 0),
+    withdrawalCount: Number(row.withdrawalCount || 0),
+  };
 }

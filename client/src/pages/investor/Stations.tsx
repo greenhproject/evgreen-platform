@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, MapPin, Zap, Settings, Eye, TrendingUp, ExternalLink, Battery, Clock, DollarSign, Sparkles, Brain, Info, ArrowRight, BarChart3, Activity, Download } from "lucide-react";
+import { Search, MapPin, Zap, Settings, Eye, TrendingUp, ExternalLink, Battery, Clock, DollarSign, Sparkles, Brain, Info, ArrowRight, BarChart3, Activity, Download, Lock } from "lucide-react";
 import { toast } from "sonner";
 
 // Tipo para estación
@@ -253,7 +253,13 @@ export default function InvestorStations() {
     setShowDetailsModal(true);
   };
 
+  const isCollectiveStation = (station: Station) => !!station.crowdfundingProjectId;
+
   const handleOpenConfig = (station: Station) => {
+    if (isCollectiveStation(station)) {
+      toast.error("Las tarifas de estaciones colectivas son configuradas exclusivamente por el administrador de EVGreen.");
+      return;
+    }
     setSelectedStation(station);
     // Cargar valores actuales de tarifa
     if (station.tariff) {
@@ -480,14 +486,16 @@ export default function InvestorStations() {
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleOpenConfig(station)}
-                        title="Configurar tarifas"
-                      >
-                        <Settings className="w-4 h-4" />
-                      </Button>
+                      {!isCollectiveStation(station) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleOpenConfig(station)}
+                          title="Configurar tarifas"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -676,17 +684,23 @@ export default function InvestorStations() {
 
               {/* Acciones */}
               <div className="flex gap-2 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    setShowDetailsModal(false);
-                    handleOpenConfig(selectedStation);
-                  }}
-                >
-                  <Settings className="w-4 h-4 mr-2" />
-                  Configurar Tarifas
-                </Button>
+                {selectedStation && !isCollectiveStation(selectedStation) ? (
+                  <Button
+                    className="flex-1"
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleOpenConfig(selectedStation);
+                    }}
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    Configurar Tarifas
+                  </Button>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md py-2 px-3">
+                    <Lock className="w-3.5 h-3.5" />
+                    Tarifas gestionadas por Admin
+                  </div>
+                )}
                 <Button
                   className="flex-1"
                   onClick={() => window.open(
