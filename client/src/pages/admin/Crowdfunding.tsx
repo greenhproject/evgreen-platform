@@ -183,6 +183,14 @@ export default function AdminCrowdfunding() {
     status: "DRAFT",
     targetDate: "",
     priority: 1,
+    // Modelo financiero
+    evgreenSharePercent: "30.00",
+    investorSharePercent: "60.00",
+    hostSharePercent: "10.00",
+    energyPurchaseCostPerKwh: "800.00",
+    hostName: "",
+    latitude: "",
+    longitude: "",
   });
 
   const { data: projects, isLoading, refetch } = trpc.crowdfunding.getAllProjects.useQuery();
@@ -294,6 +302,13 @@ export default function AdminCrowdfunding() {
       status: "DRAFT",
       targetDate: "",
       priority: 1,
+      evgreenSharePercent: "30.00",
+      investorSharePercent: "60.00",
+      hostSharePercent: "10.00",
+      energyPurchaseCostPerKwh: "800.00",
+      hostName: "",
+      latitude: "",
+      longitude: "",
     });
   };
 
@@ -334,13 +349,31 @@ export default function AdminCrowdfunding() {
       status: project.status,
       targetDate: project.targetDate ? new Date(project.targetDate).toISOString().split('T')[0] : "",
       priority: project.priority,
+      evgreenSharePercent: (project as any).evgreenSharePercent || "30.00",
+      investorSharePercent: (project as any).investorSharePercent || "60.00",
+      hostSharePercent: (project as any).hostSharePercent || "10.00",
+      energyPurchaseCostPerKwh: (project as any).energyPurchaseCostPerKwh || "800.00",
+      hostName: (project as any).hostName || "",
+      latitude: (project as any).latitude || "",
+      longitude: (project as any).longitude || "",
     });
   };
 
   const handleSubmit = () => {
+    // Validar que los porcentajes sumen 100%
+    const sum = parseFloat(formData.evgreenSharePercent || '0') + parseFloat(formData.investorSharePercent || '0') + parseFloat(formData.hostSharePercent || '0');
+    if (Math.abs(sum - 100) > 0.1) {
+      toast.error(`Los porcentajes del modelo financiero deben sumar 100%. Actual: ${sum.toFixed(2)}%`);
+      return;
+    }
+
+    const { raisedAmount, ...rest } = formData;
     const data = {
-      ...formData,
+      ...rest,
       targetDate: formData.targetDate ? new Date(formData.targetDate) : undefined,
+      hostName: formData.hostName || undefined,
+      latitude: formData.latitude || undefined,
+      longitude: formData.longitude || undefined,
     };
 
     if (editingProject) {
@@ -641,10 +674,11 @@ export default function AdminCrowdfunding() {
           </DialogHeader>
 
           <Tabs defaultValue="general" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="technical">Técnico</TabsTrigger>
-              <TabsTrigger value="financial">Financiero</TabsTrigger>
+              <TabsTrigger value="financial">Inversión</TabsTrigger>
+              <TabsTrigger value="model">Modelo</TabsTrigger>
             </TabsList>
 
             <TabsContent value="general" className="space-y-4 mt-4">
@@ -731,6 +765,121 @@ export default function AdminCrowdfunding() {
                 <div>
                   <Label>Payback Estimado (meses)</Label>
                   <Input type="number" value={formData.estimatedPaybackMonths} onChange={(e) => setFormData({ ...formData, estimatedPaybackMonths: parseInt(e.target.value) || 0 })} />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="model" className="space-y-4 mt-4">
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 mb-4">
+                <h4 className="text-sm font-semibold text-emerald-400 mb-1">Modelo Financiero de la Estación</h4>
+                <p className="text-xs text-muted-foreground">Configura la distribución de ingresos entre los actores. La suma de los 3 porcentajes debe ser 100%.</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <Label className="text-emerald-400">% EVGreen</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={formData.evgreenSharePercent}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const remaining = 100 - parseFloat(val || '0');
+                      const currentInvestor = parseFloat(formData.investorSharePercent || '0');
+                      const newInvestor = Math.min(currentInvestor, remaining);
+                      const newHost = Math.max(0, remaining - newInvestor);
+                      setFormData({
+                        ...formData,
+                        evgreenSharePercent: val,
+                        investorSharePercent: newInvestor.toFixed(2),
+                        hostSharePercent: newHost.toFixed(2),
+                      });
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Comisión plataforma</p>
+                </div>
+                <div>
+                  <Label className="text-blue-400">% Inversionistas</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={formData.investorSharePercent}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const evg = parseFloat(formData.evgreenSharePercent || '0');
+                      const newHost = Math.max(0, 100 - evg - parseFloat(val || '0'));
+                      setFormData({
+                        ...formData,
+                        investorSharePercent: val,
+                        hostSharePercent: newHost.toFixed(2),
+                      });
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Retorno a inversionistas</p>
+                </div>
+                <div>
+                  <Label className="text-amber-400">% Aliado Comercial</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={formData.hostSharePercent}
+                    onChange={(e) => setFormData({ ...formData, hostSharePercent: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Dueño del espacio</p>
+                </div>
+              </div>
+              {(() => {
+                const sum = parseFloat(formData.evgreenSharePercent || '0') + parseFloat(formData.investorSharePercent || '0') + parseFloat(formData.hostSharePercent || '0');
+                const isValid = Math.abs(sum - 100) < 0.1;
+                return (
+                  <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-md ${isValid ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                    {isValid ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                    Total: {sum.toFixed(2)}% {isValid ? '— Distribución válida' : '— Debe sumar 100%'}
+                  </div>
+                );
+              })()}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <Label>Costo Energía (COP/kWh)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.energyPurchaseCostPerKwh}
+                    onChange={(e) => setFormData({ ...formData, energyPurchaseCostPerKwh: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Costo de compra de energía al operador de red</p>
+                </div>
+                <div>
+                  <Label>Nombre Aliado Comercial</Label>
+                  <Input
+                    value={formData.hostName}
+                    onChange={(e) => setFormData({ ...formData, hostName: e.target.value })}
+                    placeholder="Nombre del dueño del espacio"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Opcional: dueño del sitio donde se instala</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>Latitud</Label>
+                  <Input
+                    value={formData.latitude}
+                    onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                    placeholder="4.6097"
+                  />
+                </div>
+                <div>
+                  <Label>Longitud</Label>
+                  <Input
+                    value={formData.longitude}
+                    onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                    placeholder="-74.0817"
+                  />
                 </div>
               </div>
             </TabsContent>

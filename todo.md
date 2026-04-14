@@ -2684,3 +2684,9 @@
 - [x] Actualizar listOwned y demás queries del inversionista para incluir estaciones con participación crowdfunding
 - [x] Distinguir en UI estaciones propias vs participación colectiva
 - [x] Tests para combinación de estaciones propias + crowdfunding (9 tests)
+
+## Mejora Formulario Crowdfunding - Campos Financieros (Abril 2026)
+- [x] Agregar campos de modelo financiero al formulario de creación de proyecto crowdfunding
+- [x] Campos: % EVGreen, % Inversionista, % Aliado Comercial, costo energía/kWh
+- [x] Pasar campos financieros al backend para que la estación auto-creada tenga configuración correcta
+- [x] Validación que la suma de porcentajes = 100%

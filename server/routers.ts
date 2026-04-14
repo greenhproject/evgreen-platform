@@ -3267,8 +3267,9 @@ const crowdfundingRouter = router({
         for (let i = 1; i <= input.chargerCount; i++) {
           await db.createEvse({
             stationId,
-            connectorId: i,
-            connectorType: 'CCS2',
+            evseIdLocal: i,
+            connectorType: 'CCS_2',
+            chargeType: 'DC',
             powerKw: String(input.chargerPowerKw || 120),
             status: 'UNAVAILABLE',
           });
