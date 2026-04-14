@@ -2701,3 +2701,10 @@
 - [x] Tabla maintenance_fund_records + endpoints (resumen, historial, retiro admin)
 - [x] Actualizar waterfall engine para calcular fondo de mantenimiento automáticamente
 - [x] Bloquear configuración de tarifas en estaciones colectivas para inversionistas (solo admin)
+
+## UI Admin - Gestión Fondo de Mantenimiento (Abril 2026)
+- [x] Crear página admin /admin/maintenance-fund con vista de fondos por estación colectiva
+- [x] Mostrar balance acumulado, depósitos totales y retiros totales por estación
+- [x] Formulario para registrar cobros de mantenimiento (retiros del fondo)
+- [x] Historial de movimientos (depósitos automáticos por liquidación + retiros por mantenimiento)
+- [x] Agregar ruta y enlace en navegación admin
