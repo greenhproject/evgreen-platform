@@ -27,7 +27,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Search, Download, Zap, DollarSign, Calendar, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Search, Download, Zap, DollarSign, Calendar, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, TrendingUp, Users, Building2, Info, PieChart } from "lucide-react";
 import { toast } from "sonner";
 import { saveBlobCrossPlatform } from "@/lib/pdf-download";
 
@@ -38,12 +44,11 @@ export default function InvestorTransactions() {
   const [isExporting, setIsExporting] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
-  // Filtros de fecha
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [showDateFilters, setShowDateFilters] = useState(false);
+  const [selectedTx, setSelectedTx] = useState<any>(null);
 
-  // Construir input para la query paginada
   const queryInput = useMemo(() => ({
     limit: pageSize,
     page,
@@ -56,7 +61,9 @@ export default function InvestorTransactions() {
   const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();
   const exportMutation = trpc.transactions.exportInvestorTransactions.useMutation();
   
-  const investorPercentage = platformSettings?.investorPercentage ?? 80;
+  const investorPercentage = platformSettings?.investorPercentage ?? 70;
+  const evgreenPercentage = platformSettings?.platformFeePercentage ?? 30;
+  const hostPercentage = 0; // Host percentage comes per-station from settlement
 
   const transactions = paginatedResult?.data || [];
   const totalPages = paginatedResult?.totalPages || 1;
@@ -100,21 +107,14 @@ export default function InvestorTransactions() {
     return <Badge className={styles[status] || "bg-gray-800/50 text-gray-300"}>{labels[status] || status}</Badge>;
   };
 
-  // Calcular KPIs sobre la página actual (los totales globales vendrán del server)
-  const pageRevenue = transactions.reduce((sum: number, t: any) => {
-    if (t.status === "COMPLETED") {
-      return sum + parseFloat(t.totalCost || "0");
-    }
-    return sum;
-  }, 0);
-
+  // KPIs
+  const completedTx = transactions.filter((t: any) => t.status === "COMPLETED");
+  const pageRevenue = completedTx.reduce((sum: number, t: any) => sum + parseFloat(t.totalCost || "0"), 0);
   const myShare = pageRevenue * (investorPercentage / 100);
-  const pageEnergy = transactions.reduce((sum: number, t: any) => {
-    if (t.status === "COMPLETED") {
-      return sum + parseFloat(t.kwhConsumed || "0");
-    }
-    return sum;
-  }, 0);
+  const evgreenShare = pageRevenue * (evgreenPercentage / 100);
+  const hostShare = pageRevenue * (hostPercentage / 100);
+  const pageEnergy = completedTx.reduce((sum: number, t: any) => sum + parseFloat(t.kwhConsumed || "0"), 0);
+  const penaltyRevenue = completedTx.reduce((sum: number, t: any) => sum + parseFloat(t.overstayCost || "0"), 0);
 
   const downloadFile = (base64: string, filename: string, mimeType: string) => {
     const byteCharacters = atob(base64);
@@ -146,7 +146,6 @@ export default function InvestorTransactions() {
     }
   };
 
-  // Filtro de búsqueda local sobre resultados paginados
   const filteredTransactions = useMemo(() => {
     if (!searchQuery) return transactions;
     return transactions.filter((tx: any) => {
@@ -155,7 +154,6 @@ export default function InvestorTransactions() {
     });
   }, [transactions, searchQuery]);
 
-  // Resetear a página 1 cuando cambian los filtros
   const handleStatusChange = (value: string) => {
     setStatusFilter(value);
     setPage(1);
@@ -167,6 +165,95 @@ export default function InvestorTransactions() {
     setPage(1);
   };
 
+  // Desglose de una transacción individual
+  const TxBreakdown = ({ tx }: { tx: any }) => {
+    const total = parseFloat(tx.totalCost || "0");
+    const energy = parseFloat(tx.energyCost || "0");
+    const overstay = parseFloat(tx.overstayCost || "0");
+    const session = parseFloat(tx.sessionCost || "0");
+    const time = parseFloat(tx.timeCost || "0");
+    const invShare = total * (investorPercentage / 100);
+    const evgShare = total * (evgreenPercentage / 100);
+    const hShare = total * (hostPercentage / 100);
+
+    return (
+      <div className="space-y-4">
+        {/* Desglose de ingresos por fuente */}
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Fuentes de Ingreso</h4>
+          <div className="space-y-1.5">
+            {energy > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5"><Zap className="w-3 h-3 text-yellow-500" /> Venta de energía</span>
+                <span className="font-medium">{formatCurrency(energy)}</span>
+              </div>
+            )}
+            {session > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5"><DollarSign className="w-3 h-3 text-blue-500" /> Cargo por sesión</span>
+                <span className="font-medium">{formatCurrency(session)}</span>
+              </div>
+            )}
+            {time > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="w-3 h-3 text-purple-500" /> Cargo por tiempo</span>
+                <span className="font-medium">{formatCurrency(time)}</span>
+              </div>
+            )}
+            {overstay > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5"><TrendingUp className="w-3 h-3 text-red-500" /> Penalidad sobreestadía</span>
+                <span className="font-medium text-red-500">{formatCurrency(overstay)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm font-semibold border-t border-border pt-1.5">
+              <span>Total bruto</span>
+              <span>{formatCurrency(total)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Distribución entre actores */}
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Distribución de Ingresos</h4>
+          <div className="space-y-2">
+            {/* Barra visual de distribución */}
+            <div className="flex h-3 rounded-full overflow-hidden">
+              <div className="bg-green-500" style={{ width: `${investorPercentage}%` }} />
+              <div className="bg-blue-500" style={{ width: `${evgreenPercentage}%` }} />
+              {hostPercentage > 0 && <div className="bg-amber-500" style={{ width: `${hostPercentage}%` }} />}
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  <Users className="w-3 h-3" /> Inversionista ({investorPercentage}%)
+                </span>
+                <span className="font-bold text-green-500">{formatCurrency(invShare)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  <Zap className="w-3 h-3" /> EVGreen ({evgreenPercentage}%)
+                </span>
+                <span className="font-medium text-blue-500">{formatCurrency(evgShare)}</span>
+              </div>
+              {hostPercentage > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    <Building2 className="w-3 h-3" /> Aliado Comercial ({hostPercentage}%)
+                  </span>
+                  <span className="font-medium text-amber-500">{formatCurrency(hShare)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 max-w-full overflow-x-hidden">
       {/* Header */}
@@ -174,7 +261,7 @@ export default function InvestorTransactions() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold truncate">Transacciones</h1>
           <p className="text-sm text-muted-foreground">
-            Historial de cargas en tus estaciones
+            Historial de cargas con desglose transparente de ingresos
           </p>
         </div>
         <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
@@ -198,11 +285,7 @@ export default function InvestorTransactions() {
                 onClick={() => handleExport("excel")}
                 disabled={isExporting}
               >
-                {isExporting ? (
-                  <Loader2 className="w-8 h-8 animate-spin text-green-600" />
-                ) : (
-                  <FileSpreadsheet className="w-8 h-8 text-green-600" />
-                )}
+                {isExporting ? <Loader2 className="w-8 h-8 animate-spin text-green-600" /> : <FileSpreadsheet className="w-8 h-8 text-green-600" />}
                 <span className="font-medium">Excel (.xlsx)</span>
                 <span className="text-xs text-muted-foreground">Ideal para análisis y filtros</span>
               </Button>
@@ -212,23 +295,16 @@ export default function InvestorTransactions() {
                 onClick={() => handleExport("pdf")}
                 disabled={isExporting}
               >
-                {isExporting ? (
-                  <Loader2 className="w-8 h-8 animate-spin text-red-600" />
-                ) : (
-                  <FileText className="w-8 h-8 text-red-600" />
-                )}
+                {isExporting ? <Loader2 className="w-8 h-8 animate-spin text-red-600" /> : <FileText className="w-8 h-8 text-red-600" />}
                 <span className="font-medium">PDF</span>
                 <span className="text-xs text-muted-foreground">Ideal para impresión y archivo</span>
               </Button>
-            </div>
-            <div className="text-xs text-muted-foreground text-center">
-              El reporte incluye todas las transacciones con el logo de EVGreen
             </div>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs mejorados con desglose */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         <Card className="p-3 sm:p-4">
           <div className="flex items-center gap-2 sm:gap-3">
@@ -236,19 +312,19 @@ export default function InvestorTransactions() {
               <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
             </div>
             <div className="min-w-0">
-              <div className="text-base sm:text-2xl font-bold truncate">{formatCurrency(myShare)}</div>
-              <div className="text-xs sm:text-sm text-muted-foreground">Mis ingresos ({investorPercentage}%)</div>
+              <div className="text-base sm:text-2xl font-bold truncate text-green-600">{formatCurrency(myShare)}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Tu parte ({investorPercentage}%)</div>
             </div>
           </div>
         </Card>
         <Card className="p-3 sm:p-4">
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-              <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
+              <PieChart className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
             </div>
             <div className="min-w-0">
               <div className="text-base sm:text-2xl font-bold truncate">{formatCurrency(pageRevenue)}</div>
-              <div className="text-xs sm:text-sm text-muted-foreground">Ingresos brutos</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Ingreso bruto total</div>
             </div>
           </div>
         </Card>
@@ -275,6 +351,62 @@ export default function InvestorTransactions() {
           </div>
         </Card>
       </div>
+
+      {/* Barra de distribución resumen */}
+      {pageRevenue > 0 && (
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold flex items-center gap-1.5">
+              <PieChart className="w-4 h-4" /> Distribución del período
+            </h3>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="w-3.5 h-3.5 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs max-w-[200px]">Distribución de ingresos según el modelo financiero configurado para tus estaciones</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+          <div className="flex h-4 rounded-full overflow-hidden mb-3">
+            <div className="bg-green-500 transition-all" style={{ width: `${investorPercentage}%` }} />
+            <div className="bg-blue-500 transition-all" style={{ width: `${evgreenPercentage}%` }} />
+            {hostPercentage > 0 && <div className="bg-amber-500 transition-all" style={{ width: `${hostPercentage}%` }} />}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-green-500 flex-shrink-0" />
+              <div>
+                <div className="font-bold text-green-600">{formatCurrency(myShare)}</div>
+                <div className="text-xs text-muted-foreground">Inversionista ({investorPercentage}%)</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0" />
+              <div>
+                <div className="font-bold text-blue-600">{formatCurrency(evgreenShare)}</div>
+                <div className="text-xs text-muted-foreground">EVGreen ({evgreenPercentage}%)</div>
+              </div>
+            </div>
+            {hostPercentage > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-amber-500 flex-shrink-0" />
+                <div>
+                  <div className="font-bold text-amber-600">{formatCurrency(hostShare)}</div>
+                  <div className="text-xs text-muted-foreground">Aliado Comercial ({hostPercentage}%)</div>
+                </div>
+              </div>
+            )}
+          </div>
+          {penaltyRevenue > 0 && (
+            <div className="mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
+              Incluye {formatCurrency(penaltyRevenue)} en penalidades por sobreestadía
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Filtros */}
       <Card className="p-3 sm:p-4">
@@ -308,37 +440,23 @@ export default function InvestorTransactions() {
               </Button>
             </div>
           </div>
-
-          {/* Filtro de rango de fechas */}
           {showDateFilters && (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 sm:gap-3 pt-2 border-t border-border">
               <div className="flex-1">
                 <label className="text-xs text-muted-foreground mb-1 block">Desde</label>
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
-                  className="text-sm"
-                />
+                <Input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(1); }} className="text-sm" />
               </div>
               <div className="flex-1">
                 <label className="text-xs text-muted-foreground mb-1 block">Hasta</label>
-                <Input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
-                  className="text-sm"
-                />
+                <Input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(1); }} className="text-sm" />
               </div>
-              <Button size="sm" variant="outline" onClick={handleClearDates} className="flex-shrink-0">
-                Limpiar
-              </Button>
+              <Button size="sm" variant="outline" onClick={handleClearDates} className="flex-shrink-0">Limpiar</Button>
             </div>
           )}
         </div>
       </Card>
 
-      {/* Desktop table */}
+      {/* Desktop table con desglose */}
       <Card className="hidden md:block overflow-x-auto">
         <Table>
           <TableHeader>
@@ -348,14 +466,17 @@ export default function InvestorTransactions() {
               <TableHead className="whitespace-nowrap">Fecha</TableHead>
               <TableHead className="whitespace-nowrap">Energía</TableHead>
               <TableHead className="whitespace-nowrap">Monto bruto</TableHead>
-              <TableHead className="whitespace-nowrap">Mi parte ({investorPercentage}%)</TableHead>
+              <TableHead className="whitespace-nowrap text-green-600">Tu parte ({investorPercentage}%)</TableHead>
+              <TableHead className="whitespace-nowrap text-blue-600">EVGreen ({evgreenPercentage}%)</TableHead>
+              {hostPercentage > 0 && <TableHead className="whitespace-nowrap text-amber-600">Aliado ({hostPercentage}%)</TableHead>}
               <TableHead className="whitespace-nowrap">Estado</TableHead>
+              <TableHead className="whitespace-nowrap w-10"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8">
+                <TableCell colSpan={hostPercentage > 0 ? 10 : 9} className="text-center py-8">
                   <div className="flex items-center justify-center gap-2">
                     <Loader2 className="w-5 h-5 animate-spin" />
                     <span>Cargando transacciones...</span>
@@ -364,30 +485,46 @@ export default function InvestorTransactions() {
               </TableRow>
             ) : filteredTransactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={hostPercentage > 0 ? 10 : 9} className="text-center py-8 text-muted-foreground">
                   No hay transacciones registradas
                 </TableCell>
               </TableRow>
             ) : (
-              filteredTransactions.map((tx: any) => (
-                <TableRow key={tx.id}>
-                  <TableCell className="font-mono text-sm">#{tx.id}</TableCell>
-                  <TableCell className="max-w-[150px] truncate">ID: {tx.stationId}</TableCell>
-                  <TableCell className="text-sm whitespace-nowrap">{formatDate(tx.startTime)}</TableCell>
-                  <TableCell className="whitespace-nowrap">{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</TableCell>
-                  <TableCell className="whitespace-nowrap">{formatCurrency(tx.totalCost || 0)}</TableCell>
-                  <TableCell className="text-green-500 font-medium whitespace-nowrap">
-                    {formatCurrency(parseFloat(tx.totalCost || "0") * (investorPercentage / 100))}
-                  </TableCell>
-                  <TableCell>{getStatusBadge(tx.status)}</TableCell>
-                </TableRow>
-              ))
+              filteredTransactions.map((tx: any) => {
+                const total = parseFloat(tx.totalCost || "0");
+                return (
+                  <TableRow key={tx.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedTx(tx)}>
+                    <TableCell className="font-mono text-sm">#{tx.id}</TableCell>
+                    <TableCell className="max-w-[150px] truncate">{tx.stationName || `ID: ${tx.stationId}`}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap">{formatDate(tx.startTime)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">{formatCurrency(total)}</TableCell>
+                    <TableCell className="text-green-600 font-bold whitespace-nowrap">
+                      {formatCurrency(total * (investorPercentage / 100))}
+                    </TableCell>
+                    <TableCell className="text-blue-600 font-medium whitespace-nowrap">
+                      {formatCurrency(total * (evgreenPercentage / 100))}
+                    </TableCell>
+                    {hostPercentage > 0 && (
+                      <TableCell className="text-amber-600 font-medium whitespace-nowrap">
+                        {formatCurrency(total * (hostPercentage / 100))}
+                      </TableCell>
+                    )}
+                    <TableCell>{getStatusBadge(tx.status)}</TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); setSelectedTx(tx); }}>
+                        <Info className="w-3.5 h-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
       </Card>
 
-      {/* Mobile cards */}
+      {/* Mobile cards con desglose */}
       <div className="md:hidden space-y-3">
         {isLoading ? (
           <Card className="p-4 text-center">
@@ -401,40 +538,79 @@ export default function InvestorTransactions() {
             No hay transacciones registradas
           </Card>
         ) : (
-          filteredTransactions.map((tx: any) => (
-            <Card key={tx.id} className="p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-mono text-sm font-semibold">#{tx.id}</span>
-                {getStatusBadge(tx.status)}
-              </div>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Estación</span>
-                  <span className="font-medium">ID: {tx.stationId}</span>
+          filteredTransactions.map((tx: any) => {
+            const total = parseFloat(tx.totalCost || "0");
+            return (
+              <Card key={tx.id} className="p-3 cursor-pointer" onClick={() => setSelectedTx(tx)}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-mono text-sm font-semibold">#{tx.id}</span>
+                  {getStatusBadge(tx.status)}
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Energía</span>
-                  <span className="font-medium">{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</span>
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Estación</span>
+                    <span className="font-medium">{tx.stationName || `ID: ${tx.stationId}`}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Energía</span>
+                    <span className="font-medium">{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Monto bruto</span>
+                    <span className="font-medium">{formatCurrency(total)}</span>
+                  </div>
+                  {/* Mini distribución */}
+                  <div className="flex h-2 rounded-full overflow-hidden mt-1">
+                    <div className="bg-green-500" style={{ width: `${investorPercentage}%` }} />
+                    <div className="bg-blue-500" style={{ width: `${evgreenPercentage}%` }} />
+                    {hostPercentage > 0 && <div className="bg-amber-500" style={{ width: `${hostPercentage}%` }} />}
+                  </div>
+                  <div className="flex justify-between border-t border-border pt-1.5 mt-1.5">
+                    <span className="text-muted-foreground">Tu parte ({investorPercentage}%)</span>
+                    <span className="font-bold text-green-600">
+                      {formatCurrency(total * (investorPercentage / 100))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Fecha</span>
+                    <span className="text-xs text-muted-foreground">{formatDate(tx.startTime)}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Monto bruto</span>
-                  <span className="font-medium">{formatCurrency(tx.totalCost || 0)}</span>
-                </div>
-                <div className="flex justify-between border-t border-border pt-1.5 mt-1.5">
-                  <span className="text-muted-foreground">Mi parte ({investorPercentage}%)</span>
-                  <span className="font-bold text-green-500">
-                    {formatCurrency(parseFloat(tx.totalCost || "0") * (investorPercentage / 100))}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Fecha</span>
-                  <span className="text-xs text-muted-foreground">{formatDate(tx.startTime)}</span>
-                </div>
-              </div>
-            </Card>
-          ))
+              </Card>
+            );
+          })
         )}
       </div>
+
+      {/* Dialog de detalle de transacción */}
+      <Dialog open={!!selectedTx} onOpenChange={(open) => !open && setSelectedTx(null)}>
+        <DialogContent className="sm:max-w-md mx-4">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              Transacción #{selectedTx?.id}
+              {selectedTx && getStatusBadge(selectedTx.status)}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedTx?.stationName || `Estación ID: ${selectedTx?.stationId}`} - {formatDate(selectedTx?.startTime)}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedTx && (
+            <div className="py-2">
+              <div className="mb-4 p-3 bg-muted/50 rounded-lg text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Energía entregada</span>
+                  <span className="font-medium">{parseFloat(selectedTx.kwhConsumed || "0").toFixed(2)} kWh</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Precio aplicado</span>
+                  <span className="font-medium">{formatCurrency(selectedTx.appliedPricePerKwh || 0)}/kWh</span>
+                </div>
+              </div>
+              <TxBreakdown tx={selectedTx} />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Paginación */}
       {!isLoading && totalCount > 0 && (
@@ -444,12 +620,7 @@ export default function InvestorTransactions() {
             {statusFilter !== "all" && ` (filtro: ${statusFilter})`}
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>
               <ChevronLeft className="w-4 h-4" />
               <span className="hidden sm:inline ml-1">Anterior</span>
             </Button>
@@ -459,12 +630,7 @@ export default function InvestorTransactions() {
               <span className="text-muted-foreground">de</span>
               <span className="font-medium">{totalPages}</span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
               <span className="hidden sm:inline mr-1">Siguiente</span>
               <ChevronRight className="w-4 h-4" />
             </Button>

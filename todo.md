@@ -2632,4 +2632,47 @@
 
 ### Tests
 - [x] 24 tests unitarios: waterfall, prorrateo, indicadores financieros, SLA, prelación
-- [ ] Push a GitHub después de implementar
+- [ ] Push a GitHub después de implementar (pendiente: usar Management UI → GitHub)
+
+
+## Modelo Financiero Configurable + Rol Aliado Comercial (Abril 2026)
+
+### Schema DB - Campos configurables por estación
+- [x] Agregar campos a charging_stations: evgreenSharePercent, investorSharePercent, hostSharePercent, energyCostPerKwh, hostUserId
+- [x] Agregar nuevo rol "host" (Aliado Comercial) al userRoleEnum
+- [x] Actualizar financialSettlements con campos para hostShare y energyCost
+- [x] Migrar DB con pnpm db:push
+
+### Backend - Waterfall Engine mejorado
+- [x] Actualizar waterfall: Ingreso bruto → Costo energía → Gastos fijos → Split configurable (EVGreen/Inversionista/Aliado)
+- [x] Crear endpoints para Aliado Comercial (dashboard, resumen ingresos, historial)
+- [x] Actualizar getStationRevenueForPeriod para incluir todas las fuentes (energía, penalidades, reservas, publicidad)
+- [x] Actualizar investor financial summary con desglose por fuente de ingreso
+
+### Frontend - Formulario estación con campos financieros
+- [x] Agregar sección "Modelo Financiero" al formulario de crear/editar estación
+- [x] Campos: % EVGreen, % Inversionista, % Aliado Comercial, costo energía/kWh, usuario Aliado
+- [x] Validación que la suma de porcentajes = 100%
+
+### Frontend - Mejorar módulo Transacciones inversionista
+- [x] Mostrar desglose transparente: ingreso bruto → costo energía → % EVGreen → % Aliado → mi parte
+- [x] KPIs con datos reales por fuente de ingreso (energía, penalidades, reservas)
+
+### Frontend - Mejorar módulo Liquidaciones/Waterfall
+- [x] Waterfall visual con 3 actores: EVGreen, Inversionista, Aliado Comercial
+- [x] Mostrar costo de energía como línea separada del waterfall
+- [x] Desglose por fuente de ingreso en cada liquidación
+
+### Frontend - Dashboard Aliado Comercial
+- [x] Crear página principal del Aliado Comercial con resumen de ingresos acumulados
+- [x] Desglose por fuente: venta energía, penalidades, reservas, publicidad
+- [x] Mostrar liquidación mensual neta (ingresos - costo factura energía)
+- [x] Historial de liquidaciones y exportación
+
+### Frontend - Mejorar módulo Reportes
+- [x] Reportes con datos reales por fuente de ingreso
+- [x] Desglose transparente del modelo financiero en reportes exportados
+
+### Tests
+- [x] Tests unitarios para nuevo waterfall engine con 3 actores (12 tests)
+- [x] Tests para endpoints del Aliado Comercial

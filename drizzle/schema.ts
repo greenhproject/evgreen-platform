@@ -23,7 +23,7 @@ import { relations } from "drizzle-orm";
 // ENUMS
 // ============================================================================
 
-export const userRoleEnum = mysqlEnum("role", ["staff", "technician", "investor", "user", "admin", "engineer"]);
+export const userRoleEnum = mysqlEnum("role", ["staff", "technician", "investor", "user", "admin", "engineer", "host"]);
 export const connectorStatusEnum = mysqlEnum("connector_status", [
   "AVAILABLE",
   "PREPARING",
@@ -197,6 +197,18 @@ export const chargingStations = mysqlTable("charging_stations", {
   // Zona premium para fee adicional (A: $5M, B: $3M, C: $0 estándar)
   premiumZone: mysqlEnum("premiumZone", ["A", "B", "C"]).default("C").notNull(),
   premiumZoneFee: decimal("premiumZoneFee", { precision: 15, scale: 2 }).default("0"),
+  // ============================================================================
+  // MODELO FINANCIERO CONFIGURABLE POR ESTACIÓN
+  // Porcentajes de distribución de ingresos (deben sumar 100%)
+  // ============================================================================
+  evgreenSharePercent: decimal("evgreenSharePercent", { precision: 5, scale: 2 }).default("30.00").notNull(), // % para EVGreen/GHP (gestor)
+  investorSharePercent: decimal("investorSharePercent", { precision: 5, scale: 2 }).default("70.00").notNull(), // % para el inversionista dueño
+  hostSharePercent: decimal("hostSharePercent", { precision: 5, scale: 2 }).default("0.00").notNull(), // % para el Aliado Comercial (dueño del espacio)
+  // Costo de compra de energía (COP/kWh) - para calcular costo de factura eléctrica
+  energyPurchaseCostPerKwh: decimal("energyPurchaseCostPerKwh", { precision: 10, scale: 2 }).default("850.00").notNull(), // Costo promedio de compra de energía de red
+  // Aliado Comercial (dueño del espacio donde se instala la estación)
+  hostUserId: int("hostUserId"), // FK a users (rol: host). null = el inversionista es también dueño del espacio
+  hostName: varchar("hostName", { length: 255 }), // Nombre del aliado comercial (para display)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -2395,11 +2407,23 @@ export const financialSettlements = mysqlTable("financial_settlements", {
   // Ingreso neto (grossRevenue - totalFixedExpenses)
   netRevenue: bigint("netRevenue", { mode: "number" }).notNull().default(0),
   
-  // Distribución
+  // Costo de energía del período (kWh consumidos * costo compra/kWh)
+  totalEnergyCost: bigint("totalEnergyCost", { mode: "number" }).notNull().default(0),
+  energyCostPerKwh: decimal("energyCostPerKwh", { precision: 10, scale: 2 }).default("850.00"),
+  
+  // Ingresos por fuente (desglose del bruto)
+  revenueFromEnergy: bigint("revenueFromEnergy", { mode: "number" }).notNull().default(0),
+  revenueFromPenalties: bigint("revenueFromPenalties", { mode: "number" }).notNull().default(0),
+  revenueFromReservations: bigint("revenueFromReservations", { mode: "number" }).notNull().default(0),
+  revenueFromAdvertising: bigint("revenueFromAdvertising", { mode: "number" }).notNull().default(0),
+  
+  // Distribución configurable (3 actores)
   investorSharePercent: decimal("investorSharePercent", { precision: 5, scale: 2 }).notNull().default("70.00"),
   platformSharePercent: decimal("platformSharePercent", { precision: 5, scale: 2 }).notNull().default("30.00"),
+  hostSharePercent: decimal("hostSharePercent", { precision: 5, scale: 2 }).notNull().default("0.00"),
   investorTotalAmount: bigint("investorTotalAmount", { mode: "number" }).notNull().default(0),
   platformTotalAmount: bigint("platformTotalAmount", { mode: "number" }).notNull().default(0),
+  hostTotalAmount: bigint("hostTotalAmount", { mode: "number" }).notNull().default(0),
   
   // Reserva de contingencia (5% del bruto, se resta antes de distribuir)
   contingencyReserve: bigint("contingencyReserve", { mode: "number" }).notNull().default(0),

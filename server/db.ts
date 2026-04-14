@@ -6297,27 +6297,71 @@ export async function updateOperationalMetric(id: number, data: Partial<InsertOp
 
 /**
  * Get revenue data for a station within a date range (from completed transactions)
+ * Now includes breakdown by revenue source: energy, penalties (overstay), reservations
  */
 export async function getStationRevenueForPeriod(stationId: number, startDate: Date, endDate: Date) {
   const db = (await getDb())!;
-  const results = await db.execute(sql.raw(`
+  const startStr = startDate.toISOString().slice(0, 19).replace('T', ' ');
+  const endStr = endDate.toISOString().slice(0, 19).replace('T', ' ');
+
+  // 1. Transaction revenue (energy sales + overstay penalties)
+  const txResults = await db.execute(sql.raw(`
     SELECT 
       COUNT(*) as totalSessions,
       COALESCE(SUM(CAST(totalCost AS DECIMAL(14,2))), 0) as grossRevenue,
-      COALESCE(SUM(CAST(energyDelivered AS DECIMAL(12,4))), 0) as totalKwh,
-      COALESCE(AVG(CAST(pricePerKwh AS DECIMAL(10,2))), 0) as avgPricePerKwh
+      COALESCE(SUM(CAST(kwhConsumed AS DECIMAL(12,4))), 0) as totalKwh,
+      COALESCE(AVG(CAST(appliedPricePerKwh AS DECIMAL(10,2))), 0) as avgPricePerKwh,
+      COALESCE(SUM(CAST(energyCost AS DECIMAL(14,2))), 0) as energyRevenue,
+      COALESCE(SUM(CAST(overstayCost AS DECIMAL(14,2))), 0) as overstayRevenue,
+      COALESCE(SUM(CAST(sessionCost AS DECIMAL(14,2))), 0) as sessionRevenue,
+      COALESCE(SUM(CAST(timeCost AS DECIMAL(14,2))), 0) as timeRevenue
     FROM transactions 
     WHERE stationId = ${stationId}
       AND transaction_status = 'COMPLETED'
-      AND startTime >= '${startDate.toISOString().slice(0, 19).replace('T', ' ')}'
-      AND startTime < '${endDate.toISOString().slice(0, 19).replace('T', ' ')}'
+      AND startTime >= '${startStr}'
+      AND startTime < '${endStr}'
   `));
-  const row = (results as any)[0]?.[0] || {};
+  const txRow = (txResults as any)[0]?.[0] || {};
+
+  // 2. Reservation fees (from reservations that were used or no-show penalized)
+  const resResults = await db.execute(sql.raw(`
+    SELECT 
+      COALESCE(SUM(CAST(reservationFee AS DECIMAL(14,2))), 0) as reservationFeeTotal,
+      COALESCE(SUM(CASE WHEN isPenaltyApplied = 1 THEN CAST(noShowPenalty AS DECIMAL(14,2)) ELSE 0 END), 0) as noShowPenaltyTotal
+    FROM reservations 
+    WHERE stationId = ${stationId}
+      AND startTime >= '${startStr}'
+      AND startTime < '${endStr}'
+  `));
+  const resRow = (resResults as any)[0]?.[0] || {};
+
+  // 3. Advertising revenue (from banner views in this period)
+  const adResults = await db.execute(sql.raw(`
+    SELECT COALESCE(SUM(CAST(b.pricePerView AS DECIMAL(14,2)) * bv.viewCount), 0) as adRevenue
+    FROM banner_views bv
+    JOIN banners b ON b.id = bv.bannerId
+    WHERE bv.stationId = ${stationId}
+      AND bv.viewDate >= '${startStr}'
+      AND bv.viewDate < '${endStr}'
+  `)).catch(() => [[{ adRevenue: 0 }]]);
+  const adRow = (adResults as any)[0]?.[0] || {};
+
+  const revenueFromEnergy = Number(txRow.energyRevenue || 0) + Number(txRow.sessionRevenue || 0) + Number(txRow.timeRevenue || 0);
+  const revenueFromPenalties = Number(txRow.overstayRevenue || 0) + Number(resRow.noShowPenaltyTotal || 0);
+  const revenueFromReservations = Number(resRow.reservationFeeTotal || 0);
+  const revenueFromAdvertising = Number(adRow.adRevenue || 0);
+  const grossRevenue = revenueFromEnergy + revenueFromPenalties + revenueFromReservations + revenueFromAdvertising;
+
   return {
-    totalSessions: Number(row.totalSessions || 0),
-    grossRevenue: Number(row.grossRevenue || 0),
-    totalKwh: Number(row.totalKwh || 0),
-    avgPricePerKwh: Number(row.avgPricePerKwh || 0),
+    totalSessions: Number(txRow.totalSessions || 0),
+    grossRevenue,
+    totalKwh: Number(txRow.totalKwh || 0),
+    avgPricePerKwh: Number(txRow.avgPricePerKwh || 0),
+    // Revenue breakdown by source
+    revenueFromEnergy,
+    revenueFromPenalties,
+    revenueFromReservations,
+    revenueFromAdvertising,
   };
 }
 
@@ -6452,4 +6496,103 @@ export async function getInvestorFinancialSummary(investorUserId: number) {
       ? (Number(row.totalNetEarnings || 0) / Number(investedRow.totalInvested)) * 100 
       : 0,
   };
+}
+
+
+// --- HOST (ALIADO COMERCIAL) FINANCIAL HELPERS ---
+
+/**
+ * Get all stations where a user is the host (Aliado Comercial)
+ */
+export async function getHostStations(hostUserId: number) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT id, name, city, address, hostSharePercent, energyPurchaseCostPerKwh,
+      evgreenSharePercent, investorSharePercent, isOnline
+    FROM charging_stations
+    WHERE hostUserId = ${hostUserId} AND isActive = 1
+    ORDER BY name
+  `));
+  return ((results as any)[0] || []).map((r: any) => ({
+    id: Number(r.id),
+    name: r.name,
+    city: r.city,
+    address: r.address,
+    hostSharePercent: Number(r.hostSharePercent || 0),
+    energyPurchaseCostPerKwh: Number(r.energyPurchaseCostPerKwh || 850),
+    evgreenSharePercent: Number(r.evgreenSharePercent || 30),
+    investorSharePercent: Number(r.investorSharePercent || 70),
+    isOnline: Boolean(r.isOnline),
+  }));
+}
+
+/**
+ * Get financial summary for a host across all their stations
+ */
+export async function getHostFinancialSummary(hostUserId: number) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      COUNT(DISTINCT fs.id) as totalSettlements,
+      COALESCE(SUM(fs.hostTotalAmount), 0) as totalHostEarnings,
+      COALESCE(SUM(fs.grossRevenue), 0) as totalGrossRevenue,
+      COALESCE(SUM(fs.totalEnergyCost), 0) as totalEnergyCost,
+      COALESCE(SUM(fs.revenueFromEnergy), 0) as totalRevenueFromEnergy,
+      COALESCE(SUM(fs.revenueFromPenalties), 0) as totalRevenueFromPenalties,
+      COALESCE(SUM(fs.revenueFromReservations), 0) as totalRevenueFromReservations,
+      COALESCE(SUM(fs.revenueFromAdvertising), 0) as totalRevenueFromAdvertising,
+      COUNT(DISTINCT cs.id) as stationCount
+    FROM financial_settlements fs
+    JOIN charging_stations cs ON cs.id = fs.stationId
+    WHERE cs.hostUserId = ${hostUserId}
+      AND fs.status IN ('APPROVED', 'DISTRIBUTED')
+  `));
+  const row = (results as any)[0]?.[0] || {};
+  return {
+    totalSettlements: Number(row.totalSettlements || 0),
+    totalHostEarnings: Number(row.totalHostEarnings || 0),
+    totalGrossRevenue: Number(row.totalGrossRevenue || 0),
+    totalEnergyCost: Number(row.totalEnergyCost || 0),
+    totalRevenueFromEnergy: Number(row.totalRevenueFromEnergy || 0),
+    totalRevenueFromPenalties: Number(row.totalRevenueFromPenalties || 0),
+    totalRevenueFromReservations: Number(row.totalRevenueFromReservations || 0),
+    totalRevenueFromAdvertising: Number(row.totalRevenueFromAdvertising || 0),
+    stationCount: Number(row.stationCount || 0),
+  };
+}
+
+/**
+ * Get settlement history for a host (Aliado Comercial)
+ */
+export async function getHostSettlementHistory(hostUserId: number, limit = 50) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT fs.*, cs.name as stationName, cs.city as stationCity,
+      cs.hostSharePercent as configuredHostPercent
+    FROM financial_settlements fs
+    JOIN charging_stations cs ON cs.id = fs.stationId
+    WHERE cs.hostUserId = ${hostUserId}
+    ORDER BY fs.periodEnd DESC
+    LIMIT ${limit}
+  `));
+  return ((results as any)[0] || []).map((r: any) => ({
+    id: Number(r.id),
+    stationId: Number(r.stationId),
+    stationName: r.stationName || 'Estación',
+    stationCity: r.stationCity || '',
+    periodStart: r.periodStart,
+    periodEnd: r.periodEnd,
+    periodType: r.periodType,
+    grossRevenue: Number(r.grossRevenue || 0),
+    totalEnergyCost: Number(r.totalEnergyCost || 0),
+    revenueFromEnergy: Number(r.revenueFromEnergy || 0),
+    revenueFromPenalties: Number(r.revenueFromPenalties || 0),
+    revenueFromReservations: Number(r.revenueFromReservations || 0),
+    revenueFromAdvertising: Number(r.revenueFromAdvertising || 0),
+    hostSharePercent: Number(r.hostSharePercent || 0),
+    hostTotalAmount: Number(r.hostTotalAmount || 0),
+    investorTotalAmount: Number(r.investorTotalAmount || 0),
+    platformTotalAmount: Number(r.platformTotalAmount || 0),
+    status: r.status,
+  }));
 }

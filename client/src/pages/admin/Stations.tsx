@@ -88,6 +88,13 @@ interface StationFormData {
   premiumZone: string;
   operatingHours: Record<string, { open: string; close: string; closed?: boolean }>;
   imageUrl: string;
+  // Modelo financiero configurable
+  evgreenSharePercent: string;
+  investorSharePercent: string;
+  hostSharePercent: string;
+  energyPurchaseCostPerKwh: string;
+  hostName: string;
+  hostUserId: string;
 }
 
 const initialFormData: StationFormData = {
@@ -104,6 +111,13 @@ const initialFormData: StationFormData = {
   isPublic: true,
   premiumZone: "C",
   imageUrl: "",
+  // Modelo financiero configurable
+  evgreenSharePercent: "30",
+  investorSharePercent: "70",
+  hostSharePercent: "0",
+  energyPurchaseCostPerKwh: "850",
+  hostName: "",
+  hostUserId: "",
   operatingHours: {
     monday: { open: "06:00", close: "22:00" },
     tuesday: { open: "06:00", close: "22:00" },
@@ -305,6 +319,13 @@ export default function AdminStations() {
       isPublic: station.isPublic ?? true,
       premiumZone: station.premiumZone || "C",
       imageUrl: station.imageUrl || "",
+      // Modelo financiero
+      evgreenSharePercent: station.evgreenSharePercent?.toString() || "30",
+      investorSharePercent: station.investorSharePercent?.toString() || "70",
+      hostSharePercent: station.hostSharePercent?.toString() || "0",
+      energyPurchaseCostPerKwh: station.energyPurchaseCostPerKwh?.toString() || "850",
+      hostName: station.hostName || "",
+      hostUserId: station.hostUserId?.toString() || "",
       operatingHours: station.operatingHours && typeof station.operatingHours === 'object' 
         ? station.operatingHours as any 
         : initialFormData.operatingHours,
@@ -398,6 +419,13 @@ export default function AdminStations() {
         ocppIdentity: formData.ocppIdentity || `GEV-${Date.now()}`,
         operatingHours: formData.operatingHours as any,
         chargerBrandId: selectedBrandId || undefined,
+        // Modelo financiero
+        evgreenSharePercent: formData.evgreenSharePercent || "30",
+        investorSharePercent: formData.investorSharePercent || "70",
+        hostSharePercent: formData.hostSharePercent || "0",
+        energyPurchaseCostPerKwh: formData.energyPurchaseCostPerKwh || "850",
+        hostName: formData.hostName || undefined,
+        hostUserId: formData.hostUserId ? parseInt(formData.hostUserId) : undefined,
       });
       
       // Si hay imagen seleccionada, subirla
@@ -467,6 +495,13 @@ export default function AdminStations() {
           isActive: formData.isActive,
           isPublic: formData.isPublic,
           operatingHours: formData.operatingHours as any,
+          // Modelo financiero
+          evgreenSharePercent: formData.evgreenSharePercent || "30",
+          investorSharePercent: formData.investorSharePercent || "70",
+          hostSharePercent: formData.hostSharePercent || "0",
+          energyPurchaseCostPerKwh: formData.energyPurchaseCostPerKwh || "850",
+          hostName: formData.hostName || undefined,
+          hostUserId: formData.hostUserId ? parseInt(formData.hostUserId) : undefined,
         },
       });
 
@@ -1014,6 +1049,133 @@ export default function AdminStations() {
         >
           Configurar como 24/7
         </Button>
+      </div>
+
+      {/* Modelo Financiero Configurable */}
+      <div className="space-y-4">
+        <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+          <DollarSign className="w-4 h-4" />
+          Modelo Financiero
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Configura la distribución de ingresos entre los actores. Los porcentajes deben sumar 100%.
+        </p>
+        
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label className="text-xs">% EVGreen (Gestor)</Label>
+            <div className="relative">
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={formData.evgreenSharePercent}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const remaining = 100 - parseFloat(val || "0") - parseFloat(formData.hostSharePercent || "0");
+                  setFormData({...formData, evgreenSharePercent: val, investorSharePercent: Math.max(0, remaining).toFixed(2)});
+                }}
+                className="pr-8"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">% Inversionista</Label>
+            <div className="relative">
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={formData.investorSharePercent}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const remaining = 100 - parseFloat(val || "0") - parseFloat(formData.evgreenSharePercent || "0");
+                  setFormData({...formData, investorSharePercent: val, hostSharePercent: Math.max(0, remaining).toFixed(2)});
+                }}
+                className="pr-8"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">% Aliado Comercial</Label>
+            <div className="relative">
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={formData.hostSharePercent}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const remaining = 100 - parseFloat(val || "0") - parseFloat(formData.evgreenSharePercent || "0");
+                  setFormData({...formData, hostSharePercent: val, investorSharePercent: Math.max(0, remaining).toFixed(2)});
+                }}
+                className="pr-8"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Validación visual de porcentajes */}
+        {(() => {
+          const total = parseFloat(formData.evgreenSharePercent || "0") + parseFloat(formData.investorSharePercent || "0") + parseFloat(formData.hostSharePercent || "0");
+          const isValid = Math.abs(total - 100) < 0.1;
+          return (
+            <div className={`p-3 rounded-lg text-xs flex items-center justify-between ${isValid ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
+              <span>Total: {total.toFixed(1)}%</span>
+              <span>{isValid ? 'Distribución válida' : 'Los porcentajes deben sumar 100%'}</span>
+            </div>
+          );
+        })()}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-xs">Costo compra energía (COP/kWh)</Label>
+            <div className="relative">
+              <Input
+                type="number"
+                min="0"
+                step="10"
+                value={formData.energyPurchaseCostPerKwh}
+                onChange={(e) => setFormData({...formData, energyPurchaseCostPerKwh: e.target.value})}
+                className="pr-16"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">COP/kWh</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground">Costo promedio de compra de energía de red para calcular la factura eléctrica</p>
+          </div>
+        </div>
+
+        {/* Aliado Comercial (dueño del espacio) */}
+        {parseFloat(formData.hostSharePercent || "0") > 0 && (
+          <div className="space-y-3 p-4 border border-dashed rounded-lg">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase">Datos del Aliado Comercial</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-xs">Nombre del Aliado</Label>
+                <Input
+                  placeholder="Ej: Centro Comercial Andino"
+                  value={formData.hostName}
+                  onChange={(e) => setFormData({...formData, hostName: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">ID de Usuario (si tiene cuenta)</Label>
+                <Input
+                  type="number"
+                  placeholder="ID del usuario host"
+                  value={formData.hostUserId}
+                  onChange={(e) => setFormData({...formData, hostUserId: e.target.value})}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Conectores (solo en creación) */}

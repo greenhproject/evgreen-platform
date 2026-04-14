@@ -45,6 +45,9 @@ import {
   getInvestorFinancialSummary,
   getChargingStationById,
   getAllChargingStations,
+  getHostStations,
+  getHostFinancialSummary,
+  getHostSettlementHistory,
 } from "../db";
 
 // ============================================================================
@@ -180,8 +183,10 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
         periodType: settlementPeriodTypeSchema,
         periodStart: z.string(), // ISO date
         periodEnd: z.string(),   // ISO date
-        investorSharePercent: z.number().min(0).max(100).default(70),
-        platformSharePercent: z.number().min(0).max(100).default(30),
+        // Optional overrides - if not provided, uses station-configured values
+        investorSharePercent: z.number().min(0).max(100).optional(),
+        platformSharePercent: z.number().min(0).max(100).optional(),
+        hostSharePercent: z.number().min(0).max(100).optional(),
         contingencyPercent: z.number().min(0).max(20).default(5),
         notes: z.string().optional(),
       }))
@@ -192,7 +197,19 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
         const periodStart = new Date(input.periodStart);
         const periodEnd = new Date(input.periodEnd);
 
-        // 1. Get revenue for the period
+        // Use station-configured percentages as defaults, allow overrides
+        const evgreenPct = input.platformSharePercent ?? Number(station.evgreenSharePercent || 30);
+        const investorPct = input.investorSharePercent ?? Number(station.investorSharePercent || 70);
+        const hostPct = input.hostSharePercent ?? Number(station.hostSharePercent || 0);
+        const energyCostPerKwh = Number(station.energyPurchaseCostPerKwh || 850);
+
+        // Validate percentages sum to 100
+        const totalPct = evgreenPct + investorPct + hostPct;
+        if (Math.abs(totalPct - 100) > 0.1) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Los porcentajes deben sumar 100%. Actual: EVGreen ${evgreenPct}% + Inversionista ${investorPct}% + Aliado ${hostPct}% = ${totalPct}%` });
+        }
+
+        // 1. Get revenue for the period (now with breakdown by source)
         const revenue = await getStationRevenueForPeriod(input.stationId, periodStart, periodEnd);
 
         // 2. Get active fixed expenses and prorate them
@@ -216,20 +233,24 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
         // Sort by priority
         waterfallBreakdown.sort((a, b) => a.priority - b.priority);
 
-        // 3. Calculate net revenue
+        // 3. Calculate energy purchase cost (kWh sold * cost per kWh)
+        const totalEnergyCost = Math.round(revenue.totalKwh * energyCostPerKwh);
+
+        // 4. Calculate net revenue: Gross - Fixed Expenses - Energy Cost
         const grossRevenue = Math.round(revenue.grossRevenue);
-        const netAfterExpenses = Math.max(0, grossRevenue - totalFixedExpenses);
+        const netAfterExpenses = Math.max(0, grossRevenue - totalFixedExpenses - totalEnergyCost);
         
-        // 4. Contingency reserve
+        // 5. Contingency reserve
         const contingencyReserve = Math.round(netAfterExpenses * (input.contingencyPercent / 100));
         const distributableAmount = netAfterExpenses - contingencyReserve;
 
-        // 5. Split investor/platform
-        const investorTotalAmount = Math.round(distributableAmount * (input.investorSharePercent / 100));
-        const platformTotalAmount = distributableAmount - investorTotalAmount;
+        // 6. Split 3-way: EVGreen / Inversionista / Aliado Comercial
+        const investorTotalAmount = Math.round(distributableAmount * (investorPct / 100));
+        const hostTotalAmount = Math.round(distributableAmount * (hostPct / 100));
+        const platformTotalAmount = distributableAmount - investorTotalAmount - hostTotalAmount;
         const netRevenue = netAfterExpenses;
 
-        // 6. Create the settlement
+        // 7. Create the settlement with full breakdown
         const settlementId = await createSettlement({
           stationId: input.stationId,
           periodStart,
@@ -240,10 +261,21 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           totalKwh: String(revenue.totalKwh),
           totalFixedExpenses,
           netRevenue,
-          investorSharePercent: String(input.investorSharePercent),
-          platformSharePercent: String(input.platformSharePercent),
+          // Energy cost
+          totalEnergyCost,
+          energyCostPerKwh: String(energyCostPerKwh),
+          // Revenue by source
+          revenueFromEnergy: Math.round(revenue.revenueFromEnergy),
+          revenueFromPenalties: Math.round(revenue.revenueFromPenalties),
+          revenueFromReservations: Math.round(revenue.revenueFromReservations),
+          revenueFromAdvertising: Math.round(revenue.revenueFromAdvertising),
+          // 3-way split
+          investorSharePercent: String(investorPct),
+          platformSharePercent: String(evgreenPct),
+          hostSharePercent: String(hostPct),
           investorTotalAmount,
           platformTotalAmount,
+          hostTotalAmount,
           contingencyReserve,
           waterfallBreakdown,
           status: "DRAFT",
@@ -254,7 +286,7 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           distributedAt: null,
         });
 
-        // 7. Create expense line items
+        // 8. Create expense line items
         for (const item of waterfallBreakdown) {
           const matchingExpense = expenses.find(e => e.name === item.name);
           await createSettlementExpenseItem({
@@ -270,11 +302,11 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           });
         }
 
-        // 8. Calculate investor shares
+        // 9. Calculate investor shares
         const investors = await getStationInvestors(input.stationId);
         for (const investor of investors) {
           const grossShare = Math.round(grossRevenue * (investor.participationPercent / 100));
-          const expenseShare = Math.round(totalFixedExpenses * (investor.participationPercent / 100));
+          const expenseShare = Math.round((totalFixedExpenses + totalEnergyCost) * (investor.participationPercent / 100));
           const netShare = Math.round(investorTotalAmount * (investor.participationPercent / 100));
 
           await createInvestorShare({
@@ -294,10 +326,21 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           id: settlementId,
           grossRevenue,
           totalFixedExpenses,
+          totalEnergyCost,
           netRevenue,
           contingencyReserve,
           investorTotalAmount,
           platformTotalAmount,
+          hostTotalAmount,
+          // Revenue breakdown
+          revenueFromEnergy: revenue.revenueFromEnergy,
+          revenueFromPenalties: revenue.revenueFromPenalties,
+          revenueFromReservations: revenue.revenueFromReservations,
+          revenueFromAdvertising: revenue.revenueFromAdvertising,
+          // Percentages used
+          evgreenPct,
+          investorPct,
+          hostPct,
           totalSessions: revenue.totalSessions,
           totalKwh: revenue.totalKwh,
           investorCount: investors.length,
@@ -661,6 +704,63 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           mimeType,
           data: buffer.toString("base64"),
         };
+      }),
+
+    // ========================================================================
+    // ALIADO COMERCIAL (HOST) FINANCIAL DATA
+    // ========================================================================
+
+    /** Estaciones donde el usuario es Aliado Comercial */
+    hostStations: protectedProcedure
+      .query(async ({ ctx }: { ctx: any }) => {
+        return getHostStations(ctx.user.id);
+      }),
+
+    /** Resumen financiero del Aliado Comercial */
+    hostSummary: protectedProcedure
+      .query(async ({ ctx }: { ctx: any }) => {
+        return getHostFinancialSummary(ctx.user.id);
+      }),
+
+    /** Historial de liquidaciones del Aliado Comercial */
+    hostSettlements: protectedProcedure
+      .input(z.object({ limit: z.number().default(20) }))
+      .query(async ({ ctx }: { ctx: any }) => {
+        return getHostSettlementHistory(ctx.user.id);
+      }),
+
+    /** Obtener configuración financiera de una estación (para admin) */
+    getStationFinancialConfig: adminProcedure
+      .input(z.object({ stationId: z.number() }))
+      .query(async ({ input }: { input: { stationId: number } }) => {
+        const station = await getChargingStationById(input.stationId);
+        if (!station) throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+        return {
+          evgreenSharePercent: Number(station.evgreenSharePercent || 30),
+          investorSharePercent: Number(station.investorSharePercent || 70),
+          hostSharePercent: Number(station.hostSharePercent || 0),
+          energyPurchaseCostPerKwh: Number(station.energyPurchaseCostPerKwh || 850),
+          hostUserId: station.hostUserId,
+          hostName: station.hostName,
+        };
+      }),
+
+    /** Obtener todas las estaciones con su configuración financiera */
+    getAllStationsFinancial: adminProcedure
+      .query(async () => {
+        const stations = await getAllChargingStations();
+        return stations.map(s => ({
+          id: s.id,
+          name: s.name,
+          city: s.city,
+          evgreenSharePercent: Number(s.evgreenSharePercent || 30),
+          investorSharePercent: Number(s.investorSharePercent || 70),
+          hostSharePercent: Number(s.hostSharePercent || 0),
+          energyPurchaseCostPerKwh: Number(s.energyPurchaseCostPerKwh || 850),
+          hostUserId: s.hostUserId,
+          hostName: s.hostName,
+          isOnline: s.isOnline,
+        }));
       }),
   });
 }

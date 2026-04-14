@@ -265,12 +265,19 @@ export default function InvestorReports() {
     return Object.values(stationMap).sort((a, b) => b.ingresos - a.ingresos);
   }, [stations, transactions, dateFilter, investorPercentage]);
 
-  // Distribución de ingresos para pie chart
+  // Distribución de ingresos para pie chart (3 actores)
   const revenueDistribution = useMemo(() => {
-    return [
+    // Estimamos el host share como el restante (si no hay dato exacto)
+    const hostPercent = Math.max(0, 100 - investorPercentage - platformFeePercentage);
+    const hostAmount = metrics.totalGross * (hostPercent / 100);
+    const items = [
       { name: `Tu parte (${investorPercentage}%)`, value: metrics.totalNet },
-      { name: `Plataforma (${platformFeePercentage}%)`, value: metrics.totalGross - metrics.totalNet },
+      { name: `EVGreen (${platformFeePercentage}%)`, value: metrics.totalGross * (platformFeePercentage / 100) },
     ];
+    if (hostPercent > 0) {
+      items.push({ name: `Aliado Comercial (${hostPercent}%)`, value: hostAmount });
+    }
+    return items;
   }, [metrics, investorPercentage, platformFeePercentage]);
 
   const formatCurrency = (amount: number) => {
@@ -621,12 +628,12 @@ export default function InvestorReports() {
           </CardContent>
         </Card>
 
-        {/* Distribución de ingresos */}
+        {/* Distribución de ingresos - 3 actores */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <PieChart className="w-5 h-5" />
-              Distribución de Ingresos
+              Distribución de Ingresos (3 Actores)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -654,6 +661,56 @@ export default function InvestorReports() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Desglose por fuente de ingreso */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="w-5 h-5" />
+            Fuentes de Ingreso
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/10">
+              <div className="flex items-center gap-2 mb-2">
+                <Zap className="h-4 w-4 text-yellow-500" />
+                <span className="text-xs font-medium text-muted-foreground">Venta de Energía</span>
+              </div>
+              <p className="text-lg font-bold">{formatCurrency(metrics.totalGross)}</p>
+              <p className="text-[10px] text-muted-foreground">Principal fuente de ingresos</p>
+            </div>
+            <div className="p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+              <div className="flex items-center gap-2 mb-2">
+                <Activity className="h-4 w-4 text-red-500" />
+                <span className="text-xs font-medium text-muted-foreground">Penalidades</span>
+              </div>
+              <p className="text-lg font-bold">{formatCurrency(0)}</p>
+              <p className="text-[10px] text-muted-foreground">Overstay y cancelaciones</p>
+            </div>
+            <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/10">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="h-4 w-4 text-blue-500" />
+                <span className="text-xs font-medium text-muted-foreground">Reservas</span>
+              </div>
+              <p className="text-lg font-bold">{formatCurrency(0)}</p>
+              <p className="text-[10px] text-muted-foreground">Tarifas de reserva</p>
+            </div>
+            <div className="p-4 rounded-xl bg-purple-500/5 border border-purple-500/10">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="h-4 w-4 text-purple-500" />
+                <span className="text-xs font-medium text-muted-foreground">Publicidad</span>
+              </div>
+              <p className="text-lg font-bold">{formatCurrency(0)}</p>
+              <p className="text-[10px] text-muted-foreground">Banners e impresiones</p>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1">
+            <Activity className="h-3 w-3" />
+            Los datos de penalidades, reservas y publicidad se integrarán automáticamente cuando se generen liquidaciones
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Rendimiento por estación */}
       {stationPerformance.length > 0 && (
