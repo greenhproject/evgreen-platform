@@ -48,6 +48,10 @@ import {
   getHostStations,
   getHostFinancialSummary,
   getHostSettlementHistory,
+  getMaintenanceFundBalance,
+  createMaintenanceFundRecord,
+  getMaintenanceFundRecords,
+  getMaintenanceFundSummary,
 } from "../db";
 
 // ============================================================================
@@ -250,6 +254,11 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
         const platformTotalAmount = distributableAmount - investorTotalAmount - hostTotalAmount;
         const netRevenue = netAfterExpenses;
 
+        // 6b. Fondo de mantenimiento (% del share de EVGreen, solo estaciones colectivas)
+        const maintenanceFundPct = Number(station.maintenanceFundPercent || 5);
+        const maintenanceFundAmount = Math.round(platformTotalAmount * (maintenanceFundPct / 100));
+        const platformNetAmount = platformTotalAmount - maintenanceFundAmount;
+
         // 7. Create the settlement with full breakdown
         const settlementId = await createSettlement({
           stationId: input.stationId,
@@ -276,6 +285,10 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           investorTotalAmount,
           platformTotalAmount,
           hostTotalAmount,
+          // Fondo de mantenimiento
+          maintenanceFundPercent: String(maintenanceFundPct),
+          maintenanceFundAmount,
+          platformNetAmount,
           contingencyReserve,
           waterfallBreakdown,
           status: "DRAFT",
@@ -322,6 +335,21 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           });
         }
 
+        // 10. Create maintenance fund deposit record
+        if (maintenanceFundAmount > 0) {
+          // Get current balance
+          const currentBalance = await getMaintenanceFundBalance(input.stationId);
+          await createMaintenanceFundRecord({
+            stationId: input.stationId,
+            type: 'deposit',
+            amount: maintenanceFundAmount,
+            description: `Aporte fondo mantenimiento - Liquidación ${periodStart.toLocaleDateString('es-CO')} a ${periodEnd.toLocaleDateString('es-CO')}`,
+            settlementId,
+            balanceAfter: currentBalance + maintenanceFundAmount,
+            createdBy: ctx.user.id,
+          });
+        }
+
         return {
           id: settlementId,
           grossRevenue,
@@ -332,6 +360,8 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           investorTotalAmount,
           platformTotalAmount,
           hostTotalAmount,
+          maintenanceFundAmount,
+          platformNetAmount,
           // Revenue breakdown
           revenueFromEnergy: revenue.revenueFromEnergy,
           revenueFromPenalties: revenue.revenueFromPenalties,
@@ -761,6 +791,58 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           hostName: s.hostName,
           isOnline: s.isOnline,
         }));
+      }),
+
+    // ========================================================================
+    // FONDO DE MANTENIMIENTO
+    // ========================================================================
+
+    /** Obtener resumen del fondo de mantenimiento de una estación */
+    maintenanceFundSummary: protectedProcedure
+      .input(z.object({ stationId: z.number() }))
+      .query(async ({ input }: { input: { stationId: number } }) => {
+        return getMaintenanceFundSummary(input.stationId);
+      }),
+
+    /** Obtener historial del fondo de mantenimiento */
+    maintenanceFundHistory: protectedProcedure
+      .input(z.object({ stationId: z.number(), limit: z.number().default(50) }))
+      .query(async ({ input }: { input: { stationId: number; limit: number } }) => {
+        return getMaintenanceFundRecords(input.stationId, input.limit);
+      }),
+
+    /** Registrar un cobro/retiro del fondo de mantenimiento (solo admin) */
+    maintenanceFundWithdraw: adminProcedure
+      .input(z.object({
+        stationId: z.number(),
+        amount: z.number().min(1),
+        description: z.string().min(5),
+        maintenanceType: z.enum(['preventivo', 'correctivo']),
+        maintenanceDetail: z.string().optional(),
+        technicianName: z.string().optional(),
+        invoiceNumber: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }: { input: any; ctx: any }) => {
+        const currentBalance = await getMaintenanceFundBalance(input.stationId);
+        if (input.amount > currentBalance) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Fondos insuficientes. Balance actual: $${currentBalance.toLocaleString('es-CO')} COP. Monto solicitado: $${input.amount.toLocaleString('es-CO')} COP`,
+          });
+        }
+        const id = await createMaintenanceFundRecord({
+          stationId: input.stationId,
+          type: 'withdrawal',
+          amount: input.amount,
+          description: input.description,
+          maintenanceType: input.maintenanceType,
+          maintenanceDetail: input.maintenanceDetail,
+          technicianName: input.technicianName,
+          invoiceNumber: input.invoiceNumber,
+          balanceAfter: currentBalance - input.amount,
+          createdBy: ctx.user.id,
+        });
+        return { id, newBalance: currentBalance - input.amount };
       }),
   });
 }

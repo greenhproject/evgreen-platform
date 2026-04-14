@@ -204,6 +204,8 @@ export const chargingStations = mysqlTable("charging_stations", {
   evgreenSharePercent: decimal("evgreenSharePercent", { precision: 5, scale: 2 }).default("30.00").notNull(), // % para EVGreen/GHP (gestor)
   investorSharePercent: decimal("investorSharePercent", { precision: 5, scale: 2 }).default("70.00").notNull(), // % para el inversionista dueño
   hostSharePercent: decimal("hostSharePercent", { precision: 5, scale: 2 }).default("0.00").notNull(), // % para el Aliado Comercial (dueño del espacio)
+  // Fondo de mantenimiento (% del share de EVGreen) - solo para estaciones colectivas
+  maintenanceFundPercent: decimal("maintenanceFundPercent", { precision: 5, scale: 2 }).default("5.00").notNull(), // % del 30% de EVGreen reservado para mantenimiento
   // Costo de compra de energía (COP/kWh) - para calcular costo de factura eléctrica
   energyPurchaseCostPerKwh: decimal("energyPurchaseCostPerKwh", { precision: 10, scale: 2 }).default("850.00").notNull(), // Costo promedio de compra de energía de red
   // Aliado Comercial (dueño del espacio donde se instala la estación)
@@ -2424,6 +2426,10 @@ export const financialSettlements = mysqlTable("financial_settlements", {
   investorTotalAmount: bigint("investorTotalAmount", { mode: "number" }).notNull().default(0),
   platformTotalAmount: bigint("platformTotalAmount", { mode: "number" }).notNull().default(0),
   hostTotalAmount: bigint("hostTotalAmount", { mode: "number" }).notNull().default(0),
+  // Fondo de mantenimiento (dentro del share de EVGreen)
+  maintenanceFundPercent: decimal("maintenanceFundPercent", { precision: 5, scale: 2 }).notNull().default("5.00"),
+  maintenanceFundAmount: bigint("maintenanceFundAmount", { mode: "number" }).notNull().default(0),
+  platformNetAmount: bigint("platformNetAmount", { mode: "number" }).notNull().default(0), // EVGreen neto (después de fondo mantenimiento)
   
   // Reserva de contingencia (5% del bruto, se resta antes de distribuir)
   contingencyReserve: bigint("contingencyReserve", { mode: "number" }).notNull().default(0),
@@ -2630,5 +2636,59 @@ export const operationalMetricsRelations = relations(operationalMetrics, ({ one 
   station: one(chargingStations, {
     fields: [operationalMetrics.stationId],
     references: [chargingStations.id],
+  }),
+}));
+
+// ============================================================================
+// MAINTENANCE FUND - Fondo de mantenimiento para estaciones colectivas
+// ============================================================================
+
+export const maintenanceFundTypeEnum = mysqlEnum("maintenance_fund_type", ["deposit", "withdrawal"]);
+
+export const maintenanceFundRecords = mysqlTable("maintenance_fund_records", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  
+  // Tipo: deposit (aporte mensual del waterfall) o withdrawal (cobro por mantenimiento)
+  type: maintenanceFundTypeEnum.notNull(),
+  
+  // Monto en COP
+  amount: bigint("amount", { mode: "number" }).notNull(),
+  
+  // Descripción del movimiento
+  description: text("description").notNull(),
+  
+  // Para withdrawals: detalle del mantenimiento realizado
+  maintenanceType: varchar("maintenanceType", { length: 100 }), // "preventivo" | "correctivo"
+  maintenanceDetail: text("maintenanceDetail"), // Descripción detallada del trabajo
+  technicianName: varchar("technicianName", { length: 255 }), // Nombre del técnico
+  invoiceNumber: varchar("invoiceNumber", { length: 100 }), // Número de factura/recibo
+  
+  // Referencia a liquidación (para deposits)
+  settlementId: int("settlementId"), // FK a financial_settlements
+  
+  // Balance acumulado después de este movimiento
+  balanceAfter: bigint("balanceAfter", { mode: "number" }).notNull().default(0),
+  
+  // Auditoría
+  createdBy: int("createdBy"), // FK a users (admin que registró)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type MaintenanceFundRecord = typeof maintenanceFundRecords.$inferSelect;
+export type InsertMaintenanceFundRecord = typeof maintenanceFundRecords.$inferInsert;
+
+export const maintenanceFundRecordsRelations = relations(maintenanceFundRecords, ({ one }) => ({
+  station: one(chargingStations, {
+    fields: [maintenanceFundRecords.stationId],
+    references: [chargingStations.id],
+  }),
+  settlement: one(financialSettlements, {
+    fields: [maintenanceFundRecords.settlementId],
+    references: [financialSettlements.id],
+  }),
+  creator: one(users, {
+    fields: [maintenanceFundRecords.createdBy],
+    references: [users.id],
   }),
 }));
