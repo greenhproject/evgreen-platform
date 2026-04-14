@@ -443,7 +443,8 @@ const stationsRouter = router({
   
   // Inversionista: listar sus estaciones con tarifas y EVSEs
   listOwned: investorProcedure.query(async ({ ctx }) => {
-    const stations = await db.getAllChargingStations({ ownerId: ctx.user.id });
+    // Obtener TODAS las estaciones: propias + participaciones crowdfunding
+    const allStations = await db.getInvestorAllStations(ctx.user.id);
     const { isDemoStation } = await import("./charging/charging-simulator");
     
     // Obtener conexiones OCPP activas para estado en tiempo real
@@ -452,7 +453,7 @@ const stationsRouter = router({
     
     // Enriquecer con tarifas, EVSEs y estado real de conexión
     const enrichedStations = await Promise.all(
-      stations.map(async (station) => {
+      allStations.map(async (station) => {
         const tariff = await db.getActiveTariffByStationId(station.id);
         const evses = await db.getEvsesByStationId(station.id);
         
@@ -477,6 +478,11 @@ const stationsRouter = router({
           // Usar estado real de OCPP en lugar de solo isOnline de BD (demo siempre online)
           isOnline: isDemo || isConnectedOCPP || station.isOnline,
           isConnectedOCPP,
+          // Tipo de propiedad: 'owned' (propia) o 'crowdfunding' (participación colectiva)
+          ownershipType: (station as any).ownershipType || 'owned',
+          participationPercent: (station as any).participationPercent || '100.0000',
+          crowdfundingProjectId: (station as any).crowdfundingProjectId || null,
+          crowdfundingProjectName: (station as any).crowdfundingProjectName || null,
           ocppConnection: ocppConn ? {
             ocppVersion: ocppConn.ocppVersion,
             connectedAt: ocppConn.connectedAt instanceof Date ? ocppConn.connectedAt.toISOString() : String(ocppConn.connectedAt),
@@ -3208,13 +3214,69 @@ const crowdfundingRouter = router({
       status: z.string().optional(),
       targetDate: z.date().optional(),
       priority: z.number().optional(),
+      // Modelo financiero para la estación auto-creada
+      evgreenSharePercent: z.string().optional(),
+      investorSharePercent: z.string().optional(),
+      hostSharePercent: z.string().optional(),
+      energyPurchaseCostPerKwh: z.string().optional(),
+      hostName: z.string().optional(),
+      hostUserId: z.number().optional(),
+      latitude: z.string().optional(),
+      longitude: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const { evgreenSharePercent, investorSharePercent, hostSharePercent, energyPurchaseCostPerKwh, hostName, hostUserId, latitude, longitude, ...projectInput } = input;
+      
+      // 1. Crear el proyecto crowdfunding
       const projectId = await db.createCrowdfundingProject({
-        ...input,
+        ...projectInput,
         createdById: ctx.user.id,
       });
-      return { success: true, projectId };
+      
+      // 2. Auto-crear estación física vinculada al proyecto
+      const stationName = `${input.name}`;
+      const stationId = await db.createChargingStation({
+        ownerId: ctx.user.id, // Admin es el owner temporal hasta que se asigne
+        name: stationName,
+        description: input.description || `Estación colectiva - Proyecto ${input.name}`,
+        address: input.address || `${input.zone}, ${input.city}`,
+        city: input.city,
+        department: '',
+        latitude: latitude || '4.6097',
+        longitude: longitude || '-74.0817',
+        country: 'Colombia',
+        isActive: false, // Inactiva hasta que se instale
+        isPublic: false,
+        // Modelo financiero
+        evgreenSharePercent: evgreenSharePercent || '30.00',
+        investorSharePercent: investorSharePercent || '60.00',
+        hostSharePercent: hostSharePercent || '10.00',
+        energyPurchaseCostPerKwh: energyPurchaseCostPerKwh || '800.00',
+        hostName: hostName || null,
+        hostUserId: hostUserId || null,
+      });
+      
+      // 3. Vincular la estación al proyecto crowdfunding
+      if (stationId) {
+        await db.updateCrowdfundingProject(projectId, { stationId });
+        console.log(`[Crowdfunding] Proyecto ${projectId} vinculado a estación ${stationId} automáticamente`);
+      }
+      
+      // 4. Crear EVSEs/conectores según especificaciones del proyecto
+      if (stationId && input.chargerCount) {
+        for (let i = 1; i <= input.chargerCount; i++) {
+          await db.createEvse({
+            stationId,
+            connectorId: i,
+            connectorType: 'CCS2',
+            powerKw: String(input.chargerPowerKw || 120),
+            status: 'UNAVAILABLE',
+          });
+        }
+        console.log(`[Crowdfunding] ${input.chargerCount} conectores creados para estación ${stationId}`);
+      }
+      
+      return { success: true, projectId, stationId };
     }),
   
   // Admin: Actualizar proyecto

@@ -526,6 +526,92 @@ export async function getAllChargingStations(filters?: { ownerId?: number; isAct
   return db.select().from(chargingStations).orderBy(desc(chargingStations.createdAt));
 }
 
+/**
+ * Get ALL station IDs an investor has access to:
+ * 1. Stations they own directly (ownerId = investorId)
+ * 2. Stations linked to crowdfunding projects where they have a participation
+ * Returns a deduplicated array of station IDs.
+ */
+export async function getInvestorAllStationIds(investorId: number): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // 1. Stations owned directly
+  const ownedStations = await db.select({ id: chargingStations.id })
+    .from(chargingStations)
+    .where(eq(chargingStations.ownerId, investorId));
+  
+  // 2. Stations linked via crowdfunding participations
+  const crowdfundingStations = await db.execute(sql`
+    SELECT DISTINCT cfp.stationId
+    FROM crowdfunding_participations cp
+    JOIN crowdfunding_projects cfp ON cp.projectId = cfp.id
+    WHERE cp.investorId = ${investorId}
+      AND cp.paymentStatus = 'COMPLETED'
+      AND cfp.stationId IS NOT NULL
+  `);
+  
+  const crowdfundingIds = ((crowdfundingStations as any)[0] || []).map((r: any) => r.stationId).filter(Boolean);
+  const ownedIds = ownedStations.map(s => s.id);
+  
+  // Deduplicate
+  return [...new Set([...ownedIds, ...crowdfundingIds])];
+}
+
+/**
+ * Get ALL stations an investor has access to (owned + crowdfunding participations).
+ * Each station includes an `ownershipType` field: 'owned' | 'crowdfunding'
+ * and a `participationPercent` for crowdfunding stations.
+ */
+export async function getInvestorAllStations(investorId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // 1. Stations owned directly
+  const ownedStations = await db.select()
+    .from(chargingStations)
+    .where(eq(chargingStations.ownerId, investorId))
+    .orderBy(desc(chargingStations.createdAt));
+  
+  const ownedWithType = ownedStations.map(s => ({
+    ...s,
+    ownershipType: 'owned' as const,
+    participationPercent: '100.0000',
+    crowdfundingProjectId: null as number | null,
+    crowdfundingProjectName: null as string | null,
+  }));
+  
+  // 2. Stations linked via crowdfunding participations
+  const crowdfundingResult = await db.execute(sql`
+    SELECT 
+      cs.*,
+      cp.participationPercent,
+      cfp.id as crowdfundingProjectId,
+      cfp.name as crowdfundingProjectName
+    FROM crowdfunding_participations cp
+    JOIN crowdfunding_projects cfp ON cp.projectId = cfp.id
+    JOIN charging_stations cs ON cfp.stationId = cs.id
+    WHERE cp.investorId = ${investorId}
+      AND cp.paymentStatus = 'COMPLETED'
+      AND cfp.stationId IS NOT NULL
+    ORDER BY cs.createdAt DESC
+  `);
+  
+  const crowdfundingRows = ((crowdfundingResult as any)[0] || []).map((r: any) => ({
+    ...r,
+    ownershipType: 'crowdfunding' as const,
+    participationPercent: r.participationPercent || '0',
+    crowdfundingProjectId: r.crowdfundingProjectId,
+    crowdfundingProjectName: r.crowdfundingProjectName,
+  }));
+  
+  // Deduplicate: if a station appears in both (owner + crowdfunding), keep the owned version
+  const ownedIds = new Set(ownedStations.map(s => s.id));
+  const uniqueCrowdfunding = crowdfundingRows.filter((s: any) => !ownedIds.has(s.id));
+  
+  return [...ownedWithType, ...uniqueCrowdfunding];
+}
+
 export async function updateChargingStation(id: number, data: Partial<InsertChargingStation>) {
   const db = await getDb();
   if (!db) return;
@@ -784,9 +870,8 @@ export async function getTransactionsByInvestor(investorId: number, filters?: { 
   const db = await getDb();
   if (!db) return { data: [], total: 0 };
   
-  // Primero obtener las estaciones del inversionista
-  const investorStations = await db.select({ id: chargingStations.id }).from(chargingStations).where(eq(chargingStations.ownerId, investorId));
-  const stationIds = investorStations.map(s => s.id);
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const stationIds = await getInvestorAllStationIds(investorId);
   
   if (stationIds.length === 0) return { data: [], total: 0 };
   
@@ -813,8 +898,8 @@ export async function getAllTransactionsByInvestor(investorId: number, filters?:
   const db = await getDb();
   if (!db) return [];
   
-  const investorStations = await db.select({ id: chargingStations.id }).from(chargingStations).where(eq(chargingStations.ownerId, investorId));
-  const stationIds = investorStations.map(s => s.id);
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const stationIds = await getInvestorAllStationIds(investorId);
   
   if (stationIds.length === 0) return [];
   
@@ -1702,9 +1787,9 @@ export async function getInvestorStats(investorId: number, startDate?: Date, end
   const db = await getDb();
   if (!db) return null;
   
-  // Obtener estaciones del inversionista
-  const investorStations = await db.select().from(chargingStations).where(eq(chargingStations.ownerId, investorId));
-  const stationIds = investorStations.map(s => s.id);
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const allStations = await getInvestorAllStations(investorId);
+  const stationIds = allStations.map(s => s.id);
   
   if (stationIds.length === 0) {
     return {
@@ -1734,7 +1819,7 @@ export async function getInvestorStats(investorId: number, startDate?: Date, end
   const platformFee = txs.reduce((sum, tx) => sum + parseFloat(tx.platformFee || "0"), 0);
   
   return {
-    totalStations: investorStations.length,
+    totalStations: allStations.length,
     totalEvses: stationEvses.length,
     totalTransactions: txs.length,
     totalKwh,
@@ -2180,14 +2265,16 @@ export async function getInvestorAnalytics(
     case "year": startDate.setFullYear(startDate.getFullYear() - 1); break;
   }
   
-  // Obtener estaciones del inversionista
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const allInvestorStationIds = await getInvestorAllStationIds(investorId);
   let investorStations;
   if (stationIds && stationIds.length > 0) {
+    // Filtrar solo las estaciones solicitadas que pertenezcan al inversionista
     investorStations = await db.select().from(chargingStations)
-      .where(and(eq(chargingStations.ownerId, investorId), inArray(chargingStations.id, stationIds)));
+      .where(and(inArray(chargingStations.id, allInvestorStationIds), inArray(chargingStations.id, stationIds)));
   } else {
     investorStations = await db.select().from(chargingStations)
-      .where(eq(chargingStations.ownerId, investorId));
+      .where(inArray(chargingStations.id, allInvestorStationIds));
   }
   
   const ids = investorStations.map(s => s.id);
@@ -3000,12 +3087,8 @@ export async function getInvestorDashboardMetrics(investorId: number) {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   
-  // Obtener estaciones del inversor
-  const investorStations = await db.select({ id: chargingStations.id })
-    .from(chargingStations)
-    .where(eq(chargingStations.ownerId, investorId));
-  
-  const stationIds = investorStations.map(s => s.id);
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const stationIds = await getInvestorAllStationIds(investorId);
   
   if (stationIds.length === 0) {
     return {
@@ -3813,11 +3896,11 @@ export async function getInvestorStationsDemand(investorId: number): Promise<Arr
   const db = await getDb();
   if (!db) return [];
   
-  // Obtener estaciones del inversor
-  const investorStations = await db.select().from(chargingStations).where(eq(chargingStations.ownerId, investorId));
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const allStations = await getInvestorAllStations(investorId);
   
   const results = [];
-  for (const station of investorStations) {
+  for (const station of allStations) {
     const demandStats = await getStationDemandStats(station.id);
     results.push({
       stationId: station.id,
