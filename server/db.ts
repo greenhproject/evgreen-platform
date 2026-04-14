@@ -97,6 +97,21 @@ import {
   userConsumptionProfile,
   UserConsumptionProfile,
   InsertUserConsumptionProfile,
+  stationFixedExpenses,
+  StationFixedExpense,
+  InsertStationFixedExpense,
+  financialSettlements,
+  FinancialSettlement,
+  InsertFinancialSettlement,
+  settlementExpenseItems,
+  SettlementExpenseItem,
+  InsertSettlementExpenseItem,
+  investorSettlementShares,
+  InvestorSettlementShare,
+  InsertInvestorSettlementShare,
+  operationalMetrics,
+  OperationalMetric,
+  InsertOperationalMetric,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -6086,4 +6101,355 @@ export async function updateCrowdfundingParticipationFull(
     SET ${setClauses.join(', ')}
     WHERE id = ${participationId}
   `));
+}
+
+
+// ============================================================================
+// FINANCIAL SYSTEM - Gastos Fijos, Liquidaciones, Distribución, Métricas SLA
+// ============================================================================
+
+// --- STATION FIXED EXPENSES (CRUD) ---
+
+export async function createFixedExpense(data: InsertStationFixedExpense): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(stationFixedExpenses).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getFixedExpensesByStation(stationId: number): Promise<StationFixedExpense[]> {
+  const db = (await getDb())!;
+  return db.select().from(stationFixedExpenses)
+    .where(eq(stationFixedExpenses.stationId, stationId))
+    .orderBy(asc(stationFixedExpenses.waterfallPriority));
+}
+
+export async function getActiveFixedExpensesByStation(stationId: number): Promise<StationFixedExpense[]> {
+  const db = (await getDb())!;
+  return db.select().from(stationFixedExpenses)
+    .where(and(
+      eq(stationFixedExpenses.stationId, stationId),
+      eq(stationFixedExpenses.isActive, true),
+    ))
+    .orderBy(asc(stationFixedExpenses.waterfallPriority));
+}
+
+export async function updateFixedExpense(id: number, data: Partial<InsertStationFixedExpense>): Promise<void> {
+  const db = (await getDb())!;
+  await db.update(stationFixedExpenses).set(data).where(eq(stationFixedExpenses.id, id));
+}
+
+export async function deleteFixedExpense(id: number): Promise<void> {
+  const db = (await getDb())!;
+  await db.delete(stationFixedExpenses).where(eq(stationFixedExpenses.id, id));
+}
+
+export async function getFixedExpenseById(id: number): Promise<StationFixedExpense | undefined> {
+  const db = (await getDb())!;
+  const rows = await db.select().from(stationFixedExpenses).where(eq(stationFixedExpenses.id, id));
+  return rows[0];
+}
+
+// --- FINANCIAL SETTLEMENTS ---
+
+export async function createSettlement(data: InsertFinancialSettlement): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(financialSettlements).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getSettlementById(id: number): Promise<FinancialSettlement | undefined> {
+  const db = (await getDb())!;
+  const rows = await db.select().from(financialSettlements).where(eq(financialSettlements.id, id));
+  return rows[0];
+}
+
+export async function getSettlementsByStation(stationId: number, limit = 20): Promise<FinancialSettlement[]> {
+  const db = (await getDb())!;
+  return db.select().from(financialSettlements)
+    .where(eq(financialSettlements.stationId, stationId))
+    .orderBy(desc(financialSettlements.periodEnd))
+    .limit(limit);
+}
+
+export async function updateSettlement(id: number, data: Partial<InsertFinancialSettlement>): Promise<void> {
+  const db = (await getDb())!;
+  await db.update(financialSettlements).set(data).where(eq(financialSettlements.id, id));
+}
+
+export async function getSettlementWithDetails(id: number) {
+  const db = (await getDb())!;
+  const settlement = await db.select().from(financialSettlements).where(eq(financialSettlements.id, id));
+  if (!settlement[0]) return null;
+  
+  const expenses = await db.select().from(settlementExpenseItems)
+    .where(eq(settlementExpenseItems.settlementId, id))
+    .orderBy(asc(settlementExpenseItems.waterfallPriority));
+  
+  const shares = await db.select().from(investorSettlementShares)
+    .where(eq(investorSettlementShares.settlementId, id));
+  
+  // Get investor names
+  const sharesWithNames = await Promise.all(shares.map(async (share) => {
+    const userRows = await db.select({ name: users.name, email: users.email })
+      .from(users).where(eq(users.id, share.investorUserId));
+    return {
+      ...share,
+      investorName: userRows[0]?.name || 'Desconocido',
+      investorEmail: userRows[0]?.email || '',
+    };
+  }));
+  
+  return {
+    ...settlement[0],
+    expenseItems: expenses,
+    investorShares: sharesWithNames,
+  };
+}
+
+// --- SETTLEMENT EXPENSE ITEMS ---
+
+export async function createSettlementExpenseItem(data: InsertSettlementExpenseItem): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(settlementExpenseItems).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getSettlementExpenseItems(settlementId: number): Promise<SettlementExpenseItem[]> {
+  const db = (await getDb())!;
+  return db.select().from(settlementExpenseItems)
+    .where(eq(settlementExpenseItems.settlementId, settlementId))
+    .orderBy(asc(settlementExpenseItems.waterfallPriority));
+}
+
+// --- INVESTOR SETTLEMENT SHARES ---
+
+export async function createInvestorShare(data: InsertInvestorSettlementShare): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(investorSettlementShares).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getInvestorShares(settlementId: number): Promise<InvestorSettlementShare[]> {
+  const db = (await getDb())!;
+  return db.select().from(investorSettlementShares)
+    .where(eq(investorSettlementShares.settlementId, settlementId));
+}
+
+export async function getInvestorSettlementHistory(investorUserId: number, limit = 20) {
+  const db = (await getDb())!;
+  const shares = await db.select().from(investorSettlementShares)
+    .where(eq(investorSettlementShares.investorUserId, investorUserId))
+    .orderBy(desc(investorSettlementShares.createdAt))
+    .limit(limit);
+  
+  // Enrich with settlement data
+  const enriched = await Promise.all(shares.map(async (share) => {
+    const settlement = await db.select().from(financialSettlements)
+      .where(eq(financialSettlements.id, share.settlementId));
+    const station = settlement[0] ? await db.select({ name: chargingStations.name })
+      .from(chargingStations).where(eq(chargingStations.id, settlement[0].stationId)) : [];
+    return {
+      ...share,
+      settlement: settlement[0] || null,
+      stationName: station[0]?.name || 'Desconocida',
+    };
+  }));
+  
+  return enriched;
+}
+
+export async function updateInvestorShare(id: number, data: Partial<InsertInvestorSettlementShare>): Promise<void> {
+  const db = (await getDb())!;
+  await db.update(investorSettlementShares).set(data).where(eq(investorSettlementShares.id, id));
+}
+
+// --- OPERATIONAL METRICS ---
+
+export async function createOperationalMetric(data: InsertOperationalMetric): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(operationalMetrics).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getOperationalMetricsByStation(stationId: number, limit = 12): Promise<OperationalMetric[]> {
+  const db = (await getDb())!;
+  return db.select().from(operationalMetrics)
+    .where(eq(operationalMetrics.stationId, stationId))
+    .orderBy(desc(operationalMetrics.periodEnd))
+    .limit(limit);
+}
+
+export async function getLatestOperationalMetric(stationId: number): Promise<OperationalMetric | undefined> {
+  const db = (await getDb())!;
+  const rows = await db.select().from(operationalMetrics)
+    .where(eq(operationalMetrics.stationId, stationId))
+    .orderBy(desc(operationalMetrics.periodEnd))
+    .limit(1);
+  return rows[0];
+}
+
+export async function updateOperationalMetric(id: number, data: Partial<InsertOperationalMetric>): Promise<void> {
+  const db = (await getDb())!;
+  await db.update(operationalMetrics).set(data).where(eq(operationalMetrics.id, id));
+}
+
+// --- FINANCIAL AGGREGATION HELPERS ---
+
+/**
+ * Get revenue data for a station within a date range (from completed transactions)
+ */
+export async function getStationRevenueForPeriod(stationId: number, startDate: Date, endDate: Date) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      COUNT(*) as totalSessions,
+      COALESCE(SUM(CAST(totalCost AS DECIMAL(14,2))), 0) as grossRevenue,
+      COALESCE(SUM(CAST(energyDelivered AS DECIMAL(12,4))), 0) as totalKwh,
+      COALESCE(AVG(CAST(pricePerKwh AS DECIMAL(10,2))), 0) as avgPricePerKwh
+    FROM transactions 
+    WHERE stationId = ${stationId}
+      AND transaction_status = 'COMPLETED'
+      AND startTime >= '${startDate.toISOString().slice(0, 19).replace('T', ' ')}'
+      AND startTime < '${endDate.toISOString().slice(0, 19).replace('T', ' ')}'
+  `));
+  const row = (results as any)[0]?.[0] || {};
+  return {
+    totalSessions: Number(row.totalSessions || 0),
+    grossRevenue: Number(row.grossRevenue || 0),
+    totalKwh: Number(row.totalKwh || 0),
+    avgPricePerKwh: Number(row.avgPricePerKwh || 0),
+  };
+}
+
+/**
+ * Calculate prorated amount for a fixed expense based on the settlement period
+ */
+export function prorateExpense(expense: StationFixedExpense, periodStartDate: Date, periodEndDate: Date): number {
+  const periodDays = Math.ceil((periodEndDate.getTime() - periodStartDate.getTime()) / (1000 * 60 * 60 * 24));
+  const amount = Number(expense.amountCop);
+  
+  // Check if expense is active during this period
+  const expStart = expense.startDate ? new Date(expense.startDate) : new Date(0);
+  const expEnd = expense.endDate ? new Date(expense.endDate) : new Date('2099-12-31');
+  
+  if (expStart > periodEndDate || expEnd < periodStartDate) return 0;
+  
+  switch (expense.periodicity) {
+    case 'MONTHLY': return amount; // Already monthly
+    case 'BIMONTHLY': return amount / 2; // Half per month
+    case 'QUARTERLY': return amount / 3;
+    case 'SEMIANNUAL': return amount / 6;
+    case 'ANNUAL': return amount / 12;
+    case 'ONE_TIME': return amount; // Full amount in the period it falls
+    default: return amount;
+  }
+}
+
+/**
+ * Get investors and their participation % for a station (from crowdfunding)
+ */
+export async function getStationInvestors(stationId: number) {
+  const db = (await getDb())!;
+  // Get the crowdfunding project for this station
+  const projects = await db.execute(sql.raw(`
+    SELECT id, goalAmount FROM crowdfunding_projects 
+    WHERE stationId = ${stationId} AND crowdfunding_status IN ('ACTIVE', 'FUNDED', 'COMPLETED')
+    ORDER BY id DESC LIMIT 1
+  `));
+  const project = (projects as any)[0]?.[0];
+  if (!project) return [];
+  
+  // Get confirmed participations
+  const participations = await db.execute(sql.raw(`
+    SELECT cp.investorId, cp.amount, u.name, u.email,
+      (cp.amount / ${Number(project.goalAmount)}) * 100 as participationPercent
+    FROM crowdfunding_participations cp
+    JOIN users u ON u.id = cp.investorId
+    WHERE cp.projectId = ${project.id}
+      AND cp.paymentStatus IN ('CONFIRMED', 'VERIFIED')
+    ORDER BY cp.amount DESC
+  `));
+  
+  return ((participations as any)[0] || []).map((row: any) => ({
+    investorId: Number(row.investorId),
+    name: row.name || 'Inversionista',
+    email: row.email || '',
+    amount: Number(row.amount),
+    participationPercent: Number(row.participationPercent),
+  }));
+}
+
+/**
+ * Get all settlements for an investor across all stations
+ */
+export async function getInvestorAllSettlements(investorUserId: number, limit = 50) {
+  const db = (await getDb())!;
+  const shares = await db.select().from(investorSettlementShares)
+    .where(eq(investorSettlementShares.investorUserId, investorUserId))
+    .orderBy(desc(investorSettlementShares.createdAt))
+    .limit(limit);
+  
+  if (shares.length === 0) return [];
+  
+  const enriched = await Promise.all(shares.map(async (share) => {
+    const settlement = await db.select().from(financialSettlements)
+      .where(eq(financialSettlements.id, share.settlementId));
+    if (!settlement[0]) return null;
+    
+    const station = await db.select({ name: chargingStations.name })
+      .from(chargingStations).where(eq(chargingStations.id, settlement[0].stationId));
+    
+    return {
+      ...share,
+      periodStart: settlement[0].periodStart,
+      periodEnd: settlement[0].periodEnd,
+      periodType: settlement[0].periodType,
+      grossRevenue: settlement[0].grossRevenue,
+      totalFixedExpenses: settlement[0].totalFixedExpenses,
+      netRevenue: settlement[0].netRevenue,
+      settlementStatus: settlement[0].status,
+      stationId: settlement[0].stationId,
+      stationName: station[0]?.name || 'Desconocida',
+    };
+  }));
+  
+  return enriched.filter(Boolean);
+}
+
+/**
+ * Get financial summary for an investor (totals across all settlements)
+ */
+export async function getInvestorFinancialSummary(investorUserId: number) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      COUNT(*) as totalSettlements,
+      COALESCE(SUM(grossShare), 0) as totalGrossEarnings,
+      COALESCE(SUM(netShare), 0) as totalNetEarnings,
+      COALESCE(SUM(expenseShare), 0) as totalExpenseShare
+    FROM investor_settlement_shares
+    WHERE investorUserId = ${investorUserId}
+      AND investor_share_status IN ('CREDITED', 'PAID')
+  `));
+  const row = (results as any)[0]?.[0] || {};
+  
+  // Get total invested amount
+  const invested = await db.execute(sql.raw(`
+    SELECT COALESCE(SUM(amount), 0) as totalInvested
+    FROM crowdfunding_participations
+    WHERE investorId = ${investorUserId}
+      AND paymentStatus IN ('CONFIRMED', 'VERIFIED')
+  `));
+  const investedRow = (invested as any)[0]?.[0] || {};
+  
+  return {
+    totalSettlements: Number(row.totalSettlements || 0),
+    totalGrossEarnings: Number(row.totalGrossEarnings || 0),
+    totalNetEarnings: Number(row.totalNetEarnings || 0),
+    totalExpenseShare: Number(row.totalExpenseShare || 0),
+    totalInvested: Number(investedRow.totalInvested || 0),
+    roi: Number(investedRow.totalInvested) > 0 
+      ? (Number(row.totalNetEarnings || 0) / Number(investedRow.totalInvested)) * 100 
+      : 0,
+  };
 }

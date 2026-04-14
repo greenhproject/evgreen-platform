@@ -2587,3 +2587,49 @@
 - [x] Actualizar diálogo de confirmación con todos los modos de carga y estimaciones
 - [x] Fix: Permitir seleccionar conectores en estado CHARGING (admin override)
 - [x] Push a GitHub después de implementar
+
+## Sistema de Liquidación Financiera Waterfall + KPIs (Contrato V3.4) - 14 Abril 2026
+
+### Schema y Migraciones
+- [x] Tabla station_fixed_expenses: gastos fijos configurables por estación
+- [x] Tabla settlement_periods: liquidaciones periódicas con waterfall
+- [x] Tabla settlement_expense_lines: detalle de cada gasto deducido en una liquidación
+- [x] Tabla investor_distributions: distribución por inversionista
+- [x] Tabla operational_metrics: métricas operativas SLA por estación
+- [x] Tabla financial_reports: reportes financieros generados
+
+### Backend - Gastos Fijos y Liquidación
+- [x] CRUD gastos fijos por estación colectiva (crear, editar, eliminar, listar)
+- [x] Endpoint de liquidación waterfall: calcular ingresos - gastos = neto → 70% inversionistas / 30% gestor
+- [x] Distribución proporcional por % participación de cada inversionista
+- [x] Historial de liquidaciones con detalle de waterfall
+
+### Backend - Indicadores Financieros
+- [x] Cálculo de rentabilidad por período (mensual, trimestral, anual)
+- [x] Monitoreo de ROI (retorno sobre inversión acumulado)
+- [x] Valorización de la inversión en el tiempo
+
+### Backend - Indicadores Operativos SLA
+- [x] 6 KPIs operativos con cálculo de breach y consecuencias progresivas
+- [x] Registro y consulta de métricas operativas por estación
+
+### Frontend Admin - Configuración Gastos
+- [x] Módulo Centro Financiero Admin con 3 tabs (Gastos, Liquidaciones, Métricas)
+- [x] CRUD de gastos fijos con categorías y periodicidades
+- [x] Generación de liquidaciones waterfall desde admin
+- [x] Registro de métricas operativas SLA
+
+### Frontend Inversionista - Centro Financiero
+- [x] Tab 1: Liquidaciones/Waterfall con resumen, detalle y distribución
+- [x] Tab 2: Indicadores Financieros (ROI, rentabilidad, recuperación, valorización)
+- [x] Tab 3: Indicadores Operativos SLA (6 KPIs con gauges y alertas)
+- [x] Botones de descarga PDF y Excel en header
+
+### Reportes Descargables
+- [x] Generación de reporte financiero en PDF (P&L + Waterfall + Distribución)
+- [x] Generación de reporte financiero en Excel (múltiples hojas)
+- [x] Endpoint exportFinancialReport con base64 encoding
+
+### Tests
+- [x] 24 tests unitarios: waterfall, prorrateo, indicadores financieros, SLA, prelación
+- [ ] Push a GitHub después de implementar
