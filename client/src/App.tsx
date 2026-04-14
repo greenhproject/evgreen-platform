@@ -112,6 +112,14 @@ const AdminSupport = lazy(() => import("./pages/admin/Support"));
 const AdminRemoteStart = lazy(() => import("./pages/admin/RemoteStart"));
 const AdminFinancial = lazy(() => import("./pages/admin/Financial"));
 
+// Páginas de Aliado Comercial (Host)
+const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
+const HostSpaces = lazy(() => import("./pages/host/Spaces"));
+const HostTransactions = lazy(() => import("./pages/host/Transactions"));
+const HostSettlements = lazy(() => import("./pages/host/Settlements"));
+const HostReports = lazy(() => import("./pages/host/Reports"));
+const HostSettings = lazy(() => import("./pages/host/Settings"));
+
 // Páginas de Staff (Evento)
 const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
 const StaffGuests = lazy(() => import("./pages/staff/Guests"));
@@ -125,6 +133,7 @@ import InvestorLayout from "./layouts/InvestorLayout";
 import TechnicianLayout from "./layouts/TechnicianLayout";
 import EngineerLayout from "./layouts/EngineerLayout";
 import StaffLayout from "./layouts/StaffLayout";
+import HostLayout from "./layouts/HostLayout";
 
 // Widgets (carga diferida)
 const AIChatWidget = lazy(() => import("./components/AIChat").then(m => ({ default: m.AIChatWidget })));
@@ -144,6 +153,8 @@ function getHomeRouteByRole(role: string | undefined): string {
       return "/technician";
     case "engineer":
       return "/engineer";
+    case "host":
+      return "/host";
     case "user":
     default:
       return "/map";
@@ -649,6 +660,52 @@ function Router() {
             <AdminLayout>
               <AdminFinancial />
             </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* ============================================
+            RUTAS DE ALIADO COMERCIAL (Host)
+            ============================================ */}
+        <Route path="/host">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostDashboard />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/spaces">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostSpaces />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/transactions">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostTransactions />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/settlements">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostSettlements />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/reports">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostReports />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/settings">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostSettings />
+            </HostLayout>
           </ProtectedRoute>
         </Route>
 

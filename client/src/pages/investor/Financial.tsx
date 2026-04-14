@@ -22,12 +22,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { saveBlobCrossPlatform } from "@/lib/pdf-download";
 import {
@@ -58,6 +57,13 @@ import {
   XCircle,
   Info,
   Zap,
+  Building2,
+  Users,
+  Bolt,
+  Ban,
+  Ticket,
+  Megaphone,
+  ChevronDown,
 } from "lucide-react";
 
 // ============================================================================
@@ -132,14 +138,14 @@ export default function InvestorFinancialPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <DollarSign className="h-6 w-6 text-emerald-500" />
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+            <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-500" />
             Centro Financiero
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Transparencia total sobre tus inversiones, liquidaciones y rendimiento operativo
+          <p className="text-sm text-muted-foreground mt-1">
+            Transparencia total sobre tus inversiones, liquidaciones y rendimiento
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -167,12 +173,12 @@ export default function InvestorFinancialPage() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 p-1 bg-muted/50 rounded-xl w-fit">
+      <div className="flex gap-1 p-1 bg-muted/50 rounded-xl w-fit overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
               activeTab === tab.id
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
@@ -218,58 +224,58 @@ function WaterfallTab() {
     <div className="space-y-6">
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
           <Card className="border-emerald-500/20 bg-emerald-500/5">
-            <CardContent className="pt-5 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                  <PiggyBank className="h-5 w-5 text-emerald-500" />
+            <CardContent className="pt-4 sm:pt-5 pb-3 sm:pb-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                  <PiggyBank className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-500" />
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Capital Invertido</p>
-                  <p className="text-lg font-bold">{formatCOP(summary.totalInvested)}</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground font-medium">Capital Invertido</p>
+                  <p className="text-sm sm:text-lg font-bold truncate">{formatCOP(summary.totalInvested)}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-blue-500/20 bg-blue-500/5">
-            <CardContent className="pt-5 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                  <Wallet className="h-5 w-5 text-blue-500" />
+            <CardContent className="pt-4 sm:pt-5 pb-3 sm:pb-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                  <Wallet className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Total Distribuido</p>
-                  <p className="text-lg font-bold">{formatCOP(summary.totalDistributed)}</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground font-medium">Total Distribuido</p>
+                  <p className="text-sm sm:text-lg font-bold truncate">{formatCOP(summary.totalDistributed)}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-purple-500/20 bg-purple-500/5">
-            <CardContent className="pt-5 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
-                  <Target className="h-5 w-5 text-purple-500" />
+            <CardContent className="pt-4 sm:pt-5 pb-3 sm:pb-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                  <Target className="h-4 w-4 sm:h-5 sm:w-5 text-purple-500" />
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Saldo Pendiente</p>
-                  <p className="text-lg font-bold">{formatCOP(summary.pendingBalance)}</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground font-medium">Saldo Pendiente</p>
+                  <p className="text-sm sm:text-lg font-bold truncate">{formatCOP(summary.pendingBalance)}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-amber-500/20 bg-amber-500/5">
-            <CardContent className="pt-5 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                  <BarChart3 className="h-5 w-5 text-amber-500" />
+            <CardContent className="pt-4 sm:pt-5 pb-3 sm:pb-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                  <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-amber-500" />
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Liquidaciones</p>
-                  <p className="text-lg font-bold">{summary.totalSettlements}</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground font-medium">Liquidaciones</p>
+                  <p className="text-sm sm:text-lg font-bold">{summary.totalSettlements}</p>
                 </div>
               </div>
             </CardContent>
@@ -285,7 +291,7 @@ function WaterfallTab() {
             Historial de Liquidaciones
           </CardTitle>
           <CardDescription>
-            Detalle de cada período de liquidación con desglose waterfall
+            Detalle de cada período con desglose waterfall y distribución de 3 actores
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -293,18 +299,18 @@ function WaterfallTab() {
             <div className="text-center py-12 text-muted-foreground">
               <ArrowDownUp className="h-12 w-12 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No hay liquidaciones registradas</p>
-              <p className="text-sm mt-1">Las liquidaciones aparecerán aquí cuando se generen</p>
+              <p className="text-sm mt-1">Las liquidaciones se generan al cierre de cada período</p>
             </div>
           ) : (
             <div className="space-y-3">
               {settlements.map((s: any) => (
                 <div
                   key={s.id}
-                  className="flex items-center justify-between p-4 rounded-xl border hover:bg-muted/30 transition-colors cursor-pointer group"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border hover:bg-muted/30 transition-colors cursor-pointer group gap-3"
                   onClick={() => setSelectedSettlement(s.settlementId || s.id)}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                    <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
                       <Calendar className="h-5 w-5 text-emerald-500" />
                     </div>
                     <div>
@@ -329,7 +335,7 @@ function WaterfallTab() {
                     >
                       {s.status === "DISTRIBUTED" ? "Pagado" : s.status === "APPROVED" ? "Aprobado" : "Pendiente"}
                     </Badge>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors hidden sm:block" />
                   </div>
                 </div>
               ))}
@@ -350,7 +356,7 @@ function WaterfallTab() {
 }
 
 // ============================================================================
-// SETTLEMENT DETAIL DIALOG (Waterfall Visual)
+// SETTLEMENT DETAIL DIALOG (Waterfall Visual Mejorado)
 // ============================================================================
 
 function SettlementDetailDialog({
@@ -362,6 +368,7 @@ function SettlementDetailDialog({
 }) {
   const detailQuery = financialTrpc.mySettlementDetail.useQuery({ settlementId });
   const detail = detailQuery.data;
+  const [showExpenses, setShowExpenses] = useState(false);
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -369,7 +376,7 @@ function SettlementDetailDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ArrowDownUp className="h-5 w-5 text-emerald-500" />
-            Detalle de Liquidación — Waterfall
+            Liquidación — Waterfall
           </DialogTitle>
         </DialogHeader>
 
@@ -382,14 +389,14 @@ function SettlementDetailDialog({
         ) : !detail ? (
           <p className="text-muted-foreground text-center py-8">No se encontró el detalle</p>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-5">
             {/* Period Info */}
             <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
               <div>
                 <p className="text-sm font-medium">
                   {formatDate(detail.periodStart)} — {formatDate(detail.periodEnd)}
                 </p>
-                <p className="text-xs text-muted-foreground">{detail.periodType}</p>
+                <p className="text-xs text-muted-foreground">{detail.periodType} · {detail.totalSessions || 0} sesiones · {Number(detail.totalKwh || 0).toFixed(1)} kWh</p>
               </div>
               <Badge
                 variant={detail.status === "DISTRIBUTED" ? "default" : "secondary"}
@@ -399,83 +406,223 @@ function SettlementDetailDialog({
               </Badge>
             </div>
 
-            {/* Waterfall Visual */}
+            {/* STEP 1: Revenue by Source */}
             <div className="space-y-2">
               <h3 className="font-semibold text-sm flex items-center gap-2">
-                <Zap className="h-4 w-4 text-emerald-500" />
-                Cascada de Pagos (Waterfall)
+                <Bolt className="h-4 w-4 text-emerald-500" />
+                1. Fuentes de Ingreso
               </h3>
-
-              {/* Gross Revenue */}
-              <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-emerald-500" />
-                  <span className="text-sm font-medium">Ingreso Bruto (Venta de Energía)</span>
-                </div>
-                <span className="font-bold text-emerald-500">{formatCOP(detail.grossRevenue)}</span>
-              </div>
-
-              {/* Expense Lines */}
-              {detail.expenseLines?.map((line: any, idx: number) => (
-                <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-red-500/5 border border-red-500/10 ml-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-red-400" />
-                    <span className="text-sm">{line.description || line.category}</span>
+              <div className="space-y-1.5 ml-2">
+                {Number(detail.revenueFromEnergy || 0) > 0 && (
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                    <span className="text-sm flex items-center gap-2"><Zap className="h-3.5 w-3.5 text-yellow-500" /> Venta de energía</span>
+                    <span className="font-medium text-sm">{formatCOP(detail.revenueFromEnergy)}</span>
                   </div>
-                  <span className="text-sm font-medium text-red-500">- {formatCOP(line.amount)}</span>
-                </div>
-              ))}
-
-              {/* Total Expenses */}
-              <div className="flex items-center justify-between p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-red-500" />
-                  <span className="text-sm font-medium">Total Gastos Operativos</span>
-                </div>
-                <span className="font-bold text-red-500">- {formatCOP(detail.totalExpenses)}</span>
-              </div>
-
-              <Separator />
-
-              {/* Net Revenue */}
-              <div className="flex items-center justify-between p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-blue-500" />
-                  <span className="text-sm font-medium">Ingreso Neto</span>
-                </div>
-                <span className="font-bold text-blue-500">{formatCOP(detail.netRevenue)}</span>
-              </div>
-
-              {/* Distribution Split */}
-              <div className="grid grid-cols-2 gap-2 ml-4">
-                <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
-                  <span className="text-xs">Inversionistas (70%)</span>
-                  <span className="text-sm font-bold text-emerald-500">{formatCOP(detail.investorTotalAmount)}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-lg bg-amber-500/5 border border-amber-500/10">
-                  <span className="text-xs">Gestor GHP (30%)</span>
-                  <span className="text-sm font-bold text-amber-500">{formatCOP(detail.platformAmount)}</span>
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Your Share */}
-              <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-emerald-500/5 border-2 border-emerald-500/30">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-                    <Wallet className="h-5 w-5 text-emerald-500" />
+                )}
+                {Number(detail.revenueFromPenalties || 0) > 0 && (
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-red-500/5 border border-red-500/10">
+                    <span className="text-sm flex items-center gap-2"><Ban className="h-3.5 w-3.5 text-red-500" /> Penalidades</span>
+                    <span className="font-medium text-sm">{formatCOP(detail.revenueFromPenalties)}</span>
                   </div>
-                  <div>
-                    <span className="text-sm font-bold">Tu Distribución</span>
-                    <p className="text-xs text-muted-foreground">
-                      Proporcional a tu participación
-                    </p>
+                )}
+                {Number(detail.revenueFromReservations || 0) > 0 && (
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                    <span className="text-sm flex items-center gap-2"><Ticket className="h-3.5 w-3.5 text-blue-500" /> Reservas</span>
+                    <span className="font-medium text-sm">{formatCOP(detail.revenueFromReservations)}</span>
                   </div>
+                )}
+                {Number(detail.revenueFromAdvertising || 0) > 0 && (
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-purple-500/5 border border-purple-500/10">
+                    <span className="text-sm flex items-center gap-2"><Megaphone className="h-3.5 w-3.5 text-purple-500" /> Publicidad</span>
+                    <span className="font-medium text-sm">{formatCOP(detail.revenueFromAdvertising)}</span>
+                  </div>
+                )}
+                {/* If no breakdown available, show total */}
+                {!detail.revenueFromEnergy && !detail.revenueFromPenalties && (
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                    <span className="text-sm flex items-center gap-2"><DollarSign className="h-3.5 w-3.5 text-emerald-500" /> Ingreso total</span>
+                    <span className="font-medium text-sm">{formatCOP(detail.grossRevenue)}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 font-semibold">
+                  <span className="text-sm">Ingreso Bruto Total</span>
+                  <span className="text-emerald-600">{formatCOP(detail.grossRevenue)}</span>
                 </div>
-                <span className="text-xl font-bold text-emerald-500">{formatCOP(detail.myShare || 0)}</span>
               </div>
             </div>
+
+            {/* STEP 2: Energy Cost */}
+            {Number(detail.totalEnergyCost || 0) > 0 && (
+              <div className="space-y-2">
+                <h3 className="font-semibold text-sm flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-amber-500" />
+                  2. Costo de Energía
+                </h3>
+                <div className="ml-2 p-3 rounded-lg bg-amber-500/5 border border-amber-500/10">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm">Factura eléctrica del período</span>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {Number(detail.totalKwh || 0).toFixed(1)} kWh × {formatCOP(detail.energyCostPerKwh || 850)}/kWh
+                      </p>
+                    </div>
+                    <span className="font-medium text-amber-600">- {formatCOP(detail.totalEnergyCost)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: Operating Expenses */}
+            <div className="space-y-2">
+              <button
+                className="font-semibold text-sm flex items-center gap-2 w-full text-left"
+                onClick={() => setShowExpenses(!showExpenses)}
+              >
+                <Receipt className="h-4 w-4 text-red-500" />
+                {Number(detail.totalEnergyCost || 0) > 0 ? "3" : "2"}. Gastos Operativos
+                <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform ${showExpenses ? "rotate-180" : ""}`} />
+                <span className="text-red-500 font-bold text-sm ml-1">- {formatCOP(detail.totalFixedExpenses || detail.totalExpenses)}</span>
+              </button>
+              {showExpenses && detail.expenseItems && detail.expenseItems.length > 0 && (
+                <div className="space-y-1.5 ml-2">
+                  {detail.expenseItems.map((line: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg bg-red-500/5 border border-red-500/10">
+                      <div>
+                        <span className="text-sm">{line.name || line.description || line.category}</span>
+                        {line.isProrated && line.prorateFormula && (
+                          <p className="text-[10px] text-muted-foreground">{line.prorateFormula}</p>
+                        )}
+                      </div>
+                      <span className="text-sm font-medium text-red-500">- {formatCOP(line.proratedAmount || line.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Contingency Reserve */}
+            {Number(detail.contingencyReserve || 0) > 0 && (
+              <div className="ml-2 p-2.5 rounded-lg bg-gray-500/5 border border-gray-500/10 flex items-center justify-between">
+                <span className="text-sm flex items-center gap-2"><Shield className="h-3.5 w-3.5 text-gray-500" /> Reserva de contingencia (5%)</span>
+                <span className="text-sm font-medium text-gray-500">- {formatCOP(detail.contingencyReserve)}</span>
+              </div>
+            )}
+
+            <Separator />
+
+            {/* STEP 4: Net Revenue */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <span className="text-sm font-semibold flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-blue-500" />
+                Ingreso Neto a Distribuir
+              </span>
+              <span className="font-bold text-blue-600 text-lg">{formatCOP(detail.netRevenue)}</span>
+            </div>
+
+            {/* STEP 5: Distribution Split (3 actors) */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <Users className="h-4 w-4 text-emerald-500" />
+                Distribución entre Actores
+              </h3>
+
+              {/* Visual bar */}
+              <div className="flex h-5 rounded-full overflow-hidden">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="bg-emerald-500 transition-all cursor-help" style={{ width: `${Number(detail.investorSharePercent || 70)}%` }} />
+                    </TooltipTrigger>
+                    <TooltipContent><p>Inversionista: {Number(detail.investorSharePercent || 70)}%</p></TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="bg-blue-500 transition-all cursor-help" style={{ width: `${Number(detail.platformSharePercent || 30)}%` }} />
+                    </TooltipTrigger>
+                    <TooltipContent><p>EVGreen: {Number(detail.platformSharePercent || 30)}%</p></TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                {Number(detail.hostSharePercent || 0) > 0 && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="bg-amber-500 transition-all cursor-help" style={{ width: `${Number(detail.hostSharePercent)}%` }} />
+                      </TooltipTrigger>
+                      <TooltipContent><p>Aliado Comercial: {Number(detail.hostSharePercent)}%</p></TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+              </div>
+
+              {/* Actor amounts */}
+              <div className={`grid gap-2 ${Number(detail.hostSharePercent || 0) > 0 ? "grid-cols-3" : "grid-cols-2"}`}>
+                <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10 text-center">
+                  <div className="flex items-center justify-center gap-1.5 mb-1">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                    <span className="text-xs font-medium">Inversionistas</span>
+                  </div>
+                  <p className="text-sm font-bold text-emerald-600">{formatCOP(detail.investorTotalAmount)}</p>
+                  <p className="text-[10px] text-muted-foreground">{Number(detail.investorSharePercent || 70)}%</p>
+                </div>
+                <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/10 text-center">
+                  <div className="flex items-center justify-center gap-1.5 mb-1">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                    <span className="text-xs font-medium">EVGreen</span>
+                  </div>
+                  <p className="text-sm font-bold text-blue-600">{formatCOP(detail.platformTotalAmount || detail.platformAmount)}</p>
+                  <p className="text-[10px] text-muted-foreground">{Number(detail.platformSharePercent || 30)}%</p>
+                </div>
+                {Number(detail.hostSharePercent || 0) > 0 && (
+                  <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 text-center">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                      <span className="text-xs font-medium">Aliado Comercial</span>
+                    </div>
+                    <p className="text-sm font-bold text-amber-600">{formatCOP(detail.hostTotalAmount)}</p>
+                    <p className="text-[10px] text-muted-foreground">{Number(detail.hostSharePercent)}%</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Your Share (highlighted) */}
+            <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-emerald-500/5 border-2 border-emerald-500/30">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                  <Wallet className="h-5 w-5 text-emerald-500" />
+                </div>
+                <div>
+                  <span className="text-sm font-bold">Tu Distribución Personal</span>
+                  <p className="text-xs text-muted-foreground">
+                    Proporcional a tu {Number(detail.myShare?.participationPercent || 0).toFixed(1)}% de participación
+                  </p>
+                </div>
+              </div>
+              <span className="text-xl font-bold text-emerald-500">{formatCOP(detail.myShare?.netShare || detail.myShare?.amount || 0)}</span>
+            </div>
+
+            {/* Investor breakdown if multiple */}
+            {detail.investorShares && detail.investorShares.length > 1 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase">Distribución entre inversionistas</h4>
+                {detail.investorShares.map((share: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30 text-sm">
+                    <span className={share.investorUserId === detail.myShare?.investorUserId ? "font-bold" : ""}>
+                      {share.investorName || `Inversionista #${share.investorUserId}`}
+                      {share.investorUserId === detail.myShare?.investorUserId && " (Tú)"}
+                    </span>
+                    <div className="text-right">
+                      <span className="font-medium">{formatCOP(share.netShare)}</span>
+                      <span className="text-xs text-muted-foreground ml-2">({Number(share.participationPercent).toFixed(1)}%)</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </DialogContent>
@@ -493,7 +640,6 @@ function FinancialIndicatorsTab() {
   const summary = summaryQuery.data;
   const settlements = settlementsQuery.data || [];
 
-  // Calculate financial metrics
   const metrics = useMemo(() => {
     if (!summary || settlements.length === 0) return null;
 
@@ -501,29 +647,19 @@ function FinancialIndicatorsTab() {
     const totalDistributed = Number(summary.totalDistributed || 0);
     const pendingBalance = Number(summary.pendingBalance || 0);
 
-    // ROI acumulado
     const roiAccumulated = totalInvested > 0 ? ((totalDistributed / totalInvested) * 100) : 0;
 
-    // Rentabilidad mensual promedio
     const distributedSettlements = settlements.filter((s: any) => s.status === "DISTRIBUTED");
     const monthlyAvg = distributedSettlements.length > 0
       ? distributedSettlements.reduce((sum: number, s: any) => sum + Number(s.amount || 0), 0) / distributedSettlements.length
       : 0;
 
-    // Rentabilidad mensual como % del capital
     const monthlyReturnPct = totalInvested > 0 ? ((monthlyAvg / totalInvested) * 100) : 0;
-
-    // Rentabilidad anualizada estimada
     const annualizedReturn = monthlyReturnPct * 12;
-
-    // Tiempo estimado de recuperación (meses)
     const recoveryMonths = monthlyAvg > 0 ? Math.ceil(pendingBalance / monthlyAvg) : 0;
-
-    // Valorización (total distribuido + valor de participación restante)
-    const currentValue = totalDistributed + totalInvested; // Simplified: investment still holds its value
+    const currentValue = totalDistributed + totalInvested;
     const appreciation = totalInvested > 0 ? (((currentValue - totalInvested) / totalInvested) * 100) : 0;
 
-    // Último mes vs anterior
     const lastMonth = distributedSettlements[0];
     const prevMonth = distributedSettlements[1];
     const monthOverMonth = lastMonth && prevMonth
@@ -569,7 +705,6 @@ function FinancialIndicatorsTab() {
     <div className="space-y-6">
       {/* Main Financial KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* ROI Acumulado */}
         <Card className="border-emerald-500/20">
           <CardContent className="pt-5 pb-4">
             <div className="flex items-start justify-between">
@@ -588,7 +723,6 @@ function FinancialIndicatorsTab() {
           </CardContent>
         </Card>
 
-        {/* Rentabilidad Mensual */}
         <Card className="border-blue-500/20">
           <CardContent className="pt-5 pb-4">
             <div className="flex items-start justify-between">
@@ -617,7 +751,6 @@ function FinancialIndicatorsTab() {
           </CardContent>
         </Card>
 
-        {/* Rentabilidad Anualizada */}
         <Card className="border-purple-500/20">
           <CardContent className="pt-5 pb-4">
             <div className="flex items-start justify-between">
@@ -638,7 +771,6 @@ function FinancialIndicatorsTab() {
 
       {/* Secondary Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Tiempo de Recuperación */}
         <Card>
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center gap-4">
@@ -659,7 +791,6 @@ function FinancialIndicatorsTab() {
           </CardContent>
         </Card>
 
-        {/* Valorización */}
         <Card>
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center gap-4">
@@ -731,7 +862,6 @@ function OperationalSLATab() {
   const summaryQuery = financialTrpc.mySummary.useQuery();
   const summary = summaryQuery.data;
 
-  // Get metrics for each station the investor owns
   const stationIds: number[] = summary?.stationIds || [];
 
   if (summaryQuery.isLoading) {
@@ -756,7 +886,6 @@ function OperationalSLATab() {
 
   return (
     <div className="space-y-6">
-      {/* Explanation Card */}
       <Card className="border-blue-500/20 bg-blue-500/5">
         <CardContent className="pt-5 pb-4">
           <div className="flex items-start gap-3">
@@ -773,7 +902,6 @@ function OperationalSLATab() {
         </CardContent>
       </Card>
 
-      {/* Per-Station Metrics */}
       {stationIds.map((stationId) => (
         <StationSLACard key={stationId} stationId={stationId} />
       ))}
@@ -915,14 +1043,13 @@ function StationSLACard({ stationId }: { stationId: number }) {
           </div>
         )}
 
-        {/* Consequences Timeline */}
         {latest && latest.slaStatus !== "COMPLIANT" && (
           <div className="mt-4 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
             <p className="text-xs font-medium text-amber-500 flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" />
               Consecuencias Progresivas por Incumplimiento
             </p>
-            <div className="flex items-center gap-2 mt-2 text-xs">
+            <div className="flex items-center gap-2 mt-2 text-xs flex-wrap">
               <Badge variant="outline" className="text-[10px]">Plan de Mejora (15 días)</Badge>
               <ChevronRight className="h-3 w-3 text-muted-foreground" />
               <Badge variant="outline" className="text-[10px] border-amber-500/50 text-amber-500">Reducción 10% Comisión</Badge>

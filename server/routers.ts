@@ -534,6 +534,13 @@ const stationsRouter = router({
       amenities: z.array(z.string()).optional(),
       chargerBrandId: z.number().optional(),
       imageUrl: z.string().optional(),
+      // Modelo financiero configurable
+      evgreenSharePercent: z.string().optional(),
+      investorSharePercent: z.string().optional(),
+      hostSharePercent: z.string().optional(),
+      energyPurchaseCostPerKwh: z.string().optional(),
+      hostName: z.string().optional(),
+      hostUserId: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
       // Si se seleccionó un perfil de marca, autoconfigurar manufacturer y model
@@ -570,6 +577,13 @@ const stationsRouter = router({
         isActive: z.boolean().optional(),
         isPublic: z.boolean().optional(),
         imageUrl: z.string().nullable().optional(),
+        // Modelo financiero configurable
+        evgreenSharePercent: z.string().optional(),
+        investorSharePercent: z.string().optional(),
+        hostSharePercent: z.string().optional(),
+        energyPurchaseCostPerKwh: z.string().optional(),
+        hostName: z.string().optional(),
+        hostUserId: z.number().optional(),
       }),
     }))
     .mutation(async ({ input, ctx }) => {
