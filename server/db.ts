@@ -554,8 +554,8 @@ export async function getInvestorAllStationIds(investorId: number): Promise<numb
   const crowdfundingIds = ((crowdfundingStations as any)[0] || []).map((r: any) => r.stationId).filter(Boolean);
   const ownedIds = ownedStations.map(s => s.id);
   
-  // Deduplicate
-  return [...new Set([...ownedIds, ...crowdfundingIds])];
+  // Deduplicate station IDs
+  return Array.from(new Set([...ownedIds, ...crowdfundingIds]));
 }
 
 /**
