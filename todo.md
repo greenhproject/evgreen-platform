@@ -2690,3 +2690,7 @@
 - [x] Campos: % EVGreen, % Inversionista, % Aliado Comercial, costo energía/kWh
 - [x] Pasar campos financieros al backend para que la estación auto-creada tenga configuración correcta
 - [x] Validación que la suma de porcentajes = 100%
+
+## Bug Fix - Insignia Muro de Fundadores (Abril 2026)
+- [x] BUG: La insignia de "Muro de Fundadores" se superpone al menú lateral del inversionista, tapando opciones de navegación
+- [x] Reubicar la insignia para que no interfiera con el sidebar (creada versión compacta FoundersWallCompact)

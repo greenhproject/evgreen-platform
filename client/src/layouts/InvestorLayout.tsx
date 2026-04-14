@@ -39,7 +39,7 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from '@/components/DashboardLayoutSkeleton';
 import { Button } from "@/components/ui/button";
-import { FoundersWall } from "@/components/FoundersWall";
+import { FoundersWallCompact } from "@/components/FoundersWall";
 
 const investorMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/investor" },
@@ -236,13 +236,14 @@ function InvestorLayoutContent({
               })}
             </SidebarMenu>
 
-            {/* Muro de Fundadores */}
-            {!isCollapsed && (
-              <div className="px-3 mt-2">
-                <FoundersWall />
-              </div>
-            )}
           </SidebarContent>
+
+          {/* Muro de Fundadores - fuera del SidebarContent para no interferir con el menú */}
+          {!isCollapsed && (
+            <div className="border-t border-border/50 px-3 py-2 max-h-[180px] overflow-y-auto">
+              <FoundersWallCompact />
+            </div>
+          )}
 
           <SidebarFooter className="p-3 border-t border-border/50">
             <DropdownMenu>

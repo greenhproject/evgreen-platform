@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Crown, Gem, Award, Shield, Star, Sparkles, Quote } from "lucide-react";
+import { Crown, Gem, Award, Shield, Star, Quote } from "lucide-react";
 import { motion } from "framer-motion";
 
 const BADGE_CONFIG: Record<string, { label: string; icon: any; gradient: string }> = {
@@ -11,6 +11,66 @@ const BADGE_CONFIG: Record<string, { label: string; icon: any; gradient: string 
   diamond: { label: "Diamante", icon: Star, gradient: "from-cyan-300 to-blue-500" },
 };
 
+/**
+ * Compact version for sidebar - shows only avatars and names, no quotes.
+ * Designed to fit in a small space without overlapping navigation.
+ */
+export function FoundersWallCompact() {
+  const { data: founders, isLoading } = trpc.investorManagement.getFoundersWall.useQuery();
+
+  if (isLoading) return null;
+  if (!founders || founders.length === 0) return null;
+
+  return (
+    <div className="py-1">
+      <div className="flex items-center gap-1.5 mb-2 px-1">
+        <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+        <span className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wider">Fundadores</span>
+      </div>
+
+      <div className="space-y-1">
+        {founders.slice(0, 5).map((founder: any) => {
+          const badgeInfo = founder.investorBadge ? BADGE_CONFIG[founder.investorBadge] : null;
+          return (
+            <div
+              key={founder.id}
+              className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-muted/50 transition-colors"
+            >
+              <div className="relative shrink-0">
+                <Avatar className="h-7 w-7 ring-1 ring-amber-500/20">
+                  <AvatarImage src={founder.investorPhotoUrl} />
+                  <AvatarFallback className="bg-gradient-to-br from-amber-400 to-amber-600 text-white font-bold text-[10px]">
+                    {founder.name?.charAt(0)?.toUpperCase() || "F"}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1">
+                  <span className="text-xs font-medium truncate">{founder.name}</span>
+                  {badgeInfo && (
+                    <Badge className={`bg-gradient-to-r ${badgeInfo.gradient} text-white border-0 text-[8px] px-1 py-0 leading-tight shrink-0`}>
+                      <badgeInfo.icon className="w-2 h-2 mr-0.5" />
+                      {badgeInfo.label}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {founders.length > 5 && (
+          <p className="text-[10px] text-muted-foreground text-center py-0.5">
+            +{founders.length - 5} más
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Full version for pages - shows complete founder cards with quotes.
+ */
 export function FoundersWall() {
   const { data: founders, isLoading } = trpc.investorManagement.getFoundersWall.useQuery();
 
