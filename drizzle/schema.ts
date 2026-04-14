@@ -2274,3 +2274,337 @@ export const chargerProblemReportsRelations = relations(chargerProblemReports, (
   user: one(users, { fields: [chargerProblemReports.userId], references: [users.id] }),
   station: one(chargingStations, { fields: [chargerProblemReports.stationId], references: [chargingStations.id] }),
 }));
+
+
+// ============================================================================
+// SISTEMA DE LIQUIDACIÓN FINANCIERA - GASTOS FIJOS, WATERFALL, KPIs
+// ============================================================================
+
+// --- Enums ---
+
+export const expenseCategoryEnum = mysqlEnum("expense_category", [
+  "ENERGY",        // Costos de energía eléctrica de red
+  "INSURANCE",     // Pólizas de seguro (todo riesgo + RC)
+  "CONNECTIVITY",  // Internet/comunicaciones
+  "MAINTENANCE",   // Mantenimiento preventivo/correctivo
+  "FIDUCIARY",     // Comisión fiduciaria
+  "TAX",           // Impuestos y tasas locales
+  "CONTINGENCY",   // Reserva para contingencias
+  "ADMIN",         // Gastos administrativos
+  "OTHER",         // Otros gastos
+]);
+
+export const expensePeriodicityEnum = mysqlEnum("expense_periodicity", [
+  "MONTHLY",
+  "BIMONTHLY",
+  "QUARTERLY",
+  "SEMIANNUAL",
+  "ANNUAL",
+  "ONE_TIME",
+]);
+
+export const settlementPeriodTypeEnum = mysqlEnum("settlement_period_type", [
+  "WEEKLY",
+  "MONTHLY",
+  "QUARTERLY",
+]);
+
+export const settlementStatusEnum = mysqlEnum("settlement_status", [
+  "DRAFT",        // Borrador, aún editable
+  "APPROVED",     // Aprobado por admin
+  "DISTRIBUTED",  // Fondos distribuidos a inversionistas
+  "CLOSED",       // Cerrado/archivado
+]);
+
+export const investorShareStatusEnum = mysqlEnum("investor_share_status", [
+  "PENDING",    // Pendiente de acreditar
+  "CREDITED",   // Acreditado en billetera
+  "PAID",       // Pagado (transferencia bancaria)
+]);
+
+export const slaStatusEnum = mysqlEnum("sla_status", [
+  "COMPLIANT",  // Cumple todos los KPIs
+  "WARNING",    // 1-2 KPIs por debajo del umbral
+  "BREACH",     // 3+ KPIs incumplidos
+]);
+
+// --- Tablas ---
+
+// ============================================================================
+// STATION FIXED EXPENSES - Gastos fijos configurables por estación
+// ============================================================================
+
+export const stationFixedExpenses = mysqlTable("station_fixed_expenses", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  
+  // Descripción del gasto
+  name: varchar("name", { length: 255 }).notNull(), // Ej: "Póliza todo riesgo", "Internet fibra"
+  category: expenseCategoryEnum.notNull(),
+  description: text("description"),
+  
+  // Monto y periodicidad
+  amountCop: bigint("amountCop", { mode: "number" }).notNull(), // Monto en COP
+  periodicity: expensePeriodicityEnum.notNull(),
+  
+  // Vigencia
+  startDate: timestamp("startDate").notNull(),
+  endDate: timestamp("endDate"), // null = vigente indefinidamente
+  
+  // Proveedor/referencia
+  providerName: varchar("providerName", { length: 255 }),
+  contractReference: varchar("contractReference", { length: 255 }),
+  
+  // Waterfall priority (1 = mayor prioridad, se descuenta primero)
+  waterfallPriority: int("waterfallPriority").notNull().default(5),
+  
+  // Estado
+  isActive: boolean("isActive").default(true).notNull(),
+  
+  // Auditoría
+  createdBy: int("createdBy").notNull(), // FK a users (admin que lo creó)
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type StationFixedExpense = typeof stationFixedExpenses.$inferSelect;
+export type InsertStationFixedExpense = typeof stationFixedExpenses.$inferInsert;
+
+// ============================================================================
+// FINANCIAL SETTLEMENTS - Liquidaciones/Cortes financieros por estación
+// ============================================================================
+
+export const financialSettlements = mysqlTable("financial_settlements", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  
+  // Período de liquidación
+  periodStart: timestamp("periodStart").notNull(),
+  periodEnd: timestamp("periodEnd").notNull(),
+  periodType: settlementPeriodTypeEnum.notNull(),
+  
+  // Ingresos brutos del período (suma de todas las transacciones de carga)
+  grossRevenue: bigint("grossRevenue", { mode: "number" }).notNull().default(0),
+  totalSessions: int("totalSessions").notNull().default(0),
+  totalKwh: decimal("totalKwh", { precision: 12, scale: 4 }).default("0"),
+  
+  // Gastos fijos del período (suma de todos los gastos prorrateados)
+  totalFixedExpenses: bigint("totalFixedExpenses", { mode: "number" }).notNull().default(0),
+  
+  // Ingreso neto (grossRevenue - totalFixedExpenses)
+  netRevenue: bigint("netRevenue", { mode: "number" }).notNull().default(0),
+  
+  // Distribución
+  investorSharePercent: decimal("investorSharePercent", { precision: 5, scale: 2 }).notNull().default("70.00"),
+  platformSharePercent: decimal("platformSharePercent", { precision: 5, scale: 2 }).notNull().default("30.00"),
+  investorTotalAmount: bigint("investorTotalAmount", { mode: "number" }).notNull().default(0),
+  platformTotalAmount: bigint("platformTotalAmount", { mode: "number" }).notNull().default(0),
+  
+  // Reserva de contingencia (5% del bruto, se resta antes de distribuir)
+  contingencyReserve: bigint("contingencyReserve", { mode: "number" }).notNull().default(0),
+  
+  // Detalle del waterfall (JSON con cada nivel y su monto)
+  waterfallBreakdown: json("waterfallBreakdown").$type<Array<{
+    priority: number;
+    category: string;
+    name: string;
+    amount: number;
+  }>>(),
+  
+  // Estado
+  status: settlementStatusEnum.default("DRAFT").notNull(),
+  
+  // Aprobación
+  approvedBy: int("approvedBy"), // FK a users
+  approvedAt: timestamp("approvedAt"),
+  distributedAt: timestamp("distributedAt"),
+  
+  // Notas del admin
+  notes: text("notes"),
+  
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FinancialSettlement = typeof financialSettlements.$inferSelect;
+export type InsertFinancialSettlement = typeof financialSettlements.$inferInsert;
+
+// ============================================================================
+// SETTLEMENT EXPENSE ITEMS - Detalle de gastos en cada liquidación
+// ============================================================================
+
+export const settlementExpenseItems = mysqlTable("settlement_expense_items", {
+  id: int("id").autoincrement().primaryKey(),
+  settlementId: int("settlementId").notNull(), // FK a financial_settlements
+  expenseId: int("expenseId"), // FK a station_fixed_expenses (null si es gasto manual)
+  
+  name: varchar("name", { length: 255 }).notNull(),
+  category: expenseCategoryEnum.notNull(),
+  originalAmount: bigint("originalAmount", { mode: "number" }).notNull(), // Monto original del gasto
+  proratedAmount: bigint("proratedAmount", { mode: "number" }).notNull(), // Monto prorrateado al período
+  waterfallPriority: int("waterfallPriority").notNull(),
+  
+  // Si fue prorrateado (ej: gasto anual dividido en meses)
+  isProrated: boolean("isProrated").default(false).notNull(),
+  prorateFormula: varchar("prorateFormula", { length: 255 }), // Ej: "120000000 / 12 meses"
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SettlementExpenseItem = typeof settlementExpenseItems.$inferSelect;
+export type InsertSettlementExpenseItem = typeof settlementExpenseItems.$inferInsert;
+
+// ============================================================================
+// INVESTOR SETTLEMENT SHARES - Parte de cada inversionista en una liquidación
+// ============================================================================
+
+export const investorSettlementShares = mysqlTable("investor_settlement_shares", {
+  id: int("id").autoincrement().primaryKey(),
+  settlementId: int("settlementId").notNull(), // FK a financial_settlements
+  investorUserId: int("investorUserId").notNull(), // FK a users
+  
+  // Participación del inversionista
+  participationPercent: decimal("participationPercent", { precision: 8, scale: 4 }).notNull(),
+  
+  // Montos
+  grossShare: bigint("grossShare", { mode: "number" }).notNull(), // Parte bruta antes de gastos
+  expenseShare: bigint("expenseShare", { mode: "number" }).notNull().default(0), // Parte proporcional de gastos
+  netShare: bigint("netShare", { mode: "number" }).notNull(), // Neto a recibir
+  
+  // Estado
+  status: investorShareStatusEnum.default("PENDING").notNull(),
+  creditedAt: timestamp("creditedAt"),
+  
+  // Referencia de pago (si se pagó por transferencia)
+  paymentReference: varchar("paymentReference", { length: 255 }),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type InvestorSettlementShare = typeof investorSettlementShares.$inferSelect;
+export type InsertInvestorSettlementShare = typeof investorSettlementShares.$inferInsert;
+
+// ============================================================================
+// OPERATIONAL METRICS - Métricas operativas SLA por estación/período
+// ============================================================================
+
+export const operationalMetrics = mysqlTable("operational_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  
+  // Período de medición
+  periodStart: timestamp("periodStart").notNull(),
+  periodEnd: timestamp("periodEnd").notNull(),
+  
+  // KPI 1: Disponibilidad Operativa (meta: 95%)
+  // Horas que los cargadores estuvieron activos / horas totales del período
+  availabilityPercent: decimal("availabilityPercent", { precision: 5, scale: 2 }).default("0"),
+  totalUptimeHours: decimal("totalUptimeHours", { precision: 10, scale: 2 }).default("0"),
+  totalDowntimeHours: decimal("totalDowntimeHours", { precision: 10, scale: 2 }).default("0"),
+  
+  // KPI 2: Respuesta a Fallas Críticas (meta: 24h)
+  // Tiempo promedio de respuesta a tickets críticos
+  avgCriticalResponseHours: decimal("avgCriticalResponseHours", { precision: 8, scale: 2 }).default("0"),
+  criticalTicketsCount: int("criticalTicketsCount").default(0),
+  criticalTicketsResolved: int("criticalTicketsResolved").default(0),
+  
+  // KPI 3: Uptime Plataforma (meta: 99%)
+  // Disponibilidad de la plataforma EVGreen
+  platformUptimePercent: decimal("platformUptimePercent", { precision: 5, scale: 2 }).default("99.50"),
+  
+  // KPI 4: Satisfacción del Usuario (meta: 4.0/5)
+  // Promedio de calificaciones de usuarios
+  userSatisfactionScore: decimal("userSatisfactionScore", { precision: 3, scale: 2 }).default("0"),
+  totalReviews: int("totalReviews").default(0),
+  
+  // KPI 5: Precisión de Facturación (meta: 99.9%)
+  // Transacciones correctas / total transacciones
+  billingAccuracyPercent: decimal("billingAccuracyPercent", { precision: 5, scale: 2 }).default("100.00"),
+  totalTransactions: int("totalTransactions").default(0),
+  disputedTransactions: int("disputedTransactions").default(0),
+  
+  // KPI 6: Generación Solar (meta: 85%)
+  // Rendimiento real vs capacidad instalada
+  solarGenerationPercent: decimal("solarGenerationPercent", { precision: 5, scale: 2 }).default("0"),
+  solarKwhGenerated: decimal("solarKwhGenerated", { precision: 12, scale: 4 }).default("0"),
+  solarKwhExpected: decimal("solarKwhExpected", { precision: 12, scale: 4 }).default("0"),
+  
+  // Estado SLA general
+  slaStatus: slaStatusEnum.default("COMPLIANT").notNull(),
+  slaBreachCount: int("slaBreachCount").default(0), // Cuántos KPIs están por debajo del umbral
+  
+  // Consecuencias progresivas
+  consecutiveBreachMonths: int("consecutiveBreachMonths").default(0),
+  penaltyApplied: varchar("penaltyApplied", { length: 100 }), // "NONE", "IMPROVEMENT_PLAN", "FEE_REDUCTION_10", "DEFAULT_EVENT"
+  
+  calculatedAt: timestamp("calculatedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OperationalMetric = typeof operationalMetrics.$inferSelect;
+export type InsertOperationalMetric = typeof operationalMetrics.$inferInsert;
+
+// ============================================================================
+// RELATIONS - Sistema Financiero
+// ============================================================================
+
+export const stationFixedExpensesRelations = relations(stationFixedExpenses, ({ one }) => ({
+  station: one(chargingStations, {
+    fields: [stationFixedExpenses.stationId],
+    references: [chargingStations.id],
+  }),
+  creator: one(users, {
+    fields: [stationFixedExpenses.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const financialSettlementsRelations = relations(financialSettlements, ({ one, many }) => ({
+  station: one(chargingStations, {
+    fields: [financialSettlements.stationId],
+    references: [chargingStations.id],
+  }),
+  approver: one(users, {
+    fields: [financialSettlements.approvedBy],
+    references: [users.id],
+  }),
+  creator: one(users, {
+    fields: [financialSettlements.createdBy],
+    references: [users.id],
+  }),
+  expenseItems: many(settlementExpenseItems),
+  investorShares: many(investorSettlementShares),
+}));
+
+export const settlementExpenseItemsRelations = relations(settlementExpenseItems, ({ one }) => ({
+  settlement: one(financialSettlements, {
+    fields: [settlementExpenseItems.settlementId],
+    references: [financialSettlements.id],
+  }),
+  expense: one(stationFixedExpenses, {
+    fields: [settlementExpenseItems.expenseId],
+    references: [stationFixedExpenses.id],
+  }),
+}));
+
+export const investorSettlementSharesRelations = relations(investorSettlementShares, ({ one }) => ({
+  settlement: one(financialSettlements, {
+    fields: [investorSettlementShares.settlementId],
+    references: [financialSettlements.id],
+  }),
+  investor: one(users, {
+    fields: [investorSettlementShares.investorUserId],
+    references: [users.id],
+  }),
+}));
+
+export const operationalMetricsRelations = relations(operationalMetrics, ({ one }) => ({
+  station: one(chargingStations, {
+    fields: [operationalMetrics.stationId],
+    references: [chargingStations.id],
+  }),
+}));

@@ -72,6 +72,7 @@ const InvestorReports = lazy(() => import("./pages/investor/Reports"));
 const InvestorSettings = lazy(() => import("./pages/investor/Settings"));
 const InvestorEarnings = lazy(() => import("./pages/investor/Earnings"));
 const InvestorSettlements = lazy(() => import("./pages/investor/Settlements"));
+const InvestorFinancial = lazy(() => import("./pages/investor/Financial"));
 
 // Páginas de técnico
 const TechnicianDashboard = lazy(() => import("./pages/technician/Dashboard"));
@@ -109,6 +110,7 @@ const AdminInvestorManagement = lazy(() => import("./pages/admin/InvestorManagem
 const AdminDebts = lazy(() => import("./pages/admin/Debts"));
 const AdminSupport = lazy(() => import("./pages/admin/Support"));
 const AdminRemoteStart = lazy(() => import("./pages/admin/RemoteStart"));
+const AdminFinancial = lazy(() => import("./pages/admin/Financial"));
 
 // Páginas de Staff (Evento)
 const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
@@ -345,6 +347,13 @@ function Router() {
           <ProtectedRoute allowedRoles={["investor", "admin"]}>
             <InvestorLayout>
               <InvestorSettlements />
+            </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/investor/financial">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorLayout>
+              <InvestorFinancial />
             </InvestorLayout>
           </ProtectedRoute>
         </Route>
@@ -632,6 +641,13 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin", "engineer", "technician"]}>
             <AdminLayout>
               <AdminRemoteStart />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/financial">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminFinancial />
             </AdminLayout>
           </ProtectedRoute>
         </Route>

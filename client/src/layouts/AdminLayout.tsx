@@ -43,7 +43,8 @@ import {
   Crown,
   Banknote,
   Headphones,
-  PhoneCall
+  PhoneCall,
+  Calculator
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -67,6 +68,7 @@ const adminMenuItems = [
   { icon: Bell, label: "Notificaciones", path: "/admin/notifications" },
   { icon: Headphones, label: "Soporte", path: "/admin/support" },
   { icon: PhoneCall, label: "Inicio Remoto", path: "/admin/remote-start" },
+  { icon: Calculator, label: "Centro Financiero", path: "/admin/financial" },
   { icon: Bot, label: "Asistente IA", path: "/admin/ai-settings" },
   { icon: Settings, label: "Configuración", path: "/admin/settings" },
 ];

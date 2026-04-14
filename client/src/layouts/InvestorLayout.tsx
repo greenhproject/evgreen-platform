@@ -32,7 +32,8 @@ import {
   Settings,
   Zap,
   TrendingUp,
-  Wallet
+  Wallet,
+  Calculator
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -47,6 +48,7 @@ const investorMenuItems = [
   { icon: TrendingUp, label: "Ingresos", path: "/investor/earnings" },
   { icon: BarChart3, label: "Reportes", path: "/investor/reports" },
   { icon: Wallet, label: "Liquidaciones", path: "/investor/settlements" },
+  { icon: Calculator, label: "Centro Financiero", path: "/investor/financial" },
   { icon: Settings, label: "Configuración", path: "/investor/settings" },
 ];
 

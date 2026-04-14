@@ -32,6 +32,7 @@ import { checkAndNotifyMilestones } from "./crowdfunding/progress-notifications"
 import { eventRouter } from "./event/event-router";
 import { idTagRouter } from "./idtags/idtag-router";
 import { supportRouterV2 } from "./support/support-router";
+import { buildFinancialRouter } from "./financial/financial-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -5628,6 +5629,7 @@ export const appRouter = router({
   investorManagement: investorManagementRouter,
   debts: debtRouter,
   adminRemoteStart: adminRemoteStartRouter,
+  financial: buildFinancialRouter(router, protectedProcedure, adminProcedure),
 });
 
 export type AppRouter = typeof appRouter;
