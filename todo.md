@@ -2676,3 +2676,11 @@
 ### Tests
 - [x] Tests unitarios para nuevo waterfall engine con 3 actores (12 tests)
 - [x] Tests para endpoints del Aliado Comercial
+
+## Bug Fix - Listado Estaciones Inversionista (Abril 2026)
+- [x] BUG: Listado "Mis Estaciones" solo muestra estaciones propias (ownerUserId), no incluye estaciones con participación colectiva (crowdfunding)
+- [x] Corregir query backend para unir estaciones propias + estaciones con participación via investor_participations/crowdfunding
+- [x] Auto-crear estación física (charging_station) al crear proyecto crowdfunding, vinculándola automáticamente
+- [x] Actualizar listOwned y demás queries del inversionista para incluir estaciones con participación crowdfunding
+- [x] Distinguir en UI estaciones propias vs participación colectiva
+- [x] Tests para combinación de estaciones propias + crowdfunding (9 tests)

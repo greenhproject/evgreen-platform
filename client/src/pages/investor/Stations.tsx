@@ -46,6 +46,11 @@ interface Station {
   isPublic: boolean;
   description?: string | null;
   isConnectedOCPP?: boolean;
+  // Tipo de propiedad
+  ownershipType?: 'owned' | 'crowdfunding';
+  participationPercent?: string;
+  crowdfundingProjectId?: number | null;
+  crowdfundingProjectName?: string | null;
   ocppConnection?: {
     ocppVersion: string;
     connectedAt: string;
@@ -306,7 +311,9 @@ export default function InvestorStations() {
   // Calcular estadísticas
   const totalStations = stations?.length || 0;
   const onlineStations = stations?.filter((s) => s.isOnline).length || 0;
-  const totalConnectors = 0; // Se calculará cuando se agregue evses a listOwned
+  const ownedStations = stations?.filter((s: any) => s.ownershipType !== 'crowdfunding').length || 0;
+  const crowdfundingStations = stations?.filter((s: any) => s.ownershipType === 'crowdfunding').length || 0;
+  const totalConnectors = stations?.reduce((sum, s: any) => sum + (s.evses?.length || 0), 0) || 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -363,6 +370,16 @@ export default function InvestorStations() {
             </div>
           </div>
         </Card>
+        {crowdfundingStations > 0 && (
+          <Card className="p-4 sm:col-span-2 lg:col-span-4 border-blue-500/20 bg-blue-500/5">
+            <div className="flex items-center gap-2 text-sm">
+              <Info className="w-4 h-4 text-blue-500" />
+              <span className="text-muted-foreground">
+                Tienes <strong className="text-foreground">{ownedStations}</strong> estación(es) propia(s) y <strong className="text-foreground">{crowdfundingStations}</strong> estación(es) por participación colectiva (crowdfunding)
+              </span>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Filtros */}
@@ -407,10 +424,21 @@ export default function InvestorStations() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredStations?.map((station) => (
+              filteredStations?.map((station: any) => (
                 <TableRow key={station.id}>
                   <TableCell>
-                    <div className="font-medium">{station.name}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium">{station.name}</div>
+                      {station.ownershipType === 'crowdfunding' ? (
+                        <Badge variant="outline" className="text-xs border-blue-500/50 text-blue-400">
+                          Colectiva {station.participationPercent ? `${parseFloat(station.participationPercent).toFixed(1)}%` : ''}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs border-green-500/50 text-green-400">
+                          Propia
+                        </Badge>
+                      )}
+                    </div>
                     <div className="text-sm text-muted-foreground">
                       ID: {station.ocppIdentity || `GEV-${station.id}`}
                     </div>
@@ -424,7 +452,7 @@ export default function InvestorStations() {
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Zap className="w-3 h-3 text-muted-foreground" />
-                      -
+                      {station.evses?.length || 0}
                     </div>
                   </TableCell>
                   <TableCell>{getStatusBadge(station.isOnline, station.isActive)}</TableCell>
