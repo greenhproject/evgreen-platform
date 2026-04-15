@@ -2769,3 +2769,4 @@
 - [x] Fix: Eliminar texto redundante en sección fuentes de ingreso de Reportes
 - [x] Fix: Diferenciar fuentes de ingreso por tipo de estación (propia vs colectiva)
 - [x] Mejora: Limpiar UI de Ingresos para estética profesional
+- [x] Fix: Gráficas de Reportes se cortan (eje Y no visible, pie chart labels superpuestas)

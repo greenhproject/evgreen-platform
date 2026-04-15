@@ -540,13 +540,13 @@ export default function InvestorReports() {
             </CardHeader>
             <CardContent>
               {dailyTrendData.length === 0 ? (
-                <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">Sin datos</div>
+                <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">Sin datos</div>
               ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={dailyTrendData}>
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={dailyTrendData} margin={{ top: 10, right: 20, left: 20, bottom: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="date" className="text-xs" />
-                    <YAxis tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} className="text-xs" />
+                    <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} className="text-xs" tick={{ fontSize: 11 }} width={55} />
                     <RechartsTooltip formatter={(value: number) => [formatCOP(value), "Tu ingreso neto"]} labelFormatter={(label) => `${label}`} />
                     <Line type="monotone" dataKey="ingresos" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981", strokeWidth: 2 }} />
                   </LineChart>
@@ -564,11 +564,11 @@ export default function InvestorReports() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={weekdayAnalysis}>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={weekdayAnalysis} margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="day" className="text-xs" />
-                  <YAxis className="text-xs" />
+                  <XAxis dataKey="day" className="text-xs" tick={{ fontSize: 11 }} />
+                  <YAxis className="text-xs" tick={{ fontSize: 11 }} width={35} />
                   <RechartsTooltip formatter={(value: number, name: string) => [name === "cargas" ? `${value} cargas` : formatCOP(value), name === "cargas" ? "Cargas" : "Ingresos"]} />
                   <Bar dataKey="cargas" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -588,11 +588,11 @@ export default function InvestorReports() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={hourlyAnalysis}>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={hourlyAnalysis} margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="label" className="text-xs" interval={2} />
-                  <YAxis className="text-xs" />
+                  <XAxis dataKey="label" className="text-xs" tick={{ fontSize: 10 }} interval={2} />
+                  <YAxis className="text-xs" tick={{ fontSize: 11 }} width={35} />
                   <RechartsTooltip formatter={(value: number) => [`${value} cargas`, "Cargas"]} labelFormatter={(label) => `Hora: ${label}`} />
                   <Bar dataKey="cargas" fill="#10b981" radius={[2, 2, 0, 0]} />
                 </BarChart>
@@ -610,27 +610,38 @@ export default function InvestorReports() {
             </CardHeader>
             <CardContent>
               {revenueDistribution.length === 0 || metrics.totalGrossRevenue === 0 ? (
-                <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">Sin datos</div>
+                <div className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">Sin datos</div>
               ) : (
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer width="100%" height={300}>
                   <RechartsPie>
                     <Pie
                       data={revenueDistribution}
                       cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={90}
+                      cy="45%"
+                      innerRadius={50}
+                      outerRadius={85}
                       paddingAngle={3}
                       dataKey="value"
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      labelLine={false}
+                      label={false}
                     >
                       {revenueDistribution.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
                     <RechartsTooltip formatter={(value: number) => formatCOP(value)} />
-                    <Legend />
+                    <Legend
+                      verticalAlign="bottom"
+                      align="center"
+                      iconType="circle"
+                      iconSize={8}
+                      formatter={(value: string) => {
+                        const item = revenueDistribution.find(d => d.name === value);
+                        const total = revenueDistribution.reduce((s, d) => s + d.value, 0);
+                        const pct = item && total > 0 ? ((item.value / total) * 100).toFixed(0) : '0';
+                        return `${value} (${pct}%)`;
+                      }}
+                      wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }}
+                    />
                   </RechartsPie>
                 </ResponsiveContainer>
               )}
