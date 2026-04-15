@@ -2793,3 +2793,4 @@
 - [x] Fix: Gráfica "Ingresos de la semana" barras negras invisibles contra fondo oscuro
 - [x] Fix: Gráficas no indican si son de estación colectiva o individual
 - [x] Agregar KPI de ingresos en parte superior del dashboard
+- [x] Fix: Error SQL al crear gasto fijo en Centro Financiero - columnas/valores no coinciden en insert station_fixed_expenses (tabla recreada con schema correcto)
