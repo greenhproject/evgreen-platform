@@ -2801,3 +2801,28 @@
 - [x] FIX: Pestaña "Empresa" en Configuración del inversionista no guarda dirección, ciudad ni departamento
 - [x] Mapear campos de empresa (dirección, ciudad, departamento) a columnas fiscales existentes (fiscalAddress, fiscalCity, fiscalDepartment)
 - [x] Cargar datos fiscales existentes al abrir el formulario
+
+## Sistema de Onboarding Premium para Inversionistas (15 Abril 2026)
+
+### Email de Bienvenida
+- [x] Crear template HTML premium de email de bienvenida para nuevos inversionistas
+- [x] Enviar email automáticamente cuando se confirma el pago de inversión (crowdfunding o individual)
+- [x] Incluir datos de la inversión, nombre del inversionista, y enlace al onboarding
+
+### Onboarding Wizard (Multi-step)
+- [x] Paso 1: Bienvenida animada con confetti y resumen de inversión
+- [x] Paso 2: Datos personales (nombre, email, teléfono, documento de identidad)
+- [x] Paso 3: Información de empresa (razón social, NIT, dirección, ciudad, departamento)
+- [x] Paso 4: Datos bancarios (banco, tipo cuenta, número cuenta, titular)
+- [x] Paso 5: Tour interactivo de la plataforma (qué puede hacer como inversionista)
+- [x] Paso 6: Confirmación y dashboard
+
+### Backend
+- [x] Agregar campo onboardingCompleted y onboardingStep al schema de usuarios
+- [x] Crear procedimientos tRPC para el flujo de onboarding
+- [x] Trigger automático de email al confirmar pago de crowdfunding
+- [x] Tracking de progreso del onboarding
+
+### Integración
+- [x] Detectar inversionistas nuevos sin onboarding completado y redirigir al wizard
+- [x] Permitir completar el onboarding después si se cierra

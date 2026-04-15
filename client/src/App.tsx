@@ -73,6 +73,7 @@ const InvestorSettings = lazy(() => import("./pages/investor/Settings"));
 const InvestorEarnings = lazy(() => import("./pages/investor/Earnings"));
 const InvestorSettlements = lazy(() => import("./pages/investor/Settlements"));
 const InvestorFinancial = lazy(() => import("./pages/investor/Financial"));
+const InvestorOnboarding = lazy(() => import("./pages/investor/InvestorOnboarding"));
 
 // Páginas de técnico
 const TechnicianDashboard = lazy(() => import("./pages/technician/Dashboard"));
@@ -368,6 +369,11 @@ function Router() {
             <InvestorLayout>
               <InvestorFinancial />
             </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/investor/onboarding">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorOnboarding />
           </ProtectedRoute>
         </Route>
 

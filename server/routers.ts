@@ -29,10 +29,12 @@ import { pushRouter } from "./push/push-router";
 import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
 import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } from "./notifications/broadcast-service";
 import { checkAndNotifyMilestones } from "./crowdfunding/progress-notifications";
+import { triggerInvestorWelcome } from "./investor-onboarding/email-service";
 import { eventRouter } from "./event/event-router";
 import { idTagRouter } from "./idtags/idtag-router";
 import { supportRouterV2 } from "./support/support-router";
 import { buildFinancialRouter } from "./financial/financial-router";
+import { onboardingRouter } from "./investor-onboarding/onboarding-router";
 import { maintenanceScheduleRouter } from "./maintenance/maintenance-schedule-router";
 
 // ============================================================================
@@ -3662,6 +3664,25 @@ const crowdfundingRouter = router({
         }
       }
       
+      // Trigger onboarding welcome email for the investor
+      try {
+        const investor = await db.getUserById(participation.investorId);
+        if (investor && investor.email && !investor.welcomeEmailSent) {
+          const isIndividual = (investor.investorTypes || []).includes('individual');
+          await triggerInvestorWelcome(investor.id, {
+            investorName: investor.name || 'Inversionista',
+            investorEmail: investor.email,
+            investmentAmount: Number(participation.amount),
+            investmentType: isIndividual ? 'individual' : 'collective',
+            projectName: projectAfter?.name,
+            participationPercent: Number(participation.participationPercent),
+          });
+          console.log(`[Onboarding] Welcome email sent to investor ${investor.id}`);
+        }
+      } catch (onboardingError) {
+        console.error('[Onboarding] Error triggering welcome:', onboardingError);
+      }
+      
       return { success: true };
     }),
 });
@@ -5743,6 +5764,7 @@ export const appRouter = router({
   adminRemoteStart: adminRemoteStartRouter,
   financial: buildFinancialRouter(router, protectedProcedure, adminProcedure),
   maintenanceSchedule: maintenanceScheduleRouter,
+  onboarding: onboardingRouter,
 });
 
 export type AppRouter = typeof appRouter;
