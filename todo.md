@@ -2743,3 +2743,12 @@
 - [x] UI de calendario de mantenimientos visible en admin
 - [x] Recordatorios automáticos (notificación push/email) antes del mantenimiento programado
 - [x] Integración con fondo de mantenimiento (estimar costos)
+
+## Rediseño Transacciones Inversionista - Abril 2026
+- [x] Filtro/agrupación por estación en la página de transacciones
+- [x] Columnas dinámicas que reflejen el modelo real (margen bruto, host, neto, tu parte proporcional)
+- [x] Para estaciones colectivas: mostrar participación proporcional del inversionista (no % fijo)
+- [x] Panel expandible por transacción con waterfall completo (Ingreso → Costo energía → Margen → Host → Neto → Tu parte)
+- [x] Resumen por estación con indicador de participación del inversionista
+- [x] Actualizar distribución del período para reflejar modelo corregido
+- [x] Backend: endpoint que retorne datos agrupados por estación con shares proporcionales

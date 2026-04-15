@@ -33,13 +33,18 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Search, Download, Zap, DollarSign, Calendar, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, TrendingUp, Users, Building2, Info, PieChart } from "lucide-react";
+import {
+  Search, Download, Zap, DollarSign, Calendar, FileSpreadsheet, FileText,
+  Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, TrendingUp,
+  Users, Building2, Info, PieChart, ArrowDown, Percent, Factory
+} from "lucide-react";
 import { toast } from "sonner";
 import { saveBlobCrossPlatform } from "@/lib/pdf-download";
 
 export default function InvestorTransactions() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [stationFilter, setStationFilter] = useState("all");
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [page, setPage] = useState(1);
@@ -48,26 +53,24 @@ export default function InvestorTransactions() {
   const [endDate, setEndDate] = useState("");
   const [showDateFilters, setShowDateFilters] = useState(false);
   const [selectedTx, setSelectedTx] = useState<any>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
   const queryInput = useMemo(() => ({
     limit: pageSize,
     page,
     status: statusFilter !== "all" ? statusFilter : undefined,
+    stationId: stationFilter !== "all" ? Number(stationFilter) : undefined,
     startDate: startDate ? new Date(startDate + "T00:00:00") : undefined,
     endDate: endDate ? new Date(endDate + "T23:59:59") : undefined,
-  }), [page, pageSize, statusFilter, startDate, endDate]);
+  }), [page, pageSize, statusFilter, stationFilter, startDate, endDate]);
 
-  const { data: paginatedResult, isLoading } = trpc.transactions.investorTransactions.useQuery(queryInput);
-  const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();
+  const { data: paginatedResult, isLoading } = trpc.transactions.investorTransactionsEnriched.useQuery(queryInput);
   const exportMutation = trpc.transactions.exportInvestorTransactions.useMutation();
-  
-  const investorPercentage = platformSettings?.investorPercentage ?? 70;
-  const evgreenPercentage = platformSettings?.platformFeePercentage ?? 30;
-  const hostPercentage = 0; // Host percentage comes per-station from settlement
 
   const transactions = paginatedResult?.data || [];
   const totalPages = paginatedResult?.totalPages || 1;
   const totalCount = paginatedResult?.total || 0;
+  const investorStations = paginatedResult?.stations || [];
 
   const formatCurrency = (amount: string | number) => {
     const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -107,14 +110,25 @@ export default function InvestorTransactions() {
     return <Badge className={styles[status] || "bg-gray-800/50 text-gray-300"}>{labels[status] || status}</Badge>;
   };
 
-  // KPIs
-  const completedTx = transactions.filter((t: any) => t.status === "COMPLETED");
-  const pageRevenue = completedTx.reduce((sum: number, t: any) => sum + parseFloat(t.totalCost || "0"), 0);
-  const myShare = pageRevenue * (investorPercentage / 100);
-  const evgreenShare = pageRevenue * (evgreenPercentage / 100);
-  const hostShare = pageRevenue * (hostPercentage / 100);
-  const pageEnergy = completedTx.reduce((sum: number, t: any) => sum + parseFloat(t.kwhConsumed || "0"), 0);
-  const penaltyRevenue = completedTx.reduce((sum: number, t: any) => sum + parseFloat(t.overstayCost || "0"), 0);
+  // KPIs calculated from waterfall data
+  const completedTx = transactions.filter((t: any) => t.status === "COMPLETED" && t.waterfall);
+  const totalGrossRevenue = completedTx.reduce((sum: number, t: any) => sum + (t.waterfall?.grossRevenue || 0), 0);
+  const totalEnergyCost = completedTx.reduce((sum: number, t: any) => sum + (t.waterfall?.energyCost || 0), 0);
+  const totalGrossMargin = completedTx.reduce((sum: number, t: any) => sum + (t.waterfall?.grossMargin || 0), 0);
+  const totalHostAmount = completedTx.reduce((sum: number, t: any) => sum + (t.waterfall?.hostAmount || 0), 0);
+  const totalNetAfterHost = completedTx.reduce((sum: number, t: any) => sum + (t.waterfall?.netAfterHost || 0), 0);
+  const totalMyShare = completedTx.reduce((sum: number, t: any) => sum + (t.waterfall?.myShare || 0), 0);
+  const totalEvgreenAmount = completedTx.reduce((sum: number, t: any) => sum + (t.waterfall?.evgreenAmount || 0), 0);
+  const totalEnergy = completedTx.reduce((sum: number, t: any) => sum + parseFloat(t.kwhConsumed || "0"), 0);
+
+  const toggleRow = (txId: number) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(txId)) next.delete(txId);
+      else next.add(txId);
+      return next;
+    });
+  };
 
   const downloadFile = (base64: string, filename: string, mimeType: string) => {
     const byteCharacters = atob(base64);
@@ -149,10 +163,17 @@ export default function InvestorTransactions() {
   const filteredTransactions = useMemo(() => {
     if (!searchQuery) return transactions;
     return transactions.filter((tx: any) => {
+      const name = tx.stationName || "";
       return tx.id.toString().includes(searchQuery) ||
-        tx.stationId.toString().includes(searchQuery);
+        tx.stationId.toString().includes(searchQuery) ||
+        name.toLowerCase().includes(searchQuery.toLowerCase());
     });
   }, [transactions, searchQuery]);
+
+  const handleStationChange = (value: string) => {
+    setStationFilter(value);
+    setPage(1);
+  };
 
   const handleStatusChange = (value: string) => {
     setStatusFilter(value);
@@ -165,94 +186,108 @@ export default function InvestorTransactions() {
     setPage(1);
   };
 
-  // Desglose de una transacción individual
-  const TxBreakdown = ({ tx }: { tx: any }) => {
-    const total = parseFloat(tx.totalCost || "0");
-    const energy = parseFloat(tx.energyCost || "0");
-    const overstay = parseFloat(tx.overstayCost || "0");
-    const session = parseFloat(tx.sessionCost || "0");
-    const time = parseFloat(tx.timeCost || "0");
-    const invShare = total * (investorPercentage / 100);
-    const evgShare = total * (evgreenPercentage / 100);
-    const hShare = total * (hostPercentage / 100);
+  // Waterfall visual for a single transaction
+  const WaterfallBreakdown = ({ tx }: { tx: any }) => {
+    const w = tx.waterfall;
+    if (!w) return <div className="text-sm text-muted-foreground">Sin datos de distribución</div>;
+    const si = tx.stationInfo;
 
     return (
-      <div className="space-y-4">
-        {/* Desglose de ingresos por fuente */}
-        <div>
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Fuentes de Ingreso</h4>
-          <div className="space-y-1.5">
-            {energy > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground flex items-center gap-1.5"><Zap className="w-3 h-3 text-yellow-500" /> Venta de energía</span>
-                <span className="font-medium">{formatCurrency(energy)}</span>
-              </div>
+      <div className="space-y-4 py-2">
+        {/* Station context */}
+        {si && (
+          <div className="flex items-center gap-2 pb-2 border-b border-border">
+            {si.isCollective ? (
+              <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-800">
+                <Users className="w-3 h-3 mr-1" /> Colectiva — Tu participación: {si.investorParticipationPercent.toFixed(1)}%
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800">
+                <Building2 className="w-3 h-3 mr-1" /> Estación propia
+              </Badge>
             )}
-            {session > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground flex items-center gap-1.5"><DollarSign className="w-3 h-3 text-blue-500" /> Cargo por sesión</span>
-                <span className="font-medium">{formatCurrency(session)}</span>
-              </div>
-            )}
-            {time > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="w-3 h-3 text-purple-500" /> Cargo por tiempo</span>
-                <span className="font-medium">{formatCurrency(time)}</span>
-              </div>
-            )}
-            {overstay > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground flex items-center gap-1.5"><TrendingUp className="w-3 h-3 text-red-500" /> Penalidad sobreestadía</span>
-                <span className="font-medium text-red-500">{formatCurrency(overstay)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-sm font-semibold border-t border-border pt-1.5">
-              <span>Total bruto</span>
-              <span>{formatCurrency(total)}</span>
-            </div>
+            <span className="text-xs text-muted-foreground">{si.stationName}</span>
           </div>
-        </div>
+        )}
 
-        {/* Distribución entre actores */}
-        <div>
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Distribución de Ingresos</h4>
-          <div className="space-y-2">
-            {/* Barra visual de distribución */}
-            <div className="flex h-3 rounded-full overflow-hidden">
-              <div className="bg-green-500" style={{ width: `${investorPercentage}%` }} />
-              <div className="bg-blue-500" style={{ width: `${evgreenPercentage}%` }} />
-              {hostPercentage > 0 && <div className="bg-amber-500" style={{ width: `${hostPercentage}%` }} />}
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-sm">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-green-500" />
-                  <Users className="w-3 h-3" /> Inversionista ({investorPercentage}%)
-                </span>
-                <span className="font-bold text-green-500">{formatCurrency(invShare)}</span>
+        {/* Waterfall steps */}
+        <div className="space-y-1">
+          {/* Step 1: Gross revenue */}
+          <div className="flex justify-between items-center text-sm py-1.5 px-2 rounded bg-muted/30">
+            <span className="flex items-center gap-1.5 font-medium">
+              <DollarSign className="w-3.5 h-3.5 text-blue-500" /> Ingreso bruto
+            </span>
+            <span className="font-bold">{formatCurrency(w.grossRevenue)}</span>
+          </div>
+
+          {/* Arrow */}
+          <div className="flex items-center justify-center">
+            <ArrowDown className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-xs text-red-500 ml-1">- Costo energía: {formatCurrency(w.energyCost)}</span>
+          </div>
+
+          {/* Step 2: Gross margin */}
+          <div className="flex justify-between items-center text-sm py-1.5 px-2 rounded bg-muted/30">
+            <span className="flex items-center gap-1.5 font-medium">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" /> Margen bruto
+            </span>
+            <span className="font-bold">{formatCurrency(w.grossMargin)}</span>
+          </div>
+
+          {/* Arrow - Host deduction */}
+          {w.hostPercent > 0 && (
+            <>
+              <div className="flex items-center justify-center">
+                <ArrowDown className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs text-amber-600 ml-1">- Aliado Comercial ({w.hostPercent}%): {formatCurrency(w.hostAmount)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-blue-500" />
-                  <Zap className="w-3 h-3" /> EVGreen ({evgreenPercentage}%)
+
+              {/* Step 3: Net after host */}
+              <div className="flex justify-between items-center text-sm py-1.5 px-2 rounded bg-muted/30">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <Factory className="w-3.5 h-3.5 text-cyan-500" /> Neto (después de aliado)
                 </span>
-                <span className="font-medium text-blue-500">{formatCurrency(evgShare)}</span>
+                <span className="font-bold">{formatCurrency(w.netAfterHost)}</span>
               </div>
-              {hostPercentage > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-500" />
-                    <Building2 className="w-3 h-3" /> Aliado Comercial ({hostPercentage}%)
-                  </span>
-                  <span className="font-medium text-amber-500">{formatCurrency(hShare)}</span>
+            </>
+          )}
+
+          {/* Arrow - Split */}
+          <div className="flex items-center justify-center py-1">
+            <ArrowDown className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground ml-1">Reparto EVGreen / Inversionistas</span>
+          </div>
+
+          {/* Step 4: Split */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="text-sm py-2 px-2 rounded bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-0.5">
+                <Users className="w-3 h-3" /> Inversionistas ({w.investorPoolPercent}%)
+              </div>
+              <div className="font-bold text-green-600">{formatCurrency(w.totalInvestorPool)}</div>
+              {w.isCollective && (
+                <div className="mt-1 pt-1 border-t border-green-200 dark:border-green-800">
+                  <div className="text-xs text-muted-foreground">Tu parte ({w.participationPercent.toFixed(1)}%)</div>
+                  <div className="font-bold text-green-700 dark:text-green-400 text-base">{formatCurrency(w.myShare)}</div>
                 </div>
               )}
+            </div>
+            <div className="text-sm py-2 px-2 rounded bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-0.5">
+                <Zap className="w-3 h-3" /> EVGreen ({w.evgreenPercent}%)
+              </div>
+              <div className="font-bold text-blue-600">{formatCurrency(w.evgreenAmount)}</div>
             </div>
           </div>
         </div>
       </div>
     );
   };
+
+  // Selected station info
+  const selectedStationInfo = stationFilter !== "all"
+    ? investorStations.find((s: any) => s.stationId === Number(stationFilter))
+    : null;
 
   return (
     <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 max-w-full overflow-x-hidden">
@@ -261,7 +296,7 @@ export default function InvestorTransactions() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold truncate">Transacciones</h1>
           <p className="text-sm text-muted-foreground">
-            Historial de cargas con desglose transparente de ingresos
+            Historial de cargas con desglose transparente del modelo financiero
           </p>
         </div>
         <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
@@ -304,7 +339,71 @@ export default function InvestorTransactions() {
         </Dialog>
       </div>
 
-      {/* KPIs mejorados con desglose */}
+      {/* Station selector with participation info */}
+      {investorStations.length > 1 && (
+        <Card className="p-3 sm:p-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground flex-shrink-0">
+              <Building2 className="w-4 h-4" /> Filtrar por estación:
+            </div>
+            <Select value={stationFilter} onValueChange={handleStationChange}>
+              <SelectTrigger className="w-full sm:w-80 text-sm">
+                <SelectValue placeholder="Todas las estaciones" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las estaciones ({investorStations.length})</SelectItem>
+                {investorStations.map((s: any) => (
+                  <SelectItem key={s.stationId} value={s.stationId.toString()}>
+                    <span className="flex items-center gap-2">
+                      {s.isCollective ? (
+                        <Users className="w-3 h-3 text-purple-500 flex-shrink-0" />
+                      ) : (
+                        <Building2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                      )}
+                      {s.stationName}
+                      {s.isCollective && (
+                        <span className="text-xs text-purple-500 ml-1">({s.investorParticipationPercent.toFixed(1)}%)</span>
+                      )}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Station info card when a specific station is selected */}
+          {selectedStationInfo && (
+            <div className="mt-3 pt-3 border-t border-border">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <div>
+                  <div className="text-xs text-muted-foreground">Tipo</div>
+                  <div className="font-medium flex items-center gap-1">
+                    {selectedStationInfo.isCollective ? (
+                      <><Users className="w-3 h-3 text-purple-500" /> Colectiva</>
+                    ) : (
+                      <><Building2 className="w-3 h-3 text-emerald-500" /> Propia</>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Tu participación</div>
+                  <div className="font-bold text-green-600">{selectedStationInfo.investorParticipationPercent.toFixed(1)}%</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Aliado comercial</div>
+                  <div className="font-medium text-amber-600">{selectedStationInfo.hostSharePercent}% del margen</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Costo energía</div>
+                  <div className="font-medium">{formatCurrency(selectedStationInfo.energyCostPerKwh)}/kWh</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* KPIs with waterfall-based calculations */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         <Card className="p-3 sm:p-4">
           <div className="flex items-center gap-2 sm:gap-3">
@@ -312,8 +411,8 @@ export default function InvestorTransactions() {
               <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
             </div>
             <div className="min-w-0">
-              <div className="text-base sm:text-2xl font-bold truncate text-green-600">{formatCurrency(myShare)}</div>
-              <div className="text-xs sm:text-sm text-muted-foreground">Tu parte ({investorPercentage}%)</div>
+              <div className="text-base sm:text-2xl font-bold truncate text-green-600">{formatCurrency(totalMyShare)}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Tu parte neta</div>
             </div>
           </div>
         </Card>
@@ -323,8 +422,8 @@ export default function InvestorTransactions() {
               <PieChart className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
             </div>
             <div className="min-w-0">
-              <div className="text-base sm:text-2xl font-bold truncate">{formatCurrency(pageRevenue)}</div>
-              <div className="text-xs sm:text-sm text-muted-foreground">Ingreso bruto total</div>
+              <div className="text-base sm:text-2xl font-bold truncate">{formatCurrency(totalGrossRevenue)}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Ingreso bruto</div>
             </div>
           </div>
         </Card>
@@ -334,81 +433,121 @@ export default function InvestorTransactions() {
               <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
             </div>
             <div className="min-w-0">
-              <div className="text-base sm:text-2xl font-bold truncate">{pageEnergy.toFixed(1)} kWh</div>
+              <div className="text-base sm:text-2xl font-bold truncate">{totalEnergy.toFixed(1)} kWh</div>
               <div className="text-xs sm:text-sm text-muted-foreground">Energía vendida</div>
             </div>
           </div>
         </Card>
         <Card className="p-3 sm:p-4">
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
-              <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+              <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
             </div>
             <div className="min-w-0">
-              <div className="text-lg sm:text-2xl font-bold">{totalCount}</div>
-              <div className="text-xs sm:text-sm text-muted-foreground">Total cargas</div>
+              <div className="text-base sm:text-2xl font-bold truncate text-emerald-600">{formatCurrency(totalGrossMargin)}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Margen bruto</div>
             </div>
           </div>
         </Card>
       </div>
 
-      {/* Barra de distribución resumen */}
-      {pageRevenue > 0 && (
+      {/* Waterfall distribution summary */}
+      {totalGrossRevenue > 0 && (
         <Card className="p-3 sm:p-4">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold flex items-center gap-1.5">
-              <PieChart className="w-4 h-4" /> Distribución del período
+              <PieChart className="w-4 h-4" /> Distribución del período (modelo financiero)
             </h3>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
                   <Info className="w-3.5 h-3.5 text-muted-foreground" />
                 </TooltipTrigger>
-                <TooltipContent>
-                  <p className="text-xs max-w-[200px]">Distribución de ingresos según el modelo financiero configurado para tus estaciones</p>
+                <TooltipContent className="max-w-[300px]">
+                  <p className="text-xs">Flujo: Ingreso bruto → menos costo energía = Margen bruto → menos % aliado comercial = Neto → se reparte entre EVGreen e inversionistas según sus porcentajes. Tu parte es proporcional a tu participación en cada estación.</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
-          <div className="flex h-4 rounded-full overflow-hidden mb-3">
-            <div className="bg-green-500 transition-all" style={{ width: `${investorPercentage}%` }} />
-            <div className="bg-blue-500 transition-all" style={{ width: `${evgreenPercentage}%` }} />
-            {hostPercentage > 0 && <div className="bg-amber-500 transition-all" style={{ width: `${hostPercentage}%` }} />}
+
+          {/* Waterfall bar */}
+          <div className="space-y-2 mb-4">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Ingreso bruto</span>
+              <div className="flex-1 h-px bg-border" />
+              <span className="font-medium text-foreground">{formatCurrency(totalGrossRevenue)}</span>
+            </div>
+            <div className="flex h-6 rounded-md overflow-hidden text-[10px] font-medium">
+              {totalEnergyCost > 0 && (
+                <div className="bg-red-400 dark:bg-red-600 flex items-center justify-center text-white px-1" style={{ width: `${(totalEnergyCost / totalGrossRevenue) * 100}%` }}>
+                  {((totalEnergyCost / totalGrossRevenue) * 100).toFixed(0)}%
+                </div>
+              )}
+              {totalHostAmount > 0 && (
+                <div className="bg-amber-400 dark:bg-amber-600 flex items-center justify-center text-white px-1" style={{ width: `${(totalHostAmount / totalGrossRevenue) * 100}%` }}>
+                  {((totalHostAmount / totalGrossRevenue) * 100).toFixed(0)}%
+                </div>
+              )}
+              <div className="bg-green-500 flex items-center justify-center text-white px-1" style={{ width: `${(totalMyShare / totalGrossRevenue) * 100}%` }}>
+                {((totalMyShare / totalGrossRevenue) * 100).toFixed(0)}%
+              </div>
+              <div className="bg-blue-500 flex items-center justify-center text-white px-1" style={{ width: `${(totalEvgreenAmount / totalGrossRevenue) * 100}%` }}>
+                {((totalEvgreenAmount / totalGrossRevenue) * 100).toFixed(0)}%
+              </div>
+              {/* Remainder for other investors in collective stations */}
+              {(totalGrossRevenue - totalEnergyCost - totalHostAmount - totalMyShare - totalEvgreenAmount) > 1 && (
+                <div className="bg-gray-400 dark:bg-gray-600 flex items-center justify-center text-white px-1" style={{ width: `${((totalGrossRevenue - totalEnergyCost - totalHostAmount - totalMyShare - totalEvgreenAmount) / totalGrossRevenue) * 100}%` }}>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-green-500 flex-shrink-0" />
+
+          {/* Legend */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-sm">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm bg-red-400 dark:bg-red-600 flex-shrink-0" />
               <div>
-                <div className="font-bold text-green-600">{formatCurrency(myShare)}</div>
-                <div className="text-xs text-muted-foreground">Inversionista ({investorPercentage}%)</div>
+                <div className="text-xs text-muted-foreground">Costo energía</div>
+                <div className="font-medium">{formatCurrency(totalEnergyCost)}</div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0" />
-              <div>
-                <div className="font-bold text-blue-600">{formatCurrency(evgreenShare)}</div>
-                <div className="text-xs text-muted-foreground">EVGreen ({evgreenPercentage}%)</div>
-              </div>
-            </div>
-            {hostPercentage > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-amber-500 flex-shrink-0" />
+            {totalHostAmount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-sm bg-amber-400 dark:bg-amber-600 flex-shrink-0" />
                 <div>
-                  <div className="font-bold text-amber-600">{formatCurrency(hostShare)}</div>
-                  <div className="text-xs text-muted-foreground">Aliado Comercial ({hostPercentage}%)</div>
+                  <div className="text-xs text-muted-foreground">Aliado comercial</div>
+                  <div className="font-medium text-amber-600">{formatCurrency(totalHostAmount)}</div>
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm bg-green-500 flex-shrink-0" />
+              <div>
+                <div className="text-xs text-muted-foreground">Tu parte neta</div>
+                <div className="font-bold text-green-600">{formatCurrency(totalMyShare)}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm bg-blue-500 flex-shrink-0" />
+              <div>
+                <div className="text-xs text-muted-foreground">EVGreen</div>
+                <div className="font-medium text-blue-600">{formatCurrency(totalEvgreenAmount)}</div>
+              </div>
+            </div>
+            {(totalGrossRevenue - totalEnergyCost - totalHostAmount - totalMyShare - totalEvgreenAmount) > 1 && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-sm bg-gray-400 dark:bg-gray-600 flex-shrink-0" />
+                <div>
+                  <div className="text-xs text-muted-foreground">Otros inversionistas</div>
+                  <div className="font-medium">{formatCurrency(totalGrossRevenue - totalEnergyCost - totalHostAmount - totalMyShare - totalEvgreenAmount)}</div>
                 </div>
               </div>
             )}
           </div>
-          {penaltyRevenue > 0 && (
-            <div className="mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
-              Incluye {formatCurrency(penaltyRevenue)} en penalidades por sobreestadía
-            </div>
-          )}
         </Card>
       )}
 
-      {/* Filtros */}
+      {/* Filters */}
       <Card className="p-3 sm:p-4">
         <div className="flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
@@ -456,27 +595,27 @@ export default function InvestorTransactions() {
         </div>
       </Card>
 
-      {/* Desktop table con desglose */}
+      {/* Desktop table with expandable waterfall */}
       <Card className="hidden md:block overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="whitespace-nowrap w-8"></TableHead>
               <TableHead className="whitespace-nowrap">ID</TableHead>
               <TableHead className="whitespace-nowrap">Estación</TableHead>
               <TableHead className="whitespace-nowrap">Fecha</TableHead>
               <TableHead className="whitespace-nowrap">Energía</TableHead>
-              <TableHead className="whitespace-nowrap">Monto bruto</TableHead>
-              <TableHead className="whitespace-nowrap text-green-600">Tu parte ({investorPercentage}%)</TableHead>
-              <TableHead className="whitespace-nowrap text-blue-600">EVGreen ({evgreenPercentage}%)</TableHead>
-              {hostPercentage > 0 && <TableHead className="whitespace-nowrap text-amber-600">Aliado ({hostPercentage}%)</TableHead>}
+              <TableHead className="whitespace-nowrap">Ingreso bruto</TableHead>
+              <TableHead className="whitespace-nowrap">Margen bruto</TableHead>
+              <TableHead className="whitespace-nowrap text-green-600">Tu parte neta</TableHead>
+              <TableHead className="whitespace-nowrap text-blue-600">EVGreen</TableHead>
               <TableHead className="whitespace-nowrap">Estado</TableHead>
-              <TableHead className="whitespace-nowrap w-10"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={hostPercentage > 0 ? 10 : 9} className="text-center py-8">
+                <TableCell colSpan={10} className="text-center py-8">
                   <div className="flex items-center justify-center gap-2">
                     <Loader2 className="w-5 h-5 animate-spin" />
                     <span>Cargando transacciones...</span>
@@ -485,38 +624,65 @@ export default function InvestorTransactions() {
               </TableRow>
             ) : filteredTransactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={hostPercentage > 0 ? 10 : 9} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                   No hay transacciones registradas
                 </TableCell>
               </TableRow>
             ) : (
               filteredTransactions.map((tx: any) => {
-                const total = parseFloat(tx.totalCost || "0");
+                const w = tx.waterfall;
+                const isExpanded = expandedRows.has(tx.id);
                 return (
-                  <TableRow key={tx.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedTx(tx)}>
-                    <TableCell className="font-mono text-sm">#{tx.id}</TableCell>
-                    <TableCell className="max-w-[150px] truncate">{tx.stationName || `ID: ${tx.stationId}`}</TableCell>
-                    <TableCell className="text-sm whitespace-nowrap">{formatDate(tx.startTime)}</TableCell>
-                    <TableCell className="whitespace-nowrap">{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">{formatCurrency(total)}</TableCell>
-                    <TableCell className="text-green-600 font-bold whitespace-nowrap">
-                      {formatCurrency(total * (investorPercentage / 100))}
-                    </TableCell>
-                    <TableCell className="text-blue-600 font-medium whitespace-nowrap">
-                      {formatCurrency(total * (evgreenPercentage / 100))}
-                    </TableCell>
-                    {hostPercentage > 0 && (
-                      <TableCell className="text-amber-600 font-medium whitespace-nowrap">
-                        {formatCurrency(total * (hostPercentage / 100))}
+                  <>
+                    <TableRow key={tx.id} className="cursor-pointer hover:bg-muted/50" onClick={() => toggleRow(tx.id)}>
+                      <TableCell className="w-8 px-2">
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                          {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </Button>
                       </TableCell>
+                      <TableCell className="font-mono text-sm">#{tx.id}</TableCell>
+                      <TableCell className="max-w-[180px]">
+                        <div className="flex items-center gap-1.5">
+                          {tx.stationInfo?.isCollective ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Users className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">Colectiva — Tu participación: {tx.stationInfo.investorParticipationPercent.toFixed(1)}%</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            <Building2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                          )}
+                          <span className="truncate">{tx.stationName || `ID: ${tx.stationId}`}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">{formatDate(tx.startTime)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</TableCell>
+                      <TableCell className="whitespace-nowrap font-medium">{formatCurrency(w?.grossRevenue || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatCurrency(w?.grossMargin || 0)}</TableCell>
+                      <TableCell className="text-green-600 font-bold whitespace-nowrap">
+                        {formatCurrency(w?.myShare || 0)}
+                        {tx.stationInfo?.isCollective && (
+                          <span className="text-[10px] text-purple-500 ml-1">({tx.stationInfo.investorParticipationPercent.toFixed(0)}%)</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-blue-600 font-medium whitespace-nowrap">
+                        {formatCurrency(w?.evgreenAmount || 0)}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(tx.status)}</TableCell>
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow key={`${tx.id}-detail`}>
+                        <TableCell colSpan={10} className="bg-muted/20 p-4">
+                          <WaterfallBreakdown tx={tx} />
+                        </TableCell>
+                      </TableRow>
                     )}
-                    <TableCell>{getStatusBadge(tx.status)}</TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); setSelectedTx(tx); }}>
-                        <Info className="w-3.5 h-3.5" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                  </>
                 );
               })
             )}
@@ -524,7 +690,7 @@ export default function InvestorTransactions() {
         </Table>
       </Card>
 
-      {/* Mobile cards con desglose */}
+      {/* Mobile cards with waterfall */}
       <div className="md:hidden space-y-3">
         {isLoading ? (
           <Card className="p-4 text-center">
@@ -539,50 +705,64 @@ export default function InvestorTransactions() {
           </Card>
         ) : (
           filteredTransactions.map((tx: any) => {
-            const total = parseFloat(tx.totalCost || "0");
+            const w = tx.waterfall;
+            const isExpanded = expandedRows.has(tx.id);
             return (
-              <Card key={tx.id} className="p-3 cursor-pointer" onClick={() => setSelectedTx(tx)}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-sm font-semibold">#{tx.id}</span>
-                  {getStatusBadge(tx.status)}
+              <Card key={tx.id} className="p-3">
+                <div className="cursor-pointer" onClick={() => toggleRow(tx.id)}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-semibold">#{tx.id}</span>
+                      {tx.stationInfo?.isCollective ? (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
+                          <Users className="w-2.5 h-2.5 mr-0.5" /> {tx.stationInfo.investorParticipationPercent.toFixed(0)}%
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          Propia
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {getStatusBadge(tx.status)}
+                      {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Estación</span>
+                      <span className="font-medium truncate ml-2">{tx.stationName || `ID: ${tx.stationId}`}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Energía</span>
+                      <span className="font-medium">{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Ingreso bruto</span>
+                      <span className="font-medium">{formatCurrency(w?.grossRevenue || 0)}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-border pt-1.5 mt-1.5">
+                      <span className="text-muted-foreground">Tu parte neta</span>
+                      <span className="font-bold text-green-600">{formatCurrency(w?.myShare || 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Fecha</span>
+                      <span className="text-xs text-muted-foreground">{formatDate(tx.startTime)}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-1.5 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Estación</span>
-                    <span className="font-medium">{tx.stationName || `ID: ${tx.stationId}`}</span>
+                {isExpanded && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <WaterfallBreakdown tx={tx} />
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Energía</span>
-                    <span className="font-medium">{parseFloat(tx.kwhConsumed || "0").toFixed(2)} kWh</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Monto bruto</span>
-                    <span className="font-medium">{formatCurrency(total)}</span>
-                  </div>
-                  {/* Mini distribución */}
-                  <div className="flex h-2 rounded-full overflow-hidden mt-1">
-                    <div className="bg-green-500" style={{ width: `${investorPercentage}%` }} />
-                    <div className="bg-blue-500" style={{ width: `${evgreenPercentage}%` }} />
-                    {hostPercentage > 0 && <div className="bg-amber-500" style={{ width: `${hostPercentage}%` }} />}
-                  </div>
-                  <div className="flex justify-between border-t border-border pt-1.5 mt-1.5">
-                    <span className="text-muted-foreground">Tu parte ({investorPercentage}%)</span>
-                    <span className="font-bold text-green-600">
-                      {formatCurrency(total * (investorPercentage / 100))}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Fecha</span>
-                    <span className="text-xs text-muted-foreground">{formatDate(tx.startTime)}</span>
-                  </div>
-                </div>
+                )}
               </Card>
             );
           })
         )}
       </div>
 
-      {/* Dialog de detalle de transacción */}
+      {/* Transaction detail dialog (for mobile tap) */}
       <Dialog open={!!selectedTx} onOpenChange={(open) => !open && setSelectedTx(null)}>
         <DialogContent className="sm:max-w-md mx-4">
           <DialogHeader>
@@ -606,18 +786,19 @@ export default function InvestorTransactions() {
                   <span className="font-medium">{formatCurrency(selectedTx.appliedPricePerKwh || 0)}/kWh</span>
                 </div>
               </div>
-              <TxBreakdown tx={selectedTx} />
+              <WaterfallBreakdown tx={selectedTx} />
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Paginación */}
+      {/* Pagination */}
       {!isLoading && totalCount > 0 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
           <div className="text-xs sm:text-sm text-muted-foreground">
             Mostrando {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, totalCount)} de {totalCount} transacción{totalCount !== 1 ? "es" : ""}
             {statusFilter !== "all" && ` (filtro: ${statusFilter})`}
+            {stationFilter !== "all" && ` (estación: ${selectedStationInfo?.stationName || stationFilter})`}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>

@@ -1360,6 +1360,39 @@ const transactionsRouter = router({
       };
     }),
 
+  // Inversionista: transacciones enriquecidas con waterfall por estación
+  investorTransactionsEnriched: investorProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      status: z.string().optional(),
+      stationId: z.number().optional(),
+      limit: z.number().min(1).max(100).default(20),
+      page: z.number().min(1).default(1),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      const limit = input?.limit || 20;
+      const page = input?.page || 1;
+      const offset = (page - 1) * limit;
+      
+      const result = await db.getEnrichedTransactionsByInvestor(ctx.user.id, {
+        startDate: input?.startDate,
+        endDate: input?.endDate,
+        status: input?.status,
+        stationId: input?.stationId,
+        limit,
+        offset,
+      });
+      return {
+        data: result.data,
+        total: result.total,
+        stations: result.stations,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(result.total / limit),
+      };
+    }),
+
   // Exportar transacciones del inversionista en Excel o PDF
   exportInvestorTransactions: investorProcedure
     .input(z.object({
