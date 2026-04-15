@@ -2794,3 +2794,5 @@
 - [x] Fix: Gráficas no indican si son de estación colectiva o individual
 - [x] Agregar KPI de ingresos en parte superior del dashboard
 - [x] Fix: Error SQL al crear gasto fijo en Centro Financiero - columnas/valores no coinciden en insert station_fixed_expenses (tabla recreada con schema correcto)
+- [ ] Fix: Error SQL al crear liquidación - tabla financial_settlements no coincide con schema Drizzle
+- [ ] Fix: Verificar y corregir todas las tablas financieras (settlement_expenses, investor_distributions, sla_metrics)
