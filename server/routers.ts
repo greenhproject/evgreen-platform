@@ -3538,6 +3538,26 @@ const crowdfundingRouter = router({
         console.log(`[Crowdfunding] Inversionista ${investorId} vinculado a estación ${project.stationId}`);
       }
       
+      // Trigger onboarding welcome email if payment is confirmed
+      if (input.paymentConfirmed) {
+        try {
+          const investor = await db.getUserById(investorId);
+          if (investor && investor.email && !investor.welcomeEmailSent) {
+            await triggerInvestorWelcome(investorId, {
+              investorName: investor.name || input.name,
+              investorEmail: investor.email || input.email,
+              investmentAmount: input.amount,
+              investmentType: 'collective',
+              projectName: project.name,
+              participationPercent,
+            });
+            console.log(`[Onboarding] Welcome email sent to new investor ${investorId} via registerInvestor`);
+          }
+        } catch (onboardingError) {
+          console.error('[Onboarding] Error triggering welcome from registerInvestor:', onboardingError);
+        }
+      }
+      
       return { 
         success: true, 
         investorId, 
@@ -3598,6 +3618,28 @@ const crowdfundingRouter = router({
       }
       await db.updateCrowdfundingParticipationFull(input.participationId, updateData);
       await db.updateProjectRaisedAmountByParticipation(input.participationId);
+      
+      // Trigger onboarding welcome email if payment status changed to COMPLETED
+      if (input.paymentStatus === 'COMPLETED' && participation.paymentStatus !== 'COMPLETED') {
+        try {
+          const investor = await db.getUserById(updateData.investorId || participation.investorId);
+          if (investor && investor.email && !investor.welcomeEmailSent) {
+            const project = await db.getCrowdfundingProjectById(participation.projectId);
+            await triggerInvestorWelcome(investor.id, {
+              investorName: investor.name || 'Inversionista',
+              investorEmail: investor.email,
+              investmentAmount: Number(participation.amount),
+              investmentType: 'collective',
+              projectName: project?.name,
+              participationPercent: Number(participation.participationPercent),
+            });
+            console.log(`[Onboarding] Welcome email sent to investor ${investor.id} via editParticipation`);
+          }
+        } catch (onboardingError) {
+          console.error('[Onboarding] Error triggering welcome from editParticipation:', onboardingError);
+        }
+      }
+      
       return { success: true };
     }),
 
