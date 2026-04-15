@@ -2858,3 +2858,18 @@
 - [x] Crear procedimiento tRPC getInvestorsOnboardingStatus para listar inversionistas
 - [x] Agregar sección/pestaña de "Estado Onboarding" en panel admin
 - [x] Mostrar: completados, pendientes, paso actual, fecha de inicio
+
+
+## Sistema de Backup y Recuperación de Datos
+- [x] Analizar tablas críticas y definir prioridades de backup (P1/P2/P3)
+- [x] Crear tabla backup_logs en BD para registrar historial de backups
+- [x] Servicio backend de backup: exportar tablas críticas a S3 como JSON comprimido
+- [x] Sistema de backup automático programado (diario para P1, semanal para P2/P3)
+- [x] Dashboard admin de backups: trigger manual, historial, descarga, estado
+- [x] Notificaciones por email de éxito/fallo de backups
+- [x] Endpoint de backup manual desde panel admin
+- [x] Clasificación de tablas por prioridad (P1: transacciones/usuarios/financiero, P2: estaciones/crowdfunding, P3: configuración)
+- [x] Compresión gzip de archivos de backup antes de subir a S3
+- [x] Procedimiento de restauración desde backup
+- [x] Retención configurable de backups (mantener últimos N backups)
+- [x] Indicador de salud del sistema de backups en dashboard admin

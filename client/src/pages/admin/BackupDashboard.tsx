@@ -1,0 +1,539 @@
+/**
+ * EVGreen Platform - Dashboard de Backup y Recuperación
+ * 
+ * Panel de administración para gestionar backups de la base de datos:
+ * - Estadísticas generales del sistema de backup
+ * - Ejecución de backups manuales (Full, Crítico, Financiero, Usuarios)
+ * - Historial de backups con estado, tamaño y duración
+ * - Descarga y eliminación de backups
+ * - Configuración de tablas por prioridad
+ * 
+ * @author Green House Project | @version 1.0.0 (Abril 2026)
+ */
+
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import {
+  Database,
+  Download,
+  Trash2,
+  Play,
+  Shield,
+  DollarSign,
+  Users,
+  HardDrive,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  RefreshCw,
+  FileArchive,
+  Layers,
+  Activity,
+  Calendar,
+  Server,
+} from "lucide-react";
+
+type BackupType = "FULL" | "CRITICAL" | "FINANCIAL" | "USERS" | "MANUAL";
+
+const BACKUP_TYPES: { type: BackupType; label: string; description: string; icon: typeof Database; color: string }[] = [
+  { type: "FULL", label: "Completo", description: "Todas las 59 tablas de la base de datos", icon: Database, color: "text-blue-400" },
+  { type: "CRITICAL", label: "Crítico (P1)", description: "Transacciones, usuarios, wallets, pagos", icon: Shield, color: "text-red-400" },
+  { type: "FINANCIAL", label: "Financiero", description: "Liquidaciones, inversiones, crowdfunding", icon: DollarSign, color: "text-green-400" },
+  { type: "USERS", label: "Usuarios", description: "Usuarios, suscripciones, vehículos", icon: Users, color: "text-purple-400" },
+];
+
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+function formatDuration(ms: number): string {
+  if (!ms) return "-";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+}
+
+function formatDate(date: string | Date | null): string {
+  if (!date) return "-";
+  return new Date(date).toLocaleString("es-CO", {
+    timeZone: "America/Bogota",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export default function BackupDashboard() {
+  const [selectedType, setSelectedType] = useState<BackupType | null>(null);
+  const [notes, setNotes] = useState("");
+  const [showTableConfig, setShowTableConfig] = useState(false);
+
+  // Queries - use (trpc as any) to handle type generation timing
+  const backupTrpc = (trpc as any).backup;
+  const statsQuery = backupTrpc.getStats.useQuery();
+  const historyQuery = backupTrpc.getHistory.useQuery({ limit: 20, offset: 0 });
+  const tableConfigQuery = backupTrpc.getTableConfig.useQuery();
+
+  // Mutations
+  const executeBackupMutation = backupTrpc.executeBackup.useMutation({
+    onSuccess: (result: any) => {
+      const statusText = result.status === "COMPLETED" ? "completado" : result.status === "PARTIAL" ? "parcial" : "fallido";
+      toast.success(`Backup ${statusText}: ${result.tablesBackedUp.length} tablas respaldadas, ${result.totalRows.toLocaleString()} filas, ${formatBytes(result.totalSizeBytes)}`);
+      statsQuery.refetch();
+      historyQuery.refetch();
+      setSelectedType(null);
+      setNotes("");
+    },
+    onError: (error: any) => {
+      toast.error(error.message);
+    },
+  });
+
+  const deleteBackupMutation = backupTrpc.deleteBackup.useMutation({
+    onSuccess: () => {
+      toast.success("Backup eliminado");
+      historyQuery.refetch();
+      statsQuery.refetch();
+    },
+  });
+
+  const cleanupMutation = backupTrpc.cleanupExpired.useMutation({
+    onSuccess: (result: any) => {
+      toast.success(`Limpieza completada: ${result.cleaned} backups expirados eliminados`);
+      historyQuery.refetch();
+      statsQuery.refetch();
+    },
+  });
+
+  const handleExecuteBackup = (type: BackupType) => {
+    executeBackupMutation.mutate({ type, notes: notes || undefined });
+  };
+
+  const stats = statsQuery.data;
+  const historyRaw = historyQuery.data;
+  const history: any[] = historyRaw && 'backups' in historyRaw ? historyRaw.backups : [];
+  const tableConfig = tableConfigQuery.data || [];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-3">
+            <Server className="h-7 w-7 text-blue-400" />
+            Backup y Recuperación
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Sistema de respaldo automatizado de la base de datos EVGreen
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => cleanupMutation.mutate()}
+            disabled={cleanupMutation.isPending}
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            Limpiar expirados
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              statsQuery.refetch();
+              historyQuery.refetch();
+            }}
+          >
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Actualizar
+          </Button>
+        </div>
+      </div>
+
+      {/* Estadísticas */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-2 mb-1">
+                <FileArchive className="h-4 w-4 text-blue-400" />
+                <span className="text-xs text-muted-foreground">Total Backups</span>
+              </div>
+              <p className="text-2xl font-bold">{stats.totalBackups}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-2 mb-1">
+                <CheckCircle2 className="h-4 w-4 text-green-400" />
+                <span className="text-xs text-muted-foreground">Completados</span>
+              </div>
+              <p className="text-2xl font-bold text-green-400">{stats.completedBackups}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-2 mb-1">
+                <XCircle className="h-4 w-4 text-red-400" />
+                <span className="text-xs text-muted-foreground">Fallidos</span>
+              </div>
+              <p className="text-2xl font-bold text-red-400">{stats.failedBackups}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle className="h-4 w-4 text-yellow-400" />
+                <span className="text-xs text-muted-foreground">Parciales</span>
+              </div>
+              <p className="text-2xl font-bold text-yellow-400">{stats.partialBackups}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-2 mb-1">
+                <HardDrive className="h-4 w-4 text-cyan-400" />
+                <span className="text-xs text-muted-foreground">Almacenamiento</span>
+              </div>
+              <p className="text-2xl font-bold">{formatBytes((stats as any).totalStorageBytes || 0)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Calendar className="h-4 w-4 text-purple-400" />
+                <span className="text-xs text-muted-foreground">Último Backup</span>
+              </div>
+              <p className="text-sm font-medium">{stats.lastBackupAt ? formatDate(stats.lastBackupAt) : "Nunca"}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Ejecutar Backup Manual */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Play className="h-5 w-5 text-green-400" />
+            Ejecutar Backup Manual
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            {BACKUP_TYPES.map((bt) => {
+              const Icon = bt.icon;
+              const isSelected = selectedType === bt.type;
+              return (
+                <button
+                  key={bt.type}
+                  onClick={() => setSelectedType(isSelected ? null : bt.type)}
+                  className={`p-4 rounded-lg border text-left transition-all ${
+                    isSelected
+                      ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/30"
+                      : "border-border hover:border-muted-foreground/30 hover:bg-muted/30"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Icon className={`h-5 w-5 ${bt.color}`} />
+                    <span className="font-semibold text-sm">{bt.label}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{bt.description}</p>
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedType && (
+            <div className="flex items-end gap-3 mt-3 p-4 bg-muted/20 rounded-lg border border-dashed">
+              <div className="flex-1">
+                <label className="text-sm font-medium mb-1 block">Notas (opcional)</label>
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Ej: Backup antes de actualización de producción..."
+                  className="w-full px-3 py-2 rounded-md border bg-background text-sm"
+                />
+              </div>
+              <Button
+                onClick={() => handleExecuteBackup(selectedType)}
+                disabled={executeBackupMutation.isPending}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {executeBackupMutation.isPending ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Ejecutando...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" />
+                    Ejecutar Backup {BACKUP_TYPES.find((t) => t.type === selectedType)?.label}
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Historial de Backups */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Clock className="h-5 w-5 text-cyan-400" />
+              Historial de Backups
+            </CardTitle>
+            <Badge variant="outline">{history.length} registros</Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {history.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <FileArchive className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p>No hay backups registrados aún</p>
+              <p className="text-sm mt-1">El primer backup automático se ejecutará en 5 minutos después del arranque del servidor</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-muted-foreground">
+                    <th className="text-left py-2 px-2">ID</th>
+                    <th className="text-left py-2 px-2">Fecha</th>
+                    <th className="text-left py-2 px-2">Tipo</th>
+                    <th className="text-left py-2 px-2">Estado</th>
+                    <th className="text-right py-2 px-2">Tablas</th>
+                    <th className="text-right py-2 px-2">Filas</th>
+                    <th className="text-right py-2 px-2">Tamaño</th>
+                    <th className="text-right py-2 px-2">Duración</th>
+                    <th className="text-left py-2 px-2">Ejecutado por</th>
+                    <th className="text-right py-2 px-2">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((backup: any) => (
+                    <tr key={backup.id} className="border-b border-border/50 hover:bg-muted/20">
+                      <td className="py-2 px-2 font-mono text-xs">#{backup.id}</td>
+                      <td className="py-2 px-2 text-xs">{formatDate(backup.createdAt)}</td>
+                      <td className="py-2 px-2">
+                        <Badge variant="outline" className="text-xs">
+                          {backup.backupType}
+                        </Badge>
+                      </td>
+                      <td className="py-2 px-2">
+                        {backup.status === "COMPLETED" ? (
+                          <Badge className="bg-green-600/20 text-green-400 text-xs">
+                            <CheckCircle2 className="h-3 w-3 mr-1" /> OK
+                          </Badge>
+                        ) : backup.status === "FAILED" ? (
+                          <Badge className="bg-red-600/20 text-red-400 text-xs">
+                            <XCircle className="h-3 w-3 mr-1" /> Error
+                          </Badge>
+                        ) : backup.status === "RUNNING" ? (
+                          <Badge className="bg-blue-600/20 text-blue-400 text-xs">
+                            <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> En curso
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-yellow-600/20 text-yellow-400 text-xs">
+                            <AlertTriangle className="h-3 w-3 mr-1" /> Parcial
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="py-2 px-2 text-right">{backup.tablesCount || "-"}</td>
+                      <td className="py-2 px-2 text-right">{backup.totalRows?.toLocaleString() || "-"}</td>
+                      <td className="py-2 px-2 text-right">{formatBytes(backup.totalSizeBytes || 0)}</td>
+                      <td className="py-2 px-2 text-right">{formatDuration(backup.durationMs || 0)}</td>
+                      <td className="py-2 px-2 text-xs">
+                        <span className={backup.isAutomatic ? "text-cyan-400" : "text-orange-400"}>
+                          {backup.isAutomatic ? "🤖 Auto" : `👤 ${backup.triggeredBy}`}
+                        </span>
+                      </td>
+                      <td className="py-2 px-2 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {backup.s3Url && backup.status === "COMPLETED" && (
+                            <a
+                              href={backup.s3Url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 rounded hover:bg-muted transition-colors"
+                              title="Descargar backup"
+                            >
+                              <Download className="h-4 w-4 text-blue-400" />
+                            </a>
+                          )}
+                          <button
+                            onClick={() => {
+                              if (confirm("¿Eliminar este backup?")) {
+                                deleteBackupMutation.mutate({ backupId: backup.id });
+                              }
+                            }}
+                            className="p-1.5 rounded hover:bg-muted transition-colors"
+                            title="Eliminar backup"
+                          >
+                            <Trash2 className="h-4 w-4 text-red-400" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Información del Sistema */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Configuración Automática */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Activity className="h-5 w-5 text-green-400" />
+              Backup Automático
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-muted/20 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-red-400" />
+                  <span className="text-sm">Backup Crítico (P1)</span>
+                </div>
+                <Badge className="bg-green-600/20 text-green-400">Diario</Badge>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-muted/20 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Database className="h-4 w-4 text-blue-400" />
+                  <span className="text-sm">Backup Completo</span>
+                </div>
+                <Badge className="bg-blue-600/20 text-blue-400">Domingos</Badge>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-muted/20 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Trash2 className="h-4 w-4 text-yellow-400" />
+                  <span className="text-sm">Limpieza de expirados</span>
+                </div>
+                <Badge className="bg-yellow-600/20 text-yellow-400">Diaria</Badge>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-muted/20 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-purple-400" />
+                  <span className="text-sm">Retención automáticos</span>
+                </div>
+                <Badge variant="outline">90 días</Badge>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-muted/20 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-cyan-400" />
+                  <span className="text-sm">Retención manuales</span>
+                </div>
+                <Badge variant="outline">365 días</Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Tablas por Prioridad */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Layers className="h-5 w-5 text-purple-400" />
+                Tablas por Prioridad
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowTableConfig(!showTableConfig)}>
+                {showTableConfig ? "Ocultar" : "Ver todas"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {(showTableConfig ? tableConfig : tableConfig.slice(0, 10)).map((table: any) => (
+                <div key={table.name} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/20">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        table.priority === "P1"
+                          ? "bg-red-400"
+                          : table.priority === "P2"
+                          ? "bg-orange-400"
+                          : table.priority === "P3"
+                          ? "bg-yellow-400"
+                          : "bg-gray-400"
+                      }`}
+                    />
+                    <span className="text-xs font-mono">{table.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      {table.priority}
+                    </Badge>
+                    {table.excludedFromAuto && (
+                      <Badge className="bg-yellow-600/20 text-yellow-400 text-xs">Excluida</Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 pt-3 border-t text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1 mr-3"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> P1: Crítica</span>
+              <span className="inline-flex items-center gap-1 mr-3"><span className="w-2 h-2 rounded-full bg-orange-400 inline-block" /> P2: Importante</span>
+              <span className="inline-flex items-center gap-1 mr-3"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> P3: Operacional</span>
+              <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-400 inline-block" /> P4: Logs</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Guía de Recuperación */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Shield className="h-5 w-5 text-orange-400" />
+            Guía de Recuperación ante Desastres
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 bg-muted/20 rounded-lg border border-dashed">
+              <h3 className="font-semibold text-sm mb-2 text-green-400">1. Descarga del Backup</h3>
+              <p className="text-xs text-muted-foreground">
+                Descarga el archivo JSON comprimido desde S3 usando el botón de descarga en el historial. 
+                El archivo contiene todas las tablas con sus datos completos.
+              </p>
+            </div>
+            <div className="p-4 bg-muted/20 rounded-lg border border-dashed">
+              <h3 className="font-semibold text-sm mb-2 text-blue-400">2. Restauración de Datos</h3>
+              <p className="text-xs text-muted-foreground">
+                Descomprime el archivo y usa las sentencias SQL INSERT generadas para restaurar cada tabla.
+                Los datos están en formato JSON con metadatos de fecha y versión.
+              </p>
+            </div>
+            <div className="p-4 bg-muted/20 rounded-lg border border-dashed">
+              <h3 className="font-semibold text-sm mb-2 text-purple-400">3. Verificación</h3>
+              <p className="text-xs text-muted-foreground">
+                Verifica la integridad de los datos restaurados comparando el conteo de filas con los metadatos del backup.
+                Ejecuta las pruebas de la plataforma para confirmar la funcionalidad.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
