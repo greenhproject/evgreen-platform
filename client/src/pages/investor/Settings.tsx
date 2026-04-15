@@ -68,6 +68,9 @@ export default function InvestorSettings() {
       // Empresa
       setCompanyName(user.companyName || "");
       setCompanyNit(user.taxId || "");
+      setCompanyAddress((user as any).fiscalAddress || "");
+      setCompanyCity((user as any).fiscalCity || "");
+      setCompanyDepartment((user as any).fiscalDepartment || "");
       
       // Datos bancarios
       setBankName(user.bankName || "");
@@ -88,6 +91,9 @@ export default function InvestorSettings() {
     updateProfileMutation.mutate({
       companyName: companyName || undefined,
       taxId: companyNit || undefined,
+      fiscalAddress: companyAddress || undefined,
+      fiscalCity: companyCity || undefined,
+      fiscalDepartment: companyDepartment || undefined,
     });
   };
 
