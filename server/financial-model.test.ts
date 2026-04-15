@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 /**
- * Tests for the financial model configuration and waterfall engine.
- * These tests validate the business logic of the 3-actor revenue split
- * (EVGreen, Investor, Host/Aliado Comercial) without hitting the database.
+ * Tests for the CORRECTED financial model waterfall engine.
+ * 
+ * CORRECTED MODEL:
+ * 1. Ingresos brutos - Costo energía = Margen bruto
+ * 2. Aliado Comercial = Margen bruto × hostPercent% (se descuenta PRIMERO)
+ * 3. Neto después del aliado = Margen bruto - Aliado
+ * 4. EVGreen + Inversionista se reparten el neto (sus % suman 100% entre ellos)
+ * 5. Fondo de mantenimiento = 5% del share de EVGreen (dentro del 30%)
  */
 
-// Simulate the waterfall calculation logic that lives in the financial router
+// Corrected waterfall: host gets % of gross margin, then EVGreen+Investor split the rest
 function calculateWaterfall(params: {
   grossRevenue: number;
   revenueFromEnergy: number;
@@ -15,9 +20,11 @@ function calculateWaterfall(params: {
   revenueFromAdvertising: number;
   energyCostPerKwh: number;
   totalKwh: number;
-  evgreenPercent: number;
-  investorPercent: number;
-  hostPercent: number;
+  evgreenPercent: number;   // % of net AFTER host deduction (EVGreen + Investor = 100%)
+  investorPercent: number;  // % of net AFTER host deduction (EVGreen + Investor = 100%)
+  hostPercent: number;      // % of gross margin (separate, deducted first)
+  contingencyPercent?: number;
+  maintenanceFundPercent?: number; // % of EVGreen's share for maintenance fund
 }) {
   const {
     grossRevenue,
@@ -30,26 +37,48 @@ function calculateWaterfall(params: {
     evgreenPercent,
     investorPercent,
     hostPercent,
+    contingencyPercent = 0,
+    maintenanceFundPercent = 5,
   } = params;
 
   // Step 1: Calculate energy cost
   const totalEnergyCost = energyCostPerKwh * totalKwh;
 
-  // Step 2: Net revenue after energy cost
-  const netRevenue = grossRevenue - totalEnergyCost;
+  // Step 2: Gross margin = Revenue - Energy cost
+  const grossMargin = grossRevenue - totalEnergyCost;
 
-  // Step 3: Distribute among 3 actors
-  const evgreenAmount = netRevenue * (evgreenPercent / 100);
-  const investorAmount = netRevenue * (investorPercent / 100);
-  const hostAmount = netRevenue * (hostPercent / 100);
+  // Step 3: Host/Aliado gets % of gross margin FIRST
+  const hostAmount = grossMargin * (hostPercent / 100);
+
+  // Step 4: Net after host
+  const netAfterHost = grossMargin - hostAmount;
+
+  // Step 5: Contingency from net after host
+  const contingencyAmount = netAfterHost * (contingencyPercent / 100);
+
+  // Step 6: Distributable amount
+  const distributableAmount = netAfterHost - contingencyAmount;
+
+  // Step 7: EVGreen and Investor split the distributable (their % sum to 100%)
+  const investorAmount = distributableAmount * (investorPercent / 100);
+  const evgreenAmount = distributableAmount * (evgreenPercent / 100);
+
+  // Step 8: Maintenance fund comes from EVGreen's share
+  const maintenanceFundAmount = evgreenAmount * (maintenanceFundPercent / 100);
+  const evgreenNetAmount = evgreenAmount - maintenanceFundAmount;
 
   return {
     grossRevenue,
     totalEnergyCost,
-    netRevenue,
-    evgreenAmount,
-    investorAmount,
+    grossMargin,
     hostAmount,
+    netAfterHost,
+    contingencyAmount,
+    distributableAmount,
+    evgreenAmount,
+    evgreenNetAmount,
+    maintenanceFundAmount,
+    investorAmount,
     revenueFromEnergy,
     revenueFromPenalties,
     revenueFromReservations,
@@ -57,54 +86,62 @@ function calculateWaterfall(params: {
   };
 }
 
-// Validate percentage configuration
+// Corrected validation: EVGreen + Investor must sum 100%, Host is separate
 function validatePercentages(evgreen: number, investor: number, host: number): { valid: boolean; error?: string } {
-  const total = evgreen + investor + host;
-  if (total !== 100) {
-    return { valid: false, error: `Los porcentajes deben sumar 100%, actualmente suman ${total}%` };
+  const evInvTotal = evgreen + investor;
+  if (Math.abs(evInvTotal - 100) > 0.1) {
+    return { valid: false, error: `EVGreen + Inversionista deben sumar 100%, actualmente suman ${evInvTotal}%` };
   }
   if (evgreen < 0 || investor < 0 || host < 0) {
     return { valid: false, error: "Los porcentajes no pueden ser negativos" };
   }
-  if (evgreen > 100 || investor > 100 || host > 100) {
-    return { valid: false, error: "Ningún porcentaje puede exceder 100%" };
+  if (host > 50) {
+    return { valid: false, error: `El % del Aliado Comercial no puede exceder 50%, actualmente es ${host}%` };
   }
   return { valid: true };
 }
 
-describe("Financial Model - Percentage Validation", () => {
-  it("accepts valid 3-actor split (30/60/10)", () => {
-    const result = validatePercentages(30, 60, 10);
+describe("Financial Model - Percentage Validation (Corrected)", () => {
+  it("accepts valid split: EVGreen 30% + Investor 70% = 100%, Host 10% separate", () => {
+    const result = validatePercentages(30, 70, 10);
     expect(result.valid).toBe(true);
     expect(result.error).toBeUndefined();
   });
 
-  it("accepts valid 2-actor split with 0% host (30/70/0)", () => {
+  it("accepts valid split with 0% host (30/70/0)", () => {
     const result = validatePercentages(30, 70, 0);
     expect(result.valid).toBe(true);
   });
 
-  it("rejects percentages that don't sum to 100", () => {
-    const result = validatePercentages(30, 60, 20);
+  it("rejects EVGreen + Investor that don't sum to 100%", () => {
+    // Old model: 30+60+10=100 was valid. New model: 30+60=90 is INVALID
+    const result = validatePercentages(30, 60, 10);
     expect(result.valid).toBe(false);
-    expect(result.error).toContain("110%");
+    expect(result.error).toContain("90%");
   });
 
   it("rejects negative percentages", () => {
-    const result = validatePercentages(30, 80, -10);
+    const result = validatePercentages(30, 70, -10);
     expect(result.valid).toBe(false);
     expect(result.error).toContain("negativos");
   });
 
-  it("rejects percentages over 100", () => {
-    const result = validatePercentages(110, 0, 0);
+  it("rejects host percentage over 50%", () => {
+    const result = validatePercentages(30, 70, 60);
     expect(result.valid).toBe(false);
-    expect(result.error).toContain("110%");
+    expect(result.error).toContain("50%");
+  });
+
+  it("accepts host percentage at exactly 50%", () => {
+    const result = validatePercentages(40, 60, 50);
+    expect(result.valid).toBe(true);
   });
 });
 
-describe("Financial Model - Waterfall Calculation", () => {
-  it("calculates correct 3-actor split for a typical station", () => {
+describe("Financial Model - Corrected Waterfall Calculation", () => {
+  it("calculates correct waterfall: host from gross margin, then EVGreen/Investor split", () => {
+    // Example from the image: Precio venta $1,800/kWh, Costo energía $700/kWh
+    // Margen = (1800 - 700) × 90% × 70% = $693/kWh
     const result = calculateWaterfall({
       grossRevenue: 1_000_000,
       revenueFromEnergy: 850_000,
@@ -113,24 +150,30 @@ describe("Financial Model - Waterfall Calculation", () => {
       revenueFromAdvertising: 20_000,
       energyCostPerKwh: 850,
       totalKwh: 200,
-      evgreenPercent: 30,
-      investorPercent: 60,
-      hostPercent: 10,
+      evgreenPercent: 30,   // 30% of net after host
+      investorPercent: 70,  // 70% of net after host
+      hostPercent: 10,      // 10% of gross margin
     });
 
     // Energy cost = 850 * 200 = 170,000
     expect(result.totalEnergyCost).toBe(170_000);
-    // Net = 1,000,000 - 170,000 = 830,000
-    expect(result.netRevenue).toBe(830_000);
-    // EVGreen = 830,000 * 0.30 = 249,000
-    expect(result.evgreenAmount).toBe(249_000);
-    // Investor = 830,000 * 0.60 = 498,000
-    expect(result.investorAmount).toBe(498_000);
-    // Host = 830,000 * 0.10 = 83,000
+    // Gross margin = 1,000,000 - 170,000 = 830,000
+    expect(result.grossMargin).toBe(830_000);
+    // Host = 830,000 * 10% = 83,000 (from gross margin)
     expect(result.hostAmount).toBe(83_000);
+    // Net after host = 830,000 - 83,000 = 747,000
+    expect(result.netAfterHost).toBe(747_000);
+    // No contingency in this test
+    expect(result.distributableAmount).toBe(747_000);
+    // Investor = 747,000 * 70% = 522,900
+    expect(result.investorAmount).toBeCloseTo(522_900, 0);
+    // EVGreen = 747,000 * 30% = 224,100
+    expect(result.evgreenAmount).toBeCloseTo(224_100, 0);
+    // Maintenance fund = 224,100 * 5% = 11,205 (from EVGreen's share)
+    expect(result.maintenanceFundAmount).toBeCloseTo(11_205, 0);
   });
 
-  it("handles station where owner is also the host (0% host share)", () => {
+  it("handles station with 0% host (no aliado comercial)", () => {
     const result = calculateWaterfall({
       grossRevenue: 500_000,
       revenueFromEnergy: 500_000,
@@ -144,65 +187,74 @@ describe("Financial Model - Waterfall Calculation", () => {
       hostPercent: 0,
     });
 
-    // Energy cost = 800 * 100 = 80,000
     expect(result.totalEnergyCost).toBe(80_000);
-    // Net = 500,000 - 80,000 = 420,000
-    expect(result.netRevenue).toBe(420_000);
-    // EVGreen = 420,000 * 0.30 = 126,000
-    expect(result.evgreenAmount).toBe(126_000);
-    // Investor = 420,000 * 0.70 = 294,000
-    expect(result.investorAmount).toBe(294_000);
-    // Host = 0
+    expect(result.grossMargin).toBe(420_000);
     expect(result.hostAmount).toBe(0);
+    expect(result.netAfterHost).toBe(420_000);
+    expect(result.investorAmount).toBeCloseTo(294_000, 0);
+    expect(result.evgreenAmount).toBeCloseTo(126_000, 0);
   });
 
-  it("handles zero energy consumption (only penalties/reservations)", () => {
+  it("handles contingency reserve correctly", () => {
     const result = calculateWaterfall({
-      grossRevenue: 200_000,
-      revenueFromEnergy: 0,
-      revenueFromPenalties: 150_000,
-      revenueFromReservations: 50_000,
+      grossRevenue: 1_000_000,
+      revenueFromEnergy: 1_000_000,
+      revenueFromPenalties: 0,
+      revenueFromReservations: 0,
       revenueFromAdvertising: 0,
-      energyCostPerKwh: 850,
+      energyCostPerKwh: 500,
+      totalKwh: 400,
+      evgreenPercent: 30,
+      investorPercent: 70,
+      hostPercent: 10,
+      contingencyPercent: 5,
+    });
+
+    // Energy cost = 500 * 400 = 200,000
+    expect(result.totalEnergyCost).toBe(200_000);
+    // Gross margin = 1,000,000 - 200,000 = 800,000
+    expect(result.grossMargin).toBe(800_000);
+    // Host = 800,000 * 10% = 80,000
+    expect(result.hostAmount).toBe(80_000);
+    // Net after host = 800,000 - 80,000 = 720,000
+    expect(result.netAfterHost).toBe(720_000);
+    // Contingency = 720,000 * 5% = 36,000
+    expect(result.contingencyAmount).toBe(36_000);
+    // Distributable = 720,000 - 36,000 = 684,000
+    expect(result.distributableAmount).toBe(684_000);
+    // Investor = 684,000 * 70% = 478,800
+    expect(result.investorAmount).toBeCloseTo(478_800, 0);
+    // EVGreen = 684,000 * 30% = 205,200
+    expect(result.evgreenAmount).toBeCloseTo(205_200, 0);
+  });
+
+  it("maintenance fund is 5% of EVGreen share (within the 30%)", () => {
+    const result = calculateWaterfall({
+      grossRevenue: 1_000_000,
+      revenueFromEnergy: 1_000_000,
+      revenueFromPenalties: 0,
+      revenueFromReservations: 0,
+      revenueFromAdvertising: 0,
+      energyCostPerKwh: 0,
       totalKwh: 0,
       evgreenPercent: 30,
-      investorPercent: 55,
-      hostPercent: 15,
+      investorPercent: 70,
+      hostPercent: 10,
+      maintenanceFundPercent: 5,
     });
 
-    // No energy cost when no kWh consumed
-    expect(result.totalEnergyCost).toBe(0);
-    expect(result.netRevenue).toBe(200_000);
-    expect(result.evgreenAmount).toBeCloseTo(60_000, 0);
-    expect(result.investorAmount).toBeCloseTo(110_000, 0);
-    expect(result.hostAmount).toBeCloseTo(30_000, 0);
+    // Gross margin = 1,000,000 (no energy cost)
+    // Host = 100,000
+    // Net = 900,000
+    // EVGreen = 900,000 * 30% = 270,000
+    expect(result.evgreenAmount).toBe(270_000);
+    // Maintenance fund = 270,000 * 5% = 13,500
+    expect(result.maintenanceFundAmount).toBe(13_500);
+    // EVGreen net = 270,000 - 13,500 = 256,500
+    expect(result.evgreenNetAmount).toBe(256_500);
   });
 
-  it("correctly breaks down revenue by source", () => {
-    const result = calculateWaterfall({
-      grossRevenue: 1_500_000,
-      revenueFromEnergy: 1_000_000,
-      revenueFromPenalties: 200_000,
-      revenueFromReservations: 150_000,
-      revenueFromAdvertising: 150_000,
-      energyCostPerKwh: 900,
-      totalKwh: 300,
-      evgreenPercent: 25,
-      investorPercent: 60,
-      hostPercent: 15,
-    });
-
-    // Verify revenue sources sum to gross
-    const sourceSum = result.revenueFromEnergy + result.revenueFromPenalties +
-      result.revenueFromReservations + result.revenueFromAdvertising;
-    expect(sourceSum).toBe(result.grossRevenue);
-
-    // Verify actor amounts sum to net revenue
-    const actorSum = result.evgreenAmount + result.investorAmount + result.hostAmount;
-    expect(actorSum).toBeCloseTo(result.netRevenue, 0);
-  });
-
-  it("handles high energy cost that exceeds revenue", () => {
+  it("handles high energy cost that exceeds revenue (negative margin)", () => {
     const result = calculateWaterfall({
       grossRevenue: 100_000,
       revenueFromEnergy: 100_000,
@@ -212,30 +264,59 @@ describe("Financial Model - Waterfall Calculation", () => {
       energyCostPerKwh: 1500,
       totalKwh: 100,
       evgreenPercent: 30,
-      investorPercent: 60,
+      investorPercent: 70,
       hostPercent: 10,
     });
 
-    // Energy cost = 1500 * 100 = 150,000 > 100,000 gross
     expect(result.totalEnergyCost).toBe(150_000);
-    expect(result.netRevenue).toBe(-50_000);
-    // Negative amounts distributed proportionally
-    expect(result.evgreenAmount).toBe(-15_000);
-    expect(result.investorAmount).toBe(-30_000);
+    expect(result.grossMargin).toBe(-50_000);
+    // Even with negative margin, host gets their % (negative)
     expect(result.hostAmount).toBe(-5_000);
+    expect(result.netAfterHost).toBe(-45_000);
+  });
+
+  it("verifies actor amounts sum correctly", () => {
+    const result = calculateWaterfall({
+      grossRevenue: 1_500_000,
+      revenueFromEnergy: 1_000_000,
+      revenueFromPenalties: 200_000,
+      revenueFromReservations: 150_000,
+      revenueFromAdvertising: 150_000,
+      energyCostPerKwh: 900,
+      totalKwh: 300,
+      evgreenPercent: 25,
+      investorPercent: 75,
+      hostPercent: 15,
+    });
+
+    // Revenue sources sum to gross
+    const sourceSum = result.revenueFromEnergy + result.revenueFromPenalties +
+      result.revenueFromReservations + result.revenueFromAdvertising;
+    expect(sourceSum).toBe(result.grossRevenue);
+
+    // EVGreen + Investor should sum to distributable
+    const evInvSum = result.evgreenAmount + result.investorAmount;
+    expect(evInvSum).toBeCloseTo(result.distributableAmount, 0);
+
+    // Host + EVGreen + Investor + Contingency should sum to gross margin
+    const totalDistributed = result.hostAmount + result.evgreenAmount + result.investorAmount + result.contingencyAmount;
+    expect(totalDistributed).toBeCloseTo(result.grossMargin, 0);
   });
 });
 
-describe("Financial Model - Station Configuration Defaults", () => {
-  it("uses correct default values when no custom config", () => {
+describe("Financial Model - Station Configuration Defaults (Corrected)", () => {
+  it("uses correct default values: EVGreen+Investor=100%, Host separate", () => {
     const defaults = {
       evgreenSharePercent: 30,
       investorSharePercent: 70,
-      hostSharePercent: 0,
+      hostSharePercent: 10, // separate, not part of the 100%
       energyCostPerKwh: 850,
     };
 
-    expect(defaults.evgreenSharePercent + defaults.investorSharePercent + defaults.hostSharePercent).toBe(100);
+    // EVGreen + Investor = 100%
+    expect(defaults.evgreenSharePercent + defaults.investorSharePercent).toBe(100);
+    // Host is separate
+    expect(defaults.hostSharePercent).toBeLessThanOrEqual(50);
     expect(defaults.energyCostPerKwh).toBeGreaterThan(0);
   });
 
@@ -243,13 +324,13 @@ describe("Financial Model - Station Configuration Defaults", () => {
     // Station A: investor-owned site (no host share)
     const stationA = { evgreen: 30, investor: 70, host: 0 };
     // Station B: rented space (with host share)
-    const stationB = { evgreen: 30, investor: 55, host: 15 };
+    const stationB = { evgreen: 40, investor: 60, host: 15 };
 
     expect(validatePercentages(stationA.evgreen, stationA.investor, stationA.host).valid).toBe(true);
     expect(validatePercentages(stationB.evgreen, stationB.investor, stationB.host).valid).toBe(true);
 
     // They can have different configurations
     expect(stationA.host).not.toBe(stationB.host);
-    expect(stationA.investor).not.toBe(stationB.investor);
+    expect(stationA.evgreen).not.toBe(stationB.evgreen);
   });
 });

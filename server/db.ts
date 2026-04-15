@@ -1487,7 +1487,7 @@ export async function getInvestorPendingBalance(investorId: number) {
   
   // Obtener configuración de porcentaje
   const settings = await db.select().from(platformSettings).limit(1);
-  const investorPercentage = settings[0]?.investorPercentage || 80;
+  const investorPercentage = settings[0]?.investorPercentage || 70;
   
   // Obtener todas las transacciones completadas
   // Nota: El campo 'status' en el schema de drizzle mapea a 'transaction_status' en la BD
@@ -3921,8 +3921,8 @@ export async function getInvestorStationsDemand(investorId: number): Promise<Arr
 
 export async function getRevenueShareConfig(): Promise<{ investorPercent: number; platformPercent: number }> {
   const settings = await getPlatformSettings();
-  const investorPercent = settings?.investorPercentage ?? 80;
-  const platformPercent = settings?.platformFeePercentage ?? 20;
+  const investorPercent = settings?.investorPercentage ?? 70;
+  const platformPercent = settings?.platformFeePercentage ?? 30;
   return { investorPercent, platformPercent };
 }
 

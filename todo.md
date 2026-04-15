@@ -2726,3 +2726,20 @@
 - [x] Actualizar lógica de alerta para usar umbral en COP en lugar de porcentaje
 - [x] Reporte consolidado multi-estación (PDF/Excel) con todos los fondos de mantenimiento
 - [x] Botón de exportar reporte consolidado en la vista principal del fondo
+
+## Corrección Modelo Financiero - Abril 2026 (CRÍTICO)
+- [x] Corregir waterfall: primero restar costo energía de ingresos brutos = margen bruto
+- [x] Del margen bruto, descontar % aliado comercial (dueño del espacio) primero
+- [x] Del neto restante (90% si aliado=10%), repartir entre EVGreen e inversionistas según sus %
+- [x] Actualizar UI de configuración del modelo para reflejar el flujo correcto
+- [x] Actualizar reportes de liquidación y vistas de inversionista
+- [x] Actualizar cálculos en la landing/simulador si aplica
+- [x] Verificar que fondo de mantenimiento se calcule correctamente con nuevo modelo
+
+## Mantenimientos Preventivos Programados - Abril 2026
+- [x] Crear tabla de mantenimientos programados (scheduled_maintenances) en schema
+- [x] Endpoints CRUD para programar mantenimientos preventivos por estación
+- [x] UI de calendario de mantenimientos en perfil de soporte
+- [x] UI de calendario de mantenimientos visible en admin
+- [x] Recordatorios automáticos (notificación push/email) antes del mantenimiento programado
+- [x] Integración con fondo de mantenimiento (estimar costos)

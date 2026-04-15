@@ -247,6 +247,7 @@ export default function Investors() {
     precioVentaMin: calcParams?.precioVentaMin ?? 1400,
     precioVentaMax: calcParams?.precioVentaMax ?? 2200,
     inversionistaPct: (calcParams?.investorPercentage ?? 70) / 100,
+    aliadoPct: (calcParams?.hostPercentage ?? 10) / 100,
   }), [calcParams]);
 
   // Sincronizar precio de venta con el backend cuando se carguen los params
@@ -262,7 +263,7 @@ export default function Investors() {
       const potencia = 'potenciaTotal' in paquete ? (paquete as any).potenciaTotal : paquete.potenciaKw * paquete.cantidadCargadores;
       const eficiencia = paquete.tipo.includes('AC') ? params.eficienciaAC : params.eficienciaDC;
       const energiaDia = potencia * horasBase * factorUtil * eficiencia;
-      const margenDia = energiaDia * (params.precioVentaDefault - costoEnergia) * (1 - costosOpPct) * params.inversionistaPct;
+      const margenDia = energiaDia * (params.precioVentaDefault - costoEnergia) * (1 - params.aliadoPct) * (1 - costosOpPct) * params.inversionistaPct;
       const inversion = 'participacionMinima' in paquete ? (paquete as any).participacionMinima : paquete.precio;
       const participacion = 'participacionMinima' in paquete ? (paquete as any).participacionMinima / paquete.precio : 1;
       const ingresoDia = margenDia * participacion;
@@ -370,8 +371,14 @@ export default function Investors() {
     // Costos operativos de la estación (mantenimiento, seguros, etc.)
     const costosOperativosDiariosEstacion = margenBrutoDiarioEstacion * costosOperativosPct;
     
+    // Descuento del aliado comercial (% del margen bruto, se descuenta PRIMERO)
+    const aliadoComercialDiarioEstacion = margenBrutoDiarioEstacion * params.aliadoPct;
+    
+    // Margen después del aliado
+    const margenDespuesAliadoEstacion = margenBrutoDiarioEstacion - aliadoComercialDiarioEstacion;
+    
     // Margen neto disponible para distribución de la estación
-    const margenNetoDistribuibleEstacion = margenBrutoDiarioEstacion - costosOperativosDiariosEstacion;
+    const margenNetoDistribuibleEstacion = margenDespuesAliadoEstacion - costosOperativosDiariosEstacion;
     
     // Margen para inversionistas (% del margen neto de la estación, desde backend)
     const margenInversionistasEstacion = margenNetoDistribuibleEstacion * params.inversionistaPct;
@@ -403,11 +410,11 @@ export default function Investors() {
     const roiAnual = inversionTotal > 0 ? (ingresoAnual / inversionTotal) * 100 : 0;
 
     // Margen neto por kWh para el inversionista (con factor de escenario)
-    const margenNetoPorKwhInversionista = (margenBrutoPorKwh * (1 - costosOperativosPct)) * params.inversionistaPct;
+    const margenNetoPorKwhInversionista = (margenBrutoPorKwh * (1 - params.aliadoPct) * (1 - costosOperativosPct)) * params.inversionistaPct;
     
     // Margen neto BASE por kWh (sin factor de escenario, para mostrar en info box)
     const margenBrutoBase = precioVenta - costoEnergia;
-    const margenNetoBaseInversionista = (margenBrutoBase * (1 - costosOperativosPct)) * params.inversionistaPct;
+    const margenNetoBaseInversionista = (margenBrutoBase * (1 - params.aliadoPct) * (1 - costosOperativosPct)) * params.inversionistaPct;
     
     // Potencia efectiva del inversionista (para mostrar)
     const potenciaEfectiva = potenciaTotal * porcentajeParticipacion;
@@ -547,7 +554,7 @@ export default function Investors() {
   const estadisticas = [
     { valor: "115%", descripcion: "Crecimiento anual del mercado EV en Colombia" },
     { valor: "1:125", descripcion: "Déficit actual de cargadores por vehículo" },
-    { valor: `${Math.round(params.inversionistaPct * 100)}%`, descripcion: "De los ingresos para el inversionista" },
+    { valor: `${Math.round(params.inversionistaPct * 100)}%`, descripcion: "Del neto para el inversionista" },
     { valor: "480kW", descripcion: "Potencia total estación colectiva" }
   ];
 
@@ -749,7 +756,7 @@ export default function Investors() {
                       </li>
                       <li className="flex items-start gap-2">
                         <CheckCircle2 className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-                        <span>Recibes el <strong className="text-white">{Math.round(params.inversionistaPct * 100)}% de los ingresos</strong> según tu porcentaje de participación</span>
+                        <span>Recibes el <strong className="text-white">{Math.round(params.inversionistaPct * 100)}% del neto</strong> (después de aliado comercial) según tu participación</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <CheckCircle2 className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
@@ -1362,7 +1369,7 @@ export default function Investors() {
                     )}
                   </p>
                   <p className="text-xs text-white/40 mt-2">
-                    * Margen = (Precio venta - Costo energía) × {100 - Math.round(calculos.costosOperativosPct * 100)}% (después de costos operativos) × {Math.round(params.inversionistaPct * 100)}% (tu parte)
+                    * Margen = (Precio venta - Costo energía) × {100 - Math.round(params.aliadoPct * 100)}% (después de aliado comercial) × {100 - Math.round(calculos.costosOperativosPct * 100)}% (después de costos operativos) × {Math.round(params.inversionistaPct * 100)}% (tu parte)
                     {paqueteSeleccionado === "COLECTIVO" && " — economías de escala"}
                   </p>
                 </div>
@@ -1578,8 +1585,8 @@ export default function Investors() {
                   const horasCol = PAQUETES.COLECTIVO.horasUsoConservador * params.factorUtilizacionPremium;
                   const energiaInd = PAQUETES.INDIVIDUAL.potenciaKw * horasInd * params.eficienciaDC;
                   const energiaCol = (PAQUETES.COLECTIVO as any).potenciaTotal * horasCol * params.eficienciaDC;
-                  const ingresoIndDia = (energiaInd * (precioBase - costoIndividual) * (1 - params.costosOpIndividual) * params.inversionistaPct);
-                  const ingresoColDia = (energiaCol * (precioBase - costoColectivo) * (1 - params.costosOpColectivo) * params.inversionistaPct);
+                  const ingresoIndDia = (energiaInd * (precioBase - costoIndividual) * (1 - params.aliadoPct) * (1 - params.costosOpIndividual) * params.inversionistaPct);
+                  const ingresoColDia = (energiaCol * (precioBase - costoColectivo) * (1 - params.aliadoPct) * (1 - params.costosOpColectivo) * params.inversionistaPct);
                   const roiIndAnual = PAQUETES.INDIVIDUAL.precio > 0 ? ((ingresoIndDia * 365) / PAQUETES.INDIVIDUAL.precio * 100) : 0;
                   const roiColAnual = PAQUETES.COLECTIVO.participacionMinima > 0 ? ((ingresoColDia * 365 * (PAQUETES.COLECTIVO.participacionMinima / PAQUETES.COLECTIVO.precio)) / PAQUETES.COLECTIVO.participacionMinima * 100) : 0;
                   const paybackInd = ingresoIndDia > 0 ? (PAQUETES.INDIVIDUAL.precio / (ingresoIndDia * 30)) : 999;

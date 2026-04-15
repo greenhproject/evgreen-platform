@@ -110,7 +110,7 @@ export default function AdminReports() {
     const completedTx = allTransactions.filter((tx: any) => tx.status === "COMPLETED");
     const totalRevenue = completedTx.reduce((sum: number, tx: any) => sum + parseFloat(tx.totalCost || 0), 0);
     const totalEnergy = completedTx.reduce((sum: number, tx: any) => sum + parseFloat(tx.kwhConsumed || 0), 0);
-    const platformFee = totalRevenue * 0.2; // 20% fee
+    const platformFee = totalRevenue * 0.30; // EVGreen 30% del neto (modelo corregido)
 
     return {
       totalRevenue,
@@ -120,14 +120,20 @@ export default function AdminReports() {
     };
   }, [allTransactions]);
 
-  // Distribución de ingresos basada en datos reales
+  // Distribución de ingresos - modelo corregido:
+  // Margen bruto → Aliado 10% → Neto → EVGreen 30% + Inversionista 70%
+  // Ejemplo con defaults: del neto después del aliado, inv=70%, evgreen=30%
   const revenueDistribution = useMemo(() => {
-    const investorShare = totals.totalRevenue * 0.8;
-    const platformShare = totals.totalRevenue * 0.2;
+    const grossMargin = totals.totalRevenue; // Simplified: actual deductions happen in settlement
+    const aliadoShare = grossMargin * 0.10;
+    const netAfterAliado = grossMargin - aliadoShare;
+    const investorShare = netAfterAliado * 0.70;
+    const platformShare = netAfterAliado * 0.30;
     
     return [
-      { name: "Inversionistas (80%)", value: investorShare, color: "#22c55e" },
-      { name: "Green EV (20%)", value: platformShare, color: "#3b82f6" },
+      { name: "Inversionistas (70% del neto)", value: investorShare, color: "#22c55e" },
+      { name: "EVGreen (30% del neto)", value: platformShare, color: "#3b82f6" },
+      { name: "Aliado Comercial (10% margen)", value: aliadoShare, color: "#f59e0b" },
     ];
   }, [totals.totalRevenue]);
 
@@ -189,7 +195,7 @@ export default function AdminReports() {
               ) : (
                 <div className="text-2xl font-bold">{formatCurrency(metrics?.monthly?.platformFees || totals.platformFee)}</div>
               )}
-              <div className="text-sm text-muted-foreground">Fee Green EV (20%)</div>
+              <div className="text-sm text-muted-foreground">Fee EVGreen (30% neto)</div>
             </div>
           </div>
         </Card>
