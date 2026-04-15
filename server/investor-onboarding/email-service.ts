@@ -3,11 +3,14 @@
  * Envía emails premium HTML usando Resend cuando se confirma una inversión
  */
 import { Resend } from "resend";
+import { buildEmailParams } from "../utils/email-helper";
 import * as db from "../db";
 
-// Resend API key from environment or known key
-const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
-const FROM_EMAIL = "EVGreen <admin@greenhproject.com>";
+// Resend API key - same pattern as ticket-email-service
+const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
+const resend = new Resend(resendApiKey);
+
+const FROM_EMAIL = "EVGreen <admin@evgreen.lat>";
 const CC_EMAIL = "gerencia@greenhproject.com"; // Copia para trazabilidad
 
 interface WelcomeEmailData {
@@ -276,19 +279,27 @@ function generateWelcomeEmailHTML(data: WelcomeEmailData): string {
 
 export async function sendWelcomeEmail(data: WelcomeEmailData): Promise<boolean> {
   try {
-    const resend = new Resend(RESEND_API_KEY);
-    
     const html = generateWelcomeEmailHTML(data);
+    const subject = `Bienvenido a EVGreen, ${data.investorName} - Tu inversion ha sido confirmada`;
     
-    const result = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: [data.investorEmail],
-      cc: [CC_EMAIL], // Copia para trazabilidad
-      subject: `🎉 ¡Bienvenido a EVGreen, ${data.investorName}! Tu inversión ha sido confirmada`,
-      html,
-    });
+    // Send to investor - using buildEmailParams like ticket-email-service
+    const recipients = [data.investorEmail, CC_EMAIL];
+    
+    for (const email of recipients) {
+      try {
+        await resend.emails.send(buildEmailParams({
+          from: FROM_EMAIL,
+          to: email,
+          subject,
+          html,
+          replyTo: "gerencia@greenhproject.com",
+        }));
+        console.log(`[Onboarding Email] Welcome email sent to ${email}`);
+      } catch (err) {
+        console.error(`[Onboarding Email] Failed to send to ${email}:`, err);
+      }
+    }
 
-    console.log(`[Onboarding Email] Welcome email sent to ${data.investorEmail}:`, result);
     return true;
   } catch (error) {
     console.error(`[Onboarding Email] Failed to send welcome email to ${data.investorEmail}:`, error);
