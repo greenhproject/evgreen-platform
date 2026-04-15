@@ -2752,3 +2752,11 @@
 - [x] Resumen por estación con indicador de participación del inversionista
 - [x] Actualizar distribución del período para reflejar modelo corregido
 - [x] Backend: endpoint que retorne datos agrupados por estación con shares proporcionales
+
+## Rediseño Módulo Ingresos Inversionista - Abril 2026
+- [x] KPIs superiores: sumatoria de ingresos netos de TODAS las estaciones (propias + colectivas proporcionales)
+- [x] Diferenciar estaciones propias vs colectivas con métricas según su modelo de negocio
+- [x] Waterfall correcto por estación: costo energía → aliado → neto → split proporcional
+- [x] Detalle de ingresos diarios con desglose por estación y tipo
+- [x] Backend: endpoint enriquecido de earnings con datos de waterfall por estación
+- [x] Selector de período con comparación vs período anterior
