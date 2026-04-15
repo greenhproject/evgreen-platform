@@ -6995,10 +6995,18 @@ export async function getEnrichedTransactionsByInvestor(
     const totalCost = Number(tx.totalCost || 0);
     const kwhConsumed = Number(tx.kwhConsumed || 0);
     
+    // Revenue source breakdown from transaction fields
+    const txEnergyCostField = Number(tx.energyCost || 0); // energy sale revenue (what user paid for energy)
+    const txTimeCost = Number(tx.timeCost || 0);
+    const txSessionCost = Number(tx.sessionCost || 0);
+    const txOverstayCost = Number(tx.overstayCost || 0);
+    const revenueFromEnergy = txEnergyCostField + txTimeCost + txSessionCost;
+    const revenueFromPenalties = txOverstayCost;
+    
     // Waterfall calculation (matching the corrected financial model)
     const grossRevenue = totalCost;
-    const energyCost = kwhConsumed * stationInfo.energyCostPerKwh;
-    const grossMargin = Math.max(0, grossRevenue - energyCost);
+    const energyCostPurchase = kwhConsumed * stationInfo.energyCostPerKwh;
+    const grossMargin = Math.max(0, grossRevenue - energyCostPurchase);
     
     // Host gets their % from gross margin FIRST
     const hostAmount = grossMargin * (stationInfo.hostSharePercent / 100);
@@ -7028,7 +7036,7 @@ export async function getEnrichedTransactionsByInvestor(
       },
       waterfall: {
         grossRevenue,
-        energyCost,
+        energyCost: energyCostPurchase,
         grossMargin,
         hostPercent: stationInfo.hostSharePercent,
         hostAmount,
@@ -7040,6 +7048,9 @@ export async function getEnrichedTransactionsByInvestor(
         participationPercent: stationInfo.investorParticipationPercent,
         myShare,
         isCollective: stationInfo.isCollective,
+        // Revenue source breakdown
+        revenueFromEnergy,
+        revenueFromPenalties,
       },
     };
   });
