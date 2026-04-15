@@ -348,7 +348,7 @@ export default function HostDashboard() {
                     <div className="text-right">
                       <p className="font-bold text-amber-600">{formatCOP(s.hostAmount || s.hostTotalAmount)}</p>
                       <p className="text-xs text-muted-foreground">
-                        {Number(s.hostSharePercent || 0).toFixed(1)}% del neto
+                        {Number(s.hostSharePercent || 0).toFixed(1)}% del margen bruto
                       </p>
                     </div>
                     <Badge

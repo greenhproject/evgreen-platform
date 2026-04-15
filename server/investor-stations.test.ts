@@ -97,7 +97,7 @@ function autoCreateStationForProject(project: {
     stationName: project.name,
     stationAddress: project.address || `${project.zone}, ${project.city}`,
     evgreenSharePercent: project.evgreenSharePercent || '30.00',
-    investorSharePercent: project.investorSharePercent || '60.00',
+    investorSharePercent: project.investorSharePercent || '70.00',
     hostSharePercent: project.hostSharePercent || '10.00',
     energyPurchaseCostPerKwh: project.energyPurchaseCostPerKwh || '800.00',
     connectorCount: project.chargerCount || 4,
@@ -192,7 +192,7 @@ describe("Auto-Station Creation for Crowdfunding", () => {
     expect(station.stationName).toBe("Estación Bogotá Norte");
     expect(station.stationAddress).toBe("Usaquén / Zona Norte, Bogotá");
     expect(station.evgreenSharePercent).toBe('30.00');
-    expect(station.investorSharePercent).toBe('60.00');
+    expect(station.investorSharePercent).toBe('70.00');
     expect(station.hostSharePercent).toBe('10.00');
     expect(station.energyPurchaseCostPerKwh).toBe('800.00');
     expect(station.connectorCount).toBe(4);
@@ -230,17 +230,21 @@ describe("Auto-Station Creation for Crowdfunding", () => {
     expect(station.stationAddress).toBe("Ciudad Jardín, Cali");
   });
 
-  it("financial model percentages sum to 100%", () => {
+  it("financial model: EVGreen + Investor = 100%, Host is separate", () => {
     const station = autoCreateStationForProject({
       name: "Test",
       city: "Bogotá",
       zone: "Centro",
     });
     
-    const total = parseFloat(station.evgreenSharePercent) +
-      parseFloat(station.investorSharePercent) +
-      parseFloat(station.hostSharePercent);
+    // EVGreen + Investor must sum to 100% (they split the net after host)
+    const evInvTotal = parseFloat(station.evgreenSharePercent) +
+      parseFloat(station.investorSharePercent);
+    expect(evInvTotal).toBe(100);
     
-    expect(total).toBe(100);
+    // Host is a separate percentage (0-50%) on gross margin
+    const hostPct = parseFloat(station.hostSharePercent);
+    expect(hostPct).toBeGreaterThanOrEqual(0);
+    expect(hostPct).toBeLessThanOrEqual(50);
   });
 });

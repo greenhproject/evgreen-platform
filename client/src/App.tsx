@@ -90,6 +90,7 @@ const TechnicianSupport = lazy(() => import("./pages/technician/Support"));
 const EngineerDashboard = lazy(() => import("./pages/engineer/Dashboard"));
 const EngineerTickets = lazy(() => import("./pages/engineer/Tickets"));
 const EngineerTechnicians = lazy(() => import("./pages/engineer/Technicians"));
+const PreventiveMaintenance = lazy(() => import("./pages/engineer/PreventiveMaintenance"));
 
 // Páginas de administración
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
@@ -430,6 +431,13 @@ function Router() {
           <ProtectedRoute allowedRoles={["engineer", "admin"]}>
             <EngineerLayout>
               <TechnicianMaintenance />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineer/preventive-maintenance">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <PreventiveMaintenance />
             </EngineerLayout>
           </ProtectedRoute>
         </Route>

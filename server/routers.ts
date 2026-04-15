@@ -33,6 +33,7 @@ import { eventRouter } from "./event/event-router";
 import { idTagRouter } from "./idtags/idtag-router";
 import { supportRouterV2 } from "./support/support-router";
 import { buildFinancialRouter } from "./financial/financial-router";
+import { maintenanceScheduleRouter } from "./maintenance/maintenance-schedule-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -1373,8 +1374,8 @@ const transactionsRouter = router({
       });
 
       const settings = await db.getPlatformSettings();
-      const investorPercentage = settings?.investorPercentage ?? 80;
-      const platformFeePercentage = settings?.platformFeePercentage ?? 20;
+      const investorPercentage = settings?.investorPercentage ?? 70;
+      const platformFeePercentage = settings?.platformFeePercentage ?? 30;
 
       const stationIds = Array.from(new Set(transactions.map(t => t.stationId)));
       const stationsMap: Record<number, string> = {};
@@ -2627,8 +2628,8 @@ const settingsRouter = router({
   getInvestorPercentage: publicProcedure.query(async () => {
     const settings = await db.getPlatformSettings();
     return {
-      investorPercentage: settings?.investorPercentage ?? 80,
-      platformFeePercentage: settings?.platformFeePercentage ?? 20,
+      investorPercentage: settings?.investorPercentage ?? 70,
+      platformFeePercentage: settings?.platformFeePercentage ?? 30,
     };
   }),
 
@@ -2648,6 +2649,7 @@ const settingsRouter = router({
       precioVentaDefault: settings?.precioVentaDefault ?? 1800,
       precioVentaMin: settings?.precioVentaMin ?? 1400,
       precioVentaMax: settings?.precioVentaMax ?? 2200,
+      hostPercentage: 10, // Default aliado comercial % (per-station config overrides this)
     };
   }),
   
@@ -2661,8 +2663,8 @@ const settingsRouter = router({
         businessLine: "Green EV",
         nit: "",
         contactEmail: "",
-        investorPercentage: 80,
-        platformFeePercentage: 20,
+        investorPercentage: 70,
+        platformFeePercentage: 30,
         wompiPublicKey: "",
         wompiPrivateKey: "",
         wompiIntegritySecret: "",
@@ -3046,7 +3048,7 @@ const payoutsRouter = router({
       const periodStart = balance.lastPayout?.periodEnd || new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const periodEnd = now;
       
-      const platformFee = input.amount * ((100 - (balance.investorPercentage || 80)) / (balance.investorPercentage || 80));
+      const platformFee = input.amount * ((100 - (balance.investorPercentage || 70)) / (balance.investorPercentage || 70));
       const totalRevenue = input.amount + platformFee;
       
       const payoutId = await db.createInvestorPayout({
@@ -3056,7 +3058,7 @@ const payoutsRouter = router({
         totalRevenue: totalRevenue.toFixed(2),
         investorShare: input.amount.toFixed(2),
         platformFee: platformFee.toFixed(2),
-        investorPercentage: balance.investorPercentage || 80,
+        investorPercentage: balance.investorPercentage || 70,
         transactionCount: balance.transactionCount || 0,
         totalKwh: '0', // Se puede calcular si es necesario
         bankName: input.bankName,
@@ -3249,7 +3251,7 @@ const crowdfundingRouter = router({
         isPublic: false,
         // Modelo financiero
         evgreenSharePercent: evgreenSharePercent || '30.00',
-        investorSharePercent: investorSharePercent || '60.00',
+        investorSharePercent: investorSharePercent || '70.00',
         hostSharePercent: hostSharePercent || '10.00',
         energyPurchaseCostPerKwh: energyPurchaseCostPerKwh || '800.00',
         hostName: hostName || null,
@@ -5707,6 +5709,7 @@ export const appRouter = router({
   debts: debtRouter,
   adminRemoteStart: adminRemoteStartRouter,
   financial: buildFinancialRouter(router, protectedProcedure, adminProcedure),
+  maintenanceSchedule: maintenanceScheduleRouter,
 });
 
 export type AppRouter = typeof appRouter;

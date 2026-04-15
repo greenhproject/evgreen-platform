@@ -54,7 +54,7 @@ export default function HostSpaces() {
                       </p>
                       <div className="flex items-center gap-2 mt-2">
                         <Badge variant="outline" className="text-[10px]">
-                          Tu participación: {Number(station.hostSharePercent || 0).toFixed(1)}%
+                          Tu participación: {Number(station.hostSharePercent || 0).toFixed(1)}% del margen
                         </Badge>
                         <Badge variant="outline" className="text-[10px]">
                           Costo energía: ${Number(station.energyCostPerKwh || 850).toLocaleString()}/kWh

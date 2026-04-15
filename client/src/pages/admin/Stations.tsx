@@ -1058,10 +1058,15 @@ export default function AdminStations() {
           Modelo Financiero
         </h3>
         <p className="text-xs text-muted-foreground">
-          Configura la distribución de ingresos entre los actores. Los porcentajes deben sumar 100%.
+          Modelo: Ingresos - Costo energía = Margen bruto → Aliado Comercial (% del margen) → Neto → EVGreen + Inversionista (deben sumar 100% entre ellos).
         </p>
         
-        <div className="grid grid-cols-3 gap-4">
+        {/* EVGreen + Inversionista = 100% del neto (después del aliado) */}
+        <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 mb-2">
+          <p className="text-xs font-semibold text-blue-400 mb-1">Reparto del Neto (EVGreen + Inversionista = 100%)</p>
+          <p className="text-[10px] text-muted-foreground">Estos porcentajes se aplican sobre el neto después de descontar el aliado comercial.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label className="text-xs">% EVGreen (Gestor)</Label>
             <div className="relative">
@@ -1073,7 +1078,7 @@ export default function AdminStations() {
                 value={formData.evgreenSharePercent}
                 onChange={(e) => {
                   const val = e.target.value;
-                  const remaining = 100 - parseFloat(val || "0") - parseFloat(formData.hostSharePercent || "0");
+                  const remaining = 100 - parseFloat(val || "0");
                   setFormData({...formData, evgreenSharePercent: val, investorSharePercent: Math.max(0, remaining).toFixed(2)});
                 }}
                 className="pr-8"
@@ -1092,28 +1097,32 @@ export default function AdminStations() {
                 value={formData.investorSharePercent}
                 onChange={(e) => {
                   const val = e.target.value;
-                  const remaining = 100 - parseFloat(val || "0") - parseFloat(formData.evgreenSharePercent || "0");
-                  setFormData({...formData, investorSharePercent: val, hostSharePercent: Math.max(0, remaining).toFixed(2)});
+                  const remaining = 100 - parseFloat(val || "0");
+                  setFormData({...formData, investorSharePercent: val, evgreenSharePercent: Math.max(0, remaining).toFixed(2)});
                 }}
                 className="pr-8"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
             </div>
           </div>
+        </div>
+
+        {/* Aliado Comercial - % separado sobre margen bruto */}
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 mb-2 mt-4">
+          <p className="text-xs font-semibold text-amber-400 mb-1">% Aliado Comercial (sobre Margen Bruto)</p>
+          <p className="text-[10px] text-muted-foreground">Este porcentaje se descuenta primero del margen bruto (ingresos - costo energía). El restante se reparte entre EVGreen e Inversionista.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label className="text-xs">% Aliado Comercial</Label>
             <div className="relative">
               <Input
                 type="number"
                 min="0"
-                max="100"
+                max="50"
                 step="0.5"
                 value={formData.hostSharePercent}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const remaining = 100 - parseFloat(val || "0") - parseFloat(formData.evgreenSharePercent || "0");
-                  setFormData({...formData, hostSharePercent: val, investorSharePercent: Math.max(0, remaining).toFixed(2)});
-                }}
+                onChange={(e) => setFormData({...formData, hostSharePercent: e.target.value})}
                 className="pr-8"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
@@ -1123,12 +1132,21 @@ export default function AdminStations() {
         
         {/* Validación visual de porcentajes */}
         {(() => {
-          const total = parseFloat(formData.evgreenSharePercent || "0") + parseFloat(formData.investorSharePercent || "0") + parseFloat(formData.hostSharePercent || "0");
-          const isValid = Math.abs(total - 100) < 0.1;
+          const evInvTotal = parseFloat(formData.evgreenSharePercent || "0") + parseFloat(formData.investorSharePercent || "0");
+          const hostPct = parseFloat(formData.hostSharePercent || "0");
+          const isEvInvValid = Math.abs(evInvTotal - 100) < 0.1;
+          const isHostValid = hostPct >= 0 && hostPct <= 50;
+          const isValid = isEvInvValid && isHostValid;
           return (
-            <div className={`p-3 rounded-lg text-xs flex items-center justify-between ${isValid ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
-              <span>Total: {total.toFixed(1)}%</span>
-              <span>{isValid ? 'Distribución válida' : 'Los porcentajes deben sumar 100%'}</span>
+            <div className={`p-3 rounded-lg text-xs space-y-1 ${isValid ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
+              <div className="flex items-center justify-between">
+                <span>EVGreen + Inversionista: {evInvTotal.toFixed(1)}%</span>
+                <span>{isEvInvValid ? '✓ Suma 100%' : '✗ Deben sumar 100%'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Aliado Comercial: {hostPct.toFixed(1)}% (sobre margen bruto)</span>
+                <span>{isHostValid ? '✓ Válido (0-50%)' : '✗ Máximo 50%'}</span>
+              </div>
             </div>
           );
         })()}

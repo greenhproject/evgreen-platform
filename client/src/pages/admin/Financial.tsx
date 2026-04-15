@@ -607,11 +607,11 @@ function SettlementsTab({ stationId }: { stationId: number }) {
                         <p className="font-semibold text-red-500">-{formatCOP(Number(s.totalFixedExpenses))}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Inversionistas ({s.investorSharePercent}%)</p>
+                        <p className="text-xs text-muted-foreground">Inversionistas ({s.investorSharePercent}% del neto)</p>
                         <p className="font-semibold text-primary">{formatCOP(Number(s.investorTotalAmount))}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Plataforma ({s.platformSharePercent}%)</p>
+                        <p className="text-xs text-muted-foreground">EVGreen ({s.platformSharePercent}% del neto)</p>
                         <p className="font-semibold">{formatCOP(Number(s.platformTotalAmount))}</p>
                       </div>
                     </div>
@@ -700,6 +700,7 @@ function GenerateSettlementDialog({
     contingencyPercent: 5,
     notes: "",
   });
+  // Note: hostSharePercent comes from station config, not from this form
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -741,7 +742,7 @@ function GenerateSettlementDialog({
               />
             </div>
             <div>
-              <Label>% Inversionistas</Label>
+              <Label>% Inversionistas (del neto)</Label>
               <Input
                 type="number"
                 min={0}
@@ -752,14 +753,16 @@ function GenerateSettlementDialog({
                   setForm({ ...form, investorSharePercent: v, platformSharePercent: 100 - v });
                 }}
               />
+              <p className="text-[10px] text-muted-foreground mt-1">Del neto después del aliado comercial</p>
             </div>
             <div>
-              <Label>% Plataforma</Label>
+              <Label>% EVGreen (del neto)</Label>
               <Input
                 type="number"
                 value={form.platformSharePercent}
                 disabled
               />
+              <p className="text-[10px] text-muted-foreground mt-1">El % Aliado Comercial viene de la config de la estación</p>
             </div>
             <div className="col-span-2">
               <Label>% Reserva Contingencia</Label>
@@ -782,26 +785,44 @@ function GenerateSettlementDialog({
             </div>
           </div>
 
-          {/* Waterfall Preview */}
+          {/* Waterfall Preview - Modelo Corregido */}
           <Card className="bg-muted/30">
             <CardContent className="pt-4 pb-4">
-              <p className="text-xs font-medium text-muted-foreground mb-2">CASCADA DE PAGOS (WATERFALL)</p>
+              <p className="text-xs font-medium text-muted-foreground mb-2">CASCADA DE PAGOS (WATERFALL) - MODELO CORREGIDO</p>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>1. Ingreso Bruto por Venta de Energía</span>
                   <span className="text-green-500 font-mono">+$$$</span>
                 </div>
                 <div className="flex justify-between text-red-400">
-                  <span>2. (-) Gastos Fijos (por prioridad)</span>
+                  <span>2. (-) Costo de Energía (kWh × costo/kWh)</span>
                   <span className="font-mono">-$$$</span>
                 </div>
-                <div className="flex justify-between text-yellow-500">
-                  <span>3. (-) Reserva Contingencia ({form.contingencyPercent}%)</span>
+                <div className="flex justify-between text-red-400">
+                  <span>3. (-) Gastos Fijos (por prioridad)</span>
+                  <span className="font-mono">-$$$</span>
+                </div>
+                <Separator className="my-1" />
+                <div className="flex justify-between font-semibold text-blue-400">
+                  <span>= Margen Bruto</span>
+                  <span className="font-mono">=$$$</span>
+                </div>
+                <div className="flex justify-between text-amber-400">
+                  <span>4. (-) Aliado Comercial (% del margen bruto)</span>
                   <span className="font-mono">-$$$</span>
                 </div>
                 <Separator className="my-1" />
                 <div className="flex justify-between font-semibold">
-                  <span>4. Neto Distribuible</span>
+                  <span>= Neto después del Aliado</span>
+                  <span className="font-mono">=$$$</span>
+                </div>
+                <div className="flex justify-between text-yellow-500">
+                  <span>5. (-) Reserva Contingencia ({form.contingencyPercent}%)</span>
+                  <span className="font-mono">-$$$</span>
+                </div>
+                <Separator className="my-1" />
+                <div className="flex justify-between font-semibold">
+                  <span>= Distribuible (EVGreen + Inversionista)</span>
                   <span className="font-mono">=$$$</span>
                 </div>
                 <div className="flex justify-between text-primary">
@@ -809,8 +830,11 @@ function GenerateSettlementDialog({
                   <span className="font-mono">$$$</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="pl-4">→ Plataforma GHP ({form.platformSharePercent}%)</span>
+                  <span className="pl-4">→ EVGreen ({form.platformSharePercent}%)</span>
                   <span className="font-mono">$$$</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground text-xs">
+                  <span className="pl-8">└ 5% del share EVGreen → Fondo Mantenimiento</span>
                 </div>
               </div>
             </CardContent>

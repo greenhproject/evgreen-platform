@@ -212,10 +212,14 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
         const hostPct = input.hostSharePercent ?? Number(station.hostSharePercent || 0);
         const energyCostPerKwh = Number(station.energyPurchaseCostPerKwh || 850);
 
-        // Validate percentages sum to 100
-        const totalPct = evgreenPct + investorPct + hostPct;
-        if (Math.abs(totalPct - 100) > 0.1) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Los porcentajes deben sumar 100%. Actual: EVGreen ${evgreenPct}% + Inversionista ${investorPct}% + Aliado ${hostPct}% = ${totalPct}%` });
+        // Validate: EVGreen + Investor must sum to 100% (they split the net after ally)
+        // Host/Ally % is applied separately on gross margin first
+        const evInvTotal = evgreenPct + investorPct;
+        if (Math.abs(evInvTotal - 100) > 0.1) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `EVGreen + Inversionista deben sumar 100%. Actual: EVGreen ${evgreenPct}% + Inversionista ${investorPct}% = ${evInvTotal}%. El % Aliado Comercial (${hostPct}%) se aplica por separado sobre el margen bruto.` });
+        }
+        if (hostPct < 0 || hostPct > 50) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `El % del Aliado Comercial debe estar entre 0% y 50%. Actual: ${hostPct}%` });
         }
 
         // 1. Get revenue for the period (now with breakdown by source)
@@ -245,19 +249,28 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
         // 3. Calculate energy purchase cost (kWh sold * cost per kWh)
         const totalEnergyCost = Math.round(revenue.totalKwh * energyCostPerKwh);
 
-        // 4. Calculate net revenue: Gross - Fixed Expenses - Energy Cost
+        // 4. Calculate gross margin: Gross Revenue - Energy Cost - Fixed Expenses
         const grossRevenue = Math.round(revenue.grossRevenue);
-        const netAfterExpenses = Math.max(0, grossRevenue - totalFixedExpenses - totalEnergyCost);
+        const grossMargin = Math.max(0, grossRevenue - totalFixedExpenses - totalEnergyCost);
         
-        // 5. Contingency reserve
-        const contingencyReserve = Math.round(netAfterExpenses * (input.contingencyPercent / 100));
-        const distributableAmount = netAfterExpenses - contingencyReserve;
+        // 5. CORRECTED WATERFALL: Ally/Host gets their % from gross margin FIRST
+        //    Then EVGreen and Investor split the remainder
+        //    Formula: (Ingresos - Costo Energía - Gastos Fijos) = Margen Bruto
+        //             Margen Bruto × hostPct% = Aliado Comercial
+        //             (Margen Bruto - Aliado) = Neto para split
+        //             Contingencia se aplica sobre el neto
+        //             EVGreen e Inversionista se reparten el distributable
+        const hostTotalAmount = Math.round(grossMargin * (hostPct / 100));
+        const netAfterHost = grossMargin - hostTotalAmount;
+        
+        // 5b. Contingency reserve (from net after host)
+        const contingencyReserve = Math.round(netAfterHost * (input.contingencyPercent / 100));
+        const distributableAmount = netAfterHost - contingencyReserve;
 
-        // 6. Split 3-way: EVGreen / Inversionista / Aliado Comercial
+        // 6. Split between EVGreen and Investor (their % sum to 100%)
         const investorTotalAmount = Math.round(distributableAmount * (investorPct / 100));
-        const hostTotalAmount = Math.round(distributableAmount * (hostPct / 100));
-        const platformTotalAmount = distributableAmount - investorTotalAmount - hostTotalAmount;
-        const netRevenue = netAfterExpenses;
+        const platformTotalAmount = distributableAmount - investorTotalAmount;
+        const netRevenue = grossMargin;
 
         // 6b. Fondo de mantenimiento (% del share de EVGreen, solo estaciones colectivas)
         const maintenanceFundPct = Number(station.maintenanceFundPercent || 5);
@@ -371,13 +384,16 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           grossRevenue,
           totalFixedExpenses,
           totalEnergyCost,
-          netRevenue,
+          grossMargin,          // Ingresos - Costo Energía - Gastos Fijos
+          hostTotalAmount,      // Aliado Comercial (% del margen bruto, descontado primero)
+          netAfterHost,         // Margen bruto - Aliado
           contingencyReserve,
+          distributableAmount,  // Neto para split entre EVGreen e Inversionista
           investorTotalAmount,
           platformTotalAmount,
-          hostTotalAmount,
           maintenanceFundAmount,
           platformNetAmount,
+          netRevenue,           // = grossMargin (for backward compat)
           // Revenue breakdown
           revenueFromEnergy: revenue.revenueFromEnergy,
           revenueFromPenalties: revenue.revenueFromPenalties,
@@ -391,7 +407,7 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           totalKwh: revenue.totalKwh,
           investorCount: investors.length,
           waterfallBreakdown,
-          message: "Liquidación generada exitosamente (estado: BORRADOR)",
+          message: "Liquidación generada exitosamente (estado: BORRADOR). Modelo: Margen bruto → Aliado → EVGreen/Inversionista",
         };
       }),
 

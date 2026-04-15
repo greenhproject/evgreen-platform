@@ -2694,3 +2694,146 @@ export const maintenanceFundRecordsRelations = relations(maintenanceFundRecords,
     references: [users.id],
   }),
 }));
+
+// ============================================================================
+// SCHEDULED MAINTENANCES - Mantenimientos preventivos programados
+// ============================================================================
+
+export const maintenanceFrequencyEnum = mysqlEnum("maintenance_frequency", [
+  "weekly", "biweekly", "monthly", "quarterly", "semiannual", "annual", "one_time"
+]);
+
+export const maintenanceScheduleStatusEnum = mysqlEnum("maintenance_schedule_status", [
+  "active", "paused", "completed", "cancelled"
+]);
+
+export const maintenanceTaskStatusEnum = mysqlEnum("maintenance_task_status", [
+  "pending", "in_progress", "completed", "overdue", "cancelled"
+]);
+
+export const scheduledMaintenances = mysqlTable("scheduled_maintenances", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  
+  // Información del mantenimiento
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  maintenanceType: varchar("maintenanceType", { length: 100 }).notNull(), // "preventivo" | "inspección" | "limpieza" | "calibración" | "actualización_firmware"
+  
+  // Programación
+  frequency: maintenanceFrequencyEnum.notNull(),
+  nextDueDate: timestamp("nextDueDate").notNull(), // Próxima fecha programada
+  lastCompletedDate: timestamp("lastCompletedDate"), // Última vez que se completó
+  
+  // Horario de trabajo (8:00 - 17:00 por defecto)
+  preferredTimeStart: varchar("preferredTimeStart", { length: 5 }).default("08:00").notNull(),
+  preferredTimeEnd: varchar("preferredTimeEnd", { length: 5 }).default("17:00").notNull(),
+  
+  // Asignación
+  assignedTechnicianId: int("assignedTechnicianId"), // FK a users (técnico asignado)
+  assignedEngineerId: int("assignedEngineerId"), // FK a users (jefe de área/ingeniero responsable)
+  
+  // Costo estimado (para presupuesto del fondo de mantenimiento)
+  estimatedCostCop: bigint("estimatedCostCop", { mode: "number" }).default(0),
+  
+  // Recordatorios
+  reminderDaysBefore: int("reminderDaysBefore").default(3).notNull(), // Días antes para enviar recordatorio
+  reminderSent: boolean("reminderSent").default(false).notNull(), // Si ya se envió el recordatorio
+  
+  // Estado del programa
+  status: maintenanceScheduleStatusEnum.default("active").notNull(),
+  
+  // Notas
+  notes: text("notes"),
+  
+  // Auditoría
+  createdBy: int("createdBy").notNull(), // FK a users
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ScheduledMaintenance = typeof scheduledMaintenances.$inferSelect;
+export type InsertScheduledMaintenance = typeof scheduledMaintenances.$inferInsert;
+
+// ============================================================================
+// MAINTENANCE TASKS - Tareas individuales generadas por los programas
+// ============================================================================
+
+export const maintenanceTasks = mysqlTable("maintenance_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  scheduleId: int("scheduleId").notNull(), // FK a scheduled_maintenances
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  
+  // Información de la tarea
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  maintenanceType: varchar("maintenanceType", { length: 100 }).notNull(),
+  
+  // Fechas
+  dueDate: timestamp("dueDate").notNull(), // Fecha límite
+  scheduledDate: timestamp("scheduledDate"), // Fecha programada real
+  completedDate: timestamp("completedDate"), // Fecha de completación
+  
+  // Asignación
+  assignedTechnicianId: int("assignedTechnicianId"), // FK a users
+  
+  // Resultado
+  status: maintenanceTaskStatusEnum.default("pending").notNull(),
+  completionNotes: text("completionNotes"),
+  actualCostCop: bigint("actualCostCop", { mode: "number" }).default(0),
+  
+  // Referencia al fondo de mantenimiento (si se cobró)
+  fundRecordId: int("fundRecordId"), // FK a maintenance_fund_records
+  
+  // Calificación del trabajo (1-5 estrellas)
+  qualityRating: int("qualityRating"), // 1-5
+  ratingNotes: text("ratingNotes"),
+  ratedBy: int("ratedBy"), // FK a users (quien calificó)
+  
+  // Auditoría
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MaintenanceTask = typeof maintenanceTasks.$inferSelect;
+export type InsertMaintenanceTask = typeof maintenanceTasks.$inferInsert;
+
+// Relations
+export const scheduledMaintenancesRelations = relations(scheduledMaintenances, ({ one, many }) => ({
+  station: one(chargingStations, {
+    fields: [scheduledMaintenances.stationId],
+    references: [chargingStations.id],
+  }),
+  assignedTechnician: one(users, {
+    fields: [scheduledMaintenances.assignedTechnicianId],
+    references: [users.id],
+  }),
+  tasks: many(maintenanceTasks),
+  creator: one(users, {
+    fields: [scheduledMaintenances.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const maintenanceTasksRelations = relations(maintenanceTasks, ({ one }) => ({
+  schedule: one(scheduledMaintenances, {
+    fields: [maintenanceTasks.scheduleId],
+    references: [scheduledMaintenances.id],
+  }),
+  station: one(chargingStations, {
+    fields: [maintenanceTasks.stationId],
+    references: [chargingStations.id],
+  }),
+  assignedTechnician: one(users, {
+    fields: [maintenanceTasks.assignedTechnicianId],
+    references: [users.id],
+  }),
+  fundRecord: one(maintenanceFundRecords, {
+    fields: [maintenanceTasks.fundRecordId],
+    references: [maintenanceFundRecords.id],
+  }),
+  rater: one(users, {
+    fields: [maintenanceTasks.ratedBy],
+    references: [users.id],
+  }),
+}));

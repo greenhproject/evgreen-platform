@@ -185,7 +185,7 @@ export default function AdminCrowdfunding() {
     priority: 1,
     // Modelo financiero
     evgreenSharePercent: "30.00",
-    investorSharePercent: "60.00",
+    investorSharePercent: "70.00",
     hostSharePercent: "10.00",
     energyPurchaseCostPerKwh: "800.00",
     hostName: "",
@@ -303,7 +303,7 @@ export default function AdminCrowdfunding() {
       targetDate: "",
       priority: 1,
       evgreenSharePercent: "30.00",
-      investorSharePercent: "60.00",
+      investorSharePercent: "70.00",
       hostSharePercent: "10.00",
       energyPurchaseCostPerKwh: "800.00",
       hostName: "",
@@ -350,7 +350,7 @@ export default function AdminCrowdfunding() {
       targetDate: project.targetDate ? new Date(project.targetDate).toISOString().split('T')[0] : "",
       priority: project.priority,
       evgreenSharePercent: (project as any).evgreenSharePercent || "30.00",
-      investorSharePercent: (project as any).investorSharePercent || "60.00",
+      investorSharePercent: (project as any).investorSharePercent || "70.00",
       hostSharePercent: (project as any).hostSharePercent || "10.00",
       energyPurchaseCostPerKwh: (project as any).energyPurchaseCostPerKwh || "800.00",
       hostName: (project as any).hostName || "",
@@ -360,10 +360,15 @@ export default function AdminCrowdfunding() {
   };
 
   const handleSubmit = () => {
-    // Validar que los porcentajes sumen 100%
-    const sum = parseFloat(formData.evgreenSharePercent || '0') + parseFloat(formData.investorSharePercent || '0') + parseFloat(formData.hostSharePercent || '0');
-    if (Math.abs(sum - 100) > 0.1) {
-      toast.error(`Los porcentajes del modelo financiero deben sumar 100%. Actual: ${sum.toFixed(2)}%`);
+    // Validar que EVGreen + Inversionista sumen 100% (el aliado es % separado sobre margen bruto)
+    const evInvSum = parseFloat(formData.evgreenSharePercent || '0') + parseFloat(formData.investorSharePercent || '0');
+    if (Math.abs(evInvSum - 100) > 0.1) {
+      toast.error(`EVGreen + Inversionista deben sumar 100%. Actual: ${evInvSum.toFixed(2)}%. El % Aliado Comercial se aplica por separado sobre el margen bruto.`);
+      return;
+    }
+    const hostPctVal = parseFloat(formData.hostSharePercent || '0');
+    if (hostPctVal < 0 || hostPctVal > 50) {
+      toast.error(`El % del Aliado Comercial debe estar entre 0% y 50%. Actual: ${hostPctVal.toFixed(2)}%`);
       return;
     }
 
@@ -772,9 +777,14 @@ export default function AdminCrowdfunding() {
             <TabsContent value="model" className="space-y-4 mt-4">
               <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 mb-4">
                 <h4 className="text-sm font-semibold text-emerald-400 mb-1">Modelo Financiero de la Estación</h4>
-                <p className="text-xs text-muted-foreground">Configura la distribución de ingresos entre los actores. La suma de los 3 porcentajes debe ser 100%.</p>
+                <p className="text-xs text-muted-foreground">Modelo: Ingresos - Costo energía = Margen bruto → Aliado Comercial (% del margen) → Neto → EVGreen + Inversionista (suman 100% entre ellos).</p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+              {/* EVGreen + Inversionista = 100% del neto */}
+              <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 mb-2">
+                <p className="text-xs font-semibold text-blue-400">Reparto del Neto (EVGreen + Inversionista = 100%)</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-emerald-400">% EVGreen</Label>
                   <Input
@@ -786,18 +796,14 @@ export default function AdminCrowdfunding() {
                     onChange={(e) => {
                       const val = e.target.value;
                       const remaining = 100 - parseFloat(val || '0');
-                      const currentInvestor = parseFloat(formData.investorSharePercent || '0');
-                      const newInvestor = Math.min(currentInvestor, remaining);
-                      const newHost = Math.max(0, remaining - newInvestor);
                       setFormData({
                         ...formData,
                         evgreenSharePercent: val,
-                        investorSharePercent: newInvestor.toFixed(2),
-                        hostSharePercent: newHost.toFixed(2),
+                        investorSharePercent: Math.max(0, remaining).toFixed(2),
                       });
                     }}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">Comisión plataforma</p>
+                  <p className="text-xs text-muted-foreground mt-1">Comisión plataforma (del neto después del aliado)</p>
                 </div>
                 <div>
                   <Label className="text-blue-400">% Inversionistas</Label>
@@ -809,37 +815,55 @@ export default function AdminCrowdfunding() {
                     value={formData.investorSharePercent}
                     onChange={(e) => {
                       const val = e.target.value;
-                      const evg = parseFloat(formData.evgreenSharePercent || '0');
-                      const newHost = Math.max(0, 100 - evg - parseFloat(val || '0'));
+                      const remaining = 100 - parseFloat(val || '0');
                       setFormData({
                         ...formData,
                         investorSharePercent: val,
-                        hostSharePercent: newHost.toFixed(2),
+                        evgreenSharePercent: Math.max(0, remaining).toFixed(2),
                       });
                     }}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">Retorno a inversionistas</p>
+                  <p className="text-xs text-muted-foreground mt-1">Retorno a inversionistas (del neto después del aliado)</p>
                 </div>
+              </div>
+
+              {/* Aliado Comercial - % separado */}
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 mb-2 mt-4">
+                <p className="text-xs font-semibold text-amber-400">% Aliado Comercial (sobre Margen Bruto)</p>
+                <p className="text-[10px] text-muted-foreground">Se descuenta primero del margen bruto. El restante se reparte entre EVGreen e Inversionista.</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-amber-400">% Aliado Comercial</Label>
                   <Input
                     type="number"
                     step="0.01"
                     min="0"
-                    max="100"
+                    max="50"
                     value={formData.hostSharePercent}
                     onChange={(e) => setFormData({ ...formData, hostSharePercent: e.target.value })}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">Dueño del espacio</p>
+                  <p className="text-xs text-muted-foreground mt-1">Dueño del espacio (0-50%)</p>
                 </div>
               </div>
+
+              {/* Validación */}
               {(() => {
-                const sum = parseFloat(formData.evgreenSharePercent || '0') + parseFloat(formData.investorSharePercent || '0') + parseFloat(formData.hostSharePercent || '0');
-                const isValid = Math.abs(sum - 100) < 0.1;
+                const evInvSum = parseFloat(formData.evgreenSharePercent || '0') + parseFloat(formData.investorSharePercent || '0');
+                const hostPct = parseFloat(formData.hostSharePercent || '0');
+                const isEvInvValid = Math.abs(evInvSum - 100) < 0.1;
+                const isHostValid = hostPct >= 0 && hostPct <= 50;
+                const isValid = isEvInvValid && isHostValid;
                 return (
-                  <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-md ${isValid ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                    {isValid ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                    Total: {sum.toFixed(2)}% {isValid ? '— Distribución válida' : '— Debe sumar 100%'}
+                  <div className={`space-y-1 text-sm px-3 py-2 rounded-md ${isValid ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                    <div className="flex items-center gap-2">
+                      {isEvInvValid ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                      EVGreen + Inversionista: {evInvSum.toFixed(2)}% {isEvInvValid ? '— Suma 100%' : '— Deben sumar 100%'}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isHostValid ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                      Aliado Comercial: {hostPct.toFixed(2)}% {isHostValid ? '— Válido (0-50%)' : '— Máximo 50%'}
+                    </div>
                   </div>
                 );
               })()}

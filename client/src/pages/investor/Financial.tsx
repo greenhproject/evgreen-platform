@@ -525,6 +525,9 @@ function SettlementDetailDialog({
                 <Users className="h-4 w-4 text-emerald-500" />
                 Distribución entre Actores
               </h3>
+              <p className="text-[10px] text-muted-foreground -mt-1 mb-2">Aliado: % del margen bruto. EVGreen + Inversionista: % del neto después del aliado.</p>
+              <h3 className="hidden">
+              </h3>
 
               {/* Visual bar */}
               <div className="flex h-5 rounded-full overflow-hidden">
@@ -564,7 +567,7 @@ function SettlementDetailDialog({
                     <span className="text-xs font-medium">Inversionistas</span>
                   </div>
                   <p className="text-sm font-bold text-emerald-600">{formatCOP(detail.investorTotalAmount)}</p>
-                  <p className="text-[10px] text-muted-foreground">{Number(detail.investorSharePercent || 70)}%</p>
+                  <p className="text-[10px] text-muted-foreground">{Number(detail.investorSharePercent || 70)}% del neto</p>
                 </div>
                 <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/10 text-center">
                   <div className="flex items-center justify-center gap-1.5 mb-1">
@@ -572,7 +575,7 @@ function SettlementDetailDialog({
                     <span className="text-xs font-medium">EVGreen</span>
                   </div>
                   <p className="text-sm font-bold text-blue-600">{formatCOP(detail.platformTotalAmount || detail.platformAmount)}</p>
-                  <p className="text-[10px] text-muted-foreground">{Number(detail.platformSharePercent || 30)}%</p>
+                  <p className="text-[10px] text-muted-foreground">{Number(detail.platformSharePercent || 30)}% del neto</p>
                 </div>
                 {Number(detail.hostSharePercent || 0) > 0 && (
                   <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 text-center">
@@ -581,7 +584,7 @@ function SettlementDetailDialog({
                       <span className="text-xs font-medium">Aliado Comercial</span>
                     </div>
                     <p className="text-sm font-bold text-amber-600">{formatCOP(detail.hostTotalAmount)}</p>
-                    <p className="text-[10px] text-muted-foreground">{Number(detail.hostSharePercent)}%</p>
+                    <p className="text-[10px] text-muted-foreground">{Number(detail.hostSharePercent)}% del margen</p>
                   </div>
                 )}
               </div>
