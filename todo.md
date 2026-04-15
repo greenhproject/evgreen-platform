@@ -2760,3 +2760,12 @@
 - [x] Detalle de ingresos diarios con desglose por estación y tipo
 - [x] Backend: endpoint enriquecido de earnings con datos de waterfall por estación
 - [x] Selector de período con comparación vs período anterior
+
+## Fix: Inconsistencias Módulo Ingresos vs Reportes - 14 Abril 2026
+
+- [x] Fix: Unificar cálculo de ingresos netos entre Ingresos y Reportes (ambos deben usar mismo waterfall)
+- [x] Fix: Distribución de ingresos dinámica por configuración real de estación (no hardcoded 70/30)
+- [x] Fix: Conectar fuentes de ingreso (penalidades) a datos reales de transacciones
+- [x] Fix: Eliminar texto redundante en sección fuentes de ingreso de Reportes
+- [x] Fix: Diferenciar fuentes de ingreso por tipo de estación (propia vs colectiva)
+- [x] Mejora: Limpiar UI de Ingresos para estética profesional
