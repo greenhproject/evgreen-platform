@@ -4307,37 +4307,90 @@ export async function getInvestorParticipations(investorId: number): Promise<any
         p.totalPowerKw as projectTotalPowerKw,
         p.hasSolarPanels as projectHasSolarPanels,
         p.stationId as projectStationId,
-        p.estimatedRoiPercent as projectEstimatedRoiPercent
+        p.estimatedRoiPercent as projectEstimatedRoiPercent,
+        cs.isOnline as stationIsOnline,
+        cs.isActive as stationIsActive,
+        cs.name as stationName,
+        cs.investorSharePercent as stationInvestorSharePercent,
+        cs.evgreenSharePercent as stationEvgreenSharePercent,
+        cs.hostSharePercent as stationHostSharePercent,
+        cs.energyPurchaseCostPerKwh as stationEnergyCostPerKwh
       FROM crowdfunding_participations cp
       LEFT JOIN crowdfunding_projects p ON cp.projectId = p.id
+      LEFT JOIN charging_stations cs ON p.stationId = cs.id
       WHERE cp.investorId = ${investorId}
       ORDER BY cp.createdAt DESC
     `);
     
     // Transformar los resultados para incluir el proyecto como objeto anidado
     const rows = ((result as any)[0] as any[]) || [];
-    return rows.map(row => ({
-      id: row.id,
-      projectId: row.projectId,
-      investorId: row.investorId,
-      amount: row.amount,
-      participationPercent: row.participationPercent,
-      paymentStatus: row.paymentStatus,
-      paymentDate: row.paymentDate,
-      createdAt: row.createdAt,
-      project: {
-        name: row.projectName,
-        city: row.projectCity,
-        zone: row.projectZone,
-        status: row.projectStatus,
-        targetAmount: row.projectTargetAmount,
-        raisedAmount: row.projectRaisedAmount,
-        totalPowerKw: row.projectTotalPowerKw,
-        hasSolarPanels: !!row.projectHasSolarPanels,
-        stationId: row.projectStationId,
-        estimatedRoiPercent: row.projectEstimatedRoiPercent,
+    // For each participation, get real transaction-based earnings
+    const enrichedRows = [];
+    for (const row of rows) {
+      let realEarnings = { totalGross: 0, totalNet: 0, txCount: 0, totalKwh: 0 };
+      if (row.projectStationId) {
+        try {
+          const earningsResult = await db.execute(sql`
+            SELECT 
+              COUNT(*) as txCount,
+              COALESCE(SUM(totalCost), 0) as totalGross,
+              COALESCE(SUM(kwhConsumed), 0) as totalKwh
+            FROM transactions
+            WHERE stationId = ${row.projectStationId}
+              AND status = 'COMPLETED'
+          `);
+          const er = (earningsResult as any)[0]?.[0] || {};
+          realEarnings.totalGross = Number(er.totalGross || 0);
+          realEarnings.txCount = Number(er.txCount || 0);
+          realEarnings.totalKwh = Number(er.totalKwh || 0);
+          
+          // Calculate net using waterfall
+          const energyCost = realEarnings.totalKwh * Number(row.stationEnergyCostPerKwh || 850);
+          const grossMargin = Math.max(0, realEarnings.totalGross - energyCost);
+          const hostPct = Number(row.stationHostSharePercent || 10);
+          const netAfterHost = grossMargin * (1 - hostPct / 100);
+          const investorPct = Number(row.stationInvestorSharePercent || 70);
+          const investorPool = netAfterHost * (investorPct / 100);
+          const myPct = Number(row.participationPercent || 0);
+          realEarnings.totalNet = investorPool * (myPct / 100);
+        } catch (e) {
+          console.error('[DB] Error getting real earnings for participation:', e);
+        }
       }
-    }));
+      
+      enrichedRows.push({
+        id: row.id,
+        projectId: row.projectId,
+        investorId: row.investorId,
+        amount: row.amount,
+        participationPercent: row.participationPercent,
+        paymentStatus: row.paymentStatus,
+        paymentDate: row.paymentDate,
+        createdAt: row.createdAt,
+        project: {
+          name: row.projectName,
+          city: row.projectCity,
+          zone: row.projectZone,
+          status: row.projectStatus,
+          targetAmount: row.projectTargetAmount,
+          raisedAmount: row.projectRaisedAmount,
+          totalPowerKw: row.projectTotalPowerKw,
+          hasSolarPanels: !!row.projectHasSolarPanels,
+          stationId: row.projectStationId,
+          estimatedRoiPercent: row.projectEstimatedRoiPercent,
+        },
+        station: {
+          isOnline: !!row.stationIsOnline,
+          isActive: !!row.stationIsActive,
+          name: row.stationName || null,
+          investorSharePercent: Number(row.stationInvestorSharePercent || 70),
+          evgreenSharePercent: Number(row.stationEvgreenSharePercent || 30),
+          hostSharePercent: Number(row.stationHostSharePercent || 10),
+        },
+        realEarnings,
+      });
+    }
+    return enrichedRows;
   } catch (error) {
     console.error('[DB] Error getting investor participations:', error);
     return [];
