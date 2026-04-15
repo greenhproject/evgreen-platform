@@ -263,11 +263,13 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
         const hostTotalAmount = Math.round(grossMargin * (hostPct / 100));
         const netAfterHost = grossMargin - hostTotalAmount;
         
-        // 5b. Contingency reserve (from net after host)
-        const contingencyReserve = Math.round(netAfterHost * (input.contingencyPercent / 100));
-        const distributableAmount = netAfterHost - contingencyReserve;
+        // 5b. Contingency reserve - included within EVGreen's 30%, NOT a separate deduction
+        // The contingencyPercent input is kept for backward compatibility but forced to 0
+        const contingencyReserve = 0;
+        const distributableAmount = netAfterHost;
 
         // 6. Split between EVGreen and Investor (their % sum to 100%)
+        // Contingency is absorbed within EVGreen's share
         const investorTotalAmount = Math.round(distributableAmount * (investorPct / 100));
         const platformTotalAmount = distributableAmount - investorTotalAmount;
         const netRevenue = grossMargin;

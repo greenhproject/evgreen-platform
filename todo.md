@@ -2779,3 +2779,7 @@
 - [x] Mejora: Agregar indicadores económicos/operativos del centro financiero de forma llamativa
 - [x] Fix: Distribución en tarjeta colectiva debe mostrar waterfall real del modelo: (PV-CE) × 90% aliado × 70% tu parte
 - [x] CRITICAL: Corregir fórmula modelo colectivo en TODA la plataforma: Margen = (PV - CE) × 90% aliado × 70% tu parte (SIN paso de costos operativos 10%)
+- [x] Agregar nota transparente de gastos fijos en calculadora pública (Investors.tsx)
+- [x] Agregar fila de gastos fijos en tabla comparativa Individual vs Colectivo
+- [x] Agregar tooltip/badge de gastos fijos en tarjeta colectiva del dashboard
+- [x] Eliminar contingencia como paso separado en liquidaciones (está dentro del 30% EVGreen)

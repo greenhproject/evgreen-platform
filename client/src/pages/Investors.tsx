@@ -1377,6 +1377,14 @@ export default function Investors() {
                       : `* Margen = (Precio venta - Costo energía) × ${100 - Math.round(params.aliadoPct * 100)}% (después de aliado comercial) × ${100 - Math.round(calculos.costosOperativosPct * 100)}% (después de costos operativos) × ${Math.round(params.inversionistaPct * 100)}% (tu parte)`
                     }
                   </p>
+                  {paqueteSeleccionado === "COLECTIVO" && (
+                    <div className="flex items-start gap-2 mt-3 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/15">
+                      <Shield className="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0" />
+                      <p className="text-[11px] text-amber-300/70 leading-relaxed">
+                        Los ingresos proyectados son antes de gastos operativos fijos (pólizas, gastos fiduciarios). Estos se descuentan proporcionalmente en cada liquidación mensual y están cubiertos dentro del 30% de gestión EVGreen.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1605,6 +1613,7 @@ export default function Investors() {
                     { label: "Costo Energía/kWh", individual: `${formatCOP(costoIndividual)} COP`, colectivo: `${formatCOP(costoColectivo)} COP (${ahorroSolar}% ahorro)`, winner: "colectivo" },
                     { label: "Margen por kWh", individual: `${formatCOP(margenIndividual)} COP`, colectivo: `${formatCOP(margenColectivo)} COP (+${margenDiff}%)`, winner: "colectivo" },
                     { label: "Costos Operativos", individual: `${Math.round(params.costosOpIndividual * 100)}%`, colectivo: "Incluidos (economías de escala)", winner: "colectivo" },
+                    { label: "Gastos Fijos", individual: "A tu cargo (pólizas, mantenimiento)", colectivo: "Incluidos y prorrateados (pólizas, fiduciario)", winner: "colectivo" },
                     { label: "Ubicación", individual: "A elección", colectivo: "Premium garantizada", winner: "colectivo" },
                     { label: "Utilización Esperada", individual: `${horasInd}h/día`, colectivo: `${horasCol.toFixed(0)}h/día (${params.factorUtilizacionPremium}x tráfico)`, winner: "colectivo" },
                     { label: "ROI Anual Estimado", individual: `~${roiIndAnual.toFixed(0)}%`, colectivo: `~${roiColAnual.toFixed(0)}%`, winner: roiColAnual > roiIndAnual ? "colectivo" : "individual" },

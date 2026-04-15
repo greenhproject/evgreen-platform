@@ -697,7 +697,7 @@ function GenerateSettlementDialog({
     periodEnd: lastDay.toISOString().split("T")[0],
     investorSharePercent: 70,
     platformSharePercent: 30,
-    contingencyPercent: 5,
+    contingencyPercent: 0,
     notes: "",
   });
   // Note: hostSharePercent comes from station config, not from this form
@@ -771,8 +771,9 @@ function GenerateSettlementDialog({
                 min={0}
                 max={20}
                 value={form.contingencyPercent}
-                onChange={(e) => setForm({ ...form, contingencyPercent: Number(e.target.value) })}
+                disabled
               />
+              <p className="text-[10px] text-muted-foreground mt-1">Incluida dentro del % EVGreen (no se descuenta por separado)</p>
             </div>
             <div className="col-span-2">
               <Label>Notas (opcional)</Label>
@@ -816,9 +817,9 @@ function GenerateSettlementDialog({
                   <span>= Neto después del Aliado</span>
                   <span className="font-mono">=$$$</span>
                 </div>
-                <div className="flex justify-between text-yellow-500">
-                  <span>5. (-) Reserva Contingencia ({form.contingencyPercent}%)</span>
-                  <span className="font-mono">-$$$</span>
+                <div className="flex justify-between text-yellow-500/50">
+                  <span>5. Contingencia: incluida en % EVGreen</span>
+                  <span className="font-mono text-yellow-500/50">$0</span>
                 </div>
                 <Separator className="my-1" />
                 <div className="flex justify-between font-semibold">
