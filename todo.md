@@ -2836,3 +2836,8 @@
 - [x] Guardar datos en campos existentes del schema (investorPhotoUrl, founderTitle, investorQuote, investorBio)
 - [x] Procedimiento tRPC para guardar perfil de fundador con upload de foto
 - [x] Preview en tiempo real de cómo se verá en el muro de fundadores
+
+## Fix: Trigger de Onboarding en todos los flujos de crowdfunding (15 Abril 2026)
+- [x] Agregar triggerInvestorWelcome a registerInvestor cuando paymentConfirmed=true
+- [x] Agregar triggerInvestorWelcome a editParticipation cuando paymentStatus cambia a COMPLETED
+- [x] Asegurar que el email no se envíe dos veces (verificar welcomeEmailSent)
