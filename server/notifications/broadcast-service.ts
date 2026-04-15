@@ -13,7 +13,7 @@ import { sendWebPush, isWebPushAvailable, type PushSubscriptionData } from "../p
 import { buildEmailParams } from "../utils/email-helper";
 
 // Inicializar Resend con la API key
-const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
+const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
 const resend = new Resend(resendApiKey);
 
 // Tipos de notificación del admin

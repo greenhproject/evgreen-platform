@@ -25,7 +25,7 @@ import { buildEmailParams } from "../utils/email-helper";
 import type { OcppAlertSeverity, OcppAlertType } from "../ocpp/alerts-service";
 
 // Inicializar Resend
-const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
+const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
 const resend = new Resend(resendApiKey);
 
 const FROM_EMAIL = "EVGreen <alertas@evgreen.lat>";
