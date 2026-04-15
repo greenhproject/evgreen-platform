@@ -500,13 +500,7 @@ function SettlementDetailDialog({
               )}
             </div>
 
-            {/* Contingency Reserve */}
-            {Number(detail.contingencyReserve || 0) > 0 && (
-              <div className="ml-2 p-2.5 rounded-lg bg-gray-500/5 border border-gray-500/10 flex items-center justify-between">
-                <span className="text-sm flex items-center gap-2"><Shield className="h-3.5 w-3.5 text-gray-500" /> Reserva de contingencia (5%)</span>
-                <span className="text-sm font-medium text-gray-500">- {formatCOP(detail.contingencyReserve)}</span>
-              </div>
-            )}
+            {/* Contingency note - now shown as sub-breakdown of EVGreen's share below */}
 
             <Separator />
 
@@ -576,6 +570,28 @@ function SettlementDetailDialog({
                   </div>
                   <p className="text-sm font-bold text-blue-600">{formatCOP(detail.platformTotalAmount || detail.platformAmount)}</p>
                   <p className="text-[10px] text-muted-foreground">{Number(detail.platformSharePercent || 30)}% del neto</p>
+                  {(Number(detail.contingencyReserve || 0) > 0 || Number(detail.maintenanceFundAmount || 0) > 0) && (
+                    <div className="mt-2 pt-2 border-t border-blue-500/10 space-y-1 text-left">
+                      {Number(detail.contingencyReserve || 0) > 0 && (
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="flex items-center gap-1 text-yellow-500">
+                            <Shield className="h-2.5 w-2.5" /> Contingencia
+                          </span>
+                          <span className="text-yellow-500 font-mono">{formatCOP(Number(detail.contingencyReserve))}</span>
+                        </div>
+                      )}
+                      {Number(detail.maintenanceFundAmount || 0) > 0 && (
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-muted-foreground">Fondo Mant.</span>
+                          <span className="text-muted-foreground font-mono">{formatCOP(Number(detail.maintenanceFundAmount))}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-muted-foreground">Gestión neta</span>
+                        <span className="text-muted-foreground font-mono">{formatCOP(Number(detail.platformNetAmount || 0))}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {Number(detail.hostSharePercent || 0) > 0 && (
                   <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 text-center">

@@ -2783,3 +2783,6 @@
 - [x] Agregar fila de gastos fijos en tabla comparativa Individual vs Colectivo
 - [x] Agregar tooltip/badge de gastos fijos en tarjeta colectiva del dashboard
 - [x] Eliminar contingencia como paso separado en liquidaciones (está dentro del 30% EVGreen)
+- [x] Fix: Contingencia debe ser sub-desglose del 30% EVGreen (no paso separado del waterfall)
+- [x] Fix: Mantener campo contingencia editable en admin pero como % del share de EVGreen
+- [x] Fix: Mostrar desglose transparente en vista inversionista: "Del 30% EVGreen: X% contingencia + Y% gestión"
