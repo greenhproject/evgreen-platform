@@ -2770,3 +2770,10 @@
 - [x] Fix: Diferenciar fuentes de ingreso por tipo de estación (propia vs colectiva)
 - [x] Mejora: Limpiar UI de Ingresos para estética profesional
 - [x] Fix: Gráficas de Reportes se cortan (eje Y no visible, pie chart labels superpuestas)
+
+## Fix: Tarjeta Inversiones Colectivas en Dashboard - 14 Abril 2026
+
+- [x] Fix: Eliminar "Tu potencia: 24kW" - modelo es % participación, no compra de potencia
+- [x] Fix: Mostrar estado real de estación (no hardcoded "Activa")
+- [x] Fix: Reemplazar proyecciones genéricas con datos reales del centro financiero
+- [x] Mejora: Agregar indicadores económicos/operativos del centro financiero de forma llamativa
