@@ -2786,3 +2786,4 @@
 - [x] Fix: Contingencia debe ser sub-desglose del 30% EVGreen (no paso separado del waterfall)
 - [x] Fix: Mantener campo contingencia editable en admin pero como % del share de EVGreen
 - [x] Fix: Mostrar desglose transparente en vista inversionista: "Del 30% EVGreen: X% contingencia + Y% gestión"
+- [x] Fix: Nota de transparencia imprecisa - el 30% EVGreen solo absorbe 5% fondo imprevistos, NO todos los gastos fijos
