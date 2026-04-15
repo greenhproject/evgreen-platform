@@ -25,6 +25,7 @@ import {
   Activity,
   ArrowUpRight,
   ArrowDownRight,
+  Shield,
 } from "lucide-react";
 
 const financialTrpc = trpc.financial as any;
@@ -309,6 +310,13 @@ export function CollectiveInvestmentCard() {
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
                           EVGreen {evgreenModelPct}%
                         </span>
+                      </div>
+                      {/* Fixed costs note */}
+                      <div className="flex items-start gap-1.5 mt-2 pt-2 border-t border-white/5">
+                        <Shield className="w-3 h-3 text-amber-400/60 mt-0.5 flex-shrink-0" />
+                        <p className="text-[9px] text-amber-300/50 leading-relaxed">
+                          Gastos fijos (pólizas, fiduciario) se descuentan en liquidación mensual, cubiertos dentro del {evgreenModelPct}% EVGreen.
+                        </p>
                       </div>
                     </div>
                   </>
