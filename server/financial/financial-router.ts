@@ -54,6 +54,9 @@ import {
   createMaintenanceFundRecord,
   getMaintenanceFundRecords,
   getMaintenanceFundSummary,
+  getMaintenanceFundMonthlyTrend,
+  updateMaintenanceFundAlertThreshold,
+  getConsolidatedMaintenanceFundSummary,
 } from "../db";
 
 // ============================================================================
@@ -919,6 +922,88 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
         const { storagePut } = await import("../storage");
         const randomSuffix = Math.random().toString(36).substring(2, 8);
         const fileKey = `reports/maintenance-fund/${filename}-${randomSuffix}`;
+        const { url } = await storagePut(fileKey, buffer, mimeType);
+
+        return { url, filename, format: input.format };
+      }),
+
+    // ========================================================================
+    // MAINTENANCE FUND - ALERT THRESHOLD CONFIG
+    // ========================================================================
+
+    /** Update the alert threshold (in COP) for a station's maintenance fund */
+    updateAlertThreshold: adminProcedure
+      .input(z.object({
+        stationId: z.number(),
+        thresholdCOP: z.number().min(0).max(100000000), // 0 to 100M COP
+      }))
+      .mutation(async ({ input }: { input: any }) => {
+        const station = await getChargingStationById(input.stationId);
+        if (!station) throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+        await updateMaintenanceFundAlertThreshold(input.stationId, input.thresholdCOP);
+        return { success: true, stationId: input.stationId, newThreshold: input.thresholdCOP };
+      }),
+
+    // ========================================================================
+    // MAINTENANCE FUND - MONTHLY TREND DATA
+    // ========================================================================
+
+    /** Get monthly trend data for a station's maintenance fund */
+    maintenanceFundMonthlyTrend: adminProcedure
+      .input(z.object({
+        stationId: z.number(),
+        months: z.number().min(3).max(36).default(12),
+      }))
+      .query(async ({ input }: { input: any }) => {
+        const station = await getChargingStationById(input.stationId);
+        if (!station) throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+        const trend = await getMaintenanceFundMonthlyTrend(input.stationId, input.months);
+        return { stationId: input.stationId, stationName: station.name, trend };
+      }),
+
+    // ========================================================================
+    // MAINTENANCE FUND - CONSOLIDATED MULTI-STATION REPORT
+    // ========================================================================
+
+    /** Get consolidated maintenance fund summary across all stations */
+    consolidatedMaintenanceFundSummary: adminProcedure
+      .query(async () => {
+        const summary = await getConsolidatedMaintenanceFundSummary();
+        const totals = summary.reduce((acc: any, s: any) => ({
+          totalDeposits: acc.totalDeposits + s.totalDeposits,
+          totalWithdrawals: acc.totalWithdrawals + s.totalWithdrawals,
+          totalBalance: acc.totalBalance + s.currentBalance,
+          stationsWithLowBalance: acc.stationsWithLowBalance + (s.isLowBalance ? 1 : 0),
+        }), { totalDeposits: 0, totalWithdrawals: 0, totalBalance: 0, stationsWithLowBalance: 0 });
+        return { stations: summary, totals, stationCount: summary.length };
+      }),
+
+    /** Export consolidated maintenance fund report (PDF or Excel) */
+    exportConsolidatedMaintenanceFund: adminProcedure
+      .input(z.object({
+        format: z.enum(["pdf", "excel"]),
+      }))
+      .mutation(async ({ input }: { input: any }) => {
+        const summary = await getConsolidatedMaintenanceFundSummary();
+        const { generateConsolidatedMaintenanceFundPDF, generateConsolidatedMaintenanceFundExcel } = await import("../reports/export-maintenance-fund");
+
+        let buffer: Buffer;
+        let mimeType: string;
+        let filename: string;
+
+        if (input.format === "excel") {
+          buffer = generateConsolidatedMaintenanceFundExcel(summary);
+          mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+          filename = `reporte-consolidado-fondos-mantenimiento-${Date.now()}.xlsx`;
+        } else {
+          buffer = generateConsolidatedMaintenanceFundPDF(summary);
+          mimeType = "application/pdf";
+          filename = `reporte-consolidado-fondos-mantenimiento-${Date.now()}.pdf`;
+        }
+
+        const { storagePut } = await import("../storage");
+        const randomSuffix = Math.random().toString(36).substring(2, 8);
+        const fileKey = `reports/maintenance-fund/consolidated-${filename}-${randomSuffix}`;
         const { url } = await storagePut(fileKey, buffer, mimeType);
 
         return { url, filename, format: input.format };

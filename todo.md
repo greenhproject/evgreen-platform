@@ -2718,3 +2718,11 @@
 - [x] Botón de exportar en la UI de detalle del fondo
 - [x] Alertas automáticas cuando el balance del fondo baje del 10% del total acumulado
 - [x] Notificación push + in-app al admin cuando fondo está bajo
+
+## Mejoras Fondo de Mantenimiento - Abril 2026 (Ronda 3)
+- [x] Dashboard con gráficos de tendencia mensual (depósitos vs retiros) en vista detalle del fondo
+- [x] Campo de umbral de alerta configurable en COP por estación (no porcentaje, ya que el fondo crece con ventas)
+- [x] UI admin para configurar el umbral de alerta por estación
+- [x] Actualizar lógica de alerta para usar umbral en COP en lugar de porcentaje
+- [x] Reporte consolidado multi-estación (PDF/Excel) con todos los fondos de mantenimiento
+- [x] Botón de exportar reporte consolidado en la vista principal del fondo

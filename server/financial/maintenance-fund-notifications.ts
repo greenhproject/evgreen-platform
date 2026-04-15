@@ -57,6 +57,7 @@ interface LowBalanceAlertInput {
   currentBalance: number;
   totalDeposits: number;
   percentRemaining: number;
+  alertThresholdCOP?: number;
 }
 
 // ============================================================================
@@ -402,16 +403,17 @@ export async function notifyLowBalance(input: LowBalanceAlertInput): Promise<voi
             icon: "⚠️",
             mainContent: `
               <p style="color: #e0e0e0; font-size: 15px; line-height: 1.6; margin: 0 0 12px 0;">
-                El fondo de mantenimiento de una estación ha bajado del umbral mínimo recomendado (10%):
+                El fondo de mantenimiento de una estación ha bajado del umbral mínimo configurado (${formatCOP(input.alertThresholdCOP || 500000)}):
               </p>
               <table style="width: 100%; color: #e0e0e0; font-size: 14px;">
                 <tr><td style="padding: 6px 0; color: #a0a0a0;">Estación:</td><td style="padding: 6px 0; font-weight: 600;">${stationName}</td></tr>
                 <tr><td style="padding: 6px 0; color: #a0a0a0;">Balance actual:</td><td style="padding: 6px 0; font-weight: 600; color: #ef4444;">${formatCOP(currentBalance)}</td></tr>
                 <tr><td style="padding: 6px 0; color: #a0a0a0;">Total acumulado:</td><td style="padding: 6px 0;">${formatCOP(totalDeposits)}</td></tr>
+                <tr><td style="padding: 6px 0; color: #a0a0a0;">Umbral configurado:</td><td style="padding: 6px 0; font-weight: 600;">${formatCOP(input.alertThresholdCOP || 500000)}</td></tr>
                 <tr><td style="padding: 6px 0; color: #a0a0a0;">% Restante:</td><td style="padding: 6px 0; font-weight: 600; color: #ef4444;">${percentRemaining.toFixed(1)}%</td></tr>
               </table>
               <p style="color: #888; font-size: 13px; margin: 16px 0 0 0;">
-                Se recomienda revisar los gastos de mantenimiento o generar nuevas liquidaciones para reponer el fondo.
+                Se recomienda revisar los gastos de mantenimiento o generar nuevas liquidaciones para reponer el fondo. Puede ajustar el umbral de alerta desde la configuración de la estación.
               </p>
             `,
             ctaUrl: "https://evgreen.lat/admin/maintenance-fund",
@@ -460,27 +462,35 @@ export async function notifyLowBalance(input: LowBalanceAlertInput): Promise<voi
 }
 
 /**
- * Check if the fund balance is below threshold and trigger alert if needed
- * Called after each withdrawal
+ * Check if the fund balance is below threshold and trigger alert if needed.
+ * Uses the configurable COP threshold per station (maintenanceFundAlertThreshold).
+ * If no threshold is configured, defaults to $500,000 COP.
+ * Called after each withdrawal.
  */
 export async function checkAndAlertLowBalance(stationId: number): Promise<void> {
   try {
     const summary = await getMaintenanceFundSummary(stationId);
     if (!summary || summary.totalDeposits === 0) return;
 
+    const station = await getChargingStationById(stationId);
+    if (!station) return;
+
+    // Use configurable COP threshold (default: $500,000 COP)
+    const alertThresholdCOP = station.maintenanceFundAlertThreshold
+      ? parseFloat(String(station.maintenanceFundAlertThreshold))
+      : 500000;
+
     const percentRemaining = (summary.currentBalance / summary.totalDeposits) * 100;
 
-    // Alert if below 10%
-    if (percentRemaining < 10) {
-      const station = await getChargingStationById(stationId);
-      if (!station) return;
-
+    // Alert if balance is below the configured COP threshold
+    if (summary.currentBalance < alertThresholdCOP) {
       await notifyLowBalance({
         stationId,
         stationName: station.name,
         currentBalance: summary.currentBalance,
         totalDeposits: summary.totalDeposits,
         percentRemaining,
+        alertThresholdCOP,
       });
     }
   } catch (err) {

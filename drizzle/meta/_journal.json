@@ -134,6 +134,13 @@
       "when": 1771070400001,
       "tag": "0018_security_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1776213471083,
+      "tag": "0019_flashy_sage",
+      "breakpoints": true
     }
   ]
 }

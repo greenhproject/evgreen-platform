@@ -6787,3 +6787,87 @@ export async function getMaintenanceFundSummary(stationId: number) {
     withdrawalCount: Number(row.withdrawalCount || 0),
   };
 }
+
+
+/**
+ * Get monthly trend data for a station's maintenance fund
+ * Returns deposits and withdrawals grouped by month for the last N months
+ */
+export async function getMaintenanceFundMonthlyTrend(stationId: number, months = 12) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      DATE_FORMAT(createdAt, '%Y-%m') as month,
+      COALESCE(SUM(CASE WHEN maintenance_fund_type = 'deposit' THEN amount ELSE 0 END), 0) as deposits,
+      COALESCE(SUM(CASE WHEN maintenance_fund_type = 'withdrawal' THEN amount ELSE 0 END), 0) as withdrawals,
+      COUNT(CASE WHEN maintenance_fund_type = 'deposit' THEN 1 END) as depositCount,
+      COUNT(CASE WHEN maintenance_fund_type = 'withdrawal' THEN 1 END) as withdrawalCount
+    FROM maintenance_fund_records
+    WHERE stationId = ${stationId}
+      AND createdAt >= DATE_SUB(NOW(), INTERVAL ${months} MONTH)
+    GROUP BY DATE_FORMAT(createdAt, '%Y-%m')
+    ORDER BY month ASC
+  `));
+  return ((results as any)[0] || []).map((r: any) => ({
+    month: r.month,
+    deposits: Number(r.deposits || 0),
+    withdrawals: Number(r.withdrawals || 0),
+    depositCount: Number(r.depositCount || 0),
+    withdrawalCount: Number(r.withdrawalCount || 0),
+    net: Number(r.deposits || 0) - Number(r.withdrawals || 0),
+  }));
+}
+
+/**
+ * Update the maintenance fund alert threshold for a station (in COP)
+ */
+export async function updateMaintenanceFundAlertThreshold(stationId: number, thresholdCOP: number): Promise<void> {
+  const db = (await getDb())!;
+  await db.execute(sql.raw(`
+    UPDATE charging_stations 
+    SET maintenanceFundAlertThreshold = ${thresholdCOP}
+    WHERE id = ${stationId}
+  `));
+}
+
+/**
+ * Get consolidated maintenance fund summary across all collective stations
+ */
+export async function getConsolidatedMaintenanceFundSummary() {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      mfr.stationId,
+      cs.name as stationName,
+      cs.city as stationCity,
+      cs.maintenanceFundAlertThreshold as alertThreshold,
+      COALESCE(SUM(CASE WHEN mfr.maintenance_fund_type = 'deposit' THEN mfr.amount ELSE 0 END), 0) as totalDeposits,
+      COALESCE(SUM(CASE WHEN mfr.maintenance_fund_type = 'withdrawal' THEN mfr.amount ELSE 0 END), 0) as totalWithdrawals,
+      COUNT(CASE WHEN mfr.maintenance_fund_type = 'deposit' THEN 1 END) as depositCount,
+      COUNT(CASE WHEN mfr.maintenance_fund_type = 'withdrawal' THEN 1 END) as withdrawalCount,
+      MAX(mfr.createdAt) as lastMovement
+    FROM maintenance_fund_records mfr
+    JOIN charging_stations cs ON cs.id = mfr.stationId
+    GROUP BY mfr.stationId, cs.name, cs.city, cs.maintenanceFundAlertThreshold
+    ORDER BY cs.name ASC
+  `));
+  return ((results as any)[0] || []).map((r: any) => {
+    const totalDeposits = Number(r.totalDeposits || 0);
+    const totalWithdrawals = Number(r.totalWithdrawals || 0);
+    const currentBalance = totalDeposits - totalWithdrawals;
+    const alertThreshold = r.alertThreshold ? Number(r.alertThreshold) : 500000;
+    return {
+      stationId: Number(r.stationId),
+      stationName: r.stationName,
+      stationCity: r.stationCity || '',
+      totalDeposits,
+      totalWithdrawals,
+      currentBalance,
+      depositCount: Number(r.depositCount || 0),
+      withdrawalCount: Number(r.withdrawalCount || 0),
+      alertThreshold,
+      isLowBalance: currentBalance < alertThreshold,
+      lastMovement: r.lastMovement,
+    };
+  });
+}

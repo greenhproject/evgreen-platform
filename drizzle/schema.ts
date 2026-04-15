@@ -206,6 +206,8 @@ export const chargingStations = mysqlTable("charging_stations", {
   hostSharePercent: decimal("hostSharePercent", { precision: 5, scale: 2 }).default("0.00").notNull(), // % para el Aliado Comercial (dueño del espacio)
   // Fondo de mantenimiento (% del share de EVGreen) - solo para estaciones colectivas
   maintenanceFundPercent: decimal("maintenanceFundPercent", { precision: 5, scale: 2 }).default("5.00").notNull(), // % del 30% de EVGreen reservado para mantenimiento
+  // Umbral de alerta del fondo de mantenimiento (en COP) - cuando el balance baje de este monto, se envía alerta
+  maintenanceFundAlertThreshold: decimal("maintenanceFundAlertThreshold", { precision: 15, scale: 2 }).default("500000.00"), // $500.000 COP por defecto
   // Costo de compra de energía (COP/kWh) - para calcular costo de factura eléctrica
   energyPurchaseCostPerKwh: decimal("energyPurchaseCostPerKwh", { precision: 10, scale: 2 }).default("850.00").notNull(), // Costo promedio de compra de energía de red
   // Aliado Comercial (dueño del espacio donde se instala la estación)
