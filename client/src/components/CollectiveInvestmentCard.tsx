@@ -176,10 +176,12 @@ export function CollectiveInvestmentCard() {
             // Real ROI
             const roiReal = monto > 0 ? ((realEarnings.totalNet / monto) * 100) : 0;
 
-            // Distribution config
-            const investorPct = station?.investorSharePercent || 70;
-            const evgreenPct = station?.evgreenSharePercent || 30;
+            // Distribution config - Fórmula correcta del modelo colectivo:
+            // Margen = (PV - CE) × 90% (después aliado) × 70% (tu parte)
             const hostPct = station?.hostSharePercent || 10;
+            const afterHostPct = 100 - hostPct; // 90%
+            const investorModelPct = 70; // Fijo del modelo colectivo (incluye costos op)
+            const evgreenModelPct = 30; // Fijo del modelo colectivo
 
             return (
               <div 
@@ -257,44 +259,55 @@ export function CollectiveInvestmentCard() {
                   </div>
                 </div>
 
-                {/* Distribution Config */}
+                {/* Waterfall del Modelo - Fórmula real */}
                 {!isPending && (
                   <>
                     <Separator className="opacity-10" />
                     <div className="px-4 py-3">
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
                         <PieChart className="w-3 h-3" />
-                        Distribución configurada
+                        Fórmula del modelo
                       </p>
-                      <div className="flex gap-1 h-2 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-emerald-500 rounded-l-full" 
-                          style={{ width: `${investorPct}%` }}
-                          title={`Inversionistas: ${investorPct}%`}
-                        />
-                        <div 
-                          className="bg-blue-500" 
-                          style={{ width: `${evgreenPct}%` }}
-                          title={`EVGreen: ${evgreenPct}%`}
-                        />
-                        <div 
-                          className="bg-amber-500 rounded-r-full" 
-                          style={{ width: `${hostPct}%` }}
-                          title={`Aliado: ${hostPct}%`}
-                        />
+                      <div className="space-y-1.5">
+                        {/* Step 1: Gross margin */}
+                        <div className="flex items-center gap-2 text-[10px]">
+                          <span className="text-muted-foreground w-4 text-center">1.</span>
+                          <span className="text-white/80">Ingreso bruto − Costo energía</span>
+                          <span className="text-muted-foreground">=</span>
+                          <span className="text-emerald-400 font-medium">Margen bruto</span>
+                        </div>
+                        {/* Step 2: After host */}
+                        <div className="flex items-center gap-2 text-[10px]">
+                          <span className="text-muted-foreground w-4 text-center">2.</span>
+                          <span className="text-white/80">Margen bruto × {afterHostPct}%</span>
+                          <span className="text-muted-foreground">(aliado {hostPct}%)</span>
+                        </div>
+                        {/* Step 3: Investor share */}
+                        <div className="flex items-center gap-2 text-[10px]">
+                          <span className="text-muted-foreground w-4 text-center">3.</span>
+                          <span className="text-white/80">× {investorModelPct}%</span>
+                          <span className="text-emerald-400 font-medium">= Tu parte</span>
+                          <span className="text-muted-foreground">(costos op. incluidos)</span>
+                        </div>
                       </div>
-                      <div className="flex justify-between text-[10px] text-muted-foreground mt-1.5">
+                      {/* Visual bar */}
+                      <div className="flex gap-0.5 h-1.5 rounded-full overflow-hidden mt-2">
+                        <div className="bg-amber-500/70 rounded-l-full" style={{ width: `${hostPct}%` }} title={`Aliado: ${hostPct}%`} />
+                        <div className="bg-emerald-500" style={{ width: `${investorModelPct * afterHostPct / 100}%` }} title={`Tu parte: ${investorModelPct}%`} />
+                        <div className="bg-blue-500 rounded-r-full" style={{ width: `${evgreenModelPct * afterHostPct / 100}%` }} title={`EVGreen: ${evgreenModelPct}%`} />
+                      </div>
+                      <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
                         <span className="flex items-center gap-1">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                          Inversionistas {investorPct}%
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-                          EVGreen {evgreenPct}%
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500/70 inline-block" />
                           Aliado {hostPct}%
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                          Tu parte {investorModelPct}%
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
+                          EVGreen {evgreenModelPct}%
                         </span>
                       </div>
                     </div>

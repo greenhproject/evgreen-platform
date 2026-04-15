@@ -279,35 +279,31 @@ export default function InvestorEarnings() {
   const collectiveCount = stationBreakdown.filter(s => s.station.isCollective).length;
 
   // ─── Weighted average distribution percentages ─────────────────
+  // Fórmula correcta: colectivas usan 70/30 fijo (costos op incluidos)
+  // Propias usan los % de la BD
+  const getEffectivePcts = (s: { hostSharePercent: number; investorSharePercent: number; evgreenSharePercent: number; isCollective: boolean }) => ({
+    hostPct: s.hostSharePercent,
+    investorPct: s.isCollective ? 70 : s.investorSharePercent,
+    evgreenPct: s.isCollective ? 30 : s.evgreenSharePercent,
+  });
+
   const weightedDistribution = useMemo(() => {
     if (stationBreakdown.length === 0) return null;
     
-    // If only one station or all have same config, show exact percentages
     if (stationBreakdown.length === 1) {
-      const s = stationBreakdown[0].station;
-      return {
-        hostPct: s.hostSharePercent,
-        investorPct: s.investorSharePercent,
-        evgreenPct: s.evgreenSharePercent,
-        isUniform: true,
-      };
+      const eff = getEffectivePcts(stationBreakdown[0].station);
+      return { ...eff, isUniform: true };
     }
     
-    // Check if all stations have same config
-    const first = stationBreakdown[0].station;
-    const allSame = stationBreakdown.every(s => 
-      s.station.hostSharePercent === first.hostSharePercent &&
-      s.station.investorSharePercent === first.investorSharePercent &&
-      s.station.evgreenSharePercent === first.evgreenSharePercent
-    );
+    // Check if all stations have same effective config
+    const firstEff = getEffectivePcts(stationBreakdown[0].station);
+    const allSame = stationBreakdown.every(s => {
+      const eff = getEffectivePcts(s.station);
+      return eff.hostPct === firstEff.hostPct && eff.investorPct === firstEff.investorPct && eff.evgreenPct === firstEff.evgreenPct;
+    });
     
     if (allSame) {
-      return {
-        hostPct: first.hostSharePercent,
-        investorPct: first.investorSharePercent,
-        evgreenPct: first.evgreenSharePercent,
-        isUniform: true,
-      };
+      return { ...firstEff, isUniform: true };
     }
     
     // Weighted average by gross revenue
@@ -316,10 +312,11 @@ export default function InvestorEarnings() {
     
     let wHost = 0, wInv = 0, wEvg = 0;
     stationBreakdown.forEach(st => {
+      const eff = getEffectivePcts(st.station);
       const weight = st.grossRevenue / totalGross;
-      wHost += st.station.hostSharePercent * weight;
-      wInv += st.station.investorSharePercent * weight;
-      wEvg += st.station.evgreenSharePercent * weight;
+      wHost += eff.hostPct * weight;
+      wInv += eff.investorPct * weight;
+      wEvg += eff.evgreenPct * weight;
     });
     
     return {
@@ -732,7 +729,7 @@ export default function InvestorEarnings() {
                                 </Badge>
                               </div>
                               <p className="text-[11px] text-muted-foreground">
-                                {s.txCount} tx · {s.energy.toFixed(1)} kWh · Inv: {formatPct(s.station.investorSharePercent)} · Host: {formatPct(s.station.hostSharePercent)}
+                                {s.txCount} tx · {s.energy.toFixed(1)} kWh · Inv: {formatPct(s.station.isCollective ? 70 : s.station.investorSharePercent)} · Host: {formatPct(s.station.hostSharePercent)}
                               </p>
                             </div>
                           </div>
@@ -768,7 +765,7 @@ export default function InvestorEarnings() {
                             </div>
                             <div className="p-2 rounded-lg bg-muted/20">
                               <p className="text-[9px] text-muted-foreground">
-                                {s.station.isCollective ? `Pool inv.` : `Inv.`} ({formatPct(s.station.investorSharePercent)})
+                                {s.station.isCollective ? `Pool inv.` : `Inv.`} ({formatPct(s.station.isCollective ? 70 : s.station.investorSharePercent)})
                               </p>
                               <p className="text-xs font-bold">{formatCOP(s.investorPool)}</p>
                             </div>

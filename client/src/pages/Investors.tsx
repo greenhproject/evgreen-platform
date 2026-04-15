@@ -263,6 +263,7 @@ export default function Investors() {
       const potencia = 'potenciaTotal' in paquete ? (paquete as any).potenciaTotal : paquete.potenciaKw * paquete.cantidadCargadores;
       const eficiencia = paquete.tipo.includes('AC') ? params.eficienciaAC : params.eficienciaDC;
       const energiaDia = potencia * horasBase * factorUtil * eficiencia;
+      // Para colectivo: (PV-CE) × 90% aliado × 70% tu parte (sin costos op separados)
       const margenDia = energiaDia * (params.precioVentaDefault - costoEnergia) * (1 - params.aliadoPct) * (1 - costosOpPct) * params.inversionistaPct;
       const inversion = 'participacionMinima' in paquete ? (paquete as any).participacionMinima : paquete.precio;
       const participacion = 'participacionMinima' in paquete ? (paquete as any).participacionMinima / paquete.precio : 1;
@@ -274,7 +275,7 @@ export default function Investors() {
     return {
       AC: calcROI(PAQUETES.AC, params.costoEnergiaRed, params.costosOpAC, PAQUETES.AC.horasUsoConservador),
       INDIVIDUAL: calcROI(PAQUETES.INDIVIDUAL, params.costoEnergiaRed, params.costosOpIndividual, PAQUETES.INDIVIDUAL.horasUsoConservador),
-      COLECTIVO: calcROI(PAQUETES.COLECTIVO, params.costoEnergiaSolar, params.costosOpColectivo, PAQUETES.COLECTIVO.horasUsoConservador, params.factorUtilizacionPremium),
+      COLECTIVO: calcROI(PAQUETES.COLECTIVO, params.costoEnergiaSolar, 0, PAQUETES.COLECTIVO.horasUsoConservador, params.factorUtilizacionPremium), // Sin costos op separados en colectivo
     };
   }, [params]);
 
@@ -302,8 +303,10 @@ export default function Investors() {
     const costoEnergia = paquete.conSolar ? params.costoEnergiaSolar : params.costoEnergiaRed;
     
     // Costos operativos diferenciados (desde backend)
+    // NOTA: Para COLECTIVO no aplican costos operativos separados (economías de escala)
+    // Fórmula colectiva: (PV - CE) × 90% aliado × 70% tu parte
     const costosOperativosPct = paqueteSeleccionado === "COLECTIVO" 
-      ? params.costosOpColectivo 
+      ? 0  // Sin costos operativos separados en modelo colectivo
       : paqueteSeleccionado === "AC" 
         ? params.costosOpAC 
         : params.costosOpIndividual;
@@ -1369,8 +1372,10 @@ export default function Investors() {
                     )}
                   </p>
                   <p className="text-xs text-white/40 mt-2">
-                    * Margen = (Precio venta - Costo energía) × {100 - Math.round(params.aliadoPct * 100)}% (después de aliado comercial) × {100 - Math.round(calculos.costosOperativosPct * 100)}% (después de costos operativos) × {Math.round(params.inversionistaPct * 100)}% (tu parte)
-                    {paqueteSeleccionado === "COLECTIVO" && " — economías de escala"}
+                    {paqueteSeleccionado === "COLECTIVO" 
+                      ? `* Margen = (Precio venta - Costo energía) × ${100 - Math.round(params.aliadoPct * 100)}% (después de aliado comercial) × ${Math.round(params.inversionistaPct * 100)}% (tu parte) — economías de escala`
+                      : `* Margen = (Precio venta - Costo energía) × ${100 - Math.round(params.aliadoPct * 100)}% (después de aliado comercial) × ${100 - Math.round(calculos.costosOperativosPct * 100)}% (después de costos operativos) × ${Math.round(params.inversionistaPct * 100)}% (tu parte)`
+                    }
                   </p>
                 </div>
               </CardContent>
@@ -1586,7 +1591,8 @@ export default function Investors() {
                   const energiaInd = PAQUETES.INDIVIDUAL.potenciaKw * horasInd * params.eficienciaDC;
                   const energiaCol = (PAQUETES.COLECTIVO as any).potenciaTotal * horasCol * params.eficienciaDC;
                   const ingresoIndDia = (energiaInd * (precioBase - costoIndividual) * (1 - params.aliadoPct) * (1 - params.costosOpIndividual) * params.inversionistaPct);
-                  const ingresoColDia = (energiaCol * (precioBase - costoColectivo) * (1 - params.aliadoPct) * (1 - params.costosOpColectivo) * params.inversionistaPct);
+                  // Colectivo: sin costos operativos separados (economías de escala)
+                  const ingresoColDia = (energiaCol * (precioBase - costoColectivo) * (1 - params.aliadoPct) * params.inversionistaPct);
                   const roiIndAnual = PAQUETES.INDIVIDUAL.precio > 0 ? ((ingresoIndDia * 365) / PAQUETES.INDIVIDUAL.precio * 100) : 0;
                   const roiColAnual = PAQUETES.COLECTIVO.participacionMinima > 0 ? ((ingresoColDia * 365 * (PAQUETES.COLECTIVO.participacionMinima / PAQUETES.COLECTIVO.precio)) / PAQUETES.COLECTIVO.participacionMinima * 100) : 0;
                   const paybackInd = ingresoIndDia > 0 ? (PAQUETES.INDIVIDUAL.precio / (ingresoIndDia * 30)) : 999;
@@ -1598,7 +1604,7 @@ export default function Investors() {
                     { label: "Fuente de Energía", individual: "Red Eléctrica", colectivo: "Solar + Red", winner: "colectivo" },
                     { label: "Costo Energía/kWh", individual: `${formatCOP(costoIndividual)} COP`, colectivo: `${formatCOP(costoColectivo)} COP (${ahorroSolar}% ahorro)`, winner: "colectivo" },
                     { label: "Margen por kWh", individual: `${formatCOP(margenIndividual)} COP`, colectivo: `${formatCOP(margenColectivo)} COP (+${margenDiff}%)`, winner: "colectivo" },
-                    { label: "Costos Operativos", individual: `${Math.round(params.costosOpIndividual * 100)}%`, colectivo: `${Math.round(params.costosOpColectivo * 100)}% (escala)`, winner: "colectivo" },
+                    { label: "Costos Operativos", individual: `${Math.round(params.costosOpIndividual * 100)}%`, colectivo: "Incluidos (economías de escala)", winner: "colectivo" },
                     { label: "Ubicación", individual: "A elección", colectivo: "Premium garantizada", winner: "colectivo" },
                     { label: "Utilización Esperada", individual: `${horasInd}h/día`, colectivo: `${horasCol.toFixed(0)}h/día (${params.factorUtilizacionPremium}x tráfico)`, winner: "colectivo" },
                     { label: "ROI Anual Estimado", individual: `~${roiIndAnual.toFixed(0)}%`, colectivo: `~${roiColAnual.toFixed(0)}%`, winner: roiColAnual > roiIndAnual ? "colectivo" : "individual" },
