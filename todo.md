@@ -2796,3 +2796,8 @@
 - [x] Fix: Error SQL al crear gasto fijo en Centro Financiero - columnas/valores no coinciden en insert station_fixed_expenses (tabla recreada con schema correcto)
 - [ ] Fix: Error SQL al crear liquidación - tabla financial_settlements no coincide con schema Drizzle
 - [ ] Fix: Verificar y corregir todas las tablas financieras (settlement_expenses, investor_distributions, sla_metrics)
+
+## Bug Fix - Configuración Empresa Inversionista (15 Abril 2026)
+- [x] FIX: Pestaña "Empresa" en Configuración del inversionista no guarda dirección, ciudad ni departamento
+- [x] Mapear campos de empresa (dirección, ciudad, departamento) a columnas fiscales existentes (fiscalAddress, fiscalCity, fiscalDepartment)
+- [x] Cargar datos fiscales existentes al abrir el formulario
