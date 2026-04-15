@@ -140,6 +140,12 @@ export const users = mysqlTable("users", {
   twoFactorEnabled: boolean("twoFactorEnabled").default(false),
   twoFactorSecret: varchar("twoFactorSecret", { length: 255 }), // TOTP secret (encrypted)
   twoFactorVerifiedAt: timestamp("twoFactorVerifiedAt"),
+  // Onboarding de inversionista
+  onboardingCompleted: boolean("onboardingCompleted").default(false),
+  onboardingStep: int("onboardingStep").default(0), // 0=no iniciado, 1-6=paso actual
+  onboardingStartedAt: timestamp("onboardingStartedAt"),
+  onboardingCompletedAt: timestamp("onboardingCompletedAt"),
+  welcomeEmailSent: boolean("welcomeEmailSent").default(false),
   // Preferencias de alertas de proximidad
   notifyProximity: boolean("notifyProximity").default(true),
   proximityRadiusKm: int("proximityRadiusKm").default(5), // Radio de búsqueda en km (1-10)
