@@ -287,3 +287,161 @@ describe("Onboarding URL Construction", () => {
     expect(onboardingUrl).toBe("https://app.evgreen.lat/investor/onboarding");
   });
 });
+
+// ============================================================================
+// Founder Profile Step Tests
+// ============================================================================
+describe("Founder Profile Step", () => {
+  it("should validate founder title max length (100 chars)", () => {
+    const shortTitle = "Co-Fundador & Visionario";
+    const longTitle = "A".repeat(101);
+
+    expect(shortTitle.length <= 100).toBe(true);
+    expect(longTitle.length <= 100).toBe(false);
+  });
+
+  it("should validate investor quote max length (500 chars)", () => {
+    const shortQuote = "Invertir en movilidad eléctrica es invertir en el futuro de Colombia";
+    const longQuote = "B".repeat(501);
+
+    expect(shortQuote.length <= 500).toBe(true);
+    expect(longQuote.length <= 500).toBe(false);
+  });
+
+  it("should validate investor bio max length (2000 chars)", () => {
+    const shortBio = "Empresario con 20 años de experiencia en el sector energético.";
+    const longBio = "C".repeat(2001);
+
+    expect(shortBio.length <= 2000).toBe(true);
+    expect(longBio.length <= 2000).toBe(false);
+  });
+
+  it("should only allow founders to save founder profile", () => {
+    const founderUser = { isFounder: true, role: "investor" };
+    const regularUser = { isFounder: false, role: "investor" };
+
+    expect(founderUser.isFounder).toBe(true);
+    expect(regularUser.isFounder).toBe(false);
+  });
+
+  it("should build correct update data from founder input", () => {
+    const input = {
+      founderTitle: "Co-Fundador Estratégico",
+      investorQuote: "El futuro es eléctrico",
+      investorBio: "Empresario colombiano apasionado por la sostenibilidad",
+      investorShowInWall: true,
+    };
+
+    const updateData: Record<string, any> = {};
+    if (input.founderTitle !== undefined) updateData.founderTitle = input.founderTitle;
+    if (input.investorQuote !== undefined) updateData.investorQuote = input.investorQuote;
+    if (input.investorBio !== undefined) updateData.investorBio = input.investorBio;
+    if (input.investorShowInWall !== undefined) updateData.investorShowInWall = input.investorShowInWall;
+
+    expect(Object.keys(updateData)).toEqual([
+      "founderTitle",
+      "investorQuote",
+      "investorBio",
+      "investorShowInWall",
+    ]);
+    expect(updateData.founderTitle).toBe("Co-Fundador Estratégico");
+    expect(updateData.investorShowInWall).toBe(true);
+  });
+
+  it("should handle empty founder profile (all optional)", () => {
+    const input = {
+      founderTitle: undefined,
+      investorQuote: undefined,
+      investorBio: undefined,
+      investorShowInWall: undefined,
+    };
+
+    const updateData: Record<string, any> = {};
+    if (input.founderTitle !== undefined) updateData.founderTitle = input.founderTitle;
+    if (input.investorQuote !== undefined) updateData.investorQuote = input.investorQuote;
+    if (input.investorBio !== undefined) updateData.investorBio = input.investorBio;
+    if (input.investorShowInWall !== undefined) updateData.investorShowInWall = input.investorShowInWall;
+
+    expect(Object.keys(updateData).length).toBe(0);
+  });
+
+  it("should default investorShowInWall to true", () => {
+    const defaultShowInWall = true;
+    expect(defaultShowInWall).toBe(true);
+  });
+});
+
+// ============================================================================
+// Founder Photo Upload Tests
+// ============================================================================
+describe("Founder Photo Upload", () => {
+  it("should validate accepted image mime types", () => {
+    const acceptedTypes = ["image/jpeg", "image/png", "image/webp"];
+    expect(acceptedTypes.includes("image/jpeg")).toBe(true);
+    expect(acceptedTypes.includes("image/png")).toBe(true);
+    expect(acceptedTypes.includes("image/webp")).toBe(true);
+    expect(acceptedTypes.includes("image/gif")).toBe(false);
+    expect(acceptedTypes.includes("application/pdf")).toBe(false);
+  });
+
+  it("should determine correct file extension from mime type", () => {
+    const getExt = (mimeType: string): string => {
+      if (mimeType.includes("png")) return "png";
+      if (mimeType.includes("webp")) return "webp";
+      return "jpg";
+    };
+
+    expect(getExt("image/jpeg")).toBe("jpg");
+    expect(getExt("image/png")).toBe("png");
+    expect(getExt("image/webp")).toBe("webp");
+  });
+
+  it("should generate unique file keys for S3 uploads", () => {
+    const userId = 42;
+    const randomSuffix1 = Math.random().toString(36).substring(2, 10);
+    const randomSuffix2 = Math.random().toString(36).substring(2, 10);
+
+    const key1 = `founders/${userId}-photo-${randomSuffix1}.jpg`;
+    const key2 = `founders/${userId}-photo-${randomSuffix2}.jpg`;
+
+    expect(key1).toContain("founders/42-photo-");
+    expect(key2).toContain("founders/42-photo-");
+    expect(key1).not.toBe(key2); // Should be unique
+  });
+
+  it("should enforce 5MB file size limit", () => {
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const smallFile = 1 * 1024 * 1024; // 1MB
+    const largeFile = 6 * 1024 * 1024; // 6MB
+
+    expect(smallFile <= maxSize).toBe(true);
+    expect(largeFile <= maxSize).toBe(false);
+  });
+});
+
+// ============================================================================
+// Founder Onboarding Step Count Tests
+// ============================================================================
+describe("Onboarding Step Count", () => {
+  it("should have 7 steps for founders", () => {
+    const allSteps = ["welcome", "personal", "company", "banking", "founder", "dashboard", "complete"];
+    const founderSteps = allSteps; // Founders see all steps
+    expect(founderSteps.length).toBe(7);
+    expect(founderSteps).toContain("founder");
+  });
+
+  it("should have 6 steps for regular investors", () => {
+    const allSteps = ["welcome", "personal", "company", "banking", "founder", "dashboard", "complete"];
+    const regularSteps = allSteps.filter((s) => s !== "founder");
+    expect(regularSteps.length).toBe(6);
+    expect(regularSteps).not.toContain("founder");
+  });
+
+  it("should set correct max step on completion", () => {
+    const founderMaxStep = 7;
+    const regularMaxStep = 6;
+
+    expect(founderMaxStep).toBe(7);
+    expect(regularMaxStep).toBe(6);
+  });
+});

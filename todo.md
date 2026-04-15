@@ -2826,3 +2826,13 @@
 ### Integración
 - [x] Detectar inversionistas nuevos sin onboarding completado y redirigir al wizard
 - [x] Permitir completar el onboarding después si se cierra
+
+## Onboarding Fundadores - Paso Especial (15 Abril 2026)
+- [x] Agregar paso de "Perfil de Fundador" al wizard de onboarding (solo para isFounder=true)
+- [x] Campo para subir foto del fundador (upload a S3)
+- [x] Campo para título de fundador (ej. "Co-Fundador & CEO")
+- [x] Campo para frase inspiradora del inversionista
+- [x] Campo para biografía corta
+- [x] Guardar datos en campos existentes del schema (investorPhotoUrl, founderTitle, investorQuote, investorBio)
+- [x] Procedimiento tRPC para guardar perfil de fundador con upload de foto
+- [x] Preview en tiempo real de cómo se verá en el muro de fundadores
