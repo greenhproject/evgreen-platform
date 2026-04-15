@@ -6871,3 +6871,182 @@ export async function getConsolidatedMaintenanceFundSummary() {
     };
   });
 }
+
+
+// ============================================================================
+// ENRICHED INVESTOR TRANSACTIONS (with waterfall breakdown per station)
+// ============================================================================
+
+export interface InvestorStationInfo {
+  stationId: number;
+  stationName: string;
+  isCollective: boolean;
+  investorParticipationPercent: number; // 100% for own stations, proportional for collective
+  investorSharePercent: number; // e.g. 70% - investor share of net after host
+  evgreenSharePercent: number; // e.g. 30% - evgreen share of net after host
+  hostSharePercent: number; // e.g. 10% - host share of gross margin
+  energyCostPerKwh: number; // energy purchase cost
+}
+
+/**
+ * Get station info map for an investor, including participation percentages
+ * For own stations: participationPercent = 100%
+ * For collective stations: participationPercent = their crowdfunding participation %
+ */
+export async function getInvestorStationInfoMap(investorId: number): Promise<Map<number, InvestorStationInfo>> {
+  const db = await getDb();
+  if (!db) return new Map();
+  
+  const stationMap = new Map<number, InvestorStationInfo>();
+  
+  // 1. Own stations (100% participation)
+  const ownedStations = await db.execute(sql`
+    SELECT id, name, investorSharePercent, evgreenSharePercent, hostSharePercent, energyPurchaseCostPerKwh
+    FROM charging_stations
+    WHERE ownerId = ${investorId} AND isActive = 1
+  `);
+  
+  for (const s of ((ownedStations as any)[0] || []) as any[]) {
+    stationMap.set(Number(s.id), {
+      stationId: Number(s.id),
+      stationName: s.name || `Estación ${s.id}`,
+      isCollective: false,
+      investorParticipationPercent: 100,
+      investorSharePercent: Number(s.investorSharePercent || 70),
+      evgreenSharePercent: Number(s.evgreenSharePercent || 30),
+      hostSharePercent: Number(s.hostSharePercent || 0),
+      energyCostPerKwh: Number(s.energyPurchaseCostPerKwh || 850),
+    });
+  }
+  
+  // 2. Collective stations via crowdfunding
+  const collectiveStations = await db.execute(sql`
+    SELECT 
+      cs.id, cs.name, cs.investorSharePercent, cs.evgreenSharePercent, cs.hostSharePercent, cs.energyPurchaseCostPerKwh,
+      cp.participationPercent
+    FROM crowdfunding_participations cp
+    JOIN crowdfunding_projects cfp ON cp.projectId = cfp.id
+    JOIN charging_stations cs ON cfp.stationId = cs.id
+    WHERE cp.investorId = ${investorId}
+      AND cp.paymentStatus = 'COMPLETED'
+      AND cfp.stationId IS NOT NULL
+      AND cs.isActive = 1
+  `);
+  
+  for (const s of ((collectiveStations as any)[0] || []) as any[]) {
+    const stationId = Number(s.id);
+    // Don't overwrite if already added as owned station
+    if (!stationMap.has(stationId)) {
+      stationMap.set(stationId, {
+        stationId,
+        stationName: s.name || `Estación ${stationId}`,
+        isCollective: true,
+        investorParticipationPercent: Number(s.participationPercent || 0),
+        investorSharePercent: Number(s.investorSharePercent || 70),
+        evgreenSharePercent: Number(s.evgreenSharePercent || 30),
+        hostSharePercent: Number(s.hostSharePercent || 0),
+        energyCostPerKwh: Number(s.energyPurchaseCostPerKwh || 850),
+      });
+    }
+  }
+  
+  return stationMap;
+}
+
+/**
+ * Get enriched transactions for an investor with waterfall breakdown
+ */
+export async function getEnrichedTransactionsByInvestor(
+  investorId: number,
+  filters?: { startDate?: Date; endDate?: Date; status?: string; stationId?: number; limit?: number; offset?: number }
+) {
+  const db = await getDb();
+  if (!db) return { data: [], total: 0, stations: [] as InvestorStationInfo[] };
+  
+  const stationMap = await getInvestorStationInfoMap(investorId);
+  const stationIds = Array.from(stationMap.keys());
+  
+  if (stationIds.length === 0) return { data: [], total: 0, stations: [] as InvestorStationInfo[] };
+  
+  // Filter by specific station if requested
+  const targetIds = filters?.stationId ? [filters.stationId].filter(id => stationIds.includes(id)) : stationIds;
+  if (targetIds.length === 0) return { data: [], total: 0, stations: Array.from(stationMap.values()) };
+  
+  const conditions: any[] = [inArray(transactions.stationId, targetIds)];
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  if (filters?.status) conditions.push(eq(transactions.status, filters.status as any));
+  
+  const whereClause = and(...conditions);
+  
+  const countResult = await db.select({ count: sql<number>`COUNT(*)` }).from(transactions).where(whereClause);
+  const total = Number(countResult[0]?.count || 0);
+  
+  const limit = filters?.limit || 20;
+  const offset = filters?.offset || 0;
+  
+  const rawData = await db.select().from(transactions).where(whereClause).orderBy(desc(transactions.startTime)).limit(limit).offset(offset);
+  
+  // Enrich each transaction with waterfall breakdown
+  const enrichedData = rawData.map(tx => {
+    const stationInfo = stationMap.get(tx.stationId);
+    if (!stationInfo) return { ...tx, waterfall: null, stationInfo: null };
+    
+    const totalCost = Number(tx.totalCost || 0);
+    const kwhConsumed = Number(tx.kwhConsumed || 0);
+    
+    // Waterfall calculation (matching the corrected financial model)
+    const grossRevenue = totalCost;
+    const energyCost = kwhConsumed * stationInfo.energyCostPerKwh;
+    const grossMargin = Math.max(0, grossRevenue - energyCost);
+    
+    // Host gets their % from gross margin FIRST
+    const hostAmount = grossMargin * (stationInfo.hostSharePercent / 100);
+    
+    // Net after host
+    const netAfterHost = grossMargin - hostAmount;
+    
+    // EVGreen and Investor split the net
+    const totalInvestorPool = netAfterHost * (stationInfo.investorSharePercent / 100);
+    const evgreenAmount = netAfterHost * (stationInfo.evgreenSharePercent / 100);
+    
+    // For collective stations, investor gets their proportional share of the investor pool
+    const myShare = totalInvestorPool * (stationInfo.investorParticipationPercent / 100);
+    
+    return {
+      ...tx,
+      stationName: stationInfo.stationName,
+      stationInfo: {
+        stationId: stationInfo.stationId,
+        stationName: stationInfo.stationName,
+        isCollective: stationInfo.isCollective,
+        investorParticipationPercent: stationInfo.investorParticipationPercent,
+        investorSharePercent: stationInfo.investorSharePercent,
+        evgreenSharePercent: stationInfo.evgreenSharePercent,
+        hostSharePercent: stationInfo.hostSharePercent,
+        energyCostPerKwh: stationInfo.energyCostPerKwh,
+      },
+      waterfall: {
+        grossRevenue,
+        energyCost,
+        grossMargin,
+        hostPercent: stationInfo.hostSharePercent,
+        hostAmount,
+        netAfterHost,
+        investorPoolPercent: stationInfo.investorSharePercent,
+        totalInvestorPool,
+        evgreenPercent: stationInfo.evgreenSharePercent,
+        evgreenAmount,
+        participationPercent: stationInfo.investorParticipationPercent,
+        myShare,
+        isCollective: stationInfo.isCollective,
+      },
+    };
+  });
+  
+  return {
+    data: enrichedData,
+    total,
+    stations: Array.from(stationMap.values()),
+  };
+}
