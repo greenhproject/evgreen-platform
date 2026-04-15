@@ -2841,3 +2841,20 @@
 - [x] Agregar triggerInvestorWelcome a registerInvestor cuando paymentConfirmed=true
 - [x] Agregar triggerInvestorWelcome a editParticipation cuando paymentStatus cambia a COMPLETED
 - [x] Asegurar que el email no se envíe dos veces (verificar welcomeEmailSent)
+
+## Mejoras de Onboarding - Fase 2 (15 Abril 2026)
+### 1. Auto-redirección al onboarding
+- [x] Detectar inversionistas con onboardingCompleted=false en InvestorLayout
+- [x] Redirigir automáticamente al wizard /investor/onboarding al iniciar sesión
+- [x] Permitir acceso a /investor/onboarding sin bloquear (evitar loop)
+
+### 2. Botón reenviar email de bienvenida en admin
+- [x] Agregar procedimiento tRPC resendWelcomeEmail en onboarding router
+- [x] Agregar botón "Reenviar email" en la lista de participaciones del admin
+- [x] Resetear welcomeEmailSent para permitir reenvío
+
+### 3. Dashboard de onboarding en admin
+- [x] Crear procedimiento tRPC getOnboardingStats para obtener estadísticas
+- [x] Crear procedimiento tRPC getInvestorsOnboardingStatus para listar inversionistas
+- [x] Agregar sección/pestaña de "Estado Onboarding" en panel admin
+- [x] Mostrar: completados, pendientes, paso actual, fecha de inicio

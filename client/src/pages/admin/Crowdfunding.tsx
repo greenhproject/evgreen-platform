@@ -64,7 +64,8 @@ import {
   Briefcase,
   Search,
   Link2,
-  X
+  X,
+  Send
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -419,6 +420,22 @@ export default function AdminCrowdfunding() {
   const handleDeleteParticipation = (participationId: number) => {
     if (confirm("¿Estás seguro de eliminar esta participación? Esta acción no se puede deshacer.")) {
       deleteParticipationMutation.mutate({ participationId });
+    }
+  };
+
+  // Reenviar email de bienvenida
+  const resendWelcomeEmailMutation = trpc.onboarding.resendWelcomeEmail.useMutation({
+    onSuccess: () => {
+      toast.success("Email de bienvenida reenviado exitosamente");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Error al reenviar el email");
+    },
+  });
+
+  const handleResendWelcomeEmail = (userId: number) => {
+    if (confirm("¿Reenviar el email de bienvenida a este inversionista?")) {
+      resendWelcomeEmailMutation.mutate({ userId });
     }
   };
 
@@ -1013,6 +1030,18 @@ export default function AdminCrowdfunding() {
                                 Confirmar
                               </Button>
                             )}
+                            {participation.paymentStatus === 'COMPLETED' && participation.investor?.id && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleResendWelcomeEmail(participation.investor.id)}
+                                className="h-7 px-2 gap-1 text-xs text-blue-500 hover:text-blue-600 hover:border-blue-300"
+                                title="Reenviar email de bienvenida"
+                              >
+                                <Send className="w-3 h-3" />
+                                Email
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
@@ -1081,6 +1110,18 @@ export default function AdminCrowdfunding() {
                                   >
                                     <CheckCircle2 className="w-4 h-4" />
                                     Confirmar
+                                  </Button>
+                                )}
+                                {participation.paymentStatus === 'COMPLETED' && participation.investor?.id && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleResendWelcomeEmail(participation.investor.id)}
+                                    className="gap-1 text-blue-500 hover:text-blue-600 hover:border-blue-300"
+                                    title="Reenviar email de bienvenida"
+                                  >
+                                    <Send className="w-4 h-4" />
+                                    Email
                                   </Button>
                                 )}
                                 <Button

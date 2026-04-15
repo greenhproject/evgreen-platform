@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -36,7 +37,7 @@ import {
   Calculator
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation } from "wouter";  // Used in both InvestorLayout and InvestorLayoutContent
 import { DashboardLayoutSkeleton } from '@/components/DashboardLayoutSkeleton';
 import { Button } from "@/components/ui/button";
 import { FoundersWallCompact } from "@/components/FoundersWall";
@@ -67,12 +68,39 @@ export default function InvestorLayout({
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
   const { loading, user } = useAuth();
+  const [location, setLocation] = useLocation();
+
+  // Consultar estado de onboarding para inversionistas
+  const { data: onboardingStatus, isLoading: onboardingLoading } = trpc.onboarding.getStatus.useQuery(
+    undefined,
+    {
+      enabled: !!user && (user.role === 'investor'),
+      retry: 1,
+      staleTime: 30000, // Cache por 30 segundos para evitar re-fetches
+    }
+  );
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
-  if (loading) {
+  // Auto-redirect al onboarding si no está completado
+  useEffect(() => {
+    if (
+      !loading &&
+      !onboardingLoading &&
+      user &&
+      user.role === 'investor' &&
+      onboardingStatus &&
+      !onboardingStatus.onboardingCompleted &&
+      onboardingStatus.welcomeEmailSent && // Solo redirigir si ya se envió el email (ya inició el proceso)
+      !location.startsWith('/investor/onboarding') // No redirigir si ya está en onboarding
+    ) {
+      setLocation('/investor/onboarding');
+    }
+  }, [loading, onboardingLoading, user, onboardingStatus, location, setLocation]);
+
+  if (loading || (user && user.role === 'investor' && onboardingLoading)) {
     return <DashboardLayoutSkeleton />
   }
 
