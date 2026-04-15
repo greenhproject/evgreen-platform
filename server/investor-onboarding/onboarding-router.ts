@@ -7,6 +7,7 @@ import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import { triggerInvestorWelcome } from "./email-service";
+import { storagePut } from "../storage";
 
 export const onboardingRouter = router({
   /**
@@ -42,6 +43,11 @@ export const onboardingRouter = router({
         investorTypes: user.investorTypes,
         isFounder: user.isFounder,
         founderTitle: user.founderTitle,
+        investorPhotoUrl: user.investorPhotoUrl,
+        investorQuote: user.investorQuote,
+        investorBio: user.investorBio,
+        investorShowInWall: user.investorShowInWall,
+        investorBadge: user.investorBadge,
       },
     };
   }),
@@ -113,12 +119,70 @@ export const onboardingRouter = router({
     }),
 
   /**
+   * Guardar perfil de fundador (Step especial entre banking y dashboard tour)
+   * Solo para inversionistas con isFounder=true
+   */
+  saveFounderProfile: protectedProcedure
+    .input(z.object({
+      founderTitle: z.string().max(100).optional(),
+      investorQuote: z.string().max(500).optional(),
+      investorBio: z.string().max(2000).optional(),
+      investorShowInWall: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user.isFounder) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Solo disponible para fundadores" });
+      }
+      const updateData: Record<string, any> = {};
+      if (input.founderTitle !== undefined) updateData.founderTitle = input.founderTitle;
+      if (input.investorQuote !== undefined) updateData.investorQuote = input.investorQuote;
+      if (input.investorBio !== undefined) updateData.investorBio = input.investorBio;
+      if (input.investorShowInWall !== undefined) updateData.investorShowInWall = input.investorShowInWall;
+
+      if (Object.keys(updateData).length > 0) {
+        await db.updateUser(ctx.user.id, updateData);
+      }
+      return { success: true };
+    }),
+
+  /**
+   * Upload de foto de fundador a S3
+   */
+  uploadFounderPhoto: protectedProcedure
+    .input(z.object({
+      photoBase64: z.string(), // base64 encoded image
+      mimeType: z.string().default("image/jpeg"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user.isFounder) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Solo disponible para fundadores" });
+      }
+      try {
+        const buffer = Buffer.from(input.photoBase64, "base64");
+        const ext = input.mimeType.includes("png") ? "png" : input.mimeType.includes("webp") ? "webp" : "jpg";
+        const randomSuffix = Math.random().toString(36).substring(2, 10);
+        const fileKey = `founders/${ctx.user.id}-photo-${randomSuffix}.${ext}`;
+        
+        const { url } = await storagePut(fileKey, buffer, input.mimeType);
+        
+        // Guardar URL en el perfil del usuario
+        await db.updateUser(ctx.user.id, { investorPhotoUrl: url } as any);
+        
+        return { success: true, photoUrl: url };
+      } catch (error: any) {
+        console.error("[Onboarding] Failed to upload founder photo:", error);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Error al subir la foto" });
+      }
+    }),
+
+  /**
    * Completar el onboarding
    */
   complete: protectedProcedure.mutation(async ({ ctx }) => {
+    const maxStep = ctx.user.isFounder ? 7 : 6;
     await db.updateUser(ctx.user.id, {
       onboardingCompleted: true,
-      onboardingStep: 6,
+      onboardingStep: maxStep,
       onboardingCompletedAt: new Date(),
     } as any);
     return { success: true };
