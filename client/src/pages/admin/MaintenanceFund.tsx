@@ -22,7 +22,8 @@ import {
   Wrench, DollarSign, TrendingUp, TrendingDown, Plus,
   ArrowUpCircle, ArrowDownCircle, Building2, Wallet,
   FileText, CheckCircle2, AlertTriangle, Search,
-  Loader2, History, PiggyBank, ShieldCheck, ChevronRight
+  Loader2, History, PiggyBank, ShieldCheck, ChevronRight,
+  Download, FileSpreadsheet
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
@@ -290,6 +291,14 @@ function StationFundDetail({
     onError: (e: any) => toast.error(e.message),
   });
 
+  const exportMutation = financialTrpc.exportMaintenanceFund.useMutation({
+    onSuccess: (data: any) => {
+      window.open(data.url, "_blank");
+      toast.success(`Reporte ${data.format === "excel" ? "Excel" : "PDF"} generado exitosamente`);
+    },
+    onError: (e: any) => toast.error(`Error al exportar: ${e.message}`),
+  });
+
   const balance = summary?.currentBalance || 0;
   const totalDeposits = summary?.totalDeposits || 0;
   const totalWithdrawals = summary?.totalWithdrawals || 0;
@@ -309,10 +318,32 @@ function StationFundDetail({
             <p className="text-sm text-muted-foreground">Fondo de mantenimiento — Estación #{stationId}</p>
           </div>
         </div>
-        <Button onClick={() => setShowWithdrawDialog(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Registrar Cobro de Mantenimiento
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={exportMutation.isPending}
+            onClick={() => exportMutation.mutate({ stationId, format: "pdf" })}
+          >
+            {exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            PDF
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={exportMutation.isPending}
+            onClick={() => exportMutation.mutate({ stationId, format: "excel" })}
+          >
+            {exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            Excel
+          </Button>
+          <Button onClick={() => setShowWithdrawDialog(true)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Registrar Cobro
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}
