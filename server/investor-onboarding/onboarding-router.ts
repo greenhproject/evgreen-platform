@@ -224,6 +224,145 @@ export const onboardingRouter = router({
     }),
 
   /**
+   * Admin: Reenviar email de bienvenida (resetea welcomeEmailSent y reenvía)
+   */
+  resendWelcomeEmail: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const user = await db.getUserById(input.userId);
+      if (!user) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Usuario no encontrado" });
+      }
+      if (!user.email) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El usuario no tiene email registrado" });
+      }
+
+      // Resetear flag para permitir reenvío
+      await db.updateUser(input.userId, { welcomeEmailSent: false } as any);
+
+      // Obtener datos de inversión del usuario (buscar su participación más reciente)
+      const { getDb } = await import("../db");
+      const database = await getDb();
+      let investmentAmount = 0;
+      let projectName = '';
+      let participationPercent = 0;
+      
+      if (database) {
+        const { sql } = await import("drizzle-orm");
+        const [rows] = await database.execute(
+          sql`SELECT cp.amount, cp.participationPercent, cfp.name as projectName 
+              FROM crowdfunding_participations cp 
+              LEFT JOIN crowdfunding_projects cfp ON cp.projectId = cfp.id 
+              WHERE cp.investorId = ${input.userId} AND cp.paymentStatus = 'COMPLETED' 
+              ORDER BY cp.id DESC LIMIT 1`
+        );
+        const row = (rows as any)?.[0];
+        if (row) {
+          investmentAmount = Number(row.amount) || 0;
+          projectName = row.projectName || '';
+          participationPercent = Number(row.participationPercent) || 0;
+        }
+      }
+
+      const sent = await triggerInvestorWelcome(user.id, {
+        investorName: user.name || "Inversionista",
+        investorEmail: user.email,
+        investmentAmount,
+        investmentType: "collective",
+        projectName: projectName || undefined,
+        participationPercent: participationPercent || undefined,
+      });
+
+      return { success: sent };
+    }),
+
+  /**
+   * Admin: Obtener estadísticas de onboarding
+   */
+  getOnboardingStats: adminProcedure.query(async () => {
+    const { getDb } = await import("../db");
+    const database = await getDb();
+    if (!database) {
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+    }
+    const { sql } = await import("drizzle-orm");
+    
+    // Total inversionistas
+    const [totalRows] = await database.execute(
+      sql`SELECT COUNT(*) as total FROM users WHERE role = 'investor'`
+    );
+    const totalInvestors = Number((totalRows as any)?.[0]?.total) || 0;
+
+    // Onboarding completado
+    const [completedRows] = await database.execute(
+      sql`SELECT COUNT(*) as total FROM users WHERE role = 'investor' AND onboardingCompleted = true`
+    );
+    const completedOnboarding = Number((completedRows as any)?.[0]?.total) || 0;
+
+    // Email enviado pero onboarding no completado
+    const [pendingRows] = await database.execute(
+      sql`SELECT COUNT(*) as total FROM users WHERE role = 'investor' AND welcomeEmailSent = true AND (onboardingCompleted = false OR onboardingCompleted IS NULL)`
+    );
+    const pendingOnboarding = Number((pendingRows as any)?.[0]?.total) || 0;
+
+    // Sin email enviado
+    const [noEmailRows] = await database.execute(
+      sql`SELECT COUNT(*) as total FROM users WHERE role = 'investor' AND (welcomeEmailSent = false OR welcomeEmailSent IS NULL)`
+    );
+    const noEmailSent = Number((noEmailRows as any)?.[0]?.total) || 0;
+
+    return {
+      totalInvestors,
+      completedOnboarding,
+      pendingOnboarding,
+      noEmailSent,
+      completionRate: totalInvestors > 0 ? Math.round((completedOnboarding / totalInvestors) * 100) : 0,
+    };
+  }),
+
+  /**
+   * Admin: Listar inversionistas con su estado de onboarding
+   */
+  getInvestorsOnboardingList: adminProcedure.query(async () => {
+    const { getDb } = await import("../db");
+    const database = await getDb();
+    if (!database) {
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+    }
+    const { sql } = await import("drizzle-orm");
+    
+    const [rows] = await database.execute(
+      sql`SELECT id, name, email, phone, companyName, taxId, 
+                 onboardingCompleted, onboardingStep, onboardingStartedAt, onboardingCompletedAt,
+                 welcomeEmailSent, isFounder, investorPhotoUrl, createdAt,
+                 bankName, bankAccount
+          FROM users 
+          WHERE role = 'investor' 
+          ORDER BY onboardingCompleted ASC, onboardingStep DESC, createdAt DESC`
+    );
+    
+    return (rows as unknown as any[]).map((row: any) => ({
+      id: row.id,
+      name: row.name || 'Sin nombre',
+      email: row.email || '',
+      phone: row.phone || '',
+      companyName: row.companyName || '',
+      taxId: row.taxId || '',
+      onboardingCompleted: !!row.onboardingCompleted,
+      onboardingStep: row.onboardingStep || 0,
+      onboardingStartedAt: row.onboardingStartedAt,
+      onboardingCompletedAt: row.onboardingCompletedAt,
+      welcomeEmailSent: !!row.welcomeEmailSent,
+      isFounder: !!row.isFounder,
+      hasPhoto: !!row.investorPhotoUrl,
+      hasBankInfo: !!(row.bankName && row.bankAccount),
+      createdAt: row.createdAt,
+    }));
+  }),
+
+  /**
    * Reset onboarding (admin only, for testing)
    */
   reset: adminProcedure
