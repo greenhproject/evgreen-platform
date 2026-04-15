@@ -4344,13 +4344,16 @@ export async function getInvestorParticipations(investorId: number): Promise<any
           realEarnings.txCount = Number(er.txCount || 0);
           realEarnings.totalKwh = Number(er.totalKwh || 0);
           
-          // Calculate net using waterfall
+          // Waterfall correcto del modelo colectivo:
+          // Margen = (Ingreso bruto - Costo energía) × 90% (después aliado) × 70% (tu parte)
+          // El 70% ya incluye costos operativos (economías de escala)
           const energyCost = realEarnings.totalKwh * Number(row.stationEnergyCostPerKwh || 850);
           const grossMargin = Math.max(0, realEarnings.totalGross - energyCost);
           const hostPct = Number(row.stationHostSharePercent || 10);
           const netAfterHost = grossMargin * (1 - hostPct / 100);
-          const investorPct = Number(row.stationInvestorSharePercent || 70);
-          const investorPool = netAfterHost * (investorPct / 100);
+          // 70% es la parte del inversionista (costos op incluidos en modelo colectivo)
+          const investorModelPct = 0.70;
+          const investorPool = netAfterHost * investorModelPct;
           const myPct = Number(row.participationPercent || 0);
           realEarnings.totalNet = investorPool * (myPct / 100);
         } catch (e) {
@@ -7067,9 +7070,13 @@ export async function getEnrichedTransactionsByInvestor(
     // Net after host
     const netAfterHost = grossMargin - hostAmount;
     
-    // EVGreen and Investor split the net
-    const totalInvestorPool = netAfterHost * (stationInfo.investorSharePercent / 100);
-    const evgreenAmount = netAfterHost * (stationInfo.evgreenSharePercent / 100);
+    // Modelo correcto: (PV - CE) × 90% aliado × 70% tu parte
+    // Para colectivas: el 70% ya incluye costos operativos (economías de escala)
+    // Para propias: se usa el investorSharePercent de la BD
+    const effectiveInvestorPct = stationInfo.isCollective ? 70 : stationInfo.investorSharePercent;
+    const effectiveEvgreenPct = stationInfo.isCollective ? 30 : stationInfo.evgreenSharePercent;
+    const totalInvestorPool = netAfterHost * (effectiveInvestorPct / 100);
+    const evgreenAmount = netAfterHost * (effectiveEvgreenPct / 100);
     
     // For collective stations, investor gets their proportional share of the investor pool
     const myShare = totalInvestorPool * (stationInfo.investorParticipationPercent / 100);
@@ -7094,9 +7101,9 @@ export async function getEnrichedTransactionsByInvestor(
         hostPercent: stationInfo.hostSharePercent,
         hostAmount,
         netAfterHost,
-        investorPoolPercent: stationInfo.investorSharePercent,
+        investorPoolPercent: effectiveInvestorPct,
         totalInvestorPool,
-        evgreenPercent: stationInfo.evgreenSharePercent,
+        evgreenPercent: effectiveEvgreenPct,
         evgreenAmount,
         participationPercent: stationInfo.investorParticipationPercent,
         myShare,

@@ -2777,3 +2777,5 @@
 - [x] Fix: Mostrar estado real de estación (no hardcoded "Activa")
 - [x] Fix: Reemplazar proyecciones genéricas con datos reales del centro financiero
 - [x] Mejora: Agregar indicadores económicos/operativos del centro financiero de forma llamativa
+- [x] Fix: Distribución en tarjeta colectiva debe mostrar waterfall real del modelo: (PV-CE) × 90% aliado × 70% tu parte
+- [x] CRITICAL: Corregir fórmula modelo colectivo en TODA la plataforma: Margen = (PV - CE) × 90% aliado × 70% tu parte (SIN paso de costos operativos 10%)
