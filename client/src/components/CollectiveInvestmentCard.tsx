@@ -26,6 +26,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Shield,
+  Wrench,
 } from "lucide-react";
 
 const financialTrpc = trpc.financial as any;
@@ -72,6 +73,10 @@ export function CollectiveInvestmentCard() {
     const roiAccumulated = totalInvertido > 0 ? ((totalDistributed / totalInvertido) * 100) : 0;
     const pendingBalance = Math.max(0, totalInvertido - totalDistributed);
 
+    // Fondo de mantenimiento acumulado (5% del 30% EVGreen sobre ingresos brutos después de aliado)
+    // Aproximación: 5% del total de ingresos brutos proporcionales
+    const maintenanceFund = totalEarningsGross * 0.05;
+
     return {
       totalInvertido,
       totalEarningsNet,
@@ -82,6 +87,7 @@ export function CollectiveInvestmentCard() {
       totalDistributed,
       roiAccumulated,
       pendingBalance,
+      maintenanceFund,
     };
   }, [participations, financialSummary]);
 
@@ -110,9 +116,9 @@ export function CollectiveInvestmentCard() {
       </CardHeader>
       <CardContent className="space-y-5">
 
-        {/* KPI Summary Row */}
+        {/* KPI Summary Row - 5 cards including income and maintenance fund */}
         {metrics && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <div className="p-3 rounded-lg bg-black/20 border border-white/5">
               <div className="flex items-center gap-1.5 mb-1">
                 <DollarSign className="w-3.5 h-3.5 text-amber-400" />
@@ -140,6 +146,14 @@ export function CollectiveInvestmentCard() {
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Sesiones</p>
               </div>
               <p className="text-lg font-bold text-cyan-400">{metrics.totalTx.toLocaleString()}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-black/20 border border-amber-500/15">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Wrench className="w-3.5 h-3.5 text-orange-400" />
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Fondo Mant.</p>
+              </div>
+              <p className="text-lg font-bold text-orange-400">{formatCOPShort(metrics.maintenanceFund)}</p>
+              <p className="text-[9px] text-muted-foreground mt-0.5">5% acumulado</p>
             </div>
           </div>
         )}
@@ -178,10 +192,13 @@ export function CollectiveInvestmentCard() {
             const roiReal = monto > 0 ? ((realEarnings.totalNet / monto) * 100) : 0;
 
             // Distribution config - Fórmula correcta del modelo colectivo:
-            // Margen = (PV - CE) × 90% (después aliado) × 70% (tu parte)
+            // 1. Ingreso bruto - Costo energía = Margen bruto
+            // 2. Margen bruto × 90% (después aliado 10%)
+            // 3. Se descuentan costos operativos fijos (pólizas, fiduciario)
+            // 4. Neto × 70% = Tu parte / × 30% = EVGreen
             const hostPct = station?.hostSharePercent || 10;
             const afterHostPct = 100 - hostPct; // 90%
-            const investorModelPct = 70; // Fijo del modelo colectivo (incluye costos op)
+            const investorModelPct = 70; // Fijo del modelo colectivo
             const evgreenModelPct = 30; // Fijo del modelo colectivo
 
             return (
@@ -260,7 +277,7 @@ export function CollectiveInvestmentCard() {
                   </div>
                 </div>
 
-                {/* Waterfall del Modelo - Fórmula real */}
+                {/* Waterfall del Modelo - Fórmula real corregida */}
                 {!isPending && (
                   <>
                     <Separator className="opacity-10" />
@@ -272,27 +289,33 @@ export function CollectiveInvestmentCard() {
                       <div className="space-y-1.5">
                         {/* Step 1: Gross margin */}
                         <div className="flex items-center gap-2 text-[10px]">
-                          <span className="text-muted-foreground w-4 text-center">1.</span>
+                          <span className="text-muted-foreground w-4 text-center font-mono">1.</span>
                           <span className="text-white/80">Ingreso bruto − Costo energía</span>
                           <span className="text-muted-foreground">=</span>
                           <span className="text-emerald-400 font-medium">Margen bruto</span>
                         </div>
                         {/* Step 2: After host */}
                         <div className="flex items-center gap-2 text-[10px]">
-                          <span className="text-muted-foreground w-4 text-center">2.</span>
+                          <span className="text-muted-foreground w-4 text-center font-mono">2.</span>
                           <span className="text-white/80">Margen bruto × {afterHostPct}%</span>
-                          <span className="text-muted-foreground">(aliado {hostPct}%)</span>
+                          <span className="text-muted-foreground">(aliado comercial {hostPct}%)</span>
                         </div>
-                        {/* Step 3: Investor share */}
+                        {/* Step 3: Fixed operational costs deducted */}
                         <div className="flex items-center gap-2 text-[10px]">
-                          <span className="text-muted-foreground w-4 text-center">3.</span>
-                          <span className="text-white/80">× {investorModelPct}%</span>
+                          <span className="text-muted-foreground w-4 text-center font-mono">3.</span>
+                          <span className="text-white/80">− Gastos operativos fijos</span>
+                          <span className="text-muted-foreground">(pólizas, fiduciario)</span>
+                        </div>
+                        {/* Step 4: Investor share */}
+                        <div className="flex items-center gap-2 text-[10px]">
+                          <span className="text-muted-foreground w-4 text-center font-mono">4.</span>
+                          <span className="text-white/80">Neto × {investorModelPct}%</span>
                           <span className="text-emerald-400 font-medium">= Tu parte</span>
-                          <span className="text-muted-foreground">(costos op. incluidos)</span>
                         </div>
                       </div>
+
                       {/* Visual bar */}
-                      <div className="flex gap-0.5 h-1.5 rounded-full overflow-hidden mt-2">
+                      <div className="flex gap-0.5 h-1.5 rounded-full overflow-hidden mt-3">
                         <div className="bg-amber-500/70 rounded-l-full" style={{ width: `${hostPct}%` }} title={`Aliado: ${hostPct}%`} />
                         <div className="bg-emerald-500" style={{ width: `${investorModelPct * afterHostPct / 100}%` }} title={`Tu parte: ${investorModelPct}%`} />
                         <div className="bg-blue-500 rounded-r-full" style={{ width: `${evgreenModelPct * afterHostPct / 100}%` }} title={`EVGreen: ${evgreenModelPct}%`} />
@@ -311,12 +334,22 @@ export function CollectiveInvestmentCard() {
                           EVGreen {evgreenModelPct}%
                         </span>
                       </div>
-                      {/* Fixed costs note */}
-                      <div className="flex items-start gap-1.5 mt-2 pt-2 border-t border-white/5">
-                        <Shield className="w-3 h-3 text-amber-400/60 mt-0.5 flex-shrink-0" />
-                        <p className="text-[9px] text-amber-300/50 leading-relaxed">
-                          Gastos fijos (pólizas, fiduciario) se descuentan en la liquidación mensual. Del {evgreenModelPct}% EVGreen, un 5% se destina al fondo de imprevistos y mantenimiento.
-                        </p>
+
+                      {/* Note 1: Fixed costs */}
+                      <div className="mt-3 pt-2 border-t border-white/5 space-y-2">
+                        <div className="flex items-start gap-1.5">
+                          <Shield className="w-3 h-3 text-amber-400/60 mt-0.5 flex-shrink-0" />
+                          <p className="text-[9px] text-amber-300/50 leading-relaxed">
+                            Los gastos operativos fijos (pólizas, gastos fiduciarios) se descuentan proporcionalmente en cada liquidación mensual.
+                          </p>
+                        </div>
+                        {/* Note 2: Maintenance fund - separate line */}
+                        <div className="flex items-start gap-1.5">
+                          <Wrench className="w-3 h-3 text-orange-400/60 mt-0.5 flex-shrink-0" />
+                          <p className="text-[9px] text-orange-300/50 leading-relaxed">
+                            Del {evgreenModelPct}% de EVGreen, un 5% se destina al fondo de imprevistos y mantenimiento correctivo/preventivo.
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </>

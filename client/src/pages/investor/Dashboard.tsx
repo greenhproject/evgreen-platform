@@ -41,6 +41,15 @@ export default function InvestorDashboard() {
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(amount);
 
+  // Determine station types for labels
+  const hasIndividual = stations?.some((s: any) => s.ownershipType !== 'collective') ?? false;
+  const hasCollective = investorProfile?.investorType === 'collective' || investorProfile?.investorType === 'founder';
+  const stationSourceLabel = hasIndividual && hasCollective 
+    ? "Todas las estaciones" 
+    : hasCollective 
+      ? "Estaciones colectivas" 
+      : "Mis estaciones";
+
   const revenueData = [
     { name: "Lun", value: 0 },
     { name: "Mar", value: 0 },
@@ -65,38 +74,28 @@ export default function InvestorDashboard() {
 
   if (isLoading) {
     return (
-      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Mi Dashboard</h1>
-          <p className="text-muted-foreground">Cargando métricas...</p>
+      <div className="space-y-6 p-4 sm:p-6">
+        <Skeleton className="h-32 w-full" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i} className="p-4 sm:p-6">
-              <Skeleton className="h-4 w-24 mb-2" />
-              <Skeleton className="h-8 w-32" />
-            </Card>
-          ))}
-        </div>
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-      {/* Header con insignia de fundador */}
+    <div className="space-y-6 p-4 sm:p-6">
+      {/* Founder Profile */}
       {investorProfile?.isFounder && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden rounded-2xl"
+          className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-900/30 via-orange-900/20 to-yellow-900/30 border border-amber-500/20 p-4 sm:p-6"
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-yellow-500/5 to-amber-500/10" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-amber-400/10 via-transparent to-transparent" />
-          <div className="relative p-5 sm:p-6 flex items-center gap-4">
-            {/* Insignia grande */}
+          <div className="flex items-center gap-4">
             <div className="relative flex-shrink-0">
-              <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br ${badgeInfo?.gradient || "from-amber-400 to-amber-600"} flex items-center justify-center shadow-lg ${badgeInfo?.ring || "ring-amber-400"} ring-2 ring-offset-2 ring-offset-background`}>
+              <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br ${badgeInfo?.gradient || 'from-amber-500 to-orange-600'} flex items-center justify-center shadow-lg`}>
                 {badgeInfo ? (
                   <badgeInfo.icon className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
                 ) : (
@@ -187,13 +186,13 @@ export default function InvestorDashboard() {
               <h3 className="text-lg sm:text-2xl font-bold mt-1 truncate">
                 {formatCurrency(metrics?.monthlyEarnings || 0)}
               </h3>
-              <p className="text-xs text-green-600 flex items-center gap-1 mt-1">
+              <p className="text-xs text-emerald-400 flex items-center gap-1 mt-1">
                 <TrendingUp className="w-3 h-3 flex-shrink-0" />
                 <span className="truncate">Este mes</span>
               </p>
             </div>
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0">
-              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400" />
             </div>
           </div>
         </Card>
@@ -207,8 +206,8 @@ export default function InvestorDashboard() {
               </h3>
               <p className="text-xs text-muted-foreground mt-1">Este mes</p>
             </div>
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-              <Zap className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
+              <Zap className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-400" />
             </div>
           </div>
         </Card>
@@ -224,8 +223,8 @@ export default function InvestorDashboard() {
               </h3>
               <p className="text-xs text-muted-foreground mt-1">En línea</p>
             </div>
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
-              <MapPin className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+              <MapPin className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />
             </div>
           </div>
         </Card>
@@ -237,46 +236,55 @@ export default function InvestorDashboard() {
               <h3 className="text-lg sm:text-2xl font-bold mt-1">{metrics?.monthlyTransactions || 0}</h3>
               <p className="text-xs text-muted-foreground mt-1">Cargas completadas</p>
             </div>
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
-              <Activity className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+              <Activity className="w-5 h-5 sm:w-6 sm:h-6 text-purple-400" />
             </div>
           </div>
         </Card>
       </div>
 
       {/* Balance de billetera */}
-      <Card className="p-4 sm:p-6 bg-gradient-to-r from-primary/10 to-primary/5">
+      <Card className="p-4 sm:p-6 bg-gradient-to-r from-emerald-500/10 to-emerald-500/5 border-emerald-500/20">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-muted-foreground">Saldo disponible para retiro</p>
-            <h2 className="text-3xl font-bold text-primary mt-1">
+            <h2 className="text-3xl font-bold text-emerald-400 mt-1">
               {formatCurrency(metrics?.walletBalance || 0)}
             </h2>
             <p className="text-xs text-muted-foreground mt-2">
               Total histórico: {formatCurrency(metrics?.totalTransactions || 0)} en {metrics?.totalTransactions || 0} transacciones
             </p>
           </div>
-          <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
-            <Wallet className="w-8 h-8 text-primary" />
+          <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
+            <Wallet className="w-8 h-8 text-emerald-400" />
           </div>
         </div>
       </Card>
 
-      {/* Gráficos */}
+      {/* Gráficos - con colores visibles y etiquetas de fuente */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <Card className="p-4 sm:p-6">
-          <h3 className="font-semibold mb-4 text-sm sm:text-base">Ingresos de la semana</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-sm sm:text-base">Ingresos de la semana</h3>
+            <Badge variant="outline" className="text-[10px] text-muted-foreground">
+              {stationSourceLabel}
+            </Badge>
+          </div>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={revenueData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 12 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
+              <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} tick={{ fill: '#9ca3af', fontSize: 12 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
+              <Tooltip 
+                formatter={(value: number) => [formatCurrency(value), "Ingresos"]}
+                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
+                labelStyle={{ color: '#9ca3af' }}
+              />
               <Area
                 type="monotone"
                 dataKey="value"
-                stroke="hsl(var(--primary))"
-                fill="hsl(var(--primary) / 0.2)"
+                stroke="#22c55e"
+                fill="rgba(34, 197, 94, 0.15)"
                 strokeWidth={2}
               />
             </AreaChart>
@@ -284,14 +292,23 @@ export default function InvestorDashboard() {
         </Card>
 
         <Card className="p-4 sm:p-6">
-          <h3 className="font-semibold mb-4 text-sm sm:text-base">Energía vendida (kWh)</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-sm sm:text-base">Energía vendida (kWh)</h3>
+            <Badge variant="outline" className="text-[10px] text-muted-foreground">
+              {stationSourceLabel}
+            </Badge>
+          </div>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={energyData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Line type="monotone" dataKey="kwh" stroke="#22c55e" strokeWidth={2} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 12 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
+              <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
+              <Tooltip 
+                formatter={(value: number) => [`${value.toFixed(1)} kWh`, "Energía"]}
+                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
+                labelStyle={{ color: '#9ca3af' }}
+              />
+              <Line type="monotone" dataKey="kwh" stroke="#06b6d4" strokeWidth={2} dot={{ fill: '#06b6d4', r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
         </Card>
@@ -311,12 +328,12 @@ export default function InvestorDashboard() {
           ) : (
             <div className="space-y-3">
               {stations?.slice(0, 5).map((station) => (
-                <div key={station.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div key={station.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                   <div>
                     <div className="font-medium">{station.name}</div>
                     <div className="text-sm text-muted-foreground">{station.city}</div>
                   </div>
-                  <Badge className={station.isOnline ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
+                  <Badge className={station.isOnline ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}>
                     {station.isOnline ? "En línea" : "Fuera de línea"}
                   </Badge>
                 </div>
@@ -325,25 +342,25 @@ export default function InvestorDashboard() {
           )}
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-4 sm:p-6">
           <h3 className="font-semibold mb-4 flex items-center gap-2">
             <Zap className="w-4 h-4" />
             Resumen de ingresos
           </h3>
           <div className="space-y-4">
-            <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
+            <div className="flex justify-between items-center p-3 bg-emerald-500/10 rounded-lg">
               <span className="text-sm">Ingresos brutos del mes</span>
-              <span className="font-bold text-green-700">
+              <span className="font-bold text-emerald-400">
                 {formatCurrency(metrics?.monthlyRevenue || 0)}
               </span>
             </div>
-            <div className="flex justify-between items-center p-3 bg-primary/5 rounded-lg">
+            <div className="flex justify-between items-center p-3 bg-cyan-500/10 rounded-lg">
               <span className="text-sm">Tu parte ({investorPercentage}%)</span>
-              <span className="font-bold text-primary">
+              <span className="font-bold text-cyan-400">
                 {formatCurrency(metrics?.monthlyEarnings || 0)}
               </span>
             </div>
-            <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
+            <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
               <span className="text-sm text-muted-foreground">Fee plataforma ({platformFeePercentage}%)</span>
               <span className="font-medium text-muted-foreground">
                 {formatCurrency((metrics?.monthlyRevenue || 0) - (metrics?.monthlyEarnings || 0))}

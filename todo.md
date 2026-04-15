@@ -2787,3 +2787,9 @@
 - [x] Fix: Mantener campo contingencia editable en admin pero como % del share de EVGreen
 - [x] Fix: Mostrar desglose transparente en vista inversionista: "Del 30% EVGreen: X% contingencia + Y% gestión"
 - [x] Fix: Nota de transparencia imprecisa - el 30% EVGreen solo absorbe 5% fondo imprevistos, NO todos los gastos fijos
+- [x] Fix: Fórmula colectiva - costos op se liquidan primero, luego se reparte 70% (no "costos op incluidos")
+- [x] Fix: Separar nota de gastos fijos y 5% fondo en renglones distintos
+- [x] Agregar KPI de fondo de mantenimiento acumulado (5%) en tarjeta colectiva
+- [x] Fix: Gráfica "Ingresos de la semana" barras negras invisibles contra fondo oscuro
+- [x] Fix: Gráficas no indican si son de estación colectiva o individual
+- [x] Agregar KPI de ingresos en parte superior del dashboard
