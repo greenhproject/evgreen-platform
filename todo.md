@@ -2708,3 +2708,13 @@
 - [x] Formulario para registrar cobros de mantenimiento (retiros del fondo)
 - [x] Historial de movimientos (depósitos automáticos por liquidación + retiros por mantenimiento)
 - [x] Agregar ruta y enlace en navegación admin
+
+## Mejoras Fondo de Mantenimiento - Abril 2026 (Ronda 2)
+- [x] Notificaciones a inversionistas cuando se aprueba liquidación (depósito al fondo)
+- [x] Notificaciones a inversionistas cuando se registra cobro de mantenimiento (retiro del fondo)
+- [x] Copia de notificación al remitente (admin) para trazabilidad
+- [x] Endpoint para exportar historial del fondo en PDF
+- [x] Endpoint para exportar historial del fondo en Excel
+- [x] Botón de exportar en la UI de detalle del fondo
+- [x] Alertas automáticas cuando el balance del fondo baje del 10% del total acumulado
+- [x] Notificación push + in-app al admin cuando fondo está bajo

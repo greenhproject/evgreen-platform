@@ -17,6 +17,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { generateFinancialExcel, generateFinancialPDF } from "../reports/export-financial";
+import { generateMaintenanceFundExcel, generateMaintenanceFundPDF } from "../reports/export-maintenance-fund";
+import { notifyFundDeposit, notifyFundWithdrawal, checkAndAlertLowBalance } from "./maintenance-fund-notifications";
 import {
   createFixedExpense,
   getFixedExpensesByStation,
@@ -348,6 +350,17 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
             balanceAfter: currentBalance + maintenanceFundAmount,
             createdBy: ctx.user.id,
           });
+
+          // Notify investors about the deposit (non-blocking)
+          notifyFundDeposit({
+            stationId: input.stationId,
+            stationName: station.name,
+            depositAmount: maintenanceFundAmount,
+            newBalance: currentBalance + maintenanceFundAmount,
+            settlementId,
+            periodDescription: `${periodStart.toLocaleDateString('es-CO')} a ${periodEnd.toLocaleDateString('es-CO')}`,
+            adminUserId: ctx.user.id,
+          }).catch(err => console.warn('[Financial] Fund deposit notification failed:', err));
         }
 
         return {
@@ -842,7 +855,73 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           balanceAfter: currentBalance - input.amount,
           createdBy: ctx.user.id,
         });
-        return { id, newBalance: currentBalance - input.amount };
+
+        const newBalance = currentBalance - input.amount;
+
+        // Get station name for notifications
+        const station = await getChargingStationById(input.stationId);
+        const stationName = station?.name || `Estación #${input.stationId}`;
+
+        // Notify investors about the withdrawal (non-blocking)
+        notifyFundWithdrawal({
+          stationId: input.stationId,
+          stationName,
+          withdrawalAmount: input.amount,
+          newBalance,
+          description: input.description,
+          maintenanceType: input.maintenanceType,
+          technicianName: input.technicianName,
+          adminUserId: ctx.user.id,
+        }).catch(err => console.warn('[Financial] Fund withdrawal notification failed:', err));
+
+        // Check and alert if balance is low (non-blocking)
+        checkAndAlertLowBalance(input.stationId)
+          .catch(err => console.warn('[Financial] Low balance check failed:', err));
+
+        return { id, newBalance };
+      }),
+
+    /** Exportar historial del fondo de mantenimiento (PDF o Excel) */
+    exportMaintenanceFund: adminProcedure
+      .input(z.object({
+        stationId: z.number(),
+        format: z.enum(["pdf", "excel"]),
+      }))
+      .mutation(async ({ input }: { input: { stationId: number; format: "pdf" | "excel" } }) => {
+        const station = await getChargingStationById(input.stationId);
+        if (!station) throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+
+        const summary = await getMaintenanceFundSummary(input.stationId);
+        const records = await getMaintenanceFundRecords(input.stationId, 500);
+
+        const exportOptions = {
+          stationName: station.name,
+          stationId: input.stationId,
+          summary,
+          records,
+        };
+
+        let buffer: Buffer;
+        let mimeType: string;
+        let filename: string;
+
+        if (input.format === "excel") {
+          buffer = generateMaintenanceFundExcel(exportOptions);
+          mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+          filename = `fondo-mantenimiento-${station.name.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}.xlsx`;
+        } else {
+          buffer = generateMaintenanceFundPDF(exportOptions);
+          mimeType = "application/pdf";
+          filename = `fondo-mantenimiento-${station.name.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}.pdf`;
+        }
+
+        // Upload to S3
+        const { storagePut } = await import("../storage");
+        const randomSuffix = Math.random().toString(36).substring(2, 8);
+        const fileKey = `reports/maintenance-fund/${filename}-${randomSuffix}`;
+        const { url } = await storagePut(fileKey, buffer, mimeType);
+
+        return { url, filename, format: input.format };
       }),
   });
 }
