@@ -35,6 +35,7 @@ import { idTagRouter } from "./idtags/idtag-router";
 import { supportRouterV2 } from "./support/support-router";
 import { buildFinancialRouter } from "./financial/financial-router";
 import { onboardingRouter } from "./investor-onboarding/onboarding-router";
+import { backupRouter, startAutomaticBackups } from "./backup/backup-router";
 import { maintenanceScheduleRouter } from "./maintenance/maintenance-schedule-router";
 
 // ============================================================================
@@ -5807,6 +5808,10 @@ export const appRouter = router({
   financial: buildFinancialRouter(router, protectedProcedure, adminProcedure),
   maintenanceSchedule: maintenanceScheduleRouter,
   onboarding: onboardingRouter,
+  backup: backupRouter,
 });
+
+// Iniciar sistema de backup automático al cargar el módulo
+startAutomaticBackups();
 
 export type AppRouter = typeof appRouter;

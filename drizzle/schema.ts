@@ -2843,3 +2843,36 @@ export const maintenanceTasksRelations = relations(maintenanceTasks, ({ one }) =
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// BACKUP SYSTEM
+// ============================================================================
+
+export const backupStatusEnum = mysqlEnum("backup_status", ["RUNNING", "COMPLETED", "FAILED", "PARTIAL"]);
+export const backupTypeEnum = mysqlEnum("backup_type", ["FULL", "CRITICAL", "FINANCIAL", "USERS", "MANUAL"]);
+
+export const backupLogs = mysqlTable("backup_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  backupType: backupTypeEnum.notNull(),
+  status: backupStatusEnum.notNull().default("RUNNING"),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  // Metadata
+  tablesIncluded: json("tablesIncluded").$type<string[]>(),
+  totalRows: int("totalRows").default(0),
+  totalSizeBytes: bigint("totalSizeBytes", { mode: "number" }).default(0),
+  s3Url: text("s3Url"),
+  s3Key: varchar("s3Key", { length: 500 }),
+  // Error tracking
+  errorMessage: text("errorMessage"),
+  errorDetails: json("errorDetails").$type<Record<string, string>>(),
+  // Who triggered it
+  triggeredBy: varchar("triggeredBy", { length: 100 }).default("system"), // 'system', 'admin', userId
+  isAutomatic: boolean("isAutomatic").default(true).notNull(),
+  // Retention
+  expiresAt: timestamp("expiresAt"),
+  isDeleted: boolean("isDeleted").default(false).notNull(),
+  // Notes
+  notes: text("notes"),
+});

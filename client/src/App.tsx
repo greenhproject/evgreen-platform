@@ -115,6 +115,7 @@ const AdminRemoteStart = lazy(() => import("./pages/admin/RemoteStart"));
 const AdminFinancial = lazy(() => import("./pages/admin/Financial"));
 const AdminMaintenanceFund = lazy(() => import("./pages/admin/MaintenanceFund"));
 const AdminOnboardingDashboard = lazy(() => import("./pages/admin/OnboardingDashboard"));
+const AdminBackupDashboard = lazy(() => import("./pages/admin/BackupDashboard"));
 
 // Páginas de Aliado Comercial (Host)
 const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
@@ -645,6 +646,14 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin"]}>
             <AdminLayout>
               <AdminOnboardingDashboard />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        <Route path="/admin/backup">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminBackupDashboard />
             </AdminLayout>
           </ProtectedRoute>
         </Route>
