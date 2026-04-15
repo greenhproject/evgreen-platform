@@ -1,10 +1,11 @@
 /**
  * Fondo de Mantenimiento - Panel Administrativo
  * Gestión del fondo de mantenimiento para estaciones colectivas (crowdfunding)
- * Muestra: balance acumulado, historial de movimientos, formulario de retiro
+ * Muestra: balance acumulado, historial de movimientos, formulario de retiro,
+ * gráficos de tendencia mensual, umbral de alerta configurable, reporte consolidado
  * @author Green House Project
  */
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 
 // Cast financial router to bypass TS inference issues with buildFinancialRouter pattern
@@ -17,13 +18,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
   Wrench, DollarSign, TrendingUp, TrendingDown, Plus,
   ArrowUpCircle, ArrowDownCircle, Building2, Wallet,
   FileText, CheckCircle2, AlertTriangle, Search,
   Loader2, History, PiggyBank, ShieldCheck, ChevronRight,
-  Download, FileSpreadsheet
+  Download, FileSpreadsheet, BarChart3, Settings2, Bell,
+  Save, LayoutGrid
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
@@ -58,6 +61,12 @@ function formatDateTime(date: string | Date | null): string {
   });
 }
 
+function formatMonthLabel(ym: string): string {
+  const [y, m] = ym.split("-");
+  const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  return `${months[parseInt(m) - 1]} ${y.slice(2)}`;
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -66,6 +75,7 @@ export default function AdminMaintenanceFund() {
   const [selectedStationId, setSelectedStationId] = useState<number | null>(null);
   const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("stations");
 
   // Get collective stations (those with crowdfunding projects)
   const collectiveStationsQuery = financialTrpc.getCollectiveStations.useQuery();
@@ -108,13 +118,32 @@ export default function AdminMaintenanceFund() {
           setShowWithdrawDialog={setShowWithdrawDialog}
         />
       ) : (
-        <StationsList
-          stations={filteredStations}
-          isLoading={collectiveStationsQuery.isLoading}
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          onSelectStation={(id: number) => setSelectedStationId(id)}
-        />
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="stations" className="gap-2">
+              <Building2 className="h-4 w-4" />
+              Estaciones
+            </TabsTrigger>
+            <TabsTrigger value="consolidated" className="gap-2">
+              <LayoutGrid className="h-4 w-4" />
+              Reporte Consolidado
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="stations" className="mt-4">
+            <StationsList
+              stations={filteredStations}
+              isLoading={collectiveStationsQuery.isLoading}
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+              onSelectStation={(id: number) => setSelectedStationId(id)}
+            />
+          </TabsContent>
+
+          <TabsContent value="consolidated" className="mt-4">
+            <ConsolidatedReport />
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );
@@ -258,6 +287,228 @@ function StationFundCard({ station, onSelect }: { station: any; onSelect: () => 
 }
 
 // ============================================================================
+// CONSOLIDATED REPORT (Multi-station overview)
+// ============================================================================
+
+function ConsolidatedReport() {
+  const consolidatedQuery = financialTrpc.consolidatedMaintenanceFundSummary.useQuery();
+  const data = consolidatedQuery.data;
+  const stations = data?.stations || [];
+  const totals = data?.totals;
+
+  const exportMutation = financialTrpc.exportConsolidatedMaintenanceFund.useMutation({
+    onSuccess: (data: any) => {
+      window.open(data.url, "_blank");
+      toast.success(`Reporte consolidado ${data.format === "excel" ? "Excel" : "PDF"} generado`);
+    },
+    onError: (e: any) => toast.error(`Error al exportar: ${e.message}`),
+  });
+
+  if (consolidatedQuery.isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (stations.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <LayoutGrid className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
+          <p className="text-muted-foreground">No hay datos de fondos de mantenimiento aún</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Export buttons */}
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          disabled={exportMutation.isPending}
+          onClick={() => exportMutation.mutate({ format: "pdf" })}
+        >
+          {exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          PDF Consolidado
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          disabled={exportMutation.isPending}
+          onClick={() => exportMutation.mutate({ format: "excel" })}
+        >
+          {exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+          Excel Consolidado
+        </Button>
+      </div>
+
+      {/* Totals summary */}
+      {totals && (
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10">
+                  <PiggyBank className="h-5 w-5 text-emerald-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Balance Total</p>
+                  <p className="text-xl font-bold">{formatCOP(totals.totalBalance)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-500/10">
+                  <TrendingUp className="h-5 w-5 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Depósitos Totales</p>
+                  <p className="text-xl font-bold">{formatCOP(totals.totalDeposits)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-red-500/10">
+                  <TrendingDown className="h-5 w-5 text-red-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Retiros Totales</p>
+                  <p className="text-xl font-bold">{formatCOP(totals.totalWithdrawals)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${totals.stationsWithLowBalance > 0 ? "bg-red-500/10" : "bg-emerald-500/10"}`}>
+                  <AlertTriangle className={`h-5 w-5 ${totals.stationsWithLowBalance > 0 ? "text-red-500" : "text-emerald-500"}`} />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Alertas Activas</p>
+                  <p className="text-xl font-bold">{totals.stationsWithLowBalance}</p>
+                  <p className="text-xs text-muted-foreground">de {data?.stationCount} estaciones</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Stations table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <LayoutGrid className="h-5 w-5" />
+            Detalle por Estación
+          </CardTitle>
+          <CardDescription>
+            Resumen de fondos de mantenimiento de todas las estaciones colectivas
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="pb-2 font-medium">Estación</th>
+                  <th className="pb-2 font-medium">Ciudad</th>
+                  <th className="pb-2 font-medium text-right">Balance</th>
+                  <th className="pb-2 font-medium text-right">Depósitos</th>
+                  <th className="pb-2 font-medium text-right">Retiros</th>
+                  <th className="pb-2 font-medium text-right">Umbral Alerta</th>
+                  <th className="pb-2 font-medium text-center">Estado</th>
+                  <th className="pb-2 font-medium">Último Mov.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stations.map((s: any) => (
+                  <tr key={s.stationId} className="border-b last:border-0 hover:bg-muted/50">
+                    <td className="py-2.5 font-medium">{s.stationName}</td>
+                    <td className="py-2.5 text-muted-foreground">{s.stationCity || "—"}</td>
+                    <td className="py-2.5 text-right font-mono font-medium">{formatCOP(s.currentBalance)}</td>
+                    <td className="py-2.5 text-right font-mono text-emerald-600">{formatCOP(s.totalDeposits)}</td>
+                    <td className="py-2.5 text-right font-mono text-red-600">{formatCOP(s.totalWithdrawals)}</td>
+                    <td className="py-2.5 text-right font-mono text-muted-foreground">{formatCOP(s.alertThreshold)}</td>
+                    <td className="py-2.5 text-center">
+                      {s.isLowBalance ? (
+                        <Badge variant="outline" className="bg-red-500/10 text-red-600 border-0 text-xs">
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          Bajo
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-0 text-xs">
+                          <ShieldCheck className="h-3 w-3 mr-1" />
+                          OK
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="py-2.5 text-xs text-muted-foreground">{formatDate(s.lastMovement)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-3">
+            {stations.map((s: any) => (
+              <div key={s.stationId} className="border rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-sm">{s.stationName}</p>
+                    <p className="text-xs text-muted-foreground">{s.stationCity}</p>
+                  </div>
+                  {s.isLowBalance ? (
+                    <Badge variant="outline" className="bg-red-500/10 text-red-600 border-0 text-xs">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      Bajo
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-0 text-xs">
+                      <ShieldCheck className="h-3 w-3 mr-1" />
+                      OK
+                    </Badge>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <p className="text-muted-foreground">Balance</p>
+                    <p className="font-mono font-medium">{formatCOP(s.currentBalance)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Depósitos</p>
+                    <p className="font-mono text-emerald-600">{formatCOP(s.totalDeposits)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Retiros</p>
+                    <p className="font-mono text-red-600">{formatCOP(s.totalWithdrawals)}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
 // STATION FUND DETAIL (Detailed view for a selected station)
 // ============================================================================
 
@@ -274,6 +525,8 @@ function StationFundDetail({
   showWithdrawDialog: boolean;
   setShowWithdrawDialog: (v: boolean) => void;
 }) {
+  const [detailTab, setDetailTab] = useState("overview");
+
   const summaryQuery = financialTrpc.maintenanceFundSummary.useQuery({ stationId });
   const historyQuery = financialTrpc.maintenanceFundHistory.useQuery({ stationId, limit: 100 });
   const summary = summaryQuery.data;
@@ -447,137 +700,35 @@ function StationFundDetail({
         </Card>
       )}
 
-      {/* History */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <History className="h-5 w-5" />
-            Historial de Movimientos
-          </CardTitle>
-          <CardDescription>
-            Depósitos automáticos de liquidaciones y cobros de mantenimiento
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {historyQuery.isLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : history.length === 0 ? (
-            <div className="text-center py-8">
-              <FileText className="h-10 w-10 mx-auto text-muted-foreground/50 mb-2" />
-              <p className="text-muted-foreground">No hay movimientos registrados aún</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Los depósitos se generan automáticamente al aprobar liquidaciones
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {/* Desktop table */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left">
-                      <th className="pb-2 font-medium">Fecha</th>
-                      <th className="pb-2 font-medium">Tipo</th>
-                      <th className="pb-2 font-medium">Descripción</th>
-                      <th className="pb-2 font-medium">Detalle</th>
-                      <th className="pb-2 font-medium text-right">Monto</th>
-                      <th className="pb-2 font-medium text-right">Balance</th>
-                      <th className="pb-2 font-medium">Registrado por</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.map((record: any) => (
-                      <tr key={record.id} className="border-b last:border-0 hover:bg-muted/50">
-                        <td className="py-2.5 text-xs">{formatDateTime(record.createdAt)}</td>
-                        <td className="py-2.5">
-                          {record.type === "deposit" ? (
-                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-0 text-xs">
-                              <ArrowUpCircle className="h-3 w-3 mr-1" />
-                              Depósito
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="bg-red-500/10 text-red-600 border-0 text-xs">
-                              <ArrowDownCircle className="h-3 w-3 mr-1" />
-                              Retiro
-                            </Badge>
-                          )}
-                        </td>
-                        <td className="py-2.5 max-w-[200px] truncate text-xs">{record.description}</td>
-                        <td className="py-2.5 text-xs">
-                          {record.type === "withdrawal" && (
-                            <div className="space-y-0.5">
-                              {record.maintenanceType && (
-                                <Badge variant="secondary" className="text-xs">
-                                  {record.maintenanceType === "preventivo" ? "Preventivo" : "Correctivo"}
-                                </Badge>
-                              )}
-                              {record.technicianName && (
-                                <p className="text-muted-foreground">Técnico: {record.technicianName}</p>
-                              )}
-                              {record.invoiceNumber && (
-                                <p className="text-muted-foreground">Factura: {record.invoiceNumber}</p>
-                              )}
-                            </div>
-                          )}
-                          {record.type === "deposit" && record.settlementId && (
-                            <span className="text-muted-foreground">Liquidación #{record.settlementId}</span>
-                          )}
-                        </td>
-                        <td className={`py-2.5 text-right font-mono font-medium ${record.type === "deposit" ? "text-emerald-600" : "text-red-600"}`}>
-                          {record.type === "deposit" ? "+" : "-"}{formatCOP(record.amount)}
-                        </td>
-                        <td className="py-2.5 text-right font-mono">{formatCOP(record.balanceAfter)}</td>
-                        <td className="py-2.5 text-xs text-muted-foreground">{record.creatorName}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+      {/* Tabs for detail sections */}
+      <Tabs value={detailTab} onValueChange={setDetailTab}>
+        <TabsList>
+          <TabsTrigger value="overview" className="gap-2">
+            <History className="h-4 w-4" />
+            Historial
+          </TabsTrigger>
+          <TabsTrigger value="trends" className="gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Tendencias
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="gap-2">
+            <Settings2 className="h-4 w-4" />
+            Configuración
+          </TabsTrigger>
+        </TabsList>
 
-              {/* Mobile cards */}
-              <div className="md:hidden space-y-2">
-                {history.map((record: any) => (
-                  <div key={record.id} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      {record.type === "deposit" ? (
-                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-0 text-xs">
-                          <ArrowUpCircle className="h-3 w-3 mr-1" />
-                          Depósito
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="bg-red-500/10 text-red-600 border-0 text-xs">
-                          <ArrowDownCircle className="h-3 w-3 mr-1" />
-                          Retiro
-                        </Badge>
-                      )}
-                      <span className={`font-mono font-bold ${record.type === "deposit" ? "text-emerald-600" : "text-red-600"}`}>
-                        {record.type === "deposit" ? "+" : "-"}{formatCOP(record.amount)}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{record.description}</p>
-                    {record.type === "withdrawal" && record.maintenanceType && (
-                      <div className="flex gap-2 flex-wrap">
-                        <Badge variant="secondary" className="text-xs">
-                          {record.maintenanceType === "preventivo" ? "Preventivo" : "Correctivo"}
-                        </Badge>
-                        {record.technicianName && (
-                          <span className="text-xs text-muted-foreground">Técnico: {record.technicianName}</span>
-                        )}
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{formatDateTime(record.createdAt)}</span>
-                      <span>Balance: {formatCOP(record.balanceAfter)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        <TabsContent value="overview" className="mt-4">
+          <FundHistory history={history} isLoading={historyQuery.isLoading} />
+        </TabsContent>
+
+        <TabsContent value="trends" className="mt-4">
+          <FundTrendChart stationId={stationId} />
+        </TabsContent>
+
+        <TabsContent value="settings" className="mt-4">
+          <AlertThresholdConfig stationId={stationId} />
+        </TabsContent>
+      </Tabs>
 
       {/* Withdraw Dialog */}
       <WithdrawDialog
@@ -589,6 +740,583 @@ function StationFundDetail({
         isLoading={withdrawMutation.isPending}
       />
     </div>
+  );
+}
+
+// ============================================================================
+// FUND HISTORY (Extracted from StationFundDetail)
+// ============================================================================
+
+function FundHistory({ history, isLoading }: { history: any[]; isLoading: boolean }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <History className="h-5 w-5" />
+          Historial de Movimientos
+        </CardTitle>
+        <CardDescription>
+          Depósitos automáticos de liquidaciones y cobros de mantenimiento
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : history.length === 0 ? (
+          <div className="text-center py-8">
+            <FileText className="h-10 w-10 mx-auto text-muted-foreground/50 mb-2" />
+            <p className="text-muted-foreground">No hay movimientos registrados aún</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Los depósitos se generan automáticamente al aprobar liquidaciones
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Desktop table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left">
+                    <th className="pb-2 font-medium">Fecha</th>
+                    <th className="pb-2 font-medium">Tipo</th>
+                    <th className="pb-2 font-medium">Descripción</th>
+                    <th className="pb-2 font-medium">Detalle</th>
+                    <th className="pb-2 font-medium text-right">Monto</th>
+                    <th className="pb-2 font-medium text-right">Balance</th>
+                    <th className="pb-2 font-medium">Registrado por</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((record: any) => (
+                    <tr key={record.id} className="border-b last:border-0 hover:bg-muted/50">
+                      <td className="py-2.5 text-xs">{formatDateTime(record.createdAt)}</td>
+                      <td className="py-2.5">
+                        {record.type === "deposit" ? (
+                          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-0 text-xs">
+                            <ArrowUpCircle className="h-3 w-3 mr-1" />
+                            Depósito
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-red-500/10 text-red-600 border-0 text-xs">
+                            <ArrowDownCircle className="h-3 w-3 mr-1" />
+                            Retiro
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="py-2.5 max-w-[200px] truncate text-xs">{record.description}</td>
+                      <td className="py-2.5 text-xs">
+                        {record.type === "withdrawal" && (
+                          <div className="space-y-0.5">
+                            {record.maintenanceType && (
+                              <Badge variant="secondary" className="text-xs">
+                                {record.maintenanceType === "preventivo" ? "Preventivo" : "Correctivo"}
+                              </Badge>
+                            )}
+                            {record.technicianName && (
+                              <p className="text-muted-foreground">Técnico: {record.technicianName}</p>
+                            )}
+                            {record.invoiceNumber && (
+                              <p className="text-muted-foreground">Factura: {record.invoiceNumber}</p>
+                            )}
+                          </div>
+                        )}
+                        {record.type === "deposit" && record.settlementId && (
+                          <span className="text-muted-foreground">Liquidación #{record.settlementId}</span>
+                        )}
+                      </td>
+                      <td className={`py-2.5 text-right font-mono font-medium ${record.type === "deposit" ? "text-emerald-600" : "text-red-600"}`}>
+                        {record.type === "deposit" ? "+" : "-"}{formatCOP(record.amount)}
+                      </td>
+                      <td className="py-2.5 text-right font-mono">{formatCOP(record.balanceAfter)}</td>
+                      <td className="py-2.5 text-xs text-muted-foreground">{record.creatorName}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="md:hidden space-y-2">
+              {history.map((record: any) => (
+                <div key={record.id} className="border rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    {record.type === "deposit" ? (
+                      <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-0 text-xs">
+                        <ArrowUpCircle className="h-3 w-3 mr-1" />
+                        Depósito
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-red-500/10 text-red-600 border-0 text-xs">
+                        <ArrowDownCircle className="h-3 w-3 mr-1" />
+                        Retiro
+                      </Badge>
+                    )}
+                    <span className={`font-mono font-bold ${record.type === "deposit" ? "text-emerald-600" : "text-red-600"}`}>
+                      {record.type === "deposit" ? "+" : "-"}{formatCOP(record.amount)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{record.description}</p>
+                  {record.type === "withdrawal" && record.maintenanceType && (
+                    <div className="flex gap-2 flex-wrap">
+                      <Badge variant="secondary" className="text-xs">
+                        {record.maintenanceType === "preventivo" ? "Preventivo" : "Correctivo"}
+                      </Badge>
+                      {record.technicianName && (
+                        <span className="text-xs text-muted-foreground">Técnico: {record.technicianName}</span>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{formatDateTime(record.createdAt)}</span>
+                    <span>Balance: {formatCOP(record.balanceAfter)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// FUND TREND CHART (Monthly deposits vs withdrawals)
+// ============================================================================
+
+function FundTrendChart({ stationId }: { stationId: number }) {
+  const [months] = useState(12);
+  const trendQuery = financialTrpc.maintenanceFundMonthlyTrend.useQuery({ stationId, months });
+  const trend = trendQuery.data?.trend || [];
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartInstanceRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current || trend.length === 0) return;
+
+    // Dynamically import Chart.js
+    const loadChart = async () => {
+      const { Chart, registerables } = await import("chart.js");
+      Chart.register(...registerables);
+
+      // Destroy previous chart instance
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+      }
+
+      const ctx = canvasRef.current!.getContext("2d");
+      if (!ctx) return;
+
+      const labels = trend.map((t: any) => formatMonthLabel(t.month));
+      const deposits = trend.map((t: any) => t.deposits);
+      const withdrawals = trend.map((t: any) => t.withdrawals);
+      const netValues = trend.map((t: any) => t.net);
+
+      // Calculate cumulative balance
+      let cumBalance = 0;
+      const cumulativeBalance = trend.map((t: any) => {
+        cumBalance += t.net;
+        return cumBalance;
+      });
+
+      chartInstanceRef.current = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Depósitos",
+              data: deposits,
+              backgroundColor: "rgba(16, 185, 129, 0.7)",
+              borderColor: "rgb(16, 185, 129)",
+              borderWidth: 1,
+              borderRadius: 4,
+              order: 2,
+            },
+            {
+              label: "Retiros",
+              data: withdrawals,
+              backgroundColor: "rgba(239, 68, 68, 0.7)",
+              borderColor: "rgb(239, 68, 68)",
+              borderWidth: 1,
+              borderRadius: 4,
+              order: 2,
+            },
+            {
+              label: "Balance Acumulado",
+              data: cumulativeBalance,
+              type: "line",
+              borderColor: "rgb(59, 130, 246)",
+              backgroundColor: "rgba(59, 130, 246, 0.1)",
+              borderWidth: 2,
+              pointRadius: 4,
+              pointBackgroundColor: "rgb(59, 130, 246)",
+              fill: true,
+              tension: 0.3,
+              yAxisID: "y1",
+              order: 1,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: "index",
+            intersect: false,
+          },
+          plugins: {
+            legend: {
+              position: "top",
+              labels: {
+                usePointStyle: true,
+                padding: 16,
+              },
+            },
+            tooltip: {
+              callbacks: {
+                label: (context: any) => {
+                  const value = context.parsed.y;
+                  return `${context.dataset.label}: ${formatCOP(value)}`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+            },
+            y: {
+              position: "left",
+              title: {
+                display: true,
+                text: "Monto (COP)",
+              },
+              ticks: {
+                callback: (value: any) => {
+                  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+                  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
+                  return `$${value}`;
+                },
+              },
+            },
+            y1: {
+              position: "right",
+              title: {
+                display: true,
+                text: "Balance Acumulado",
+              },
+              grid: { drawOnChartArea: false },
+              ticks: {
+                callback: (value: any) => {
+                  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+                  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
+                  return `$${value}`;
+                },
+              },
+            },
+          },
+        },
+      });
+    };
+
+    loadChart();
+
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+        chartInstanceRef.current = null;
+      }
+    };
+  }, [trend]);
+
+  if (trendQuery.isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-12">
+          <div className="flex justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (trend.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <BarChart3 className="h-10 w-10 mx-auto text-muted-foreground/50 mb-2" />
+          <p className="text-muted-foreground">No hay datos de tendencia disponibles</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Los datos aparecerán cuando se registren movimientos en el fondo
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Summary stats
+  const totalMonthlyDeposits = trend.reduce((s: number, t: any) => s + t.deposits, 0);
+  const totalMonthlyWithdrawals = trend.reduce((s: number, t: any) => s + t.withdrawals, 0);
+  const avgMonthlyDeposit = totalMonthlyDeposits / trend.length;
+  const avgMonthlyWithdrawal = totalMonthlyWithdrawals / trend.length;
+
+  return (
+    <div className="space-y-4">
+      {/* Stats summary */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-500/10">
+                <TrendingUp className="h-5 w-5 text-emerald-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Promedio Mensual Depósitos</p>
+                <p className="text-lg font-bold">{formatCOP(avgMonthlyDeposit)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-red-500/10">
+                <TrendingDown className="h-5 w-5 text-red-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Promedio Mensual Retiros</p>
+                <p className="text-lg font-bold">{formatCOP(avgMonthlyWithdrawal)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-500/10">
+                <BarChart3 className="h-5 w-5 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Flujo Neto Mensual</p>
+                <p className={`text-lg font-bold ${(avgMonthlyDeposit - avgMonthlyWithdrawal) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                  {formatCOP(avgMonthlyDeposit - avgMonthlyWithdrawal)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <BarChart3 className="h-5 w-5" />
+            Tendencia Mensual — Últimos {months} meses
+          </CardTitle>
+          <CardDescription>
+            Depósitos (liquidaciones) vs retiros (mantenimientos) con balance acumulado
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div style={{ height: "350px" }}>
+            <canvas ref={canvasRef} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Monthly breakdown table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Desglose Mensual</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="pb-2 font-medium">Mes</th>
+                  <th className="pb-2 font-medium text-right">Depósitos</th>
+                  <th className="pb-2 font-medium text-right">Retiros</th>
+                  <th className="pb-2 font-medium text-right">Neto</th>
+                  <th className="pb-2 font-medium text-center"># Dep.</th>
+                  <th className="pb-2 font-medium text-center"># Ret.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trend.map((t: any) => (
+                  <tr key={t.month} className="border-b last:border-0 hover:bg-muted/50">
+                    <td className="py-2 font-medium">{formatMonthLabel(t.month)}</td>
+                    <td className="py-2 text-right font-mono text-emerald-600">{formatCOP(t.deposits)}</td>
+                    <td className="py-2 text-right font-mono text-red-600">{formatCOP(t.withdrawals)}</td>
+                    <td className={`py-2 text-right font-mono font-medium ${t.net >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                      {t.net >= 0 ? "+" : ""}{formatCOP(t.net)}
+                    </td>
+                    <td className="py-2 text-center text-muted-foreground">{t.depositCount}</td>
+                    <td className="py-2 text-center text-muted-foreground">{t.withdrawalCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// ALERT THRESHOLD CONFIG (Configurable per-station threshold in COP)
+// ============================================================================
+
+function AlertThresholdConfig({ stationId }: { stationId: number }) {
+  const [threshold, setThreshold] = useState("");
+  const [isSaved, setIsSaved] = useState(false);
+
+  // Get current station data to show current threshold
+  const stationQuery = financialTrpc.getCollectiveStations.useQuery();
+  const station = (stationQuery.data || []).find((s: any) => s.id === stationId);
+  const currentThreshold = station?.maintenanceFundAlertThreshold
+    ? Number(station.maintenanceFundAlertThreshold)
+    : 500000;
+
+  useEffect(() => {
+    if (station && !threshold) {
+      setThreshold(String(currentThreshold));
+    }
+  }, [station, currentThreshold]);
+
+  const updateMutation = financialTrpc.updateAlertThreshold.useMutation({
+    onSuccess: () => {
+      toast.success("Umbral de alerta actualizado exitosamente");
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+    },
+    onError: (e: any) => toast.error(`Error: ${e.message}`),
+  });
+
+  const numThreshold = Number(threshold) || 0;
+  const hasChanged = numThreshold !== currentThreshold;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Bell className="h-5 w-5 text-amber-500" />
+          Configuración de Alertas
+        </CardTitle>
+        <CardDescription>
+          Configura el umbral de alerta en pesos colombianos (COP). Cuando el balance del fondo
+          baje de este monto después de un retiro, se enviará una alerta automática a los
+          administradores e inversionistas de la estación.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Current threshold display */}
+          <div className="space-y-2">
+            <Label className="text-muted-foreground">Umbral actual</Label>
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+              <DollarSign className="h-5 w-5 text-amber-500" />
+              <span className="text-xl font-bold">{formatCOP(currentThreshold)}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Se envía alerta cuando el balance baje de este monto
+            </p>
+          </div>
+
+          {/* New threshold input */}
+          <div className="space-y-2">
+            <Label htmlFor="threshold">Nuevo umbral (COP)</Label>
+            <Input
+              id="threshold"
+              type="number"
+              placeholder="Ej: 500000"
+              value={threshold}
+              onChange={(e) => {
+                setThreshold(e.target.value);
+                setIsSaved(false);
+              }}
+              min={0}
+              max={100000000}
+            />
+            {numThreshold > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Equivale a: {formatCOP(numThreshold)}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Quick presets */}
+        <div className="space-y-2">
+          <Label className="text-muted-foreground text-xs">Valores sugeridos</Label>
+          <div className="flex flex-wrap gap-2">
+            {[200000, 500000, 1000000, 2000000, 5000000].map((val) => (
+              <Button
+                key={val}
+                variant="outline"
+                size="sm"
+                className={`text-xs ${numThreshold === val ? "border-amber-500 bg-amber-500/10" : ""}`}
+                onClick={() => {
+                  setThreshold(String(val));
+                  setIsSaved(false);
+                }}
+              >
+                {formatCOP(val)}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {/* Info box */}
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-2">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium">Funcionamiento del umbral</p>
+              <ul className="text-xs text-muted-foreground mt-1 space-y-1 list-disc pl-4">
+                <li>El fondo crece progresivamente con cada liquidación (ventas de energía)</li>
+                <li>Después de cada retiro (cobro de mantenimiento), se verifica el balance</li>
+                <li>Si el balance queda por debajo del umbral, se envía notificación push, in-app y email</li>
+                <li>Los destinatarios son: todos los administradores y los inversionistas de la estación</li>
+                <li>Un valor de $0 desactiva las alertas automáticas</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Save button */}
+        <div className="flex justify-end">
+          <Button
+            onClick={() => updateMutation.mutate({ stationId, thresholdCOP: numThreshold })}
+            disabled={!hasChanged || updateMutation.isPending || numThreshold < 0}
+            className="gap-2"
+          >
+            {updateMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Guardando...
+              </>
+            ) : isSaved ? (
+              <>
+                <CheckCircle2 className="h-4 w-4" />
+                Guardado
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                Guardar Umbral
+              </>
+            )}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -280,3 +280,210 @@ export function generateMaintenanceFundPDF(options: ExportMaintenanceFundOptions
 
   return Buffer.from(doc.output("arraybuffer"));
 }
+
+
+// ============================================================================
+// CONSOLIDATED MULTI-STATION TYPES
+// ============================================================================
+
+export interface ConsolidatedStationSummary {
+  stationId: number;
+  stationName: string;
+  stationCity: string;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  currentBalance: number;
+  depositCount: number;
+  withdrawalCount: number;
+  alertThreshold: number;
+  isLowBalance: boolean;
+  lastMovement: string | Date | null;
+}
+
+// ============================================================================
+// CONSOLIDATED EXCEL EXPORT
+// ============================================================================
+
+export function generateConsolidatedMaintenanceFundExcel(stations: ConsolidatedStationSummary[]): Buffer {
+  const wb = XLSX.utils.book_new();
+
+  // Totals
+  const totalDeposits = stations.reduce((s, st) => s + st.totalDeposits, 0);
+  const totalWithdrawals = stations.reduce((s, st) => s + st.totalWithdrawals, 0);
+  const totalBalance = stations.reduce((s, st) => s + st.currentBalance, 0);
+  const lowBalanceCount = stations.filter((s) => s.isLowBalance).length;
+
+  // ---- HOJA 1: RESUMEN CONSOLIDADO ----
+  const summaryData = [
+    ["REPORTE CONSOLIDADO — FONDOS DE MANTENIMIENTO"],
+    ["EVGreen — Green House Project®"],
+    [""],
+    ["Fecha de generación:", new Date().toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })],
+    ["Total de estaciones:", String(stations.length)],
+    [""],
+    ["═══════════════════════════════════════"],
+    ["TOTALES GENERALES"],
+    ["═══════════════════════════════════════"],
+    [""],
+    ["Concepto", "Valor"],
+    ["Balance Total Consolidado", formatCOP(totalBalance)],
+    ["Total Depósitos Acumulados", formatCOP(totalDeposits)],
+    ["Total Retiros (Mantenimientos)", formatCOP(totalWithdrawals)],
+    [""],
+    ["Estaciones con Fondo Bajo", String(lowBalanceCount)],
+    ["Estaciones con Fondo Saludable", String(stations.length - lowBalanceCount)],
+  ];
+
+  const wsResumen = XLSX.utils.aoa_to_sheet(summaryData);
+  wsResumen["!cols"] = [{ wch: 35 }, { wch: 30 }];
+  XLSX.utils.book_append_sheet(wb, wsResumen, "Resumen Consolidado");
+
+  // ---- HOJA 2: DETALLE POR ESTACIÓN ----
+  const detailHeader = [
+    "Estación",
+    "Ciudad",
+    "Balance Actual",
+    "Total Depósitos",
+    "Total Retiros",
+    "# Depósitos",
+    "# Retiros",
+    "Uso (%)",
+    "Umbral Alerta (COP)",
+    "Estado",
+    "Último Movimiento",
+  ];
+
+  const detailRows = stations.map((s) => [
+    s.stationName,
+    s.stationCity || "—",
+    formatCOP(s.currentBalance),
+    formatCOP(s.totalDeposits),
+    formatCOP(s.totalWithdrawals),
+    String(s.depositCount),
+    String(s.withdrawalCount),
+    s.totalDeposits > 0 ? `${((s.totalWithdrawals / s.totalDeposits) * 100).toFixed(1)}%` : "0%",
+    formatCOP(s.alertThreshold),
+    s.isLowBalance ? "⚠️ BAJO" : "✅ OK",
+    formatDate(s.lastMovement),
+  ]);
+
+  const detailData = [
+    ["DETALLE POR ESTACIÓN — FONDOS DE MANTENIMIENTO"],
+    [""],
+    detailHeader,
+    ...detailRows,
+  ];
+
+  const wsDetalle = XLSX.utils.aoa_to_sheet(detailData);
+  wsDetalle["!cols"] = [
+    { wch: 25 }, { wch: 15 }, { wch: 18 }, { wch: 18 },
+    { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
+    { wch: 20 }, { wch: 12 }, { wch: 18 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsDetalle, "Detalle Estaciones");
+
+  return Buffer.from(XLSX.write(wb, { bookType: "xlsx", type: "buffer" }));
+}
+
+// ============================================================================
+// CONSOLIDATED PDF EXPORT
+// ============================================================================
+
+export function generateConsolidatedMaintenanceFundPDF(stations: ConsolidatedStationSummary[]): Buffer {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 15;
+
+  // Totals
+  const totalDeposits = stations.reduce((s, st) => s + st.totalDeposits, 0);
+  const totalWithdrawals = stations.reduce((s, st) => s + st.totalWithdrawals, 0);
+  const totalBalance = stations.reduce((s, st) => s + st.currentBalance, 0);
+  const lowBalanceCount = stations.filter((s) => s.isLowBalance).length;
+
+  // ---- HEADER ----
+  doc.setFillColor(22, 163, 74);
+  doc.rect(0, 0, pageWidth, 35, "F");
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(20);
+  doc.setFont("helvetica", "bold");
+  doc.text("EVGreen — Reporte Consolidado de Fondos de Mantenimiento", margin, 16);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.text(`${stations.length} estaciones | Generado: ${new Date().toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}`, margin, 24);
+  doc.text(`Balance total: ${formatCOP(totalBalance)} | Alertas activas: ${lowBalanceCount}`, margin, 31);
+
+  // ---- RESUMEN TOTALES ----
+  let y = 45;
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("Totales Generales", margin, y);
+  y += 8;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: margin, right: margin },
+    head: [["Concepto", "Valor"]],
+    body: [
+      ["Balance Total Consolidado", formatCOP(totalBalance)],
+      ["Total Depósitos Acumulados", formatCOP(totalDeposits)],
+      ["Total Retiros (Mantenimientos)", formatCOP(totalWithdrawals)],
+      ["Estaciones con Fondo Bajo", String(lowBalanceCount)],
+      ["Estaciones con Fondo Saludable", String(stations.length - lowBalanceCount)],
+    ],
+    theme: "grid",
+    headStyles: { fillColor: [22, 163, 74], textColor: [255, 255, 255], fontStyle: "bold" },
+    styles: { fontSize: 9, cellPadding: 3 },
+    columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 50, halign: "right" } },
+  });
+
+  // ---- DETALLE POR ESTACIÓN ----
+  y = (doc as any).lastAutoTable.finalY + 12;
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("Detalle por Estación", margin, y);
+  y += 6;
+
+  const tableBody = stations.map((s) => [
+    s.stationName,
+    s.stationCity || "—",
+    formatCOP(s.currentBalance),
+    formatCOP(s.totalDeposits),
+    formatCOP(s.totalWithdrawals),
+    s.totalDeposits > 0 ? `${((s.totalWithdrawals / s.totalDeposits) * 100).toFixed(1)}%` : "0%",
+    formatCOP(s.alertThreshold),
+    s.isLowBalance ? "BAJO" : "OK",
+    formatDate(s.lastMovement),
+  ]);
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: margin, right: margin },
+    head: [["Estación", "Ciudad", "Balance", "Depósitos", "Retiros", "Uso %", "Umbral", "Estado", "Último Mov."]],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [22, 163, 74], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8 },
+    styles: { fontSize: 7, cellPadding: 2 },
+    columnStyles: {
+      0: { cellWidth: 35 },
+      1: { cellWidth: 20 },
+      2: { cellWidth: 28, halign: "right" },
+      3: { cellWidth: 28, halign: "right" },
+      4: { cellWidth: 28, halign: "right" },
+      5: { cellWidth: 15, halign: "center" },
+      6: { cellWidth: 28, halign: "right" },
+      7: { cellWidth: 15, halign: "center" },
+      8: { cellWidth: 25 },
+    },
+    didDrawPage: () => {
+      const pageHeight = doc.internal.pageSize.getHeight();
+      doc.setFontSize(7);
+      doc.setTextColor(150, 150, 150);
+      doc.text("EVGreen — Green House Project® — Reporte Consolidado de Fondos de Mantenimiento", margin, pageHeight - 8);
+      doc.text(`Página ${doc.getCurrentPageInfo().pageNumber}`, pageWidth - margin, pageHeight - 8, { align: "right" });
+    },
+  });
+
+  return Buffer.from(doc.output("arraybuffer"));
+}
