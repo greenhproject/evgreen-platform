@@ -7,7 +7,7 @@ import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, ne, inArray,
  * Contiene TODAS las queries SQL organizadas por dominio.
  * 
  * NOTA: columnas BD usan snake_case, código usa camelCase.
- * En queries raw usar: crowdfunding_status, payment_status, payment_reference
+ * En queries raw usar: status (crowdfunding_projects), payment_status, payment_reference
  * 
  * @author Green House Project
  * @version 2.0.0 (Marzo 2026)
@@ -6537,8 +6537,8 @@ export async function getStationInvestors(stationId: number) {
   const db = (await getDb())!;
   // Get the crowdfunding project for this station
   const projects = await db.execute(sql.raw(`
-    SELECT id, goalAmount FROM crowdfunding_projects 
-    WHERE stationId = ${stationId} AND crowdfunding_status IN ('ACTIVE', 'FUNDED', 'COMPLETED')
+    SELECT id, targetAmount as goalAmount FROM crowdfunding_projects 
+    WHERE stationId = ${stationId} AND status IN ('OPEN', 'IN_PROGRESS', 'FUNDED', 'COMPLETED')
     ORDER BY id DESC LIMIT 1
   `));
   const project = (projects as any)[0]?.[0];
@@ -6551,7 +6551,7 @@ export async function getStationInvestors(stationId: number) {
     FROM crowdfunding_participations cp
     JOIN users u ON u.id = cp.investorId
     WHERE cp.projectId = ${project.id}
-      AND cp.paymentStatus IN ('CONFIRMED', 'VERIFIED')
+      AND cp.paymentStatus = 'COMPLETED'
     ORDER BY cp.amount DESC
   `));
   
@@ -6623,7 +6623,7 @@ export async function getInvestorFinancialSummary(investorUserId: number) {
     SELECT COALESCE(SUM(amount), 0) as totalInvested
     FROM crowdfunding_participations
     WHERE investorId = ${investorUserId}
-      AND paymentStatus IN ('CONFIRMED', 'VERIFIED')
+      AND paymentStatus = 'COMPLETED'
   `));
   const investedRow = (invested as any)[0]?.[0] || {};
   
