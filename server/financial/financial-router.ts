@@ -263,21 +263,22 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
         const hostTotalAmount = Math.round(grossMargin * (hostPct / 100));
         const netAfterHost = grossMargin - hostTotalAmount;
         
-        // 5b. Contingency reserve - included within EVGreen's 30%, NOT a separate deduction
-        // The contingencyPercent input is kept for backward compatibility but forced to 0
-        const contingencyReserve = 0;
+        // 5b. Split between EVGreen and Investor (their % sum to 100%)
+        // NO separate contingency deduction — it's a sub-breakdown of EVGreen's share
         const distributableAmount = netAfterHost;
-
-        // 6. Split between EVGreen and Investor (their % sum to 100%)
-        // Contingency is absorbed within EVGreen's share
         const investorTotalAmount = Math.round(distributableAmount * (investorPct / 100));
         const platformTotalAmount = distributableAmount - investorTotalAmount;
         const netRevenue = grossMargin;
 
-        // 6b. Fondo de mantenimiento (% del share de EVGreen, solo estaciones colectivas)
+        // 6. Sub-breakdown of EVGreen's share for transparency:
+        //    - Contingencia (mantenimiento correctivo/preventivo del operador)
+        //    - Fondo de mantenimiento preventivo
+        //    - Gestión EVGreen neta
+        const contingencyPct = input.contingencyPercent || 0; // % of EVGreen's share
+        const contingencyReserve = Math.round(platformTotalAmount * (contingencyPct / 100));
         const maintenanceFundPct = Number(station.maintenanceFundPercent || 5);
         const maintenanceFundAmount = Math.round(platformTotalAmount * (maintenanceFundPct / 100));
-        const platformNetAmount = platformTotalAmount - maintenanceFundAmount;
+        const platformNetAmount = platformTotalAmount - contingencyReserve - maintenanceFundAmount;
 
         // 7. Create the settlement with full breakdown
         const settlementId = await createSettlement({

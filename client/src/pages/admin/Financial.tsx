@@ -697,7 +697,7 @@ function GenerateSettlementDialog({
     periodEnd: lastDay.toISOString().split("T")[0],
     investorSharePercent: 70,
     platformSharePercent: 30,
-    contingencyPercent: 0,
+    contingencyPercent: 5,
     notes: "",
   });
   // Note: hostSharePercent comes from station config, not from this form
@@ -765,15 +765,15 @@ function GenerateSettlementDialog({
               <p className="text-[10px] text-muted-foreground mt-1">El % Aliado Comercial viene de la config de la estación</p>
             </div>
             <div className="col-span-2">
-              <Label>% Reserva Contingencia</Label>
+              <Label>% Contingencia (del share EVGreen)</Label>
               <Input
                 type="number"
                 min={0}
-                max={20}
+                max={50}
                 value={form.contingencyPercent}
-                disabled
+                onChange={(e) => setForm({ ...form, contingencyPercent: Number(e.target.value) })}
               />
-              <p className="text-[10px] text-muted-foreground mt-1">Incluida dentro del % EVGreen (no se descuenta por separado)</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Se descuenta del {form.platformSharePercent}% de EVGreen (mantenimiento correctivo/preventivo del operador)</p>
             </div>
             <div className="col-span-2">
               <Label>Notas (opcional)</Label>
@@ -814,16 +814,7 @@ function GenerateSettlementDialog({
                 </div>
                 <Separator className="my-1" />
                 <div className="flex justify-between font-semibold">
-                  <span>= Neto después del Aliado</span>
-                  <span className="font-mono">=$$$</span>
-                </div>
-                <div className="flex justify-between text-yellow-500/50">
-                  <span>5. Contingencia: incluida en % EVGreen</span>
-                  <span className="font-mono text-yellow-500/50">$0</span>
-                </div>
-                <Separator className="my-1" />
-                <div className="flex justify-between font-semibold">
-                  <span>= Distribuible (EVGreen + Inversionista)</span>
+                  <span>= Neto después del Aliado = Distribuible</span>
                   <span className="font-mono">=$$$</span>
                 </div>
                 <div className="flex justify-between text-primary">
@@ -834,8 +825,17 @@ function GenerateSettlementDialog({
                   <span className="pl-4">→ EVGreen ({form.platformSharePercent}%)</span>
                   <span className="font-mono">$$$</span>
                 </div>
+                <div className="flex justify-between text-yellow-500 text-xs">
+                  <span className="pl-8">└ Contingencia ({form.contingencyPercent}% del share EVGreen) → Mant. correctivo/preventivo</span>
+                  <span className="font-mono">-$$$</span>
+                </div>
                 <div className="flex justify-between text-muted-foreground text-xs">
-                  <span className="pl-8">└ 5% del share EVGreen → Fondo Mantenimiento</span>
+                  <span className="pl-8">└ Fondo Mantenimiento (5% del share EVGreen)</span>
+                  <span className="font-mono">-$$$</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground text-xs">
+                  <span className="pl-8">└ Gestión EVGreen neta (restante)</span>
+                  <span className="font-mono">$$$</span>
                 </div>
               </div>
             </CardContent>
@@ -903,16 +903,38 @@ function SettlementDetailDialog({
                   </div>
                 ))}
                 <Separator />
-                <div className="flex justify-between p-2 bg-yellow-500/10 rounded">
-                  <span className="font-medium">Reserva Contingencia</span>
-                  <span className="font-mono text-yellow-600">-{formatCOP(Number(detail.settlement.contingencyReserve))}</span>
-                </div>
-                <Separator />
                 <div className="flex justify-between p-2 bg-primary/10 rounded font-bold">
                   <span>Neto Distribuible</span>
                   <span className="font-mono text-primary">
                     {formatCOP(Number(detail.settlement.investorTotalAmount) + Number(detail.settlement.platformTotalAmount))}
                   </span>
+                </div>
+                <div className="flex justify-between p-2 rounded text-sm">
+                  <span>→ Inversionistas ({formatPercent(detail.settlement.investorSharePercent)})</span>
+                  <span className="font-mono font-semibold text-green-500">{formatCOP(Number(detail.settlement.investorTotalAmount))}</span>
+                </div>
+                <div className="flex justify-between p-2 rounded text-sm">
+                  <span>→ EVGreen ({formatPercent(detail.settlement.platformSharePercent)})</span>
+                  <span className="font-mono font-semibold">{formatCOP(Number(detail.settlement.platformTotalAmount))}</span>
+                </div>
+                {Number(detail.settlement.contingencyReserve || 0) > 0 && (
+                  <div className="flex justify-between p-2 pl-8 rounded text-xs bg-yellow-500/5">
+                    <span className="flex items-center gap-1">
+                      <Shield className="h-3 w-3 text-yellow-500" />
+                      Contingencia (del share EVGreen) → Mant. correctivo/preventivo
+                    </span>
+                    <span className="font-mono text-yellow-600">-{formatCOP(Number(detail.settlement.contingencyReserve))}</span>
+                  </div>
+                )}
+                {Number(detail.settlement.maintenanceFundAmount || 0) > 0 && (
+                  <div className="flex justify-between p-2 pl-8 rounded text-xs bg-muted/30">
+                    <span>└ Fondo Mantenimiento (del share EVGreen)</span>
+                    <span className="font-mono text-muted-foreground">-{formatCOP(Number(detail.settlement.maintenanceFundAmount))}</span>
+                  </div>
+                )}
+                <div className="flex justify-between p-2 pl-8 rounded text-xs bg-muted/30">
+                  <span>└ Gestión EVGreen neta</span>
+                  <span className="font-mono text-muted-foreground">{formatCOP(Number(detail.settlement.platformNetAmount || 0))}</span>
                 </div>
               </div>
             </div>
