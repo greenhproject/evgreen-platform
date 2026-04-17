@@ -2885,3 +2885,8 @@
 - [x] Agregar botón y funcionalidad de restauración de backup desde la interfaz
 - [x] Backend: endpoint para restaurar backup desde archivo JSON subido
 - [x] Frontend: UI de restauración con confirmación, progreso y validación
+
+## Bug: Gráficas del Dashboard Admin no muestran datos (17-Abr-2026)
+- [x] Bug: Gráficas "Ingresos mensuales" y "Energía semanal (kWh)" muestran $0 y vacías a pesar de 112 transacciones y $44K+ en ingresos
+- [x] Investigar query backend que alimenta las gráficas del dashboard (causa: datos hardcodeados en 0, no conectados al backend)
+- [x] Corregir: backend ahora devuelve revenueChart y energyChart con datos reales agrupados por mes/día
