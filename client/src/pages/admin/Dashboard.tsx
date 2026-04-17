@@ -25,6 +25,7 @@ import {
   BarChart,
   Bar,
 } from "recharts";
+import { useMemo } from "react";
 
 export default function AdminDashboard() {
   // Obtener métricas del dashboard
@@ -46,25 +47,24 @@ export default function AdminDashboard() {
     }).format(amount);
   };
 
-  // Datos de ejemplo para gráficos (se pueden reemplazar con datos reales)
-  const revenueData = [
-    { name: "Ene", value: 0 },
-    { name: "Feb", value: 0 },
-    { name: "Mar", value: 0 },
-    { name: "Abr", value: 0 },
-    { name: "May", value: 0 },
-    { name: "Jun", value: metrics?.monthly?.revenue || 0 },
-  ];
+  // Datos reales de gráficos desde el backend
+  const revenueData = useMemo(() => {
+    if (metrics?.revenueChart && metrics.revenueChart.length > 0) {
+      return metrics.revenueChart;
+    }
+    // Fallback: si no hay datos, mostrar meses vacíos
+    const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun"];
+    return monthNames.map((name) => ({ name, value: 0 }));
+  }, [metrics?.revenueChart]);
 
-  const energyData = [
-    { name: "Lun", kwh: 0 },
-    { name: "Mar", kwh: 0 },
-    { name: "Mié", kwh: 0 },
-    { name: "Jue", kwh: 0 },
-    { name: "Vie", kwh: 0 },
-    { name: "Sáb", kwh: 0 },
-    { name: "Dom", kwh: metrics?.today?.kwhSold || 0 },
-  ];
+  const energyData = useMemo(() => {
+    if (metrics?.energyChart && metrics.energyChart.length > 0) {
+      return metrics.energyChart;
+    }
+    // Fallback: si no hay datos, mostrar días vacíos
+    const dayNames = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+    return dayNames.map((name) => ({ name, kwh: 0 }));
+  }, [metrics?.energyChart]);
 
   if (isLoading) {
     return (
@@ -226,13 +226,19 @@ export default function AdminDashboard() {
             <LineChart data={revenueData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
-              <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <YAxis tickFormatter={(value) => {
+                if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+                if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
+                return `$${value}`;
+              }} />
+              <Tooltip formatter={(value: number) => formatCurrency(value)} labelFormatter={(label) => `Mes: ${label}`} />
               <Line
                 type="monotone"
                 dataKey="value"
                 stroke="hsl(var(--primary))"
                 strokeWidth={2}
+                dot={{ r: 4 }}
+                activeDot={{ r: 6 }}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -244,8 +250,8 @@ export default function AdminDashboard() {
             <BarChart data={energyData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
+              <YAxis tickFormatter={(value) => `${value.toFixed(1)}`} />
+              <Tooltip formatter={(value: number) => [`${value.toFixed(2)} kWh`, "Energía"]} labelFormatter={(label) => `Día: ${label}`} />
               <Bar dataKey="kwh" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -275,25 +281,25 @@ export default function AdminDashboard() {
                       }`} />
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{item.user.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.station.name}</p>
+                      <p className="text-sm font-medium">{item.user?.name || 'Usuario'}</p>
+                      <p className="text-xs text-muted-foreground">{item.station?.name || 'Estación'}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold">
-                      {formatCurrency(parseFloat(item.transaction.totalCost || '0'))}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {parseFloat(item.transaction.kwhConsumed || '0').toFixed(2)} kWh
-                    </p>
+                    <p className="text-sm font-medium">{formatCurrency(Number(item.transaction.totalCost) || 0)}</p>
+                    <Badge variant={
+                      item.transaction.status === 'COMPLETED' ? 'default' : 
+                      item.transaction.status === 'IN_PROGRESS' ? 'secondary' : 'outline'
+                    } className="text-xs">
+                      {item.transaction.status === 'COMPLETED' ? 'Completada' : 
+                       item.transaction.status === 'IN_PROGRESS' ? 'En curso' : item.transaction.status}
+                    </Badge>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No hay transacciones recientes
-            </div>
+            <p className="text-sm text-muted-foreground text-center py-8">No hay transacciones recientes</p>
           )}
         </Card>
 
@@ -306,91 +312,25 @@ export default function AdminDashboard() {
           {topStations && topStations.length > 0 ? (
             <div className="space-y-3">
               {topStations.map((station: any, index: number) => (
-                <div key={station.stationId} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div key={station.id || index} className="flex items-center justify-between py-2 border-b last:border-0">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">
                       {index + 1}
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{station.stationName}</p>
-                      <p className="text-xs text-muted-foreground">{station.city}</p>
+                      <p className="text-sm font-medium">{station.name || 'Estación'}</p>
+                      <p className="text-xs text-muted-foreground">{station.city || station.address || ''}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold">{formatCurrency(station.totalRevenue)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {station.transactionCount} sesiones
-                    </p>
+                    <p className="text-sm font-medium">{formatCurrency(Number(station.totalRevenue) || 0)}</p>
+                    <p className="text-xs text-muted-foreground">{station.totalTransactions || 0} sesiones</p>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No hay datos de estaciones
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Estado del sistema */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        <Card className="p-4 sm:p-6">
-          <h3 className="font-semibold mb-4 flex items-center gap-2 text-sm sm:text-base">
-            <Activity className="w-4 h-4" />
-            Estado del sistema
-          </h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Servidor OCPP</span>
-              <Badge className="bg-green-100 text-green-700">
-                <CheckCircle className="w-3 h-3 mr-1" />
-                Operativo
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Base de datos</span>
-              <Badge className="bg-green-100 text-green-700">
-                <CheckCircle className="w-3 h-3 mr-1" />
-                Activa
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Pasarela de pagos</span>
-              <Badge className="bg-yellow-100 text-yellow-700">
-                <AlertTriangle className="w-3 h-3 mr-1" />
-                Pendiente
-              </Badge>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-4 sm:p-6">
-          <h3 className="font-semibold mb-4 flex items-center gap-2 text-sm sm:text-base">
-            <AlertTriangle className="w-4 h-4" />
-            Alertas recientes
-          </h3>
-          <div className="text-center py-8 text-muted-foreground">
-            No hay alertas pendientes
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <Zap className="w-4 h-4" />
-            Cargas en progreso
-          </h3>
-          {metrics?.activeTransactions && metrics.activeTransactions > 0 ? (
-            <div className="text-center">
-              <div className="text-4xl font-bold text-primary mb-2">
-                {metrics.activeTransactions}
-              </div>
-              <p className="text-sm text-muted-foreground">sesiones activas</p>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No hay cargas activas
-            </div>
+            <p className="text-sm text-muted-foreground text-center py-8">No hay datos de estaciones</p>
           )}
         </Card>
       </div>

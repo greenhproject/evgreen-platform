@@ -3058,6 +3058,64 @@ export async function getAdminDashboardMetrics() {
   // Total de usuarios
   const totalUsers = await db.select({ count: count() }).from(users);
   
+  // Ingresos por mes (últimos 6 meses)
+  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  const revenueByMonth = await db.select({
+    month: sql<number>`MONTH(startTime)`,
+    year: sql<number>`YEAR(startTime)`,
+    totalRevenue: sum(transactions.totalCost),
+    totalKwh: sum(transactions.kwhConsumed),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, sixMonthsAgo)
+      )
+    )
+    .groupBy(sql`YEAR(startTime)`, sql`MONTH(startTime)`)
+    .orderBy(sql`YEAR(startTime)`, sql`MONTH(startTime)`);
+  
+  // Energía por día de la semana (últimas 4 semanas)
+  const fourWeeksAgo = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
+  const energyByDayOfWeek = await db.select({
+    dayOfWeek: sql<number>`DAYOFWEEK(startTime)`,
+    totalKwh: sum(transactions.kwhConsumed),
+    count: count(),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, fourWeeksAgo)
+      )
+    )
+    .groupBy(sql`DAYOFWEEK(startTime)`)
+    .orderBy(sql`DAYOFWEEK(startTime)`);
+  
+  // Formatear datos de ingresos mensuales
+  const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  const revenueChartData = revenueByMonth.map((row) => ({
+    name: monthNames[(Number(row.month) || 1) - 1],
+    month: Number(row.month),
+    year: Number(row.year),
+    value: Number(row.totalRevenue) || 0,
+    kwh: Number(row.totalKwh) || 0,
+  }));
+  
+  // Formatear datos de energía semanal
+  const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  // MySQL DAYOFWEEK: 1=Sunday, 2=Monday, ..., 7=Saturday
+  const energyChartData = dayNames.map((name, idx) => {
+    const dayNum = idx + 1; // 1=Dom, 2=Lun, ..., 7=Sáb
+    const found = energyByDayOfWeek.find((r) => Number(r.dayOfWeek) === dayNum);
+    return {
+      name,
+      kwh: Number(found?.totalKwh) || 0,
+      sessions: Number(found?.count) || 0,
+    };
+  });
+  
   return {
     totalTransactions: totalTransactions[0]?.count || 0,
     activeTransactions: activeTransactions[0]?.count || 0,
@@ -3079,6 +3137,8 @@ export async function getAdminDashboardMetrics() {
     users: {
       total: totalUsers[0]?.count || 0,
     },
+    revenueChart: revenueChartData,
+    energyChart: energyChartData,
   };
 }
 
