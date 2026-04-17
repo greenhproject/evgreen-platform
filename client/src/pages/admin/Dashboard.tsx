@@ -248,23 +248,28 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <Card className="p-4 sm:p-6">
           <h3 className="font-semibold mb-4 text-sm sm:text-base">Ingresos mensuales</h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={220}>
             <LineChart data={revenueData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis tickFormatter={(value) => {
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+              <XAxis dataKey="name" stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
+              <YAxis stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} tickFormatter={(value) => {
                 if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
                 if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
                 return `$${value}`;
               }} />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} labelFormatter={(label) => `Mes: ${label}`} />
+              <Tooltip
+                formatter={(value: number) => [formatCurrency(value), "Ingresos"]}
+                labelFormatter={(label) => `Mes: ${label}`}
+                contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid #333', borderRadius: '8px', color: '#fff' }}
+                labelStyle={{ color: '#22c55e', fontWeight: 'bold' }}
+              />
               <Line
                 type="monotone"
                 dataKey="value"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
+                stroke="#22c55e"
+                strokeWidth={3}
+                dot={{ r: 5, fill: '#22c55e', stroke: '#fff', strokeWidth: 2 }}
+                activeDot={{ r: 7, fill: '#22c55e', stroke: '#fff', strokeWidth: 2 }}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -272,13 +277,18 @@ export default function AdminDashboard() {
 
         <Card className="p-4 sm:p-6">
           <h3 className="font-semibold mb-4 text-sm sm:text-base">Energía semanal (kWh)</h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={220}>
             <BarChart data={energyData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis tickFormatter={(value) => `${value.toFixed(1)}`} />
-              <Tooltip formatter={(value: number) => [`${value.toFixed(2)} kWh`, "Energía"]} labelFormatter={(label) => `Día: ${label}`} />
-              <Bar dataKey="kwh" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+              <XAxis dataKey="name" stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
+              <YAxis stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} tickFormatter={(value) => `${value.toFixed(1)}`} />
+              <Tooltip
+                formatter={(value: number) => [`${value.toFixed(2)} kWh`, "Energía"]}
+                labelFormatter={(label) => `Día: ${label}`}
+                contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid #333', borderRadius: '8px', color: '#fff' }}
+                labelStyle={{ color: '#3b82f6', fontWeight: 'bold' }}
+              />
+              <Bar dataKey="kwh" fill="#3b82f6" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -291,15 +301,20 @@ export default function AdminDashboard() {
             <Users className="w-4 h-4" />
             Tendencia de usuarios
           </h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={usersData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis allowDecimals={false} />
-              <Tooltip formatter={(value: number) => [`${value} usuarios`, "Registros"]} labelFormatter={(label) => `Mes: ${label}`} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+              <XAxis dataKey="name" stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
+              <YAxis allowDecimals={false} stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
+              <Tooltip
+                formatter={(value: number) => [`${value} usuarios`, "Registros"]}
+                labelFormatter={(label) => `Mes: ${label}`}
+                contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid #333', borderRadius: '8px', color: '#fff' }}
+                labelStyle={{ color: '#8b5cf6', fontWeight: 'bold' }}
+              />
               <defs>
                 <linearGradient id="usersGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
                   <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
                 </linearGradient>
               </defs>
@@ -307,10 +322,10 @@ export default function AdminDashboard() {
                 type="monotone"
                 dataKey="users"
                 stroke="#8b5cf6"
-                strokeWidth={2}
+                strokeWidth={3}
                 fill="url(#usersGradient)"
-                dot={{ r: 4, fill: "#8b5cf6" }}
-                activeDot={{ r: 6 }}
+                dot={{ r: 5, fill: '#8b5cf6', stroke: '#fff', strokeWidth: 2 }}
+                activeDot={{ r: 7 }}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -322,28 +337,32 @@ export default function AdminDashboard() {
             Distribución de ingresos por estación
           </h3>
           {stationDistData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
+            <ResponsiveContainer width="100%" height={220}>
               <PieChart>
                 <Pie
                   data={stationDistData}
                   cx="50%"
                   cy="50%"
                   innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={2}
+                  outerRadius={85}
+                  paddingAngle={3}
                   dataKey="value"
                   nameKey="name"
-                  label={({ name, percent }) => `${name.length > 12 ? name.slice(0, 12) + '...' : name} ${(percent * 100).toFixed(0)}%`}
+                  label={({ name, percent }) => `${name.length > 15 ? name.slice(0, 15) + '...' : name} ${(percent * 100).toFixed(0)}%`}
+                  labelLine={{ stroke: '#a1a1aa' }}
                 >
                   {stationDistData.map((_: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                <Tooltip
+                  formatter={(value: number) => [formatCurrency(value), "Ingresos"]}
+                  contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid #333', borderRadius: '8px', color: '#fff' }}
+                />
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-[200px] text-muted-foreground text-sm">
+            <div className="flex items-center justify-center h-[220px] text-muted-foreground text-sm">
               No hay datos de distribución
             </div>
           )}

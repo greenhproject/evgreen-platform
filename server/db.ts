@@ -3118,14 +3118,14 @@ export async function getAdminDashboardMetrics() {
   
   // Tendencia de registros de usuarios (últimos 6 meses)
   const usersByMonth = await db.select({
-    month: sql<number>`MONTH(created_at)`,
-    year: sql<number>`YEAR(created_at)`,
+    month: sql<number>`MONTH(createdAt)`,
+    year: sql<number>`YEAR(createdAt)`,
     count: count(),
   })
     .from(users)
     .where(gte(users.createdAt, sixMonthsAgo))
-    .groupBy(sql`YEAR(created_at)`, sql`MONTH(created_at)`)
-    .orderBy(sql`YEAR(created_at)`, sql`MONTH(created_at)`);
+    .groupBy(sql`YEAR(createdAt)`, sql`MONTH(createdAt)`)
+    .orderBy(sql`YEAR(createdAt)`, sql`MONTH(createdAt)`);
   
   const usersChartData = usersByMonth.map((row) => ({
     name: monthNames[(Number(row.month) || 1) - 1],
