@@ -2879,3 +2879,9 @@
 - [x] Investigar query backend que obtiene estaciones colectivas para el fondo de mantenimiento
 - [x] Causa raíz: query usaba columna inexistente 'crowdfunding_status' (columna real es 'status') y valores incorrectos ('ACTIVE','FUNDED','COMPLETED' vs reales 'OPEN','IN_PROGRESS')
 - [x] Corregido: query ahora usa cp.status IN ('OPEN','IN_PROGRESS','FUNDED','COMPLETED','ACTIVE') - retorna 4 estaciones correctamente
+
+## Módulo Backup - Mejoras 17 Abril 2026
+- [x] Fix responsive móvil del módulo Backup & Recovery (textos cortados, layout roto)
+- [x] Agregar botón y funcionalidad de restauración de backup desde la interfaz
+- [x] Backend: endpoint para restaurar backup desde archivo JSON subido
+- [x] Frontend: UI de restauración con confirmación, progreso y validación
