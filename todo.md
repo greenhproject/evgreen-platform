@@ -2895,3 +2895,8 @@
 - [x] Gráfica de tendencia de usuarios (crecimiento de registros por mes, últimos 6 meses, AreaChart violeta)
 - [x] Gráfica de distribución de ingresos por estación (donut/pie chart con colores, top 8 estaciones)
 - [ ] Filtro de rango de fechas en las gráficas (3, 6, 12 meses) - pendiente para próxima iteración
+
+## Bug: Gráficas dashboard muestran $0 y mal contraste (17-Abr-2026)
+- [x] Diagnosticar por qué las queries del backend devuelven 0 - causa: columna created_at vs createdAt en users query hacía fallar todo el endpoint
+- [x] Mejorar contraste de gráficas para fondo oscuro (ejes #a1a1aa, grid rgba blanco 10%, tooltips oscuros, colores brillantes)
+- [x] Fix distribución por estación - corregido al arreglar el endpoint completo
