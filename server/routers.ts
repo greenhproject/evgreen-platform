@@ -3728,6 +3728,24 @@ const crowdfundingRouter = router({
       
       return { success: true };
     }),
+
+  // Admin: Eliminar proyecto de crowdfunding completo
+  deleteProject: adminProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ input }) => {
+      const project = await db.getCrowdfundingProjectById(input.projectId);
+      if (!project) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Proyecto no encontrado' });
+      }
+      
+      // 1. Eliminar todas las participaciones del proyecto
+      await db.deleteCrowdfundingProjectParticipations(input.projectId);
+      
+      // 2. Eliminar el proyecto
+      await db.deleteCrowdfundingProject(input.projectId);
+      
+      return { success: true, deletedProject: project.name };
+    }),
 });
 
 // ============================================================================

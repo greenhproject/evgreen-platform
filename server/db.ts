@@ -6295,6 +6295,26 @@ export async function deleteCrowdfundingParticipation(participationId: number): 
   `);
 }
 
+// Eliminar todas las participaciones de un proyecto de crowdfunding
+export async function deleteCrowdfundingProjectParticipations(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.execute(sql`
+    DELETE FROM crowdfunding_participations WHERE projectId = ${projectId}
+  `);
+}
+
+// Eliminar un proyecto de crowdfunding
+export async function deleteCrowdfundingProject(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.execute(sql`
+    DELETE FROM crowdfunding_projects WHERE id = ${projectId}
+  `);
+}
+
 // Actualizar participación de crowdfunding (campos extendidos: monto, estado, etc.)
 export async function updateCrowdfundingParticipationFull(
   participationId: number,
