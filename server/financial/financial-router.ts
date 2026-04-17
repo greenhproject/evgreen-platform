@@ -636,7 +636,7 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
             cp.id as projectId, cp.targetAmount, cp.raisedAmount, cp.status as projectStatus
           FROM charging_stations cs
           INNER JOIN crowdfunding_projects cp ON cp.stationId = cs.id
-          WHERE cp.crowdfunding_status IN ('ACTIVE', 'FUNDED', 'COMPLETED')
+          WHERE cp.status IN ('OPEN', 'IN_PROGRESS', 'FUNDED', 'COMPLETED', 'ACTIVE')
           ORDER BY cs.name
         `));
         return ((results as any)[0] || []).map((r: any) => ({
