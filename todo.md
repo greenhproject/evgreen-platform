@@ -2900,3 +2900,7 @@
 - [x] Diagnosticar por qué las queries del backend devuelven 0 - causa: columna created_at vs createdAt en users query hacía fallar todo el endpoint
 - [x] Mejorar contraste de gráficas para fondo oscuro (ejes #a1a1aa, grid rgba blanco 10%, tooltips oscuros, colores brillantes)
 - [x] Fix distribución por estación - corregido al arreglar el endpoint completo
+
+## Crowdfunding + Backup fixes (17-Abr-2026)
+- [x] Agregar botón de eliminar proyectos/estaciones de crowdfunding en la tabla de gestión (backend + frontend, con confirmación y advertencia de inversionistas)
+- [x] Corregir error 500 en backup.getStats - columna 'status' -> 'backup_status' en query SQL raw

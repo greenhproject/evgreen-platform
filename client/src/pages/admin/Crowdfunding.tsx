@@ -284,6 +284,28 @@ export default function AdminCrowdfunding() {
     },
   });
 
+  const deleteProjectMutation = trpc.crowdfunding.deleteProject.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`Proyecto "${data.deletedProject}" eliminado correctamente`);
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Error al eliminar proyecto");
+    },
+  });
+
+  const handleDeleteProject = (project: any) => {
+    const investorCount = project.investorCount || 0;
+    const hasInvestors = investorCount > 0;
+    const msg = hasInvestors
+      ? `¿Eliminar el proyecto "${project.name}" en ${project.city} - ${project.zone}?\n\n⚠️ ADVERTENCIA: Este proyecto tiene ${investorCount} inversionista(s). Se eliminarán TODAS las participaciones asociadas.\n\nEsta acción es irreversible.`
+      : `¿Eliminar el proyecto "${project.name}" en ${project.city} - ${project.zone}?\n\nEsta acción es irreversible.`;
+    
+    if (window.confirm(msg)) {
+      deleteProjectMutation.mutate({ projectId: project.id });
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       name: "",
@@ -617,6 +639,9 @@ export default function AdminCrowdfunding() {
                   <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
                     <Pencil className="w-3 h-3" />
                   </Button>
+                  <Button size="sm" variant="outline" className="text-xs h-8 text-red-500 hover:text-red-600 hover:border-red-300" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending}>
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
                 </div>
               </Card>
             ))}
@@ -672,6 +697,9 @@ export default function AdminCrowdfunding() {
                           </Button>
                           <Button size="sm" variant="outline" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
                             <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending} className="text-red-500 hover:text-red-600 hover:border-red-300" title="Eliminar proyecto">
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
                       </TableCell>

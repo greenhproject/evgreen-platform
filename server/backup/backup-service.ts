@@ -331,13 +331,13 @@ export async function getBackupStats() {
   
   const [stats] = await db.select({
     totalBackups: sql<number>`COUNT(*)`,
-    completedBackups: sql<number>`SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END)`,
-    failedBackups: sql<number>`SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END)`,
-    partialBackups: sql<number>`SUM(CASE WHEN status = 'PARTIAL' THEN 1 ELSE 0 END)`,
+    completedBackups: sql<number>`SUM(CASE WHEN backup_status = 'COMPLETED' THEN 1 ELSE 0 END)`,
+    failedBackups: sql<number>`SUM(CASE WHEN backup_status = 'FAILED' THEN 1 ELSE 0 END)`,
+    partialBackups: sql<number>`SUM(CASE WHEN backup_status = 'PARTIAL' THEN 1 ELSE 0 END)`,
     totalSizeBytes: sql<number>`COALESCE(SUM(totalSizeBytes), 0)`,
     totalRowsBackedUp: sql<number>`COALESCE(SUM(totalRows), 0)`,
     lastBackupAt: sql<string>`MAX(completedAt)`,
-    lastSuccessfulAt: sql<string>`MAX(CASE WHEN status = 'COMPLETED' THEN completedAt ELSE NULL END)`,
+    lastSuccessfulAt: sql<string>`MAX(CASE WHEN backup_status = 'COMPLETED' THEN completedAt ELSE NULL END)`,
   }).from(backupLogs)
     .where(eq(backupLogs.isDeleted, false));
   
