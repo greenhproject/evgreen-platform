@@ -21,6 +21,7 @@ import {
   getBackupDownloadUrl,
   deleteBackup,
   cleanupExpiredBackups,
+  restoreBackup,
   BACKUP_TABLES,
   type BackupType,
 } from "./backup-service";
@@ -136,6 +137,44 @@ export const backupRouter = router({
       rowLimit: t.rowLimit || null,
     }));
   }),
+
+  /**
+   * Restaurar un backup desde datos JSON.
+   * Recibe las tablas con sus filas y las inserta en la BD.
+   * Soporta modo "merge" (INSERT IGNORE) y "replace" (DELETE + INSERT).
+   */
+  restoreBackup: adminProcedure
+    .input(z.object({
+      tables: z.record(z.string(), z.array(z.any())),
+      mode: z.enum(["merge", "replace"]),
+      metadata: z.object({
+        backupId: z.number().optional(),
+        type: z.string().optional(),
+        timestamp: z.string().optional(),
+        version: z.string().optional(),
+      }).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        console.log(`[Backup Restore] Iniciado por ${ctx.user.name || ctx.user.id}. Modo: ${input.mode}. Tablas: ${Object.keys(input.tables).length}`);
+        
+        const result = await restoreBackup({
+          tables: input.tables,
+          mode: input.mode,
+          triggeredBy: ctx.user.name || ctx.user.id.toString(),
+          metadata: input.metadata,
+        });
+        
+        console.log(`[Backup Restore] Completado: ${result.tablesRestored} tablas, ${result.totalRowsRestored} filas`);
+        return result;
+      } catch (error: any) {
+        console.error(`[Backup Restore] Error:`, error.message);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Error restaurando backup: ${error.message}`,
+        });
+      }
+    }),
 });
 
 // ============================================================================

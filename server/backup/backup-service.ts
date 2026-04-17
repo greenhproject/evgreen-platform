@@ -444,3 +444,166 @@ export async function cleanupExpiredBackups() {
   console.log(`[Backup Cleanup] ${expired.length} backups expirados marcados como eliminados`);
   return { cleaned: expired.length };
 }
+
+// ============================================================================
+// SERVICIO DE RESTAURACIÓN DE BACKUP
+// ============================================================================
+
+interface RestoreResult {
+  tablesRestored: number;
+  tablesSkipped: number;
+  totalRowsRestored: number;
+  errors: string[];
+  details: Record<string, { inserted: number; skipped: number; error?: string }>;
+}
+
+/**
+ * Restaura datos desde un backup JSON a la base de datos.
+ * 
+ * Modos:
+ * - "merge": INSERT IGNORE — inserta filas nuevas, omite duplicados por PK
+ * - "replace": DELETE + INSERT — elimina datos existentes y reinserta todo
+ * 
+ * Seguridad:
+ * - Solo permite restaurar tablas que existen en BACKUP_TABLES
+ * - Sanitiza nombres de tabla para prevenir SQL injection
+ * - Procesa en lotes de 100 filas para evitar timeouts
+ */
+export async function restoreBackup(options: {
+  tables: Record<string, any[]>;
+  mode: "merge" | "replace";
+  triggeredBy?: string;
+  metadata?: any;
+}): Promise<RestoreResult> {
+  const db = (await getDb())!;
+  const allowedTables = BACKUP_TABLES.map(t => t.name);
+  
+  const result: RestoreResult = {
+    tablesRestored: 0,
+    tablesSkipped: 0,
+    totalRowsRestored: 0,
+    errors: [],
+    details: {},
+  };
+
+  const tableNames = Object.keys(options.tables);
+  console.log(`[Restore] Iniciando restauración de ${tableNames.length} tablas en modo "${options.mode}"`);
+
+  for (const tableName of tableNames) {
+    // Validate table name against allowed list
+    if (!allowedTables.includes(tableName)) {
+      console.warn(`[Restore] Tabla "${tableName}" no está en la lista permitida, omitiendo`);
+      result.tablesSkipped++;
+      result.details[tableName] = { inserted: 0, skipped: 0, error: "Tabla no permitida" };
+      result.errors.push(`Tabla "${tableName}" no está en la lista de tablas permitidas`);
+      continue;
+    }
+
+    const rows = options.tables[tableName];
+    if (!rows || !Array.isArray(rows) || rows.length === 0) {
+      console.log(`[Restore] Tabla "${tableName}" sin datos, omitiendo`);
+      result.tablesSkipped++;
+      result.details[tableName] = { inserted: 0, skipped: 0, error: "Sin datos" };
+      continue;
+    }
+
+    try {
+      // Sanitize table name (only allow alphanumeric and underscore)
+      const safeTableName = tableName.replace(/[^a-zA-Z0-9_]/g, "");
+      if (safeTableName !== tableName) {
+        throw new Error(`Nombre de tabla inválido: ${tableName}`);
+      }
+
+      let insertedCount = 0;
+
+      // In replace mode, delete existing data first
+      if (options.mode === "replace") {
+        // Temporarily disable foreign key checks for clean replacement
+        await db.execute(sql.raw("SET FOREIGN_KEY_CHECKS = 0"));
+        await db.execute(sql.raw(`DELETE FROM \`${safeTableName}\``));
+        console.log(`[Restore] Tabla "${safeTableName}": datos existentes eliminados`);
+      }
+
+      // Get column names from the first row
+      const columns = Object.keys(rows[0]);
+      if (columns.length === 0) {
+        throw new Error("Filas sin columnas");
+      }
+
+      // Helper to escape SQL values
+      const escapeValue = (val: any): string => {
+        if (val === null || val === undefined) return "NULL";
+        if (typeof val === "number") return String(val);
+        if (typeof val === "boolean") return val ? "1" : "0";
+        if (typeof val === "object" && !(val instanceof Date)) {
+          const str = JSON.stringify(val).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+          return `'${str}'`;
+        }
+        const str = String(val).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+        return `'${str}'`;
+      };
+
+      // Build column list
+      const colList = columns.map(c => `\`${c.replace(/[^a-zA-Z0-9_]/g, "")}\``).join(", ");
+      const insertKeyword = options.mode === "merge" ? "INSERT IGNORE" : "INSERT";
+
+      // Process in batches of 50
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const batch = rows.slice(i, i + BATCH_SIZE);
+        
+        // Build values with escaped inline values
+        const valueSets = batch.map(row => {
+          const vals = columns.map(col => escapeValue(row[col]));
+          return `(${vals.join(", ")})`;
+        });
+
+        const queryStr = `${insertKeyword} INTO \`${safeTableName}\` (${colList}) VALUES ${valueSets.join(", ")}`;
+        
+        try {
+          const [insertResult] = await db.execute(sql.raw(queryStr)) as any;
+          insertedCount += insertResult?.affectedRows || batch.length;
+        } catch (batchError: any) {
+          // If batch fails, try row by row
+          console.warn(`[Restore] Batch error en "${safeTableName}" (lote ${i}-${i + BATCH_SIZE}): ${batchError.message}. Intentando fila por fila...`);
+          for (const row of batch) {
+            try {
+              const vals = columns.map(col => escapeValue(row[col]));
+              const singleQuery = `${insertKeyword} INTO \`${safeTableName}\` (${colList}) VALUES (${vals.join(", ")})`;
+              await db.execute(sql.raw(singleQuery));
+              insertedCount++;
+            } catch (rowError: any) {
+              // Skip individual row errors silently in merge mode
+              if (options.mode !== "merge") {
+                console.warn(`[Restore] Error en fila de "${safeTableName}": ${rowError.message}`);
+              }
+            }
+          }
+        }
+      }
+
+      // Re-enable foreign key checks if we disabled them
+      if (options.mode === "replace") {
+        await db.execute(sql.raw("SET FOREIGN_KEY_CHECKS = 1"));
+      }
+
+      result.tablesRestored++;
+      result.totalRowsRestored += insertedCount;
+      result.details[tableName] = { inserted: insertedCount, skipped: rows.length - insertedCount };
+      console.log(`[Restore] Tabla "${safeTableName}": ${insertedCount}/${rows.length} filas restauradas`);
+
+    } catch (error: any) {
+      console.error(`[Restore] Error restaurando tabla "${tableName}":`, error.message);
+      result.errors.push(`Error en tabla "${tableName}": ${error.message}`);
+      result.details[tableName] = { inserted: 0, skipped: rows.length, error: error.message };
+      
+      // Make sure foreign key checks are re-enabled
+      try {
+        await db.execute(sql.raw("SET FOREIGN_KEY_CHECKS = 1"));
+      } catch {}
+    }
+  }
+
+  console.log(`[Restore] Completado: ${result.tablesRestored} tablas restauradas, ${result.totalRowsRestored} filas, ${result.errors.length} errores`);
+  return result;
+}
