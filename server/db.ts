@@ -3116,6 +3116,44 @@ export async function getAdminDashboardMetrics() {
     };
   });
   
+  // Tendencia de registros de usuarios (últimos 6 meses)
+  const usersByMonth = await db.select({
+    month: sql<number>`MONTH(created_at)`,
+    year: sql<number>`YEAR(created_at)`,
+    count: count(),
+  })
+    .from(users)
+    .where(gte(users.createdAt, sixMonthsAgo))
+    .groupBy(sql`YEAR(created_at)`, sql`MONTH(created_at)`)
+    .orderBy(sql`YEAR(created_at)`, sql`MONTH(created_at)`);
+  
+  const usersChartData = usersByMonth.map((row) => ({
+    name: monthNames[(Number(row.month) || 1) - 1],
+    month: Number(row.month),
+    year: Number(row.year),
+    users: Number(row.count) || 0,
+  }));
+  
+  // Distribución de ingresos por estación (top 8)
+  const revenueByStation = await db.select({
+    stationId: transactions.stationId,
+    stationName: chargingStations.name,
+    totalRevenue: sum(transactions.totalCost),
+    totalSessions: count(),
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(eq(transactions.status, "COMPLETED"))
+    .groupBy(transactions.stationId, chargingStations.name)
+    .orderBy(desc(sum(transactions.totalCost)))
+    .limit(8);
+  
+  const stationDistributionData = revenueByStation.map((row) => ({
+    name: row.stationName || `Estación ${row.stationId}`,
+    value: Number(row.totalRevenue) || 0,
+    sessions: Number(row.totalSessions) || 0,
+  }));
+  
   return {
     totalTransactions: totalTransactions[0]?.count || 0,
     activeTransactions: activeTransactions[0]?.count || 0,
@@ -3139,6 +3177,8 @@ export async function getAdminDashboardMetrics() {
     },
     revenueChart: revenueChartData,
     energyChart: energyChartData,
+    usersChart: usersChartData,
+    stationDistribution: stationDistributionData,
   };
 }
 

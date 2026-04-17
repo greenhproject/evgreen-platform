@@ -24,8 +24,15 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+  AreaChart,
+  Area,
 } from "recharts";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function AdminDashboard() {
   // Obtener métricas del dashboard
@@ -61,10 +68,29 @@ export default function AdminDashboard() {
     if (metrics?.energyChart && metrics.energyChart.length > 0) {
       return metrics.energyChart;
     }
-    // Fallback: si no hay datos, mostrar días vacíos
     const dayNames = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
     return dayNames.map((name) => ({ name, kwh: 0 }));
   }, [metrics?.energyChart]);
+
+  // Datos de tendencia de usuarios
+  const usersData = useMemo(() => {
+    if (metrics?.usersChart && metrics.usersChart.length > 0) {
+      return metrics.usersChart;
+    }
+    const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun"];
+    return monthNames.map((name) => ({ name, users: 0 }));
+  }, [metrics?.usersChart]);
+
+  // Datos de distribución por estación
+  const stationDistData = useMemo(() => {
+    if (metrics?.stationDistribution && metrics.stationDistribution.length > 0) {
+      return metrics.stationDistribution;
+    }
+    return [];
+  }, [metrics?.stationDistribution]);
+
+  // Colores para el pie chart
+  const PIE_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316", "#14b8a6"];
 
   if (isLoading) {
     return (
@@ -255,6 +281,72 @@ export default function AdminDashboard() {
               <Bar dataKey="kwh" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+        </Card>
+      </div>
+
+      {/* Gráficas adicionales: Tendencia de usuarios + Distribución por estación */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <Card className="p-4 sm:p-6">
+          <h3 className="font-semibold mb-4 text-sm sm:text-base flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            Tendencia de usuarios
+          </h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={usersData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis allowDecimals={false} />
+              <Tooltip formatter={(value: number) => [`${value} usuarios`, "Registros"]} labelFormatter={(label) => `Mes: ${label}`} />
+              <defs>
+                <linearGradient id="usersGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area
+                type="monotone"
+                dataKey="users"
+                stroke="#8b5cf6"
+                strokeWidth={2}
+                fill="url(#usersGradient)"
+                dot={{ r: 4, fill: "#8b5cf6" }}
+                activeDot={{ r: 6 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </Card>
+
+        <Card className="p-4 sm:p-6">
+          <h3 className="font-semibold mb-4 text-sm sm:text-base flex items-center gap-2">
+            <MapPin className="w-4 h-4" />
+            Distribución de ingresos por estación
+          </h3>
+          {stationDistData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie
+                  data={stationDistData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={80}
+                  paddingAngle={2}
+                  dataKey="value"
+                  nameKey="name"
+                  label={({ name, percent }) => `${name.length > 12 ? name.slice(0, 12) + '...' : name} ${(percent * 100).toFixed(0)}%`}
+                >
+                  {stationDistData.map((_: any, index: number) => (
+                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[200px] text-muted-foreground text-sm">
+              No hay datos de distribución
+            </div>
+          )}
         </Card>
       </div>
 

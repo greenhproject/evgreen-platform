@@ -2890,3 +2890,8 @@
 - [x] Bug: Gráficas "Ingresos mensuales" y "Energía semanal (kWh)" muestran $0 y vacías a pesar de 112 transacciones y $44K+ en ingresos
 - [x] Investigar query backend que alimenta las gráficas del dashboard (causa: datos hardcodeados en 0, no conectados al backend)
 - [x] Corregir: backend ahora devuelve revenueChart y energyChart con datos reales agrupados por mes/día
+
+## Mejoras Dashboard Admin - Gráficas avanzadas (17-Abr-2026)
+- [x] Gráfica de tendencia de usuarios (crecimiento de registros por mes, últimos 6 meses, AreaChart violeta)
+- [x] Gráfica de distribución de ingresos por estación (donut/pie chart con colores, top 8 estaciones)
+- [ ] Filtro de rango de fechas en las gráficas (3, 6, 12 meses) - pendiente para próxima iteración
