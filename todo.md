@@ -2873,3 +2873,9 @@
 - [x] Procedimiento de restauración desde backup
 - [x] Retención configurable de backups (mantener últimos N backups)
 - [x] Indicador de salud del sistema de backups en dashboard admin
+
+## Bug: Fondo de Mantenimiento no muestra estaciones colectivas - 16 Abril 2026
+- [x] BUG: Página de Fondo de Mantenimiento dice "No hay estaciones colectivas registradas" aunque hay estaciones con inversionistas asociados
+- [x] Investigar query backend que obtiene estaciones colectivas para el fondo de mantenimiento
+- [x] Causa raíz: query usaba columna inexistente 'crowdfunding_status' (columna real es 'status') y valores incorrectos ('ACTIVE','FUNDED','COMPLETED' vs reales 'OPEN','IN_PROGRESS')
+- [x] Corregido: query ahora usa cp.status IN ('OPEN','IN_PROGRESS','FUNDED','COMPLETED','ACTIVE') - retorna 4 estaciones correctamente
