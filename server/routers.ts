@@ -5154,6 +5154,35 @@ const investorManagementRouter = router({
       totalInvested: participations.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0) + (user.investorTotalInvested || 0),
     };
   }),
+
+  // Admin: eliminar inversionista (limpia participaciones, payouts, perfil)
+  deleteInvestor: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      deleteUserAccount: z.boolean().default(false), // Si true, elimina la cuenta de usuario completa
+    }))
+    .mutation(async ({ input }) => {
+      // Verificar que el usuario existe y es inversionista
+      const user = await db.getUserById(input.userId);
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+      }
+      if (user.role !== 'investor') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El usuario no es un inversionista' });
+      }
+      // No permitir eliminar al owner/admin principal
+      if (user.email === 'Admin@greenhproject.com' || user.email === 'greenhproject@gmail.com') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'No se puede eliminar la cuenta del administrador principal' });
+      }
+      const result = await db.deleteInvestor(input.userId, input.deleteUserAccount);
+      return {
+        success: true,
+        message: input.deleteUserAccount
+          ? `Inversionista y cuenta de usuario eliminados. ${result.deletedParticipations} participación(es) eliminada(s).`
+          : `Perfil de inversionista eliminado. ${result.deletedParticipations} participación(es) eliminada(s). La cuenta de usuario se mantuvo como usuario normal.`,
+        ...result,
+      };
+    }),
 });
 
 // ============================================================================

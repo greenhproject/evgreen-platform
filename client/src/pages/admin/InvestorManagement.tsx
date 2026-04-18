@@ -10,7 +10,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -18,7 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Search, Crown, Star, Building2, Users, Camera, Upload, Pencil,
   Award, Gem, Shield, TrendingUp, MapPin, DollarSign, Eye, EyeOff,
-  Percent, Zap,
+  Percent, Zap, Trash2, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -39,6 +39,10 @@ export default function InvestorManagement() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedInvestor, setSelectedInvestor] = useState<any>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [investorToDelete, setInvestorToDelete] = useState<any>(null);
+  const [deleteUserAccount, setDeleteUserAccount] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -56,6 +60,17 @@ export default function InvestorManagement() {
       toast.success("Foto subida correctamente");
       setSelectedInvestor((prev: any) => prev ? { ...prev, investorPhotoUrl: data.photoUrl } : null);
       refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteInvestor = trpc.investorManagement.deleteInvestor.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      refetch();
+      setShowDeleteModal(false);
+      setInvestorToDelete(null);
+      setDeleteConfirmText("");
+      setDeleteUserAccount(false);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -94,6 +109,21 @@ export default function InvestorManagement() {
       investorShowInWall: investor.investorShowInWall !== false,
     });
     setShowEditModal(true);
+  };
+
+  const openDeleteModal = (investor: any) => {
+    setInvestorToDelete(investor);
+    setDeleteConfirmText("");
+    setDeleteUserAccount(false);
+    setShowDeleteModal(true);
+  };
+
+  const handleDelete = () => {
+    if (!investorToDelete || deleteConfirmText !== "ELIMINAR") return;
+    deleteInvestor.mutate({
+      userId: investorToDelete.id,
+      deleteUserAccount,
+    });
   };
 
   const toggleType = (type: string) => {
@@ -300,6 +330,7 @@ export default function InvestorManagement() {
                 filtered?.map((inv: any) => {
                   const badgeInfo = getBadgeInfo(inv.investorBadge);
                   const types = getTypeLabels(inv);
+                  const isProtected = inv.email === "Admin@greenhproject.com" || inv.email === "greenhproject@gmail.com";
                   return (
                     <TableRow key={inv.id}>
                       <TableCell>
@@ -379,10 +410,22 @@ export default function InvestorManagement() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button size="sm" variant="outline" onClick={() => openEditModal(inv)}>
-                          <Pencil className="w-3 h-3 mr-1" />
-                          Editar
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button size="sm" variant="outline" onClick={() => openEditModal(inv)}>
+                            <Pencil className="w-3 h-3 mr-1" />
+                            Editar
+                          </Button>
+                          {!isProtected && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/30"
+                              onClick={() => openDeleteModal(inv)}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -392,6 +435,114 @@ export default function InvestorManagement() {
           </Table>
         </div>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog open={showDeleteModal} onOpenChange={(open) => {
+        if (!open) {
+          setShowDeleteModal(false);
+          setInvestorToDelete(null);
+          setDeleteConfirmText("");
+          setDeleteUserAccount(false);
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-500">
+              <AlertTriangle className="w-5 h-5" />
+              Eliminar Inversionista
+            </DialogTitle>
+            <DialogDescription>
+              Esta acción no se puede deshacer. Se eliminarán los datos del inversionista.
+            </DialogDescription>
+          </DialogHeader>
+
+          {investorToDelete && (
+            <div className="space-y-4 py-2">
+              {/* Investor info */}
+              <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                <Avatar className="h-10 w-10">
+                  <AvatarImage src={investorToDelete.investorPhotoUrl || investorToDelete.avatarUrl} />
+                  <AvatarFallback className="bg-red-500/10 text-red-600 text-sm font-bold">
+                    {investorToDelete.name?.charAt(0)?.toUpperCase() || "I"}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="font-medium text-sm">{investorToDelete.name || "Sin nombre"}</p>
+                  <p className="text-xs text-muted-foreground">{investorToDelete.email}</p>
+                </div>
+              </div>
+
+              {/* Warning about data */}
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg space-y-2">
+                <p className="text-sm font-medium text-red-400">Se eliminarán los siguientes datos:</p>
+                <ul className="text-xs text-red-300 space-y-1 ml-4 list-disc">
+                  {(investorToDelete.participations?.length || 0) > 0 && (
+                    <li>{investorToDelete.participations.length} participación(es) de crowdfunding ({formatCurrency(investorToDelete.totalInvested || 0)} invertidos)</li>
+                  )}
+                  <li>Liquidaciones (payouts) pendientes y pagadas</li>
+                  <li>Perfil de inversionista (tipo, insignia, foto, biografía)</li>
+                  <li>Datos de onboarding</li>
+                  {investorToDelete.isFounder && (
+                    <li>Perfil de fundador y visibilidad en el muro</li>
+                  )}
+                </ul>
+              </div>
+
+              {/* Option: delete user account too */}
+              <div className="flex items-start gap-3 p-3 border border-border rounded-lg">
+                <Checkbox
+                  id="deleteAccount"
+                  checked={deleteUserAccount}
+                  onCheckedChange={(v) => setDeleteUserAccount(v === true)}
+                  className="mt-0.5 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
+                />
+                <div>
+                  <Label htmlFor="deleteAccount" className="text-sm font-medium cursor-pointer">
+                    También eliminar la cuenta de usuario
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Si no se marca, el usuario se convertirá en usuario normal (rol "user") y podrá seguir usando la plataforma sin privilegios de inversionista.
+                  </p>
+                </div>
+              </div>
+
+              {/* Confirmation input */}
+              <div className="space-y-2">
+                <Label className="text-sm">
+                  Escribe <span className="font-mono font-bold text-red-400">ELIMINAR</span> para confirmar:
+                </Label>
+                <Input
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="ELIMINAR"
+                  className="font-mono"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteModal(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteConfirmText !== "ELIMINAR" || deleteInvestor.isPending}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deleteInvestor.isPending ? (
+                "Eliminando..."
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  {deleteUserAccount ? "Eliminar Inversionista y Cuenta" : "Eliminar Inversionista"}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Modal */}
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>

@@ -2904,3 +2904,7 @@
 ## Crowdfunding + Backup fixes (17-Abr-2026)
 - [x] Agregar botón de eliminar proyectos/estaciones de crowdfunding en la tabla de gestión (backend + frontend, con confirmación y advertencia de inversionistas)
 - [x] Corregir error 500 en backup.getStats - columna 'status' -> 'backup_status' en query SQL raw
+
+## Eliminar inversionistas desde admin (17-Abr-2026)
+- [x] Backend: endpoint para eliminar inversionista (eliminar participaciones, datos de onboarding, perfil de fundador, y registro de inversionista)
+- [x] Frontend: botón eliminar en tabla de Gestión de Inversionistas con diálogo de confirmación y advertencia de datos asociados
