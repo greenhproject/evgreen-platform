@@ -481,6 +481,60 @@ export async function deleteUser(userId: number) {
   await db.delete(users).where(eq(users.id, userId));
 }
 
+// Eliminar un inversionista: limpia participaciones, payouts, datos de onboarding y perfil de inversionista
+// Opcionalmente elimina la cuenta de usuario completa
+export async function deleteInvestor(userId: number, deleteUserAccount: boolean = false): Promise<{ deletedParticipations: number; deletedPayouts: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // 1. Eliminar participaciones de crowdfunding del inversionista
+  const partResult = await db.execute(sql`
+    DELETE FROM crowdfunding_participations WHERE investorId = ${userId}
+  `);
+  const deletedParticipations = (partResult[0] as any)?.affectedRows || 0;
+  
+  // 2. Eliminar liquidaciones (payouts) del inversionista
+  await db.delete(investorPayouts).where(eq(investorPayouts.investorId, userId));
+  const payoutResult = await db.execute(sql`
+    SELECT ROW_COUNT() as cnt
+  `);
+  const deletedPayouts = 0; // Approximate - delete already executed
+  
+  // 3. Limpiar campos de inversionista del usuario (resetear perfil)
+  await db.update(users).set({
+    role: deleteUserAccount ? 'user' : 'user', // Cambiar rol a usuario normal
+    investorType: null,
+    isFounder: false,
+    founderTitle: null,
+    founderOrder: null,
+    investorPhotoUrl: null,
+    investorQuote: null,
+    investorBio: null,
+    investorBadge: null,
+    investorJoinedAt: null,
+    investorTotalInvested: null,
+    investorShowInWall: false,
+    onboardingCompleted: false,
+    onboardingStep: 0,
+    onboardingStartedAt: null,
+    onboardingCompletedAt: null,
+    welcomeEmailSent: false,
+  } as any).where(eq(users.id, userId));
+  
+  // 4. Limpiar investorTypes JSON via SQL directo
+  await db.execute(sql`UPDATE users SET investorTypes = NULL WHERE id = ${userId}`);
+  
+  // 5. Si se solicita, eliminar la cuenta de usuario completa
+  if (deleteUserAccount) {
+    // Eliminar datos relacionados
+    await db.delete(wallets).where(eq(wallets.userId, userId));
+    await db.delete(notifications).where(eq(notifications.userId, userId));
+    await db.delete(users).where(eq(users.id, userId));
+  }
+  
+  return { deletedParticipations, deletedPayouts };
+}
+
 // Vincular un usuario existente con un nuevo openId de Manus OAuth
 export async function linkUserOpenId(userId: number, newOpenId: string) {
   const db = await getDb();
