@@ -1,0 +1,23 @@
+Email Investigation - 17 Abr 2026
+
+HALLAZGO CLAVE: Los emails SÍ se están enviando y entregando correctamente según Resend API.
+
+Emails recientes enviados:
+1. "Maria Olga Lopez Peña" -> suministroshospi@yahoo.com -> last_event: "delivered" (00:22:14 UTC)
+2. "Maria Olga Lopez Peña" -> gerencia@greenhproject.com -> last_event: "delivered" (00:22:15 UTC)
+3. "Olga Lopez" -> suministroshospi@gmail.com -> last_event: "delivered" (16:58:15 UTC) 
+4. "Olga Lopez" -> gerencia@greenhproject.com -> last_event: "delivered" (16:58:15 UTC)
+5. "Alejandra Ramirez Ch" -> ing.alejandra.ramirez@gmail.com -> last_event: "delivered"
+6. "Alejandra Ramirez Ch" -> gerencia@greenhproject.com -> last_event: "delivered"
+
+NOTA: El email a suministroshospi@yahoo.com muestra "delivered" en Resend.
+El error 422 GET /emails/0 que ve el usuario en Resend logs es una petición DIFERENTE - 
+parece ser una llamada GET (no POST) con ID "0" que no es un UUID válido.
+
+Esto sugiere que hay OTRA parte del código haciendo un GET /emails/0 - posiblemente 
+intentando verificar el estado del email enviado, o es un request del dashboard de Resend.
+
+El email SÍ se envió correctamente. El problema puede ser:
+1. Yahoo filtra el email como spam
+2. El usuario está viendo un log de error diferente (no relacionado con el welcome email)
+3. Hay un segundo intento de envío que falla

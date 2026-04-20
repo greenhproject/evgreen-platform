@@ -2908,3 +2908,10 @@
 ## Eliminar inversionistas desde admin (17-Abr-2026)
 - [x] Backend: endpoint para eliminar inversionista (eliminar participaciones, datos de onboarding, perfil de fundador, y registro de inversionista)
 - [x] Frontend: botón eliminar en tabla de Gestión de Inversionistas con diálogo de confirmación y advertencia de datos asociados
+
+## Bug: Email de bienvenida inversionistas no se envía (17-Abr-2026)
+- [x] Bug: Resend recibe GET /emails/0 en vez de POST /emails - Investigado: emails sí se envían y entregan correctamente (verified via API). El error 422 era una consulta GET del dashboard, no del envío. El email a Yahoo puede caer en spam.
+
+## Bug: Módulo Precisión de SoC no funciona (20-Abr-2026)
+- [x] Diagnosticado: createSocAccuracyLog existía en csms-dual.ts StopTransaction pero faltaba en completeTransactionLocally
+- [x] Agregada lógica de registro de SoC accuracy a completeTransactionLocally (para cuando cargador no responde StopTransaction)
