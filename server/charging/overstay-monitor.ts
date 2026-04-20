@@ -106,19 +106,23 @@ export async function onChargingFinished(evseId: number, stationId: number) {
     const dbInstance = await db.getDb();
     if (!dbInstance) return;
 
-    const recentTx = await dbInstance.select()
-      .from(transactions)
-      .where(and(
-        eq(transactions.evseId, evseId),
-        eq(transactions.status, "COMPLETED")
-      ))
-      .orderBy(transactions.endTime)
-      .limit(1);
-
-    // Also check IN_PROGRESS (the StopTransaction may not have arrived yet)
+    // Prioridad: transacción activa (IN_PROGRESS) > transacción completada más reciente
     const activeTx = await db.getActiveTransaction(evseId);
     
-    const transaction = activeTx || (recentTx.length > 0 ? recentTx[0] : null);
+    let transaction = activeTx;
+    
+    if (!transaction) {
+      // Si no hay transacción activa, buscar la más reciente completada (DESC = más nueva primero)
+      const recentTx = await dbInstance.select()
+        .from(transactions)
+        .where(and(
+          eq(transactions.evseId, evseId),
+          eq(transactions.status, "COMPLETED")
+        ))
+        .orderBy(desc(transactions.endTime))
+        .limit(1);
+      transaction = recentTx.length > 0 ? recentTx[0] : undefined;
+    }
     
     if (!transaction) {
       console.warn(`[OverstayMonitor] No transaction found for EVSE ${evseId} in Finishing state`);

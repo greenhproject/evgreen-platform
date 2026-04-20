@@ -2915,3 +2915,8 @@
 ## Bug: Módulo Precisión de SoC no funciona (20-Abr-2026)
 - [x] Diagnosticado: createSocAccuracyLog existía en csms-dual.ts StopTransaction pero faltaba en completeTransactionLocally
 - [x] Agregada lógica de registro de SoC accuracy a completeTransactionLocally (para cuando cargador no responde StopTransaction)
+
+## Bug CRÍTICO: Notificaciones de otros usuarios aparecen en cuenta actual (20-Abr-2026)
+- [x] Investigar query de getNotifications - filtro por userId es correcto en BD
+- [x] Diagnosticado: bug en overstay-monitor.ts orderBy ASC en vez de DESC - tomaba transacción antigua de otro usuario
+- [x] Corregido orderBy a DESC y priorizado transacción activa sobre completada
