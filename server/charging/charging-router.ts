@@ -1341,13 +1341,18 @@ export const chargingRouter = router({
         const currentKwh = activeTransaction.kwhConsumed ? parseFloat(activeTransaction.kwhConsumed) : 0;
         const currentCost = activeTransaction.totalCost ? parseFloat(activeTransaction.totalCost) : 0;
         
+        // Restaurar chargeMode y targetValue desde la BD (NO hardcodear full_charge)
+        const restoredChargeMode = (activeTransaction.chargeMode as "fixed_amount" | "percentage" | "full_charge") || "full_charge";
+        const restoredTargetValue = activeTransaction.targetValue ? parseFloat(String(activeTransaction.targetValue)) : (restoredChargeMode === "full_charge" ? 100 : 0);
+        console.log(`[setManualSoc] Restoring session from DB: chargeMode=${restoredChargeMode}, targetValue=${restoredTargetValue}`);
+        
         setActiveSession(activeTransaction.id, {
           transactionId: activeTransaction.id,
           userId: ctx.user.id,
           stationId: activeTransaction.stationId,
           connectorId: activeTransaction.evseId,
-          chargeMode: "full_charge" as const,
-          targetValue: 100,
+          chargeMode: restoredChargeMode,
+          targetValue: restoredTargetValue,
           startTime,
           currentKwh,
           currentCost,
