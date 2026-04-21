@@ -2920,3 +2920,8 @@
 - [x] Investigar query de getNotifications - filtro por userId es correcto en BD
 - [x] Diagnosticado: bug en overstay-monitor.ts orderBy ASC en vez de DESC - tomaba transacción antigua de otro usuario
 - [x] Corregido orderBy a DESC y priorizado transacción activa sobre completada
+
+## Bug: Pantalla de carga pierde modo valor fijo (21-Abr-2026)
+- [x] Al seleccionar valor fijo de $50,000 como meta, la pantalla se actualiza y cambia a "carga total" perdiendo el modo valor fijo
+- [x] Causa: setManualSoc recreaba sesión en memoria con chargeMode hardcodeado a "full_charge" en vez de restaurar desde BD
+- [x] Corregido: ahora restaura chargeMode y targetValue desde activeTransaction en la BD
