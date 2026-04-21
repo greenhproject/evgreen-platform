@@ -3212,7 +3212,7 @@ const crowdfundingRouter = router({
   // Obtener todos los proyectos públicos
   getProjects: publicProcedure
     .input(z.object({
-      status: z.string().optional(),
+      status: z.enum(['ACTIVE', 'FUNDED', 'COMPLETED', 'CANCELLED', 'DRAFT']).optional(),
     }).optional())
     .query(async ({ input }) => {
       return db.getCrowdfundingProjects({
@@ -4231,6 +4231,43 @@ import {
   recordLoginSession,
 } from "./security/security-service";
 
+// SEGURIDAD: Rate limiting para intentos de 2FA (anti brute-force)
+const twoFaAttempts = new Map<number, { count: number; lockUntil: number }>();
+const TWO_FA_MAX_ATTEMPTS = 5;
+const TWO_FA_LOCKOUT_MS = 5 * 60 * 1000; // 5 minutos de bloqueo
+
+function check2FALimit(userId: number): void {
+  const now = Date.now();
+  const entry = twoFaAttempts.get(userId);
+  
+  if (entry && now < entry.lockUntil) {
+    const remainingSec = Math.ceil((entry.lockUntil - now) / 1000);
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: `Demasiados intentos. Intenta de nuevo en ${remainingSec} segundos.`,
+    });
+  }
+  
+  if (!entry || now >= entry.lockUntil) {
+    twoFaAttempts.set(userId, { count: 0, lockUntil: 0 });
+  }
+}
+
+function record2FAFailure(userId: number): void {
+  const entry = twoFaAttempts.get(userId) || { count: 0, lockUntil: 0 };
+  entry.count++;
+  if (entry.count >= TWO_FA_MAX_ATTEMPTS) {
+    entry.lockUntil = Date.now() + TWO_FA_LOCKOUT_MS;
+    entry.count = 0;
+    console.warn(`[Security] 2FA brute-force lockout for user ${userId}`);
+  }
+  twoFaAttempts.set(userId, entry);
+}
+
+function clear2FAAttempts(userId: number): void {
+  twoFaAttempts.delete(userId);
+}
+
 const securityRouter = router({
   // Obtener estado de 2FA
   get2FAStatus: protectedProcedure.query(async ({ ctx }) => {
@@ -4251,13 +4288,16 @@ const securityRouter = router({
   verify2FA: protectedProcedure
     .input(z.object({ token: z.string().length(6) }))
     .mutation(async ({ ctx, input }) => {
+      check2FALimit(ctx.user.id);
       const isValid = await verify2FAToken(ctx.user.id, input.token);
       if (!isValid) {
+        record2FAFailure(ctx.user.id);
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Código inválido. Verifica e intenta de nuevo.",
         });
       }
+      clear2FAAttempts(ctx.user.id);
       return { success: true, message: "2FA activado correctamente" };
     }),
 
@@ -4265,13 +4305,16 @@ const securityRouter = router({
   disable2FA: protectedProcedure
     .input(z.object({ token: z.string().length(6) }))
     .mutation(async ({ ctx, input }) => {
+      check2FALimit(ctx.user.id);
       const success = await disable2FA(ctx.user.id, input.token);
       if (!success) {
+        record2FAFailure(ctx.user.id);
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Código inválido. No se pudo desactivar 2FA.",
         });
       }
+      clear2FAAttempts(ctx.user.id);
       return { success: true, message: "2FA desactivado" };
     }),
 

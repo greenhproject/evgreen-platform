@@ -2929,3 +2929,11 @@
 ## Bug: Decimales excesivos en pantalla de carga (21-Abr-2026)
 - [x] "Objetivo: 89.76666666666668%" muestra demasiados decimales — corregido con Math.round()
 - [x] Corregido formateo en ChargingGauge.tsx, ChargingMonitor.tsx (targetPercentage, progressPercentage, badges, auto-stop messages)
+
+## Auditoría de Seguridad - Implementación de mejoras (21-Abr-2026)
+- [x] [ALTO] SQL Injection en getCrowdfundingProjects: whitelist de status en router + query parametrizada en db.ts
+- [x] [MEDIO] XSS en InfoWindow de mapa: función escapeHtml() aplicada a todos los campos interpolados
+- [x] [MEDIO] Webhook de pagos: firma obligatoria, rechaza con 503 si no hay eventsSecret configurado
+- [x] [MEDIO] Rate limiting en webhook/OCPP: rate limit separado de 600 req/min (antes era ilimitado)
+- [x] [MEDIO-BAJO] 2FA brute-force: 5 intentos máx por usuario, lockout de 5 minutos
+- [x] [BAJO] Cookie policy: sameSite "lax" en producción (HTTPS), "none" solo en desarrollo local
