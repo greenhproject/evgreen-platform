@@ -87,9 +87,30 @@ async function startServer() {
   // RATE LIMITING para API endpoints (protección contra brute force)
   // ============================================
   const apiRateLimits = new Map<string, { count: number; resetTime: number }>();
+  
+  // SEGURIDAD: Rate limit separado para webhook/OCPP (más permisivo pero existente)
+  const webhookRateLimits = new Map<string, { count: number; resetTime: number }>();
   app.use('/api/', (req, res, next) => {
-    // No limitar webhooks ni OCPP
-    if (req.path.includes('/webhook') || req.path.includes('/ocpp')) return next();
+    if (req.path.includes('/webhook') || req.path.includes('/ocpp')) {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const key = `wh:${ip}`;
+      const now = Date.now();
+      const windowMs = 60000; // 1 minuto
+      const maxRequests = 600; // 600 req/min para webhook/OCPP (operacional pero con límite)
+      
+      const entry = webhookRateLimits.get(key);
+      if (!entry || now > entry.resetTime) {
+        webhookRateLimits.set(key, { count: 1, resetTime: now + windowMs });
+      } else {
+        entry.count++;
+        if (entry.count > maxRequests) {
+          console.warn(`[Security] Rate limit exceeded for webhook/OCPP from IP: ${ip}`);
+          res.status(429).json({ error: 'Too many requests' });
+          return;
+        }
+      }
+      return next();
+    }
     
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const key = `${ip}:${req.path}`;

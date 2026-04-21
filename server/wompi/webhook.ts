@@ -23,17 +23,18 @@ export async function handleWompiWebhook(req: Request, res: Response) {
     // Obtener llaves de la BD para verificar firma
     const keys = await getWompiKeys();
 
-    // Verificar firma si tenemos events secret
-    if (keys?.eventsSecret) {
-      const isValid = verifyWebhookChecksum(event, keys.eventsSecret);
-      if (!isValid) {
-        console.error("[Wompi Webhook] Firma inválida - rechazando evento");
-        return res.status(401).json({ error: "Invalid signature" });
-      }
-      console.log("[Wompi Webhook] Firma verificada correctamente");
-    } else {
-      console.warn("[Wompi Webhook] Sin events secret - aceptando sin verificar firma");
+    // SEGURIDAD: Verificar firma obligatoriamente - rechazar si no hay eventsSecret
+    if (!keys?.eventsSecret) {
+      console.error("[Wompi Webhook] RECHAZADO: No hay events secret configurado - no se pueden verificar firmas");
+      return res.status(503).json({ error: "Webhook signature verification not configured" });
     }
+    
+    const isValid = verifyWebhookChecksum(event, keys.eventsSecret);
+    if (!isValid) {
+      console.error("[Wompi Webhook] Firma inválida - rechazando evento");
+      return res.status(401).json({ error: "Invalid signature" });
+    }
+    console.log("[Wompi Webhook] Firma verificada correctamente");
 
     // Manejar eventos de transacción
     if (event.event === "transaction.updated") {

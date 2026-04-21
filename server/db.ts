@@ -4226,6 +4226,9 @@ export interface CrowdfundingParticipation {
 }
 
 // Obtener todos los proyectos de crowdfunding (públicos)
+// SEGURIDAD: Whitelist de status válidos para prevenir SQL injection
+const VALID_CROWDFUNDING_STATUSES = ['ACTIVE', 'FUNDED', 'COMPLETED', 'CANCELLED', 'DRAFT'] as const;
+
 export async function getCrowdfundingProjects(options?: {
   status?: string;
   includePrivate?: boolean;
@@ -4234,6 +4237,11 @@ export async function getCrowdfundingProjects(options?: {
   if (!db) return [];
   
   try {
+    // Validar status contra whitelist para prevenir SQL injection
+    const sanitizedStatus = options?.status && VALID_CROWDFUNDING_STATUSES.includes(options.status as any)
+      ? options.status
+      : null;
+    
     let query = `
       SELECT 
         p.*,
@@ -4241,16 +4249,10 @@ export async function getCrowdfundingProjects(options?: {
       FROM crowdfunding_projects p
     `;
     
-    const conditions = [];
-    
-    if (options?.status) {
-      conditions.push(`p.status = '${options.status}'`);
+    if (sanitizedStatus) {
+      query += ` WHERE p.status = '${sanitizedStatus}'`;
     } else if (!options?.includePrivate) {
-      conditions.push(`p.status != 'DRAFT'`);
-    }
-    
-    if (conditions.length > 0) {
-      query += ` WHERE ${conditions.join(' AND ')}`;
+      query += ` WHERE p.status != 'DRAFT'`;
     }
     
     query += ` ORDER BY p.priority ASC, p.createdAt DESC`;
@@ -4271,14 +4273,14 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
   if (!db) return null;
   
   try {
-    const result = await db.execute(sql.raw(`
+    const result = await db.execute(sql`
       SELECT 
         p.*,
         (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
       FROM crowdfunding_projects p
       WHERE p.id = ${projectId}
       LIMIT 1
-    `));
+    `);
     
     const rows = (result as any)[0] as CrowdfundingProject[];
     const row = rows[0] || null;
