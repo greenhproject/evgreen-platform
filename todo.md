@@ -2925,3 +2925,7 @@
 - [x] Al seleccionar valor fijo de $50,000 como meta, la pantalla se actualiza y cambia a "carga total" perdiendo el modo valor fijo
 - [x] Causa: setManualSoc recreaba sesión en memoria con chargeMode hardcodeado a "full_charge" en vez de restaurar desde BD
 - [x] Corregido: ahora restaura chargeMode y targetValue desde activeTransaction en la BD
+
+## Bug: Decimales excesivos en pantalla de carga (21-Abr-2026)
+- [x] "Objetivo: 89.76666666666668%" muestra demasiados decimales — corregido con Math.round()
+- [x] Corregido formateo en ChargingGauge.tsx, ChargingMonitor.tsx (targetPercentage, progressPercentage, badges, auto-stop messages)

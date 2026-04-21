@@ -326,7 +326,7 @@ export default function ChargingMonitor() {
       const targetPct = session.targetPercentage || 100;
       if (currentProgress >= targetPct && currentProgress > 0) {
         shouldAutoStop = true;
-        reason = `🔋 ¡Batería al ${Math.round(currentProgress)}%! Objetivo de ${targetPct}% alcanzado.`;
+        reason = `🔋 ¡Batería al ${Math.round(currentProgress)}%! Objetivo de ${Math.round(targetPct)}% alcanzado.`;
       }
     }
     
@@ -427,6 +427,9 @@ export default function ChargingMonitor() {
   if (isNaN(progressPercentage)) progressPercentage = 0;
   progressPercentage = Math.min(100, Math.max(0, progressPercentage));
   
+  // Redondear progressPercentage para display limpio
+  progressPercentage = Math.round(progressPercentage * 10) / 10;
+  
   // Detectar cuando SoC alcanza el objetivo y mostrar toast
   const targetPercentage = chargeMode === "percentage" ? (session.targetPercentage || 100) : 100;
   
@@ -468,7 +471,7 @@ export default function ChargingMonitor() {
             {chargeMode === "fixed_amount" 
               ? `Meta: $${(session.targetAmount || 0).toLocaleString()}` 
               : chargeMode === "percentage" 
-                ? `Meta: ${session.targetPercentage || 100}%`
+                ? `Meta: ${Math.round(session.targetPercentage || 100)}%`
                 : "Carga completa"}
           </Badge>
         </div>
@@ -489,9 +492,9 @@ export default function ChargingMonitor() {
             percentage={progressPercentage}
             targetPercentage={
               chargeMode === "percentage" 
-                ? (session.targetPercentage || 100)
+                ? Math.round(session.targetPercentage || 100)
                 : chargeMode === "fixed_amount"
-                  ? Math.min(100, (session.startPercentage || 20) + ((session.estimatedKwh / 60) * 100))
+                  ? Math.round(Math.min(100, (session.startPercentage || 20) + ((session.estimatedKwh / 60) * 100)))
                   : 100
             }
             size={260}
