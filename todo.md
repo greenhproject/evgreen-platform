@@ -2937,3 +2937,11 @@
 - [x] [MEDIO] Rate limiting en webhook/OCPP: rate limit separado de 600 req/min (antes era ilimitado)
 - [x] [MEDIO-BAJO] 2FA brute-force: 5 intentos máx por usuario, lockout de 5 minutos
 - [x] [BAJO] Cookie policy: sameSite "lax" en producción (HTTPS), "none" solo en desarrollo local
+
+## Bug: Módulo Precisión de SoC no registra cargas - 25 Abril 2026
+
+- [x] Investigar por qué el módulo de Precisión de SoC muestra 0 cargas registradas
+- [x] Causa raíz: createSocAccuracyLog NO se llamaba en el handler StopTransaction de OCPP 1.6 en _core/index.ts
+- [x] Solo se llamaba desde charging-router.ts (cuando el usuario detiene desde la app), no cuando el cargador envía StopTransaction directamente
+- [x] Corrección: Agregada lógica completa de registro de SoC accuracy en StopTransaction de _core/index.ts (antes de limpiar sesión activa)
+- [x] Ahora registra: manualSocStart, batteryCapacity, realKwhDelivered, calculatedSocEnd, chargerSocEnd, detectionMethod, errores estimados
