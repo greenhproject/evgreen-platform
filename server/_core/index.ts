@@ -1330,6 +1330,62 @@ async function handleOCPP16Message(
         }
       }
       
+      // ============================================================
+      // REGISTRO DE PRECISIÓN DE SOC (antes de limpiar la sesión)
+      // Registra la comparación entre el SoC manual del usuario y los datos reales
+      // ============================================================
+      try {
+        const { getActiveSessionById } = await import("../charging/charging-router");
+        const activeSession = getActiveSessionById(transaction.id);
+        
+        // Obtener SoC manual: priorizar sesión en memoria, luego DB
+        const manualSocValue = activeSession?.manualSoc ?? (transaction as any).manualSoc ?? null;
+        const batteryCapKwh = activeSession?.manualBatteryCapacityKwh 
+          ?? ((transaction as any).manualBatteryCapacityKwh ? parseFloat(String((transaction as any).manualBatteryCapacityKwh)) : null);
+        
+        if (manualSocValue !== null && batteryCapKwh && batteryCapKwh > 0 && energyDelivered > 0) {
+          const calculatedSocEnd = Math.min(100, Math.round(manualSocValue + (energyDelivered / batteryCapKwh) * 100));
+          const chargerSocEnd = activeSession?.soc ?? null;
+          let estimatedErrorKwh: number | null = null;
+          let estimatedErrorSocPct: number | null = null;
+          if (chargerSocEnd !== null) {
+            estimatedErrorSocPct = calculatedSocEnd - chargerSocEnd;
+            estimatedErrorKwh = Math.round((estimatedErrorSocPct / 100) * batteryCapKwh * 10) / 10;
+          }
+          
+          // Obtener vehículo del usuario para vincular
+          let vehicleId: number | null = null;
+          try {
+            const defaultVehicle = await db.getDefaultVehicle(transaction.userId);
+            if (defaultVehicle) vehicleId = defaultVehicle.id;
+          } catch (e) { /* ignore */ }
+          
+          const detectionMethod = activeSession?.chargeCompleteDetected
+            ? (activeSession.soc !== null ? 'charger_soc' : 'power_drop')
+            : (payload.reason === 'Remote' ? 'target_reached' : 'user_stop');
+          
+          await db.createSocAccuracyLog({
+            userId: transaction.userId,
+            transactionId: transaction.id,
+            vehicleId,
+            manualSocStart: manualSocValue,
+            manualBatteryCapacityKwh: batteryCapKwh,
+            realKwhDelivered: Math.round(energyDelivered * 100) / 100,
+            calculatedSocEnd,
+            chargerSocEnd,
+            batteryFullDetected: activeSession?.chargeCompleteDetected ?? false,
+            detectionMethod,
+            estimatedErrorKwh,
+            estimatedErrorSocPct,
+          });
+          console.log(`[OCPP] StopTransaction - SoC accuracy logged: manual=${manualSocValue}%, calculated=${calculatedSocEnd}%, charger=${chargerSocEnd ?? 'N/A'}%, error=${estimatedErrorSocPct ?? 'N/A'}%`);
+        } else {
+          console.log(`[OCPP] StopTransaction - SoC accuracy NOT logged: manualSoc=${manualSocValue}, batteryCapKwh=${batteryCapKwh}, energyDelivered=${energyDelivered.toFixed(4)}`);
+        }
+      } catch (socErr) {
+        console.error(`[OCPP] Error logging SoC accuracy:`, socErr);
+      }
+      
       // Limpiar sesión activa de memoria
       const { removeActiveSession } = await import("../charging/charging-router");
       removeActiveSession(transaction.id);
