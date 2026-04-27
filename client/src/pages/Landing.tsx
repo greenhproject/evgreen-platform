@@ -30,8 +30,7 @@ import {
   LineChart,
   Bot,
   Lightbulb,
-  Target,
-  Download
+  Target
 } from "lucide-react";
 import { InstallButton } from "@/components/InstallBanner";
 
@@ -210,15 +209,7 @@ export default function Landing() {
                 <MapPin className="w-5 h-5 ml-2" />
               </Button>
               <InstallButton className="px-8 py-6 text-lg" />
-              <Button
-                size="lg"
-                variant="outline"
-                className="px-8 py-6 text-lg rounded-xl border-2 border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300 gap-2"
-                onClick={() => window.open('https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/cBOZMdXRBRVmAOjm.apk', '_blank')}
-              >
-                <Download className="w-5 h-5" />
-                Descargar APK
-              </Button>
+
             </motion.div>
 
             {/* Stats */}
