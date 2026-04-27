@@ -2945,3 +2945,11 @@
 - [x] Solo se llamaba desde charging-router.ts (cuando el usuario detiene desde la app), no cuando el cargador envía StopTransaction directamente
 - [x] Corrección: Agregada lógica completa de registro de SoC accuracy en StopTransaction de _core/index.ts (antes de limpiar sesión activa)
 - [x] Ahora registra: manualSocStart, batteryCapacity, realKwhDelivered, calculatedSocEnd, chargerSocEnd, detectionMethod, errores estimados
+
+## Rediseño Splash Screen - 26 Abril 2026
+- [x] Eliminar fondo blanco cuadrado del logo en splash screen (iconos convertidos a fondo transparente)
+- [x] Rediseñar splash screen completo con estética futurista y tecnológica
+- [x] Nuevo splash: anillo de energía cónico, órbita con partícula luminosa, grid tecnológico, estrellas, glow pulsante
+- [x] Logo circular sin puntas blancas (splash-logo.png con transparencia)
+- [x] Conservar banner publicitario/informativo
+- [x] Mantener línea de diseño EVGreen (verde, oscuro, eléctrico)
