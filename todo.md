@@ -2953,3 +2953,9 @@
 - [x] Logo circular sin puntas blancas (splash-logo.png con transparencia)
 - [x] Conservar banner publicitario/informativo
 - [x] Mantener línea de diseño EVGreen (verde, oscuro, eléctrico)
+
+## Bug Fixes
+- [x] Fix: WebSocket aparece CLOSED cuando cargador está en grace period (reconectando tras proxy cycling)
+  - Backend: getChargerDetail ahora usa connection-manager con grace period para mostrar estado real
+  - Backend: getRegisteredChargers ahora incluye fallback a connection-manager para estaciones en grace period
+  - Frontend: Badge muestra "Reconectando" (amarillo pulsante) en lugar de "Desconectado" durante grace period
