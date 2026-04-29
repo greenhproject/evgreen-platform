@@ -562,7 +562,9 @@ function ChargerDetailView({
               <Zap className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
               <span className="break-all">{station?.name || ocppIdentity}</span>
               {isConnected ? (
-                conn?.wsReadyState === 1 ? (
+                conn?.isReconnecting ? (
+                  <Badge className="bg-yellow-500 text-white animate-pulse">Reconectando</Badge>
+                ) : conn?.wsReadyState === 1 ? (
                   <Badge className="bg-green-500 text-white">Conectado</Badge>
                 ) : (
                   <Badge className="bg-yellow-500 text-white">Degradado</Badge>
@@ -587,7 +589,10 @@ function ChargerDetailView({
         <Card>
           <CardContent className="pt-4 pb-3 text-center">
             <p className="text-xs text-muted-foreground">WebSocket</p>
-            <Badge variant={conn?.wsReadyState === 1 ? "default" : "destructive"} className="mt-1">
+            <Badge 
+              variant={conn?.wsReadyState === 1 ? "default" : conn?.isReconnecting ? "outline" : "destructive"} 
+              className={`mt-1 ${conn?.isReconnecting ? 'border-yellow-500 text-yellow-500 animate-pulse' : ''}`}
+            >
               {conn?.wsReadyStateLabel || 'CLOSED'}
             </Badge>
           </CardContent>

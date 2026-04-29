@@ -191,6 +191,14 @@ export const ocppRouter = router({
         diagMap.set(diag.ocppIdentity, diag);
       }
       
+      // 2b. Obtener estados del connection-manager (incluye grace period)
+      // Esto cubre el caso donde dualCSMS eliminó la conexión pero el cargador está reconectando
+      const cmConnections = ocppManager.getAllConnections();
+      const cmMap = new Map<string, any>();
+      for (const conn of cmConnections) {
+        cmMap.set(conn.ocppIdentity, conn);
+      }
+      
       // 3. Obtener última actividad de logs para cada estación (fallback si no hay WS)
       const recentActivityMap = new Map<string, { lastLogAt: Date; lastAction: string }>();
       for (const station of stations) {
@@ -225,13 +233,17 @@ export const ocppRouter = router({
           
           // Determinar estado de conexión:
           // 1. WebSocket activo en dualCSMS = conectado (fuente principal)
-          // 2. Log reciente < 5 minutos = probablemente conectado (fallback)
-          // 3. isOnline en BD = último estado conocido
+          // 2. Connection-manager en grace period = reconectando (cubre proxy cycling)
+          // 3. Log reciente < 5 minutos = probablemente conectado (fallback)
+          // 4. isOnline en BD = último estado conocido
           const hasActiveWs = !!wsConn;
+          const cmConn = cmMap.get(ocppId);
+          const isInGrace = ocppManager.isInGracePeriod(ocppId);
           const hasRecentLog = recentActivity 
             ? (Date.now() - recentActivity.lastLogAt.getTime()) < 5 * 60 * 1000 
             : false;
-          const isConnected = hasActiveWs || hasRecentLog;
+          const isConnected = hasActiveWs || isInGrace || hasRecentLog;
+          const isReconnecting = !hasActiveWs && isInGrace;
           
           return {
             id: station.id,
@@ -245,16 +257,17 @@ export const ocppRouter = router({
             isOnline: station.isOnline,
             // Estado de conexión
             isConnected,
-            connectionSource: hasActiveWs ? "websocket" : hasRecentLog ? "recent_log" : "none",
-            // Datos de WebSocket (si hay conexión activa)
-            ocppVersion: wsConn?.ocppVersion || null,
-            connectedAt: wsConn?.connectedAt?.toISOString() || null,
-            lastHeartbeat: wsConn?.lastHeartbeat?.toISOString() || null,
+            isReconnecting,
+            connectionSource: hasActiveWs ? "websocket" : isInGrace ? "grace_period" : hasRecentLog ? "recent_log" : "none",
+            // Datos de WebSocket (si hay conexión activa o en grace period)
+            ocppVersion: wsConn?.ocppVersion || cmConn?.ocppVersion || null,
+            connectedAt: wsConn?.connectedAt?.toISOString() || cmConn?.connectedAt || null,
+            lastHeartbeat: wsConn?.lastHeartbeat?.toISOString() || cmConn?.lastHeartbeat || null,
             // Datos de diagnóstico
-            wsReadyState: diag?.wsReadyState ?? null,
-            uptimeSeconds: diag?.uptimeSeconds ?? null,
+            wsReadyState: diag?.wsReadyState ?? (isInGrace ? 0 : null),
+            uptimeSeconds: diag?.uptimeSeconds ?? (cmConn ? Math.floor((Date.now() - new Date(cmConn.connectedAt).getTime()) / 1000) : null),
             pendingCallsCount: diag?.pendingCallsCount ?? 0,
-            isHealthy: diag?.isHealthy ?? false,
+            isHealthy: diag?.isHealthy ?? isInGrace,
             // Última actividad de logs
             lastActivity: recentActivity?.lastLogAt?.toISOString() || station.lastBootNotification?.toISOString() || null,
             lastAction: recentActivity?.lastAction || null,
@@ -721,6 +734,10 @@ export const ocppRouter = router({
       const liveConn = ocppManager.getConnection(input.ocppIdentity);
       const liveConnInfo = ocppManager.getAllConnections().find(c => c.ocppIdentity === input.ocppIdentity);
       
+      // Verificar si está en grace period (reconectando tras cierre cíclico del proxy)
+      const inGracePeriod = ocppManager.isInGracePeriod(input.ocppIdentity);
+      const persistentState = ocppManager.getPersistentState(input.ocppIdentity);
+      
       // Datos de BD
       const station = await db.getChargingStationByOcppIdentity(input.ocppIdentity);
       const evses = station ? await db.getEvsesByStationId(station.id) : [];
@@ -733,24 +750,49 @@ export const ocppRouter = router({
       });
       
       // Calcular campos derivados para el frontend
-      const wsReadyState = liveConn ? liveConn.ws.readyState : 3;
+      // Si hay conexión activa, usar su readyState; si está en grace period, mostrar como RECONNECTING (no CLOSED)
+      const wsReadyState = liveConn ? liveConn.ws.readyState : (inGracePeriod ? 0 : 3);
       const wsReadyStateLabels: Record<number, string> = { 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED' };
+      const wsLabel = liveConn 
+        ? (wsReadyStateLabels[liveConn.ws.readyState] || 'UNKNOWN')
+        : (inGracePeriod ? 'RECONNECTING' : 'CLOSED');
       const now = Date.now();
-      const connectedAtMs = liveConnInfo ? new Date(liveConnInfo.connectedAt).getTime() : 0;
-      const lastHeartbeatMs = liveConnInfo ? new Date(liveConnInfo.lastHeartbeat).getTime() : 0;
       
-      const enrichedConnection = liveConnInfo ? {
-        ...liveConnInfo,
+      // Usar datos del estado persistente cuando está en grace period
+      const effectiveConnInfo = liveConnInfo || (persistentState ? {
+        ocppIdentity: persistentState.ocppIdentity,
+        ocppVersion: persistentState.ocppVersion,
+        stationId: persistentState.stationId,
+        connectedAt: persistentState.originalConnectedAt.toISOString(),
+        lastHeartbeat: persistentState.lastHeartbeat.toISOString(),
+        lastMessage: persistentState.lastMessage.toISOString(),
+        connectorStatuses: Object.fromEntries(persistentState.connectorStatuses),
+        bootInfo: persistentState.bootInfo,
+        isConnected: false,
+        seamlessReconnections: persistentState.seamlessReconnections,
+        lastSeamlessReconnect: persistentState.lastSeamlessReconnect?.toISOString() || null,
+      } : null);
+      
+      const connectedAtMs = effectiveConnInfo ? new Date(effectiveConnInfo.connectedAt).getTime() : 0;
+      const lastHeartbeatMs = effectiveConnInfo ? new Date(effectiveConnInfo.lastHeartbeat).getTime() : 0;
+      
+      const enrichedConnection = effectiveConnInfo ? {
+        ...effectiveConnInfo,
         wsReadyState,
-        wsReadyStateLabel: wsReadyStateLabels[wsReadyState] || 'UNKNOWN',
+        wsReadyStateLabel: wsLabel,
         uptimeSeconds: Math.floor((now - connectedAtMs) / 1000),
         heartbeatAgeSeconds: lastHeartbeatMs > 0 ? Math.floor((now - lastHeartbeatMs) / 1000) : -1,
-        pendingCallsCount: 0, // El connection-manager no trackea pending calls
+        pendingCallsCount: 0,
+        isReconnecting: inGracePeriod,
       } : null;
+      
+      // isConnected: true si hay WS activo O si está en grace period (reconectando)
+      const effectivelyConnected = (!!liveConn && liveConn.ws.readyState === 1) || inGracePeriod;
       
       return {
         ocppIdentity: input.ocppIdentity,
-        isConnected: !!liveConn && liveConn.ws.readyState === 1,
+        isConnected: effectivelyConnected,
+        isReconnecting: inGracePeriod,
         // Datos de conexión en tiempo real con campos calculados
         connection: enrichedConnection,
         // Datos de BD
