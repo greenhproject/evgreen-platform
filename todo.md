@@ -2959,3 +2959,6 @@
   - Backend: getChargerDetail ahora usa connection-manager con grace period para mostrar estado real
   - Backend: getRegisteredChargers ahora incluye fallback a connection-manager para estaciones en grace period
   - Frontend: Badge muestra "Reconectando" (amarillo pulsante) en lugar de "Desconectado" durante grace period
+- [x] Fix: Mapa público muestra estaciones como "en línea" cuando están desconectadas según Monitor OCPP
+  - Backend: listPublic ahora verifica estado real OCPP via connection-manager (getConnection + isInGracePeriod) en vez de usar campo stale isOnline de BD
+  - Test: 5 tests verifican consistencia entre mapa público y Monitor OCPP

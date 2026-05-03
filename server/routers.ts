@@ -402,6 +402,7 @@ const stationsRouter = router({
       
       // Agregar tarifa activa y EVSEs a cada estación
       const { isDemoStation } = await import("./charging/charging-simulator");
+      const ocppManager = await import("./ocpp/connection-manager");
       const stationsWithData = await Promise.all(
         stations.map(async (station: any) => {
           const tariff = await db.getActiveTariffByStationId(station.id);
@@ -409,12 +410,29 @@ const stationsRouter = router({
           const effectivePrice = await db.getEffectiveStationPrice(station.id);
           
           // Verificar si es estación demo para forzar online y conectores AVAILABLE
-          // Pero respetar el estado RESERVED si hay reservas activas
           const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
+          
+          // Determinar estado online real usando connection-manager (fuente de verdad)
+          // Prioridad: 1) Conexión activa en connection-manager, 2) Grace period (reconectando), 3) BD como fallback
+          let realIsOnline = station.isOnline;
+          if (!isDemo && station.ocppIdentity) {
+            const liveConn = ocppManager.getConnection(station.ocppIdentity);
+            const inGracePeriod = ocppManager.isInGracePeriod(station.ocppIdentity);
+            if (liveConn && liveConn.ws.readyState === 1) {
+              // WebSocket activo = online
+              realIsOnline = true;
+            } else if (inGracePeriod) {
+              // En grace period = reconectando, mostrar como online para no confundir usuarios
+              realIsOnline = true;
+            } else if (liveConn === undefined && !inGracePeriod) {
+              // Sin conexión activa y sin grace period = realmente offline
+              realIsOnline = false;
+            }
+          }
           
           return {
             ...station,
-            isOnline: isDemo ? true : station.isOnline,
+            isOnline: isDemo ? true : realIsOnline,
             evses: isDemo ? evses.map((e: any) => ({ 
               ...e, 
               status: e.status === 'RESERVED' ? 'RESERVED' : 'AVAILABLE' 
