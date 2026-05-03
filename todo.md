@@ -2962,3 +2962,10 @@
 - [x] Fix: Mapa público muestra estaciones como "en línea" cuando están desconectadas según Monitor OCPP
   - Backend: listPublic ahora verifica estado real OCPP via connection-manager (getConnection + isInGracePeriod) en vez de usar campo stale isOnline de BD
   - Test: 5 tests verifican consistencia entre mapa público y Monitor OCPP
+
+## Bug: Columna "Última conexión" muestra "Nunca" para todas las estaciones (3-May-2026)
+- [x] La tabla de Estaciones muestra "Nunca" en la columna "Última conexión" incluso para estaciones conectadas
+- [x] Causa raíz: endpoint listAll no enriquecía estaciones con datos OCPP (lastHeartbeat). El campo lastHeartbeat no existía en el schema de BD, solo lastBootNotification
+- [x] Fix backend: listAll ahora obtiene conexiones OCPP activas de dualCSMS y agrega lastHeartbeat (prioridad: OCPP heartbeat > lastBootNotification)
+- [x] Fix frontend: columna usa prioridad lastHeartbeat del backend > connInfo OCPP > lastBootNotification
+- [x] Verificado: Livoltek MF120 muestra fecha real, EVG001 muestra fecha real, estaciones sin conexión muestran "Nunca" correctamente

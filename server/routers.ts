@@ -453,11 +453,28 @@ const stationsRouter = router({
   // Admin/Técnico: listar todas las estaciones
   listAll: technicianProcedure.query(async () => {
     const stations = await db.getAllChargingStations();
-    // Agregar evses a cada estación
+    // Obtener conexiones OCPP activas para enriquecer con lastHeartbeat
+    const csmsConnections = dualCSMS.getConnectionsStatus();
+    const csmsMap = new Map<string, any>();
+    for (const conn of csmsConnections) {
+      csmsMap.set(conn.ocppIdentity, conn);
+    }
+    // Agregar evses y datos de conexión OCPP a cada estación
     const stationsWithEvses = await Promise.all(
       stations.map(async (station: any) => {
         const evses = await db.getEvsesByStationId(station.id);
-        return { ...station, evses };
+        const ocppId = station.ocppIdentity || station.id?.toString();
+        const ocppConn = csmsMap.get(ocppId);
+        return {
+          ...station,
+          evses,
+          // Última actividad OCPP: heartbeat > bootNotification > null
+          lastHeartbeat: ocppConn?.lastHeartbeat
+            ? (ocppConn.lastHeartbeat instanceof Date ? ocppConn.lastHeartbeat.toISOString() : String(ocppConn.lastHeartbeat))
+            : (station.lastBootNotification
+              ? (station.lastBootNotification instanceof Date ? station.lastBootNotification.toISOString() : String(station.lastBootNotification))
+              : null),
+        };
       })
     );
     return stationsWithEvses;

@@ -1692,9 +1692,17 @@ export default function AdminStations() {
                   </TableCell>
                   <TableCell>{getStatusBadge(station)}</TableCell>
                   <TableCell>
-                    {(station as any).lastHeartbeat
-                      ? new Date((station as any).lastHeartbeat).toLocaleString("es-CO")
-                      : "Nunca"}
+                    {(() => {
+                      // Prioridad: 1) lastHeartbeat del backend (OCPP real), 2) connInfo del query OCPP, 3) lastBootNotification
+                      const connInfo = getOCPPConnectionInfo(station);
+                      const lastActivity = (station as any).lastHeartbeat
+                        || connInfo?.lastHeartbeat
+                        || connInfo?.lastMessage
+                        || (station as any).lastBootNotification;
+                      return lastActivity
+                        ? new Date(lastActivity).toLocaleString("es-CO")
+                        : "Nunca";
+                    })()}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
