@@ -129,6 +129,7 @@ export default function TechnicianSupport() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los estados</SelectItem>
+              <SelectItem value="AI_HANDLING">IA atendiendo</SelectItem>
               <SelectItem value="WAITING_AGENT">Esperando agente</SelectItem>
               <SelectItem value="ASSIGNED">Asignados</SelectItem>
               <SelectItem value="OPEN">Abiertos</SelectItem>
@@ -217,7 +218,7 @@ function TicketList({ tab, search, statusFilter, selectedId, onSelect }: {
   // Filter by tab
   if (tab === "pending") {
     tickets = tickets.filter((t: any) =>
-      ["WAITING_AGENT", "OPEN", "ASSIGNED", "IN_PROGRESS"].includes(t.status)
+      ["AI_HANDLING", "WAITING_AGENT", "OPEN", "ASSIGNED", "IN_PROGRESS"].includes(t.status)
     );
   } else if (tab === "resolved") {
     tickets = tickets.filter((t: any) =>
