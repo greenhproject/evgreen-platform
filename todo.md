@@ -3006,3 +3006,9 @@
 - [x] Fix backend: getActiveConnections resuelve stationId desde BD por ocppIdentity + agrega connectorStatuses
 - [x] Fix frontend Dashboard: isStationConnected() hace match por stationId O ocppIdentity, lista cargadores usa campos correctos
 - [x] Fix frontend Stations: columna último heartbeat usa fallback station.lastHeartbeat > lastBootNotification
+
+## Fix Responsive: Mis Tickets del técnico (3-May-2026)
+- [x] Contenido se desborda horizontalmente en móvil (overflow-x-hidden + padding reducido)
+- [x] Tabla se corta: columnas ID/Prioridad ocultas en <sm, Estación/Creado ocultas en <lg, título truncado
+- [x] Título y subtítulo: padding reducido, tamaños responsivos, botón shrink-0
+- [x] Tabs: w-full en móvil, flex-1 para distribuir, texto abreviado "Mant." en móvil
