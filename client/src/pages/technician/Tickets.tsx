@@ -399,41 +399,43 @@ export default function TechnicianTickets() {
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+    <div className="p-3 sm:p-6 space-y-3 sm:space-y-6 overflow-x-hidden">
       {/* Hidden file input */}
       <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={onFileSelected} />
 
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Mis Tickets</h1>
-          <p className="text-muted-foreground text-sm">Gestiona todos tus tickets asignados</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold">Mis Tickets</h1>
+          <p className="text-muted-foreground text-xs sm:text-sm">Gestiona todos tus tickets asignados</p>
         </div>
-        <Button className="gradient-primary" onClick={() => setIsCreateOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Nuevo ticket
+        <Button className="gradient-primary shrink-0" size="sm" onClick={() => setIsCreateOpen(true)}>
+          <Plus className="w-4 h-4 mr-1" />
+          <span className="hidden sm:inline">Nuevo ticket</span>
+          <span className="sm:hidden">Nuevo</span>
         </Button>
       </div>
 
       {/* Tabs: Todos / Mantenimiento / Soporte */}
       <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as any); setStatusFilter("all"); }}>
-        <TabsList>
-          <TabsTrigger value="all" className="gap-2">
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="all" className="gap-1 text-xs sm:text-sm flex-1 sm:flex-none">
             Todos
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-1">
+            <Badge variant="outline" className="text-[10px] px-1 py-0">
               {maintenanceCount + supportCount}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="maintenance" className="gap-2">
-            <Wrench className="w-3.5 h-3.5" />
-            Mantenimiento
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-1">
+          <TabsTrigger value="maintenance" className="gap-1 text-xs sm:text-sm flex-1 sm:flex-none">
+            <Wrench className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            <span className="hidden sm:inline">Mantenimiento</span>
+            <span className="sm:hidden">Mant.</span>
+            <Badge variant="outline" className="text-[10px] px-1 py-0">
               {maintenanceCount}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="support" className="gap-2">
-            <Headphones className="w-3.5 h-3.5" />
+          <TabsTrigger value="support" className="gap-1 text-xs sm:text-sm flex-1 sm:flex-none">
+            <Headphones className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             Soporte
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-1">
+            <Badge variant="outline" className="text-[10px] px-1 py-0">
               {supportCount}
             </Badge>
           </TabsTrigger>
@@ -441,14 +443,14 @@ export default function TechnicianTickets() {
       </Tabs>
 
       {/* Filtros */}
-      <Card className="p-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
+      <Card className="p-3 sm:p-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input placeholder="Buscar por título, estación o usuario..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-52"><SelectValue placeholder="Estado" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-52"><SelectValue placeholder="Estado" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los estados</SelectItem>
               {getStatusOptions().map(opt => (
@@ -460,18 +462,18 @@ export default function TechnicianTickets() {
       </Card>
 
       {/* Tabla unificada */}
-      <Card>
-        <Table>
+      <Card className="overflow-x-auto">
+        <Table className="min-w-0">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-16">Tipo</TableHead>
-              <TableHead>ID</TableHead>
+              <TableHead className="w-14">Tipo</TableHead>
+              <TableHead className="hidden sm:table-cell">ID</TableHead>
               <TableHead>Título</TableHead>
-              <TableHead className="hidden md:table-cell">Estación / Usuario</TableHead>
-              <TableHead>Prioridad</TableHead>
+              <TableHead className="hidden lg:table-cell">Estación / Usuario</TableHead>
+              <TableHead className="hidden sm:table-cell">Prioridad</TableHead>
               <TableHead>Estado</TableHead>
-              <TableHead className="hidden md:table-cell">Creado</TableHead>
-              <TableHead></TableHead>
+              <TableHead className="hidden lg:table-cell">Creado</TableHead>
+              <TableHead className="w-10"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -505,12 +507,12 @@ export default function TechnicianTickets() {
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="font-mono text-sm">#{ticket.id}</TableCell>
+                  <TableCell className="hidden sm:table-cell font-mono text-xs sm:text-sm">#{ticket.id}</TableCell>
                   <TableCell>
-                    <div className="font-medium text-sm">{ticket._title}</div>
-                    {ticket._category && <span className="text-xs text-muted-foreground">{getCategoryLabel(ticket._category)}</span>}
+                    <div className="font-medium text-xs sm:text-sm truncate max-w-[140px] sm:max-w-none">{ticket._title}</div>
+                    {ticket._category && <span className="text-[10px] sm:text-xs text-muted-foreground">{getCategoryLabel(ticket._category)}</span>}
                   </TableCell>
-                  <TableCell className="hidden md:table-cell">
+                  <TableCell className="hidden lg:table-cell">
                     {ticket._type === "maintenance" ? (
                       <span className="text-sm flex items-center gap-1">
                         <MapPin className="w-3 h-3 text-muted-foreground" />
@@ -523,23 +525,19 @@ export default function TechnicianTickets() {
                       </span>
                     )}
                   </TableCell>
-                  <TableCell>{getPriorityBadge(ticket._priority)}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{getPriorityBadge(ticket._priority)}</TableCell>
                   <TableCell>
                     {ticket._type === "maintenance"
                       ? getMaintenanceStatusBadge(ticket._status)
                       : getSupportStatusBadge(ticket._status)
                     }
                   </TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                  <TableCell className="hidden lg:table-cell text-xs sm:text-sm text-muted-foreground">
                     {new Date(ticket._createdAt).toLocaleDateString("es-CO")}
                   </TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openDetail(ticket.id, ticket._type); }}>
-                      {ticket._type === "support" ? (
-                        <>Chat <ChevronRight className="w-4 h-4 ml-1" /></>
-                      ) : (
-                        <>Ver <ChevronRight className="w-4 h-4 ml-1" /></>
-                      )}
+                  <TableCell className="p-1 sm:p-2">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openDetail(ticket.id, ticket._type); }}>
+                      <ChevronRight className="w-4 h-4" />
                     </Button>
                   </TableCell>
                 </TableRow>
