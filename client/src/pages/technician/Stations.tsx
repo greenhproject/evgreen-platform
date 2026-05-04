@@ -970,9 +970,15 @@ export default function TechnicianStations() {
                     </TableCell>
                     <TableCell>{getStatusBadge(station)}</TableCell>
                     <TableCell>
-                      {connInfo?.lastHeartbeat 
-                        ? new Date(connInfo.lastHeartbeat).toLocaleString("es-CO")
-                        : "Sin conexión"}
+                      {(() => {
+                        const lastActivity = connInfo?.lastHeartbeat
+                          || connInfo?.lastMessage
+                          || (station as any).lastHeartbeat
+                          || (station as any).lastBootNotification;
+                        return lastActivity
+                          ? new Date(lastActivity).toLocaleString("es-CO")
+                          : "Sin conexión";
+                      })()}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1">

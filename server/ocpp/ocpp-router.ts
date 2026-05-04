@@ -38,6 +38,13 @@ export const ocppRouter = router({
     // Fuente terciaria: conexiones inferidas de logs de BD (persistente)
     const dbConnections = await db.getActiveConnectionsFromLogs();
     
+    // Pre-cargar todas las estaciones para resolver stationId por ocppIdentity
+    const allStations = await db.getAllChargingStations();
+    const stationByOcppId = new Map<string, number>();
+    for (const s of allStations) {
+      if (s.ocppIdentity) stationByOcppId.set(s.ocppIdentity, s.id);
+    }
+    
     // Combinar: dualCSMS > legacy > BD
     const connectionMap = new Map<string, any>();
     
@@ -52,15 +59,26 @@ export const ocppRouter = router({
     }
     
     // Finalmente dualCSMS (mayor prioridad, fuente real)
+    // Obtener connector statuses del connection-manager para cada conexión
     for (const conn of csmsConnections) {
+      // Resolver stationId desde BD si es null
+      const resolvedStationId = conn.stationId ?? stationByOcppId.get(conn.ocppIdentity) ?? null;
+      // Obtener estados de conectores desde connection-manager
+      const liveConn = ocppManager.getConnection(conn.ocppIdentity);
+      const connectorStatuses: Record<string, string> = {};
+      if (liveConn?.connectorStatuses) {
+        for (const [k, v] of Object.entries(liveConn.connectorStatuses)) {
+          connectorStatuses[k] = v as string;
+        }
+      }
       connectionMap.set(conn.ocppIdentity, {
         ocppIdentity: conn.ocppIdentity,
         ocppVersion: conn.ocppVersion,
-        stationId: conn.stationId,
+        stationId: resolvedStationId,
         connectedAt: conn.connectedAt.toISOString(),
         lastHeartbeat: conn.lastHeartbeat.toISOString(),
         lastMessage: conn.lastHeartbeat.toISOString(),
-        connectorStatuses: {},
+        connectorStatuses,
         isConnected: true, // Si está en dualCSMS, está conectado
       });
     }
