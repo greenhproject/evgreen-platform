@@ -2977,3 +2977,10 @@
   1. Al conectar un cargador (pre-resolve stationId) - línea ~606
   2. Al confirmar reconexion seamless (grace period) - línea ~862
 - [x] Tests: 16 tests pasan (4 nuevos para auto-resolución)
+
+## Bug: Bandeja de Soporte muestra "2 sin leer" pero no lista los tickets (3-May-2026)
+- [x] La bandeja de soporte muestra "2 sin leer" pero la lista de tickets está vacía
+- [x] Tickets creados por usuarios no aparecen en la vista de soporte del técnico/ingeniero
+- [x] Causa raíz: listAll excluía tickets AI_HANDLING por defecto, pero adminUnreadCount contaba mensajes de TODOS los tickets
+- [x] Fix backend: listAll ahora muestra TODOS los tickets (excludeAiHandling: false) para control total del técnico
+- [x] Fix frontend: tab "Pendientes" ahora incluye AI_HANDLING + filtro de estado incluye opción "IA atendiendo"

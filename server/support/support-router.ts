@@ -769,10 +769,11 @@ export const supportRouterV2 = router({
       // Auto-register technician as support agent on first access
       await supportDb.ensureAgentRegistered(ctx.user.id);
       
+      // Show ALL tickets including AI_HANDLING for full control
       return supportDb.getAllTickets({
         status: input?.status,
         category: input?.category,
-        excludeAiHandling: !input?.includeAiHandling,
+        excludeAiHandling: false,
       });
     }),
 
