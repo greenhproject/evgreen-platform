@@ -3012,3 +3012,20 @@
 - [x] Tabla se corta: columnas ID/Prioridad ocultas en <sm, Estación/Creado ocultas en <lg, título truncado
 - [x] Título y subtítulo: padding reducido, tamaños responsivos, botón shrink-0
 - [x] Tabs: w-full en móvil, flex-1 para distribuir, texto abreviado "Mant." en móvil
+
+
+## Unificación CSMS y Corrección de Alertas Falsas de Desconexión (2026-05-04)
+
+### Problema
+- El sistema genera alertas falsas de desconexión cuando Railway recicla el proxy WebSocket (Proxy Cycle)
+- Las reconexiones son transparentes (0s de duración) pero generan notificaciones al owner, emails y push a técnicos
+- Hay duplicación de lógica de desconexión entre index.ts, connection-manager.ts y csms-dual.ts
+
+### Tareas
+- [x] Auditar flujo completo de desconexión para identificar fuente exacta de alertas falsas
+- [x] Eliminar handleDisconnection duplicado de csms-dual.ts (solo index.ts + connection-manager deben manejar desconexiones)
+- [x] Asegurar que removeExternalConnection de csms-dual NO dispare alertas ni grace periods propios
+- [x] Mejorar filtrado: NO generar alertas si la reconexión ocurre dentro del grace period
+- [x] Verificar que notifyOwner y notifyTechniciansOfAlert solo se llamen para desconexiones REALES
+- [x] Tests para validar que Proxy Cycle no genera alertas (18 tests passing)
+- [ ] Checkpoint y push a GitHub

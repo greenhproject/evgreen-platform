@@ -15,7 +15,7 @@ import * as db from "../db";
 import { nanoid } from "nanoid";
 import { findPendingSessionByOcppIdentity, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
 import { sendChargingCompleteNotification } from "../firebase/fcm";
-import * as alertsService from "./alerts-service";
+// alertsService ya no se usa directamente aquí — las alertas se manejan en index.ts
 import mysql from "mysql2/promise";
 
 // BUILD VERSION para diagnóstico de deploys
@@ -2316,6 +2316,16 @@ export class DualCSMS {
   // DISCONNECTION HANDLING
   // ============================================================================
 
+  /**
+   * Maneja desconexión de un cargador conectado directamente al WSS del dualCSMS.
+   * 
+   * NOTA: Este handler solo se ejecuta para conexiones directas al WSS del dualCSMS
+   * (cuando se llama dualCSMS.start()). Para conexiones externas (bridge desde index.ts),
+   * la desconexión se maneja en index.ts + connection-manager.
+   * 
+   * Las alertas y grace periods son responsabilidad EXCLUSIVA de index.ts + connection-manager.
+   * Este handler solo limpia el estado interno del dualCSMS (pendingCalls, conexión del mapa).
+   */
   private async handleDisconnection(ocppIdentity: string): Promise<void> {
     const conn = this.connections.get(ocppIdentity);
     
@@ -2337,55 +2347,20 @@ export class DualCSMS {
     // Eliminar la conexión del mapa inmediatamente
     this.connections.delete(ocppIdentity);
 
-    await db.createOcppLog({
-      ocppIdentity,
-      stationId: conn?.stationId,
-      direction: "IN",
-      messageType: "DISCONNECTION",
-      payload: {},
-    });
-
-    // En lugar de marcar offline inmediatamente, usar grace period
-    // Esto permite que el cargador se reconecte sin parpadeo de estado
-    if (conn?.stationId) {
-      console.log(`[CSMS-DUAL] Starting ${DualCSMS.GRACE_PERIOD_MS / 1000}s grace period for: ${ocppIdentity}`);
-      
-      const graceTimeout = setTimeout(async () => {
-        // Verificar si el cargador se reconectó durante el grace period
-        const currentConn = this.connections.get(ocppIdentity);
-        if (!currentConn) {
-          // No se reconectó, ahora sí marcar como offline
-          console.log(`[CSMS-DUAL] Grace period expired, marking offline: ${ocppIdentity}`);
-          await db.updateStationOnlineStatus(ocppIdentity, false);
-          
-          // Generar alerta de desconexión SOLO después del grace period (desconexión real confirmada)
-          alertsService.handleDisconnection(ocppIdentity, conn.stationId ?? undefined)
-            .catch(err => console.error("[CSMS-DUAL] Error sending disconnect alert:", err));
-          
-          // Actualizar estado de conectores a UNAVAILABLE (excepto los que tienen reserva activa)
-          try {
-            const evses = await db.getEvsesByStationId(conn.stationId!);
-            for (const evse of evses) {
-              const activeRes = await db.getActiveReservation(evse.id);
-              if (!activeRes) {
-                await db.updateEvseStatus(evse.id, "UNAVAILABLE");
-              } else {
-                // Mantener RESERVED para EVSEs con reservas activas
-                await db.updateEvseStatus(evse.id, "RESERVED");
-                console.log(`[CSMS-DUAL] Disconnect: Keeping EVSE ${evse.id} as RESERVED - has active reservation #${activeRes.id}`);
-              }
-            }
-          } catch (err) {
-            console.error(`[CSMS-DUAL] Error updating EVSE status on disconnect:`, err);
-          }
-        } else {
-          console.log(`[CSMS-DUAL] Charger reconnected during grace period: ${ocppIdentity}`);
-        }
-        this.reconnectionGrace.delete(ocppIdentity);
-      }, DualCSMS.GRACE_PERIOD_MS);
-      
-      this.reconnectionGrace.set(ocppIdentity, graceTimeout);
+    // Log de desconexión para auditoría (sin generar alertas — eso lo hace index.ts)
+    try {
+      await db.createOcppLog({
+        ocppIdentity,
+        stationId: conn?.stationId,
+        direction: "IN",
+        messageType: "DISCONNECTION",
+        payload: { source: "csms-dual-direct" },
+      });
+    } catch (err) {
+      console.error(`[CSMS-DUAL] Error logging disconnection:`, err);
     }
+
+    console.log(`[CSMS-DUAL] Connection cleaned up: ${ocppIdentity} (alerts/grace handled by index.ts)`);
   }
 
   // ============================================================================
