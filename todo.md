@@ -2969,3 +2969,11 @@
 - [x] Fix backend: listAll ahora obtiene conexiones OCPP activas de dualCSMS y agrega lastHeartbeat (prioridad: OCPP heartbeat > lastBootNotification)
 - [x] Fix frontend: columna usa prioridad lastHeartbeat del backend > connInfo OCPP > lastBootNotification
 - [x] Verificado: Livoltek MF120 muestra fecha real, EVG001 muestra fecha real, estaciones sin conexión muestran "Nunca" correctamente
+
+## Bug: Alertas de desconexión no se auto-resuelven al reconectar (3-May-2026)
+- [x] Las alertas DISCONNECTION no se auto-resuelven cuando el cargador se reconecta al servidor OCPP
+- [x] Causa raíz: handleReconnection() existía en alerts-service.ts pero NUNCA se llamaba desde index.ts
+- [x] Fix: Agregada llamada a alertsService.handleReconnection() en 2 puntos de index.ts:
+  1. Al conectar un cargador (pre-resolve stationId) - línea ~606
+  2. Al confirmar reconexion seamless (grace period) - línea ~862
+- [x] Tests: 16 tests pasan (4 nuevos para auto-resolución)
