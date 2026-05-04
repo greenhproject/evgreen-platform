@@ -495,10 +495,11 @@ function Router() {
             </TechnicianLayout>
           </ProtectedRoute>
         </Route>
+        {/* Redirigir /technician/maintenance a /technician/tickets (unificado) */}
         <Route path="/technician/maintenance">
           <ProtectedRoute allowedRoles={["technician", "admin"]}>
             <TechnicianLayout>
-              <TechnicianMaintenance />
+              <TechnicianTickets />
             </TechnicianLayout>
           </ProtectedRoute>
         </Route>

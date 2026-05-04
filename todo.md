@@ -2984,3 +2984,17 @@
 - [x] Causa raíz: listAll excluía tickets AI_HANDLING por defecto, pero adminUnreadCount contaba mensajes de TODOS los tickets
 - [x] Fix backend: listAll ahora muestra TODOS los tickets (excludeAiHandling: false) para control total del técnico
 - [x] Fix frontend: tab "Pendientes" ahora incluye AI_HANDLING + filtro de estado incluye opción "IA atendiendo"
+
+## Unificación de Sistema de Tickets para Técnicos (3-May-2026)
+- [x] Analizar estructura actual de maintenance_tickets y support_tickets
+- [x] Unificar "Mis Tickets" para mostrar TODOS los tickets asignados (soporte + mantenimiento)
+  - Backend: nuevo endpoint support.mySupportTickets que filtra por assignedToId del técnico actual
+  - Frontend: Tickets.tsx reescrito con tabs Todos/Mantenimiento/Soporte, tabla unificada con tipo, filtros combinados
+- [x] "Soporte" se mantiene como Bandeja de entrada/chat con usuarios
+- [x] Eliminar "Mantenimiento" como sección separada del sidebar
+  - TechnicianLayout.tsx: removido item de menú "Mantenimiento"
+  - App.tsx: ruta /technician/maintenance redirige a TechnicianTickets
+- [x] Ajustar sidebar del técnico para reflejar la nueva estructura
+- [x] Verificar que los tickets de ambos tipos se muestran correctamente con sus estados
+  - Click en ticket de soporte navega al chat de Soporte
+  - Click en ticket de mantenimiento abre diálogo de detalle con fotos, timeline, resolución
