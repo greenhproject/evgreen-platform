@@ -814,7 +814,10 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       const { isGracePeriod } = ocppManager.handleDisconnection(ocppIdentity, code, reasonStr);
       
       // Registrar log de desconexión (para auditoría, marcado como proxy_cycle si es código 1006)
-      const isProxyCycle = code === 1006 && durationSec >= 170 && durationSec <= 200;
+      // Proxy Cycle: Railway/proxy recicla la conexión WebSocket periódicamente.
+      // Rango ampliado: 60-300s cubre variaciones del proxy timeout (no solo 170-200s)
+      // También considerar código 1001 (Going Away) que algunos proxies usan
+      const isProxyCycle = (code === 1006 || code === 1001) && durationSec >= 60 && durationSec <= 300;
       await db.createOcppLog({
         ocppIdentity,
         stationId,
