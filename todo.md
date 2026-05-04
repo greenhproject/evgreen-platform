@@ -2998,3 +2998,11 @@
 - [x] Verificar que los tickets de ambos tipos se muestran correctamente con sus estados
   - Click en ticket de soporte navega al chat de Soporte
   - Click en ticket de mantenimiento abre diálogo de detalle con fotos, timeline, resolución
+
+## Bug: Estaciones conectadas no aparecen en panel técnico (3-May-2026)
+- [x] Tabla de Estaciones del técnico muestra todas como "Inactiva"/"Sin conexión" aunque Monitor OCPP muestra 2 conectadas
+- [x] Mi Panel del técnico muestra "0/0 Estaciones en línea" y "No hay cargadores conectados"
+- [x] Causa raíz: getActiveConnections devolvía stationId=null para conexiones dualCSMS, match por stationId fallaba
+- [x] Fix backend: getActiveConnections resuelve stationId desde BD por ocppIdentity + agrega connectorStatuses
+- [x] Fix frontend Dashboard: isStationConnected() hace match por stationId O ocppIdentity, lista cargadores usa campos correctos
+- [x] Fix frontend Stations: columna último heartbeat usa fallback station.lastHeartbeat > lastBootNotification
