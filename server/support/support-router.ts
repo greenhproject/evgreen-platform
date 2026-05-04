@@ -778,6 +778,16 @@ export const supportRouterV2 = router({
     }),
 
   // ========================================================================
+  // TECH: My assigned support tickets (for unified Mis Tickets view)
+  // ========================================================================
+  mySupportTickets: techProcedure.query(async ({ ctx }) => {
+    return supportDb.getAllTickets({
+      assignedToId: ctx.user.id,
+      excludeAiHandling: false,
+    });
+  }),
+
+  // ========================================================================
   // ADMIN/TECH: Get ticket with full conversation
   // ========================================================================
   getTicketDetail: techProcedure
