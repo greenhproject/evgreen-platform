@@ -601,6 +601,10 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       console.log(`[OCPP] Pre-resolved stationId=${stationId} for ${ocppIdentity} at connection time (updated in connection-manager)`);
       // Marcar como online
       await db.updateStationOnlineStatus(ocppIdentity, true);
+      
+      // Auto-resolver alertas de desconexión activas al reconectar
+      alertsService.handleReconnection(ocppIdentity)
+        .catch(err => console.error(`[OCPP Alert] Error auto-resolving on reconnect for ${ocppIdentity}:`, err));
     } else {
       console.warn(`[OCPP] Could not pre-resolve stationId for ${ocppIdentity} - station not found in DB`);
     }
@@ -854,6 +858,9 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
             .catch(err => console.error("[OCPP Alert] Error:", err));
         } else if (currentConn) {
           console.log(`[OCPP] ⚡ Seamless reconnection confirmed: ${ocppIdentity}`);
+          // Auto-resolver alertas pendientes también en reconexiones seamless
+          alertsService.handleReconnection(ocppIdentity)
+            .catch(err => console.error(`[OCPP Alert] Error auto-resolving on seamless reconnect for ${ocppIdentity}:`, err));
         }
         legacyDisconnectGrace.delete(ocppIdentity);
       }, LEGACY_DISCONNECT_GRACE_MS);
