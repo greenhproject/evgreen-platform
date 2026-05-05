@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EVGreen API - Documentación</title>
+  <link rel="icon" href="/favicon.ico">
+  <style>
+    :root {
+      --bg: #0a0f1a;
+      --surface: #111827;
+      --surface-hover: #1f2937;
+      --border: #1e3a5f;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --green: #10b981;
+      --green-dim: #065f46;
+      --blue: #3b82f6;
+      --orange: #f59e0b;
+      --red: #ef4444;
+      --purple: #8b5cf6;
+      --code-bg: #0d1117;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+    
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #0a0f1a 0%, #0d2818 50%, #0a0f1a 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 48px 0;
+    }
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #10b981, #34d399);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .header p { color: var(--text-muted); font-size: 1.1rem; }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-green { background: var(--green-dim); color: var(--green); }
+    .badge-blue { background: #1e3a5f; color: var(--blue); }
+    .badge-orange { background: #78350f; color: var(--orange); }
+    
+    /* Navigation */
+    .nav {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 0;
+      z-index: 100;
+    }
+    .nav-links {
+      display: flex;
+      gap: 24px;
+      overflow-x: auto;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      white-space: nowrap;
+      padding: 8px 0;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .nav-links a:hover, .nav-links a.active {
+      color: var(--green);
+      border-bottom-color: var(--green);
+    }
+    
+    /* Sections */
+    .section { padding: 48px 0; border-bottom: 1px solid var(--border); }
+    .section h2 {
+      font-size: 1.8rem;
+      margin-bottom: 16px;
+      color: var(--text);
+    }
+    .section h3 {
+      font-size: 1.2rem;
+      margin: 24px 0 12px;
+      color: var(--text);
+    }
+    .section p { color: var(--text-muted); margin-bottom: 16px; }
+    
+    /* Endpoint Card */
+    .endpoint {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin: 20px 0;
+      overflow: hidden;
+    }
+    .endpoint-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .endpoint-header:hover { background: var(--surface-hover); }
+    .method {
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: monospace;
+    }
+    .method-get { background: #064e3b; color: #6ee7b7; }
+    .method-post { background: #1e3a5f; color: #93c5fd; }
+    .method-put { background: #78350f; color: #fcd34d; }
+    .method-delete { background: #7f1d1d; color: #fca5a5; }
+    .endpoint-path {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      color: var(--text);
+    }
+    .endpoint-desc {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-left: auto;
+    }
+    .endpoint-body {
+      display: none;
+      padding: 20px;
+      border-top: 1px solid var(--border);
+      background: var(--code-bg);
+    }
+    .endpoint.open .endpoint-body { display: block; }
+    .endpoint.open .endpoint-header { background: var(--surface-hover); }
+    
+    /* Code blocks */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      margin: 12px 0;
+    }
+    code { font-family: 'JetBrains Mono', monospace; }
+    .inline-code {
+      background: var(--surface);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+    }
+    th, td {
+      padding: 10px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+    th { color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+    td code { color: var(--green); }
+    
+    /* Auth section */
+    .auth-box {
+      background: var(--surface);
+      border: 1px solid var(--green-dim);
+      border-radius: 12px;
+      padding: 24px;
+      margin: 20px 0;
+    }
+    .auth-box h3 { color: var(--green); margin-top: 0; }
+    
+    /* Footer */
+    .footer {
+      padding: 32px 0;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .footer a { color: var(--green); text-decoration: none; }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header h1 { font-size: 1.8rem; }
+      .endpoint-desc { display: none; }
+      .container { padding: 0 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="container">
+      <h1>⚡ EVGreen API</h1>
+      <p>API REST para integración con aplicaciones externas</p>
+      <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <span class="badge badge-green">v1.0</span>
+        <span class="badge badge-blue">REST</span>
+        <span class="badge badge-orange">JSON</span>
+      </div>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <div class="container">
+      <ul class="nav-links">
+        <li><a href="#auth">Autenticación</a></li>
+        <li><a href="#stations">Estaciones</a></li>
+        <li><a href="#transactions">Transacciones</a></li>
+        <li><a href="#commands">Comandos</a></li>
+        <li><a href="#stats">Estadísticas</a></li>
+        <li><a href="#users">Usuarios</a></li>
+        <li><a href="#webhooks">Webhooks</a></li>
+        <li><a href="#errors">Errores</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="container">
+    <!-- BASE URL -->
+    <section class="section" id="overview">
+      <h2>Información General</h2>
+      <p>La API de EVGreen permite integrar tu aplicación con nuestra plataforma de carga de vehículos eléctricos. Consulta estaciones, transacciones, envía comandos remotos y recibe notificaciones en tiempo real.</p>
+      
+      <h3>Base URL</h3>
+      <pre><code>https://www.evgreen.lat/api/v1</code></pre>
+      
+      <h3>Formato de Respuesta</h3>
+      <p>Todas las respuestas son JSON con la siguiente estructura:</p>
+      <pre><code>{
+  "success": true,
+  "data": { ... },
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 5
+  }
+}</code></pre>
+    </section>
+
+    <!-- AUTENTICACIÓN -->
+    <section class="section" id="auth">
+      <h2>🔐 Autenticación</h2>
+      <p>Todas las solicitudes requieren una API Key válida. Puedes generar API Keys desde el panel de administración de EVGreen.</p>
+      
+      <div class="auth-box">
+        <h3>Cómo autenticarse</h3>
+        <p>Incluye tu API Key en el header <code class="inline-code">X-API-Key</code> o como query param <code class="inline-code">api_key</code>:</p>
+        <pre><code># Opción 1: Header (recomendado)
+curl -H "X-API-Key: evg_tu_api_key_aqui" \
+  https://www.evgreen.lat/api/v1/stations
+
+# Opción 2: Query parameter
+curl "https://www.evgreen.lat/api/v1/stations?api_key=evg_tu_api_key_aqui"</code></pre>
+      </div>
+
+      <h3>Límites de Uso</h3>
+      <table>
+        <thead>
+          <tr><th>Límite</th><th>Valor</th><th>Descripción</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Rate Limit</td><td><code>100 req/min</code></td><td>Máximo 100 solicitudes por minuto por API Key</td></tr>
+          <tr><td>Paginación</td><td><code>max 100</code></td><td>Máximo 100 registros por página</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Generar API Key</h3>
+      <p>Para obtener una API Key, contacta al administrador de EVGreen o genera una desde el panel admin en <code class="inline-code">Configuración → API Keys</code>.</p>
+    </section>
+
+    <!-- ESTACIONES -->
+    <section class="section" id="stations">
+      <h2>⚡ Estaciones de Carga</h2>
+      <p>Endpoints para consultar estaciones de carga, conectores y estado en tiempo real.</p>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-get">GET</span>
+          <span class="endpoint-path">/stations</span>
+          <span class="endpoint-desc">Listar estaciones públicas</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Parámetros de Query</h4>
+          <table>
+            <thead><tr><th>Param</th><th>Tipo</th><th>Descripción</th></tr></thead>
+            <tbody>
+              <tr><td><code>city</code></td><td>string</td><td>Filtrar por ciudad</td></tr>
+              <tr><td><code>active</code></td><td>boolean</td><td>Solo estaciones activas</td></tr>
+              <tr><td><code>page</code></td><td>number</td><td>Página (default: 1)</td></tr>
+              <tr><td><code>limit</code></td><td>number</td><td>Registros por página (default: 20, max: 100)</td></tr>
+            </tbody>
+          </table>
+          <h4>Ejemplo</h4>
+          <pre><code>curl -H "X-API-Key: evg_xxx" \
+  "https://www.evgreen.lat/api/v1/stations?city=Bogota&active=true"</code></pre>
+          <h4>Respuesta</h4>
+          <pre><code>{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "EVGreen Centro Comercial",
+      "address": "Cra 7 #45-12",
+      "city": "Bogota",
+      "location": { "latitude": 4.6097, "longitude": -74.0817 },
+      "status": "ONLINE",
+      "isActive": true,
+      "manufacturer": "ABB",
+      "model": "Terra 124",
+      "operatingHours": "24/7"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 1 }
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-get">GET</span>
+          <span class="endpoint-path">/stations/:id</span>
+          <span class="endpoint-desc">Detalle de estación con conectores y tarifa</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Ejemplo</h4>
+          <pre><code>curl -H "X-API-Key: evg_xxx" \
+  "https://www.evgreen.lat/api/v1/stations/1"</code></pre>
+          <h4>Respuesta</h4>
+          <pre><code>{
+  "success": true,
+  "data": {
+    "id": 1,
+    "name": "EVGreen Centro Comercial",
+    "address": "Cra 7 #45-12",
+    "city": "Bogota",
+    "status": "ONLINE",
+    "connectors": [
+      {
+        "id": 1,
+        "connectorId": 1,
+        "connectorType": "CCS_2",
+        "chargeType": "DC",
+        "powerKw": 120,
+        "status": "AVAILABLE"
+      }
+    ],
+    "tariff": {
+      "pricePerKwh": 2200,
+      "connectionFee": 0,
+      "overstayPenaltyPerMin": 500,
+      "overstayGracePeriodMin": 10,
+      "currency": "COP"
+    }
+  }
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-get">GET</span>
+          <span class="endpoint-path">/stations/:id/status</span>
+          <span class="endpoint-desc">Estado en tiempo real (OCPP, sesiones activas)</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Ejemplo</h4>
+          <pre><code>curl -H "X-API-Key: evg_xxx" \
+  "https://www.evgreen.lat/api/v1/stations/1/status"</code></pre>
+          <h4>Respuesta</h4>
+          <pre><code>{
+  "success": true,
+  "data": {
+    "stationId": 1,
+    "stationName": "EVGreen Centro Comercial",
+    "connectionStatus": "CONNECTED",
+    "ocppVersion": "1.6",
+    "lastHeartbeat": "2026-05-04T15:30:00Z",
+    "connectors": [
+      { "connectorId": 1, "type": "CCS_2", "powerKw": 120, "status": "CHARGING" }
+    ],
+    "activeSessions": [
+      {
+        "sessionId": 42,
+        "connectorId": 1,
+        "startTime": "2026-05-04T15:00:00Z",
+        "energyKwh": 18.5,
+        "currentPowerKw": 95.2
+      }
+    ],
+    "timestamp": "2026-05-04T15:30:00Z"
+  }
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRANSACCIONES -->
+    <section class="section" id="transactions">
+      <h2>📊 Transacciones</h2>
+      <p>Historial de sesiones de carga. Los resultados se filtran según el rol de la API Key.</p>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-get">GET</span>
+          <span class="endpoint-path">/transactions</span>
+          <span class="endpoint-desc">Historial de transacciones</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Parámetros de Query</h4>
+          <table>
+            <thead><tr><th>Param</th><th>Tipo</th><th>Descripción</th></tr></thead>
+            <tbody>
+              <tr><td><code>stationId</code></td><td>number</td><td>Filtrar por estación</td></tr>
+              <tr><td><code>status</code></td><td>string</td><td>PENDING, IN_PROGRESS, COMPLETED, FAILED, CANCELLED</td></tr>
+              <tr><td><code>from</code></td><td>datetime</td><td>Fecha inicio (ISO 8601)</td></tr>
+              <tr><td><code>to</code></td><td>datetime</td><td>Fecha fin (ISO 8601)</td></tr>
+              <tr><td><code>page</code></td><td>number</td><td>Página</td></tr>
+              <tr><td><code>limit</code></td><td>number</td><td>Registros por página (max: 100)</td></tr>
+            </tbody>
+          </table>
+          <h4>Ejemplo</h4>
+          <pre><code>curl -H "X-API-Key: evg_xxx" \
+  "https://www.evgreen.lat/api/v1/transactions?status=COMPLETED&from=2026-05-01"</code></pre>
+          <h4>Respuesta</h4>
+          <pre><code>{
+  "success": true,
+  "data": [
+    {
+      "id": 42,
+      "stationId": 1,
+      "stationName": "EVGreen Centro Comercial",
+      "connectorId": 1,
+      "userId": 5,
+      "userName": "Juan Pérez",
+      "status": "COMPLETED",
+      "startTime": "2026-05-04T14:00:00Z",
+      "endTime": "2026-05-04T14:35:00Z",
+      "energyKwh": 45.2,
+      "totalCost": 99440,
+      "pricePerKwh": 2200,
+      "currency": "COP"
+    }
+  ]
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-get">GET</span>
+          <span class="endpoint-path">/transactions/:id</span>
+          <span class="endpoint-desc">Detalle completo de una transacción</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Ejemplo</h4>
+          <pre><code>curl -H "X-API-Key: evg_xxx" \
+  "https://www.evgreen.lat/api/v1/transactions/42"</code></pre>
+          <h4>Respuesta</h4>
+          <pre><code>{
+  "success": true,
+  "data": {
+    "id": 42,
+    "stationId": 1,
+    "stationName": "EVGreen Centro Comercial",
+    "connectorId": 1,
+    "userId": 5,
+    "userName": "Juan Pérez",
+    "userEmail": "juan@email.com",
+    "status": "COMPLETED",
+    "startTime": "2026-05-04T14:00:00Z",
+    "endTime": "2026-05-04T14:35:00Z",
+    "energyKwh": 45.2,
+    "totalCost": 99440,
+    "pricePerKwh": 2200,
+    "connectionFee": 0,
+    "overstayFee": 0,
+    "meterStart": 1000,
+    "meterStop": 1045.2,
+    "stopReason": "Local",
+    "currency": "COP"
+  }
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMANDOS REMOTOS -->
+    <section class="section" id="commands">
+      <h2>🎮 Comandos Remotos</h2>
+      <p>Envía comandos OCPP a las estaciones de carga. <strong>Solo disponible para API Keys con rol admin/staff.</strong></p>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-post">POST</span>
+          <span class="endpoint-path">/stations/:id/start</span>
+          <span class="endpoint-desc">Iniciar carga remota</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Body (JSON)</h4>
+          <table>
+            <thead><tr><th>Campo</th><th>Tipo</th><th>Requerido</th><th>Descripción</th></tr></thead>
+            <tbody>
+              <tr><td><code>connectorId</code></td><td>number</td><td>Sí</td><td>ID del conector</td></tr>
+              <tr><td><code>idTag</code></td><td>string</td><td>Sí</td><td>Tag RFID o ID del usuario (formato: EV-XXXXXX)</td></tr>
+            </tbody>
+          </table>
+          <h4>Ejemplo</h4>
+          <pre><code>curl -X POST -H "X-API-Key: evg_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"connectorId": 1, "idTag": "EV-001234"}' \
+  "https://www.evgreen.lat/api/v1/stations/1/start"</code></pre>
+          <h4>Respuesta</h4>
+          <pre><code>{
+  "success": true,
+  "data": {
+    "stationId": 1,
+    "connectorId": 1,
+    "idTag": "EV-001234",
+    "commandResult": { "status": "Accepted" },
+    "timestamp": "2026-05-04T15:00:00Z"
+  }
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-post">POST</span>
+          <span class="endpoint-path">/stations/:id/stop</span>
+          <span class="endpoint-desc">Detener carga remota</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Body (JSON)</h4>
+          <table>
+            <thead><tr><th>Campo</th><th>Tipo</th><th>Requerido</th><th>Descripción</th></tr></thead>
+            <tbody>
+              <tr><td><code>transactionId</code></td><td>number</td><td>Sí</td><td>ID de la transacción activa</td></tr>
+            </tbody>
+          </table>
+          <h4>Ejemplo</h4>
+          <pre><code>curl -X POST -H "X-API-Key: evg_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId": 42}' \
+  "https://www.evgreen.lat/api/v1/stations/1/stop"</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ESTADÍSTICAS -->
+    <section class="section" id="stats">
+      <h2>📈 Estadísticas</h2>
+      <p>Métricas de rendimiento de la plataforma y consumo energético.</p>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-get">GET</span>
+          <span class="endpoint-path">/stats/overview</span>
+          <span class="endpoint-desc">Resumen general (últimos 30 días)</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Respuesta</h4>
+          <pre><code>{
+  "success": true,
+  "data": {
+    "stations": { "total": 5, "online": 3 },
+    "last30Days": {
+      "totalEnergyKwh": 12500.5,
+      "totalRevenueCOP": 27501100,
+      "totalSessions": 580
+    },
+    "timestamp": "2026-05-04T15:00:00Z"
+  }
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-get">GET</span>
+          <span class="endpoint-path">/stats/energy</span>
+          <span class="endpoint-desc">Estadísticas de energía por período</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Parámetros de Query</h4>
+          <table>
+            <thead><tr><th>Param</th><th>Tipo</th><th>Descripción</th></tr></thead>
+            <tbody>
+              <tr><td><code>period</code></td><td>string</td><td>hourly, daily, weekly, monthly (default: daily)</td></tr>
+              <tr><td><code>days</code></td><td>number</td><td>Últimos N días (default: 30, max: 365)</td></tr>
+              <tr><td><code>stationId</code></td><td>number</td><td>Filtrar por estación</td></tr>
+            </tbody>
+          </table>
+          <h4>Ejemplo</h4>
+          <pre><code>curl -H "X-API-Key: evg_xxx" \
+  "https://www.evgreen.lat/api/v1/stats/energy?period=daily&days=7"</code></pre>
+          <h4>Respuesta</h4>
+          <pre><code>{
+  "success": true,
+  "data": [
+    {
+      "period": "2026-05-01",
+      "energyKwh": 450.2,
+      "revenueCOP": 990440,
+      "sessions": 25,
+      "avgEnergyPerSession": 18.0
+    }
+  ]
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- USUARIOS -->
+    <section class="section" id="users">
+      <h2>👥 Usuarios</h2>
+      <p><strong>Solo admin/staff.</strong> Consulta la lista de usuarios registrados.</p>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-get">GET</span>
+          <span class="endpoint-path">/users</span>
+          <span class="endpoint-desc">Listar usuarios</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Parámetros de Query</h4>
+          <table>
+            <thead><tr><th>Param</th><th>Tipo</th><th>Descripción</th></tr></thead>
+            <tbody>
+              <tr><td><code>role</code></td><td>string</td><td>Filtrar por rol: user, admin, technician, investor, engineer, host</td></tr>
+              <tr><td><code>page</code></td><td>number</td><td>Página</td></tr>
+              <tr><td><code>limit</code></td><td>number</td><td>Registros (max: 200)</td></tr>
+            </tbody>
+          </table>
+          <h4>Ejemplo</h4>
+          <pre><code>curl -H "X-API-Key: evg_xxx" \
+  "https://www.evgreen.lat/api/v1/users?role=user&limit=10"</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- WEBHOOKS -->
+    <section class="section" id="webhooks">
+      <h2>🔔 Webhooks</h2>
+      <p>Recibe notificaciones en tiempo real cuando ocurren eventos en la plataforma.</p>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-get">GET</span>
+          <span class="endpoint-path">/webhooks</span>
+          <span class="endpoint-desc">Listar webhooks configurados</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Respuesta</h4>
+          <pre><code>{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "url": "https://tu-app.com/webhook",
+      "events": ["charging.started", "charging.completed"],
+      "isActive": true,
+      "lastTriggeredAt": "2026-05-04T14:00:00Z"
+    }
+  ]
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+          <span class="method method-post">POST</span>
+          <span class="endpoint-path">/webhooks</span>
+          <span class="endpoint-desc">Registrar un nuevo webhook</span>
+        </div>
+        <div class="endpoint-body">
+          <h4>Body (JSON)</h4>
+          <table>
+            <thead><tr><th>Campo</th><th>Tipo</th><th>Requerido</th><th>Descripción</th></tr></thead>
+            <tbody>
+              <tr><td><code>url</code></td><td>string</td><td>Sí</td><td>URL que recibirá los eventos (HTTPS)</td></tr>
+              <tr><td><code>events</code></td><td>string[]</td><td>Sí</td><td>Lista de eventos a suscribir</td></tr>
+            </tbody>
+          </table>
+          <h4>Eventos Disponibles</h4>
+          <table>
+            <thead><tr><th>Evento</th><th>Descripción</th></tr></thead>
+            <tbody>
+              <tr><td><code>charging.started</code></td><td>Se inició una sesión de carga</td></tr>
+              <tr><td><code>charging.completed</code></td><td>Se completó una sesión de carga</td></tr>
+              <tr><td><code>charging.failed</code></td><td>Falló una sesión de carga</td></tr>
+              <tr><td><code>station.online</code></td><td>Estación se conectó</td></tr>
+              <tr><td><code>station.offline</code></td><td>Estación se desconectó</td></tr>
+              <tr><td><code>alert.created</code></td><td>Se generó una alerta</td></tr>
+            </tbody>
+          </table>
+          <h4>Ejemplo</h4>
+          <pre><code>curl -X POST -H "X-API-Key: evg_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://tu-app.com/evgreen-webhook",
+    "events": ["charging.started", "charging.completed"]
+  }' \
+  "https://www.evgreen.lat/api/v1/webhooks"</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ERRORES -->
+    <section class="section" id="errors">
+      <h2>❌ Códigos de Error</h2>
+      <p>La API usa códigos HTTP estándar y devuelve errores en formato JSON:</p>
+      <pre><code>{
+  "error": "ERROR_CODE",
+  "message": "Descripción legible del error"
+}</code></pre>
+      <table>
+        <thead><tr><th>HTTP</th><th>Código</th><th>Descripción</th></tr></thead>
+        <tbody>
+          <tr><td>400</td><td><code>INVALID_PARAM</code></td><td>Parámetro inválido o faltante</td></tr>
+          <tr><td>401</td><td><code>UNAUTHORIZED</code></td><td>API Key no proporcionada</td></tr>
+          <tr><td>401</td><td><code>INVALID_API_KEY</code></td><td>API Key inválida o expirada</td></tr>
+          <tr><td>403</td><td><code>FORBIDDEN</code></td><td>Sin permisos para esta acción</td></tr>
+          <tr><td>404</td><td><code>NOT_FOUND</code></td><td>Recurso no encontrado</td></tr>
+          <tr><td>429</td><td><code>RATE_LIMIT_EXCEEDED</code></td><td>Demasiadas solicitudes (espera 1 min)</td></tr>
+          <tr><td>500</td><td><code>INTERNAL_ERROR</code></td><td>Error interno del servidor</td></tr>
+          <tr><td>503</td><td><code>SERVICE_UNAVAILABLE</code></td><td>Servicio temporalmente no disponible</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SDKs -->
+    <section class="section" id="sdks">
+      <h2>🛠️ Ejemplos de Integración</h2>
+      
+      <h3>Python</h3>
+      <pre><code>import requests
+
+API_KEY = "evg_tu_api_key"
+BASE_URL = "https://www.evgreen.lat/api/v1"
+headers = {"X-API-Key": API_KEY}
+
+# Listar estaciones
+response = requests.get(f"{BASE_URL}/stations", headers=headers)
+stations = response.json()["data"]
+
+# Ver estado en tiempo real
+status = requests.get(f"{BASE_URL}/stations/1/status", headers=headers)
+print(status.json()["data"]["connectionStatus"])
+
+# Iniciar carga remota
+payload = {"connectorId": 1, "idTag": "EV-001234"}
+result = requests.post(f"{BASE_URL}/stations/1/start", 
+                       json=payload, headers=headers)
+print(result.json())</code></pre>
+
+      <h3>JavaScript / Node.js</h3>
+      <pre><code>const API_KEY = "evg_tu_api_key";
+const BASE_URL = "https://www.evgreen.lat/api/v1";
+
+// Listar estaciones
+const response = await fetch(`${BASE_URL}/stations`, {
+  headers: { "X-API-Key": API_KEY }
+});
+const { data: stations } = await response.json();
+
+// Ver estadísticas
+const stats = await fetch(`${BASE_URL}/stats/overview`, {
+  headers: { "X-API-Key": API_KEY }
+}).then(r => r.json());
+
+console.log(`Energía total: ${stats.data.last30Days.totalEnergyKwh} kWh`);</code></pre>
+
+      <h3>cURL</h3>
+      <pre><code># Listar transacciones completadas del último mes
+curl -H "X-API-Key: evg_xxx" \
+  "https://www.evgreen.lat/api/v1/transactions?status=COMPLETED&from=2026-04-01"
+
+# Registrar webhook
+curl -X POST -H "X-API-Key: evg_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://mi-app.com/webhook","events":["charging.completed"]}' \
+  "https://www.evgreen.lat/api/v1/webhooks"</code></pre>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>EVGreen API v1.0 — <a href="https://www.evgreen.lat">evgreen.lat</a> — Green House Project &copy; 2026</p>
+      <p style="margin-top: 8px;">Contacto: <a href="mailto:evgreen@greenhproject.com">evgreen@greenhproject.com</a> | Tel: 321 456 7644</p>
+    </div>
+  </footer>
+
+  <script>
+    function toggleEndpoint(header) {
+      const endpoint = header.parentElement;
+      endpoint.classList.toggle('open');
+    }
+    
+    // Smooth scroll for nav links
+    document.querySelectorAll('.nav-links a').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const target = document.querySelector(link.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  </script>
+</body>
+</html>

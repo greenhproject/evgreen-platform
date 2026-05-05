@@ -154,6 +154,16 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Wompi webhook
   app.post("/api/wompi/webhook", express.json(), handleWompiWebhook);
+
+  // API Pública REST v1 para integración externa
+  const { default: publicApiRouter } = await import("../api/public-api");
+  app.use("/api/v1", express.json(), publicApiRouter);
+
+  // Página de documentación de API
+  app.get("/api-docs", (_req, res) => {
+    const currentDir = path.dirname(new URL(import.meta.url).pathname);
+    res.sendFile("api-docs.html", { root: path.join(currentDir, "../../client/public") });
+  });
   
   // Auth0 authentication routes
   registerAuth0Routes(app);

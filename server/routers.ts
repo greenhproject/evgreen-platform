@@ -37,6 +37,7 @@ import { buildFinancialRouter } from "./financial/financial-router";
 import { onboardingRouter } from "./investor-onboarding/onboarding-router";
 import { backupRouter, startAutomaticBackups } from "./backup/backup-router";
 import { maintenanceScheduleRouter } from "./maintenance/maintenance-schedule-router";
+import { buildApiKeysRouter } from "./api/api-keys-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -5934,6 +5935,7 @@ export const appRouter = router({
   maintenanceSchedule: maintenanceScheduleRouter,
   onboarding: onboardingRouter,
   backup: backupRouter,
+  apiKeys: buildApiKeysRouter(router, adminProcedure),
 });
 
 // Iniciar sistema de backup automático al cargar el módulo
