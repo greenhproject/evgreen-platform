@@ -1739,6 +1739,278 @@ const transactionsRouter = router({
         message: `Carga completada. Total: $${totalCost.toLocaleString()} COP por ${kwhConsumed.toFixed(2)} kWh`,
       };
     }),
+
+  // ============================================================================
+  // DETALLE DE TRANSACCIÓN (para soporte y admin - resolver reclamos)
+  // ============================================================================
+  getDetail: adminProcedure
+    .input(z.object({ transactionId: z.number() }))
+    .query(async ({ input }) => {
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+      }
+
+      // Obtener datos relacionados
+      const station = await db.getChargingStationById(transaction.stationId);
+      const evse = await db.getEvseById(transaction.evseId);
+      const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
+      const user = await db.getUserById(transaction.userId);
+      const meterValuesData = await db.getMeterValuesByTransactionId(input.transactionId);
+
+      // Obtener wallet transactions relacionadas a esta transacción (pagos + overstay)
+      const dbInstance = await db.getDb();
+      let relatedWalletTxs: any[] = [];
+      if (dbInstance) {
+        const { walletTransactions: wtTable } = await import("../drizzle/schema");
+        const { eq: eqOp, and: andOp, desc: descOp } = await import("drizzle-orm");
+        relatedWalletTxs = await dbInstance.select().from(wtTable)
+          .where(andOp(
+            eqOp(wtTable.userId, transaction.userId),
+            eqOp(wtTable.referenceId, input.transactionId)
+          ))
+          .orderBy(descOp(wtTable.createdAt));
+      }
+
+      // Obtener deudas asociadas
+      let relatedDebts: any[] = [];
+      if (dbInstance) {
+        const { userDebts: debtsTable } = await import("../drizzle/schema");
+        const { eq: eqOp2, and: andOp2 } = await import("drizzle-orm");
+        relatedDebts = await dbInstance.select().from(debtsTable)
+          .where(andOp2(
+            eqOp2(debtsTable.userId, transaction.userId),
+            eqOp2(debtsTable.transactionId, input.transactionId)
+          ));
+      }
+
+      // Reconstruir timeline de overstay
+      const gracePeriodMinutes = tariff?.overstayGracePeriodMinutes ?? 10;
+      const overstayPenaltyPerMin = tariff?.overstayPenaltyPerMinute
+        ? parseFloat(tariff.overstayPenaltyPerMinute.toString())
+        : 0;
+
+      const startTime = transaction.startTime;
+      const endTime = transaction.endTime;
+      const overstayCost = parseFloat(transaction.overstayCost?.toString() || "0");
+
+      // Calcular overstay start time = endTime + gracePeriodMinutes
+      let overstayStartTime: Date | null = null;
+      let overstayMinutesBilled = 0;
+      if (endTime && overstayCost > 0) {
+        overstayStartTime = new Date(endTime.getTime() + gracePeriodMinutes * 60 * 1000);
+        if (overstayPenaltyPerMin > 0) {
+          overstayMinutesBilled = Math.round(overstayCost / overstayPenaltyPerMin);
+        }
+      }
+
+      // Calcular duración de carga
+      const chargeDurationMs = endTime ? endTime.getTime() - startTime.getTime() : 0;
+      const chargeDurationMinutes = Math.round(chargeDurationMs / 60000);
+
+      // Obtener precio efectivo de la estación para contexto
+      const effectivePrice = await db.getEffectiveStationPrice(transaction.stationId);
+
+      return {
+        // Datos básicos de la transacción
+        id: transaction.id,
+        status: transaction.status,
+        ocppTransactionId: transaction.ocppTransactionId,
+        startMethod: transaction.startMethod || "APP",
+        stopReason: transaction.stopReason || "",
+        chargeMode: transaction.chargeMode || "full_charge",
+
+        // Timestamps exactos
+        startTime: startTime.toISOString(),
+        endTime: endTime?.toISOString() || null,
+        chargeDurationMinutes,
+
+        // Consumo
+        kwhConsumed: parseFloat(transaction.kwhConsumed?.toString() || "0"),
+        meterStart: transaction.meterStart ? parseFloat(transaction.meterStart.toString()) : null,
+        meterEnd: transaction.meterEnd ? parseFloat(transaction.meterEnd.toString()) : null,
+
+        // Desglose de costos
+        energyCost: parseFloat(transaction.energyCost?.toString() || "0"),
+        timeCost: parseFloat(transaction.timeCost?.toString() || "0"),
+        sessionCost: parseFloat(transaction.sessionCost?.toString() || "0"),
+        overstayCost,
+        totalCost: parseFloat(transaction.totalCost?.toString() || "0"),
+
+        // Tarifas aplicadas
+        appliedPricePerKwh: transaction.appliedPricePerKwh
+          ? parseFloat(transaction.appliedPricePerKwh.toString())
+          : effectivePrice.pricePerKwh,
+        overstayPenaltyPerMin: overstayPenaltyPerMin || effectivePrice.overstayPenaltyPerMin,
+        gracePeriodMinutes,
+
+        // Timeline de overstay
+        overstay: overstayCost > 0 ? {
+          gracePeriodEnd: endTime ? new Date(endTime.getTime() + gracePeriodMinutes * 60 * 1000).toISOString() : null,
+          overstayStartTime: overstayStartTime?.toISOString() || null,
+          minutesBilled: overstayMinutesBilled,
+          ratePerMinute: overstayPenaltyPerMin || effectivePrice.overstayPenaltyPerMin,
+          totalCharged: overstayCost,
+        } : null,
+
+        // Info de estación y conector
+        station: {
+          id: transaction.stationId,
+          name: station?.name || "Estación",
+          address: station?.address || "",
+          city: station?.city || "",
+        },
+        connector: {
+          id: evse?.id || 0,
+          connectorId: evse?.connectorId || 1,
+          connectorType: evse?.connectorType || "TYPE_2",
+          chargeType: evse?.chargeType || "AC",
+          powerKw: evse?.powerKw ? parseFloat(evse.powerKw.toString()) : 0,
+        },
+
+        // Info del usuario
+        user: {
+          id: user?.id || transaction.userId,
+          name: user?.name || "Usuario",
+          email: user?.email || "",
+          phone: user?.phone || "",
+        },
+
+        // Movimientos de billetera relacionados
+        walletMovements: relatedWalletTxs.map(wt => ({
+          id: wt.id,
+          type: wt.type,
+          amount: parseFloat(wt.amount?.toString() || "0"),
+          description: wt.description || "",
+          createdAt: wt.createdAt?.toISOString() || "",
+          status: wt.status,
+        })),
+
+        // Deudas asociadas
+        debts: relatedDebts.map(d => ({
+          id: d.id,
+          originalAmount: parseFloat(d.originalAmount?.toString() || "0"),
+          remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
+          reason: d.reason,
+          status: d.status,
+          createdAt: d.createdAt?.toISOString() || "",
+        })),
+
+        // Distribución de ingresos
+        investorShare: parseFloat(transaction.investorShare?.toString() || "0"),
+        platformFee: parseFloat(transaction.platformFee?.toString() || "0"),
+
+        // Meter values (últimos 20 para gráfico de potencia)
+        meterValues: meterValuesData.slice(-20).map(mv => ({
+          timestamp: mv.timestamp.toISOString(),
+          energyKwh: mv.energyKwh ? parseFloat(mv.energyKwh.toString()) : null,
+          powerKw: mv.powerKw ? parseFloat(mv.powerKw.toString()) : null,
+          soc: mv.soc,
+        })),
+      };
+    }),
+
+  // ============================================================================
+  // REEMBOLSO PARCIAL (para soporte - resolver reclamos)
+  // ============================================================================
+  partialRefund: adminProcedure
+    .input(z.object({
+      transactionId: z.number(),
+      refundAmount: z.number().min(1, "El monto debe ser mayor a 0"),
+      reason: z.string().min(3, "Debe indicar un motivo"),
+      refundType: z.enum(["overstay", "energy", "general"]).default("general"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+
+      const totalCost = parseFloat(transaction.totalCost?.toString() || "0");
+      if (input.refundAmount > totalCost) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `El reembolso ($${input.refundAmount.toLocaleString()}) no puede superar el total de la transacción ($${totalCost.toLocaleString()})` });
+      }
+
+      // Si es reembolso de overstay, actualizar el campo overstayCost
+      if (input.refundType === "overstay") {
+        const currentOverstay = parseFloat(transaction.overstayCost?.toString() || "0");
+        if (input.refundAmount > currentOverstay) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `El reembolso de sobreestadía ($${input.refundAmount.toLocaleString()}) no puede superar el cobro de sobreestadía ($${currentOverstay.toLocaleString()})` });
+        }
+        const newOverstay = currentOverstay - input.refundAmount;
+        const newTotal = totalCost - input.refundAmount;
+        await db.updateTransaction(input.transactionId, {
+          overstayCost: newOverstay.toFixed(2),
+          totalCost: Math.max(0, newTotal).toFixed(2),
+        });
+      } else {
+        // Reembolso general: solo reducir totalCost
+        const newTotal = totalCost - input.refundAmount;
+        await db.updateTransaction(input.transactionId, {
+          totalCost: Math.max(0, newTotal).toFixed(2),
+        });
+      }
+
+      // Reembolsar al usuario en billetera
+      const wallet = await db.getWalletByUserId(transaction.userId);
+      if (wallet) {
+        const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+        const newBalance = currentBalance + input.refundAmount;
+        await db.updateWalletBalance(transaction.userId, newBalance.toString());
+        await db.createWalletTransaction({
+          walletId: wallet.id,
+          userId: transaction.userId,
+          type: "ADMIN_REFUND",
+          amount: input.refundAmount.toString(),
+          balanceBefore: currentBalance.toString(),
+          balanceAfter: newBalance.toString(),
+          referenceId: input.transactionId,
+          referenceType: "TRANSACTION",
+          status: "COMPLETED",
+          description: `[Admin: ${ctx.user.name || ctx.user.email}] Reembolso parcial (${input.refundType}). Motivo: ${input.reason}`,
+        });
+      }
+
+      // Condonar deudas asociadas si el reembolso cubre la deuda
+      if (input.refundType === "overstay") {
+        const debts = await db.getUserPendingDebts(transaction.userId);
+        for (const debt of debts) {
+          if (debt.transactionId === input.transactionId) {
+            const remaining = parseFloat(debt.remainingAmount?.toString() || "0");
+            if (input.refundAmount >= remaining) {
+              await db.waiveUserDebt(debt.id);
+            } else {
+              // Reducir deuda parcialmente
+              const dbInst = await db.getDb();
+              if (dbInst) {
+                const { userDebts: debtsTable } = await import("../drizzle/schema");
+                const { eq: eqOp3 } = await import("drizzle-orm");
+                await dbInst.update(debtsTable).set({
+                  remainingAmount: (remaining - input.refundAmount).toFixed(2),
+                  updatedAt: new Date(),
+                }).where(eqOp3(debtsTable.id, debt.id));
+              }
+            }
+          }
+        }
+      }
+
+      // Notificar al usuario
+      await db.createNotification({
+        userId: transaction.userId,
+        title: "💰 Reembolso aplicado",
+        message: `Se te ha reembolsado $${input.refundAmount.toLocaleString("es-CO")} COP de tu sesión de carga #${input.transactionId}. Motivo: ${input.reason}`,
+        type: "PAYMENT",
+        isRead: false,
+      });
+
+      console.log(`[Refund] Admin ${ctx.user.name} refunded $${input.refundAmount} (${input.refundType}) for tx #${input.transactionId}. Reason: ${input.reason}`);
+
+      return {
+        success: true,
+        refundedAmount: input.refundAmount,
+        refundType: input.refundType,
+        newTotalCost: totalCost - input.refundAmount,
+      };
+    }),
 });
 
 // ============================================================================

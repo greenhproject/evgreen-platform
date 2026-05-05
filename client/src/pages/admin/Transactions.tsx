@@ -20,8 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Download, Filter, Zap, DollarSign, Clock, Battery, Loader2, Trash2, FileSpreadsheet, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { Search, Download, Filter, Zap, DollarSign, Clock, Battery, Loader2, Trash2, FileSpreadsheet, ChevronLeft, ChevronRight, Calendar, Eye } from "lucide-react";
 import { toast } from "sonner";
+import { TransactionDetailModal } from "@/components/TransactionDetailModal";
 
 export default function AdminTransactions() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -33,6 +34,9 @@ export default function AdminTransactions() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [showDateFilters, setShowDateFilters] = useState(false);
+  // Detalle de transacción
+  const [detailTxId, setDetailTxId] = useState<number | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -402,12 +406,13 @@ export default function AdminTransactions() {
               <TableHead className="whitespace-nowrap">Total</TableHead>
               <TableHead className="whitespace-nowrap">Estado</TableHead>
               <TableHead className="whitespace-nowrap">Fecha</TableHead>
+              <TableHead className="whitespace-nowrap w-10"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {transactionsLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8">
+                <TableCell colSpan={9} className="text-center py-8">
                   <div className="flex items-center justify-center gap-2">
                     <Loader2 className="w-5 h-5 animate-spin" />
                     <span>Cargando transacciones...</span>
@@ -416,13 +421,17 @@ export default function AdminTransactions() {
               </TableRow>
             ) : filteredTransactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                   No hay transacciones registradas
                 </TableCell>
               </TableRow>
             ) : (
               filteredTransactions.map((tx: any) => (
-                <TableRow key={tx.id}>
+                <TableRow
+                  key={tx.id}
+                  className="cursor-pointer hover:bg-green-900/10 transition-colors"
+                  onClick={() => { setDetailTxId(tx.id); setDetailOpen(true); }}
+                >
                   <TableCell className="font-mono text-sm">#{tx.id}</TableCell>
                   <TableCell className="max-w-[150px] truncate">{tx.userName || "Usuario"}</TableCell>
                   <TableCell className="max-w-[150px] truncate">{tx.stationName || "Estación"}</TableCell>
@@ -431,6 +440,16 @@ export default function AdminTransactions() {
                   <TableCell className="font-semibold whitespace-nowrap">{formatCurrency(tx.totalCost)}</TableCell>
                   <TableCell>{getStatusBadge(tx.status)}</TableCell>
                   <TableCell className="text-muted-foreground text-sm whitespace-nowrap">{formatDate(tx.startTime)}</TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-green-400 hover:text-green-300 hover:bg-green-900/20 p-1 h-7 w-7"
+                      onClick={(e) => { e.stopPropagation(); setDetailTxId(tx.id); setDetailOpen(true); }}
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -453,10 +472,17 @@ export default function AdminTransactions() {
           </Card>
         ) : (
           filteredTransactions.map((tx: any) => (
-            <Card key={tx.id} className="p-3">
+            <Card
+              key={tx.id}
+              className="p-3 cursor-pointer hover:border-green-700/50 transition-colors"
+              onClick={() => { setDetailTxId(tx.id); setDetailOpen(true); }}
+            >
               <div className="flex items-center justify-between mb-2">
                 <span className="font-mono text-sm font-semibold">#{tx.id}</span>
-                {getStatusBadge(tx.status)}
+                <div className="flex items-center gap-2">
+                  {getStatusBadge(tx.status)}
+                  <Eye className="w-4 h-4 text-green-400" />
+                </div>
               </div>
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between">
@@ -524,6 +550,12 @@ export default function AdminTransactions() {
           </div>
         </div>
       )}
+      {/* Modal de detalle */}
+      <TransactionDetailModal
+        transactionId={detailTxId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   );
 }
