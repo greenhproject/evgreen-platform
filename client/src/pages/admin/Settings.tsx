@@ -1491,6 +1491,7 @@ function ApiKeysSection() {
   });
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [showKey, setShowKey] = useState<string | null>(null);
+  const [showRevoked, setShowRevoked] = useState(false);
 
   const { data: apiKeys, isLoading, refetch } = (trpc.apiKeys as any).list.useQuery();
   
@@ -1671,7 +1672,17 @@ function ApiKeysSection() {
       {/* Lista de API Keys existentes */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium">Tus API Keys</p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm font-medium">Tus API Keys</p>
+            {apiKeys && apiKeys.some((k: any) => !k.isActive) && (
+              <button
+                onClick={() => setShowRevoked(!showRevoked)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showRevoked ? "Ocultar revocadas" : `Mostrar revocadas (${apiKeys.filter((k: any) => !k.isActive).length})`}
+              </button>
+            )}
+          </div>
           <Button
             size="sm"
             onClick={() => setShowCreateForm(!showCreateForm)}
@@ -1745,10 +1756,10 @@ function ApiKeysSection() {
           </div>
         ) : (
           <div className="space-y-2">
-            {apiKeys.map((key: any) => (
+            {apiKeys.filter((key: any) => showRevoked || key.isActive).map((key: any) => (
               <div
                 key={key.id}
-                className="flex items-center gap-3 bg-muted/30 rounded-lg px-4 py-3 border border-border"
+                className={`flex items-center gap-3 bg-muted/30 rounded-lg px-4 py-3 border border-border ${!key.isActive ? "opacity-50" : ""}`}
               >
                 <Key className="w-4 h-4 text-muted-foreground shrink-0" />
                 <div className="flex-1 min-w-0">
