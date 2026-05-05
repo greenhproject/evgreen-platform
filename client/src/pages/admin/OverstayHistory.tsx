@@ -58,6 +58,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { TransactionDetailModal } from "@/components/TransactionDetailModal";
 import {
   Timer,
   DollarSign,
@@ -68,6 +69,7 @@ import {
   RefreshCw,
   MapPin,
   User,
+  Eye,
   Calendar,
   Loader2,
   Zap,
@@ -128,6 +130,8 @@ export default function OverstayHistory() {
   const [stationFilter, setStationFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [dateRange, setDateRange] = useState<"7d" | "30d" | "90d" | "all">("30d");
+  const [detailTxId, setDetailTxId] = useState<number | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
 
   // Dialog states
@@ -537,6 +541,16 @@ export default function OverstayHistory() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-green-400 hover:text-green-300 hover:bg-green-900/20"
+                            onClick={() => { setDetailTxId(tx.id); setDetailOpen(true); }}
+                            title="Ver detalle"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
                         {tx.overstayCost > 0 && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -567,6 +581,7 @@ export default function OverstayHistory() {
                             </DropdownMenuContent>
                           </DropdownMenu>
                         )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -797,6 +812,13 @@ export default function OverstayHistory() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Modal de detalle de transacción */}
+      <TransactionDetailModal
+        transactionId={detailTxId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   );
 }

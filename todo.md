@@ -3047,3 +3047,12 @@
 - [x] Sistema de API Keys con tabla en BD y gestión desde admin (tRPC)
 - [x] Endpoints: estaciones, transacciones, comandos remotos, estadísticas, webhooks, usuarios
 - [x] Checkpoint (89859542) y push a GitHub completado
+
+## Detalle de Transacción para Soporte (resolver reclamos rápidamente)
+- [x] Auditar esquema de datos de transacciones y sobreestadía en BD
+- [x] Crear endpoint tRPC de detalle de transacción con desglose (energía + sobreestadía + timeline)
+- [x] Crear componente UI expandible/modal con timeline visual y desglose de cobros
+- [x] Integrar botón de reembolso parcial directo desde el detalle
+- [x] Integrar modal en páginas de Transacciones y OverstayHistory
+- [x] Tests unitarios para getDetail y partialRefund (10 tests)
+- [ ] Checkpoint y push a GitHub
