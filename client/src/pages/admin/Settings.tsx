@@ -1496,11 +1496,11 @@ function ApiKeysSection() {
   
   const createMutation = (trpc.apiKeys as any).create.useMutation({
     onSuccess: (data: any) => {
-      setCreatedKey(data.rawKey);
+      setCreatedKey(data.apiKey);
       setShowCreateForm(false);
       setNewKeyName("");
       refetch();
-      toast.success("API Key creada exitosamente");
+      toast.success("API Key creada exitosamente. ¡Cópiala ahora!");
     },
     onError: (err: any) => {
       toast.error(`Error: ${err.message}`);
@@ -1626,32 +1626,45 @@ function ApiKeysSection() {
         </div>
       </div>
 
-      {/* Key recién creada */}
+      {/* Key recién creada - PROMINENTE */}
       {createdKey && (
-        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle className="w-5 h-5 text-green-500" />
-            <p className="font-medium text-green-400">API Key creada exitosamente</p>
+        <div className="bg-green-500/10 border-2 border-green-500/50 rounded-lg p-6 ring-2 ring-green-500/20 shadow-lg shadow-green-500/10">
+          <div className="flex items-center gap-2 mb-3">
+            <CheckCircle className="w-6 h-6 text-green-500" />
+            <p className="font-bold text-green-400 text-lg">¡API Key creada exitosamente!</p>
           </div>
-          <p className="text-xs text-muted-foreground mb-2">
-            Copia esta key ahora. No podrás verla de nuevo después de cerrar este mensaje.
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="bg-background px-3 py-2 rounded text-sm font-mono flex-1 break-all">
-              {createdKey}
-            </code>
-            <Button variant="ghost" size="sm" onClick={() => copyToClipboard(createdKey)}>
-              <Copy className="w-4 h-4" />
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-3 mb-4">
+            <p className="text-sm text-yellow-300 font-medium">
+              ⚠️ IMPORTANTE: Copia esta key ahora. Por seguridad, no podrás verla de nuevo después de cerrar este mensaje.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Tu API Key:</Label>
+            <div className="flex items-center gap-2">
+              <code className="bg-background border border-border px-4 py-3 rounded-lg text-sm font-mono flex-1 break-all select-all">
+                {createdKey}
+              </code>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => copyToClipboard(createdKey)}
+                className="shrink-0 gap-1 border-green-500/50 text-green-400 hover:bg-green-500/10"
+              >
+                <Copy className="w-4 h-4" />
+                Copiar
+              </Button>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 mt-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={() => setCreatedKey(null)}
+            >
+              Ya la copié, cerrar
             </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-2 text-muted-foreground"
-            onClick={() => setCreatedKey(null)}
-          >
-            Cerrar
-          </Button>
         </div>
       )}
 
