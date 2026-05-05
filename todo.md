@@ -3035,7 +3035,7 @@
 - [ ] Implementar manejo de error 503/non-JSON en el tRPC client (retry con backoff)
 - [ ] Agregar pantalla de "Servidor iniciando..." cuando se detecta 503
 - [ ] Evitar loop infinito de requests fallidos al backend
-- [ ] Checkpoint y push a GitHub
+- [x] Checkpoint (89859542) y push a GitHub completado
 
 ## Keep-Alive para evitar 503 por inactividad
 - [x] Configurar scheduled task de ping cada 5 min a evgreen.lat/api/health
@@ -3046,4 +3046,4 @@
 - [x] Crear página de documentación de API (/api-docs) con ejemplos
 - [x] Sistema de API Keys con tabla en BD y gestión desde admin (tRPC)
 - [x] Endpoints: estaciones, transacciones, comandos remotos, estadísticas, webhooks, usuarios
-- [ ] Checkpoint y push a GitHub
+- [x] Checkpoint (89859542) y push a GitHub completado

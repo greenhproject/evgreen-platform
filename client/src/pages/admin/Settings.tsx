@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw, CalendarDays, MapPin, Phone, Mail, Navigation, ExternalLink, FileText, CheckCircle, XCircle, Zap, Headphones } from "lucide-react";
+import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw, CalendarDays, MapPin, Phone, Mail, Navigation, ExternalLink, FileText, CheckCircle, XCircle, Zap, Headphones, Key, Copy, Trash2, Plus, Eye, EyeOff, Code } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
@@ -778,6 +778,9 @@ export default function AdminSettings() {
               )}
             </Button>
           </Card>
+
+          {/* Sección API Keys */}
+          <ApiKeysSection />
         </TabsContent>
 
         <TabsContent value="calculator">
@@ -1470,5 +1473,339 @@ function ReconcileButton() {
         </div>
       )}
     </div>
+  );
+}
+
+// ============ API Keys Section Component ============
+
+function ApiKeysSection() {
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyPermissions, setNewKeyPermissions] = useState({
+    stations: true,
+    transactions: true,
+    commands: false,
+    stats: true,
+    webhooks: false,
+    users: false,
+  });
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [showKey, setShowKey] = useState<string | null>(null);
+
+  const { data: apiKeys, isLoading, refetch } = (trpc.apiKeys as any).list.useQuery();
+  
+  const createMutation = (trpc.apiKeys as any).create.useMutation({
+    onSuccess: (data: any) => {
+      setCreatedKey(data.rawKey);
+      setShowCreateForm(false);
+      setNewKeyName("");
+      refetch();
+      toast.success("API Key creada exitosamente");
+    },
+    onError: (err: any) => {
+      toast.error(`Error: ${err.message}`);
+    },
+  });
+
+  const revokeMutation = (trpc.apiKeys as any).revoke.useMutation({
+    onSuccess: () => {
+      refetch();
+      toast.success("API Key revocada");
+    },
+    onError: (err: any) => {
+      toast.error(`Error: ${err.message}`);
+    },
+  });
+
+  const handleCreate = () => {
+    if (!newKeyName.trim()) {
+      toast.error("El nombre es requerido");
+      return;
+    }
+    const permissions = Object.entries(newKeyPermissions)
+      .filter(([_, v]) => v)
+      .map(([k]) => k);
+    createMutation.mutate({ name: newKeyName, permissions });
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Copiado al portapapeles");
+  };
+
+  const baseUrl = window.location.origin;
+
+  return (
+    <Card className="p-6 space-y-6 mt-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold flex items-center gap-2">
+            <Key className="w-5 h-5 text-blue-500" />
+            API Keys - Integración Externa
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Genera API Keys para conectar aplicaciones externas con la plataforma EVGreen.
+          </p>
+        </div>
+        <a
+          href="/api-docs"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-sm text-blue-500 hover:text-blue-400 transition-colors"
+        >
+          <Code className="w-4 h-4" />
+          Ver Documentación API
+          <ExternalLink className="w-3 h-3" />
+        </a>
+      </div>
+
+      {/* Información de la API */}
+      <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+        <p className="text-sm font-medium">Base URL de la API:</p>
+        <div className="flex items-center gap-2">
+          <code className="bg-background px-3 py-1.5 rounded text-sm font-mono flex-1 overflow-x-auto">
+            {baseUrl}/api/v1
+          </code>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => copyToClipboard(`${baseUrl}/api/v1`)}
+          >
+            <Copy className="w-4 h-4" />
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          Autenticación: Header <code className="bg-background px-1 rounded">X-API-Key: tu_api_key</code> o query param <code className="bg-background px-1 rounded">?api_key=tu_api_key</code>
+        </p>
+      </div>
+
+      {/* Endpoints disponibles */}
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Endpoints disponibles:</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+          <div className="flex items-center gap-2 bg-muted/30 rounded px-3 py-2">
+            <span className="bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-mono text-[10px]">GET</span>
+            <span className="font-mono">/stations</span>
+            <span className="text-muted-foreground ml-auto">Listar estaciones</span>
+          </div>
+          <div className="flex items-center gap-2 bg-muted/30 rounded px-3 py-2">
+            <span className="bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-mono text-[10px]">GET</span>
+            <span className="font-mono">/stations/:id</span>
+            <span className="text-muted-foreground ml-auto">Detalle estación</span>
+          </div>
+          <div className="flex items-center gap-2 bg-muted/30 rounded px-3 py-2">
+            <span className="bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-mono text-[10px]">GET</span>
+            <span className="font-mono">/transactions</span>
+            <span className="text-muted-foreground ml-auto">Listar transacciones</span>
+          </div>
+          <div className="flex items-center gap-2 bg-muted/30 rounded px-3 py-2">
+            <span className="bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-mono text-[10px]">POST</span>
+            <span className="font-mono">/commands/start</span>
+            <span className="text-muted-foreground ml-auto">Iniciar carga</span>
+          </div>
+          <div className="flex items-center gap-2 bg-muted/30 rounded px-3 py-2">
+            <span className="bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-mono text-[10px]">POST</span>
+            <span className="font-mono">/commands/stop</span>
+            <span className="text-muted-foreground ml-auto">Detener carga</span>
+          </div>
+          <div className="flex items-center gap-2 bg-muted/30 rounded px-3 py-2">
+            <span className="bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-mono text-[10px]">GET</span>
+            <span className="font-mono">/stats/overview</span>
+            <span className="text-muted-foreground ml-auto">Estadísticas</span>
+          </div>
+          <div className="flex items-center gap-2 bg-muted/30 rounded px-3 py-2">
+            <span className="bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-mono text-[10px]">POST</span>
+            <span className="font-mono">/webhooks</span>
+            <span className="text-muted-foreground ml-auto">Registrar webhook</span>
+          </div>
+          <div className="flex items-center gap-2 bg-muted/30 rounded px-3 py-2">
+            <span className="bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-mono text-[10px]">GET</span>
+            <span className="font-mono">/users</span>
+            <span className="text-muted-foreground ml-auto">Listar usuarios</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Key recién creada */}
+      {createdKey && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <CheckCircle className="w-5 h-5 text-green-500" />
+            <p className="font-medium text-green-400">API Key creada exitosamente</p>
+          </div>
+          <p className="text-xs text-muted-foreground mb-2">
+            Copia esta key ahora. No podrás verla de nuevo después de cerrar este mensaje.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="bg-background px-3 py-2 rounded text-sm font-mono flex-1 break-all">
+              {createdKey}
+            </code>
+            <Button variant="ghost" size="sm" onClick={() => copyToClipboard(createdKey)}>
+              <Copy className="w-4 h-4" />
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2 text-muted-foreground"
+            onClick={() => setCreatedKey(null)}
+          >
+            Cerrar
+          </Button>
+        </div>
+      )}
+
+      {/* Lista de API Keys existentes */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium">Tus API Keys</p>
+          <Button
+            size="sm"
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="gap-1"
+          >
+            <Plus className="w-4 h-4" />
+            Nueva API Key
+          </Button>
+        </div>
+
+        {/* Formulario de creación */}
+        {showCreateForm && (
+          <div className="bg-muted/30 rounded-lg p-4 space-y-4 border border-border">
+            <div className="space-y-2">
+              <Label>Nombre de la API Key</Label>
+              <Input
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                placeholder="Ej: App Móvil, Sistema ERP, Bot de Monitoreo..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Permisos</Label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {[
+                  { key: "stations", label: "Estaciones" },
+                  { key: "transactions", label: "Transacciones" },
+                  { key: "commands", label: "Comandos" },
+                  { key: "stats", label: "Estadísticas" },
+                  { key: "webhooks", label: "Webhooks" },
+                  { key: "users", label: "Usuarios" },
+                ].map(({ key, label }) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <Switch
+                      checked={newKeyPermissions[key as keyof typeof newKeyPermissions]}
+                      onCheckedChange={(checked) =>
+                        setNewKeyPermissions({ ...newKeyPermissions, [key]: checked })
+                      }
+                    />
+                    <span className="text-sm">{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleCreate} disabled={createMutation.isPending} size="sm">
+                {createMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                ) : (
+                  <Key className="w-4 h-4 mr-1" />
+                )}
+                Crear API Key
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowCreateForm(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Lista de keys */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : !apiKeys || apiKeys.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Key className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No hay API Keys creadas</p>
+            <p className="text-xs mt-1">Crea una para integrar aplicaciones externas</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {apiKeys.map((key: any) => (
+              <div
+                key={key.id}
+                className="flex items-center gap-3 bg-muted/30 rounded-lg px-4 py-3 border border-border"
+              >
+                <Key className="w-4 h-4 text-muted-foreground shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{key.name}</p>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-mono">{key.keyPrefix}...</span>
+                    <span>·</span>
+                    <span>{key.permissions?.join(", ") || "todos"}</span>
+                    <span>·</span>
+                    <span>
+                      {key.lastUsedAt
+                        ? `Último uso: ${new Date(key.lastUsedAt).toLocaleDateString()}`
+                        : "Sin usar"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded ${
+                      key.isActive
+                        ? "bg-green-500/20 text-green-400"
+                        : "bg-red-500/20 text-red-400"
+                    }`}
+                  >
+                    {key.isActive ? "Activa" : "Revocada"}
+                  </span>
+                  {key.isActive && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      onClick={() => {
+                        if (confirm(`¿Revocar la API Key "${key.name}"? Esta acción no se puede deshacer.`)) {
+                          revokeMutation.mutate({ id: key.id });
+                        }
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Ejemplo de uso */}
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Ejemplo de uso rápido:</p>
+        <div className="bg-background rounded-lg p-4 overflow-x-auto">
+          <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap">
+{`curl -H "X-API-Key: tu_api_key" \\
+  ${baseUrl}/api/v1/stations
+
+# Respuesta:
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "Estación Centro",
+      "status": "online",
+      "connectors": [...]
+    }
+  ]
+}`}
+          </pre>
+        </div>
+      </div>
+    </Card>
   );
 }
