@@ -162,6 +162,13 @@
       "when": 1776256597895,
       "tag": "0022_worthless_nightmare",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1777941596122,
+      "tag": "0023_rich_eternals",
+      "breakpoints": true
     }
   ]
 }

@@ -62,7 +62,7 @@
 ## Testing y Documentación
 - [x] Tests unitarios backend
 - [ ] Tests de integración
-- [ ] Documentación API
+- [x] Documentación API (/api-docs con endpoints REST v1)
 - [ ] Manual de usuario
 - [ ] Documentación técnica OCPP/OCPI
 
@@ -3028,4 +3028,22 @@
 - [x] Mejorar filtrado: NO generar alertas si la reconexión ocurre dentro del grace period
 - [x] Verificar que notifyOwner y notifyTechniciansOfAlert solo se llamen para desconexiones REALES
 - [x] Tests para validar que Proxy Cycle no genera alertas (18 tests passing)
+- [x] Checkpoint guardado (1d450244) - Push a GitHub pendiente (usuario debe publicar desde UI)
+
+
+## Corrección 503 Service Unavailable en evgreen.lat (Cold Start)
+- [ ] Implementar manejo de error 503/non-JSON en el tRPC client (retry con backoff)
+- [ ] Agregar pantalla de "Servidor iniciando..." cuando se detecta 503
+- [ ] Evitar loop infinito de requests fallidos al backend
+- [ ] Checkpoint y push a GitHub
+
+## Keep-Alive para evitar 503 por inactividad
+- [x] Configurar scheduled task de ping cada 5 min a evgreen.lat/api/health
+
+## Documentación de API Pública para Integración Externa
+- [x] Auditar todos los endpoints existentes (tRPC + REST)
+- [x] Crear endpoints REST públicos para integración externa con API key
+- [x] Crear página de documentación de API (/api-docs) con ejemplos
+- [x] Sistema de API Keys con tabla en BD y gestión desde admin (tRPC)
+- [x] Endpoints: estaciones, transacciones, comandos remotos, estadísticas, webhooks, usuarios
 - [ ] Checkpoint y push a GitHub

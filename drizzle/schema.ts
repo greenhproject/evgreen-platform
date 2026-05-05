@@ -2876,3 +2876,34 @@ export const backupLogs = mysqlTable("backup_logs", {
   // Notes
   notes: text("notes"),
 });
+
+
+// ============================================================================
+// API KEYS & WEBHOOKS (Integración externa)
+// ============================================================================
+
+export const apiKeys = mysqlTable("api_keys", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 100 }).notNull(), // Nombre descriptivo de la key
+  keyHash: varchar("keyHash", { length: 64 }).notNull().unique(), // SHA-256 hash
+  keyPrefix: varchar("keyPrefix", { length: 12 }).notNull(), // Primeros 8 chars para identificación
+  permissions: json("permissions").$type<string[]>(), // ["stations:read", "transactions:read", etc.]
+  isActive: boolean("isActive").default(true).notNull(),
+  expiresAt: timestamp("expiresAt"),
+  lastUsedAt: timestamp("lastUsedAt"),
+  usageCount: int("usageCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const apiWebhooks = mysqlTable("api_webhooks", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  url: varchar("url", { length: 500 }).notNull(),
+  events: json("events").$type<string[]>().notNull(), // ["charging.started", "charging.completed", etc.]
+  secret: varchar("secret", { length: 64 }), // Para verificación HMAC
+  isActive: boolean("isActive").default(true).notNull(),
+  lastTriggeredAt: timestamp("lastTriggeredAt"),
+  failCount: int("failCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
