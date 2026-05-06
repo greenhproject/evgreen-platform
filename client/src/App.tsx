@@ -55,6 +55,7 @@ const QRRedirect = lazy(() => import("./pages/QRRedirect"));
 const ChargingMonitor = lazy(() => import("./pages/user/ChargingMonitor"));
 const OverstayMonitor = lazy(() => import("./pages/user/OverstayMonitor"));
 const ChargingSummary = lazy(() => import("./pages/user/ChargingSummary"));
+const UserClaimForm = lazy(() => import("./pages/user/ClaimForm"));
 const ChargingWaiting = lazy(() => import("./pages/user/ChargingWaiting"));
 const UserSettingsNotifications = lazy(() => import("./pages/user/settings/Notifications"));
 const UserSettingsPersonalInfo = lazy(() => import("./pages/user/settings/PersonalInfo"));
@@ -116,6 +117,8 @@ const AdminFinancial = lazy(() => import("./pages/admin/Financial"));
 const AdminMaintenanceFund = lazy(() => import("./pages/admin/MaintenanceFund"));
 const AdminOnboardingDashboard = lazy(() => import("./pages/admin/OnboardingDashboard"));
 const AdminBackupDashboard = lazy(() => import("./pages/admin/BackupDashboard"));
+const AdminRefunds = lazy(() => import("./pages/admin/Refunds"));
+const AdminClaims = lazy(() => import("./pages/admin/Claims"));
 
 // Páginas de Aliado Comercial (Host)
 const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
@@ -308,6 +311,7 @@ function Router() {
         <Route path="/charging-monitor" component={ChargingMonitor} />
         <Route path="/overstay" component={OverstayMonitor} />
         <Route path="/charging-summary/:transactionId" component={ChargingSummary} />
+        <Route path="/user/claim/:transactionId" component={UserClaimForm} />
         <Route path="/vehicles" component={UserSettingsVehicles} />
         <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
         <Route path="/settings/config" component={UserSettingsConfig} />
@@ -699,6 +703,21 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin"]}>
             <AdminLayout>
               <AdminMaintenanceFund />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        <Route path="/admin/refunds">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminRefunds />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/claims">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminClaims />
             </AdminLayout>
           </ProtectedRoute>
         </Route>

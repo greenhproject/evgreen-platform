@@ -868,6 +868,18 @@ export default function ChargingSummary() {
         <ChargingSummaryBanner />
       </div>
       
+      {/* Reportar cobro incorrecto */}
+      <div className="px-4 mt-4">
+        <Button
+          variant="outline"
+          className="w-full border-red-600/30 text-red-500 hover:bg-red-950/20 hover:text-red-400"
+          onClick={() => setLocation(`/user/claim/${transaction.id}`)}
+        >
+          <AlertTriangle className="w-4 h-4 mr-2" />
+          Reportar cobro incorrecto
+        </Button>
+      </div>
+
       {/* Acciones */}
       <div className="px-4 mt-6 space-y-3">
         <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-3">

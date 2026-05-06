@@ -3055,4 +3055,21 @@
 - [x] Integrar botón de reembolso parcial directo desde el detalle
 - [x] Integrar modal en páginas de Transacciones y OverstayHistory
 - [x] Tests unitarios para getDetail y partialRefund (10 tests)
+- [x] Checkpoint (5b1c5d04) y push a GitHub completado
+
+## Historial de Reembolsos y Sistema de Reclamos (Auditoría + Soporte)
+- [x] Crear tabla de reembolsos en BD (refunds) con admin, motivo, monto, fecha, transacción
+- [x] Crear tabla de reclamos en BD (claims) con usuario, transacción, motivo, estado
+- [x] Endpoint para registrar reembolso (actualizar partialRefund para guardar en tabla)
+- [x] Endpoint para listar historial de reembolsos con filtros
+- [x] Endpoint para crear reclamo de cobro incorrecto (usuario)
+- [x] Endpoint para listar reclamos pendientes (admin)
+- [x] Endpoint para resolver reclamo (admin - aprobar con reembolso o rechazar)
+- [x] Vista de historial de reembolsos en admin (/admin/refunds)
+- [x] Vista de reclamos en admin (/admin/claims con gestión completa)
+- [x] Botón "Reportar cobro incorrecto" en historial de cargas del usuario
+- [x] Formulario de reclamo con selección de categoría y descripción (/user/claim/:id)
+- [x] Notificación push al admin cuando se crea un reclamo
+- [x] Notificación al usuario cuando se resuelve/rechaza su reclamo
+- [x] Tests unitarios (11 tests)
 - [ ] Checkpoint y push a GitHub
