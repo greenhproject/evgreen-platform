@@ -114,6 +114,12 @@ import {
   InsertOperationalMetric,
   maintenanceFundRecords,
   InsertMaintenanceFundRecord,
+  refunds,
+  Refund,
+  InsertRefund,
+  claims,
+  Claim,
+  InsertClaim,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -7297,3 +7303,97 @@ export async function getEnrichedTransactionsByInvestor(
     stations: Array.from(stationMap.values()),
   };
 }
+
+
+// ============================================================================
+// REFUNDS (Historial de reembolsos para auditoría)
+// ============================================================================
+
+export async function createRefund(data: InsertRefund): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(refunds).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getRefunds(opts: { limit?: number; offset?: number; adminId?: number; userId?: number; transactionId?: number }): Promise<{ data: Refund[]; total: number }> {
+  const db = await getDb();
+  if (!db) return { data: [], total: 0 };
+  const { eq, and, desc, sql, count } = await import("drizzle-orm");
+  
+  const conditions: any[] = [];
+  if (opts.adminId) conditions.push(eq(refunds.adminId, opts.adminId));
+  if (opts.userId) conditions.push(eq(refunds.userId, opts.userId));
+  if (opts.transactionId) conditions.push(eq(refunds.transactionId, opts.transactionId));
+  
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const [data, totalResult] = await Promise.all([
+    db.select().from(refunds).where(where).orderBy(desc(refunds.createdAt)).limit(opts.limit || 50).offset(opts.offset || 0),
+    db.select({ count: count() }).from(refunds).where(where),
+  ]);
+  
+  return { data, total: totalResult[0]?.count || 0 };
+}
+
+export async function getRefundById(id: number): Promise<Refund | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const { eq } = await import("drizzle-orm");
+  const result = await db.select().from(refunds).where(eq(refunds.id, id));
+  return result[0] || null;
+}
+
+// ============================================================================
+// CLAIMS (Reclamos de cobro incorrecto)
+// ============================================================================
+
+export async function createClaim(data: InsertClaim): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(claims).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getClaims(opts: { limit?: number; offset?: number; status?: string; userId?: number }): Promise<{ data: Claim[]; total: number }> {
+  const db = await getDb();
+  if (!db) return { data: [], total: 0 };
+  const { eq, and, desc, count } = await import("drizzle-orm");
+  
+  const conditions: any[] = [];
+  if (opts.status) conditions.push(eq(claims.status, opts.status));
+  if (opts.userId) conditions.push(eq(claims.userId, opts.userId));
+  
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const [data, totalResult] = await Promise.all([
+    db.select().from(claims).where(where).orderBy(desc(claims.createdAt)).limit(opts.limit || 50).offset(opts.offset || 0),
+    db.select({ count: count() }).from(claims).where(where),
+  ]);
+  
+  return { data, total: totalResult[0]?.count || 0 };
+}
+
+export async function getClaimById(id: number): Promise<Claim | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const { eq } = await import("drizzle-orm");
+  const result = await db.select().from(claims).where(eq(claims.id, id));
+  return result[0] || null;
+}
+
+export async function updateClaim(id: number, data: Partial<InsertClaim>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const { eq } = await import("drizzle-orm");
+  await db.update(claims).set(data).where(eq(claims.id, id));
+}
+
+export async function getClaimsByTransactionId(transactionId: number): Promise<Claim[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq, desc } = await import("drizzle-orm");
+  return db.select().from(claims).where(eq(claims.transactionId, transactionId)).orderBy(desc(claims.createdAt));
+}
+
+

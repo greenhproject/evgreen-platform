@@ -2002,15 +2002,327 @@ const transactionsRouter = router({
         isRead: false,
       });
 
-      console.log(`[Refund] Admin ${ctx.user.name} refunded $${input.refundAmount} (${input.refundType}) for tx #${input.transactionId}. Reason: ${input.reason}`);
+      // Registrar reembolso en tabla de auditoría
+      const refundId = await db.createRefund({
+        transactionId: input.transactionId,
+        userId: transaction.userId,
+        adminId: ctx.user.id,
+        adminName: ctx.user.name || ctx.user.email || `Admin #${ctx.user.id}`,
+        amount: input.refundAmount.toString(),
+        refundType: input.refundType,
+        reason: input.reason,
+        claimId: (input as any).claimId || null,
+        walletTransactionId: null,
+      });
+
+      console.log(`[Refund] Admin ${ctx.user.name} refunded $${input.refundAmount} (${input.refundType}) for tx #${input.transactionId}. Reason: ${input.reason}. RefundId: ${refundId}`);
 
       return {
         success: true,
         refundedAmount: input.refundAmount,
         refundType: input.refundType,
         newTotalCost: totalCost - input.refundAmount,
+        refundId,
       };
     }),
+});
+
+// ============================================================================
+// REFUNDS ROUTER (Historial de reembolsos para auditoría)
+// ============================================================================
+
+const refundsRouter = router({
+  // Listar todos los reembolsos (admin)
+  list: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      offset: z.number().min(0).default(0),
+      adminId: z.number().optional(),
+      userId: z.number().optional(),
+      transactionId: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const opts = input || {};
+      const result = await db.getRefunds(opts);
+      // Enriquecer con datos del usuario
+      const enriched = await Promise.all(
+        result.data.map(async (refund) => {
+          const user = await db.getUserById(refund.userId);
+          const transaction = await db.getTransactionById(refund.transactionId);
+          return {
+            ...refund,
+            amount: parseFloat(refund.amount?.toString() || "0"),
+            userName: user?.name || user?.email || `Usuario #${refund.userId}`,
+            userEmail: user?.email || null,
+            transactionTotal: transaction ? parseFloat(transaction.totalCost?.toString() || "0") : null,
+            stationName: transaction ? (await db.getChargingStationById(transaction.stationId))?.name || null : null,
+          };
+        })
+      );
+      return { data: enriched, total: result.total };
+    }),
+
+  // Obtener un reembolso por ID
+  getById: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const refund = await db.getRefundById(input.id);
+      if (!refund) throw new TRPCError({ code: "NOT_FOUND", message: "Reembolso no encontrado" });
+      return refund;
+    }),
+
+  // Estadísticas de reembolsos
+  stats: adminProcedure.query(async () => {
+    const allRefunds = await db.getRefunds({ limit: 10000 });
+    const totalAmount = allRefunds.data.reduce((sum, r) => sum + parseFloat(r.amount?.toString() || "0"), 0);
+    const byType = allRefunds.data.reduce((acc, r) => {
+      acc[r.refundType] = (acc[r.refundType] || 0) + parseFloat(r.amount?.toString() || "0");
+      return acc;
+    }, {} as Record<string, number>);
+    return {
+      totalRefunds: allRefunds.total,
+      totalAmount,
+      byType,
+      last30Days: allRefunds.data.filter(r => {
+        const d = new Date(r.createdAt);
+        return d > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      }).length,
+    };
+  }),
+});
+
+// ============================================================================
+// CLAIMS ROUTER (Reclamos de cobro incorrecto)
+// ============================================================================
+
+const claimsRouter = router({
+  // Crear reclamo (usuario)
+  create: protectedProcedure
+    .input(z.object({
+      transactionId: z.number(),
+      category: z.enum(["overcharge", "overstay_unfair", "wrong_kwh", "double_charge", "other"]),
+      description: z.string().min(10, "Describe el problema con al menos 10 caracteres"),
+      requestedAmount: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // Verificar que la transacción pertenece al usuario
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+      if (transaction.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "No puedes reclamar una transacción que no te pertenece" });
+      }
+
+      // Verificar que no haya un reclamo pendiente para esta transacción
+      const existingClaims = await db.getClaimsByTransactionId(input.transactionId);
+      const pendingClaim = existingClaims.find(c => c.status === "PENDING" || c.status === "IN_REVIEW");
+      if (pendingClaim) {
+        throw new TRPCError({ code: "CONFLICT", message: "Ya tienes un reclamo pendiente para esta transacción" });
+      }
+
+      const claimId = await db.createClaim({
+        userId: ctx.user.id,
+        userName: ctx.user.name || ctx.user.email || `Usuario #${ctx.user.id}`,
+        transactionId: input.transactionId,
+        category: input.category,
+        description: input.description,
+        requestedAmount: input.requestedAmount?.toString() || null,
+        status: "PENDING",
+      });
+
+      // Notificar a todos los admins/staff
+      const allUsers = await db.getAllUsers();
+      const admins = allUsers.filter((u: any) => u.role === "admin" || u.role === "staff");
+      for (const admin of admins) {
+        await db.createNotification({
+          userId: admin.id,
+          title: "⚠️ Nuevo reclamo de cobro",
+          message: `${ctx.user.name || ctx.user.email} reportó un cobro incorrecto en la transacción #${input.transactionId}. Categoría: ${input.category}. Revisa el panel de reclamos.`,
+          type: "SYSTEM",
+          referenceId: claimId,
+          referenceType: "CLAIM",
+          isRead: false,
+        });
+      }
+
+      return { success: true, claimId };
+    }),
+
+  // Mis reclamos (usuario)
+  myClaims: protectedProcedure.query(async ({ ctx }) => {
+    const result = await db.getClaims({ userId: ctx.user.id });
+    // Enriquecer con datos de la transacción
+    const enriched = await Promise.all(
+      result.data.map(async (claim) => {
+        const transaction = await db.getTransactionById(claim.transactionId);
+        const station = transaction ? await db.getChargingStationById(transaction.stationId) : null;
+        return {
+          ...claim,
+          requestedAmount: claim.requestedAmount ? parseFloat(claim.requestedAmount.toString()) : null,
+          transactionTotal: transaction ? parseFloat(transaction.totalCost?.toString() || "0") : null,
+          stationName: station?.name || null,
+          transactionDate: transaction?.startTime || null,
+        };
+      })
+    );
+    return enriched;
+  }),
+
+  // Listar reclamos (admin)
+  list: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      offset: z.number().min(0).default(0),
+      status: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const opts = input || {};
+      const result = await db.getClaims(opts);
+      // Enriquecer con datos de la transacción
+      const enriched = await Promise.all(
+        result.data.map(async (claim) => {
+          const transaction = await db.getTransactionById(claim.transactionId);
+          const station = transaction ? await db.getChargingStationById(transaction.stationId) : null;
+          return {
+            ...claim,
+            requestedAmount: claim.requestedAmount ? parseFloat(claim.requestedAmount.toString()) : null,
+            transactionTotal: transaction ? parseFloat(transaction.totalCost?.toString() || "0") : null,
+            stationName: station?.name || null,
+            transactionDate: transaction?.startTime || null,
+            kwhConsumed: transaction ? parseFloat(transaction.kwhConsumed?.toString() || "0") : null,
+            overstayCost: transaction ? parseFloat(transaction.overstayCost?.toString() || "0") : null,
+          };
+        })
+      );
+      return { data: enriched, total: result.total };
+    }),
+
+  // Resolver reclamo (admin)
+  resolve: adminProcedure
+    .input(z.object({
+      claimId: z.number(),
+      resolution: z.string().min(3, "Debe indicar la resolución"),
+      status: z.enum(["RESOLVED", "REJECTED"]),
+      refundAmount: z.number().optional(), // Si se aprueba reembolso
+      refundType: z.enum(["overstay", "energy", "general"]).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const claim = await db.getClaimById(input.claimId);
+      if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Reclamo no encontrado" });
+      if (claim.status !== "PENDING" && claim.status !== "IN_REVIEW") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Este reclamo ya fue resuelto" });
+      }
+
+      let refundId: number | null = null;
+
+      // Si se aprueba con reembolso, ejecutar el reembolso
+      if (input.status === "RESOLVED" && input.refundAmount && input.refundAmount > 0) {
+        const transaction = await db.getTransactionById(claim.transactionId);
+        if (!transaction) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+
+        const totalCost = parseFloat(transaction.totalCost?.toString() || "0");
+        if (input.refundAmount > totalCost) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "El reembolso no puede superar el total" });
+        }
+
+        // Ejecutar reembolso en billetera
+        const wallet = await db.getWalletByUserId(transaction.userId);
+        if (wallet) {
+          const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+          const newBalance = currentBalance + input.refundAmount;
+          await db.updateWalletBalance(transaction.userId, newBalance.toString());
+          await db.createWalletTransaction({
+            walletId: wallet.id,
+            userId: transaction.userId,
+            type: "ADMIN_REFUND",
+            amount: input.refundAmount.toString(),
+            balanceBefore: currentBalance.toString(),
+            balanceAfter: newBalance.toString(),
+            referenceId: claim.transactionId,
+            referenceType: "TRANSACTION",
+            status: "COMPLETED",
+            description: `[Reclamo #${claim.id}] Reembolso aprobado por ${ctx.user.name || ctx.user.email}. Motivo: ${input.resolution}`,
+          });
+        }
+
+        // Actualizar transacción
+        const refundType = input.refundType || "general";
+        if (refundType === "overstay") {
+          const currentOverstay = parseFloat(transaction.overstayCost?.toString() || "0");
+          await db.updateTransaction(claim.transactionId, {
+            overstayCost: Math.max(0, currentOverstay - input.refundAmount).toFixed(2),
+            totalCost: Math.max(0, totalCost - input.refundAmount).toFixed(2),
+          });
+        } else {
+          await db.updateTransaction(claim.transactionId, {
+            totalCost: Math.max(0, totalCost - input.refundAmount).toFixed(2),
+          });
+        }
+
+        // Registrar en tabla de reembolsos
+        refundId = await db.createRefund({
+          transactionId: claim.transactionId,
+          userId: transaction.userId,
+          adminId: ctx.user.id,
+          adminName: ctx.user.name || ctx.user.email || `Admin #${ctx.user.id}`,
+          amount: input.refundAmount.toString(),
+          refundType: refundType,
+          reason: `[Reclamo #${claim.id}] ${input.resolution}`,
+          claimId: claim.id,
+          walletTransactionId: null,
+        });
+      }
+
+      // Actualizar reclamo
+      await db.updateClaim(input.claimId, {
+        status: input.status,
+        resolution: input.resolution,
+        resolvedByAdminId: ctx.user.id,
+        resolvedByAdminName: ctx.user.name || ctx.user.email || `Admin #${ctx.user.id}`,
+        refundId,
+        resolvedAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Notificar al usuario
+      const statusText = input.status === "RESOLVED" ? "aprobado" : "rechazado";
+      const refundText = input.refundAmount ? ` Se reembolsó $${input.refundAmount.toLocaleString("es-CO")} COP.` : "";
+      await db.createNotification({
+        userId: claim.userId,
+        title: input.status === "RESOLVED" ? "✅ Reclamo resuelto" : "❌ Reclamo rechazado",
+        message: `Tu reclamo sobre la transacción #${claim.transactionId} fue ${statusText}.${refundText} Resolución: ${input.resolution}`,
+        type: "PAYMENT",
+        referenceId: input.claimId,
+        referenceType: "CLAIM",
+        isRead: false,
+      });
+
+      return { success: true, status: input.status, refundId };
+    }),
+
+  // Marcar como en revisión (admin)
+  markInReview: adminProcedure
+    .input(z.object({ claimId: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.updateClaim(input.claimId, { status: "IN_REVIEW", updatedAt: new Date() });
+      return { success: true };
+    }),
+
+  // Estadísticas de reclamos
+  stats: adminProcedure.query(async () => {
+    const [pending, inReview, resolved, rejected] = await Promise.all([
+      db.getClaims({ status: "PENDING" }),
+      db.getClaims({ status: "IN_REVIEW" }),
+      db.getClaims({ status: "RESOLVED" }),
+      db.getClaims({ status: "REJECTED" }),
+    ]);
+    return {
+      pending: pending.total,
+      inReview: inReview.total,
+      resolved: resolved.total,
+      rejected: rejected.total,
+      total: pending.total + inReview.total + resolved.total + rejected.total,
+    };
+  }),
 });
 
 // ============================================================================
@@ -6208,6 +6520,8 @@ export const appRouter = router({
   onboarding: onboardingRouter,
   backup: backupRouter,
   apiKeys: buildApiKeysRouter(router, adminProcedure),
+  refunds: refundsRouter,
+  claims: claimsRouter,
 });
 
 // Iniciar sistema de backup automático al cargar el módulo
