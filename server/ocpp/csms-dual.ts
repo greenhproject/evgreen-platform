@@ -13,7 +13,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import * as db from "../db";
 import { nanoid } from "nanoid";
-import { findPendingSessionByOcppIdentity, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
+import { findPendingSessionByOcppIdentity, findPendingSessionFromDb, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
 import { sendChargingCompleteNotification } from "../firebase/fcm";
 // alertsService ya no se usa directamente aquí — las alertas se manejan en index.ts
 import mysql from "mysql2/promise";
@@ -946,7 +946,17 @@ export class DualCSMS {
     if (pendingSessionData && pendingSessionData.session) {
       userId = pendingSessionData.session.userId;
       userResolutionSource = "pending_session";
-      console.log(`[CSMS-DUAL] StartTransaction: [RESOLVE] User ${userId} from pending session (sessionId: ${pendingSessionData.sessionId})`);
+      console.log(`[CSMS-DUAL] StartTransaction: [RESOLVE] User ${userId} from pending session in memory (sessionId: ${pendingSessionData.sessionId})`);
+    }
+    
+    // 4a-bis. FALLBACK BD: Si no se encontró en memoria, buscar en BD (multi-instancia)
+    if (!pendingSessionData) {
+      pendingSessionData = await findPendingSessionFromDb(conn.ocppIdentity, req.connectorId);
+      if (pendingSessionData && pendingSessionData.session) {
+        userId = pendingSessionData.session.userId;
+        userResolutionSource = "pending_session_db";
+        console.log(`[CSMS-DUAL] StartTransaction: [RESOLVE] User ${userId} from pending session in DB (sessionId: ${pendingSessionData.sessionId})`);
+      }
     }
     
     // 4b. Si no hay sesión pendiente, buscar por idTag en tabla id_tags (soporta APP + RFID + NFC)
@@ -968,6 +978,10 @@ export class DualCSMS {
     // 4c. Si no hay sesión pendiente por connectorId, buscar cualquier sesión pendiente para esta estación
     if (!userId) {
       pendingSessionData = findPendingSessionByOcppIdentity(conn.ocppIdentity);
+      if (!pendingSessionData) {
+        // Fallback BD sin connectorId
+        pendingSessionData = await findPendingSessionFromDb(conn.ocppIdentity);
+      }
       if (pendingSessionData && pendingSessionData.session) {
         userId = pendingSessionData.session.userId;
         userResolutionSource = "pending_session_any_connector";
@@ -1642,8 +1656,11 @@ export class DualCSMS {
           // No hay transacción activa - crear una nueva (transacción huérfana)
           console.log(`[CSMS-DUAL] Orphan recovery: No active transaction for EVSE ${evse.id}. Creating orphan transaction...`);
           
-          // Buscar sesión pendiente
-          const pendingSession = findPendingSessionByOcppIdentity(conn.ocppIdentity, req.connectorId);
+          // Buscar sesión pendiente (memoria + BD fallback)
+          let pendingSession = findPendingSessionByOcppIdentity(conn.ocppIdentity, req.connectorId);
+          if (!pendingSession) {
+            pendingSession = await findPendingSessionFromDb(conn.ocppIdentity, req.connectorId);
+          }
           let userId = 1;
           if (pendingSession?.session) {
             userId = pendingSession.session.userId;

@@ -1122,9 +1122,20 @@ async function handleOCPP16Message(
       const { nanoid } = await import("nanoid");
       const internalTransactionId = nanoid();
       
-      // Buscar sesión pendiente para obtener chargeMode/targetValue
-      const { findPendingSessionByOcppIdentity: findPendingOcpp } = await import("../charging/charging-router");
-      const pendingSessionForTx = findPendingOcpp(ocppIdentity, payload.connectorId);
+      // Buscar sesión pendiente para obtener chargeMode/targetValue (memoria + BD fallback)
+      const { findPendingSessionByOcppIdentity: findPendingOcpp, findPendingSessionFromDb: findPendingDb } = await import("../charging/charging-router");
+      let pendingSessionForTx = findPendingOcpp(ocppIdentity, payload.connectorId);
+      if (!pendingSessionForTx) {
+        // Fallback: buscar en BD (multi-instancia)
+        pendingSessionForTx = await findPendingDb(ocppIdentity, payload.connectorId);
+      }
+      if (!pendingSessionForTx) {
+        // Intentar sin connectorId
+        pendingSessionForTx = findPendingOcpp(ocppIdentity);
+        if (!pendingSessionForTx) {
+          pendingSessionForTx = await findPendingDb(ocppIdentity);
+        }
+      }
       const txChargeMode = pendingSessionForTx?.session?.chargeMode || "full_charge";
       const txTargetValue = pendingSessionForTx?.session?.targetValue || 0;
       const txPricePerKwh = pendingSessionForTx?.session?.pricePerKwh || (tariff ? parseFloat(tariff.pricePerKwh) : 1800);

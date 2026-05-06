@@ -2962,3 +2962,52 @@ export const claims = mysqlTable("claims", {
 
 export type Claim = typeof claims.$inferSelect;
 export type InsertClaim = typeof claims.$inferInsert;
+
+// ============================================================================
+// OVERSTAY LOCKS TABLE - Prevents duplicate overstay charges across instances
+// ============================================================================
+
+export const overstayLocks = mysqlTable("overstay_locks", {
+  id: int("id").autoincrement().primaryKey(),
+  /** EVSE being monitored */
+  evseId: int("evseId").notNull(),
+  /** Transaction being charged for overstay */
+  transactionId: int("transactionId").notNull(),
+  /** Instance ID that holds the lock */
+  instanceId: varchar("instanceId", { length: 100 }).notNull(),
+  /** Last heartbeat from the instance holding the lock */
+  lastHeartbeat: timestamp("lastHeartbeat").notNull(),
+  /** Accumulated overstay cost so far (for recovery after restart) */
+  accumulatedCost: decimal("accumulatedCost", { precision: 12, scale: 2 }).default("0"),
+  /** Last time a charge was applied */
+  lastChargeTime: timestamp("lastChargeTime").notNull(),
+  /** When the overstay tracking started (finishingStartTime) */
+  startedAt: timestamp("startedAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OverstayLock = typeof overstayLocks.$inferSelect;
+
+// ============================================================
+// PENDING CHARGE SESSIONS - Persistencia de sesiones pendientes
+// Resuelve el problema de múltiples instancias del servidor
+// donde la sesión se crea en memoria de una instancia pero
+// el StartTransaction llega a otra instancia diferente
+// ============================================================
+export const pendingChargeSessions = mysqlTable("pending_charge_sessions", {
+  id: int("id").primaryKey().autoincrement(),
+  sessionId: varchar("sessionId", { length: 64 }).notNull().unique(),
+  userId: int("userId").notNull(),
+  stationId: int("stationId").notNull(),
+  connectorId: int("connectorId").notNull(),
+  ocppIdentity: varchar("ocppIdentity", { length: 128 }).notNull(),
+  chargeMode: varchar("chargeMode", { length: 20 }).notNull().default("full_charge"),
+  targetValue: decimal("targetValue", { precision: 12, scale: 2 }).notNull().default("0"),
+  estimatedCost: decimal("estimatedCost", { precision: 12, scale: 2 }).notNull().default("0"),
+  pricePerKwh: decimal("pricePerKwh", { precision: 10, scale: 2 }).notNull().default("1800"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  consumed: boolean("consumed").notNull().default(false),
+});
+
+export type PendingChargeSession = typeof pendingChargeSessions.$inferSelect;
