@@ -2907,3 +2907,58 @@ export const apiWebhooks = mysqlTable("api_webhooks", {
   failCount: int("failCount").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
+
+
+// ============================================================================
+// REFUNDS TABLE (Historial de reembolsos para auditoría)
+// ============================================================================
+export const refunds = mysqlTable("refunds", {
+  id: int("id").autoincrement().primaryKey(),
+  transactionId: int("transactionId").notNull(), // FK a transactions
+  userId: int("userId").notNull(), // Usuario que recibe el reembolso
+  adminId: int("adminId").notNull(), // Admin que ejecutó el reembolso
+  adminName: varchar("adminName", { length: 255 }).notNull(), // Nombre del admin (para auditoría)
+  // Montos
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(), // Monto reembolsado
+  // Tipo de reembolso
+  refundType: varchar("refundType", { length: 50 }).notNull(), // "general", "overstay", "energy"
+  // Motivo y detalles
+  reason: text("reason").notNull(), // Motivo del reembolso
+  // Referencia al reclamo (si aplica)
+  claimId: int("claimId"), // FK a claims (opcional)
+  // Wallet transaction generada
+  walletTransactionId: int("walletTransactionId"), // FK a wallet_transactions
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Refund = typeof refunds.$inferSelect;
+export type InsertRefund = typeof refunds.$inferInsert;
+
+// ============================================================================
+// CLAIMS TABLE (Reclamos de cobro incorrecto)
+// ============================================================================
+export const claims = mysqlTable("claims", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // Usuario que reclama
+  userName: varchar("userName", { length: 255 }).notNull(), // Nombre del usuario
+  transactionId: int("transactionId").notNull(), // Transacción reclamada
+  // Detalle del reclamo
+  category: varchar("category", { length: 50 }).notNull(), // "overcharge", "overstay_unfair", "wrong_kwh", "double_charge", "other"
+  description: text("description").notNull(), // Descripción del problema
+  requestedAmount: decimal("requestedAmount", { precision: 12, scale: 2 }), // Monto que solicita (opcional)
+  // Estado del reclamo
+  status: varchar("status", { length: 30 }).default("PENDING").notNull(), // PENDING, IN_REVIEW, RESOLVED, REJECTED
+  // Resolución
+  resolvedByAdminId: int("resolvedByAdminId"), // Admin que resolvió
+  resolvedByAdminName: varchar("resolvedByAdminName", { length: 255 }),
+  resolution: text("resolution"), // Nota de resolución
+  refundId: int("refundId"), // FK a refunds (si se reembolsó)
+  resolvedAt: timestamp("resolvedAt"),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type Claim = typeof claims.$inferSelect;
+export type InsertClaim = typeof claims.$inferInsert;

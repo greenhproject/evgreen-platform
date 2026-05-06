@@ -47,7 +47,9 @@ import {
   Calculator,
   Wrench,
   UserCheck,
-  Server
+  Server,
+  RotateCcw,
+  AlertCircle
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -71,6 +73,8 @@ const adminMenuItems = [
   { icon: BarChart3, label: "Reportes", path: "/admin/reports" },
   { icon: Image, label: "Banners", path: "/admin/banners" },
   { icon: Bell, label: "Notificaciones", path: "/admin/notifications" },
+  { icon: RotateCcw, label: "Reembolsos", path: "/admin/refunds" },
+  { icon: AlertCircle, label: "Reclamos", path: "/admin/claims" },
   { icon: Headphones, label: "Soporte", path: "/admin/support" },
   { icon: PhoneCall, label: "Inicio Remoto", path: "/admin/remote-start" },
   { icon: Calculator, label: "Centro Financiero", path: "/admin/financial" },
