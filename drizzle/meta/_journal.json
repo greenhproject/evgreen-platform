@@ -176,6 +176,20 @@
       "when": 1778024396751,
       "tag": "0024_mean_stardust",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1778030054312,
+      "tag": "0025_shocking_the_fury",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1778032622746,
+      "tag": "0026_rapid_thena",
+      "breakpoints": true
     }
   ]
 }

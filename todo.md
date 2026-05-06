@@ -3072,4 +3072,12 @@
 - [x] Notificación push al admin cuando se crea un reclamo
 - [x] Notificación al usuario cuando se resuelve/rechaza su reclamo
 - [x] Tests unitarios (11 tests)
+- [x] Checkpoint (2f351557) y push a GitHub completado
+
+## Corrección de Bugs Críticos - Transacción #690003 Olga Lopez (05/05/2026)
+- [x] Limpiar deudas duplicadas de Olga Lopez (243 deudas → 1 deuda consolidada $77,674)
+- [x] Bug fix: Agregar lock en BD para evitar duplicación de deudas en overstay monitor (múltiples instancias)
+- [x] Bug fix: Persistir sesiones pendientes en BD para resolver pérdida de chargeMode entre instancias
+- [x] Bug fix: Fallback a BD en csms-dual.ts e index.ts cuando sesión pendiente no está en memoria local
+- [x] Tests unitarios para las correcciones (14 tests)
 - [ ] Checkpoint y push a GitHub

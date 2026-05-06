@@ -11,14 +11,23 @@
  * 4. Sends notifications to user (warning at grace end, periodic updates)
  * 5. When cable is disconnected (Available), finalizes overstay charges
  * 
+ * IMPORTANT: Uses DB-level locks (overstay_locks table) to prevent duplicate charges
+ * when multiple server instances are running (e.g., Railway replicas).
+ * 
  * Runs as a periodic job every 60 seconds.
  */
 
 import * as db from "../db";
-import { transactions, evses, tariffs } from "../../drizzle/schema";
-import { eq, and, or, desc } from "drizzle-orm";
+import { transactions, evses, tariffs, overstayLocks } from "../../drizzle/schema";
+import { eq, and, or, desc, lt } from "drizzle-orm";
 import { sendUserPush } from "../push/unified-push";
 import { autoChargeIfNeeded } from "../wompi/auto-charge";
+import crypto from "crypto";
+
+// Unique instance ID for this server process (survives restarts with different ID)
+const INSTANCE_ID = `inst-${crypto.randomUUID().substring(0, 8)}-${Date.now()}`;
+// Lock heartbeat timeout: if an instance hasn't updated its heartbeat in 3 minutes, consider it dead
+const LOCK_TIMEOUT_MS = 3 * 60 * 1000;
 
 // ============================================================================
 // OVERSTAY SESSION TRACKING
@@ -60,6 +69,138 @@ const activeOverstaySessions = new Map<number, OverstaySession>();
 let monitorInterval: ReturnType<typeof setInterval> | null = null;
 
 // ============================================================================
+// DB LOCK MANAGEMENT - Prevents duplicate charges across instances
+// ============================================================================
+
+/**
+ * Try to acquire a DB lock for an EVSE overstay session.
+ * Returns true if this instance now holds the lock, false if another instance has it.
+ */
+async function acquireOverstayLock(evseId: number, transactionId: number, startedAt: Date): Promise<boolean> {
+  const dbInstance = await db.getDb();
+  if (!dbInstance) return false;
+
+  try {
+    const now = new Date();
+    const timeoutThreshold = new Date(now.getTime() - LOCK_TIMEOUT_MS);
+
+    // Check if there's an existing lock for this EVSE
+    const [existing] = await dbInstance.select()
+      .from(overstayLocks)
+      .where(eq(overstayLocks.evseId, evseId))
+      .limit(1);
+
+    if (existing) {
+      // Lock exists - check if it's from this instance or if it's stale
+      if (existing.instanceId === INSTANCE_ID) {
+        // We already hold the lock - update heartbeat
+        await dbInstance.update(overstayLocks)
+          .set({ lastHeartbeat: now })
+          .where(eq(overstayLocks.id, existing.id));
+        return true;
+      }
+
+      if (new Date(existing.lastHeartbeat) > timeoutThreshold) {
+        // Another instance holds a valid lock - do NOT process
+        return false;
+      }
+
+      // Lock is stale (instance died) - take over
+      console.log(`[OverstayMonitor] Taking over stale lock for EVSE ${evseId} from instance ${existing.instanceId}`);
+      await dbInstance.update(overstayLocks)
+        .set({
+          instanceId: INSTANCE_ID,
+          lastHeartbeat: now,
+          transactionId,
+        })
+        .where(eq(overstayLocks.id, existing.id));
+      return true;
+    }
+
+    // No lock exists - create one
+    await dbInstance.insert(overstayLocks).values({
+      evseId,
+      transactionId,
+      instanceId: INSTANCE_ID,
+      lastHeartbeat: now,
+      accumulatedCost: "0",
+      lastChargeTime: now,
+      startedAt,
+    });
+    return true;
+  } catch (error: any) {
+    // Duplicate key error means another instance just created the lock
+    if (error?.code === 'ER_DUP_ENTRY' || error?.errno === 1062) {
+      return false;
+    }
+    console.error(`[OverstayMonitor] Error acquiring lock for EVSE ${evseId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Update the heartbeat and accumulated cost for our lock
+ */
+async function updateOverstayLock(evseId: number, accumulatedCost: number, lastChargeTime: Date): Promise<void> {
+  const dbInstance = await db.getDb();
+  if (!dbInstance) return;
+
+  try {
+    await dbInstance.update(overstayLocks)
+      .set({
+        lastHeartbeat: new Date(),
+        accumulatedCost: accumulatedCost.toFixed(2),
+        lastChargeTime,
+      })
+      .where(and(
+        eq(overstayLocks.evseId, evseId),
+        eq(overstayLocks.instanceId, INSTANCE_ID)
+      ));
+  } catch (error) {
+    console.error(`[OverstayMonitor] Error updating lock for EVSE ${evseId}:`, error);
+  }
+}
+
+/**
+ * Release the lock when overstay session ends
+ */
+async function releaseOverstayLock(evseId: number): Promise<void> {
+  const dbInstance = await db.getDb();
+  if (!dbInstance) return;
+
+  try {
+    await dbInstance.delete(overstayLocks)
+      .where(eq(overstayLocks.evseId, evseId));
+  } catch (error) {
+    console.error(`[OverstayMonitor] Error releasing lock for EVSE ${evseId}:`, error);
+  }
+}
+
+/**
+ * Get lock info for recovery (when this instance takes over a stale lock)
+ */
+async function getExistingLockInfo(evseId: number): Promise<{ accumulatedCost: number; lastChargeTime: Date; startedAt: Date } | null> {
+  const dbInstance = await db.getDb();
+  if (!dbInstance) return null;
+
+  try {
+    const [lock] = await dbInstance.select()
+      .from(overstayLocks)
+      .where(eq(overstayLocks.evseId, evseId))
+      .limit(1);
+
+    if (!lock) return null;
+    return {
+      accumulatedCost: parseFloat(lock.accumulatedCost?.toString() || "0"),
+      lastChargeTime: new Date(lock.lastChargeTime),
+      startedAt: new Date(lock.startedAt),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
 // PUBLIC API
 // ============================================================================
 
@@ -95,7 +236,7 @@ export function stopOverstayMonitor() {
  * This means the charge is complete but the cable is still connected.
  */
 export async function onChargingFinished(evseId: number, stationId: number) {
-  // Check if there's already an overstay session for this EVSE
+  // Check if there's already an overstay session for this EVSE (in-memory)
   if (activeOverstaySessions.has(evseId)) {
     console.log(`[OverstayMonitor] Overstay session already active for EVSE ${evseId}, skipping`);
     return;
@@ -178,6 +319,24 @@ export async function onChargingFinished(evseId: number, stationId: number) {
       chargeCount: 0,
     };
 
+    // Try to acquire DB lock before starting
+    const lockAcquired = await acquireOverstayLock(evseId, transaction.id, new Date());
+    if (!lockAcquired) {
+      console.log(`[OverstayMonitor] Another instance already tracking EVSE ${evseId}, skipping`);
+      return;
+    }
+
+    // Check if there's existing lock info (recovery from restart)
+    const existingLock = await getExistingLockInfo(evseId);
+    if (existingLock && existingLock.accumulatedCost > 0) {
+      // Recover accumulated cost from previous instance
+      session.accumulatedCost = existingLock.accumulatedCost;
+      session.lastChargeTime = existingLock.lastChargeTime;
+      session.finishingStartTime = existingLock.startedAt;
+      session.chargeCount = Math.round(existingLock.accumulatedCost / penaltyPerMinute);
+      console.log(`[OverstayMonitor] Recovered session for EVSE ${evseId}: accumulated=$${existingLock.accumulatedCost}, lastCharge=${existingLock.lastChargeTime.toISOString()}`);
+    }
+
     activeOverstaySessions.set(evseId, session);
     console.log(`[OverstayMonitor] Started tracking EVSE ${evseId}: grace=${gracePeriodMinutes}min, penalty=$${penaltyPerMinute}/min, txId=${transaction.id}`);
 
@@ -208,6 +367,9 @@ export async function onCableDisconnected(evseId: number) {
 
   // Do one final charge calculation for any remaining time
   await chargeOverstayForSession(session, true);
+
+  // Release the DB lock
+  await releaseOverstayLock(evseId);
 
   // Remove the session
   activeOverstaySessions.delete(evseId);
@@ -346,6 +508,15 @@ async function processOverstaySessions() {
       if (!evse || (evse.status !== "FINISHING" && evse.status !== "SUSPENDED_EV")) {
         // Cable was disconnected or status changed - finalize
         console.log(`[OverstayMonitor] EVSE ${evseId} no longer in FINISHING/SUSPENDED_EV (status=${evse?.status}). Removing session.`);
+        await releaseOverstayLock(evseId);
+        activeOverstaySessions.delete(evseId);
+        continue;
+      }
+
+      // Verify we still hold the lock (another instance might have taken over)
+      const lockValid = await acquireOverstayLock(evseId, session.transactionId, session.finishingStartTime);
+      if (!lockValid) {
+        console.log(`[OverstayMonitor] Lost lock for EVSE ${evseId}, removing local session`);
         activeOverstaySessions.delete(evseId);
         continue;
       }
@@ -504,6 +675,9 @@ async function chargeOverstayForSession(session: OverstaySession, isFinal: boole
     session.accumulatedCost += penaltyAmount;
     session.lastChargeTime = now;
     session.chargeCount++;
+
+    // Update the DB lock with new accumulated cost (for recovery)
+    await updateOverstayLock(session.evseId, session.accumulatedCost, now);
 
     // Update transaction overstayCost in DB
     await db.updateTransaction(session.transactionId, {

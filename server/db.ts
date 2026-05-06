@@ -7397,3 +7397,78 @@ export async function getClaimsByTransactionId(transactionId: number): Promise<C
 }
 
 
+
+// ============================================================
+// PENDING CHARGE SESSIONS - Persistencia en BD
+// ============================================================
+import { pendingChargeSessions } from "../drizzle/schema";
+
+export async function savePendingChargeSession(data: {
+  sessionId: string;
+  userId: number;
+  stationId: number;
+  connectorId: number;
+  ocppIdentity: string;
+  chargeMode: string;
+  targetValue: number;
+  estimatedCost: number;
+  pricePerKwh: number;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutos
+  await db.insert(pendingChargeSessions).values({
+    sessionId: data.sessionId,
+    userId: data.userId,
+    stationId: data.stationId,
+    connectorId: data.connectorId,
+    ocppIdentity: data.ocppIdentity,
+    chargeMode: data.chargeMode,
+    targetValue: String(data.targetValue),
+    estimatedCost: String(data.estimatedCost),
+    pricePerKwh: String(data.pricePerKwh),
+    expiresAt,
+  });
+}
+
+export async function findPendingChargeSessionByOcppIdentity(ocppIdentity: string, connectorId?: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const now = new Date();
+  let conditions = [
+    eq(pendingChargeSessions.ocppIdentity, ocppIdentity),
+    eq(pendingChargeSessions.consumed, false),
+    gt(pendingChargeSessions.expiresAt, now),
+  ];
+  if (connectorId !== undefined) {
+    conditions.push(eq(pendingChargeSessions.connectorId, connectorId));
+  }
+  const results = await db
+    .select()
+    .from(pendingChargeSessions)
+    .where(and(...conditions))
+    .orderBy(desc(pendingChargeSessions.createdAt))
+    .limit(1);
+  return results.length > 0 ? results[0] : null;
+}
+
+export async function consumePendingChargeSession(sessionId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(pendingChargeSessions)
+    .set({ consumed: true })
+    .where(eq(pendingChargeSessions.sessionId, sessionId));
+}
+
+export async function cleanExpiredPendingSessions() {
+  const db = await getDb();
+  if (!db) return;
+  const now = new Date();
+  await db
+    .delete(pendingChargeSessions)
+    .where(and(
+      lt(pendingChargeSessions.expiresAt, now),
+      eq(pendingChargeSessions.consumed, false)
+    ));
+}
