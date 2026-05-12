@@ -188,6 +188,12 @@ export function generateQuoteHTML(data: QuotePDFData): string {
       gap: 14px;
     }
 
+    .brand-logo {
+      height: 52px;
+      width: auto;
+      object-fit: contain;
+    }
+
     .brand-icon {
       width: 48px;
       height: 48px;
@@ -763,13 +769,7 @@ export function generateQuoteHTML(data: QuotePDFData): string {
     <div class="hero-header">
       <div class="header-top">
         <div class="brand">
-          <div class="brand-icon">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
-          <div class="brand-text">
-            <h1>EVGreen</h1>
-            <p>Estaciones de Carga Inteligentes</p>
-          </div>
+          <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/zbDIWjuOCDapFXwo.webp" alt="EVGreen" class="brand-logo" />
         </div>
         <div class="quote-badge">
           <div class="label">Cotización</div>
@@ -936,9 +936,9 @@ export function generateQuoteHTML(data: QuotePDFData): string {
 
     <!-- FOOTER -->
     <div class="footer">
-      <div class="footer-brand">
-        <strong>${data.settings.companyName}</strong>
-        NIT: ${data.settings.companyNit}
+      <div class="footer-brand" style="display:flex;align-items:center;gap:12px;">
+        <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/zbDIWjuOCDapFXwo.webp" alt="EVGreen" style="height:32px;width:auto;" />
+        <span>NIT: ${data.settings.companyNit}</span>
       </div>
       <div class="footer-contact">
         ${data.settings.companyPhone ? `${data.settings.companyPhone}<br/>` : ''}
