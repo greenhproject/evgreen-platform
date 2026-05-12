@@ -19,7 +19,8 @@ import { useLocation } from "wouter";
 import {
   Plus, Search, FileText, Send, Eye, Copy, BarChart3,
   Clock, CheckCircle2, XCircle, AlertCircle, Mail,
-  Package, Settings, Minus, ExternalLink
+  Package, Settings, Minus, ExternalLink, Pencil, Trash2,
+  Download, CopyPlus
 } from "lucide-react";
 
 function formatCOP(amount: number): string {
@@ -62,6 +63,8 @@ export default function Quotes() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingQuote, setEditingQuote] = useState<any>(null);
   const [formData, setFormData] = useState({
     clientName: "",
     clientEmail: "",
@@ -111,6 +114,33 @@ export default function Quotes() {
     onSuccess: () => {
       toast.success("Cotización enviada por email exitosamente");
       refetch();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const updateQuoteMutation = trpc.quotes.updateQuote.useMutation({
+    onSuccess: () => {
+      toast.success("Cotización actualizada exitosamente");
+      refetch();
+      setIsEditOpen(false);
+      setEditingQuote(null);
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const deleteQuoteMutation = trpc.quotes.deleteQuote.useMutation({
+    onSuccess: () => {
+      toast.success("Cotización eliminada");
+      refetch();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const generatePdfMutation = trpc.quotes.generatePdf.useMutation({
+    onSuccess: (data) => {
+      // Abrir el PDF en nueva pestaña
+      window.open(data.url, "_blank");
+      toast.success("PDF generado exitosamente");
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -169,6 +199,32 @@ export default function Quotes() {
       ...formData,
       items: selectedItems,
     });
+  }
+
+  function openEdit(quote: any) {
+    setEditingQuote(quote);
+    setIsEditOpen(true);
+  }
+
+  function handleEdit() {
+    if (!editingQuote) return;
+    updateQuoteMutation.mutate({
+      id: editingQuote.id,
+      clientName: editingQuote.clientName,
+      clientEmail: editingQuote.clientEmail,
+      clientPhone: editingQuote.clientPhone || "",
+      clientCompany: editingQuote.clientCompany || "",
+      clientCity: editingQuote.clientCity || "",
+      clientNotes: editingQuote.clientNotes || "",
+      internalNotes: editingQuote.internalNotes || "",
+      discount: editingQuote.discount || 0,
+    });
+  }
+
+  function handleDelete(quote: any) {
+    if (confirm(`¿Eliminar cotización ${quote.quoteNumber}? Esta acción no se puede deshacer.`)) {
+      deleteQuoteMutation.mutate({ id: quote.id });
+    }
   }
 
   function getQuoteUrl(token: string): string {
@@ -354,24 +410,39 @@ export default function Quotes() {
                   <div className="flex items-center gap-4">
                     <div className="text-right">
                       <div className="font-bold text-lg">{formatCOP(quote.total)}</div>
-                      {quote.viewCount > 0 && (
-                        <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
-                          <Eye className="h-3 w-3" /> {quote.viewCount} vista(s)
-                        </p>
-                      )}
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
+                        <Eye className="h-3 w-3" /> {quote.viewCount || 0} vista(s)
+                      </p>
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Copiar link" onClick={() => copyLink(quote.publicToken)}>
+                      {/* Copiar link */}
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Copiar link público" onClick={() => copyLink(quote.publicToken)}>
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Ver cotización"
+                      {/* Ver cotización online */}
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Ver cotización online"
                         onClick={() => window.open(getQuoteUrl(quote.publicToken), "_blank")}>
                         <ExternalLink className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicar"
-                        onClick={() => duplicateMutation.mutate({ id: quote.id })}>
-                        <Copy className="h-3.5 w-3.5" />
+                      {/* Descargar PDF */}
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-400" title="Descargar PDF"
+                        onClick={() => generatePdfMutation.mutate({ id: quote.id })}
+                        disabled={generatePdfMutation.isPending}>
+                        <Download className="h-3.5 w-3.5" />
                       </Button>
+                      {/* Duplicar (icono diferente a copiar) */}
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicar cotización"
+                        onClick={() => duplicateMutation.mutate({ id: quote.id })}>
+                        <CopyPlus className="h-3.5 w-3.5" />
+                      </Button>
+                      {/* Editar */}
+                      {(quote.status === "DRAFT" || quote.status === "SENT") && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-yellow-400" title="Editar cotización"
+                          onClick={() => openEdit(quote)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {/* Enviar por email */}
                       {(quote.status === "DRAFT" || quote.status === "SENT") && (
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-400" title="Enviar por email"
                           onClick={() => sendEmailMutation.mutate({ id: quote.id })}
@@ -379,12 +450,18 @@ export default function Quotes() {
                           <Mail className="h-3.5 w-3.5" />
                         </Button>
                       )}
-                      {quote.status === "DRAFT" && (
+                      {/* Marcar como aceptada */}
+                      {(quote.status === "DRAFT" || quote.status === "SENT" || quote.status === "VIEWED") && (
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-400" title="Marcar como aceptada"
                           onClick={() => updateStatusMutation.mutate({ id: quote.id, status: "ACCEPTED" })}>
                           <CheckCircle2 className="h-3.5 w-3.5" />
                         </Button>
                       )}
+                      {/* Eliminar */}
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400" title="Eliminar cotización"
+                        onClick={() => handleDelete(quote)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -612,6 +689,90 @@ export default function Quotes() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Quote Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) setEditingQuote(null); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Cotización {editingQuote?.quoteNumber}</DialogTitle>
+          </DialogHeader>
+          {editingQuote && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Nombre completo *</Label>
+                  <Input
+                    value={editingQuote.clientName}
+                    onChange={(e) => setEditingQuote({ ...editingQuote, clientName: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Correo electrónico *</Label>
+                  <Input
+                    type="email"
+                    value={editingQuote.clientEmail}
+                    onChange={(e) => setEditingQuote({ ...editingQuote, clientEmail: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Teléfono</Label>
+                  <Input
+                    value={editingQuote.clientPhone || ""}
+                    onChange={(e) => setEditingQuote({ ...editingQuote, clientPhone: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Empresa</Label>
+                  <Input
+                    value={editingQuote.clientCompany || ""}
+                    onChange={(e) => setEditingQuote({ ...editingQuote, clientCompany: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label>Ciudad</Label>
+                  <Input
+                    value={editingQuote.clientCity || ""}
+                    onChange={(e) => setEditingQuote({ ...editingQuote, clientCity: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Notas para el cliente</Label>
+                  <Textarea
+                    value={editingQuote.clientNotes || ""}
+                    onChange={(e) => setEditingQuote({ ...editingQuote, clientNotes: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Notas internas</Label>
+                  <Textarea
+                    value={editingQuote.internalNotes || ""}
+                    onChange={(e) => setEditingQuote({ ...editingQuote, internalNotes: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Descuento (COP)</Label>
+                <Input
+                  type="number"
+                  value={editingQuote.discount || ""}
+                  onChange={(e) => setEditingQuote({ ...editingQuote, discount: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={() => { setIsEditOpen(false); setEditingQuote(null); }}>Cancelar</Button>
+                <Button onClick={handleEdit} disabled={updateQuoteMutation.isPending} className="gap-2">
+                  <Pencil className="h-4 w-4" />
+                  Guardar Cambios
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

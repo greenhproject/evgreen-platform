@@ -666,4 +666,150 @@ export const quotesRouter = router({
 
       return result;
     }),
+
+  /** Editar datos de una cotización (solo borrador o enviada) */
+  updateQuote: advisorProcedure
+    .input(z.object({
+      id: z.number(),
+      clientName: z.string().min(2).optional(),
+      clientEmail: z.string().email().optional(),
+      clientPhone: z.string().optional(),
+      clientCompany: z.string().optional(),
+      clientCity: z.string().optional(),
+      clientNotes: z.string().optional(),
+      internalNotes: z.string().optional(),
+      discount: z.number().min(0).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDatabase();
+      const { id, ...updateData } = input;
+      const [quote] = await db.select().from(quotes).where(eq(quotes.id, id));
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Cotización no encontrada" });
+
+      // Verificar acceso
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      if (!isAdmin && quote.advisorId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      // Solo se pueden editar borradores y enviadas
+      if (!["DRAFT", "SENT"].includes(quote.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Solo se pueden editar cotizaciones en borrador o enviadas" });
+      }
+
+      // Recalcular total si se cambia el descuento
+      const finalUpdate: any = {};
+      Object.entries(updateData).forEach(([key, value]) => {
+        if (value !== undefined) finalUpdate[key] = value;
+      });
+
+      if (updateData.discount !== undefined) {
+        finalUpdate.total = quote.subtotal - updateData.discount;
+      }
+
+      await db.update(quotes).set(finalUpdate).where(eq(quotes.id, id));
+      return { success: true };
+    }),
+
+  /** Eliminar cotización (solo borrador) */
+  deleteQuote: advisorProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDatabase();
+      const [quote] = await db.select().from(quotes).where(eq(quotes.id, input.id));
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Cotización no encontrada" });
+
+      // Verificar acceso
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      if (!isAdmin && quote.advisorId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      // Solo admin puede eliminar cualquiera, asesores solo borradores
+      if (!isAdmin && quote.status !== "DRAFT") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Solo puedes eliminar cotizaciones en borrador" });
+      }
+
+      // Eliminar items primero, luego la cotización
+      await db.delete(quoteItems).where(eq(quoteItems.quoteId, input.id));
+      await db.delete(quotes).where(eq(quotes.id, input.id));
+      return { success: true };
+    }),
+
+  /** Generar PDF de cotización y devolver URL */
+  generatePdf: advisorProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDatabase();
+      const [quote] = await db.select().from(quotes).where(eq(quotes.id, input.id));
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Cotización no encontrada" });
+
+      // Verificar acceso
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      if (!isAdmin && quote.advisorId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, input.id));
+      const [settings] = await db.select().from(quoteSettings).limit(1);
+
+      if (!settings) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Configure primero los ajustes de cotización." });
+      }
+
+      // Generar HTML de la cotización
+      const { generateQuoteHTML } = await import("./quote-pdf");
+      const baseUrl = ctx.req?.headers?.origin || "https://evgreen.lat";
+      const htmlContent = generateQuoteHTML({
+        quoteNumber: quote.quoteNumber,
+        createdAt: quote.createdAt,
+        expiresAt: quote.expiresAt,
+        publicUrl: `${baseUrl}/cotizacion/${quote.publicToken}`,
+        clientName: quote.clientName,
+        clientEmail: quote.clientEmail,
+        clientPhone: quote.clientPhone,
+        clientCompany: quote.clientCompany,
+        clientCity: quote.clientCity,
+        clientNotes: quote.clientNotes,
+        advisorName: quote.advisorName,
+        subtotal: quote.subtotal,
+        discount: quote.discount || 0,
+        total: quote.total,
+        items: items.map((item: any) => ({
+          productName: item.productName,
+          productPowerKw: item.productPowerKw,
+          productChargeType: item.productChargeType,
+          productConnector: item.productConnector,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          lineTotal: item.lineTotal,
+          includesTransformer: item.includesTransformer || false,
+          cableMetersIncluded: item.cableMetersIncluded || 10,
+        })),
+        settings: {
+          companyName: settings.companyName || "EVGreen",
+          companyNit: settings.companyNit || "",
+          companyPhone: settings.companyPhone || "",
+          companyEmail: settings.companyEmail || "",
+          companyWebsite: settings.companyWebsite || "",
+          evgreenFeePercent: settings.evgreenFeePercent,
+          ownerSharePercent: settings.ownerSharePercent,
+          headerMessage: settings.headerMessage || "",
+          footerMessage: settings.footerMessage || "",
+          termsAndConditions: settings.termsAndConditions || "",
+          exclusions: settings.exclusions || "",
+          benefitsDescription: settings.benefitsDescription || "",
+        },
+      });
+
+      // Subir HTML como PDF-ready a S3
+      const { storagePut } = await import("../storage");
+      const fileName = `quotes/${quote.quoteNumber.replace(/\s/g, "-")}.html`;
+      const { url } = await storagePut(fileName, Buffer.from(htmlContent, "utf-8"), "text/html");
+
+      // Guardar URL en BD
+      await db.update(quotes).set({ pdfUrl: url }).where(eq(quotes.id, input.id));
+
+      return { url };
+    }),
 });
