@@ -3174,3 +3174,11 @@
 - [x] Mostrar imágenes de los cargadores en el template HTML/PDF
 - [x] Usar las URLs de imagen configuradas en el catálogo de cargadores
 - [x] Campo productImageUrl agregado a quoteItems para snapshot de imagen
+
+## Corrección PDF v3 (Mayo 12)
+- [x] Usar logo negro (letras negras) en el template HTML para PDF (fondo blanco)
+- [x] Agregar @media print con page-break-inside: avoid en secciones
+- [x] Eliminar headers/footers del navegador al imprimir (@page margin: 0)
+- [x] Generar PDF limpio sin URL, fecha ni numeración del navegador
+- [x] Evitar cortes de contenido entre páginas
+- [x] Eliminar hojas en blanco innecesarias al final (diseño compacto)
