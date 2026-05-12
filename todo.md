@@ -3159,3 +3159,10 @@
 - [x] Agregar botón de editar cotización (corregir datos del cliente)
 - [x] Agregar botón de eliminar cotización
 - [x] Agregar botón de descargar PDF desde el dashboard
+
+## Rediseño Cotización Premium - Mayo 2026
+
+- [x] Rediseñar template HTML (quote-pdf.ts) con estética premium EVGreen
+- [x] Rediseñar página pública QuotePublic.tsx con diseño impactante y moderno
+- [x] Gradientes, glassmorphism, tipografía premium, iconografía profesional
+- [x] Alineado con identidad visual EVGreen (verde eléctrico, oscuro, futurista)
