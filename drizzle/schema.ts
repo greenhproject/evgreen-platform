@@ -3011,3 +3011,127 @@ export const pendingChargeSessions = mysqlTable("pending_charge_sessions", {
 });
 
 export type PendingChargeSession = typeof pendingChargeSessions.$inferSelect;
+
+
+// ============================================================================
+// QUOTES MODULE - Cotizaciones Automatizadas de Cargadores
+// ============================================================================
+
+export const quoteStatusEnum = mysqlEnum("quote_status", [
+  "DRAFT",      // Borrador
+  "SENT",       // Enviada al cliente
+  "VIEWED",     // El cliente abrió el link
+  "ACCEPTED",   // Aceptada por el cliente
+  "REJECTED",   // Rechazada
+  "EXPIRED",    // Vencida (pasaron los días de vigencia)
+]);
+
+/** Catálogo de cargadores disponibles para venta (configurado por admin) */
+export const chargersCatalog = mysqlTable("chargers_catalog", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(), // Ej: "Cargador DC 120 kW CCS2"
+  slug: varchar("slug", { length: 100 }).notNull().unique(), // Ej: "dc-120kw"
+  powerKw: decimal("powerKw", { precision: 8, scale: 2 }).notNull(), // Potencia en kW
+  chargeType: chargeTypeEnum.notNull(), // AC o DC
+  connectorType: varchar("connectorType", { length: 50 }).notNull(), // CCS2, Type2, etc.
+  price: bigint("price", { mode: "number" }).notNull(), // Precio en COP (incluye llave en mano)
+  description: text("description"), // Descripción técnica corta
+  features: json("features").$type<string[]>(), // Lista de características incluidas
+  imageUrl: text("imageUrl"), // Foto del cargador
+  includesTransformer: boolean("includesTransformer").default(false), // Si incluye transformador
+  cableMetersIncluded: int("cableMetersIncluded").default(10), // Metros de cableado incluidos
+  warrantyYears: int("warrantyYears").default(2), // Años de garantía
+  isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ChargerCatalog = typeof chargersCatalog.$inferSelect;
+export type InsertChargerCatalog = typeof chargersCatalog.$inferInsert;
+
+/** Configuración global de cotizaciones (singleton, 1 fila) */
+export const quoteSettings = mysqlTable("quote_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  validityDays: int("validityDays").default(30).notNull(), // Días de vigencia
+  evgreenFeePercent: int("evgreenFeePercent").default(30).notNull(), // % fee de EVGreen (30%)
+  ownerSharePercent: int("ownerSharePercent").default(70).notNull(), // % para el dueño (70%)
+  companyName: varchar("companyName", { length: 255 }).default("EVGreen - Green House Project S.A.S").notNull(),
+  companyNit: varchar("companyNit", { length: 50 }).default("901.447.678-0").notNull(),
+  companyPhone: varchar("companyPhone", { length: 50 }).default("321 456 7644").notNull(),
+  companyEmail: varchar("companyEmail", { length: 255 }).default("evgreen@greenhproject.com").notNull(),
+  companyWebsite: varchar("companyWebsite", { length: 255 }).default("www.evgreen.lat").notNull(),
+  // Textos configurables de la cotización
+  headerMessage: text("headerMessage"), // Mensaje de cabecera personalizable
+  footerMessage: text("footerMessage"), // Notas al pie
+  termsAndConditions: text("termsAndConditions"), // Términos y condiciones
+  exclusions: text("exclusions"), // Qué NO incluye
+  // Beneficios del modelo EVGreen (justificación del 30%)
+  benefitsDescription: text("benefitsDescription"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type QuoteSettings = typeof quoteSettings.$inferSelect;
+
+/** Cotizaciones generadas */
+export const quotes = mysqlTable("quotes", {
+  id: int("id").autoincrement().primaryKey(),
+  quoteNumber: varchar("quoteNumber", { length: 20 }).notNull().unique(), // EVG-2026-0001
+  // Datos del cliente
+  clientName: varchar("clientName", { length: 255 }).notNull(),
+  clientEmail: varchar("clientEmail", { length: 320 }).notNull(),
+  clientPhone: varchar("clientPhone", { length: 50 }),
+  clientCompany: varchar("clientCompany", { length: 255 }),
+  clientCity: varchar("clientCity", { length: 100 }),
+  // Asesor que creó la cotización
+  advisorId: int("advisorId").notNull(), // FK a users
+  advisorName: varchar("advisorName", { length: 255 }),
+  // Estado y seguimiento
+  status: quoteStatusEnum.default("DRAFT").notNull(),
+  // Totales
+  subtotal: bigint("subtotal", { mode: "number" }).notNull().default(0), // Suma de items
+  discount: bigint("discount", { mode: "number" }).default(0), // Descuento aplicado
+  total: bigint("total", { mode: "number" }).notNull().default(0), // Total final
+  // Vigencia
+  validityDays: int("validityDays").default(30).notNull(),
+  expiresAt: timestamp("expiresAt"),
+  // Notas del asesor
+  internalNotes: text("internalNotes"), // Solo visible para el equipo
+  clientNotes: text("clientNotes"), // Notas visibles para el cliente
+  // Token único para acceso público (link de visualización)
+  publicToken: varchar("publicToken", { length: 64 }).notNull().unique(),
+  // Tracking
+  viewedAt: timestamp("viewedAt"), // Cuándo el cliente abrió el link
+  viewCount: int("viewCount").default(0),
+  sentAt: timestamp("sentAt"), // Cuándo se envió por email
+  acceptedAt: timestamp("acceptedAt"),
+  rejectedAt: timestamp("rejectedAt"),
+  // PDF generado
+  pdfUrl: text("pdfUrl"), // URL del PDF en S3
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Quote = typeof quotes.$inferSelect;
+export type InsertQuote = typeof quotes.$inferInsert;
+
+/** Items de cada cotización (cargadores seleccionados) */
+export const quoteItems = mysqlTable("quote_items", {
+  id: int("id").autoincrement().primaryKey(),
+  quoteId: int("quoteId").notNull(), // FK a quotes
+  catalogItemId: int("catalogItemId").notNull(), // FK a chargers_catalog
+  // Snapshot del producto al momento de cotizar (para que no cambie si se edita el catálogo)
+  productName: varchar("productName", { length: 255 }).notNull(),
+  productPowerKw: decimal("productPowerKw", { precision: 8, scale: 2 }).notNull(),
+  productChargeType: varchar("productChargeType", { length: 10 }).notNull(), // AC o DC
+  productConnector: varchar("productConnector", { length: 50 }).notNull(),
+  unitPrice: bigint("unitPrice", { mode: "number" }).notNull(), // Precio unitario COP
+  quantity: int("quantity").notNull().default(1),
+  lineTotal: bigint("lineTotal", { mode: "number" }).notNull(), // unitPrice * quantity
+  includesTransformer: boolean("includesTransformer").default(false),
+  cableMetersIncluded: int("cableMetersIncluded").default(10),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type QuoteItem = typeof quoteItems.$inferSelect;
+export type InsertQuoteItem = typeof quoteItems.$inferInsert;

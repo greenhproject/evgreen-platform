@@ -190,6 +190,13 @@
       "when": 1778032622746,
       "tag": "0026_rapid_thena",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1778600907702,
+      "tag": "0027_friendly_green_goblin",
+      "breakpoints": true
     }
   ]
 }

@@ -3080,4 +3080,60 @@
 - [x] Bug fix: Persistir sesiones pendientes en BD para resolver pérdida de chargeMode entre instancias
 - [x] Bug fix: Fallback a BD en csms-dual.ts e index.ts cuando sesión pendiente no está en memoria local
 - [x] Tests unitarios para las correcciones (14 tests)
-- [ ] Checkpoint y push a GitHub
+- [x] Checkpoint (02f7a88e) y push a GitHub completado
+
+
+## Módulo de Cotizaciones Automatizadas - Mayo 2026
+
+### Base de Datos y Backend
+- [x] Crear tabla de productos/cargadores configurables (chargers_catalog)
+- [x] Crear tabla de cotizaciones (quotes) con número único EVG-2026-XXXX
+- [x] Crear tabla de items de cotización (quote_items)
+- [x] Crear tabla de configuración de cotización (quote_settings)
+- [x] Procedimientos tRPC para CRUD de catálogo de cargadores (admin)
+- [x] Procedimientos tRPC para crear/listar/enviar cotizaciones (asesor)
+- [x] Procedimiento para vista pública de cotización (link único)
+- [x] Generación de PDF profesional con diseño ejecutivo
+
+### Roles y Permisos
+- [x] Rol de asesor comercial (advisor) en el sistema
+- [x] Admin: configura catálogo, precios, parámetros, ve todas las cotizaciones
+- [x] Asesor: crea, envía y da seguimiento a sus cotizaciones
+
+### Configuración Admin (Catálogo de Cargadores)
+- [x] UI para agregar/editar/eliminar cargadores del catálogo de ventas
+- [x] Campos: nombre, potencia, precio, conector, descripción, imagen
+- [x] Configurar parámetros generales (vigencia, fee EVGreen 30%, modelo llave en mano)
+- [x] Configurar texto de condiciones comerciales y exclusiones
+
+### Formulario de Cotización (Asesor Comercial)
+- [x] Campos del cliente: nombre, correo, teléfono, empresa (opcional)
+- [x] Selector de cargador(es) del catálogo configurado
+- [x] Cantidad de unidades por cargador
+- [x] Cálculo automático de totales
+- [x] Preview en tiempo real de la cotización
+
+### Cotización Profesional (PDF + Vista Online)
+- [x] Diseño ejecutivo con portada, datos del cliente, especificaciones técnicas
+- [x] Incluir beneficios del modelo EVGreen (70/30, operación, soporte 24/7, IA)
+- [x] Justificación del fee 30% (operación, mantenimiento, soporte, licencia IA, tecnología)
+- [x] Detalle de qué incluye: llave en mano, instalación, transformador, 10m cableado
+- [x] Detalle de qué NO incluye: obras civiles, cableado adicional (validado en visita técnica)
+- [ ] Proyección de retorno de inversión
+- [x] Vigencia de la oferta (30 días)
+- [x] Número de cotización único (EVG-2026-XXXX)
+- [x] Vista online con link único (sin login)
+- [x] Botón de descargar PDF
+
+### Sistema de Email
+- [x] Template HTML premium para envío de cotización
+- [x] Adjuntar PDF generado al email
+- [x] Mensaje profesional y persuasivo
+- [x] Copia al asesor para trazabilidad
+- [x] Asunto personalizado con nombre del cliente
+
+### Dashboard de Seguimiento
+- [x] Lista de cotizaciones con estados (Borrador, Enviada, Vista, Aceptada, Vencida)
+- [x] Filtros por estado, fecha, asesor
+- [x] Indicador de cuándo el cliente abrió la cotización
+- [x] Acciones rápidas: reenviar, duplicar, marcar como aceptada
