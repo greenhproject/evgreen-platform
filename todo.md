@@ -3151,3 +3151,11 @@
 - [x] Crear layout/sidebar específico para comercial con acceso solo a cotizaciones
 - [x] Comercial solo ve sus propias cotizaciones (no las de otros)
 - [ ] Admin puede asignar rol de comercial a usuarios desde gestión de usuarios
+
+## Mejoras Módulo Cotizaciones v2 - Mayo 2026
+
+- [x] Contador de vistas no se muestra en el dashboard (corregir)
+- [x] Iconos de copiar link y clonar son iguales (diferenciarlos: Copy vs CopyPlus)
+- [x] Agregar botón de editar cotización (corregir datos del cliente)
+- [x] Agregar botón de eliminar cotización
+- [x] Agregar botón de descargar PDF desde el dashboard
