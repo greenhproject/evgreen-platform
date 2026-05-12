@@ -65,7 +65,7 @@ export async function sendQuoteEmail(params: SendQuoteParams): Promise<{ success
     const publicUrl = `${params.baseUrl}/cotizacion/${params.publicToken}`;
 
     // 1. Generar HTML del PDF
-    const pdfHTML = generateQuoteHTML({
+    const pdfHTML = await generateQuoteHTML({
       ...params,
       publicUrl,
     });

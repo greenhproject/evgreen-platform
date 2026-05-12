@@ -2,7 +2,7 @@
  * Admin - Catálogo de Cargadores para Cotizaciones
  * Permite configurar los cargadores disponibles para venta con precios
  */
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Zap, Package, FileText, Settings, ArrowLeft } from "lucide-react";
+import { Plus, Pencil, Trash2, Zap, Package, FileText, Settings, ArrowLeft, Upload, ImageIcon, X } from "lucide-react";
 import { useLocation } from "wouter";
 
 function formatCOP(amount: number): string {
@@ -64,7 +64,21 @@ export default function QuotesCatalog() {
   const [form, setForm] = useState<ChargerFormData>(defaultForm);
   const [featuresText, setFeaturesText] = useState("");
 
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const { data: catalog, refetch } = trpc.quotes.catalog.listAll.useQuery();
+  const uploadImageMutation = trpc.quotes.catalog.uploadImage.useMutation({
+    onSuccess: (data) => {
+      setForm((prev) => ({ ...prev, imageUrl: data.url }));
+      toast.success("Imagen subida correctamente");
+      setIsUploading(false);
+    },
+    onError: (err) => {
+      toast.error(err.message);
+      setIsUploading(false);
+    },
+  });
   const createMutation = trpc.quotes.catalog.create.useMutation({
     onSuccess: () => {
       toast.success("Cargador agregado al catálogo");
@@ -330,12 +344,74 @@ export default function QuotesCatalog() {
             </div>
 
             <div className="space-y-2">
-              <Label>URL de imagen del producto</Label>
-              <Input
-                value={form.imageUrl}
-                onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-                placeholder="https://..."
-              />
+              <Label>Imagen del producto</Label>
+              <div className="flex gap-3 items-start">
+                {/* Preview de imagen */}
+                <div className="w-20 h-20 rounded-lg border border-border overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center">
+                  {form.imageUrl ? (
+                    <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  {/* Botón de upload */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 5 * 1024 * 1024) {
+                        toast.error("La imagen no puede superar 5MB");
+                        return;
+                      }
+                      setIsUploading(true);
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const base64 = (reader.result as string).split(",")[1];
+                        uploadImageMutation.mutate({
+                          fileName: file.name,
+                          fileBase64: base64,
+                          contentType: file.type,
+                        });
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 w-full"
+                    disabled={isUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="h-4 w-4" />
+                    {isUploading ? "Subiendo..." : "Subir imagen"}
+                  </Button>
+                  {/* Campo URL manual (colapsable) */}
+                  <Input
+                    value={form.imageUrl}
+                    onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+                    placeholder="O pega una URL..."
+                    className="text-xs h-8"
+                  />
+                  {form.imageUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs text-destructive gap-1 p-0"
+                      onClick={() => setForm({ ...form, imageUrl: "" })}
+                    >
+                      <X className="h-3 w-3" /> Quitar imagen
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4">

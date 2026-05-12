@@ -3186,3 +3186,7 @@
 ## Fix Logo Footer PDF (Mayo 12)
 - [x] Reemplazar img externa del footer por SVG inline del logo EVGreen (no se rompe al imprimir)
 - [x] Reducción espacio en blanco última página PDF (padding/margin compactados, page-break-before:avoid en footer)
+
+## Fix Imágenes Cargadores en PDF + Upload Directo (Mayo 12)
+- [x] Convertir imágenes de producto a base64 en el servidor para que se rendericen al imprimir PDF
+- [x] Agregar upload directo de imagen en el formulario del catálogo de cargadores (sin pegar URL manualmente)

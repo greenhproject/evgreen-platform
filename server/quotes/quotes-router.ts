@@ -186,6 +186,32 @@ export const quotesRouter = router({
         await db.update(chargersCatalog).set({ isActive: false }).where(eq(chargersCatalog.id, input.id));
         return { success: true };
       }),
+
+    /** Subir imagen de producto al catálogo */
+    uploadImage: adminProcedure
+      .input(z.object({
+        fileName: z.string(),
+        fileBase64: z.string(),
+        contentType: z.string().refine(
+          (ct) => ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(ct),
+          { message: "Solo se permiten imágenes (JPEG, PNG, WebP, GIF)" }
+        ),
+      }))
+      .mutation(async ({ input }) => {
+        const { storagePut } = await import("../storage");
+        const ext = input.fileName.split(".").pop() || "jpg";
+        const timestamp = Date.now();
+        const randomSuffix = Math.random().toString(36).substring(2, 8);
+        const fileKey = `catalog-chargers/${timestamp}-${randomSuffix}.${ext}`;
+        const buffer = Buffer.from(input.fileBase64, "base64");
+
+        if (buffer.length > 5 * 1024 * 1024) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "La imagen no puede superar 5MB" });
+        }
+
+        const { url } = await storagePut(fileKey, buffer, input.contentType);
+        return { url, fileKey };
+      }),
   }),
 
   // ========================================================================
@@ -763,7 +789,7 @@ export const quotesRouter = router({
       // Generar HTML de la cotización
       const { generateQuoteHTML } = await import("./quote-pdf");
       const baseUrl = ctx.req?.headers?.origin || "https://evgreen.lat";
-      const htmlContent = generateQuoteHTML({
+      const htmlContent = await generateQuoteHTML({
         quoteNumber: quote.quoteNumber,
         createdAt: quote.createdAt,
         expiresAt: quote.expiresAt,
