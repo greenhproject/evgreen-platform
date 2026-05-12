@@ -10,9 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Save, Settings2, Building2, FileText } from "lucide-react";
+import { Save, Settings2, Building2, FileText, Package, Settings } from "lucide-react";
+import { useLocation } from "wouter";
 
 export default function QuotesSettings() {
+  const [, navigate] = useLocation();
   const { data: settings, refetch } = trpc.quotes.settings.get.useQuery();
   const updateMutation = trpc.quotes.settings.update.useMutation({
     onSuccess: () => {
@@ -64,6 +66,22 @@ export default function QuotesSettings() {
 
   return (
     <div className="space-y-6">
+      {/* Sub-navegación */}
+      <div className="flex items-center gap-1 border-b border-border pb-3">
+        <button onClick={() => navigate("/admin/quotes")} className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md hover:bg-accent text-muted-foreground">
+          <FileText className="h-4 w-4" />
+          Cotizaciones
+        </button>
+        <button onClick={() => navigate("/admin/quotes/catalog")} className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md hover:bg-accent text-muted-foreground">
+          <Package className="h-4 w-4" />
+          Catálogo de Cargadores
+        </button>
+        <button className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground">
+          <Settings className="h-4 w-4" />
+          Configuración
+        </button>
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Configuración de Cotizaciones</h1>

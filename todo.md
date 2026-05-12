@@ -3137,3 +3137,17 @@
 - [x] Filtros por estado, fecha, asesor
 - [x] Indicador de cuándo el cliente abrió la cotización
 - [x] Acciones rápidas: reenviar, duplicar, marcar como aceptada
+
+## Correcciones Módulo Cotizaciones - Mayo 2026
+
+### Selector de Cargadores
+- [x] Corregir selector de cargadores en formulario de nueva cotización (muestra productos del catálogo)
+- [x] Agregar link directo al catálogo desde el formulario cuando no hay productos
+- [x] Mejorar UX: mostrar productos con precio, potencia y conector en el selector
+- [x] Agregar sub-navegación clara entre Cotizaciones, Catálogo y Configuración
+
+### Rol de Comercial/Asesor
+- [x] Agregar rol "comercial" al enum de roles en schema.ts
+- [x] Crear layout/sidebar específico para comercial con acceso solo a cotizaciones
+- [x] Comercial solo ve sus propias cotizaciones (no las de otros)
+- [ ] Admin puede asignar rol de comercial a usuarios desde gestión de usuarios

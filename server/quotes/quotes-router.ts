@@ -28,8 +28,8 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 });
 
 const advisorProcedure = protectedProcedure.use(({ ctx, next }) => {
-  // Admin, staff y host pueden crear cotizaciones (host = asesor comercial)
-  const allowed = ["admin", "staff", "host", "investor"];
+  // Admin, staff, host y comercial pueden crear cotizaciones
+  const allowed = ["admin", "staff", "host", "investor", "comercial"];
   if (!allowed.includes(ctx.user.role)) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Se requiere rol de asesor comercial." });
   }
@@ -428,8 +428,9 @@ export const quotesRouter = router({
       const [quote] = await db.select().from(quotes).where(eq(quotes.id, input.id));
       if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Cotización no encontrada" });
 
-      // Verificar acceso
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && quote.advisorId !== ctx.user.id) {
+      // Verificar acceso (admin/staff ven todas, comercial/host solo las suyas)
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      if (!isAdmin && quote.advisorId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
@@ -593,8 +594,9 @@ export const quotesRouter = router({
       const [quote] = await db.select().from(quotes).where(eq(quotes.id, input.id));
       if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Cotización no encontrada" });
 
-      // Verificar acceso
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && quote.advisorId !== ctx.user.id) {
+      // Verificar acceso (admin/staff ven todas, comercial/host solo las suyas)
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      if (!isAdmin && quote.advisorId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
