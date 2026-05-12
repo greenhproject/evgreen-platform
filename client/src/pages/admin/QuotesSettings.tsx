@@ -1,6 +1,6 @@
 /**
  * Admin - Configuración de Cotizaciones
- * Permite configurar parámetros generales, textos, modelo de negocio
+ * Permite configurar parámetros generales, textos, modelo de negocio y proyección
  */
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Save, Settings2, Building2, FileText, Package, Settings } from "lucide-react";
+import { Save, Settings2, Building2, FileText, Package, Settings, TrendingUp, DollarSign } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function QuotesSettings() {
@@ -28,6 +28,10 @@ export default function QuotesSettings() {
     validityDays: 30,
     evgreenFeePercent: 30,
     ownerSharePercent: 70,
+    hostSharePercent: 0,
+    defaultEnergyCostPerKwh: 700,
+    defaultSalePricePerKwh: 1800,
+    defaultDailyHours: "4.0",
     companyName: "",
     companyNit: "",
     companyPhone: "",
@@ -46,6 +50,10 @@ export default function QuotesSettings() {
         validityDays: settings.validityDays,
         evgreenFeePercent: settings.evgreenFeePercent,
         ownerSharePercent: settings.ownerSharePercent,
+        hostSharePercent: (settings as any).hostSharePercent ?? 0,
+        defaultEnergyCostPerKwh: (settings as any).defaultEnergyCostPerKwh ?? 700,
+        defaultSalePricePerKwh: (settings as any).defaultSalePricePerKwh ?? 1800,
+        defaultDailyHours: (settings as any).defaultDailyHours ?? "4.0",
         companyName: settings.companyName || "",
         companyNit: settings.companyNit || "",
         companyPhone: settings.companyPhone || "",
@@ -136,10 +144,36 @@ export default function QuotesSettings() {
                 />
               </div>
             </div>
+
+            {/* Reparto del Neto */}
+            <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <p className="text-xs font-semibold text-blue-400 mb-1">Reparto del Neto (EVGreen + Inversionista = 100%)</p>
+              <p className="text-xs text-blue-300/80">
+                Estos porcentajes se aplican sobre el neto después de descontar el aliado comercial.
+              </p>
+            </div>
+
+            {/* Aliado Comercial */}
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <p className="text-xs font-semibold text-amber-400 mb-2">% Aliado Comercial (sobre Margen Bruto)</p>
+              <p className="text-xs text-amber-300/80 mb-2">
+                Este porcentaje se descuenta primero del margen bruto. El restante se reparte entre EVGreen e Inversionista.
+              </p>
+              <Input
+                type="number"
+                value={form.hostSharePercent}
+                onChange={(e) => setForm({ ...form, hostSharePercent: parseInt(e.target.value) || 0 })}
+                className="w-32"
+                min={0}
+                max={50}
+              />
+            </div>
+
             <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
               <p className="text-sm text-emerald-400">
                 <strong>Modelo:</strong> El dueño recibe el {form.ownerSharePercent}% del margen neto.
                 EVGreen retiene el {form.evgreenFeePercent}% por operación, mantenimiento, soporte 24/7 y tecnología IA.
+                {form.hostSharePercent > 0 && ` El aliado comercial recibe el ${form.hostSharePercent}% del margen bruto antes del reparto.`}
               </p>
             </div>
           </CardContent>
@@ -182,8 +216,59 @@ export default function QuotesSettings() {
           </CardContent>
         </Card>
 
+        {/* Parámetros de Proyección por Defecto */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Proyección de Ingresos (Defaults)
+            </CardTitle>
+            <CardDescription>Valores por defecto que se precargan al crear una cotización</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <DollarSign className="h-3 w-3" />
+                  Costo Energía (COP/kWh)
+                </Label>
+                <Input
+                  type="number"
+                  value={form.defaultEnergyCostPerKwh}
+                  onChange={(e) => setForm({ ...form, defaultEnergyCostPerKwh: parseInt(e.target.value) || 700 })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <DollarSign className="h-3 w-3" />
+                  Precio Venta (COP/kWh)
+                </Label>
+                <Input
+                  type="number"
+                  value={form.defaultSalePricePerKwh}
+                  onChange={(e) => setForm({ ...form, defaultSalePricePerKwh: parseInt(e.target.value) || 1800 })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Horas de Uso Diario (default)</Label>
+              <Input
+                type="number"
+                step="0.5"
+                value={form.defaultDailyHours}
+                onChange={(e) => setForm({ ...form, defaultDailyHours: e.target.value || "4.0" })}
+              />
+            </div>
+            <div className="p-3 rounded-lg bg-muted border border-border">
+              <p className="text-xs text-muted-foreground">
+                Estos valores se precargan al crear una nueva cotización. El asesor puede ajustarlos según la negociación particular de cada cliente.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Beneficios del Modelo (Justificación del 30%) */}
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />

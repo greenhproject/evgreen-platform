@@ -3190,3 +3190,21 @@
 ## Fix Imágenes Cargadores en PDF + Upload Directo (Mayo 12)
 - [x] Convertir imágenes de producto a base64 en el servidor para que se rendericen al imprimir PDF
 - [x] Agregar upload directo de imagen en el formulario del catálogo de cargadores (sin pegar URL manualmente)
+
+## URGENTE: Error 500 en producción - Catálogo borrado (Mayo 12)
+- [x] Investigar por qué la query de chargers_catalog falla con 500 en producción
+  → Causa raíz: commit externo (27a4578) con columnas inexistentes (revenue_model, etc.) se desplegó en Railway
+- [x] Force push del código correcto (d12958d) a GitHub para sobreescribir el commit problemático
+- [x] Datos del catálogo NO se perdieron (4 cargadores siguen en BD)
+- [x] Estaciones funcionando correctamente después del redeploy
+
+## Modelo Financiero Configurable + Proyección de Ingresos (Mayo 12)
+- [x] Agregar campos de modelo financiero a tabla quotes (evgreenPercent, investorPercent, hostPercent, energyCostPerKwh, salePricePerKwh, dailyUsageHours)
+- [x] Paso/sección de "Modelo Financiero" en formulario Nueva Cotización con precarga desde configuración global
+- [x] Permitir editar porcentajes por cotización individual (flexibilidad de negociación)
+- [x] Implementar cálculos de proyección de ingresos (diario, mensual, anual, ROI, recuperación de inversión)
+- [x] Sección de Proyección de Ingresos en template PDF con disclaimer informativo
+- [x] Sección de Proyección de Ingresos en vista pública de cotización
+- [x] Actualizar router backend para guardar/servir datos del modelo financiero por cotización
+- [x] Agregar campos de configuración de proyección por defecto en QuotesSettings
+- [x] Tests unitarios para modelo financiero y proyección (5 tests nuevos)

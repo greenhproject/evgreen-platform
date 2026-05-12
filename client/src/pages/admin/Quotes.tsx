@@ -20,8 +20,10 @@ import {
   Plus, Search, FileText, Send, Eye, Copy, BarChart3,
   Clock, CheckCircle2, XCircle, AlertCircle, Mail,
   Package, Settings, Minus, ExternalLink, Pencil, Trash2,
-  Download, CopyPlus
+  Download, CopyPlus, DollarSign, TrendingUp, Percent
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 
 function formatCOP(amount: number): string {
   return new Intl.NumberFormat("es-CO", {
@@ -76,6 +78,18 @@ export default function Quotes() {
     discount: 0,
   });
   const [selectedItems, setSelectedItems] = useState<QuoteFormItem[]>([]);
+  // Modelo financiero personalizado por cotización
+  const [financialModel, setFinancialModel] = useState({
+    evgreenSharePercent: 30,
+    investorSharePercent: 70,
+    hostSharePercent: 0,
+    projectionEnergyCostPerKwh: 700,
+    projectionSalePricePerKwh: 1800,
+    projectionDailyHours: 4,
+    projectionScenario: "realistic" as "pessimistic" | "realistic" | "optimistic",
+    showProjection: true,
+  });
+  const [financialLoaded, setFinancialLoaded] = useState(false);
 
   const { data: quotesData, refetch } = trpc.quotes.list.useQuery({
     status: statusFilter !== "all" ? statusFilter as any : undefined,
@@ -83,6 +97,7 @@ export default function Quotes() {
   });
   const { data: stats } = trpc.quotes.stats.useQuery();
   const { data: catalog } = trpc.quotes.catalog.list.useQuery();
+  const { data: settingsDefaults } = trpc.quotes.settings.getDefaults.useQuery();
 
   const createMutation = trpc.quotes.create.useMutation({
     onSuccess: (data) => {
@@ -159,6 +174,21 @@ export default function Quotes() {
     onError: (err: any) => toast.error(err.message),
   });
 
+  // Precargar defaults del modelo financiero cuando se obtienen de la config
+  if (settingsDefaults && !financialLoaded) {
+    setFinancialModel({
+      evgreenSharePercent: settingsDefaults.evgreenFeePercent,
+      investorSharePercent: settingsDefaults.ownerSharePercent,
+      hostSharePercent: settingsDefaults.hostSharePercent,
+      projectionEnergyCostPerKwh: settingsDefaults.defaultEnergyCostPerKwh,
+      projectionSalePricePerKwh: settingsDefaults.defaultSalePricePerKwh,
+      projectionDailyHours: settingsDefaults.defaultDailyHours,
+      projectionScenario: "realistic",
+      showProjection: true,
+    });
+    setFinancialLoaded(true);
+  }
+
   function resetForm() {
     setFormData({
       clientName: "",
@@ -171,6 +201,19 @@ export default function Quotes() {
       discount: 0,
     });
     setSelectedItems([]);
+    // Reset financial model to defaults
+    if (settingsDefaults) {
+      setFinancialModel({
+        evgreenSharePercent: settingsDefaults.evgreenFeePercent,
+        investorSharePercent: settingsDefaults.ownerSharePercent,
+        hostSharePercent: settingsDefaults.hostSharePercent,
+        projectionEnergyCostPerKwh: settingsDefaults.defaultEnergyCostPerKwh,
+        projectionSalePricePerKwh: settingsDefaults.defaultSalePricePerKwh,
+        projectionDailyHours: settingsDefaults.defaultDailyHours,
+        projectionScenario: "realistic",
+        showProjection: true,
+      });
+    }
   }
 
   function addItem(catalogItemId: number) {
@@ -209,9 +252,15 @@ export default function Quotes() {
       toast.error("Completa los campos obligatorios y selecciona al menos un cargador");
       return;
     }
+    // Validar que EVGreen + Inversionista = 100%
+    if (Math.abs(financialModel.evgreenSharePercent + financialModel.investorSharePercent - 100) > 0.01) {
+      toast.error("EVGreen + Inversionista debe sumar 100% del neto");
+      return;
+    }
     createMutation.mutate({
       ...formData,
       items: selectedItems,
+      ...financialModel,
     });
   }
 
@@ -645,6 +694,210 @@ export default function Quotes() {
                 </div>
               )}
             </div>
+
+            {/* ====== MODELO FINANCIERO ====== */}
+            {selectedItems.length > 0 && (
+              <div className="border border-border rounded-lg p-4 space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-emerald-500" /> Modelo Financiero
+                </h3>
+                <p className="text-xs text-muted-foreground -mt-2">
+                  Modelo: Ingresos - Costo energía = Margen bruto → Aliado Comercial (% del margen) → Neto → EVGreen + Inversionista (deben sumar 100% entre ellos).
+                </p>
+
+                {/* Reparto del Neto */}
+                <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
+                  <p className="text-sm font-medium text-blue-400 mb-3">
+                    Reparto del Neto (EVGreen + Inversionista = 100%)
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Estos porcentajes se aplican sobre el neto después de descontar el aliado comercial.
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs">% EVGreen (Gestor)</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.5}
+                          value={financialModel.evgreenSharePercent}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setFinancialModel({
+                              ...financialModel,
+                              evgreenSharePercent: val,
+                              investorSharePercent: Math.max(0, 100 - val),
+                            });
+                          }}
+                          className="w-24"
+                        />
+                        <span className="text-sm text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">% Inversionista</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.5}
+                          value={financialModel.investorSharePercent}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setFinancialModel({
+                              ...financialModel,
+                              investorSharePercent: val,
+                              evgreenSharePercent: Math.max(0, 100 - val),
+                            });
+                          }}
+                          className="w-24"
+                        />
+                        <span className="text-sm text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Aliado Comercial */}
+                <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                  <p className="text-sm font-medium text-amber-400 mb-2">
+                    % Aliado Comercial (sobre Margen Bruto)
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Este porcentaje se descuenta primero del margen bruto (ingresos - costo energía). El restante se reparte entre EVGreen e Inversionista.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={50}
+                      step={0.5}
+                      value={financialModel.hostSharePercent}
+                      onChange={(e) => setFinancialModel({ ...financialModel, hostSharePercent: parseFloat(e.target.value) || 0 })}
+                      className="w-24"
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                  </div>
+                </div>
+
+                {/* Proyección de Ingresos */}
+                <div className="border-t border-border pt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium flex items-center gap-2 text-sm">
+                      <TrendingUp className="h-4 w-4 text-emerald-500" /> Proyección de Ingresos
+                    </h4>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-muted-foreground">Incluir en cotización</Label>
+                      <Switch
+                        checked={financialModel.showProjection}
+                        onCheckedChange={(v) => setFinancialModel({ ...financialModel, showProjection: v })}
+                      />
+                    </div>
+                  </div>
+
+                  {financialModel.showProjection && (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Costo energía (COP/kWh)</Label>
+                          <Input
+                            type="number"
+                            value={financialModel.projectionEnergyCostPerKwh}
+                            onChange={(e) => setFinancialModel({ ...financialModel, projectionEnergyCostPerKwh: parseInt(e.target.value) || 700 })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Precio venta (COP/kWh)</Label>
+                          <Input
+                            type="number"
+                            value={financialModel.projectionSalePricePerKwh}
+                            onChange={(e) => setFinancialModel({ ...financialModel, projectionSalePricePerKwh: parseInt(e.target.value) || 1800 })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Horas uso/día</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={24}
+                            step={0.5}
+                            value={financialModel.projectionDailyHours}
+                            onChange={(e) => setFinancialModel({ ...financialModel, projectionDailyHours: parseFloat(e.target.value) || 4 })}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Escenario */}
+                      <div className="space-y-1">
+                        <Label className="text-xs">Escenario</Label>
+                        <div className="flex gap-2">
+                          {(["pessimistic", "realistic", "optimistic"] as const).map((s) => (
+                            <Button
+                              key={s}
+                              type="button"
+                              variant={financialModel.projectionScenario === s ? "default" : "outline"}
+                              size="sm"
+                              className="flex-1 text-xs"
+                              onClick={() => {
+                                const hours = s === "pessimistic" ? 2 : s === "optimistic" ? 8 : 4;
+                                setFinancialModel({ ...financialModel, projectionScenario: s, projectionDailyHours: hours });
+                              }}
+                            >
+                              {s === "pessimistic" ? "⚠️ Pesimista" : s === "realistic" ? "🏦 Realista" : "🚀 Optimista"}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Preview de la proyección */}
+                      {(() => {
+                        const totalKw = selectedItems.reduce((acc, item) => {
+                          const cat = catalog?.find((c: any) => c.id === item.catalogItemId);
+                          return acc + (cat ? Number(cat.powerKw) * item.quantity : 0);
+                        }, 0);
+                        const kwhDay = totalKw * financialModel.projectionDailyHours;
+                        const revenueDay = kwhDay * financialModel.projectionSalePricePerKwh;
+                        const costDay = kwhDay * financialModel.projectionEnergyCostPerKwh;
+                        const marginDay = revenueDay - costDay;
+                        const hostCut = marginDay * (financialModel.hostSharePercent / 100);
+                        const netDay = marginDay - hostCut;
+                        const investorDay = netDay * (financialModel.investorSharePercent / 100);
+                        const investorMonth = investorDay * 30;
+                        const investorYear = investorDay * 365;
+                        const totalInvestment = calculateTotal() + (formData.discount || 0);
+                        const roiMonths = totalInvestment > 0 ? totalInvestment / (investorMonth || 1) : 0;
+
+                        return totalKw > 0 ? (
+                          <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                            <p className="text-xs font-medium text-emerald-400 mb-2">Vista previa de proyección (informativa)</p>
+                            <div className="grid grid-cols-3 gap-3 text-center">
+                              <div>
+                                <p className="text-lg font-bold text-foreground">{formatCOP(investorDay)}</p>
+                                <p className="text-xs text-muted-foreground">Ingreso/día (inv.)</p>
+                              </div>
+                              <div>
+                                <p className="text-lg font-bold text-foreground">{formatCOP(investorMonth)}</p>
+                                <p className="text-xs text-muted-foreground">Ingreso/mes (inv.)</p>
+                              </div>
+                              <div>
+                                <p className="text-lg font-bold text-foreground">{roiMonths > 0 ? `${roiMonths.toFixed(1)} meses` : "-"}</p>
+                                <p className="text-xs text-muted-foreground">Recuperación inv.</p>
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-2 italic">
+                              * Proyección estimada con {kwhDay.toFixed(0)} kWh/día. No constituye garantía de ingresos.
+                            </p>
+                          </div>
+                        ) : null;
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Notas y Descuento */}
             <div className="grid grid-cols-2 gap-4">
