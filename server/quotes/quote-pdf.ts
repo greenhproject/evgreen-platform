@@ -66,9 +66,27 @@ function formatDate(date: Date | string | null): string {
 }
 
 /**
- * Genera el HTML premium de la cotización - OPTIMIZADO PARA PDF
+ * Descarga una imagen desde URL y la convierte a base64 data URI
+ * para que se renderice correctamente al imprimir/generar PDF
  */
-export function generateQuoteHTML(data: QuotePDFData): string {
+async function imageUrlToBase64(url: string): Promise<string> {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return url; // fallback a URL original
+    const buffer = await response.arrayBuffer();
+    const contentType = response.headers.get("content-type") || "image/png";
+    const base64 = Buffer.from(buffer).toString("base64");
+    return `data:${contentType};base64,${base64}`;
+  } catch {
+    return url; // fallback a URL original si falla
+  }
+}
+
+/**
+ * Genera el HTML premium de la cotización - OPTIMIZADO PARA PDF
+ * Las imágenes de producto se convierten a base64 para garantizar renderizado en print
+ */
+export async function generateQuoteHTML(data: QuotePDFData): Promise<string> {
   let benefits: string[] = [];
   try {
     benefits = data.settings.benefitsDescription ? JSON.parse(data.settings.benefitsDescription) : [];
@@ -81,10 +99,18 @@ export function generateQuoteHTML(data: QuotePDFData): string {
     </div>
   `).join("");
 
-  const itemsRows = data.items.map((item) => `
+  // Convertir imágenes de producto a base64 para que se rendericen al imprimir
+  const itemsWithBase64 = await Promise.all(
+    data.items.map(async (item) => ({
+      ...item,
+      imageBase64: item.productImageUrl ? await imageUrlToBase64(item.productImageUrl) : null,
+    }))
+  );
+
+  const itemsRows = itemsWithBase64.map((item) => `
     <div class="product-card">
       <div class="product-row">
-        ${item.productImageUrl ? `<div class="product-img"><img src="${item.productImageUrl}" alt="${item.productName}" /></div>` : `<div class="product-img-placeholder"><span>⚡</span></div>`}
+        ${item.imageBase64 ? `<div class="product-img"><img src="${item.imageBase64}" alt="${item.productName}" /></div>` : `<div class="product-img-placeholder"><span>⚡</span></div>`}
         <div class="product-details">
           <h4>${item.productName}</h4>
           <div class="specs">
