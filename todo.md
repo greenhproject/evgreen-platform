@@ -3166,3 +3166,11 @@
 - [x] Rediseñar página pública QuotePublic.tsx con diseño impactante y moderno
 - [x] Gradientes, glassmorphism, tipografía premium, iconografía profesional
 - [x] Alineado con identidad visual EVGreen (verde eléctrico, oscuro, futurista)
+
+## Corrección PDF + Imágenes Cargadores - Mayo 2026
+
+- [x] Generar PDF real descargable (abre diálogo de imprimir/guardar como PDF)
+- [x] Mostrar imágenes de los cargadores en la vista pública de cotización
+- [x] Mostrar imágenes de los cargadores en el template HTML/PDF
+- [x] Usar las URLs de imagen configuradas en el catálogo de cargadores
+- [x] Campo productImageUrl agregado a quoteItems para snapshot de imagen

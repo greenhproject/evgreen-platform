@@ -138,9 +138,17 @@ export default function Quotes() {
 
   const generatePdfMutation = trpc.quotes.generatePdf.useMutation({
     onSuccess: (data) => {
-      // Abrir el PDF en nueva pestaña
-      window.open(data.url, "_blank");
-      toast.success("PDF generado exitosamente");
+      // Descargar como archivo HTML para imprimir/guardar como PDF
+      const blob = new Blob([data.htmlContent], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const printWindow = window.open(url, "_blank");
+      if (printWindow) {
+        printWindow.onload = () => {
+          setTimeout(() => printWindow.print(), 500);
+        };
+      }
+      URL.revokeObjectURL(url);
+      toast.success("Cotización lista para descargar/imprimir");
     },
     onError: (err: any) => toast.error(err.message),
   });

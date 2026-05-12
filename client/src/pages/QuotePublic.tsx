@@ -180,10 +180,16 @@ export default function QuotePublic() {
               {items.map((item: any, idx: number) => (
                 <div key={idx} className="bg-[#111827] border border-[#1f2937] rounded-xl p-5 hover:border-emerald-500/30 transition-colors">
                   <div className="flex items-center gap-4">
-                    {/* Icon */}
-                    <div className="w-11 h-11 bg-emerald-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Zap className="h-6 w-6 text-emerald-400" />
-                    </div>
+                    {/* Product Image or Icon */}
+                    {item.productImageUrl ? (
+                      <div className="w-20 h-20 rounded-xl overflow-hidden border border-[#1f2937] flex-shrink-0">
+                        <img src={item.productImageUrl} alt={item.productName} className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-11 h-11 bg-emerald-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Zap className="h-6 w-6 text-emerald-400" />
+                      </div>
+                    )}
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <h3 className="text-lg font-bold text-white">{item.productName}</h3>

@@ -3130,6 +3130,7 @@ export const quoteItems = mysqlTable("quote_items", {
   lineTotal: bigint("lineTotal", { mode: "number" }).notNull(), // unitPrice * quantity
   includesTransformer: boolean("includesTransformer").default(false),
   cableMetersIncluded: int("cableMetersIncluded").default(10),
+  productImageUrl: text("productImageUrl"), // Snapshot de la imagen del cargador
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

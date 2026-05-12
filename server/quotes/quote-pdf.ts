@@ -27,6 +27,7 @@ interface QuotePDFData {
     lineTotal: number;
     includesTransformer: boolean;
     cableMetersIncluded: number;
+    productImageUrl?: string | null;
   }>;
   settings: {
     companyName: string;
@@ -75,9 +76,7 @@ export function generateQuoteHTML(data: QuotePDFData): string {
   const itemsRows = data.items.map((item) => `
     <div class="product-card">
       <div class="product-header">
-        <div class="product-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-        </div>
+        ${item.productImageUrl ? `<div class="product-image"><img src="${item.productImageUrl}" alt="${item.productName}" /></div>` : `<div class="product-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>`}
         <div class="product-info">
           <h4>${item.productName}</h4>
           <div class="product-specs">
@@ -365,6 +364,21 @@ export function generateQuoteHTML(data: QuotePDFData): string {
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+    }
+
+    .product-image {
+      width: 80px;
+      height: 80px;
+      border-radius: 12px;
+      overflow: hidden;
+      flex-shrink: 0;
+      border: 1px solid var(--dark-border);
+    }
+
+    .product-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .product-info {
