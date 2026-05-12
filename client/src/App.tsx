@@ -119,6 +119,10 @@ const AdminOnboardingDashboard = lazy(() => import("./pages/admin/OnboardingDash
 const AdminBackupDashboard = lazy(() => import("./pages/admin/BackupDashboard"));
 const AdminRefunds = lazy(() => import("./pages/admin/Refunds"));
 const AdminClaims = lazy(() => import("./pages/admin/Claims"));
+const AdminQuotes = lazy(() => import("./pages/admin/Quotes"));
+const AdminQuotesCatalog = lazy(() => import("./pages/admin/QuotesCatalog"));
+const AdminQuotesSettings = lazy(() => import("./pages/admin/QuotesSettings"));
+const QuotePublic = lazy(() => import("./pages/QuotePublic"));
 
 // Páginas de Aliado Comercial (Host)
 const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
@@ -289,6 +293,13 @@ function Router() {
         
         {/* Ruta para códigos QR - Redirige a StartCharge */}
         <Route path="/c/:code" component={QRRedirect} />
+
+        {/* Cotización pública (sin login) */}
+        <Route path="/cotizacion/:token">
+          <Suspense fallback={<LazySpinner />}>
+            <QuotePublic />
+          </Suspense>
+        </Route>
 
         {/* ============================================
             RUTAS DE USUARIO (App móvil principal)
@@ -718,6 +729,29 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin", "staff"]}>
             <AdminLayout>
               <AdminClaims />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* Cotizaciones */}
+        <Route path="/admin/quotes">
+          <ProtectedRoute allowedRoles={["admin", "staff", "host"]}>
+            <AdminLayout>
+              <AdminQuotes />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/quotes/catalog">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminQuotesCatalog />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/quotes/settings">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminQuotesSettings />
             </AdminLayout>
           </ProtectedRoute>
         </Route>

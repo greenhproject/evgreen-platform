@@ -49,7 +49,8 @@ import {
   UserCheck,
   Server,
   RotateCcw,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -77,6 +78,7 @@ const adminMenuItems = [
   { icon: AlertCircle, label: "Reclamos", path: "/admin/claims" },
   { icon: Headphones, label: "Soporte", path: "/admin/support" },
   { icon: PhoneCall, label: "Inicio Remoto", path: "/admin/remote-start" },
+  { icon: FileText, label: "Cotizaciones", path: "/admin/quotes" },
   { icon: Calculator, label: "Centro Financiero", path: "/admin/financial" },
   { icon: Wrench, label: "Fondo Mantenimiento", path: "/admin/maintenance-fund" },
   { icon: Bot, label: "Asistente IA", path: "/admin/ai-settings" },
