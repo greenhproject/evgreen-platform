@@ -167,6 +167,8 @@ function getHomeRouteByRole(role: string | undefined): string {
       return "/engineer";
     case "host":
       return "/host";
+    case "comercial":
+      return "/admin/quotes";
     case "user":
     default:
       return "/map";
@@ -735,21 +737,21 @@ function Router() {
 
         {/* Cotizaciones */}
         <Route path="/admin/quotes">
-          <ProtectedRoute allowedRoles={["admin", "staff", "host"]}>
+          <ProtectedRoute allowedRoles={["admin", "staff", "host", "comercial"]}>
             <AdminLayout>
               <AdminQuotes />
             </AdminLayout>
           </ProtectedRoute>
         </Route>
         <Route path="/admin/quotes/catalog">
-          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+          <ProtectedRoute allowedRoles={["admin", "staff", "comercial"]}>
             <AdminLayout>
               <AdminQuotesCatalog />
             </AdminLayout>
           </ProtectedRoute>
         </Route>
         <Route path="/admin/quotes/settings">
-          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+          <ProtectedRoute allowedRoles={["admin", "staff", "comercial"]}>
             <AdminLayout>
               <AdminQuotesSettings />
             </AdminLayout>

@@ -23,7 +23,7 @@ import { relations } from "drizzle-orm";
 // ENUMS
 // ============================================================================
 
-export const userRoleEnum = mysqlEnum("role", ["staff", "technician", "investor", "user", "admin", "engineer", "host"]);
+export const userRoleEnum = mysqlEnum("role", ["staff", "technician", "investor", "user", "admin", "engineer", "host", "comercial"]);
 export const connectorStatusEnum = mysqlEnum("connector_status", [
   "AVAILABLE",
   "PREPARING",
