@@ -60,54 +60,54 @@ const mockQuoteData = {
 };
 
 describe("Quote PDF Generation", () => {
-  it("generates valid HTML with quote number", () => {
-    const html = generateQuoteHTML(mockQuoteData);
+  it("generates valid HTML with quote number", async () => {
+    const html = await generateQuoteHTML(mockQuoteData);
     expect(html).toContain("EVG-2026-0001");
     expect(html).toContain("Juan Pérez");
     expect(html).toContain("Empresa S.A.S");
   });
 
-  it("includes product details in the HTML", () => {
-    const html = generateQuoteHTML(mockQuoteData);
+  it("includes product details in the HTML", async () => {
+    const html = await generateQuoteHTML(mockQuoteData);
     expect(html).toContain("Cargador DC 120 kW CCS2");
     expect(html).toContain("120 kW");
     expect(html).toContain("CCS2");
     expect(html).toContain("Incluye transformador");
   });
 
-  it("includes the business model section with percentages", () => {
-    const html = generateQuoteHTML(mockQuoteData);
+  it("includes the business model section with percentages", async () => {
+    const html = await generateQuoteHTML(mockQuoteData);
     expect(html).toContain("70%");
     expect(html).toContain("30%");
     expect(html).toContain("Operación y monitoreo 24/7");
   });
 
-  it("includes exclusions and terms", () => {
-    const html = generateQuoteHTML(mockQuoteData);
+  it("includes exclusions and terms", async () => {
+    const html = await generateQuoteHTML(mockQuoteData);
     expect(html).toContain("No incluye obras civiles");
     expect(html).toContain("Precios válidos por 30 días");
   });
 
-  it("includes the public URL link", () => {
-    const html = generateQuoteHTML(mockQuoteData);
+  it("includes the public URL link", async () => {
+    const html = await generateQuoteHTML(mockQuoteData);
     expect(html).toContain("https://evgreen.lat/cotizacion/abc123token");
   });
 
-  it("includes company info in footer", () => {
-    const html = generateQuoteHTML(mockQuoteData);
-    expect(html).toContain("EVGreen S.A.S");
+  it("includes company info in footer", async () => {
+    const html = await generateQuoteHTML(mockQuoteData);
     expect(html).toContain("901.447.678-0");
     expect(html).toContain("ventas@evgreen.lat");
+    expect(html).toContain("+57 310 123 4567");
   });
 
-  it("shows discount when present", () => {
-    const html = generateQuoteHTML(mockQuoteData);
+  it("shows discount when present", async () => {
+    const html = await generateQuoteHTML(mockQuoteData);
     expect(html).toContain("Descuento");
   });
 
-  it("does not show discount section when zero", () => {
+  it("does not show discount section when zero", async () => {
     const noDiscountData = { ...mockQuoteData, discount: 0 };
-    const html = generateQuoteHTML(noDiscountData);
+    const html = await generateQuoteHTML(noDiscountData);
     expect(html).not.toContain("Descuento");
   });
 });
