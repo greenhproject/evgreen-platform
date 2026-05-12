@@ -1,11 +1,13 @@
 /**
  * Admin/Asesor - Dashboard de Cotizaciones
  * Lista, crea y gestiona cotizaciones de cargadores
+ * Incluye sub-navegación a Catálogo y Configuración
  */
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,9 +15,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 import {
   Plus, Search, FileText, Send, Eye, Copy, BarChart3,
-  Clock, CheckCircle2, XCircle, AlertCircle, Mail
+  Clock, CheckCircle2, XCircle, AlertCircle, Mail,
+  Package, Settings, Minus, ExternalLink
 } from "lucide-react";
 
 function formatCOP(amount: number): string {
@@ -51,6 +55,10 @@ interface QuoteFormItem {
 }
 
 export default function Quotes() {
+  const [, navigate] = useLocation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin" || user?.role === "staff";
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -80,7 +88,7 @@ export default function Quotes() {
       setIsCreateOpen(false);
       resetForm();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: any) => toast.error(err.message),
   });
 
   const duplicateMutation = trpc.quotes.duplicate.useMutation({
@@ -88,7 +96,7 @@ export default function Quotes() {
       toast.success(`Cotización duplicada: ${data.quoteNumber}`);
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: any) => toast.error(err.message),
   });
 
   const updateStatusMutation = trpc.quotes.updateStatus.useMutation({
@@ -96,7 +104,7 @@ export default function Quotes() {
       toast.success("Estado actualizado");
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: any) => toast.error(err.message),
   });
 
   const sendEmailMutation = trpc.quotes.sendEmail.useMutation({
@@ -104,7 +112,7 @@ export default function Quotes() {
       toast.success("Cotización enviada por email exitosamente");
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: any) => toast.error(err.message),
   });
 
   function resetForm() {
@@ -172,19 +180,80 @@ export default function Quotes() {
     toast.success("Link copiado al portapapeles");
   }
 
+  const hasCatalog = catalog && catalog.length > 0;
+
   return (
     <div className="space-y-6">
+      {/* Sub-navegación */}
+      <div className="flex items-center gap-1 border-b border-border pb-3">
+        <Button variant="default" size="sm" className="gap-2">
+          <FileText className="h-4 w-4" />
+          Cotizaciones
+        </Button>
+        {isAdmin && (
+          <>
+            <Button variant="ghost" size="sm" className="gap-2" onClick={() => navigate("/admin/quotes/catalog")}>
+              <Package className="h-4 w-4" />
+              Catálogo de Cargadores
+            </Button>
+            <Button variant="ghost" size="sm" className="gap-2" onClick={() => navigate("/admin/quotes/settings")}>
+              <Settings className="h-4 w-4" />
+              Configuración
+            </Button>
+          </>
+        )}
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Cotizaciones</h1>
           <p className="text-muted-foreground">Gestiona y envía cotizaciones de estaciones de carga</p>
         </div>
-        <Button onClick={() => setIsCreateOpen(true)} className="gap-2">
+        <Button onClick={() => {
+          if (!hasCatalog) {
+            toast.error("Primero debes agregar cargadores al catálogo", {
+              action: isAdmin ? {
+                label: "Ir al Catálogo",
+                onClick: () => navigate("/admin/quotes/catalog"),
+              } : undefined,
+            });
+            return;
+          }
+          setIsCreateOpen(true);
+        }} className="gap-2">
           <Plus className="h-4 w-4" />
           Nueva Cotización
         </Button>
       </div>
+
+      {/* Alerta si no hay catálogo */}
+      {!hasCatalog && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardContent className="py-4 px-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-500/10">
+                <Package className="h-5 w-5 text-amber-500" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-amber-400">No hay cargadores en el catálogo</p>
+                <p className="text-sm text-muted-foreground">
+                  {isAdmin
+                    ? "Primero configura los cargadores disponibles para venta en el catálogo antes de crear cotizaciones."
+                    : "El administrador debe configurar los cargadores disponibles antes de poder crear cotizaciones."
+                  }
+                </p>
+              </div>
+              {isAdmin && (
+                <Button variant="outline" size="sm" className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10" onClick={() => navigate("/admin/quotes/catalog")}>
+                  <Plus className="h-4 w-4" />
+                  Configurar Catálogo
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Cards */}
       {stats && (
@@ -274,10 +343,11 @@ export default function Quotes() {
                         <Badge variant="outline" className={config.color}>{config.label}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {quote.clientName} {quote.clientCompany && `· ${quote.clientCompany}`}
+                        {quote.clientName} {quote.clientCompany ? `· ${quote.clientCompany}` : ""}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {quote.clientEmail} · {formatDate(quote.createdAt)}
+                        {quote.advisorName && ` · Asesor: ${quote.advisorName}`}
                       </p>
                     </div>
                   </div>
@@ -296,7 +366,7 @@ export default function Quotes() {
                       </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" title="Ver cotización"
                         onClick={() => window.open(getQuoteUrl(quote.publicToken), "_blank")}>
-                        <Eye className="h-3.5 w-3.5" />
+                        <ExternalLink className="h-3.5 w-3.5" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicar"
                         onClick={() => duplicateMutation.mutate({ id: quote.id })}>
@@ -328,11 +398,25 @@ export default function Quotes() {
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <FileText className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="font-semibold text-lg">Sin cotizaciones</h3>
-              <p className="text-muted-foreground mt-1">Crea tu primera cotización para un cliente</p>
-              <Button onClick={() => setIsCreateOpen(true)} className="mt-4 gap-2">
-                <Plus className="h-4 w-4" />
-                Nueva Cotización
-              </Button>
+              <p className="text-muted-foreground mt-1">
+                {hasCatalog
+                  ? "Crea tu primera cotización para un cliente"
+                  : isAdmin
+                    ? "Primero configura el catálogo de cargadores para poder crear cotizaciones"
+                    : "El administrador debe configurar el catálogo de cargadores primero"
+                }
+              </p>
+              {hasCatalog ? (
+                <Button onClick={() => setIsCreateOpen(true)} className="mt-4 gap-2">
+                  <Plus className="h-4 w-4" />
+                  Nueva Cotización
+                </Button>
+              ) : isAdmin ? (
+                <Button onClick={() => navigate("/admin/quotes/catalog")} className="mt-4 gap-2">
+                  <Package className="h-4 w-4" />
+                  Ir al Catálogo
+                </Button>
+              ) : null}
             </CardContent>
           </Card>
         )}
@@ -397,39 +481,78 @@ export default function Quotes() {
 
             {/* Selección de Cargadores */}
             <div>
-              <h3 className="font-semibold mb-3 flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" /> Seleccionar Cargadores
-              </h3>
-              <div className="grid gap-3">
-                {catalog?.map((item: any) => {
-                  const selected = selectedItems.find((s) => s.catalogItemId === item.id);
-                  return (
-                    <div key={item.id} className={`flex items-center justify-between p-3 rounded-lg border ${selected ? "border-primary bg-primary/5" : "border-border"}`}>
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded ${item.chargeType === "DC" ? "bg-amber-500/10 text-amber-500" : "bg-emerald-500/10 text-emerald-500"}`}>
-                          <span className="text-xs font-bold">{item.powerKw}kW</span>
-                        </div>
-                        <div>
-                          <p className="font-medium text-sm">{item.name}</p>
-                          <p className="text-xs text-muted-foreground">{item.connectorType} · {formatCOP(item.price)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {selected ? (
-                          <>
-                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.id, selected.quantity - 1)}>-</Button>
-                            <span className="w-8 text-center font-medium">{selected.quantity}</span>
-                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.id, selected.quantity + 1)}>+</Button>
-                            <Button variant="ghost" size="sm" className="text-destructive ml-2" onClick={() => removeItem(item.id)}>Quitar</Button>
-                          </>
-                        ) : (
-                          <Button variant="outline" size="sm" onClick={() => addItem(item.id)}>Agregar</Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4" /> Seleccionar Cargadores
+                </h3>
+                {isAdmin && (
+                  <Button variant="link" size="sm" className="text-xs gap-1 text-muted-foreground" onClick={() => {
+                    setIsCreateOpen(false);
+                    navigate("/admin/quotes/catalog");
+                  }}>
+                    <Settings className="h-3 w-3" /> Gestionar catálogo
+                  </Button>
+                )}
               </div>
+
+              {!hasCatalog ? (
+                <div className="p-6 rounded-lg border border-dashed border-amber-500/30 bg-amber-500/5 text-center">
+                  <Package className="h-8 w-8 text-amber-500 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-amber-400">No hay cargadores configurados</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {isAdmin
+                      ? "Ve al catálogo para agregar los cargadores disponibles para venta."
+                      : "Contacta al administrador para configurar el catálogo de cargadores."
+                    }
+                  </p>
+                  {isAdmin && (
+                    <Button variant="outline" size="sm" className="mt-3 gap-2 border-amber-500/30" onClick={() => {
+                      setIsCreateOpen(false);
+                      navigate("/admin/quotes/catalog");
+                    }}>
+                      <Plus className="h-3 w-3" /> Agregar Cargadores
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {catalog?.map((item: any) => {
+                    const selected = selectedItems.find((s) => s.catalogItemId === item.id);
+                    return (
+                      <div key={item.id} className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${selected ? "border-primary bg-primary/5" : "border-border hover:border-border/80"}`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded ${item.chargeType === "DC" ? "bg-amber-500/10 text-amber-500" : "bg-emerald-500/10 text-emerald-500"}`}>
+                            <span className="text-xs font-bold">{item.powerKw}kW</span>
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">{item.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.connectorType} · {item.chargeType} · {formatCOP(item.price)}
+                              {item.includesTransformer && " · Incluye transformador"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {selected ? (
+                            <>
+                              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.id, selected.quantity - 1)}>
+                                <Minus className="h-3 w-3" />
+                              </Button>
+                              <span className="w-8 text-center font-medium">{selected.quantity}</span>
+                              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.id, selected.quantity + 1)}>
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="text-destructive ml-2" onClick={() => removeItem(item.id)}>Quitar</Button>
+                            </>
+                          ) : (
+                            <Button variant="outline" size="sm" onClick={() => addItem(item.id)}>Agregar</Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Notas y Descuento */}
@@ -474,13 +597,16 @@ export default function Quotes() {
                 {formData.discount > 0 && (
                   <p className="text-sm text-muted-foreground mt-1">Descuento aplicado: {formatCOP(formData.discount)}</p>
                 )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Incluye instalación llave en mano, hasta 10m de cableado y tubería
+                </p>
               </div>
             )}
 
             {/* Actions */}
             <div className="flex justify-end gap-3">
               <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetForm(); }}>Cancelar</Button>
-              <Button onClick={handleCreate} disabled={createMutation.isPending} className="gap-2">
+              <Button onClick={handleCreate} disabled={createMutation.isPending || !hasCatalog} className="gap-2">
                 <FileText className="h-4 w-4" />
                 Crear Cotización
               </Button>

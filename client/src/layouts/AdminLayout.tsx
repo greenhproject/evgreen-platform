@@ -57,7 +57,8 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from '@/components/DashboardLayoutSkeleton';
 import { Button } from "@/components/ui/button";
 
-const adminMenuItems = [
+// Items del menú con roles permitidos
+const adminMenuItems: { icon: any; label: string; path: string; roles?: string[] }[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
   { icon: MapPin, label: "Estaciones", path: "/admin/stations" },
   { icon: Users, label: "Usuarios", path: "/admin/users" },
@@ -78,12 +79,25 @@ const adminMenuItems = [
   { icon: AlertCircle, label: "Reclamos", path: "/admin/claims" },
   { icon: Headphones, label: "Soporte", path: "/admin/support" },
   { icon: PhoneCall, label: "Inicio Remoto", path: "/admin/remote-start" },
-  { icon: FileText, label: "Cotizaciones", path: "/admin/quotes" },
+  { icon: FileText, label: "Cotizaciones", path: "/admin/quotes", roles: ["admin", "staff", "host", "comercial"] },
   { icon: Calculator, label: "Centro Financiero", path: "/admin/financial" },
   { icon: Wrench, label: "Fondo Mantenimiento", path: "/admin/maintenance-fund" },
   { icon: Bot, label: "Asistente IA", path: "/admin/ai-settings" },
   { icon: Settings, label: "Configuración", path: "/admin/settings" },
 ];
+
+/** Filtra items del menú según el rol del usuario */
+function getMenuItemsForRole(role: string | undefined) {
+  if (!role) return [];
+  // Admin y staff ven todo
+  if (role === "admin" || role === "staff") return adminMenuItems;
+  // Comercial solo ve Cotizaciones
+  if (role === "comercial") return adminMenuItems.filter(item => item.roles?.includes("comercial"));
+  // Host ve todo (es admin de estación)
+  if (role === "host") return adminMenuItems;
+  // Otros roles: filtrar por roles si está definido, si no mostrar
+  return adminMenuItems.filter(item => !item.roles || item.roles.includes(role));
+}
 
 const SIDEBAR_WIDTH_KEY = "admin-sidebar-width";
 const DEFAULT_WIDTH = 260;
@@ -170,7 +184,8 @@ function AdminLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = adminMenuItems.find(item => item.path === location);
+  const menuItems = getMenuItemsForRole(user?.role);
+  const activeMenuItem = menuItems.find(item => item.path === location) || adminMenuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -247,7 +262,7 @@ function AdminLayoutContent({
 
           <SidebarContent className="gap-0 py-4">
             <SidebarMenu className="px-2 space-y-1">
-              {adminMenuItems.map(item => {
+              {menuItems.map(item => {
                 const isActive = location === item.path;
                 return (
                   <SidebarMenuItem key={item.path}>

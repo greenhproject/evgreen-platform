@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Zap, Package } from "lucide-react";
+import { Plus, Pencil, Trash2, Zap, Package, FileText, Settings, ArrowLeft } from "lucide-react";
+import { useLocation } from "wouter";
 
 function formatCOP(amount: number): string {
   return new Intl.NumberFormat("es-CO", {
@@ -57,6 +58,7 @@ const defaultForm: ChargerFormData = {
 };
 
 export default function QuotesCatalog() {
+  const [, navigate] = useLocation();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<ChargerFormData>(defaultForm);
@@ -135,6 +137,22 @@ export default function QuotesCatalog() {
 
   return (
     <div className="space-y-6">
+      {/* Sub-navegación */}
+      <div className="flex items-center gap-1 border-b border-border pb-3">
+        <Button variant="ghost" size="sm" className="gap-2" onClick={() => navigate("/admin/quotes")}>
+          <FileText className="h-4 w-4" />
+          Cotizaciones
+        </Button>
+        <Button variant="default" size="sm" className="gap-2">
+          <Package className="h-4 w-4" />
+          Catálogo de Cargadores
+        </Button>
+        <Button variant="ghost" size="sm" className="gap-2" onClick={() => navigate("/admin/quotes/settings")}>
+          <Settings className="h-4 w-4" />
+          Configuración
+        </Button>
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Catálogo de Cargadores - Ventas</h1>
