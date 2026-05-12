@@ -245,7 +245,7 @@ export function generateQuoteHTML(data: QuotePDFData): string {
 
     /* === CONTENT === */
     .content {
-      padding: 32px 40px;
+      padding: 28px 40px 16px;
     }
 
     .intro-msg {
@@ -463,7 +463,7 @@ export function generateQuoteHTML(data: QuotePDFData): string {
     /* === MODEL SECTION === */
     .model-section {
       page-break-inside: avoid;
-      margin-bottom: 32px;
+      margin-bottom: 24px;
     }
 
     .model-card {
@@ -551,8 +551,8 @@ export function generateQuoteHTML(data: QuotePDFData): string {
       background: #fffbeb;
       border: 1px solid #fde68a;
       border-radius: 10px;
-      padding: 16px 20px;
-      margin-bottom: 24px;
+      padding: 14px 20px;
+      margin-bottom: 16px;
       page-break-inside: avoid;
     }
 
@@ -574,8 +574,8 @@ export function generateQuoteHTML(data: QuotePDFData): string {
       background: #f8fafc;
       border: 1px solid #e2e8f0;
       border-radius: 10px;
-      padding: 16px 20px;
-      margin-bottom: 24px;
+      padding: 14px 20px;
+      margin-bottom: 16px;
       page-break-inside: avoid;
     }
 
@@ -597,8 +597,8 @@ export function generateQuoteHTML(data: QuotePDFData): string {
       background: #f0f9ff;
       border: 1px solid #bae6fd;
       border-radius: 10px;
-      padding: 16px 20px;
-      margin-bottom: 24px;
+      padding: 14px 20px;
+      margin-bottom: 16px;
       page-break-inside: avoid;
     }
 
@@ -643,13 +643,14 @@ export function generateQuoteHTML(data: QuotePDFData): string {
 
     /* === FOOTER === */
     .footer {
-      padding: 24px 40px;
+      padding: 20px 40px;
       background: #f8fafc;
       border-top: 2px solid #e2e8f0;
       display: flex;
       justify-content: space-between;
       align-items: center;
       page-break-inside: avoid;
+      margin-top: 0;
     }
 
     .footer-brand {
@@ -658,7 +659,7 @@ export function generateQuoteHTML(data: QuotePDFData): string {
       gap: 12px;
     }
 
-    .footer-brand img {
+    .footer-brand svg {
       height: 28px;
       width: auto;
     }
@@ -677,7 +678,7 @@ export function generateQuoteHTML(data: QuotePDFData): string {
 
     .footer-advisor {
       text-align: center;
-      padding: 12px 40px;
+      padding: 10px 40px;
       background: #f1f5f9;
       font-size: 11px;
       color: #64748b;
@@ -709,6 +710,10 @@ export function generateQuoteHTML(data: QuotePDFData): string {
         print-color-adjust: exact !important;
       }
 
+      .content {
+        padding-bottom: 16px;
+      }
+
       .product-card,
       .totals-box,
       .model-section,
@@ -716,9 +721,14 @@ export function generateQuoteHTML(data: QuotePDFData): string {
       .exclusions-box,
       .terms-box,
       .notes-box,
-      .includes-grid,
-      .footer {
+      .includes-grid {
         page-break-inside: avoid;
+      }
+
+      .footer,
+      .footer-advisor {
+        page-break-inside: avoid;
+        page-break-before: avoid;
       }
 
       .section-title {
@@ -872,7 +882,17 @@ export function generateQuoteHTML(data: QuotePDFData): string {
     <!-- FOOTER -->
     <div class="footer">
       <div class="footer-brand">
-        <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/cAIxLqDfMSXNUqFl.webp" alt="EVGreen" />
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" height="28">
+          <defs>
+            <linearGradient id="footerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" style="stop-color:#22c55e"/>
+              <stop offset="100%" style="stop-color:#16a34a"/>
+            </linearGradient>
+          </defs>
+          <path d="M10 40 C10 40 8 25 18 18 C22 14 28 16 30 20 C32 14 38 10 44 14 C48 17 46 24 44 28 C50 22 56 20 60 24 C64 28 60 36 56 40 Z" fill="url(#footerGrad)" opacity="0.9"/>
+          <text x="65" y="35" font-family="Montserrat, sans-serif" font-weight="800" font-size="24" fill="#1a1a2e">EV</text>
+          <text x="95" y="35" font-family="Montserrat, sans-serif" font-weight="800" font-size="24" fill="#22c55e">Green</text>
+        </svg>
         <span>NIT: ${data.settings.companyNit}</span>
       </div>
       <div class="footer-contact">

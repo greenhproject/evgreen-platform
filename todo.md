@@ -3182,3 +3182,7 @@
 - [x] Generar PDF limpio sin URL, fecha ni numeración del navegador
 - [x] Evitar cortes de contenido entre páginas
 - [x] Eliminar hojas en blanco innecesarias al final (diseño compacto)
+
+## Fix Logo Footer PDF (Mayo 12)
+- [x] Reemplazar img externa del footer por SVG inline del logo EVGreen (no se rompe al imprimir)
+- [x] Reducción espacio en blanco última página PDF (padding/margin compactados, page-break-before:avoid en footer)
