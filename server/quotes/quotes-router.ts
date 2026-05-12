@@ -316,6 +316,7 @@ export const quotesRouter = router({
           lineTotal,
           includesTransformer: catalogItem.includesTransformer,
           cableMetersIncluded: catalogItem.cableMetersIncluded,
+          productImageUrl: catalogItem.imageUrl || null,
         };
       });
 
@@ -544,6 +545,7 @@ export const quotesRouter = router({
           lineTotal: item.lineTotal,
           includesTransformer: item.includesTransformer,
           cableMetersIncluded: item.cableMetersIncluded,
+          productImageUrl: item.productImageUrl || null,
         });
       }
 
@@ -637,6 +639,7 @@ export const quotesRouter = router({
           lineTotal: item.lineTotal,
           includesTransformer: item.includesTransformer || false,
           cableMetersIncluded: item.cableMetersIncluded || 10,
+          productImageUrl: item.productImageUrl || null,
         })),
         settings: {
           companyName: settings.companyName || "EVGreen",
@@ -785,6 +788,7 @@ export const quotesRouter = router({
           lineTotal: item.lineTotal,
           includesTransformer: item.includesTransformer || false,
           cableMetersIncluded: item.cableMetersIncluded || 10,
+          productImageUrl: item.productImageUrl || null,
         })),
         settings: {
           companyName: settings.companyName || "EVGreen",
@@ -802,14 +806,14 @@ export const quotesRouter = router({
         },
       });
 
-      // Subir HTML como PDF-ready a S3
+      // Subir HTML a S3
       const { storagePut } = await import("../storage");
       const fileName = `quotes/${quote.quoteNumber.replace(/\s/g, "-")}.html`;
-      const { url } = await storagePut(fileName, Buffer.from(htmlContent, "utf-8"), "text/html");
+      const { url: htmlUrl } = await storagePut(fileName, Buffer.from(htmlContent, "utf-8"), "text/html");
 
       // Guardar URL en BD
-      await db.update(quotes).set({ pdfUrl: url }).where(eq(quotes.id, input.id));
+      await db.update(quotes).set({ pdfUrl: htmlUrl }).where(eq(quotes.id, input.id));
 
-      return { url };
+      return { url: htmlUrl, htmlContent };
     }),
 });
