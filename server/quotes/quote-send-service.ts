@@ -55,6 +55,19 @@ interface SendQuoteParams {
     benefitsDescription: string;
   };
   baseUrl: string;
+  financialModel?: {
+    evgreenSharePercent: number;
+    investorSharePercent: number;
+    hostSharePercent: number;
+  };
+  projection?: {
+    show: boolean;
+    energyCostPerKwh: number;
+    salePricePerKwh: number;
+    dailyHours: number;
+    scenario: string;
+    totalKw: number;
+  };
 }
 
 /**

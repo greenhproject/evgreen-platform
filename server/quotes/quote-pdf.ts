@@ -45,6 +45,21 @@ interface QuotePDFData {
     benefitsDescription: string;
   };
   publicUrl: string;
+  // Modelo financiero personalizado
+  financialModel?: {
+    evgreenSharePercent: number;
+    investorSharePercent: number;
+    hostSharePercent: number;
+  };
+  // Proyección de ingresos
+  projection?: {
+    show: boolean;
+    energyCostPerKwh: number;
+    salePricePerKwh: number;
+    dailyHours: number;
+    scenario: string;
+    totalKw: number;
+  };
 }
 
 function formatCOP(amount: number): string {
@@ -858,21 +873,86 @@ export async function generateQuoteHTML(data: QuotePDFData): Promise<string> {
         <div class="model-card">
           <div class="shares-row">
             <div class="share-box owner">
-              <div class="percent">${data.settings.ownerSharePercent}%</div>
-              <div class="share-label">Para usted (dueño)</div>
+              <div class="percent">${data.financialModel?.investorSharePercent ?? data.settings.ownerSharePercent}%</div>
+              <div class="share-label">Para usted (inversionista)</div>
               <div class="share-sub">Del margen neto de operación</div>
             </div>
             <div class="share-box evgreen">
-              <div class="percent">${data.settings.evgreenFeePercent}%</div>
+              <div class="percent">${data.financialModel?.evgreenSharePercent ?? data.settings.evgreenFeePercent}%</div>
               <div class="share-label">EVGreen (operación)</div>
               <div class="share-sub">Soporte, tecnología y mantenimiento</div>
             </div>
           </div>
+          ${(data.financialModel?.hostSharePercent ?? 0) > 0 ? `
+          <div style="text-align:center; padding:8px; margin-top:8px; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; font-size:12px; color:#92400e;">
+            <strong>Aliado Comercial:</strong> ${data.financialModel?.hostSharePercent}% del margen bruto (se descuenta antes del reparto neto)
+          </div>
+          ` : ''}
           <div class="benefits-title">¿Qué cubre el fee de EVGreen?</div>
           ${benefitsList}
         </div>
       </div>
       ` : ''}
+
+      <!-- Proyección de Ingresos -->
+      ${data.projection?.show ? (() => {
+        const p = data.projection!;
+        const fm = data.financialModel || { evgreenSharePercent: data.settings.evgreenFeePercent, investorSharePercent: data.settings.ownerSharePercent, hostSharePercent: 0 };
+        const kwhDay = p.totalKw * p.dailyHours;
+        const revenueDay = kwhDay * p.salePricePerKwh;
+        const costDay = kwhDay * p.energyCostPerKwh;
+        const marginDay = revenueDay - costDay;
+        const hostCut = marginDay * (fm.hostSharePercent / 100);
+        const netDay = marginDay - hostCut;
+        const investorDay = netDay * (fm.investorSharePercent / 100);
+        const investorMonth = investorDay * 30;
+        const investorYear = investorDay * 365;
+        const roiMonths = data.total > 0 ? data.total / (investorMonth || 1) : 0;
+        const scenarioLabel = p.scenario === 'pessimistic' ? 'Pesimista' : p.scenario === 'optimistic' ? 'Optimista' : 'Realista';
+
+        return `
+      <div class="model-section" style="page-break-inside:avoid;">
+        <div class="section-title">
+          <span class="icon">📈</span>
+          Proyección de Ingresos Estimada
+        </div>
+        <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
+            <div style="font-size:11px; color:#64748b;">Escenario: <strong style="color:#15803d;">${scenarioLabel}</strong></div>
+            <div style="font-size:11px; color:#64748b;">${kwhDay.toFixed(0)} kWh/día | ${p.dailyHours}h uso/día</div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; text-align:center; margin-bottom:12px;">
+            <div style="background:white; border-radius:6px; padding:12px; border:1px solid #e2e8f0;">
+              <div style="font-size:20px; font-weight:800; color:#15803d;">${formatCOP(investorDay)}</div>
+              <div style="font-size:10px; color:#64748b; margin-top:2px;">Ingreso diario (inv.)</div>
+            </div>
+            <div style="background:white; border-radius:6px; padding:12px; border:1px solid #e2e8f0;">
+              <div style="font-size:20px; font-weight:800; color:#15803d;">${formatCOP(investorMonth)}</div>
+              <div style="font-size:10px; color:#64748b; margin-top:2px;">Ingreso mensual (inv.)</div>
+            </div>
+            <div style="background:white; border-radius:6px; padding:12px; border:1px solid #e2e8f0;">
+              <div style="font-size:20px; font-weight:800; color:#15803d;">${formatCOP(investorYear)}</div>
+              <div style="font-size:10px; color:#64748b; margin-top:2px;">Ingreso anual (inv.)</div>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; text-align:center; margin-bottom:12px;">
+            <div style="background:white; border-radius:6px; padding:10px; border:1px solid #e2e8f0;">
+              <div style="font-size:16px; font-weight:700; color:#0f172a;">${roiMonths > 0 ? roiMonths.toFixed(1) : '-'} meses</div>
+              <div style="font-size:10px; color:#64748b;">Recuperación de inversión</div>
+            </div>
+            <div style="background:white; border-radius:6px; padding:10px; border:1px solid #e2e8f0;">
+              <div style="font-size:16px; font-weight:700; color:#0f172a;">${investorYear > 0 && data.total > 0 ? ((investorYear / data.total) * 100).toFixed(1) : '-'}%</div>
+              <div style="font-size:10px; color:#64748b;">ROI anual estimado</div>
+            </div>
+          </div>
+          <div style="font-size:10px; color:#94a3b8; padding:8px; background:#f8fafc; border-radius:4px; border:1px solid #e2e8f0;">
+            <strong>Supuestos:</strong> Costo energía: ${formatCOP(p.energyCostPerKwh)}/kWh | Precio venta: ${formatCOP(p.salePricePerKwh)}/kWh | Potencia total: ${p.totalKw} kW | Uso: ${p.dailyHours}h/día<br/>
+            <em>⚠ Esta proyección es netamente informativa y se basa en supuestos estimados. No constituye garantía de ingresos. Los resultados reales pueden variar según ubicación, demanda, tarifas y condiciones del mercado.</em>
+          </div>
+        </div>
+      </div>
+        `;
+      })() : ''}
 
       <!-- Exclusions -->
       ${data.settings.exclusions ? `
