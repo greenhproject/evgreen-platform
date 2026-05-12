@@ -103,13 +103,7 @@ export default function QuotePublic() {
             {/* Top bar: Brand + Quote number */}
             <div className="flex items-start justify-between mb-10">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                  <Zap className="h-7 w-7 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-white to-emerald-300 bg-clip-text text-transparent">EVGreen</h2>
-                  <p className="text-[11px] text-emerald-400/80 uppercase tracking-[2px] font-medium">Estaciones de Carga Inteligentes</p>
-                </div>
+                <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/zbDIWjuOCDapFXwo.webp" alt="EVGreen" className="h-14 w-auto object-contain" />
               </div>
               <div className="text-right">
                 <p className="text-[10px] text-gray-500 uppercase tracking-widest">Cotización</p>
@@ -372,11 +366,8 @@ export default function QuotePublic() {
           <section className="border-t border-[#1f2937] pt-8">
             <div className="flex flex-col md:flex-row items-center justify-between gap-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-cyan-500 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/10">
-                  <Zap className="h-5 w-5 text-white" />
-                </div>
+                <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/zbDIWjuOCDapFXwo.webp" alt="EVGreen" className="h-10 w-auto object-contain" />
                 <div>
-                  <p className="font-bold text-white">{settings?.companyName || "EVGreen"}</p>
                   <p className="text-xs text-gray-500">NIT: {settings?.companyNit}</p>
                 </div>
               </div>
