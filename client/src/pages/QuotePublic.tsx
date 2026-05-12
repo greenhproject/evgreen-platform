@@ -75,9 +75,12 @@ export default function QuotePublic() {
   const handleDownload = async () => {
     setDownloading(true);
     try {
+      // Disparar impresión del navegador (Guardar como PDF)
       window.print();
+    } catch (e) {
+      console.error('Error al imprimir:', e);
     } finally {
-      setDownloading(false);
+      setTimeout(() => setDownloading(false), 1000);
     }
   };
 

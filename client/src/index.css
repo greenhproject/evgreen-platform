@@ -348,3 +348,35 @@
     transition-duration: 0.01ms !important;
   }
 }
+/* === PRINT STYLES para Cotización Pública === */
+@media print {
+  @page {
+    margin: 10mm;
+    size: A4;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: white !important;
+  }
+
+  /* Ocultar elementos no imprimibles */
+  .no-print,
+  .fixed,
+  button,
+  [data-no-print] {
+    display: none !important;
+  }
+
+  /* Control de saltos de página */
+  .print-avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print-break-before {
+    page-break-before: always;
+    break-before: page;
+  }
+}
