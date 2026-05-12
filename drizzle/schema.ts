@@ -3056,6 +3056,11 @@ export const quoteSettings = mysqlTable("quote_settings", {
   validityDays: int("validityDays").default(30).notNull(), // Días de vigencia
   evgreenFeePercent: int("evgreenFeePercent").default(30).notNull(), // % fee de EVGreen (30%)
   ownerSharePercent: int("ownerSharePercent").default(70).notNull(), // % para el dueño (70%)
+  hostSharePercent: int("hostSharePercent").default(0).notNull(), // % Aliado Comercial (sobre margen bruto)
+  // Parámetros por defecto de proyección
+  defaultEnergyCostPerKwh: int("defaultEnergyCostPerKwh").default(700).notNull(), // COP/kWh costo energía
+  defaultSalePricePerKwh: int("defaultSalePricePerKwh").default(1800).notNull(), // COP/kWh precio venta
+  defaultDailyHours: decimal("defaultDailyHours", { precision: 4, scale: 1 }).default("4.0").notNull(), // Horas uso diario
   companyName: varchar("companyName", { length: 255 }).default("EVGreen - Green House Project S.A.S").notNull(),
   companyNit: varchar("companyNit", { length: 50 }).default("901.447.678-0").notNull(),
   companyPhone: varchar("companyPhone", { length: 50 }).default("321 456 7644").notNull(),
@@ -3108,6 +3113,16 @@ export const quotes = mysqlTable("quotes", {
   rejectedAt: timestamp("rejectedAt"),
   // PDF generado
   pdfUrl: text("pdfUrl"), // URL del PDF en S3
+  // === Modelo Financiero Personalizado por Cotización ===
+  evgreenSharePercent: decimal("evgreenSharePercent", { precision: 5, scale: 2 }).default("30.00"), // % EVGreen (Gestor)
+  investorSharePercent: decimal("investorSharePercent", { precision: 5, scale: 2 }).default("70.00"), // % Inversionista
+  hostSharePercent: decimal("hostSharePercent", { precision: 5, scale: 2 }).default("0.00"), // % Aliado Comercial (sobre margen bruto)
+  // === Parámetros de Proyección de Ingresos ===
+  projectionEnergyCostPerKwh: int("projectionEnergyCostPerKwh").default(700), // COP/kWh costo energía
+  projectionSalePricePerKwh: int("projectionSalePricePerKwh").default(1800), // COP/kWh precio venta
+  projectionDailyHours: decimal("projectionDailyHours", { precision: 4, scale: 1 }).default("4.0"), // Horas de uso diario
+  projectionScenario: varchar("projectionScenario", { length: 20 }).default("realistic"), // pessimistic, realistic, optimistic
+  showProjection: boolean("showProjection").default(true), // Mostrar proyección en la cotización
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

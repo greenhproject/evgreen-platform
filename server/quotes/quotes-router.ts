@@ -249,12 +249,30 @@ export const quotesRouter = router({
       return settings;
     }),
 
+    /** Obtener defaults de modelo financiero para precargar en formulario de crear cotización */
+    getDefaults: protectedProcedure.query(async () => {
+      const db = await getDatabase();
+      const [settings] = await db.select().from(quoteSettings).limit(1);
+      return {
+        evgreenFeePercent: settings?.evgreenFeePercent || 30,
+        ownerSharePercent: settings?.ownerSharePercent || 70,
+        hostSharePercent: (settings as any)?.hostSharePercent || 0,
+        defaultEnergyCostPerKwh: (settings as any)?.defaultEnergyCostPerKwh || 700,
+        defaultSalePricePerKwh: (settings as any)?.defaultSalePricePerKwh || 1800,
+        defaultDailyHours: parseFloat((settings as any)?.defaultDailyHours || "4.0"),
+      };
+    }),
+
     update: adminProcedure
       .input(
         z.object({
           validityDays: z.number().min(7).max(90).optional(),
           evgreenFeePercent: z.number().min(10).max(50).optional(),
           ownerSharePercent: z.number().min(50).max(90).optional(),
+          hostSharePercent: z.number().min(0).max(50).optional(),
+          defaultEnergyCostPerKwh: z.number().min(100).max(5000).optional(),
+          defaultSalePricePerKwh: z.number().min(500).max(10000).optional(),
+          defaultDailyHours: z.string().optional(),
           companyName: z.string().optional(),
           companyNit: z.string().optional(),
           companyPhone: z.string().optional(),
@@ -300,6 +318,16 @@ export const quotesRouter = router({
         clientNotes: z.string().optional(),
         internalNotes: z.string().optional(),
         discount: z.number().min(0).optional(),
+        // Modelo financiero personalizado
+        evgreenSharePercent: z.number().min(0).max(100).optional(),
+        investorSharePercent: z.number().min(0).max(100).optional(),
+        hostSharePercent: z.number().min(0).max(100).optional(),
+        // Proyección de ingresos
+        projectionEnergyCostPerKwh: z.number().min(100).max(5000).optional(),
+        projectionSalePricePerKwh: z.number().min(500).max(10000).optional(),
+        projectionDailyHours: z.number().min(1).max(24).optional(),
+        projectionScenario: z.enum(["pessimistic", "realistic", "optimistic"]).optional(),
+        showProjection: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -376,6 +404,16 @@ export const quotesRouter = router({
         clientNotes: input.clientNotes || null,
         internalNotes: input.internalNotes || null,
         publicToken,
+        // Modelo financiero personalizado
+        evgreenSharePercent: input.evgreenSharePercent?.toString() || settings?.evgreenFeePercent?.toString() || "30.00",
+        investorSharePercent: input.investorSharePercent?.toString() || settings?.ownerSharePercent?.toString() || "70.00",
+        hostSharePercent: input.hostSharePercent?.toString() || settings?.hostSharePercent?.toString() || "0.00",
+        // Proyección de ingresos
+        projectionEnergyCostPerKwh: input.projectionEnergyCostPerKwh || (settings as any)?.defaultEnergyCostPerKwh || 700,
+        projectionSalePricePerKwh: input.projectionSalePricePerKwh || (settings as any)?.defaultSalePricePerKwh || 1800,
+        projectionDailyHours: input.projectionDailyHours?.toString() || (settings as any)?.defaultDailyHours?.toString() || "4.0",
+        projectionScenario: input.projectionScenario || "realistic",
+        showProjection: input.showProjection !== undefined ? input.showProjection : true,
       });
 
       const quoteId = quoteResult.insertId;
@@ -555,6 +593,15 @@ export const quotesRouter = router({
         clientNotes: original.clientNotes,
         internalNotes: original.internalNotes,
         publicToken,
+        // Copiar modelo financiero
+        evgreenSharePercent: original.evgreenSharePercent,
+        investorSharePercent: original.investorSharePercent,
+        hostSharePercent: original.hostSharePercent,
+        projectionEnergyCostPerKwh: original.projectionEnergyCostPerKwh,
+        projectionSalePricePerKwh: original.projectionSalePricePerKwh,
+        projectionDailyHours: original.projectionDailyHours,
+        projectionScenario: original.projectionScenario,
+        showProjection: original.showProjection,
       });
 
       const newQuoteId = newQuote.insertId;
@@ -682,6 +729,19 @@ export const quotesRouter = router({
           benefitsDescription: settings.benefitsDescription || "",
         },
         baseUrl,
+        financialModel: {
+          evgreenSharePercent: parseFloat(quote.evgreenSharePercent || "0") || settings.evgreenFeePercent,
+          investorSharePercent: parseFloat(quote.investorSharePercent || "0") || settings.ownerSharePercent,
+          hostSharePercent: parseFloat(quote.hostSharePercent || "0") || 0,
+        },
+        projection: {
+          show: quote.showProjection ?? true,
+          energyCostPerKwh: quote.projectionEnergyCostPerKwh || 700,
+          salePricePerKwh: quote.projectionSalePricePerKwh || 1800,
+          dailyHours: parseFloat(quote.projectionDailyHours || "4.0"),
+          scenario: quote.projectionScenario || "realistic",
+          totalKw: items.reduce((acc: number, item: any) => acc + (parseFloat(item.productPowerKw) || 0) * item.quantity, 0),
+        },
       });
 
       if (result.success) {
@@ -829,6 +889,19 @@ export const quotesRouter = router({
           termsAndConditions: settings.termsAndConditions || "",
           exclusions: settings.exclusions || "",
           benefitsDescription: settings.benefitsDescription || "",
+        },
+        financialModel: {
+          evgreenSharePercent: parseFloat(quote.evgreenSharePercent || "0") || settings.evgreenFeePercent,
+          investorSharePercent: parseFloat(quote.investorSharePercent || "0") || settings.ownerSharePercent,
+          hostSharePercent: parseFloat(quote.hostSharePercent || "0") || 0,
+        },
+        projection: {
+          show: quote.showProjection ?? true,
+          energyCostPerKwh: quote.projectionEnergyCostPerKwh || 700,
+          salePricePerKwh: quote.projectionSalePricePerKwh || 1800,
+          dailyHours: parseFloat(quote.projectionDailyHours || "4.0"),
+          scenario: quote.projectionScenario || "realistic",
+          totalKw: items.reduce((acc: number, item: any) => acc + (parseFloat(item.productPowerKw) || 0) * item.quantity, 0),
         },
       });
 

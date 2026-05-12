@@ -110,6 +110,77 @@ describe("Quote PDF Generation", () => {
     const html = await generateQuoteHTML(noDiscountData);
     expect(html).not.toContain("Descuento");
   });
+
+  it("uses custom financial model percentages when provided", async () => {
+    const customData = {
+      ...mockQuoteData,
+      financialModel: {
+        evgreenSharePercent: 25,
+        investorSharePercent: 75,
+        hostSharePercent: 10,
+      },
+    };
+    const html = await generateQuoteHTML(customData);
+    expect(html).toContain("75%");
+    expect(html).toContain("25%");
+    expect(html).toContain("Aliado Comercial");
+    expect(html).toContain("10%");
+  });
+
+  it("shows projection section when enabled", async () => {
+    const projectionData = {
+      ...mockQuoteData,
+      financialModel: {
+        evgreenSharePercent: 30,
+        investorSharePercent: 70,
+        hostSharePercent: 0,
+      },
+      projection: {
+        show: true,
+        energyCostPerKwh: 700,
+        salePricePerKwh: 1800,
+        dailyHours: 4,
+        scenario: "realistic" as const,
+        totalKw: 120,
+      },
+    };
+    const html = await generateQuoteHTML(projectionData);
+    expect(html).toContain("Proyecci\u00f3n de Ingresos Estimada");
+    expect(html).toContain("Realista");
+    expect(html).toContain("Recuperaci\u00f3n de inversi\u00f3n");
+    expect(html).toContain("ROI anual estimado");
+    expect(html).toContain("netamente informativa");
+    expect(html).toContain("120 kW");
+  });
+
+  it("does not show projection when disabled", async () => {
+    const noProjectionData = {
+      ...mockQuoteData,
+      projection: {
+        show: false,
+        energyCostPerKwh: 700,
+        salePricePerKwh: 1800,
+        dailyHours: 4,
+        scenario: "realistic" as const,
+        totalKw: 120,
+      },
+    };
+    const html = await generateQuoteHTML(noProjectionData);
+    expect(html).not.toContain("Proyecci\u00f3n de Ingresos Estimada");
+  });
+
+  it("does not show host share when zero", async () => {
+    const noHostData = {
+      ...mockQuoteData,
+      financialModel: {
+        evgreenSharePercent: 30,
+        investorSharePercent: 70,
+        hostSharePercent: 0,
+      },
+    };
+    const html = await generateQuoteHTML(noHostData);
+    expect(html).not.toContain("Aliado Comercial");
+  });
 });
 
 describe("Quote Email Generation", () => {
