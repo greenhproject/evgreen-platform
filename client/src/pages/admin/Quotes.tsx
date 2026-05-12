@@ -138,17 +138,23 @@ export default function Quotes() {
 
   const generatePdfMutation = trpc.quotes.generatePdf.useMutation({
     onSuccess: (data) => {
-      // Descargar como archivo HTML para imprimir/guardar como PDF
-      const blob = new Blob([data.htmlContent], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      const printWindow = window.open(url, "_blank");
+      // Abrir HTML en nueva pestaña y disparar impresión automática
+      const printWindow = window.open("", "_blank");
       if (printWindow) {
+        printWindow.document.write(data.htmlContent);
+        printWindow.document.close();
+        // Esperar a que carguen fuentes e imágenes antes de imprimir
         printWindow.onload = () => {
-          setTimeout(() => printWindow.print(), 500);
+          setTimeout(() => {
+            printWindow.print();
+          }, 800);
         };
+        // Fallback si onload no se dispara
+        setTimeout(() => {
+          try { printWindow.print(); } catch(e) {}
+        }, 2000);
       }
-      URL.revokeObjectURL(url);
-      toast.success("Cotización lista para descargar/imprimir");
+      toast.success("Cotización lista — usa 'Guardar como PDF' en el diálogo de impresión");
     },
     onError: (err: any) => toast.error(err.message),
   });

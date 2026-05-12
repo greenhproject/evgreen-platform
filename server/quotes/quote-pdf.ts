@@ -1,6 +1,7 @@
 /**
  * Generación de HTML profesional para cotizaciones EVGreen
- * Diseño premium con estética futurista/eléctrica de la marca
+ * Diseño PRINT-FIRST: optimizado para generar PDFs limpios
+ * Fondo blanco, texto oscuro, logo negro - compatible con impresión
  */
 
 interface QuotePDFData {
@@ -65,7 +66,7 @@ function formatDate(date: Date | string | null): string {
 }
 
 /**
- * Genera el HTML premium de la cotización
+ * Genera el HTML premium de la cotización - OPTIMIZADO PARA PDF
  */
 export function generateQuoteHTML(data: QuotePDFData): string {
   let benefits: string[] = [];
@@ -73,36 +74,34 @@ export function generateQuoteHTML(data: QuotePDFData): string {
     benefits = data.settings.benefitsDescription ? JSON.parse(data.settings.benefitsDescription) : [];
   } catch { benefits = []; }
 
+  const benefitsList = benefits.map((b: string) => `
+    <div class="benefit-item">
+      <span class="benefit-check">✓</span>
+      <span>${b}</span>
+    </div>
+  `).join("");
+
   const itemsRows = data.items.map((item) => `
     <div class="product-card">
-      <div class="product-header">
-        ${item.productImageUrl ? `<div class="product-image"><img src="${item.productImageUrl}" alt="${item.productName}" /></div>` : `<div class="product-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>`}
-        <div class="product-info">
+      <div class="product-row">
+        ${item.productImageUrl ? `<div class="product-img"><img src="${item.productImageUrl}" alt="${item.productName}" /></div>` : `<div class="product-img-placeholder"><span>⚡</span></div>`}
+        <div class="product-details">
           <h4>${item.productName}</h4>
-          <div class="product-specs">
-            <span class="spec-badge">${item.productPowerKw} kW</span>
-            <span class="spec-badge">${item.productChargeType}</span>
-            <span class="spec-badge">${item.productConnector}</span>
+          <div class="specs">
+            <span class="spec">${item.productPowerKw} kW</span>
+            <span class="spec">${item.productChargeType}</span>
+            <span class="spec">${item.productConnector}</span>
+          </div>
+          <div class="features">
+            ${item.includesTransformer ? `<span class="feature">✓ Incluye transformador</span>` : ''}
+            <span class="feature">✓ Hasta ${item.cableMetersIncluded}m de cableado</span>
           </div>
         </div>
-        <div class="product-price">
+        <div class="product-pricing">
           <span class="qty">×${item.quantity}</span>
           <span class="price">${formatCOP(item.lineTotal)}</span>
         </div>
       </div>
-      <div class="product-features">
-        ${item.includesTransformer ? '<span class="feature-tag"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Incluye transformador</span>' : ''}
-        <span class="feature-tag"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Hasta ${item.cableMetersIncluded}m de cableado</span>
-      </div>
-    </div>
-  `).join("");
-
-  const benefitsList = benefits.map((b) => `
-    <div class="benefit-item">
-      <div class="benefit-icon">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      </div>
-      <span>${b}</span>
     </div>
   `).join("");
 
@@ -112,715 +111,680 @@ export function generateQuoteHTML(data: QuotePDFData): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cotización ${data.quoteNumber} - EVGreen</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
   <style>
-    :root {
-      --green: #22c55e;
-      --green-dark: #16a34a;
-      --green-glow: rgba(34, 197, 94, 0.3);
-      --cyan: #06b6d4;
-      --dark: #0a0f1a;
-      --dark-card: #111827;
-      --dark-border: #1f2937;
-      --text: #f1f5f9;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
+    /* === PRINT-FIRST RESET === */
+    @page {
+      margin: 0;
+      size: A4;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
       font-family: 'Inter', -apple-system, sans-serif;
-      background: var(--dark);
-      color: var(--text);
+      background: #ffffff;
+      color: #1a1a2e;
       line-height: 1.6;
-      min-height: 100vh;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
 
     .page {
-      max-width: 900px;
+      max-width: 800px;
       margin: 0 auto;
       padding: 0;
     }
 
-    /* === HERO HEADER === */
-    .hero-header {
-      background: linear-gradient(135deg, #0a0f1a 0%, #0d1b2a 50%, #0a2e1a 100%);
-      padding: 48px 48px 40px;
+    /* === HEADER === */
+    .header {
+      background: linear-gradient(135deg, #0a1628 0%, #0d2818 100%);
+      padding: 36px 40px 32px;
       position: relative;
       overflow: hidden;
-      border-bottom: 1px solid var(--dark-border);
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
 
-    .hero-header::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      right: -20%;
-      width: 500px;
-      height: 500px;
-      background: radial-gradient(circle, var(--green-glow) 0%, transparent 70%);
-      opacity: 0.4;
-    }
-
-    .hero-header::after {
+    .header::after {
       content: '';
       position: absolute;
       bottom: 0;
       left: 0;
       right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, var(--green), transparent);
+      height: 3px;
+      background: linear-gradient(90deg, #22c55e, #06b6d4, #22c55e);
     }
 
-    .header-top {
+    .header-row {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      position: relative;
-      z-index: 1;
-      margin-bottom: 32px;
-    }
-
-    .brand {
-      display: flex;
       align-items: center;
-      gap: 14px;
+      margin-bottom: 24px;
     }
 
     .brand-logo {
-      height: 52px;
+      height: 44px;
       width: auto;
-      object-fit: contain;
     }
 
-    .brand-icon {
-      width: 48px;
-      height: 48px;
-      background: linear-gradient(135deg, var(--green), var(--cyan));
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 20px var(--green-glow);
-    }
-
-    .brand-text h1 {
-      font-family: 'Montserrat', sans-serif;
-      font-size: 26px;
-      font-weight: 800;
-      background: linear-gradient(135deg, #fff, #22c55e);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      letter-spacing: -0.5px;
-    }
-
-    .brand-text p {
-      font-size: 12px;
-      color: var(--text-muted);
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      font-weight: 500;
-    }
-
-    .quote-badge {
+    .quote-number {
       text-align: right;
-    }
-
-    .quote-badge .label {
+      color: #94a3b8;
       font-size: 11px;
-      color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 1px;
     }
 
-    .quote-badge .number {
-      font-size: 20px;
-      font-weight: 700;
-      font-family: 'Montserrat', monospace;
-      color: var(--green);
+    .quote-number strong {
+      display: block;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 18px;
+      font-weight: 800;
+      color: #22c55e;
       margin-top: 2px;
     }
 
-    .hero-title {
-      position: relative;
-      z-index: 1;
-    }
-
-    .hero-title h2 {
+    .header-title h1 {
       font-family: 'Montserrat', sans-serif;
-      font-size: 36px;
+      font-size: 28px;
       font-weight: 900;
-      color: #fff;
-      margin-bottom: 6px;
-      letter-spacing: -1px;
+      color: #ffffff;
+      letter-spacing: -0.5px;
     }
 
-    .hero-title .subtitle {
-      font-size: 16px;
-      color: var(--green);
+    .header-title .subtitle {
+      font-size: 14px;
+      color: #22c55e;
       font-weight: 500;
+      margin-top: 4px;
     }
 
-    /* === CLIENT SECTION === */
-    .client-section {
-      background: var(--dark-card);
-      padding: 32px 48px;
-      border-bottom: 1px solid var(--dark-border);
+    /* === CLIENT INFO === */
+    .client-bar {
+      background: #f8fafc;
+      padding: 24px 40px;
+      border-bottom: 1px solid #e2e8f0;
     }
 
     .client-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 24px;
+      gap: 20px;
+      margin-bottom: 12px;
     }
 
-    .client-field .label {
-      font-size: 11px;
-      color: var(--text-dim);
+    .client-field label {
+      display: block;
+      font-size: 10px;
+      color: #64748b;
       text-transform: uppercase;
       letter-spacing: 0.8px;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
     }
 
-    .client-field .value {
-      font-size: 15px;
+    .client-field span {
+      font-size: 14px;
       font-weight: 600;
-      color: #fff;
+      color: #1e293b;
     }
 
-    .validity-badge {
+    .validity {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      background: rgba(34, 197, 94, 0.1);
-      border: 1px solid rgba(34, 197, 94, 0.3);
-      padding: 6px 14px;
-      border-radius: 20px;
-      font-size: 12px;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      padding: 5px 12px;
+      border-radius: 16px;
+      font-size: 11px;
       font-weight: 600;
-      color: var(--green);
-      margin-top: 16px;
+      color: #059669;
     }
 
     /* === CONTENT === */
     .content {
-      padding: 40px 48px;
-      background: var(--dark);
+      padding: 32px 40px;
     }
 
-    .intro-message {
-      font-size: 15px;
-      color: var(--text-muted);
-      padding: 20px 24px;
-      border-left: 3px solid var(--green);
-      background: rgba(34, 197, 94, 0.05);
+    .intro-msg {
+      font-size: 14px;
+      color: #475569;
+      padding: 16px 20px;
+      border-left: 3px solid #22c55e;
+      background: #f0fdf4;
       border-radius: 0 8px 8px 0;
-      margin-bottom: 36px;
+      margin-bottom: 28px;
     }
 
-    /* === PRODUCTS === */
+    /* === SECTION TITLES === */
     .section-title {
       font-family: 'Montserrat', sans-serif;
-      font-size: 20px;
+      font-size: 16px;
       font-weight: 800;
-      color: #fff;
-      margin-bottom: 20px;
+      color: #0f172a;
+      margin-bottom: 16px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
+      page-break-after: avoid;
     }
 
     .section-title .icon {
-      width: 32px;
-      height: 32px;
-      background: rgba(34, 197, 94, 0.15);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      color: #22c55e;
+      font-size: 18px;
     }
 
+    /* === PRODUCTS === */
     .product-card {
-      background: var(--dark-card);
-      border: 1px solid var(--dark-border);
-      border-radius: 12px;
-      padding: 20px 24px;
-      margin-bottom: 12px;
-      transition: border-color 0.2s;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 10px;
+      page-break-inside: avoid;
+      background: #fafbfc;
     }
 
-    .product-card:hover {
-      border-color: rgba(34, 197, 94, 0.3);
-    }
-
-    .product-header {
+    .product-row {
       display: flex;
       align-items: center;
       gap: 16px;
     }
 
-    .product-icon {
-      width: 44px;
-      height: 44px;
-      background: rgba(34, 197, 94, 0.1);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-
-    .product-image {
-      width: 80px;
-      height: 80px;
-      border-radius: 12px;
+    .product-img {
+      width: 70px;
+      height: 70px;
+      border-radius: 8px;
       overflow: hidden;
       flex-shrink: 0;
-      border: 1px solid var(--dark-border);
+      border: 1px solid #e2e8f0;
+      background: #fff;
     }
 
-    .product-image img {
+    .product-img img {
       width: 100%;
       height: 100%;
       object-fit: cover;
     }
 
-    .product-info {
+    .product-img-placeholder {
+      width: 70px;
+      height: 70px;
+      border-radius: 8px;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 24px;
+    }
+
+    .product-details {
       flex: 1;
     }
 
-    .product-info h4 {
-      font-size: 16px;
+    .product-details h4 {
+      font-size: 15px;
       font-weight: 700;
-      color: #fff;
+      color: #0f172a;
       margin-bottom: 6px;
     }
 
-    .product-specs {
+    .specs {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       flex-wrap: wrap;
+      margin-bottom: 6px;
     }
 
-    .spec-badge {
-      font-size: 11px;
+    .spec {
+      font-size: 10px;
       font-weight: 600;
-      padding: 3px 10px;
+      padding: 2px 8px;
       border-radius: 4px;
-      background: rgba(6, 182, 212, 0.1);
-      color: var(--cyan);
-      border: 1px solid rgba(6, 182, 212, 0.2);
+      background: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
     }
 
-    .product-price {
+    .features {
+      display: flex;
+      gap: 12px;
+    }
+
+    .feature {
+      font-size: 11px;
+      color: #059669;
+      font-weight: 500;
+    }
+
+    .product-pricing {
       text-align: right;
       flex-shrink: 0;
     }
 
-    .product-price .qty {
+    .product-pricing .qty {
       display: block;
-      font-size: 12px;
-      color: var(--text-dim);
+      font-size: 11px;
+      color: #64748b;
       margin-bottom: 2px;
     }
 
-    .product-price .price {
-      font-size: 20px;
-      font-weight: 800;
-      color: var(--green);
+    .product-pricing .price {
       font-family: 'Montserrat', sans-serif;
-    }
-
-    .product-features {
-      display: flex;
-      gap: 12px;
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid var(--dark-border);
-    }
-
-    .feature-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 12px;
-      color: var(--green);
-      font-weight: 500;
+      font-size: 18px;
+      font-weight: 800;
+      color: #059669;
     }
 
     /* === TOTALS === */
-    .totals-card {
-      background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(6, 182, 212, 0.05));
-      border: 1px solid rgba(34, 197, 94, 0.25);
-      border-radius: 16px;
-      padding: 28px 32px;
-      margin: 24px 0 40px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .totals-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, var(--green), var(--cyan), var(--green));
+    .totals-box {
+      background: linear-gradient(135deg, #ecfdf5 0%, #f0fdfa 100%);
+      border: 2px solid #22c55e;
+      border-radius: 12px;
+      padding: 24px 28px;
+      margin: 20px 0 32px;
+      page-break-inside: avoid;
     }
 
     .totals-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 6px 0;
+      padding: 4px 0;
     }
 
-    .totals-row.sub { color: var(--text-muted); font-size: 14px; }
-    .totals-row.discount { color: var(--green); font-size: 14px; }
+    .totals-row.sub {
+      font-size: 13px;
+      color: #64748b;
+    }
+
+    .totals-row.discount {
+      font-size: 13px;
+      color: #059669;
+    }
 
     .totals-row.main {
-      padding-top: 14px;
-      margin-top: 10px;
-      border-top: 1px solid rgba(34, 197, 94, 0.2);
+      padding-top: 12px;
+      margin-top: 8px;
+      border-top: 2px solid #22c55e;
     }
 
     .totals-row.main .label {
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 700;
-      color: #fff;
+      color: #0f172a;
     }
 
     .totals-row.main .amount {
       font-family: 'Montserrat', sans-serif;
-      font-size: 32px;
+      font-size: 28px;
       font-weight: 900;
-      background: linear-gradient(135deg, #22c55e, #06b6d4);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: #059669;
     }
 
     .totals-note {
-      font-size: 11px;
-      color: var(--text-dim);
-      margin-top: 10px;
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 8px;
       text-align: right;
     }
 
-    /* === INCLUDES === */
+    /* === INCLUDES GRID === */
     .includes-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-bottom: 40px;
+      gap: 8px;
+      margin-bottom: 32px;
     }
 
     .include-item {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 12px 16px;
-      background: var(--dark-card);
-      border: 1px solid var(--dark-border);
-      border-radius: 8px;
-      font-size: 13px;
-      color: var(--text);
+      gap: 8px;
+      padding: 10px 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #334155;
+      page-break-inside: avoid;
     }
 
-    .include-item .check-icon {
-      width: 20px;
-      height: 20px;
-      background: rgba(34, 197, 94, 0.15);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    .include-item .check {
+      color: #22c55e;
+      font-weight: 700;
+      font-size: 14px;
       flex-shrink: 0;
     }
 
-    /* === MODEL === */
-    .model-card {
-      background: var(--dark-card);
-      border: 1px solid var(--dark-border);
-      border-radius: 16px;
-      padding: 32px;
-      margin-bottom: 40px;
+    /* === MODEL SECTION === */
+    .model-section {
+      page-break-inside: avoid;
+      margin-bottom: 32px;
     }
 
-    .model-shares {
+    .model-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      background: #fafbfc;
+    }
+
+    .shares-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 16px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
 
     .share-box {
-      padding: 24px;
-      border-radius: 12px;
+      padding: 20px;
+      border-radius: 10px;
       text-align: center;
     }
 
     .share-box.owner {
-      background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.05));
-      border: 1px solid rgba(34, 197, 94, 0.3);
+      background: #ecfdf5;
+      border: 2px solid #22c55e;
     }
 
     .share-box.evgreen {
-      background: rgba(100, 116, 139, 0.1);
-      border: 1px solid var(--dark-border);
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
     }
 
     .share-box .percent {
       font-family: 'Montserrat', sans-serif;
-      font-size: 42px;
+      font-size: 36px;
       font-weight: 900;
       line-height: 1;
       margin-bottom: 4px;
     }
 
     .share-box.owner .percent {
-      background: linear-gradient(135deg, #22c55e, #06b6d4);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: #059669;
     }
 
-    .share-box.evgreen .percent { color: var(--text-muted); }
+    .share-box.evgreen .percent {
+      color: #64748b;
+    }
 
     .share-box .share-label {
-      font-size: 13px;
-      color: var(--text-muted);
-      font-weight: 500;
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
     }
 
-    .share-box .share-sublabel {
-      font-size: 11px;
-      color: var(--text-dim);
+    .share-box .share-sub {
+      font-size: 10px;
+      color: #64748b;
       margin-top: 2px;
     }
 
     .benefits-title {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
-      color: var(--green);
-      margin-bottom: 12px;
+      color: #059669;
+      margin-bottom: 10px;
     }
 
     .benefit-item {
       display: flex;
       align-items: flex-start;
-      gap: 10px;
-      padding: 8px 0;
-      font-size: 13px;
-      color: var(--text-muted);
+      gap: 8px;
+      padding: 5px 0;
+      font-size: 12px;
+      color: #475569;
     }
 
-    .benefit-icon {
+    .benefit-check {
+      color: #22c55e;
+      font-weight: 700;
       flex-shrink: 0;
-      margin-top: 2px;
     }
 
     /* === EXCLUSIONS === */
-    .exclusions-card {
-      background: rgba(245, 158, 11, 0.05);
-      border: 1px solid rgba(245, 158, 11, 0.2);
-      border-radius: 12px;
-      padding: 20px 24px;
-      margin-bottom: 40px;
+    .exclusions-box {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      page-break-inside: avoid;
     }
 
-    .exclusions-card h4 {
-      font-size: 14px;
-      font-weight: 700;
-      color: #f59e0b;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .exclusions-card p {
+    .exclusions-box h4 {
       font-size: 13px;
-      color: #fbbf24;
+      font-weight: 700;
+      color: #b45309;
+      margin-bottom: 6px;
+    }
+
+    .exclusions-box p {
+      font-size: 12px;
+      color: #92400e;
       line-height: 1.7;
     }
 
     /* === TERMS === */
-    .terms-card {
-      background: var(--dark-card);
-      border: 1px solid var(--dark-border);
-      border-radius: 12px;
-      padding: 20px 24px;
-      margin-bottom: 40px;
+    .terms-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      page-break-inside: avoid;
     }
 
-    .terms-card h4 {
-      font-size: 14px;
+    .terms-box h4 {
+      font-size: 13px;
       font-weight: 700;
-      color: var(--text-muted);
-      margin-bottom: 8px;
+      color: #475569;
+      margin-bottom: 6px;
     }
 
-    .terms-card p {
-      font-size: 12px;
-      color: var(--text-dim);
+    .terms-box p {
+      font-size: 11px;
+      color: #64748b;
       line-height: 1.7;
     }
 
     /* === NOTES === */
-    .notes-card {
-      background: rgba(6, 182, 212, 0.05);
-      border: 1px solid rgba(6, 182, 212, 0.2);
-      border-radius: 12px;
-      padding: 20px 24px;
-      margin-bottom: 40px;
+    .notes-box {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      page-break-inside: avoid;
     }
 
-    .notes-card h4 {
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--cyan);
-      margin-bottom: 8px;
-    }
-
-    .notes-card p {
+    .notes-box h4 {
       font-size: 13px;
-      color: var(--text-muted);
+      font-weight: 700;
+      color: #0369a1;
+      margin-bottom: 6px;
     }
 
-    /* === CTA === */
+    .notes-box p {
+      font-size: 12px;
+      color: #475569;
+    }
+
+    /* === CTA (hidden in print) === */
     .cta-section {
       text-align: center;
-      padding: 32px;
-      background: linear-gradient(135deg, rgba(34, 197, 94, 0.05), rgba(6, 182, 212, 0.05));
-      border: 1px solid var(--dark-border);
-      border-radius: 16px;
-      margin-bottom: 40px;
+      padding: 24px;
+      background: #f0fdf4;
+      border: 1px solid #a7f3d0;
+      border-radius: 12px;
+      margin-bottom: 32px;
     }
 
     .cta-section p {
-      font-size: 14px;
-      color: var(--text-muted);
-      margin-bottom: 16px;
+      font-size: 13px;
+      color: #475569;
+      margin-bottom: 12px;
     }
 
     .cta-button {
       display: inline-block;
-      background: linear-gradient(135deg, var(--green), var(--green-dark));
+      background: #22c55e;
       color: #fff;
-      padding: 14px 32px;
+      padding: 12px 28px;
       border-radius: 8px;
       font-weight: 700;
-      font-size: 14px;
+      font-size: 13px;
       text-decoration: none;
-      box-shadow: 0 4px 20px var(--green-glow);
     }
 
     /* === FOOTER === */
     .footer {
-      padding: 32px 48px;
-      background: var(--dark-card);
-      border-top: 1px solid var(--dark-border);
+      padding: 24px 40px;
+      background: #f8fafc;
+      border-top: 2px solid #e2e8f0;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      page-break-inside: avoid;
     }
 
     .footer-brand {
-      font-size: 13px;
-      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
 
-    .footer-brand strong {
-      color: #fff;
-      display: block;
-      margin-bottom: 2px;
+    .footer-brand img {
+      height: 28px;
+      width: auto;
+    }
+
+    .footer-brand span {
+      font-size: 11px;
+      color: #64748b;
     }
 
     .footer-contact {
       text-align: right;
-      font-size: 12px;
-      color: var(--text-dim);
+      font-size: 11px;
+      color: #64748b;
       line-height: 1.8;
     }
 
     .footer-advisor {
       text-align: center;
-      padding: 16px 48px;
-      background: var(--dark);
-      font-size: 12px;
-      color: var(--text-dim);
-      border-top: 1px solid var(--dark-border);
+      padding: 12px 40px;
+      background: #f1f5f9;
+      font-size: 11px;
+      color: #64748b;
+      border-top: 1px solid #e2e8f0;
     }
 
+    .footer-advisor strong {
+      color: #0f172a;
+    }
+
+    /* === PRINT OVERRIDES === */
     @media print {
-      body { background: #fff; color: #1f2937; }
-      .hero-header { background: #111827 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .product-card, .model-card, .totals-card { break-inside: avoid; }
+      @page {
+        margin: 0;
+        size: A4;
+      }
+
+      body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      .page {
+        max-width: 100%;
+      }
+
+      .header {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      .product-card,
+      .totals-box,
+      .model-section,
+      .model-card,
+      .exclusions-box,
+      .terms-box,
+      .notes-box,
+      .includes-grid,
+      .footer {
+        page-break-inside: avoid;
+      }
+
+      .section-title {
+        page-break-after: avoid;
+      }
+
+      .cta-section {
+        display: none !important;
+      }
+
+      .no-print {
+        display: none !important;
+      }
     }
   </style>
 </head>
 <body>
   <div class="page">
-    <!-- HERO HEADER -->
-    <div class="hero-header">
-      <div class="header-top">
-        <div class="brand">
-          <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/zbDIWjuOCDapFXwo.webp" alt="EVGreen" class="brand-logo" />
-        </div>
-        <div class="quote-badge">
-          <div class="label">Cotización</div>
-          <div class="number">${data.quoteNumber}</div>
+    <!-- HEADER -->
+    <div class="header">
+      <div class="header-row">
+        <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/zbDIWjuOCDapFXwo.webp" alt="EVGreen" class="brand-logo" />
+        <div class="quote-number">
+          Cotización
+          <strong>${data.quoteNumber}</strong>
         </div>
       </div>
-      <div class="hero-title">
-        <h2>Propuesta Comercial</h2>
+      <div class="header-title">
+        <h1>Propuesta Comercial</h1>
         <div class="subtitle">Estación de Carga para Vehículos Eléctricos</div>
       </div>
     </div>
 
     <!-- CLIENT INFO -->
-    <div class="client-section">
+    <div class="client-bar">
       <div class="client-grid">
         <div class="client-field">
-          <div class="label">Preparada para</div>
-          <div class="value">${data.clientName}</div>
+          <label>Preparada para</label>
+          <span>${data.clientName}</span>
         </div>
-        ${data.clientCompany ? `<div class="client-field"><div class="label">Empresa</div><div class="value">${data.clientCompany}</div></div>` : `<div class="client-field"><div class="label">Email</div><div class="value">${data.clientEmail}</div></div>`}
+        ${data.clientCompany ? `<div class="client-field"><label>Empresa</label><span>${data.clientCompany}</span></div>` : `<div class="client-field"><label>Email</label><span>${data.clientEmail}</span></div>`}
         <div class="client-field">
-          <div class="label">Fecha</div>
-          <div class="value">${formatDate(data.createdAt)}</div>
+          <label>Fecha</label>
+          <span>${formatDate(data.createdAt)}</span>
         </div>
         <div class="client-field">
-          <div class="label">Válida hasta</div>
-          <div class="value">${formatDate(data.expiresAt)}</div>
+          <label>Válida hasta</label>
+          <span>${formatDate(data.expiresAt)}</span>
         </div>
       </div>
-      <div class="validity-badge">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Oferta vigente por 30 días
-      </div>
+      <div class="validity">⏱ Oferta vigente por 30 días</div>
     </div>
 
     <!-- CONTENT -->
     <div class="content">
-      <!-- Intro message -->
-      ${data.settings.headerMessage ? `<div class="intro-message">${data.settings.headerMessage}</div>` : ''}
+      ${data.settings.headerMessage ? `<div class="intro-msg">${data.settings.headerMessage}</div>` : ''}
 
       <!-- Products -->
       <div class="section-title">
-        <div class="icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-        </div>
+        <span class="icon">⚡</span>
         Equipos Cotizados
       </div>
       ${itemsRows}
 
       <!-- Totals -->
-      <div class="totals-card">
+      <div class="totals-box">
         ${data.discount > 0 ? `
           <div class="totals-row sub"><span>Subtotal</span><span>${formatCOP(data.subtotal)}</span></div>
           <div class="totals-row discount"><span>Descuento aplicado</span><span>-${formatCOP(data.discount)}</span></div>
@@ -834,86 +798,57 @@ export function generateQuoteHTML(data: QuotePDFData): string {
 
       <!-- Includes -->
       <div class="section-title">
-        <div class="icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-        </div>
+        <span class="icon">✓</span>
         ¿Qué incluye el precio?
       </div>
       <div class="includes-grid">
-        <div class="include-item">
-          <div class="check-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-          Cargador(es) de última generación
-        </div>
-        <div class="include-item">
-          <div class="check-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-          Transformador eléctrico (cuando aplique)
-        </div>
-        <div class="include-item">
-          <div class="check-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-          Hasta 10 metros de cableado y tubería
-        </div>
-        <div class="include-item">
-          <div class="check-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-          Instalación llave en mano completa
-        </div>
-        <div class="include-item">
-          <div class="check-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-          Configuración y puesta en marcha
-        </div>
-        <div class="include-item">
-          <div class="check-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-          Garantía de 2 años en equipos
-        </div>
-        <div class="include-item">
-          <div class="check-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-          Registro ante UPME y CárgaME
-        </div>
-        <div class="include-item">
-          <div class="check-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-          Capacitación de uso y operación
-        </div>
+        <div class="include-item"><span class="check">✓</span> Cargador(es) de última generación</div>
+        <div class="include-item"><span class="check">✓</span> Transformador eléctrico (cuando aplique)</div>
+        <div class="include-item"><span class="check">✓</span> Hasta 10 metros de cableado y tubería</div>
+        <div class="include-item"><span class="check">✓</span> Instalación llave en mano completa</div>
+        <div class="include-item"><span class="check">✓</span> Configuración y puesta en marcha</div>
+        <div class="include-item"><span class="check">✓</span> Garantía de 2 años en equipos</div>
+        <div class="include-item"><span class="check">✓</span> Registro ante UPME y CárgaME</div>
+        <div class="include-item"><span class="check">✓</span> Capacitación de uso y operación</div>
       </div>
 
       <!-- Business Model -->
       ${benefits.length > 0 ? `
-      <div class="section-title">
-        <div class="icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <div class="model-section">
+        <div class="section-title">
+          <span class="icon">🛡</span>
+          Modelo de Operación EVGreen
         </div>
-        Modelo de Operación EVGreen
-      </div>
-      <div class="model-card">
-        <div class="model-shares">
-          <div class="share-box owner">
-            <div class="percent">${data.settings.ownerSharePercent}%</div>
-            <div class="share-label">Para usted (dueño)</div>
-            <div class="share-sublabel">Del margen neto de operación</div>
+        <div class="model-card">
+          <div class="shares-row">
+            <div class="share-box owner">
+              <div class="percent">${data.settings.ownerSharePercent}%</div>
+              <div class="share-label">Para usted (dueño)</div>
+              <div class="share-sub">Del margen neto de operación</div>
+            </div>
+            <div class="share-box evgreen">
+              <div class="percent">${data.settings.evgreenFeePercent}%</div>
+              <div class="share-label">EVGreen (operación)</div>
+              <div class="share-sub">Soporte, tecnología y mantenimiento</div>
+            </div>
           </div>
-          <div class="share-box evgreen">
-            <div class="percent">${data.settings.evgreenFeePercent}%</div>
-            <div class="share-label">EVGreen (operación)</div>
-            <div class="share-sublabel">Soporte, tecnología y mantenimiento</div>
-          </div>
+          <div class="benefits-title">¿Qué cubre el fee de EVGreen?</div>
+          ${benefitsList}
         </div>
-        <div class="benefits-title">¿Qué cubre el fee de EVGreen?</div>
-        ${benefitsList}
       </div>
       ` : ''}
 
       <!-- Exclusions -->
       ${data.settings.exclusions ? `
-      <div class="exclusions-card">
-        <h4>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Importante — No incluye
-        </h4>
+      <div class="exclusions-box">
+        <h4>⚠ Importante — No incluye</h4>
         <p>${data.settings.exclusions}</p>
       </div>
       ` : ''}
 
       <!-- Terms -->
       ${data.settings.termsAndConditions ? `
-      <div class="terms-card">
+      <div class="terms-box">
         <h4>Términos y Condiciones</h4>
         <p>${data.settings.termsAndConditions}</p>
       </div>
@@ -921,13 +856,13 @@ export function generateQuoteHTML(data: QuotePDFData): string {
 
       <!-- Notes -->
       ${data.clientNotes ? `
-      <div class="notes-card">
+      <div class="notes-box">
         <h4>Nota del asesor</h4>
         <p>${data.clientNotes}</p>
       </div>
       ` : ''}
 
-      <!-- CTA -->
+      <!-- CTA (hidden in print) -->
       <div class="cta-section">
         <p>¿Listo para dar el paso hacia la movilidad eléctrica?</p>
         <a href="${data.publicUrl}" class="cta-button">Ver Cotización Online →</a>
@@ -936,8 +871,8 @@ export function generateQuoteHTML(data: QuotePDFData): string {
 
     <!-- FOOTER -->
     <div class="footer">
-      <div class="footer-brand" style="display:flex;align-items:center;gap:12px;">
-        <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/zbDIWjuOCDapFXwo.webp" alt="EVGreen" style="height:32px;width:auto;" />
+      <div class="footer-brand">
+        <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/cAIxLqDfMSXNUqFl.webp" alt="EVGreen" />
         <span>NIT: ${data.settings.companyNit}</span>
       </div>
       <div class="footer-contact">
