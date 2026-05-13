@@ -3366,3 +3366,16 @@
 - [x] Implementar clustering de marcadores para muchos puntos
 - [x] Re-renderizar marcadores al cambiar zoom (zoom_changed listener)
 - [x] Marcadores cluster con contador de puntos y kW totales
+
+## Mejoras Espacios - Formulario Inversionistas y Admin (Mayo 2026)
+- [x] Formulario de contacto para inversionistas en detalle del espacio (captura leads sin depender de WhatsApp)
+- [x] Contador de visitas por espacio para medir interés de inversionistas
+- [x] Endpoint incrementView (público) para contabilizar vistas de cada espacio
+- [x] Endpoint submitLead (público) con notificación al admin y email de confirmación al inversionista
+- [x] Endpoint listLeads (admin) para ver todos los leads capturados
+- [x] Endpoint updateLead (admin) para cambiar estado/notas de leads
+- [x] Botón de Editar espacio desde el panel admin (dialog con campos editables)
+- [x] Botón de Eliminar espacio desde el panel admin (con confirmación)
+- [x] Fix responsive de tarjetas móviles en admin/Spaces (flex-wrap, tipo de espacio, inversión)
+- [x] Tabla investorLeads en BD con campos: nombre, email, teléfono, monto interesado, mensaje, estado
+- [x] Columna viewCount en spaceSubmissions
