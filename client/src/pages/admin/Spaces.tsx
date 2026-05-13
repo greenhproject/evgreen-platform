@@ -19,7 +19,7 @@ import {
   CheckCircle2, XCircle, Clock, FileText, Loader2, ChevronLeft,
   ChevronRight, Building2, Phone, Mail, Camera, BarChart3,
   TrendingUp, DollarSign, ArrowUpRight, ExternalLink, RefreshCw,
-  ChevronDown, X,
+  ChevronDown, X, Pencil, Trash2, AlertTriangle, Users,
 } from "lucide-react";
 
 // ============================================================================
@@ -277,8 +277,8 @@ export default function AdminSpaces() {
                     {statusInfo.label}
                   </span>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-gray-400 mt-2">
-                  <span className="flex items-center gap-1 truncate">
+                <div className="flex items-center gap-2 flex-wrap text-xs text-gray-400 mt-2">
+                  <span className="flex items-center gap-1 max-w-[45%] truncate">
                     <Mail className="w-3 h-3 flex-shrink-0" />
                     <span className="truncate">{sub.submitterName}</span>
                   </span>
@@ -292,8 +292,18 @@ export default function AdminSpaces() {
                       {sub.aiScore}
                     </span>
                   )}
+                  {sub.spaceType && (
+                    <span className="flex items-center gap-1 flex-shrink-0 text-gray-500">
+                      {SPACE_TYPE_LABELS[sub.spaceType] || sub.spaceType}
+                    </span>
+                  )}
                 </div>
-                <p className="text-[11px] text-gray-600 mt-2">{formatDateShort(sub.createdAt)}</p>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-[11px] text-gray-600">{formatDateShort(sub.createdAt)}</p>
+                  {sub.estimatedInvestmentCop && (
+                    <span className="text-[11px] text-emerald-400 font-medium">{formatCOP(sub.estimatedInvestmentCop)}</span>
+                  )}
+                </div>
               </button>
             );
           })
@@ -347,12 +357,17 @@ function SpaceDetailDialog({
   const sendLetterMutation = trpc.spaces.admin.sendLetter.useMutation();
   const generateAIMutation = trpc.spaces.admin.generateAIScore.useMutation();
   const publishMutation = trpc.spaces.admin.publishToCrowdfunding.useMutation();
+  const updateSpaceMutation = trpc.spaces.admin.updateSpace.useMutation();
+  const deleteSpaceMutation = trpc.spaces.admin.deleteSpace.useMutation();
 
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [publishAmount, setPublishAmount] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [editForm, setEditForm] = useState<Record<string, any>>({});
 
   if (isLoading || !space) {
     return (
@@ -485,6 +500,13 @@ function SpaceDetailDialog({
                   Re-evaluar IA
                 </Button>
               )}
+              {/* Edit & Delete */}
+              <Button size="sm" variant="outline" onClick={() => { setEditForm({ spaceName: space.spaceName, address: space.address, city: space.city, department: space.department || "", submitterName: space.submitterName, submitterEmail: space.submitterEmail, submitterPhone: space.submitterPhone || "", estimatedInvestmentCop: space.estimatedInvestmentCop || "", estimatedPowerKw: space.estimatedPowerKw || "", estimatedChargerCount: space.estimatedChargerCount || "", additionalNotes: space.additionalNotes || "" }); setShowEditDialog(true); }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-shrink-0 text-xs">
+                <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setShowDeleteDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 flex-shrink-0 text-xs">
+                <Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar
+              </Button>
             </div>
 
             {/* Content grid - single column on mobile, two columns on desktop */}
@@ -645,6 +667,132 @@ function SpaceDetailDialog({
             <Button onClick={handleReject} disabled={updateStatusMutation.isPending} className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto">
               {updateStatusMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <XCircle className="w-4 h-4 mr-1.5" />}
               Rechazar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Pencil className="w-4 h-4 text-blue-400" /> Editar espacio</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-gray-300 text-xs mb-1 block">Nombre del espacio</Label>
+              <Input value={editForm.spaceName || ""} onChange={e => setEditForm(p => ({ ...p, spaceName: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Dirección</Label>
+                <Input value={editForm.address || ""} onChange={e => setEditForm(p => ({ ...p, address: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              </div>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Ciudad</Label>
+                <Input value={editForm.city || ""} onChange={e => setEditForm(p => ({ ...p, city: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              </div>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Departamento</Label>
+                <Input value={editForm.department || ""} onChange={e => setEditForm(p => ({ ...p, department: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              </div>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Postulante</Label>
+                <Input value={editForm.submitterName || ""} onChange={e => setEditForm(p => ({ ...p, submitterName: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              </div>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Email postulante</Label>
+                <Input value={editForm.submitterEmail || ""} onChange={e => setEditForm(p => ({ ...p, submitterEmail: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              </div>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Teléfono</Label>
+                <Input value={editForm.submitterPhone || ""} onChange={e => setEditForm(p => ({ ...p, submitterPhone: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              </div>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Inversión estimada (COP)</Label>
+                <Input type="number" value={editForm.estimatedInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, estimatedInvestmentCop: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              </div>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Potencia (kW)</Label>
+                <Input type="number" value={editForm.estimatedPowerKw || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPowerKw: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              </div>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Cargadores</Label>
+                <Input type="number" value={editForm.estimatedChargerCount || ""} onChange={e => setEditForm(p => ({ ...p, estimatedChargerCount: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-gray-300 text-xs mb-1 block">Notas adicionales</Label>
+              <Textarea value={editForm.additionalNotes || ""} onChange={e => setEditForm(p => ({ ...p, additionalNotes: e.target.value }))} rows={3} className="bg-[#0a0f1a] border-[#374151] text-white text-sm resize-none" />
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowEditDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
+              Cancelar
+            </Button>
+            <Button onClick={async () => {
+              try {
+                const payload: Record<string, any> = { id };
+                if (editForm.spaceName) payload.spaceName = editForm.spaceName;
+                if (editForm.address) payload.address = editForm.address;
+                if (editForm.city) payload.city = editForm.city;
+                if (editForm.department) payload.department = editForm.department;
+                if (editForm.submitterName) payload.submitterName = editForm.submitterName;
+                if (editForm.submitterEmail) payload.submitterEmail = editForm.submitterEmail;
+                if (editForm.submitterPhone) payload.submitterPhone = editForm.submitterPhone;
+                if (editForm.estimatedInvestmentCop) payload.estimatedInvestmentCop = parseInt(editForm.estimatedInvestmentCop);
+                if (editForm.estimatedPowerKw) payload.estimatedPowerKw = parseInt(editForm.estimatedPowerKw);
+                if (editForm.estimatedChargerCount) payload.estimatedChargerCount = parseInt(editForm.estimatedChargerCount);
+                if (editForm.additionalNotes !== undefined) payload.additionalNotes = editForm.additionalNotes;
+                await updateSpaceMutation.mutateAsync(payload as any);
+                toast.success("Espacio actualizado correctamente");
+                setShowEditDialog(false);
+                refetch();
+                onRefresh();
+              } catch (err: any) {
+                toast.error(err.message || "Error al actualizar");
+              }
+            }} disabled={updateSpaceMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto">
+              {updateSpaceMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Pencil className="w-4 h-4 mr-1.5" />}
+              Guardar cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <AlertTriangle className="w-5 h-5" /> Eliminar espacio
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-300">
+              ¿Estás seguro de que deseas eliminar <strong className="text-white">"{space.spaceName}"</strong>?
+            </p>
+            <p className="text-xs text-gray-500">
+              Esta acción eliminará permanentemente la postulación, sus fotos y todos los leads asociados. No se puede deshacer.
+            </p>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
+              Cancelar
+            </Button>
+            <Button onClick={async () => {
+              try {
+                await deleteSpaceMutation.mutateAsync({ id });
+                toast.success("Espacio eliminado correctamente");
+                setShowDeleteDialog(false);
+                onClose();
+                onRefresh();
+              } catch (err: any) {
+                toast.error(err.message || "Error al eliminar");
+              }
+            }} disabled={deleteSpaceMutation.isPending} className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto">
+              {deleteSpaceMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1.5" />}
+              Eliminar permanentemente
             </Button>
           </DialogFooter>
         </DialogContent>

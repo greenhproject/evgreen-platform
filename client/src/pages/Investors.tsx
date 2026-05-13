@@ -58,8 +58,14 @@ import {
   Filter,
   Loader2,
   X,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Eye,
+  Send,
+  User
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 import { MapView } from "@/components/Map";
 
 // ============================================================================
@@ -827,6 +833,29 @@ export default function Investors() {
     const [selectedSpace, setSelectedSpace] = useState<any>(null);
     const [spaceFilter, setSpaceFilter] = useState<string>("all");
     const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+    const [showContactForm, setShowContactForm] = useState(false);
+    const [contactForm, setContactForm] = useState({ name: "", email: "", phone: "", interestedAmount: "", message: "" });
+    const [contactSent, setContactSent] = useState(false);
+
+    const incrementViewMut = trpc.spaces.incrementView.useMutation();
+    const submitLeadMut = trpc.spaces.submitLead.useMutation({
+      onSuccess: () => {
+        setContactSent(true);
+        toast.success("\u00a1Solicitud enviada! Te contactaremos pronto.");
+        setContactForm({ name: "", email: "", phone: "", interestedAmount: "", message: "" });
+      },
+      onError: (err) => {
+        toast.error(err.message || "Error al enviar la solicitud");
+      },
+    });
+
+    // Increment view when selecting a space
+    const handleSelectSpace = useCallback((space: any) => {
+      setSelectedSpace(space);
+      setShowContactForm(false);
+      setContactSent(false);
+      incrementViewMut.mutate({ id: space.id });
+    }, [incrementViewMut]);
     const mapRef = useRef<google.maps.Map | null>(null);
     const markersRef = useRef<google.maps.Marker[]>([]);
     const overlaysRef = useRef<google.maps.OverlayView[]>([]);
@@ -1033,7 +1062,7 @@ export default function Investors() {
               mapRef.current!,
               position,
               html,
-              () => setSelectedSpace(space)
+              () => handleSelectSpace(space)
             );
             overlaysRef.current.push(overlay);
           }
@@ -1338,18 +1367,130 @@ export default function Investors() {
                       );
                     })()}
 
+                    {/* View count */}
+                    {selectedSpace.viewCount > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>{selectedSpace.viewCount} {selectedSpace.viewCount === 1 ? 'vista' : 'vistas'}</span>
+                      </div>
+                    )}
+
                     {/* CTA */}
                     <div className="space-y-2 pt-2">
-                      <Button
-                        onClick={() => contactAdvisor(selectedSpace)}
-                        className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white"
-                      >
-                        <MessageCircle className="w-4 h-4 mr-2" />
-                        M\u00e1s informaci\u00f3n con asesor
-                      </Button>
-                      <p className="text-xs text-gray-500 text-center">
-                        Un asesor te brindar\u00e1 toda la informaci\u00f3n sobre condiciones de inversi\u00f3n
-                      </p>
+                      {!showContactForm && !contactSent ? (
+                        <>
+                          <Button
+                            onClick={() => setShowContactForm(true)}
+                            className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white"
+                          >
+                            <Send className="w-4 h-4 mr-2" />
+                            Quiero invertir en este punto
+                          </Button>
+                          <Button
+                            onClick={() => contactAdvisor(selectedSpace)}
+                            variant="outline"
+                            className="w-full border-slate-600 text-gray-300 hover:bg-slate-700"
+                          >
+                            <MessageCircle className="w-4 h-4 mr-2" />
+                            Hablar con asesor por WhatsApp
+                          </Button>
+                        </>
+                      ) : contactSent ? (
+                        <div className="text-center py-4">
+                          <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                            <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                          </div>
+                          <p className="text-sm font-medium text-white">\u00a1Solicitud enviada!</p>
+                          <p className="text-xs text-gray-400 mt-1">Te contactaremos en 24-48 horas h\u00e1biles</p>
+                          <Button
+                            onClick={() => { setContactSent(false); setShowContactForm(false); }}
+                            variant="ghost"
+                            size="sm"
+                            className="mt-3 text-emerald-400 hover:text-emerald-300"
+                          >
+                            Volver al detalle
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="bg-black/30 rounded-xl p-4 space-y-3">
+                          <h4 className="text-sm font-semibold text-emerald-400 flex items-center gap-2">
+                            <User className="w-4 h-4" />
+                            Formulario de contacto
+                          </h4>
+                          <div className="space-y-2">
+                            <Input
+                              placeholder="Tu nombre completo *"
+                              value={contactForm.name}
+                              onChange={(e) => setContactForm(prev => ({ ...prev, name: e.target.value }))}
+                              className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 h-9 text-sm"
+                            />
+                            <Input
+                              placeholder="Email *"
+                              type="email"
+                              value={contactForm.email}
+                              onChange={(e) => setContactForm(prev => ({ ...prev, email: e.target.value }))}
+                              className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 h-9 text-sm"
+                            />
+                            <Input
+                              placeholder="Tel\u00e9fono (opcional)"
+                              value={contactForm.phone}
+                              onChange={(e) => setContactForm(prev => ({ ...prev, phone: e.target.value }))}
+                              className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 h-9 text-sm"
+                            />
+                            <Input
+                              placeholder="Monto a invertir (COP, opcional)"
+                              type="number"
+                              value={contactForm.interestedAmount}
+                              onChange={(e) => setContactForm(prev => ({ ...prev, interestedAmount: e.target.value }))}
+                              className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 h-9 text-sm"
+                            />
+                            <Textarea
+                              placeholder="Mensaje o preguntas (opcional)"
+                              value={contactForm.message}
+                              onChange={(e) => setContactForm(prev => ({ ...prev, message: e.target.value }))}
+                              className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 text-sm min-h-[60px] resize-none"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => setShowContactForm(false)}
+                              variant="ghost"
+                              size="sm"
+                              className="text-gray-400 hover:text-white"
+                            >
+                              Cancelar
+                            </Button>
+                            <Button
+                              onClick={() => {
+                                if (!contactForm.name || !contactForm.email) {
+                                  toast.error("Nombre y email son requeridos");
+                                  return;
+                                }
+                                submitLeadMut.mutate({
+                                  spaceId: selectedSpace.id,
+                                  name: contactForm.name,
+                                  email: contactForm.email,
+                                  phone: contactForm.phone || undefined,
+                                  interestedAmount: contactForm.interestedAmount ? parseInt(contactForm.interestedAmount) : undefined,
+                                  message: contactForm.message || undefined,
+                                });
+                              }}
+                              disabled={submitLeadMut.isPending}
+                              size="sm"
+                              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                              {submitLeadMut.isPending ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <Send className="w-3.5 h-3.5 mr-1.5" />
+                                  Enviar solicitud
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1368,7 +1509,7 @@ export default function Investors() {
                     <button
                       key={space.id}
                       onClick={() => {
-                        setSelectedSpace(space);
+                        handleSelectSpace(space);
                         if (space.latitude && space.longitude && mapRef.current) {
                           mapRef.current.panTo({ lat: parseFloat(space.latitude), lng: parseFloat(space.longitude) });
                           mapRef.current.setZoom(14);
@@ -1421,6 +1562,12 @@ export default function Investors() {
                           <span className="flex items-center gap-1">
                             <DollarSign className="w-3 h-3 text-yellow-400" />
                             {formatCOPMap(space.estimatedInvestmentCop)}
+                          </span>
+                        )}
+                        {space.viewCount > 0 && (
+                          <span className="flex items-center gap-1">
+                            <Eye className="w-3 h-3 text-gray-500" />
+                            {space.viewCount}
                           </span>
                         )}
                       </div>
