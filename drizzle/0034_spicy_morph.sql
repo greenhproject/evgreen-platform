@@ -1,0 +1,1 @@
+ALTER TABLE `crowdfunding_projects` ADD `spaceSubmissionId` int;

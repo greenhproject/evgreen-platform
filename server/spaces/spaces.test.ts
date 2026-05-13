@@ -362,3 +362,116 @@ describe("spaces.acceptLetter", () => {
     ).rejects.toThrow("Token de carta de intención inválido");
   });
 });
+
+// ============================================================================
+// INTEGRACIÓN SPACES ↔ CROWDFUNDING
+// ============================================================================
+
+describe("spaces → crowdfunding integration", () => {
+  it("auto-crea proyecto CF DRAFT al aprobar un espacio", async () => {
+    // 1. Crear postulación
+    const publicCtx = createPublicContext();
+    const publicCaller = appRouter.createCaller(publicCtx);
+    const { submissionId } = await publicCaller.spaces.submit({
+      submitterName: "CF Integration Test",
+      submitterEmail: "cf-integration@example.com",
+      submitterPhone: "3001234567",
+      spaceName: "Espacio CF Integration Test",
+      spaceType: "mall",
+      address: "Calle 80 #50-10",
+      city: "Bogotá",
+      department: "Cundinamarca",
+    });
+
+    // 2. Aprobar como admin → debe auto-crear CF DRAFT
+    const adminCtx = createAdminContext();
+    const adminCaller = appRouter.createCaller(adminCtx);
+    const result = await adminCaller.spaces.admin.updateStatus({
+      id: submissionId,
+      status: "approved",
+    });
+    expect(result.success).toBe(true);
+
+    // 3. Verificar que el espacio ahora tiene crowdfundingProjectId
+    const detail = await adminCaller.spaces.admin.getById({ id: submissionId });
+    expect(detail.status).toBe("approved");
+    expect(detail.crowdfundingProjectId).toBeDefined();
+    expect(detail.crowdfundingProjectId).toBeGreaterThan(0);
+
+    // 4. Verificar que el proyecto CF existe y es DRAFT
+    const cfProjects = await adminCaller.crowdfunding.getAllProjects();
+    const linkedCF = cfProjects.find(
+      (p: any) => p.id === detail.crowdfundingProjectId
+    );
+    expect(linkedCF).toBeDefined();
+    expect(linkedCF!.status).toBe("DRAFT");
+    expect(linkedCF!.city).toBe("Bogotá");
+    // Verificar que tiene spaceSubmissionId
+    expect(linkedCF!.spaceSubmissionId).toBe(submissionId);
+    // Verificar que tiene linked space info del JOIN
+    expect(linkedCF!.linkedSpaceName).toBe("Espacio CF Integration Test");
+    expect(linkedCF!.linkedSpaceCity).toBe("Bogotá");
+    expect(linkedCF!.linkedSubmitterName).toBe("CF Integration Test");
+  });
+
+  it("no duplica CF al aprobar un espacio ya aprobado", async () => {
+    // 1. Crear y aprobar
+    const publicCtx = createPublicContext();
+    const publicCaller = appRouter.createCaller(publicCtx);
+    const { submissionId } = await publicCaller.spaces.submit({
+      submitterName: "No Dup Test",
+      submitterEmail: "nodup@example.com",
+      submitterPhone: "3001234567",
+      spaceName: "Espacio No Dup Test",
+      spaceType: "parking",
+      address: "Carrera 15 #100-20",
+      city: "Cali",
+    });
+
+    const adminCtx = createAdminContext();
+    const adminCaller = appRouter.createCaller(adminCtx);
+
+    // Primera aprobación
+    await adminCaller.spaces.admin.updateStatus({
+      id: submissionId,
+      status: "approved",
+    });
+    const detail1 = await adminCaller.spaces.admin.getById({ id: submissionId });
+    const cfId1 = detail1.crowdfundingProjectId;
+    expect(cfId1).toBeGreaterThan(0);
+
+    // Contar proyectos CF antes de segunda aprobación
+    const cfBefore = await adminCaller.crowdfunding.getAllProjects();
+    const countBefore = cfBefore.length;
+
+    // Intentar re-aprobar (no debería crear otro CF)
+    await adminCaller.spaces.admin.updateStatus({
+      id: submissionId,
+      status: "approved",
+    });
+    const detail2 = await adminCaller.spaces.admin.getById({ id: submissionId });
+    expect(detail2.crowdfundingProjectId).toBe(cfId1); // Mismo ID
+
+    const cfAfter = await adminCaller.crowdfunding.getAllProjects();
+    expect(cfAfter.length).toBe(countBefore); // No se creó otro
+  });
+
+  it("getAllProjects incluye DRAFT para admin (includePrivate)", async () => {
+    const adminCtx = createAdminContext();
+    const adminCaller = appRouter.createCaller(adminCtx);
+
+    const allProjects = await adminCaller.crowdfunding.getAllProjects();
+    // Debe incluir al menos un DRAFT (de los tests anteriores)
+    const drafts = allProjects.filter((p: any) => p.status === "DRAFT");
+    expect(drafts.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("getProjects público NO incluye DRAFT", async () => {
+    const publicCtx = createPublicContext();
+    const publicCaller = appRouter.createCaller(publicCtx);
+
+    const publicProjects = await publicCaller.crowdfunding.getProjects();
+    const drafts = publicProjects.filter((p: any) => p.status === "DRAFT");
+    expect(drafts.length).toBe(0);
+  });
+});

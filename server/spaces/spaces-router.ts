@@ -557,6 +557,59 @@ export const spacesRouter = router({
           .set(updateData)
           .where(eq(spaceSubmissions.id, input.id));
 
+        // ── Auto-crear proyecto crowdfunding DRAFT cuando se aprueba ──
+        if (input.status === "approved") {
+          const [submission] = await db
+            .select()
+            .from(spaceSubmissions)
+            .where(eq(spaceSubmissions.id, input.id))
+            .limit(1);
+
+          if (submission && !submission.crowdfundingProjectId) {
+            const targetAmount = submission.estimatedInvestmentCop || 1000000000;
+            const [cfResult] = await db.insert(crowdfundingProjects).values({
+              name: `Punto de Carga - ${submission.spaceName}`,
+              description: `Punto de carga EV en ${submission.spaceName}, ${submission.city}. ${submission.address}`,
+              city: submission.city,
+              zone: submission.department || submission.city,
+              address: submission.address,
+              targetAmount,
+              minimumInvestment: 50000000,
+              totalPowerKw: submission.estimatedPowerKw || 120,
+              chargerCount: submission.estimatedChargerCount || 2,
+              chargerPowerKw: submission.estimatedPowerKw && submission.estimatedChargerCount
+                ? Math.round(submission.estimatedPowerKw / submission.estimatedChargerCount)
+                : 60,
+              hasSolarPanels: false,
+              estimatedRoiPercent: "85.00",
+              estimatedPaybackMonths: 14,
+              status: "DRAFT",
+              spaceSubmissionId: input.id,
+              createdById: ctx.user.id,
+            });
+
+            // Vincular el espacio con el proyecto CF
+            await db.update(spaceSubmissions)
+              .set({ crowdfundingProjectId: cfResult.insertId })
+              .where(eq(spaceSubmissions.id, input.id));
+          }
+        }
+
+        // ── Auto-activar proyecto CF cuando carta es aceptada ──
+        if (input.status === "letter_accepted") {
+          const [submission] = await db
+            .select()
+            .from(spaceSubmissions)
+            .where(eq(spaceSubmissions.id, input.id))
+            .limit(1);
+
+          if (submission?.crowdfundingProjectId) {
+            await db.update(crowdfundingProjects)
+              .set({ status: "OPEN", launchDate: new Date() })
+              .where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId));
+          }
+        }
+
         return { success: true };
       }),
 
@@ -771,45 +824,64 @@ Responde en formato JSON con la siguiente estructura:`;
           throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         }
 
-        if (submission.status !== "letter_accepted") {
+        if (submission.status !== "letter_accepted" && submission.status !== "approved") {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Solo se pueden publicar espacios con carta de intención aceptada",
+            message: "Solo se pueden publicar espacios aprobados o con carta de intenci\u00f3n aceptada",
           });
         }
 
-        // Crear proyecto de crowdfunding
-        const [cfResult] = await db.insert(crowdfundingProjects).values({
-          name: `Punto de Carga - ${submission.spaceName}`,
-          description: `Punto de carga EV en ${submission.spaceName}, ${submission.city}. ${submission.address}`,
-          city: submission.city,
-          zone: submission.department || submission.city,
-          address: submission.address,
-          targetAmount: input.targetAmount,
-          minimumInvestment: input.minimumInvestment || 50000000,
-          totalPowerKw: submission.estimatedPowerKw || 120,
-          chargerCount: submission.estimatedChargerCount || 2,
-          chargerPowerKw: submission.estimatedPowerKw && submission.estimatedChargerCount
-            ? Math.round(submission.estimatedPowerKw / submission.estimatedChargerCount)
-            : 60,
-          hasSolarPanels: false,
-          estimatedRoiPercent: input.estimatedRoiPercent || "85.00",
-          estimatedPaybackMonths: input.estimatedPaybackMonths || 14,
-          status: "OPEN",
-          launchDate: new Date(),
-          createdById: ctx.user.id,
-        });
+        let crowdfundingProjectId: number;
 
-        // Actualizar postulación
+        if (submission.crowdfundingProjectId) {
+          // Ya existe un proyecto CF (creado auto al aprobar) → actualizar
+          await db.update(crowdfundingProjects)
+            .set({
+              targetAmount: input.targetAmount,
+              minimumInvestment: input.minimumInvestment || 50000000,
+              estimatedRoiPercent: input.estimatedRoiPercent || "85.00",
+              estimatedPaybackMonths: input.estimatedPaybackMonths || 14,
+              status: "OPEN",
+              launchDate: new Date(),
+            })
+            .where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId));
+          crowdfundingProjectId = submission.crowdfundingProjectId;
+        } else {
+          // Crear nuevo proyecto de crowdfunding
+          const [cfResult] = await db.insert(crowdfundingProjects).values({
+            name: `Punto de Carga - ${submission.spaceName}`,
+            description: `Punto de carga EV en ${submission.spaceName}, ${submission.city}. ${submission.address}`,
+            city: submission.city,
+            zone: submission.department || submission.city,
+            address: submission.address,
+            targetAmount: input.targetAmount,
+            minimumInvestment: input.minimumInvestment || 50000000,
+            totalPowerKw: submission.estimatedPowerKw || 120,
+            chargerCount: submission.estimatedChargerCount || 2,
+            chargerPowerKw: submission.estimatedPowerKw && submission.estimatedChargerCount
+              ? Math.round(submission.estimatedPowerKw / submission.estimatedChargerCount)
+              : 60,
+            hasSolarPanels: false,
+            estimatedRoiPercent: input.estimatedRoiPercent || "85.00",
+            estimatedPaybackMonths: input.estimatedPaybackMonths || 14,
+            status: "OPEN",
+            launchDate: new Date(),
+            spaceSubmissionId: input.id,
+            createdById: ctx.user.id,
+          });
+          crowdfundingProjectId = cfResult.insertId;
+        }
+
+        // Actualizar postulaci\u00f3n
         await db.update(spaceSubmissions)
           .set({
             status: "published",
-            crowdfundingProjectId: cfResult.insertId,
+            crowdfundingProjectId,
             estimatedInvestmentCop: input.targetAmount,
           })
           .where(eq(spaceSubmissions.id, input.id));
 
-        return { success: true, crowdfundingProjectId: cfResult.insertId };
+        return { success: true, crowdfundingProjectId };
       }),
 
     // ========================================================================

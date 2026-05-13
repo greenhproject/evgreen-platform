@@ -3412,3 +3412,17 @@
 - [x] Asegurar que comercial solo vea sus propias cotizaciones (ya implementado en advisorProcedure)
 - [x] Agregar 'comercial' y 'host' a validaciones z.enum en backend routers.ts
 - [x] Agregar badge, stats card, filtro y quick-action para rol comercial en admin/Users
+## Integración Espacios ↔ Crowdfunding ↔ Financiamientos ↔ Mapa (Mayo 2026)
+
+- [x] Auto-crear proyecto crowdfunding DRAFT al aprobar espacio (updateStatus)
+- [x] Vincular spaceSubmission con crowdfunding project (spaceSubmissionId en crowdfunding_projects)
+- [x] Mostrar espacios aprobados en listado de crowdfunding automáticamente (tab "Espacios Aprobados")
+- [x] Auto-activar CF a OPEN cuando carta de intención es aceptada (letter_accepted)
+- [x] publishToCrowdfunding actualizado para manejar CF existentes (update vs create)
+- [x] getCrowdfundingProjects con LEFT JOIN a space_submissions (linkedSpaceName, linkedSpaceCity, etc.)
+- [x] Admin Crowdfunding con tabs: Proyectos Activos vs Espacios Aprobados (DRAFT)
+- [x] Botón "Publicar" en tab de espacios aprobados (cambia status a OPEN)
+- [x] Tests de integración: auto-creación CF, no duplicación, includePrivate, público sin DRAFT
+- [x] Conectar datos de crowdfunding con sección pública de financiamientos
+- [x] Conectar datos de crowdfunding con mapa de oportunidades
+- [x] Fix caracteres escapados en textos del mapa de oportunidades (\u00e9, \u00f3n)
