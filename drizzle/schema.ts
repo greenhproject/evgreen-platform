@@ -3266,6 +3266,9 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
   estimatedChargerCount: int("estimatedChargerCount"), // Número de cargadores estimados
   recommendedChargerType: varchar("recommendedChargerType", { length: 50 }), // AC/DC recomendado
   
+  // Contador de visitas de inversionistas
+  viewCount: int("viewCount").default(0).notNull(),
+  
   // Auditoría
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -3321,6 +3324,33 @@ export const spaceSubmissionsRelations = relations(spaceSubmissions, ({ one, man
 export const spacePhotosRelations = relations(spacePhotos, ({ one }) => ({
   submission: one(spaceSubmissions, {
     fields: [spacePhotos.submissionId],
+    references: [spaceSubmissions.id],
+  }),
+}));
+
+// ============================================================================
+// INVESTOR LEADS - Leads de inversionistas interesados en espacios
+// ============================================================================
+
+export const investorLeads = mysqlTable("investor_leads", {
+  id: int("id").autoincrement().primaryKey(),
+  spaceId: int("spaceId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  phone: varchar("phone", { length: 20 }),
+  interestedAmount: bigint("interestedAmount", { mode: "number" }),
+  message: text("message"),
+  status: mysqlEnum("lead_status", ["new", "contacted", "converted", "discarded"]).default("new").notNull(),
+  adminNotes: text("adminNotes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type InvestorLead = typeof investorLeads.$inferSelect;
+export type InsertInvestorLead = typeof investorLeads.$inferInsert;
+
+export const investorLeadsRelations = relations(investorLeads, ({ one }) => ({
+  space: one(spaceSubmissions, {
+    fields: [investorLeads.spaceId],
     references: [spaceSubmissions.id],
   }),
 }));

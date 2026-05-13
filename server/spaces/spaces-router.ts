@@ -12,6 +12,7 @@ import {
   spaceSubmissions,
   spacePhotos,
   crowdfundingProjects,
+  investorLeads,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, like, or, inArray, count } from "drizzle-orm";
 import { randomBytes } from "crypto";
@@ -343,6 +344,7 @@ export const spacesRouter = router({
           socioeconomicStratum: spaceSubmissions.socioeconomicStratum,
           estimatedDailyVehicles: spaceSubmissions.estimatedDailyVehicles,
           parkingSpots: spaceSubmissions.parkingSpots,
+          viewCount: spaceSubmissions.viewCount,
         })
         .from(spaceSubmissions)
         .where(
@@ -809,7 +811,239 @@ Responde en formato JSON con la siguiente estructura:`;
 
         return { success: true, crowdfundingProjectId: cfResult.insertId };
       }),
+
+    // ========================================================================
+    // ADMIN: Editar datos de un espacio
+    // ========================================================================
+    updateSpace: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        spaceName: z.string().optional(),
+        spaceType: z.string().optional(),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        department: z.string().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
+        availableAreaM2: z.string().optional(),
+        parkingSpots: z.number().int().optional(),
+        transformerCapacityKva: z.string().optional(),
+        hasElectricalPanel: z.boolean().optional(),
+        electricalDistance: z.number().int().optional(),
+        hasInternet: z.boolean().optional(),
+        operatingHoursStart: z.string().optional(),
+        operatingHoursEnd: z.string().optional(),
+        is24Hours: z.boolean().optional(),
+        estimatedDailyVehicles: z.number().int().optional(),
+        estimatedEvPercent: z.number().int().optional(),
+        nearbyAttractions: z.string().optional(),
+        socioeconomicStratum: z.number().int().optional(),
+        additionalNotes: z.string().optional(),
+        submitterName: z.string().optional(),
+        submitterEmail: z.string().optional(),
+        submitterPhone: z.string().optional(),
+        submitterCompany: z.string().optional(),
+        estimatedInvestmentCop: z.number().optional(),
+        estimatedPowerKw: z.number().int().optional(),
+        estimatedChargerCount: z.number().int().optional(),
+        recommendedChargerType: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDatabase();
+        const { id, ...updateFields } = input;
+
+        const cleanFields: Record<string, any> = {};
+        for (const [key, value] of Object.entries(updateFields)) {
+          if (value !== undefined) {
+            cleanFields[key] = value;
+          }
+        }
+
+        if (Object.keys(cleanFields).length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No se proporcionaron campos para actualizar" });
+        }
+
+        await db.update(spaceSubmissions)
+          .set(cleanFields)
+          .where(eq(spaceSubmissions.id, id));
+
+        return { success: true };
+      }),
+
+    // ========================================================================
+    // ADMIN: Eliminar un espacio y sus fotos
+    // ========================================================================
+    deleteSpace: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDatabase();
+
+        const [submission] = await db
+          .select({ id: spaceSubmissions.id, spaceName: spaceSubmissions.spaceName })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+
+        if (!submission) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Postulaci\u00f3n no encontrada" });
+        }
+
+        await db.delete(investorLeads).where(eq(investorLeads.spaceId, input.id));
+        await db.delete(spacePhotos).where(eq(spacePhotos.submissionId, input.id));
+        await db.delete(spaceSubmissions).where(eq(spaceSubmissions.id, input.id));
+
+        return { success: true, deletedName: submission.spaceName };
+      }),
+
+    // ========================================================================
+    // ADMIN: Listar leads de inversionistas
+    // ========================================================================
+    listLeads: adminProcedure
+      .input(z.object({
+        spaceId: z.number().optional(),
+        status: z.string().optional(),
+        limit: z.number().min(1).max(200).optional(),
+        offset: z.number().min(0).optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        const db = await getDatabase();
+        const limit = input?.limit || 50;
+        const offset = input?.offset || 0;
+
+        let conditions: any[] = [];
+        if (input?.spaceId) {
+          conditions.push(eq(investorLeads.spaceId, input.spaceId));
+        }
+        if (input?.status && input.status !== "all") {
+          conditions.push(eq(investorLeads.status, input.status as any));
+        }
+
+        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+        const [leads, [totalResult]] = await Promise.all([
+          db
+            .select()
+            .from(investorLeads)
+            .where(whereClause)
+            .orderBy(desc(investorLeads.createdAt))
+            .limit(limit)
+            .offset(offset),
+          db
+            .select({ count: count() })
+            .from(investorLeads)
+            .where(whereClause),
+        ]);
+
+        return { leads, total: totalResult?.count || 0 };
+      }),
+
+    // ========================================================================
+    // ADMIN: Actualizar estado/notas de un lead
+    // ========================================================================
+    updateLead: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(["new", "contacted", "converted", "discarded"]).optional(),
+        adminNotes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDatabase();
+        const { id, ...updateFields } = input;
+
+        const cleanFields: Record<string, any> = {};
+        for (const [key, value] of Object.entries(updateFields)) {
+          if (value !== undefined) cleanFields[key] = value;
+        }
+
+        if (Object.keys(cleanFields).length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No se proporcionaron campos para actualizar" });
+        }
+
+        await db.update(investorLeads)
+          .set(cleanFields)
+          .where(eq(investorLeads.id, id));
+
+        return { success: true };
+      }),
   }),
+
+  // ========================================================================
+  // P\u00daBLICO: Incrementar contador de visitas de un espacio
+  // ========================================================================
+  incrementView: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDatabase();
+      await db.update(spaceSubmissions)
+        .set({ viewCount: sql`${spaceSubmissions.viewCount} + 1` })
+        .where(eq(spaceSubmissions.id, input.id));
+      return { success: true };
+    }),
+
+  // ========================================================================
+  // P\u00daBLICO: Enviar formulario de contacto de inversionista (lead)
+  // ========================================================================
+  submitLead: publicProcedure
+    .input(z.object({
+      spaceId: z.number(),
+      name: z.string().min(2, "El nombre es requerido"),
+      email: z.string().email("Email inv\u00e1lido"),
+      phone: z.string().optional(),
+      interestedAmount: z.number().optional(),
+      message: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDatabase();
+
+      const [space] = await db
+        .select({ id: spaceSubmissions.id, spaceName: spaceSubmissions.spaceName, status: spaceSubmissions.status })
+        .from(spaceSubmissions)
+        .where(eq(spaceSubmissions.id, input.spaceId))
+        .limit(1);
+
+      if (!space || !["published", "funded", "in_construction", "operational"].includes(space.status)) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no encontrado o no disponible" });
+      }
+
+      await db.insert(investorLeads).values({
+        spaceId: input.spaceId,
+        name: input.name,
+        email: input.email,
+        phone: input.phone || null,
+        interestedAmount: input.interestedAmount || null,
+        message: input.message || null,
+        status: "new",
+      });
+
+      // Notificar al admin
+      try {
+        const { notifyOwner } = await import("../_core/notification");
+        await notifyOwner({
+          title: `Nuevo lead de inversionista - ${space.spaceName}`,
+          content: `${input.name} (${input.email}) est\u00e1 interesado en invertir en "${space.spaceName}".${input.interestedAmount ? ` Monto interesado: $${input.interestedAmount.toLocaleString("es-CO")} COP.` : ""}${input.message ? ` Mensaje: ${input.message}` : ""}`,
+        });
+      } catch (err) {
+        console.error("[Spaces] Error notifying owner about lead:", err);
+      }
+
+      // Enviar email de confirmaci\u00f3n al inversionista
+      try {
+        const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
+        const resend = new Resend(resendApiKey);
+        const emailParams = buildEmailParams({
+          from: "EVGreen <admin@evgreen.lat>",
+          to: input.email,
+          subject: `Gracias por tu inter\u00e9s en ${space.spaceName} | EVGreen`,
+          html: generateLeadConfirmationHTML({ name: input.name, spaceName: space.spaceName }),
+          replyTo: "gerencia@greenhproject.com",
+        });
+        await resend.emails.send({ ...emailParams, cc: "gerencia@greenhproject.com" });
+      } catch (err) {
+        console.error("[Spaces] Error sending lead confirmation email:", err);
+      }
+
+      return { success: true };
+    }),
 });
 
 // ============================================================================
@@ -924,6 +1158,62 @@ function generateLetterEmailHTML(params: {
           </tr>
 
           <!-- Footer -->
+          <tr>
+            <td style="background-color:#0d1117;padding:24px 40px;border-top:1px solid #1f2937;">
+              <p style="color:#6b7280;font-size:12px;line-height:1.5;margin:0;text-align:center;">
+                Este email fue enviado por EVGreen, una marca de Green House Project S.A.S.<br>
+                NIT 901.856.696-1 | Bogotá, Colombia<br>
+                <a href="https://evgreen.lat" style="color:#10b981;">evgreen.lat</a> | 
+                <a href="mailto:gerencia@greenhproject.com" style="color:#10b981;">gerencia@greenhproject.com</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+function generateLeadConfirmationHTML(params: { name: string; spaceName: string }): string {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Gracias por tu interés - EVGreen</title></head>
+<body style="margin:0;padding:0;background-color:#0a0f1a;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0f1a;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color:#111827;border-radius:16px;overflow:hidden;border:1px solid #1f2937;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#065f46,#047857,#10b981);padding:32px 40px;text-align:center;">
+              <h1 style="color:#ffffff;margin:0;font-size:28px;font-weight:700;">⚡ EVGreen</h1>
+              <p style="color:#d1fae5;margin:8px 0 0;font-size:14px;">Infraestructura de Carga para Vehículos Eléctricos</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:40px;">
+              <h2 style="color:#10b981;margin:0 0 24px;font-size:22px;font-weight:600;">¡Gracias por tu interés!</h2>
+              <p style="color:#e5e7eb;font-size:16px;line-height:1.6;margin:0 0 16px;">
+                Hola <strong style="color:#ffffff;">${params.name}</strong>,
+              </p>
+              <p style="color:#d1d5db;font-size:15px;line-height:1.6;margin:0 0 24px;">
+                Hemos recibido tu solicitud de información sobre el espacio <strong style="color:#10b981;">"${params.spaceName}"</strong>. Nuestro equipo de inversiones se pondrá en contacto contigo en las próximas 24-48 horas hábiles para brindarte toda la información detallada sobre esta oportunidad de inversión.
+              </p>
+              <p style="color:#d1d5db;font-size:15px;line-height:1.6;margin:0 0 24px;">
+                Mientras tanto, te invitamos a explorar otros espacios disponibles en nuestra plataforma.
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <a href="https://evgreen.lat/investors" style="display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:#ffffff;text-decoration:none;padding:14px 40px;border-radius:12px;font-size:15px;font-weight:700;">
+                      Ver Oportunidades de Inversión
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
           <tr>
             <td style="background-color:#0d1117;padding:24px 40px;border-top:1px solid #1f2937;">
               <p style="color:#6b7280;font-size:12px;line-height:1.5;margin:0;text-align:center;">
