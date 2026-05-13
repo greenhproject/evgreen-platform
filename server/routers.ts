@@ -39,6 +39,7 @@ import { backupRouter, startAutomaticBackups } from "./backup/backup-router";
 import { maintenanceScheduleRouter } from "./maintenance/maintenance-schedule-router";
 import { buildApiKeysRouter } from "./api/api-keys-router";
 import { quotesRouter } from "./quotes/quotes-router";
+import { spacesRouter } from "./spaces/spaces-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -6524,6 +6525,7 @@ export const appRouter = router({
   refunds: refundsRouter,
   claims: claimsRouter,
   quotes: quotesRouter,
+  spaces: spacesRouter,
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

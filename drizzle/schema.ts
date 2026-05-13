@@ -56,6 +56,36 @@ export const paymentStatusEnum = mysqlEnum("payment_status", ["PENDING", "COMPLE
 export const payoutStatusEnum = mysqlEnum("payout_status", ["PENDING", "REQUESTED", "APPROVED", "PROCESSING", "PAID", "REJECTED"]);
 export const maintenanceStatusEnum = mysqlEnum("maintenance_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]);
 
+// Enums para sistema de postulación de espacios
+export const spaceSubmissionStatusEnum = mysqlEnum("space_status", [
+  "pending",         // Recién enviado, pendiente de revisión
+  "under_review",    // En evaluación técnica por el equipo
+  "approved",        // Aprobado técnicamente, listo para carta de intención
+  "rejected",        // Rechazado (no viable)
+  "letter_sent",     // Carta de intención enviada al postulante
+  "letter_accepted", // Carta firmada/aceptada digitalmente
+  "published",       // Publicado en el muro de crowdfunding
+  "funded",          // Completamente fondeado
+  "in_construction", // En construcción/instalación
+  "operational",     // Punto operativo
+]);
+
+export const spaceTypeEnum = mysqlEnum("space_type", [
+  "parking",           // Parqueadero público
+  "mall",              // Centro comercial
+  "gas_station",       // Estación de servicio
+  "hotel",             // Hotel / hospedaje
+  "restaurant",        // Restaurante
+  "office_building",   // Edificio de oficinas
+  "residential",       // Conjunto residencial
+  "supermarket",       // Supermercado
+  "hospital",          // Hospital / clínica
+  "university",        // Universidad / institución educativa
+  "airport",           // Aeropuerto
+  "highway_rest",      // Parador en carretera
+  "other",             // Otro
+]);
+
 // ============================================================================
 // USERS TABLE
 // ============================================================================
@@ -3151,3 +3181,146 @@ export const quoteItems = mysqlTable("quote_items", {
 
 export type QuoteItem = typeof quoteItems.$inferSelect;
 export type InsertQuoteItem = typeof quoteItems.$inferInsert;
+
+
+// ============================================================================
+// SPACE SUBMISSIONS - Postulaciones de espacios para cargadores
+// ============================================================================
+
+export const spaceSubmissions = mysqlTable("space_submissions", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Código único de postulación (SPE-2026-XXXX)
+  code: varchar("code", { length: 20 }).notNull().unique(),
+  
+  // Datos del postulante
+  submitterName: varchar("submitterName", { length: 255 }).notNull(),
+  submitterEmail: varchar("submitterEmail", { length: 320 }).notNull(),
+  submitterPhone: varchar("submitterPhone", { length: 20 }).notNull(),
+  submitterCompany: varchar("submitterCompany", { length: 255 }),
+  submitterDocument: varchar("submitterDocument", { length: 50 }), // CC o NIT
+  
+  // Datos del espacio
+  spaceName: varchar("spaceName", { length: 255 }).notNull(), // Nombre del lugar
+  spaceType: spaceTypeEnum.notNull(),
+  spaceTypeOther: varchar("spaceTypeOther", { length: 255 }), // Si es "other"
+  address: varchar("address", { length: 500 }).notNull(),
+  city: varchar("city", { length: 100 }).notNull(),
+  department: varchar("department", { length: 100 }),
+  country: varchar("country", { length: 100 }).default("Colombia").notNull(),
+  latitude: decimal("latitude", { precision: 10, scale: 8 }),
+  longitude: decimal("longitude", { precision: 11, scale: 8 }),
+  
+  // Características del espacio
+  availableAreaM2: decimal("availableAreaM2", { precision: 10, scale: 2 }), // Área disponible en m²
+  parkingSpots: int("parkingSpots"), // Número de puestos de parqueo disponibles
+  transformerCapacityKva: decimal("transformerCapacityKva", { precision: 10, scale: 2 }), // Capacidad del transformador en kVA
+  hasElectricalPanel: boolean("hasElectricalPanel").default(false), // ¿Tiene tablero eléctrico accesible?
+  electricalDistance: int("electricalDistance"), // Distancia del tablero al punto de carga (metros)
+  hasInternet: boolean("hasInternet").default(false), // ¿Tiene conexión a internet?
+  operatingHoursStart: varchar("operatingHoursStart", { length: 5 }).default("06:00"), // Horario de operación
+  operatingHoursEnd: varchar("operatingHoursEnd", { length: 5 }).default("22:00"),
+  is24Hours: boolean("is24Hours").default(false),
+  
+  // Información de tráfico y contexto
+  estimatedDailyVehicles: int("estimatedDailyVehicles"), // Vehículos diarios estimados
+  estimatedEvPercent: int("estimatedEvPercent"), // % estimado de vehículos eléctricos
+  nearbyAttractions: text("nearbyAttractions"), // Puntos de interés cercanos
+  socioeconomicStratum: int("socioeconomicStratum"), // Estrato socioeconómico (1-6 en Colombia)
+  
+  // Notas adicionales del postulante
+  additionalNotes: text("additionalNotes"),
+  
+  // Estado del proceso
+  status: spaceSubmissionStatusEnum.default("pending").notNull(),
+  
+  // Evaluación técnica (llenada por el admin)
+  technicalScore: int("technicalScore"), // Puntaje técnico 1-100
+  technicalNotes: text("technicalNotes"), // Notas de la evaluación
+  electricalViability: mysqlEnum("electrical_viability", ["viable", "requires_upgrade", "not_viable"]),
+  accessibilityScore: int("accessibilityScore"), // Puntaje de accesibilidad 1-10
+  trafficPotentialScore: int("trafficPotentialScore"), // Potencial de tráfico 1-10
+  evaluatedBy: int("evaluatedBy"), // FK a users (admin que evaluó)
+  evaluatedAt: timestamp("evaluatedAt"),
+  rejectionReason: text("rejectionReason"), // Motivo de rechazo (si aplica)
+  
+  // Calificación IA (generada automáticamente)
+  aiScore: int("aiScore"), // Puntaje IA 1-100
+  aiAnalysis: text("aiAnalysis"), // Análisis detallado de la IA (JSON o texto)
+  aiScoredAt: timestamp("aiScoredAt"),
+  
+  // Carta de intención
+  letterSentAt: timestamp("letterSentAt"),
+  letterAcceptedAt: timestamp("letterAcceptedAt"),
+  letterToken: varchar("letterToken", { length: 100 }), // Token único para aceptar la carta
+  letterSignerName: varchar("letterSignerName", { length: 255 }), // Nombre de quien firma
+  letterSignerDocument: varchar("letterSignerDocument", { length: 50 }), // Documento de quien firma
+  letterSignerIp: varchar("letterSignerIp", { length: 50 }), // IP desde donde se firmó
+  
+  // Conexión con crowdfunding (cuando se publica)
+  crowdfundingProjectId: int("crowdfundingProjectId"), // FK a crowdfunding_projects
+  
+  // Datos de inversión estimados (para publicar en crowdfunding)
+  estimatedInvestmentCop: bigint("estimatedInvestmentCop", { mode: "number" }), // Inversión total estimada
+  estimatedPowerKw: int("estimatedPowerKw"), // Potencia estimada a instalar
+  estimatedChargerCount: int("estimatedChargerCount"), // Número de cargadores estimados
+  recommendedChargerType: varchar("recommendedChargerType", { length: 50 }), // AC/DC recomendado
+  
+  // Auditoría
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SpaceSubmission = typeof spaceSubmissions.$inferSelect;
+export type InsertSpaceSubmission = typeof spaceSubmissions.$inferInsert;
+
+// ============================================================================
+// SPACE PHOTOS - Fotos de evidencia de los espacios postulados
+// ============================================================================
+
+export const spacePhotos = mysqlTable("space_photos", {
+  id: int("id").autoincrement().primaryKey(),
+  submissionId: int("submissionId").notNull(), // FK a space_submissions
+  
+  photoUrl: text("photoUrl").notNull(), // URL en S3
+  photoKey: varchar("photoKey", { length: 500 }).notNull(), // Key en S3
+  caption: varchar("caption", { length: 255 }), // Descripción de la foto
+  photoType: mysqlEnum("photo_type", [
+    "general",          // Vista general del espacio
+    "electrical_panel", // Tablero eléctrico
+    "transformer",      // Transformador
+    "parking_area",     // Área de parqueo
+    "access_road",      // Vía de acceso
+    "surroundings",     // Alrededores
+    "other",            // Otra
+  ]).default("general").notNull(),
+  
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SpacePhoto = typeof spacePhotos.$inferSelect;
+export type InsertSpacePhoto = typeof spacePhotos.$inferInsert;
+
+// ============================================================================
+// SPACE SUBMISSIONS RELATIONS
+// ============================================================================
+
+export const spaceSubmissionsRelations = relations(spaceSubmissions, ({ one, many }) => ({
+  photos: many(spacePhotos),
+  evaluator: one(users, {
+    fields: [spaceSubmissions.evaluatedBy],
+    references: [users.id],
+  }),
+  crowdfundingProject: one(crowdfundingProjects, {
+    fields: [spaceSubmissions.crowdfundingProjectId],
+    references: [crowdfundingProjects.id],
+  }),
+}));
+
+export const spacePhotosRelations = relations(spacePhotos, ({ one }) => ({
+  submission: one(spaceSubmissions, {
+    fields: [spacePhotos.submissionId],
+    references: [spaceSubmissions.id],
+  }),
+}));

@@ -80,6 +80,7 @@ const adminMenuItems: { icon: any; label: string; path: string; roles?: string[]
   { icon: Headphones, label: "Soporte", path: "/admin/support" },
   { icon: PhoneCall, label: "Inicio Remoto", path: "/admin/remote-start" },
   { icon: FileText, label: "Cotizaciones", path: "/admin/quotes", roles: ["admin", "staff", "host", "comercial"] },
+  { icon: MapPin, label: "Espacios", path: "/admin/spaces" },
   { icon: Calculator, label: "Centro Financiero", path: "/admin/financial" },
   { icon: Wrench, label: "Fondo Mantenimiento", path: "/admin/maintenance-fund" },
   { icon: Bot, label: "Asistente IA", path: "/admin/ai-settings" },
