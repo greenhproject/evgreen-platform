@@ -5,8 +5,8 @@
 import { useRoute } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Download, CheckCircle2, Clock, Shield, Zap, Phone, Mail, Globe, AlertTriangle, FileText } from "lucide-react";
-import { useState } from "react";
+import { Download, CheckCircle2, Clock, Shield, Zap, Phone, Mail, Globe, AlertTriangle, FileText, TrendingUp, BarChart3, DollarSign, Info } from "lucide-react";
+import { useState, useMemo } from "react";
 
 function formatCOP(amount: number): string {
   return new Intl.NumberFormat("es-CO", {
@@ -24,6 +24,143 @@ function formatDate(date: string | Date | null): string {
     month: "long",
     year: "numeric",
   });
+}
+
+/** Componente de Proyección de Ingresos para la vista pública */
+function IncomeProjection({ quote, items }: { quote: any; items: any[] }) {
+  const projection = useMemo(() => {
+    const totalKw = items.reduce((sum: number, it: any) => sum + Number(it.productPowerKw || 0) * (it.quantity || 1), 0);
+    const dailyHours = Number(quote.projDailyHours || 4);
+    const energyCost = Number(quote.projEnergyCost || 700);
+    const salePrice = Number(quote.projSalePrice || 1800);
+    const investorPct = Number(quote.investorSharePercent || 70);
+    const evgreenPct = Number(quote.evgreenSharePercent || 30);
+    const hostPct = Number(quote.hostSharePercent || 0);
+    const totalInvestment = Number(quote.total || 0);
+
+    const dailyKwh = totalKw * dailyHours;
+    const monthlyKwh = dailyKwh * 30;
+    const yearlyKwh = monthlyKwh * 12;
+
+    const grossMarginPerKwh = salePrice - energyCost;
+    const dailyGrossRevenue = dailyKwh * grossMarginPerKwh;
+
+    // Descuento aliado comercial primero (sobre margen bruto)
+    const hostCut = dailyGrossRevenue * (hostPct / 100);
+    const netAfterHost = dailyGrossRevenue - hostCut;
+
+    // Reparto del neto entre EVGreen e Inversionista
+    const dailyInvestorIncome = netAfterHost * (investorPct / (investorPct + evgreenPct));
+    const monthlyInvestorIncome = dailyInvestorIncome * 30;
+    const yearlyInvestorIncome = monthlyInvestorIncome * 12;
+
+    const roiAnnual = totalInvestment > 0 ? (yearlyInvestorIncome / totalInvestment) * 100 : 0;
+    const paybackMonths = monthlyInvestorIncome > 0 ? totalInvestment / monthlyInvestorIncome : 0;
+
+    return {
+      totalKw, dailyHours, energyCost, salePrice,
+      dailyKwh, monthlyKwh, yearlyKwh,
+      grossMarginPerKwh,
+      dailyInvestorIncome, monthlyInvestorIncome, yearlyInvestorIncome,
+      roiAnnual, paybackMonths, totalInvestment,
+    };
+  }, [quote, items]);
+
+  return (
+    <section>
+      <h2 className="text-2xl font-extrabold mb-6 flex items-center gap-3">
+        <div className="w-8 h-8 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+          <TrendingUp className="h-5 w-5 text-emerald-400" />
+        </div>
+        Proyección de Ingresos Estimada
+      </h2>
+
+      <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-7 space-y-6">
+        {/* Supuestos */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Potencia total</p>
+            <p className="text-lg font-bold text-white">{projection.totalKw} kW</p>
+          </div>
+          <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Uso diario</p>
+            <p className="text-lg font-bold text-white">{projection.dailyHours}h</p>
+          </div>
+          <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Precio venta</p>
+            <p className="text-lg font-bold text-white">{formatCOP(projection.salePrice)}/kWh</p>
+          </div>
+          <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Costo energía</p>
+            <p className="text-lg font-bold text-white">{formatCOP(projection.energyCost)}/kWh</p>
+          </div>
+        </div>
+
+        {/* KPIs principales */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 text-center">
+            <DollarSign className="h-5 w-5 text-emerald-400 mx-auto mb-2" />
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ingreso Diario</p>
+            <p className="text-2xl font-black bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+              {formatCOP(Math.round(projection.dailyInvestorIncome))}
+            </p>
+          </div>
+          <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 text-center">
+            <BarChart3 className="h-5 w-5 text-emerald-400 mx-auto mb-2" />
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ingreso Mensual</p>
+            <p className="text-2xl font-black bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+              {formatCOP(Math.round(projection.monthlyInvestorIncome))}
+            </p>
+          </div>
+          <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 text-center">
+            <TrendingUp className="h-5 w-5 text-emerald-400 mx-auto mb-2" />
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ingreso Anual</p>
+            <p className="text-2xl font-black bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+              {formatCOP(Math.round(projection.yearlyInvestorIncome))}
+            </p>
+          </div>
+        </div>
+
+        {/* ROI y Recuperación */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border border-cyan-500/20 rounded-xl p-5 text-center">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">ROI Anual Estimado</p>
+            <p className="text-3xl font-black text-cyan-400">{projection.roiAnnual.toFixed(1)}%</p>
+          </div>
+          <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border border-cyan-500/20 rounded-xl p-5 text-center">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Recuperación de Inversión</p>
+            <p className="text-3xl font-black text-cyan-400">{projection.paybackMonths.toFixed(1)} meses</p>
+          </div>
+        </div>
+
+        {/* Energía generada */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
+            <p className="text-lg font-bold text-white">{Math.round(projection.dailyKwh).toLocaleString('es-CO')}</p>
+            <p className="text-[10px] text-gray-500">kWh/día</p>
+          </div>
+          <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
+            <p className="text-lg font-bold text-white">{Math.round(projection.monthlyKwh).toLocaleString('es-CO')}</p>
+            <p className="text-[10px] text-gray-500">kWh/mes</p>
+          </div>
+          <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
+            <p className="text-lg font-bold text-white">{Math.round(projection.yearlyKwh).toLocaleString('es-CO')}</p>
+            <p className="text-[10px] text-gray-500">kWh/año</p>
+          </div>
+        </div>
+
+        {/* Disclaimer */}
+        <div className="flex items-start gap-2.5 bg-amber-500/5 border border-amber-500/15 rounded-lg p-4">
+          <Info className="h-4 w-4 text-amber-400 mt-0.5 flex-shrink-0" />
+          <p className="text-[11px] text-amber-200/70 leading-relaxed">
+            <strong className="text-amber-300">Nota informativa:</strong> Esta proyección es estimativa y se basa en supuestos de uso promedio.
+            Los ingresos reales pueden variar según la ubicación, el tráfico vehicular, las tarifas de energía vigentes
+            y las condiciones del mercado. No constituye una garantía de retorno.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export default function QuotePublic() {
@@ -274,48 +411,62 @@ export default function QuotePublic() {
           </section>
 
           {/* === BUSINESS MODEL === */}
-          {benefits.length > 0 && (
-            <section>
-              <h2 className="text-2xl font-extrabold mb-6 flex items-center gap-3">
-                <div className="w-8 h-8 bg-emerald-500/10 rounded-lg flex items-center justify-center">
-                  <Shield className="h-5 w-5 text-emerald-400" />
-                </div>
-                Modelo de Operación EVGreen
-              </h2>
-              <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-7">
-                {/* Shares */}
-                <div className="grid grid-cols-2 gap-4 mb-7">
-                  <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-xl p-6 text-center">
-                    <div className="text-4xl font-black bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent mb-1">
-                      {settings?.ownerSharePercent || 70}%
-                    </div>
-                    <div className="text-sm font-semibold text-white">Para usted (dueño)</div>
-                    <div className="text-[11px] text-gray-500 mt-1">Del margen neto de operación</div>
-                  </div>
-                  <div className="bg-[#1a2332] border border-[#1f2937] rounded-xl p-6 text-center">
-                    <div className="text-4xl font-black text-gray-400 mb-1">
-                      {settings?.evgreenFeePercent || 30}%
-                    </div>
-                    <div className="text-sm font-semibold text-white">EVGreen (operación)</div>
-                    <div className="text-[11px] text-gray-500 mt-1">Soporte, tecnología y mantenimiento</div>
-                  </div>
-                </div>
-
-                {/* Benefits */}
-                <h4 className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-4">
-                  ¿Qué cubre el fee de EVGreen?
-                </h4>
-                <div className="grid md:grid-cols-2 gap-3">
-                  {benefits.map((benefit: string, idx: number) => (
-                    <div key={idx} className="flex items-start gap-2.5">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-gray-300">{benefit}</span>
-                    </div>
-                  ))}
-                </div>
+          <section>
+            <h2 className="text-2xl font-extrabold mb-6 flex items-center gap-3">
+              <div className="w-8 h-8 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+                <Shield className="h-5 w-5 text-emerald-400" />
               </div>
-            </section>
-          )}
+              Modelo de Operación EVGreen
+            </h2>
+            <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-7">
+              {/* Shares - use quote-specific values with fallback to settings */}
+              <div className={`grid ${Number(quote.hostSharePercent || 0) > 0 ? 'grid-cols-3' : 'grid-cols-2'} gap-4 mb-7`}>
+                <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-xl p-6 text-center">
+                  <div className="text-4xl font-black bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent mb-1">
+                    {Number(quote.investorSharePercent || settings?.ownerSharePercent || 70)}%
+                  </div>
+                  <div className="text-sm font-semibold text-white">Para usted (inversionista)</div>
+                  <div className="text-[11px] text-gray-500 mt-1">Del margen neto de operación</div>
+                </div>
+                <div className="bg-[#1a2332] border border-[#1f2937] rounded-xl p-6 text-center">
+                  <div className="text-4xl font-black text-gray-400 mb-1">
+                    {Number(quote.evgreenSharePercent || settings?.evgreenFeePercent || 30)}%
+                  </div>
+                  <div className="text-sm font-semibold text-white">EVGreen (operación)</div>
+                  <div className="text-[11px] text-gray-500 mt-1">Soporte, tecnología y mantenimiento</div>
+                </div>
+                {Number(quote.hostSharePercent || 0) > 0 && (
+                  <div className="bg-[#1a2332] border border-[#1f2937] rounded-xl p-6 text-center">
+                    <div className="text-4xl font-black text-amber-400 mb-1">
+                      {Number(quote.hostSharePercent)}%
+                    </div>
+                    <div className="text-sm font-semibold text-white">Aliado Comercial</div>
+                    <div className="text-[11px] text-gray-500 mt-1">Sobre margen bruto</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Benefits */}
+              {benefits.length > 0 && (
+                <>
+                  <h4 className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-4">
+                    ¿Qué cubre el fee de EVGreen?
+                  </h4>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    {benefits.map((benefit: string, idx: number) => (
+                      <div key={idx} className="flex items-start gap-2.5">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                        <span className="text-sm text-gray-300">{benefit}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+
+          {/* === INCOME PROJECTION === */}
+          {quote.showProjection && <IncomeProjection quote={quote} items={items} />}
 
           {/* === EXCLUSIONS === */}
           {settings?.exclusions && (
