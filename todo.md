@@ -3231,35 +3231,35 @@
 - [x] Flujo de estados: pending → under_review → approved → letter_sent → letter_accepted → published → funded
 
 ### Fase 2: Formulario Público de Postulación
-- [ ] Landing/formulario público "Postula tu espacio" con campos completos
-- [ ] Validación de campos y upload de fotos a S3
-- [ ] Confirmación por email al postulante
+- [x] Landing/formulario público "Postula tu espacio" con campos completos
+- [x] Validación de campos y upload de fotos a S3
+- [x] Confirmación por email al postulante
 
 ### Fase 3: Panel Admin de Validación
-- [ ] Vista de postulaciones con filtros por estado, ciudad, fecha
-- [ ] Detalle de postulación con fotos, mapa, datos del postulante
-- [ ] Formulario de evaluación técnica (viabilidad eléctrica, accesibilidad, potencial)
-- [ ] Botón aprobar/rechazar con comentarios
-- [ ] Envío de email de resultado al postulante
+- [x] Vista de postulaciones con filtros por estado, ciudad, fecha
+- [x] Detalle de postulación con fotos, mapa, datos del postulante
+- [x] Formulario de evaluación técnica (viabilidad eléctrica, accesibilidad, potencial)
+- [x] Botón aprobar/rechazar con comentarios
+- [x] Envío de email de resultado al postulante
 
 ### Fase 4: Carta de Intención por Email
-- [ ] Generación automática de carta de intención con datos del espacio
-- [ ] Envío por email con link de aceptación digital
-- [ ] Página de aceptación de términos con firma digital
-- [ ] Registro de aceptación en BD con timestamp
+- [x] Generación automática de carta de intención con datos del espacio
+- [x] Envío por email con link de aceptación digital
+- [x] Página de aceptación de términos con firma digital
+- [x] Registro de aceptación en BD con timestamp
 
 ### Fase 5: Muro de Crowdfunding con Mapa Interactivo
-- [ ] Mapa interactivo con marcadores de puntos disponibles para inversión
-- [ ] Colores según nivel de recaudo (rojo=0%, amarillo=parcial, verde=fondeado)
-- [ ] Tarjetas de punto con: valor, potencia, calificación IA, estrato, flujo vehicular
-- [ ] Filtros por ciudad, rango de inversión, potencia, estado de recaudo
-- [ ] Calificación automática del punto con IA
+- [x] Mapa interactivo con marcadores de puntos disponibles para inversión
+- [x] Colores según nivel de recaudo (rojo=0%, amarillo=parcial, verde=fondeado)
+- [x] Tarjetas de punto con: valor, potencia, calificación IA, estrato, flujo vehicular
+- [x] Filtros por ciudad, rango de inversión, potencia, estado de recaudo
+- [x] Calificación automática del punto con IA
 
 ### Fase 6: Vista Detallada del Punto
-- [ ] Página de detalle con estadísticas completas, fotos, mapa
-- [ ] Proyección de ingresos del punto específico
-- [ ] Botón "Más información" → contacto directo con asesor
-- [ ] Indicador de progreso de recaudo del punto
+- [x] Página de detalle con estadísticas completas, fotos, mapa
+- [x] Proyección de ingresos del punto específico
+- [x] Botón "Más información" → contacto directo con asesor
+- [x] Indicador de progreso de recaudo del punto
 
 
 ## Sistema de Postulación de Espacios y Crowdfunding - 13 Mayo 2026
