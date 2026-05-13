@@ -573,12 +573,19 @@ function SpaceDetailDialog({
                         ))}
                       </div>
                     )}
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-3 pt-3 border-t border-[#374151]/50">
-                      <DetailRow label="Recomendación" value={aiAnalysis.recommendation || "—"} />
-                      <DetailRow label="Cargadores" value={aiAnalysis.estimatedChargers?.toString() || "—"} />
-                      <DetailRow label="Potencia" value={aiAnalysis.estimatedPowerKw ? `${aiAnalysis.estimatedPowerKw} kW` : "—"} />
-                      <DetailRow label="Inversión" value={aiAnalysis.investmentAppeal || "—"} />
-                      <DetailRow label="Viabilidad" value={aiAnalysis.electricalViability || "—"} />
+                    <div className="mt-3 pt-3 border-t border-[#374151]/50 space-y-1.5">
+                      {aiAnalysis.recommendation && (
+                        <div>
+                          <p className="text-xs text-gray-500 mb-0.5">Recomendación:</p>
+                          <p className="text-xs text-gray-300 leading-relaxed">{aiAnalysis.recommendation}</p>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                        <DetailRow label="Cargadores" value={aiAnalysis.estimatedChargers?.toString() || "—"} />
+                        <DetailRow label="Potencia" value={aiAnalysis.estimatedPowerKw ? `${aiAnalysis.estimatedPowerKw} kW` : "—"} />
+                        <DetailRow label="Inversión" value={aiAnalysis.investmentAppeal || "—"} />
+                        <DetailRow label="Viabilidad" value={aiAnalysis.electricalViability || "—"} />
+                      </div>
                     </div>
                   </DetailSection>
                 )}
@@ -854,9 +861,18 @@ function DetailSection({ title, icon, children }: { title: string; icon: React.R
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
+  const isLong = value.length > 50;
+  if (isLong) {
+    return (
+      <div className="text-xs sm:text-sm">
+        <span className="text-gray-500 block mb-0.5">{label}</span>
+        <span className="text-gray-300 break-words leading-relaxed">{value}</span>
+      </div>
+    );
+  }
   return (
     <div className="flex items-start justify-between text-xs sm:text-sm gap-3">
-      <span className="text-gray-500 flex-shrink-0 min-w-0">{label}</span>
+      <span className="text-gray-500 flex-shrink-0">{label}</span>
       <span className="text-gray-300 text-right break-words min-w-0">{value}</span>
     </div>
   );
