@@ -65,7 +65,9 @@ import {
   Search,
   Link2,
   X,
-  Send
+  Send,
+  FileText,
+  ArrowRight
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -108,6 +110,11 @@ interface Project {
   targetDate: Date | null;
   priority: number;
   stationId: number | null;
+  spaceSubmissionId: number | null;
+  linkedSpaceName: string | null;
+  linkedSpaceCity: string | null;
+  linkedSubmitterName: string | null;
+  linkedSpaceStatus: string | null;
   createdAt: Date;
 }
 
@@ -538,9 +545,14 @@ export default function AdminCrowdfunding() {
   const stats = {
     totalProjects: projects?.length || 0,
     activeProjects: projects?.filter(p => p.status === 'OPEN' || p.status === 'IN_PROGRESS').length || 0,
+    draftProjects: projects?.filter(p => p.status === 'DRAFT').length || 0,
     totalRaised: projects?.reduce((sum, p) => sum + Number(p.raisedAmount), 0) || 0,
     totalInvestors: projects?.reduce((sum, p) => sum + (p.investorCount || 0), 0) || 0,
   };
+
+  // Separar proyectos por categoría
+  const draftProjects = projects?.filter(p => p.status === 'DRAFT') || [];
+  const activeProjects = projects?.filter(p => p.status !== 'DRAFT') || [];
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -561,7 +573,7 @@ export default function AdminCrowdfunding() {
       </div>
 
       {/* Estadísticas */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
         <Card className="p-3 sm:p-4">
           <div className="flex items-center gap-2 mb-1">
             <Building2 className="w-4 h-4 text-blue-500" />
@@ -585,6 +597,13 @@ export default function AdminCrowdfunding() {
         </Card>
         <Card className="p-3 sm:p-4">
           <div className="flex items-center gap-2 mb-1">
+            <FileText className="w-4 h-4 text-gray-500" />
+            <p className="text-xs text-muted-foreground">Pendientes</p>
+          </div>
+          <p className="text-lg sm:text-2xl font-bold">{stats.draftProjects}</p>
+        </Card>
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-1">
             <Users className="w-4 h-4 text-purple-500" />
             <p className="text-xs text-muted-foreground">Inversionistas</p>
           </div>
@@ -592,7 +611,7 @@ export default function AdminCrowdfunding() {
         </Card>
       </div>
 
-      {/* Lista de proyectos - Vista móvil: tarjetas, Desktop: tabla */}
+      {/* Lista de proyectos con tabs */}
       {isLoading ? (
         <div className="text-center py-8 text-muted-foreground">Cargando proyectos...</div>
       ) : !projects || projects.length === 0 ? (
@@ -605,111 +624,214 @@ export default function AdminCrowdfunding() {
           </Button>
         </Card>
       ) : (
-        <>
-          {/* Vista móvil - tarjetas */}
-          <div className="sm:hidden space-y-3">
-            {projects.map((project: any) => (
-              <Card key={project.id} className="p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm truncate">{project.city}</h3>
-                    <p className="text-xs text-muted-foreground">{project.zone}</p>
-                  </div>
-                  {getStatusBadge(project.status)}
-                </div>
-                <div className="space-y-2 mb-3">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Recaudado</span>
-                    <span className="font-medium">{formatCOPShort(Number(project.raisedAmount))} / {formatCOPShort(Number(project.targetAmount))}</span>
-                  </div>
-                  <Progress value={(Number(project.raisedAmount) / Number(project.targetAmount)) * 100} className="h-2" />
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <Users className="w-3 h-3" /> {project.investorCount || 0}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {project.targetDate ? new Date(project.targetDate).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Sin fecha'}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" className="flex-1 text-xs h-8" onClick={() => handleViewParticipations(project)}>
-                    <Eye className="w-3 h-3 mr-1" /> Ver
-                  </Button>
-                  <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
-                    <Pencil className="w-3 h-3" />
-                  </Button>
-                  <Button size="sm" variant="outline" className="text-xs h-8 text-red-500 hover:text-red-600 hover:border-red-300" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending}>
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
+        <Tabs defaultValue="active" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="active" className="gap-2">
+              <TrendingUp className="w-4 h-4" />
+              Proyectos Activos ({activeProjects.length})
+            </TabsTrigger>
+            <TabsTrigger value="draft" className="gap-2">
+              <FileText className="w-4 h-4" />
+              Espacios Aprobados ({draftProjects.length})
+            </TabsTrigger>
+          </TabsList>
 
-          {/* Vista desktop - tabla */}
-          <div className="hidden sm:block">
-            <Card>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Proyecto</TableHead>
-                    <TableHead>Meta</TableHead>
-                    <TableHead>Recaudado</TableHead>
-                    <TableHead>Inversionistas</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Fecha Objetivo</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {projects.map((project: any) => (
-                    <TableRow key={project.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{project.city}</p>
-                          <p className="text-sm text-muted-foreground">{project.zone}</p>
+          {/* Tab: Proyectos Activos */}
+          <TabsContent value="active" className="mt-4">
+            {activeProjects.length === 0 ? (
+              <Card className="p-6 text-center text-muted-foreground">
+                <p>No hay proyectos activos</p>
+              </Card>
+            ) : (
+              <>
+                {/* Vista m\u00f3vil - tarjetas */}
+                <div className="sm:hidden space-y-3">
+                  {activeProjects.map((project: any) => (
+                    <Card key={project.id} className="p-4">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-sm truncate">{project.name || project.city}</h3>
+                          <p className="text-xs text-muted-foreground">{project.zone}</p>
+                          {project.linkedSpaceName && (
+                            <p className="text-xs text-blue-400 flex items-center gap-1 mt-1">
+                              <Link2 className="w-3 h-3" /> {project.linkedSpaceName}
+                            </p>
+                          )}
                         </div>
-                      </TableCell>
-                      <TableCell>{formatCOPShort(Number(project.targetAmount))}</TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <p className="font-medium text-green-600">{formatCOPShort(Number(project.raisedAmount))}</p>
-                          <Progress value={(Number(project.raisedAmount) / Number(project.targetAmount)) * 100} className="h-1.5 w-20" />
+                        {getStatusBadge(project.status)}
+                      </div>
+                      <div className="space-y-2 mb-3">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Recaudado</span>
+                          <span className="font-medium">{formatCOPShort(Number(project.raisedAmount))} / {formatCOPShort(Number(project.targetAmount))}</span>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Users className="w-4 h-4 text-muted-foreground" />
-                          {project.investorCount || 0}
+                        <Progress value={(Number(project.raisedAmount) / Number(project.targetAmount)) * 100} className="h-2" />
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground flex items-center gap-1">
+                            <Users className="w-3 h-3" /> {project.investorCount || 0}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {project.targetDate ? new Date(project.targetDate).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Sin fecha'}
+                          </span>
                         </div>
-                      </TableCell>
-                      <TableCell>{getStatusBadge(project.status)}</TableCell>
-                      <TableCell>
-                        {project.targetDate 
-                          ? new Date(project.targetDate).toLocaleDateString('es-CO')
-                          : '-'}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex gap-1 justify-end">
-                          <Button size="sm" variant="outline" onClick={() => handleViewParticipations(project)}>
-                            <Eye className="w-4 h-4 mr-1" /> Ver
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending} className="text-red-500 hover:text-red-600 hover:border-red-300" title="Eliminar proyecto">
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="flex-1 text-xs h-8" onClick={() => handleViewParticipations(project)}>
+                          <Eye className="w-3 h-3 mr-1" /> Ver
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-xs h-8 text-red-500 hover:text-red-600 hover:border-red-300" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </Card>
                   ))}
-                </TableBody>
-              </Table>
-            </Card>
-          </div>
-        </>
+                </div>
+
+                {/* Vista desktop - tabla */}
+                <div className="hidden sm:block">
+                  <Card>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Proyecto</TableHead>
+                          <TableHead>Meta</TableHead>
+                          <TableHead>Recaudado</TableHead>
+                          <TableHead>Inversionistas</TableHead>
+                          <TableHead>Estado</TableHead>
+                          <TableHead>Fecha Objetivo</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {activeProjects.map((project: any) => (
+                          <TableRow key={project.id}>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{project.name || project.city}</p>
+                                <p className="text-sm text-muted-foreground">{project.zone}</p>
+                                {project.linkedSpaceName && (
+                                  <p className="text-xs text-blue-400 flex items-center gap-1 mt-0.5">
+                                    <Link2 className="w-3 h-3" /> Espacio: {project.linkedSpaceName}
+                                  </p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{formatCOPShort(Number(project.targetAmount))}</TableCell>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <p className="font-medium text-green-600">{formatCOPShort(Number(project.raisedAmount))}</p>
+                                <Progress value={(Number(project.raisedAmount) / Number(project.targetAmount)) * 100} className="h-1.5 w-20" />
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Users className="w-4 h-4 text-muted-foreground" />
+                                {project.investorCount || 0}
+                              </div>
+                            </TableCell>
+                            <TableCell>{getStatusBadge(project.status)}</TableCell>
+                            <TableCell>
+                              {project.targetDate 
+                                ? new Date(project.targetDate).toLocaleDateString('es-CO')
+                                : '-'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button size="sm" variant="outline" onClick={() => handleViewParticipations(project)}>
+                                  <Eye className="w-4 h-4 mr-1" /> Ver
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending} className="text-red-500 hover:text-red-600 hover:border-red-300" title="Eliminar proyecto">
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Card>
+                </div>
+              </>
+            )}
+          </TabsContent>
+
+          {/* Tab: Espacios Aprobados (DRAFT) */}
+          <TabsContent value="draft" className="mt-4">
+            {draftProjects.length === 0 ? (
+              <Card className="p-6 text-center text-muted-foreground">
+                <FileText className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                <p className="font-medium">No hay espacios pendientes de publicar</p>
+                <p className="text-sm mt-1">Cuando se apruebe un espacio en el panel de Espacios, aparecer\u00e1 aqu\u00ed autom\u00e1ticamente.</p>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                  <p className="text-sm text-amber-400 font-medium">Espacios aprobados pendientes de publicar al crowdfunding</p>
+                  <p className="text-xs text-muted-foreground mt-1">Estos proyectos fueron creados autom\u00e1ticamente al aprobar un espacio. Edita los datos financieros y publica cuando est\u00e9 listo.</p>
+                </div>
+                {draftProjects.map((project: any) => (
+                  <Card key={project.id} className="p-4 border-amber-500/20">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-sm truncate">{project.name || 'Sin nombre'}</h3>
+                          {getStatusBadge(project.status)}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" /> {project.city} - {project.zone}
+                          </span>
+                          {project.linkedSpaceName && (
+                            <span className="flex items-center gap-1 text-blue-400">
+                              <Link2 className="w-3 h-3" /> Espacio: {project.linkedSpaceName}
+                            </span>
+                          )}
+                          {project.linkedSubmitterName && (
+                            <span className="flex items-center gap-1">
+                              <Users className="w-3 h-3" /> Postulante: {project.linkedSubmitterName}
+                            </span>
+                          )}
+                          {project.linkedSpaceStatus && (
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> Estado espacio: {project.linkedSpaceStatus}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-1">
+                          <span>Meta: {formatCOPShort(Number(project.targetAmount))}</span>
+                          <span>Potencia: {project.totalPowerKw || '?'} kW</span>
+                          <span>Cargadores: {project.chargerCount || '?'}</span>
+                          <span>Creado: {new Date(project.createdAt).toLocaleDateString('es-CO')}</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <Button size="sm" variant="outline" onClick={() => { handleEdit(project); setShowCreateDialog(true); }} className="gap-1">
+                          <Pencil className="w-3 h-3" /> Editar
+                        </Button>
+                        <Button size="sm" className="gap-1 bg-green-600 hover:bg-green-700" onClick={() => {
+                          handleEdit(project);
+                          setFormData(prev => ({ ...prev, status: 'OPEN' }));
+                          setShowCreateDialog(true);
+                        }}>
+                          <ArrowRight className="w-3 h-3" /> Publicar
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending} className="text-red-500 hover:text-red-600 hover:border-red-300">
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       )}
 
       {/* Dialog para crear/editar proyecto */}

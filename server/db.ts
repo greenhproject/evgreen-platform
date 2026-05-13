@@ -4233,7 +4233,7 @@ export interface CrowdfundingParticipation {
 
 // Obtener todos los proyectos de crowdfunding (públicos)
 // SEGURIDAD: Whitelist de status válidos para prevenir SQL injection
-const VALID_CROWDFUNDING_STATUSES = ['ACTIVE', 'FUNDED', 'COMPLETED', 'CANCELLED', 'DRAFT'] as const;
+const VALID_CROWDFUNDING_STATUSES = ['OPEN', 'ACTIVE', 'IN_PROGRESS', 'FUNDED', 'COMPLETED', 'CANCELLED', 'CLOSED', 'DRAFT'] as const;
 
 export async function getCrowdfundingProjects(options?: {
   status?: string;
@@ -4251,8 +4251,13 @@ export async function getCrowdfundingProjects(options?: {
     let query = `
       SELECT 
         p.*,
-        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount,
+        s.spaceName as linkedSpaceName,
+        s.city as linkedSpaceCity,
+        s.submitterName as linkedSubmitterName,
+        s.space_status as linkedSpaceStatus
       FROM crowdfunding_projects p
+      LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
     `;
     
     if (sanitizedStatus) {
