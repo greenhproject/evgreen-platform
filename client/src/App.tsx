@@ -123,6 +123,10 @@ const AdminQuotes = lazy(() => import("./pages/admin/Quotes"));
 const AdminQuotesCatalog = lazy(() => import("./pages/admin/QuotesCatalog"));
 const AdminQuotesSettings = lazy(() => import("./pages/admin/QuotesSettings"));
 const QuotePublic = lazy(() => import("./pages/QuotePublic"));
+const SpaceSubmission = lazy(() => import("./pages/SpaceSubmission"));
+const SpaceLetterAccept = lazy(() => import("./pages/SpaceLetterAccept"));
+const Crowdfunding = lazy(() => import("./pages/Crowdfunding"));
+const AdminSpaces = lazy(() => import("./pages/admin/Spaces"));
 
 // Páginas de Aliado Comercial (Host)
 const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
@@ -300,6 +304,27 @@ function Router() {
         <Route path="/cotizacion/:token">
           <Suspense fallback={<LazySpinner />}>
             <QuotePublic />
+          </Suspense>
+        </Route>
+
+        {/* Postulación de espacios (público) */}
+        <Route path="/postula-tu-espacio">
+          <Suspense fallback={<LazySpinner />}>
+            <SpaceSubmission />
+          </Suspense>
+        </Route>
+
+        {/* Carta de intención (público, por token) */}
+        <Route path="/carta-intencion/:token">
+          <Suspense fallback={<LazySpinner />}>
+            <SpaceLetterAccept />
+          </Suspense>
+        </Route>
+
+        {/* Muro de crowdfunding (público) */}
+        <Route path="/crowdfunding">
+          <Suspense fallback={<LazySpinner />}>
+            <Crowdfunding />
           </Suspense>
         </Route>
 
@@ -754,6 +779,15 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin", "staff", "comercial"]}>
             <AdminLayout>
               <AdminQuotesSettings />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* Administración de Espacios */}
+        <Route path="/admin/spaces">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminSpaces />
             </AdminLayout>
           </ProtectedRoute>
         </Route>
