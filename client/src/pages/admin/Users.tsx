@@ -37,7 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, MoreVertical, UserPlus, Users, Shield, Wrench, Briefcase, Eye, Copy, Hash, Pencil, Trash2, Tag, Wallet, Plus, Minus, RotateCcw, Loader2, Download, FileSpreadsheet, FileText, ChevronDown, ChevronUp, History } from "lucide-react";
+import { Search, MoreVertical, UserPlus, Users, Shield, Wrench, Briefcase, Eye, Copy, Hash, Pencil, Trash2, Tag, Wallet, Plus, Minus, RotateCcw, Loader2, Download, FileSpreadsheet, FileText, ChevronDown, ChevronUp, History, HandCoins } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -70,7 +70,7 @@ export default function AdminUsers() {
     name: "",
     email: "",
     phone: "",
-    role: "user" as "staff" | "technician" | "investor" | "user" | "admin",
+    role: "user" as "staff" | "technician" | "investor" | "user" | "admin" | "comercial" | "engineer" | "host",
     isActive: true,
     companyName: "",
     taxId: "",
@@ -333,6 +333,9 @@ export default function AdminUsers() {
       staff: { bg: "bg-purple-100 text-purple-700", icon: Shield, label: "Staff" },
       technician: { bg: "bg-blue-100 text-blue-700", icon: Wrench, label: "Técnico" },
       investor: { bg: "bg-green-100 text-green-700", icon: Briefcase, label: "Inversionista" },
+      comercial: { bg: "bg-orange-100 text-orange-700", icon: HandCoins, label: "Comercial" },
+      engineer: { bg: "bg-cyan-100 text-cyan-700", icon: Wrench, label: "Ingeniero" },
+      host: { bg: "bg-yellow-100 text-yellow-700", icon: Briefcase, label: "Host" },
       user: { bg: "bg-gray-100 text-gray-700", icon: Users, label: "Usuario" },
     };
     const style = styles[role] || styles.user;
@@ -383,6 +386,7 @@ export default function AdminUsers() {
           { role: "staff", icon: Shield, color: "purple" },
           { role: "technician", icon: Wrench, color: "blue" },
           { role: "investor", icon: Briefcase, color: "green" },
+          { role: "comercial", icon: HandCoins, color: "orange" },
           { role: "user", icon: Users, color: "gray" },
         ].map(({ role, icon: Icon, color }) => (
           <Card key={role} className="p-4">
@@ -421,8 +425,11 @@ export default function AdminUsers() {
               <SelectItem value="all">Todos los roles</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
               <SelectItem value="staff">Staff</SelectItem>
+              <SelectItem value="comercial">Comercial</SelectItem>
               <SelectItem value="technician">Técnico</SelectItem>
               <SelectItem value="investor">Inversionista</SelectItem>
+              <SelectItem value="engineer">Ingeniero</SelectItem>
+              <SelectItem value="host">Host</SelectItem>
               <SelectItem value="user">Usuario</SelectItem>
             </SelectContent>
           </Select>
@@ -554,6 +561,13 @@ export default function AdminUsers() {
                             >
                               <Briefcase className="w-4 h-4 mr-2" />
                               Hacer inversionista
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => updateRoleMutation.mutate({ userId: user.id, role: "comercial" })}
+                              disabled={user.role === "comercial"}
+                            >
+                              <HandCoins className="w-4 h-4 mr-2" />
+                              Hacer comercial
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => updateRoleMutation.mutate({ userId: user.id, role: "technician" })}
@@ -992,7 +1006,10 @@ export default function AdminUsers() {
                   <SelectContent>
                     <SelectItem value="user">Usuario</SelectItem>
                     <SelectItem value="investor">Inversionista</SelectItem>
+                    <SelectItem value="comercial">Comercial</SelectItem>
                     <SelectItem value="technician">Técnico</SelectItem>
+                    <SelectItem value="engineer">Ingeniero</SelectItem>
+                    <SelectItem value="host">Host</SelectItem>
                     <SelectItem value="staff">Staff</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
                   </SelectContent>
