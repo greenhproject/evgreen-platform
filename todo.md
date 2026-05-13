@@ -3323,3 +3323,15 @@
 - [x] Visualización de análisis IA con fortalezas/debilidades
 - [x] Historial de eventos (creación, evaluación, carta, firma)
 - [x] Menú en sidebar del admin
+
+## Mejoras Postulación de Espacios y Crowdfunding - 13 Mayo 2026 (Ronda 2)
+
+### Banner/CTA en Landing Principal
+- [x] Agregar sección CTA llamativa "¿Tienes un espacio? ¡Postúlalo!" en la landing
+- [x] Diseño con gradientes y animación sutil para captar atención
+- [x] Enlace directo a /postula-tu-espacio
+
+### Galería de Fotos en Crowdfunding
+- [x] Agregar galería de fotos del espacio en la vista detallada del crowdfunding
+- [x] Mostrar fotos con tipo/categoría y caption
+- [x] Lightbox para ver fotos en tamaño completo
