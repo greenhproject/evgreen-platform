@@ -3387,3 +3387,14 @@
 
 ## Bug Fix - Responsive tarjetas detalle espacio en móvil (Mayo 2026)
 - [x] Fix texto de recomendación IA cortado palabra por palabra en móvil (DetailRow layout)
+
+## Módulo Comerciales - Comisiones y Panel (Mayo 2026)
+- [x] Schema: agregar commissionPercent a chargers_catalog
+- [x] Schema: agregar commissionPercent/commissionAmount a quote_items + totalCommission a quotes
+- [x] Backend: endpoint para configurar comisión por producto (admin)
+- [x] Backend: endpoint para calcular comisiones del comercial (stats)
+- [x] Backend: comisiones integradas en create quote y stats
+- [x] Frontend: campo de comisión % en catálogo de cargadores (admin)
+- [x] Frontend: panel de comercial con sus cotizaciones y estadísticas de comisiones (integrado en /admin/quotes)
+- [x] Frontend: comercial accede vía AdminLayout con rol 'comercial' (solo ve Cotizaciones)
+- [x] Frontend: estadísticas de comisión acumulada, pendiente, por producto en panel de cotizaciones

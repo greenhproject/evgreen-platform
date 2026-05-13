@@ -113,6 +113,7 @@ export const quotesRouter = router({
           cableMetersIncluded: z.number().optional(),
           warrantyYears: z.number().optional(),
           sortOrder: z.number().optional(),
+          commissionPercent: z.number().min(0).max(100).optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -131,6 +132,7 @@ export const quotesRouter = router({
           cableMetersIncluded: input.cableMetersIncluded ?? 10,
           warrantyYears: input.warrantyYears ?? 2,
           sortOrder: input.sortOrder ?? 0,
+          commissionPercent: (input.commissionPercent ?? 0).toFixed(2),
         });
         return { id: result.insertId };
       }),
@@ -153,6 +155,7 @@ export const quotesRouter = router({
           warrantyYears: z.number().optional(),
           sortOrder: z.number().optional(),
           isActive: z.boolean().optional(),
+          commissionPercent: z.number().min(0).max(100).optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -173,6 +176,7 @@ export const quotesRouter = router({
         if (data.warrantyYears !== undefined) updateData.warrantyYears = data.warrantyYears;
         if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
         if (data.isActive !== undefined) updateData.isActive = data.isActive;
+        if (data.commissionPercent !== undefined) updateData.commissionPercent = data.commissionPercent.toFixed(2);
 
         await db.update(chargersCatalog).set(updateData).where(eq(chargersCatalog.id, id));
         return { success: true };
@@ -353,12 +357,16 @@ export const quotesRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Uno o más productos no están disponibles." });
       }
 
-      // Calcular totales
+      // Calcular totales y comisiones
       let subtotal = 0;
+      let totalCommission = 0;
       const itemsToInsert = input.items.map((item) => {
         const catalogItem = catalogItems.find((c) => c.id === item.catalogItemId)!;
         const lineTotal = catalogItem.price * item.quantity;
         subtotal += lineTotal;
+        const commPct = parseFloat(catalogItem.commissionPercent || "0");
+        const commAmount = Math.round(lineTotal * commPct / 100);
+        totalCommission += commAmount;
         return {
           catalogItemId: item.catalogItemId,
           productName: catalogItem.name,
@@ -371,6 +379,8 @@ export const quotesRouter = router({
           includesTransformer: catalogItem.includesTransformer,
           cableMetersIncluded: catalogItem.cableMetersIncluded,
           productImageUrl: catalogItem.imageUrl || null,
+          commissionPercent: commPct.toFixed(2),
+          commissionAmount: commAmount,
         };
       });
 
@@ -399,6 +409,7 @@ export const quotesRouter = router({
         subtotal,
         discount,
         total,
+        totalCommission,
         validityDays,
         expiresAt,
         clientNotes: input.clientNotes || null,
@@ -649,7 +660,12 @@ export const quotesRouter = router({
       ? Math.round((accepted / (sent + viewed + accepted + rejected)) * 100)
       : 0;
 
-    return { total, draft, sent, viewed, accepted, rejected, expired, totalValue, acceptedValue, conversionRate };
+    // Comisiones
+    const totalCommission = allQuotes.reduce((sum: number, q: any) => sum + (q.totalCommission || 0), 0);
+    const acceptedCommission = allQuotes.filter((q: any) => q.status === "ACCEPTED").reduce((sum: number, q: any) => sum + (q.totalCommission || 0), 0);
+    const pendingCommission = allQuotes.filter((q: any) => ["SENT", "VIEWED", "DRAFT"].includes(q.status)).reduce((sum: number, q: any) => sum + (q.totalCommission || 0), 0);
+
+    return { total, draft, sent, viewed, accepted, rejected, expired, totalValue, acceptedValue, conversionRate, totalCommission, acceptedCommission, pendingCommission };
   }),
 
   /** Guardar URL del PDF generado */

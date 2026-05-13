@@ -3071,6 +3071,7 @@ export const chargersCatalog = mysqlTable("chargers_catalog", {
   includesTransformer: boolean("includesTransformer").default(false), // Si incluye transformador
   cableMetersIncluded: int("cableMetersIncluded").default(10), // Metros de cableado incluidos
   warrantyYears: int("warrantyYears").default(2), // Años de garantía
+  commissionPercent: decimal("commissionPercent", { precision: 5, scale: 2 }).default("0.00").notNull(), // % comisión comercial
   isActive: boolean("isActive").default(true).notNull(),
   sortOrder: int("sortOrder").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -3127,6 +3128,7 @@ export const quotes = mysqlTable("quotes", {
   subtotal: bigint("subtotal", { mode: "number" }).notNull().default(0), // Suma de items
   discount: bigint("discount", { mode: "number" }).default(0), // Descuento aplicado
   total: bigint("total", { mode: "number" }).notNull().default(0), // Total final
+  totalCommission: bigint("totalCommission", { mode: "number" }).default(0), // Comisión total del comercial
   // Vigencia
   validityDays: int("validityDays").default(30).notNull(),
   expiresAt: timestamp("expiresAt"),
@@ -3176,6 +3178,8 @@ export const quoteItems = mysqlTable("quote_items", {
   includesTransformer: boolean("includesTransformer").default(false),
   cableMetersIncluded: int("cableMetersIncluded").default(10),
   productImageUrl: text("productImageUrl"), // Snapshot de la imagen del cargador
+  commissionPercent: decimal("commissionPercent", { precision: 5, scale: 2 }).default("0.00").notNull(), // Snapshot comisión %
+  commissionAmount: bigint("commissionAmount", { mode: "number" }).default(0).notNull(), // Monto comisión calculado
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

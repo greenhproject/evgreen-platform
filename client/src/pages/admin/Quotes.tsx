@@ -416,6 +416,32 @@ export default function Quotes() {
         </div>
       )}
 
+      {/* Commission Stats */}
+      {stats && (stats.totalCommission > 0 || stats.acceptedCommission > 0) && (
+        <Card className="border-emerald-500/30 bg-emerald-500/5">
+          <CardContent className="py-4 px-5">
+            <div className="flex items-center gap-2 mb-3">
+              <DollarSign className="h-4 w-4 text-emerald-400" />
+              <span className="font-semibold text-sm">Mis Comisiones</span>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <div className="text-xl font-bold text-emerald-400">{formatCOP(stats.acceptedCommission)}</div>
+                <p className="text-xs text-muted-foreground">Comisión Ganada (aceptadas)</p>
+              </div>
+              <div>
+                <div className="text-xl font-bold text-amber-400">{formatCOP(stats.pendingCommission)}</div>
+                <p className="text-xs text-muted-foreground">Comisión Pendiente</p>
+              </div>
+              <div>
+                <div className="text-xl font-bold text-muted-foreground">{formatCOP(stats.totalCommission)}</div>
+                <p className="text-xs text-muted-foreground">Comisión Total Potencial</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Filters */}
       <div className="flex gap-3">
         <div className="relative flex-1 max-w-sm">
@@ -473,6 +499,11 @@ export default function Quotes() {
                   <div className="flex items-center gap-4">
                     <div className="text-right">
                       <div className="font-bold text-lg">{formatCOP(quote.total)}</div>
+                      {quote.totalCommission > 0 && (
+                        <p className="text-xs text-emerald-400 flex items-center gap-1 justify-end">
+                          <DollarSign className="h-3 w-3" /> Com: {formatCOP(quote.totalCommission)}
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
                         <Eye className="h-3 w-3" /> {quote.viewCount || 0} vista(s)
                       </p>
