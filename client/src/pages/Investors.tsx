@@ -961,17 +961,23 @@ export default function Investors() {
     // Add markers when spaces load and map is ready
     useEffect(() => {
       if (!mapRef.current || !mapReady || !filteredSpaces?.length) return;
+      if (!window.google?.maps) return;
       // Clear old overlays
-      overlaysRef.current.forEach(o => o.setMap(null));
+      try {
+        overlaysRef.current.forEach(o => { try { o.setMap(null); } catch {} });
+      } catch {}
       overlaysRef.current = [];
-      markersRef.current.forEach(m => m.setMap(null));
+      try {
+        markersRef.current.forEach(m => { try { m.setMap(null); } catch {} });
+      } catch {}
       markersRef.current = [];
 
       const renderMarkers = () => {
-        overlaysRef.current.forEach(o => o.setMap(null));
+        try { overlaysRef.current.forEach(o => { try { o.setMap(null); } catch {} }); } catch {}
         overlaysRef.current = [];
 
-        const zoom = mapRef.current!.getZoom() || 6;
+        if (!mapRef.current) return;
+        const zoom = mapRef.current.getZoom() || 6;
         const clusters = clusterSpaces(filteredSpaces, zoom);
 
         clusters.forEach((cluster) => {
@@ -1077,23 +1083,31 @@ export default function Investors() {
         renderMarkers();
       });
 
-      // Fit bounds
-      const bounds = new google.maps.LatLngBounds();
-      let hasValidCoords = false;
-      filteredSpaces.forEach((space: any) => {
-        if (!space.latitude || !space.longitude) return;
-        const lat = parseFloat(space.latitude);
-        const lng = parseFloat(space.longitude);
-        if (isNaN(lat) || isNaN(lng)) return;
-        bounds.extend(new google.maps.LatLng(lat, lng));
-        hasValidCoords = true;
-      });
-      if (hasValidCoords) {
-        mapRef.current.fitBounds(bounds, 60);
+      // Fit bounds - wrapped in try-catch to prevent crash on stale map instances
+      try {
+        const bounds = new google.maps.LatLngBounds();
+        let hasValidCoords = false;
+        filteredSpaces.forEach((space: any) => {
+          if (!space.latitude || !space.longitude) return;
+          const lat = parseFloat(space.latitude);
+          const lng = parseFloat(space.longitude);
+          if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
+          bounds.extend({ lat, lng });
+          hasValidCoords = true;
+        });
+        if (hasValidCoords && mapRef.current) {
+          const ne = bounds.getNorthEast();
+          const sw = bounds.getSouthWest();
+          if (ne && sw && typeof ne.lat === 'function' && typeof sw.lat === 'function') {
+            mapRef.current.fitBounds(bounds, 60);
+          }
+        }
+      } catch (e) {
+        console.warn('[EVGreen] fitBounds error (non-fatal):', e);
       }
 
       return () => {
-        google.maps.event.removeListener(zoomListener);
+        try { google.maps.event.removeListener(zoomListener); } catch {}
       };
     }, [filteredSpaces, mapReady, createCustomOverlay, clusterSpaces]);
 

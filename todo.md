@@ -3379,3 +3379,8 @@
 - [x] Fix responsive de tarjetas móviles en admin/Spaces (flex-wrap, tipo de espacio, inversión)
 - [x] Tabla investorLeads en BD con campos: nombre, email, teléfono, monto interesado, mensaje, estado
 - [x] Columna viewCount en spaceSubmissions
+
+## Bug Fix - Google Maps fitBounds crash en /investors (Mayo 2026)
+- [x] Fix error "not a LatLngBounds or LatLngBoundsLiteral: unknown property cj" en página de inversionistas
+- [x] Fix "Map container not found" error
+- [x] Fix "Cannot read properties of undefined (reading 'kO')"
