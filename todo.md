@@ -3358,3 +3358,11 @@
 
 - [x] Cambiar AdvancedMarkerElement a CustomOverlay (OverlayView) para marcadores HTML ricos
 - [x] Agregar estado mapReady para sincronizar carga del mapa con datos
+
+## Google Maps API Key + Animación + Clustering - 13 Mayo 2026
+
+- [x] Configurar VITE_GOOGLE_MAPS_API_KEY con la key del usuario
+- [x] Agregar animación de pulso en los marcadores del mapa de inversión
+- [x] Implementar clustering de marcadores para muchos puntos
+- [x] Re-renderizar marcadores al cambiar zoom (zoom_changed listener)
+- [x] Marcadores cluster con contador de puntos y kW totales
