@@ -3384,3 +3384,6 @@
 - [x] Fix error "not a LatLngBounds or LatLngBoundsLiteral: unknown property cj" en página de inversionistas
 - [x] Fix "Map container not found" error
 - [x] Fix "Cannot read properties of undefined (reading 'kO')"
+
+## Bug Fix - Responsive tarjetas detalle espacio en móvil (Mayo 2026)
+- [x] Fix texto de recomendación IA cortado palabra por palabra en móvil (DetailRow layout)
