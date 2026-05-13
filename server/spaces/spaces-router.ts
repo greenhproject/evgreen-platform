@@ -350,24 +350,35 @@ export const spacesRouter = router({
         )
         .orderBy(desc(spaceSubmissions.aiScore));
 
-      // Obtener fotos de cada espacio (primera foto como thumbnail)
+      // Obtener TODAS las fotos de cada espacio (primera como thumbnail + galería completa)
       const submissionIds = published.map(s => s.id);
-      let photosMap: Record<number, string> = {};
+      let thumbnailMap: Record<number, string> = {};
+      let allPhotosMap: Record<number, Array<{ url: string; type: string; caption: string | null }>> = {};
 
       if (submissionIds.length > 0) {
         const photos = await db
           .select({
             submissionId: spacePhotos.submissionId,
             photoUrl: spacePhotos.photoUrl,
+            photoType: spacePhotos.photoType,
+            caption: spacePhotos.caption,
           })
           .from(spacePhotos)
           .where(inArray(spacePhotos.submissionId, submissionIds))
           .orderBy(spacePhotos.sortOrder);
 
         for (const photo of photos) {
-          if (!photosMap[photo.submissionId]) {
-            photosMap[photo.submissionId] = photo.photoUrl;
+          if (!thumbnailMap[photo.submissionId]) {
+            thumbnailMap[photo.submissionId] = photo.photoUrl;
           }
+          if (!allPhotosMap[photo.submissionId]) {
+            allPhotosMap[photo.submissionId] = [];
+          }
+          allPhotosMap[photo.submissionId].push({
+            url: photo.photoUrl,
+            type: photo.photoType,
+            caption: photo.caption,
+          });
         }
       }
 
@@ -393,7 +404,8 @@ export const spacesRouter = router({
 
       return published.map(s => ({
         ...s,
-        thumbnailUrl: photosMap[s.id] || null,
+        thumbnailUrl: thumbnailMap[s.id] || null,
+        photos: allPhotosMap[s.id] || [],
         crowdfunding: s.crowdfundingProjectId ? cfMap[s.crowdfundingProjectId] || null : null,
       }));
     }),
