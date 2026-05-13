@@ -3353,3 +3353,8 @@
 - [x] Investigar por qué el espacio publicado no aparece en la sección de inversión
 - [x] Integrar mapa interactivo de crowdfunding en la página de inversión existente
 - [x] Mostrar datos reales de espacios publicados junto con los proyectos existentes
+
+## Bug: Marcadores no aparecen en mapa de inversión - 13 Mayo 2026
+
+- [x] Cambiar AdvancedMarkerElement a CustomOverlay (OverlayView) para marcadores HTML ricos
+- [x] Agregar estado mapReady para sincronizar carga del mapa con datos
