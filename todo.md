@@ -3347,3 +3347,9 @@
 - [x] Lightbox de fotos en el detalle admin
 - [x] Paginación adaptada para móvil
 - [x] DialogFooter con botones full-width en móvil
+
+## Bug: Mapa interactivo no aparece en sección Inversión - 13 Mayo 2026
+
+- [x] Investigar por qué el espacio publicado no aparece en la sección de inversión
+- [x] Integrar mapa interactivo de crowdfunding en la página de inversión existente
+- [x] Mostrar datos reales de espacios publicados junto con los proyectos existentes
