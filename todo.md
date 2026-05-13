@@ -3335,3 +3335,15 @@
 - [x] Agregar galería de fotos del espacio en la vista detallada del crowdfunding
 - [x] Mostrar fotos con tipo/categoría y caption
 - [x] Lightbox para ver fotos en tamaño completo
+
+## Responsive Admin Espacios - 13 Mayo 2026
+
+- [x] Vista de tarjetas en móvil (reemplaza tabla) con info resumida
+- [x] Dialog de detalle responsive con max-w-[95vw] en móvil
+- [x] Botones de acción scrollable horizontalmente en móvil
+- [x] Grid de contenido 1 columna en móvil, 2 en desktop (lg breakpoint)
+- [x] Tamaños de texto adaptativos (text-xs en móvil, text-sm en desktop)
+- [x] Columnas de tabla ocultas progresivamente (lg:hidden, xl:hidden)
+- [x] Lightbox de fotos en el detalle admin
+- [x] Paginación adaptada para móvil
+- [x] DialogFooter con botones full-width en móvil

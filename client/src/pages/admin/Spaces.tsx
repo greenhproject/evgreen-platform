@@ -2,6 +2,8 @@
  * EVGreen - Panel de Administración de Espacios Postulados
  * Gestión completa: revisión, evaluación técnica, scoring IA,
  * envío de carta de intención y publicación en crowdfunding
+ * 
+ * RESPONSIVE: Optimizado para desktop, tablet y móvil
  */
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
@@ -17,6 +19,7 @@ import {
   CheckCircle2, XCircle, Clock, FileText, Loader2, ChevronLeft,
   ChevronRight, Building2, Phone, Mail, Camera, BarChart3,
   TrendingUp, DollarSign, ArrowUpRight, ExternalLink, RefreshCw,
+  ChevronDown, X,
 } from "lucide-react";
 
 // ============================================================================
@@ -52,6 +55,11 @@ function formatDate(date: Date | string | null): string {
   return new Date(date).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+function formatDateShort(date: Date | string | null): string {
+  if (!date) return "—";
+  return new Date(date).toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -75,29 +83,29 @@ export default function AdminSpaces() {
   const statusCounts = data?.statusCounts || {};
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <MapPin className="w-6 h-6 text-emerald-400" />
+          <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+            <MapPin className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400" />
             Espacios Postulados
           </h1>
-          <p className="text-sm text-gray-400 mt-1">
-            Gestión de postulaciones de espacios para cargadores EV
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">
+            Gestión de postulaciones para cargadores EV
           </p>
         </div>
-        <Button onClick={() => refetch()} variant="outline" size="sm" className="border-[#374151] text-gray-300">
+        <Button onClick={() => refetch()} variant="outline" size="sm" className="border-[#374151] text-gray-300 self-start sm:self-auto">
           <RefreshCw className="w-4 h-4 mr-1.5" />
           Actualizar
         </Button>
       </div>
 
-      {/* Status tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2">
+      {/* Status tabs - scrollable on mobile */}
+      <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-thin">
         <button
           onClick={() => { setStatusFilter("all"); setOffset(0); }}
-          className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+          className={`flex-shrink-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-all ${
             statusFilter === "all"
               ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
               : "bg-[#1f2937] text-gray-400 border border-[#374151] hover:border-[#4b5563]"
@@ -111,7 +119,7 @@ export default function AdminSpaces() {
             <button
               key={key}
               onClick={() => { setStatusFilter(key); setOffset(0); }}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              className={`flex-shrink-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-all ${
                 statusFilter === key
                   ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                   : "bg-[#1f2937] text-gray-400 border border-[#374151] hover:border-[#4b5563]"
@@ -129,13 +137,13 @@ export default function AdminSpaces() {
         <Input
           value={search}
           onChange={e => { setSearch(e.target.value); setOffset(0); }}
-          placeholder="Buscar por código, nombre, postulante o ciudad..."
-          className="pl-10 bg-[#111827] border-[#374151] text-white placeholder:text-gray-600"
+          placeholder="Buscar por código, nombre, ciudad..."
+          className="pl-10 bg-[#111827] border-[#374151] text-white placeholder:text-gray-600 text-sm"
         />
       </div>
 
-      {/* Table */}
-      <div className="bg-[#111827] border border-[#1f2937] rounded-xl overflow-hidden">
+      {/* Desktop Table (hidden on mobile) */}
+      <div className="hidden md:block bg-[#111827] border border-[#1f2937] rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -143,11 +151,11 @@ export default function AdminSpaces() {
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Código</th>
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Espacio</th>
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Postulante</th>
-                <th className="text-left px-4 py-3 text-gray-400 font-medium">Ciudad</th>
-                <th className="text-left px-4 py-3 text-gray-400 font-medium">Tipo</th>
-                <th className="text-left px-4 py-3 text-gray-400 font-medium">Score IA</th>
+                <th className="text-left px-4 py-3 text-gray-400 font-medium hidden lg:table-cell">Ciudad</th>
+                <th className="text-left px-4 py-3 text-gray-400 font-medium hidden xl:table-cell">Tipo</th>
+                <th className="text-left px-4 py-3 text-gray-400 font-medium">Score</th>
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Estado</th>
-                <th className="text-left px-4 py-3 text-gray-400 font-medium">Fecha</th>
+                <th className="text-left px-4 py-3 text-gray-400 font-medium hidden lg:table-cell">Fecha</th>
                 <th className="text-right px-4 py-3 text-gray-400 font-medium">Acciones</th>
               </tr>
             </thead>
@@ -174,16 +182,16 @@ export default function AdminSpaces() {
                         <span className="font-mono text-xs text-emerald-400">{sub.code}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-white font-medium">{sub.spaceName}</span>
+                        <span className="text-white font-medium text-sm">{sub.spaceName}</span>
                       </td>
                       <td className="px-4 py-3">
                         <div>
-                          <span className="text-gray-300">{sub.submitterName}</span>
-                          <p className="text-xs text-gray-500">{sub.submitterEmail}</p>
+                          <span className="text-gray-300 text-sm">{sub.submitterName}</span>
+                          <p className="text-xs text-gray-500 truncate max-w-[180px]">{sub.submitterEmail}</p>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-300">{sub.city}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{SPACE_TYPE_LABELS[sub.spaceType] || sub.spaceType}</td>
+                      <td className="px-4 py-3 text-gray-300 hidden lg:table-cell">{sub.city}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs hidden xl:table-cell">{SPACE_TYPE_LABELS[sub.spaceType] || sub.spaceType}</td>
                       <td className="px-4 py-3">
                         {sub.aiScore ? (
                           <span className={`font-bold ${sub.aiScore >= 80 ? "text-emerald-400" : sub.aiScore >= 60 ? "text-yellow-400" : "text-orange-400"}`}>
@@ -196,10 +204,10 @@ export default function AdminSpaces() {
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusInfo.color}`}>
                           <StatusIcon className="w-3 h-3" />
-                          {statusInfo.label}
+                          <span className="hidden xl:inline">{statusInfo.label}</span>
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                      <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap hidden lg:table-cell">
                         {formatDate(sub.createdAt)}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -225,25 +233,83 @@ export default function AdminSpaces() {
         {total > limit && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-[#1f2937]">
             <span className="text-xs text-gray-500">
-              Mostrando {offset + 1}-{Math.min(offset + limit, total)} de {total}
+              {offset + 1}-{Math.min(offset + limit, total)} de {total}
             </span>
             <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - limit))}
-                className="border-[#374151] text-gray-300 h-7"
-              >
+              <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))} className="border-[#374151] text-gray-300 h-7">
                 <ChevronLeft className="w-4 h-4" />
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={offset + limit >= total}
-                onClick={() => setOffset(offset + limit)}
-                className="border-[#374151] text-gray-300 h-7"
+              <Button size="sm" variant="outline" disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)} className="border-[#374151] text-gray-300 h-7">
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Mobile Card List (visible only on mobile) */}
+      <div className="md:hidden space-y-3">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
+          </div>
+        ) : submissions.length === 0 ? (
+          <div className="text-center py-12 text-gray-500 text-sm">
+            No se encontraron postulaciones
+          </div>
+        ) : (
+          submissions.map((sub: any) => {
+            const statusInfo = STATUS_LABELS[sub.status] || STATUS_LABELS.pending;
+            const StatusIcon = statusInfo.icon;
+            return (
+              <button
+                key={sub.id}
+                onClick={() => setSelectedId(sub.id)}
+                className="w-full text-left bg-[#111827] border border-[#1f2937] rounded-xl p-4 hover:border-emerald-500/30 transition-colors active:bg-[#1f2937]/50"
               >
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-white font-medium text-sm truncate">{sub.spaceName}</p>
+                    <p className="font-mono text-[11px] text-emerald-400 mt-0.5">{sub.code}</p>
+                  </div>
+                  <span className={`flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${statusInfo.color}`}>
+                    <StatusIcon className="w-3 h-3" />
+                    {statusInfo.label}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-gray-400 mt-2">
+                  <span className="flex items-center gap-1 truncate">
+                    <Mail className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">{sub.submitterName}</span>
+                  </span>
+                  <span className="flex items-center gap-1 flex-shrink-0">
+                    <MapPin className="w-3 h-3" />
+                    {sub.city}
+                  </span>
+                  {sub.aiScore && (
+                    <span className={`flex items-center gap-1 flex-shrink-0 font-bold ${sub.aiScore >= 80 ? "text-emerald-400" : sub.aiScore >= 60 ? "text-yellow-400" : "text-orange-400"}`}>
+                      <Brain className="w-3 h-3" />
+                      {sub.aiScore}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-600 mt-2">{formatDateShort(sub.createdAt)}</p>
+              </button>
+            );
+          })
+        )}
+
+        {/* Mobile Pagination */}
+        {total > limit && (
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-xs text-gray-500">
+              {offset + 1}-{Math.min(offset + limit, total)} de {total}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))} className="border-[#374151] text-gray-300 h-8">
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button size="sm" variant="outline" disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)} className="border-[#374151] text-gray-300 h-8">
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
@@ -264,7 +330,7 @@ export default function AdminSpaces() {
 }
 
 // ============================================================================
-// SPACE DETAIL DIALOG
+// SPACE DETAIL DIALOG - RESPONSIVE
 // ============================================================================
 
 function SpaceDetailDialog({
@@ -286,11 +352,12 @@ function SpaceDetailDialog({
   const [publishAmount, setPublishAmount] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
 
   if (isLoading || !space) {
     return (
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-4xl">
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-4xl">
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
           </div>
@@ -367,65 +434,62 @@ function SpaceDetailDialog({
   return (
     <>
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-emerald-400">{space.code}</span>
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusInfo.color}`}>
-                  <StatusIcon className="w-3 h-3" />
-                  {statusInfo.label}
-                </span>
-              </div>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+          {/* Header */}
+          <DialogHeader className="pb-2">
+            <DialogTitle className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <span className="font-mono text-emerald-400 text-base sm:text-lg">{space.code}</span>
+              <span className={`self-start inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusInfo.color}`}>
+                <StatusIcon className="w-3 h-3" />
+                {statusInfo.label}
+              </span>
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-6 mt-4">
-            {/* Action buttons based on status */}
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="space-y-4 sm:space-y-6 mt-2">
+            {/* Action buttons - scrollable on mobile */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
               {space.status === "pending" && (
-                <>
-                  <Button size="sm" onClick={() => handleStatusUpdate("under_review")} className="bg-blue-600 hover:bg-blue-700 text-white">
-                    <Eye className="w-4 h-4 mr-1.5" /> Iniciar revisión
-                  </Button>
-                </>
+                <Button size="sm" onClick={() => handleStatusUpdate("under_review")} className="bg-blue-600 hover:bg-blue-700 text-white flex-shrink-0 text-xs">
+                  <Eye className="w-3.5 h-3.5 mr-1" /> Revisar
+                </Button>
               )}
               {(space.status === "pending" || space.status === "under_review") && (
                 <>
-                  <Button size="sm" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white">
-                    {generateAIMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Brain className="w-4 h-4 mr-1.5" />}
+                  <Button size="sm" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0 text-xs">
+                    {generateAIMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Brain className="w-3.5 h-3.5 mr-1" />}
                     Scoring IA
                   </Button>
-                  <Button size="sm" onClick={() => handleStatusUpdate("approved")} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                    <CheckCircle2 className="w-4 h-4 mr-1.5" /> Aprobar
+                  <Button size="sm" onClick={() => handleStatusUpdate("approved")} className="bg-emerald-600 hover:bg-emerald-700 text-white flex-shrink-0 text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Aprobar
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setShowRejectDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10">
-                    <XCircle className="w-4 h-4 mr-1.5" /> Rechazar
+                  <Button size="sm" variant="outline" onClick={() => setShowRejectDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 flex-shrink-0 text-xs">
+                    <XCircle className="w-3.5 h-3.5 mr-1" /> Rechazar
                   </Button>
                 </>
               )}
               {space.status === "approved" && (
-                <Button size="sm" onClick={handleSendLetter} disabled={sendLetterMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white">
-                  {sendLetterMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Send className="w-4 h-4 mr-1.5" />}
-                  Enviar carta de intención
+                <Button size="sm" onClick={handleSendLetter} disabled={sendLetterMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0 text-xs">
+                  {sendLetterMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
+                  Enviar carta
                 </Button>
               )}
               {space.status === "letter_accepted" && (
-                <Button size="sm" onClick={() => setShowPublishDialog(true)} className="bg-green-600 hover:bg-green-700 text-white">
-                  <Globe className="w-4 h-4 mr-1.5" /> Publicar en Crowdfunding
+                <Button size="sm" onClick={() => setShowPublishDialog(true)} className="bg-green-600 hover:bg-green-700 text-white flex-shrink-0 text-xs">
+                  <Globe className="w-3.5 h-3.5 mr-1" /> Publicar
                 </Button>
               )}
               {!["pending", "under_review"].includes(space.status) && (
-                <Button size="sm" variant="outline" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="border-[#374151] text-gray-300">
-                  {generateAIMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Brain className="w-4 h-4 mr-1.5" />}
+                <Button size="sm" variant="outline" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="border-[#374151] text-gray-300 flex-shrink-0 text-xs">
+                  {generateAIMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Brain className="w-3.5 h-3.5 mr-1" />}
                   Re-evaluar IA
                 </Button>
               )}
             </div>
 
-            {/* Two-column layout */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Left: Submitter & Space info */}
+            {/* Content grid - single column on mobile, two columns on desktop */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+              {/* Left column */}
               <div className="space-y-4">
                 <DetailSection title="Postulante" icon={<Mail className="w-4 h-4 text-emerald-400" />}>
                   <DetailRow label="Nombre" value={space.submitterName} />
@@ -440,24 +504,24 @@ function SpaceDetailDialog({
                   <DetailRow label="Tipo" value={SPACE_TYPE_LABELS[space.spaceType] || space.spaceType} />
                   <DetailRow label="Dirección" value={space.address} />
                   <DetailRow label="Ciudad" value={space.city} />
-                  {space.department && <DetailRow label="Departamento" value={space.department} />}
+                  {space.department && <DetailRow label="Depto." value={space.department} />}
                   {space.latitude && space.longitude && (
-                    <DetailRow label="Coordenadas" value={`${space.latitude}, ${space.longitude}`} />
+                    <DetailRow label="Coords." value={`${Number(space.latitude).toFixed(4)}, ${Number(space.longitude).toFixed(4)}`} />
                   )}
                 </DetailSection>
 
                 <DetailSection title="Técnico" icon={<Zap className="w-4 h-4 text-emerald-400" />}>
                   {space.availableAreaM2 && <DetailRow label="Área" value={`${space.availableAreaM2} m²`} />}
                   {space.parkingSpots && <DetailRow label="Parqueos" value={space.parkingSpots.toString()} />}
-                  {space.transformerCapacityKva && <DetailRow label="Transformador" value={`${space.transformerCapacityKva} kVA`} />}
-                  <DetailRow label="Tablero eléctrico" value={space.hasElectricalPanel ? "Sí" : "No"} />
-                  {space.electricalDistance && <DetailRow label="Distancia tablero" value={`${space.electricalDistance} m`} />}
+                  {space.transformerCapacityKva && <DetailRow label="Trafo" value={`${space.transformerCapacityKva} kVA`} />}
+                  <DetailRow label="Tablero" value={space.hasElectricalPanel ? "Sí" : "No"} />
+                  {space.electricalDistance && <DetailRow label="Dist. tablero" value={`${space.electricalDistance} m`} />}
                   <DetailRow label="Internet" value={space.hasInternet ? "Sí" : "No"} />
-                  <DetailRow label="Horario" value={space.is24Hours ? "24 horas" : `${space.operatingHoursStart} - ${space.operatingHoursEnd}`} />
+                  <DetailRow label="Horario" value={space.is24Hours ? "24h" : `${space.operatingHoursStart || "—"} - ${space.operatingHoursEnd || "—"}`} />
                 </DetailSection>
               </div>
 
-              {/* Right: Context, AI, Photos */}
+              {/* Right column */}
               <div className="space-y-4">
                 <DetailSection title="Contexto" icon={<TrendingUp className="w-4 h-4 text-emerald-400" />}>
                   {space.estimatedDailyVehicles && <DetailRow label="Vehículos/día" value={space.estimatedDailyVehicles.toString()} />}
@@ -470,7 +534,7 @@ function SpaceDetailDialog({
                 {/* AI Analysis */}
                 {aiAnalysis && (
                   <DetailSection title={`Análisis IA — Score: ${space.aiScore}/100`} icon={<Brain className="w-4 h-4 text-purple-400" />}>
-                    <p className="text-sm text-gray-300 mb-3">{aiAnalysis.summary}</p>
+                    <p className="text-xs sm:text-sm text-gray-300 mb-3 leading-relaxed">{aiAnalysis.summary}</p>
                     {aiAnalysis.strengths?.length > 0 && (
                       <div className="mb-2">
                         <p className="text-xs text-gray-500 mb-1">Fortalezas:</p>
@@ -487,29 +551,35 @@ function SpaceDetailDialog({
                         ))}
                       </div>
                     )}
-                    <DetailRow label="Recomendación" value={aiAnalysis.recommendation || "—"} />
-                    <DetailRow label="Cargadores sugeridos" value={aiAnalysis.estimatedChargers?.toString() || "—"} />
-                    <DetailRow label="Potencia sugerida" value={aiAnalysis.estimatedPowerKw ? `${aiAnalysis.estimatedPowerKw} kW` : "—"} />
-                    <DetailRow label="Atractivo inversión" value={aiAnalysis.investmentAppeal || "—"} />
-                    <DetailRow label="Viabilidad eléctrica" value={aiAnalysis.electricalViability || "—"} />
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-3 pt-3 border-t border-[#374151]/50">
+                      <DetailRow label="Recomendación" value={aiAnalysis.recommendation || "—"} />
+                      <DetailRow label="Cargadores" value={aiAnalysis.estimatedChargers?.toString() || "—"} />
+                      <DetailRow label="Potencia" value={aiAnalysis.estimatedPowerKw ? `${aiAnalysis.estimatedPowerKw} kW` : "—"} />
+                      <DetailRow label="Inversión" value={aiAnalysis.investmentAppeal || "—"} />
+                      <DetailRow label="Viabilidad" value={aiAnalysis.electricalViability || "—"} />
+                    </div>
                   </DetailSection>
                 )}
 
                 {/* Photos */}
                 {space.photos && space.photos.length > 0 && (
                   <DetailSection title={`Fotos (${space.photos.length})`} icon={<Camera className="w-4 h-4 text-emerald-400" />}>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                       {space.photos.map((photo: any, i: number) => (
-                        <a key={i} href={photo.photoUrl} target="_blank" rel="noopener noreferrer" className="block">
+                        <button
+                          key={i}
+                          onClick={() => setExpandedPhoto(photo.photoUrl)}
+                          className="block relative group"
+                        >
                           <img
                             src={photo.photoUrl}
                             alt={photo.caption || `Foto ${i + 1}`}
-                            className="w-full h-24 object-cover rounded-lg border border-[#374151] hover:border-emerald-500/30 transition-colors"
+                            className="w-full h-16 sm:h-20 object-cover rounded-lg border border-[#374151] group-hover:border-emerald-500/30 transition-colors"
                           />
-                          {photo.caption && (
-                            <p className="text-xs text-gray-500 mt-1 truncate">{photo.caption}</p>
-                          )}
-                        </a>
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded-lg transition-colors flex items-center justify-center">
+                            <Eye className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        </button>
                       ))}
                     </div>
                   </DetailSection>
@@ -529,29 +599,50 @@ function SpaceDetailDialog({
         </DialogContent>
       </Dialog>
 
+      {/* Photo Lightbox */}
+      {expandedPhoto && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setExpandedPhoto(null)}
+        >
+          <button
+            onClick={() => setExpandedPhoto(null)}
+            className="absolute top-4 right-4 text-white/70 hover:text-white z-10"
+          >
+            <X className="w-8 h-8" />
+          </button>
+          <img
+            src={expandedPhoto}
+            alt="Foto ampliada"
+            className="max-w-full max-h-[85vh] object-contain rounded-lg"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
+
       {/* Reject Dialog */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-md">
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Rechazar postulación</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label className="text-gray-300 mb-1.5 block">Motivo del rechazo</Label>
+              <Label className="text-gray-300 mb-1.5 block text-sm">Motivo del rechazo</Label>
               <Textarea
                 value={rejectionReason}
                 onChange={e => setRejectionReason(e.target.value)}
                 placeholder="Explique el motivo del rechazo..."
                 rows={4}
-                className="bg-[#0a0f1a] border-[#374151] text-white placeholder:text-gray-600 resize-none"
+                className="bg-[#0a0f1a] border-[#374151] text-white placeholder:text-gray-600 resize-none text-sm"
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRejectDialog(false)} className="border-[#374151] text-gray-300">
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowRejectDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
               Cancelar
             </Button>
-            <Button onClick={handleReject} disabled={updateStatusMutation.isPending} className="bg-red-600 hover:bg-red-700 text-white">
+            <Button onClick={handleReject} disabled={updateStatusMutation.isPending} className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto">
               {updateStatusMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <XCircle className="w-4 h-4 mr-1.5" />}
               Rechazar
             </Button>
@@ -561,33 +652,33 @@ function SpaceDetailDialog({
 
       {/* Publish Dialog */}
       <Dialog open={showPublishDialog} onOpenChange={setShowPublishDialog}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-md">
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Publicar en Crowdfunding</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-gray-400">
-              Al publicar, este espacio aparecerá en el muro de crowdfunding para que inversionistas puedan financiar la instalación del cargador.
+            <p className="text-xs sm:text-sm text-gray-400">
+              Al publicar, este espacio aparecerá en el muro de crowdfunding para que inversionistas puedan financiar la instalación.
             </p>
             <div>
-              <Label className="text-gray-300 mb-1.5 block">Meta de inversión (COP) *</Label>
+              <Label className="text-gray-300 mb-1.5 block text-sm">Meta de inversión (COP) *</Label>
               <Input
                 type="number"
                 value={publishAmount}
                 onChange={e => setPublishAmount(e.target.value)}
                 placeholder="Ej: 150000000"
-                className="bg-[#0a0f1a] border-[#374151] text-white placeholder:text-gray-600"
+                className="bg-[#0a0f1a] border-[#374151] text-white placeholder:text-gray-600 text-sm"
               />
               <p className="text-xs text-gray-500 mt-1">
-                {publishAmount ? formatCOP(parseInt(publishAmount) || 0) : "Ingrese el monto total de inversión"}
+                {publishAmount ? formatCOP(parseInt(publishAmount) || 0) : "Ingrese el monto total"}
               </p>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPublishDialog(false)} className="border-[#374151] text-gray-300">
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowPublishDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
               Cancelar
             </Button>
-            <Button onClick={handlePublish} disabled={publishMutation.isPending} className="bg-green-600 hover:bg-green-700 text-white">
+            <Button onClick={handlePublish} disabled={publishMutation.isPending} className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto">
               {publishMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Globe className="w-4 h-4 mr-1.5" />}
               Publicar
             </Button>
@@ -604,21 +695,21 @@ function SpaceDetailDialog({
 
 function DetailSection({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="bg-[#0a0f1a] border border-[#374151] rounded-xl p-4">
-      <h4 className="text-sm font-medium text-white flex items-center gap-2 mb-3">
+    <div className="bg-[#0a0f1a] border border-[#374151] rounded-xl p-3 sm:p-4">
+      <h4 className="text-xs sm:text-sm font-medium text-white flex items-center gap-2 mb-2 sm:mb-3">
         {icon}
         {title}
       </h4>
-      <div className="space-y-2">{children}</div>
+      <div className="space-y-1.5 sm:space-y-2">{children}</div>
     </div>
   );
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between text-sm gap-4">
-      <span className="text-gray-500 flex-shrink-0">{label}</span>
-      <span className="text-gray-300 text-right">{value}</span>
+    <div className="flex items-start justify-between text-xs sm:text-sm gap-3">
+      <span className="text-gray-500 flex-shrink-0 min-w-0">{label}</span>
+      <span className="text-gray-300 text-right break-words min-w-0">{value}</span>
     </div>
   );
 }
