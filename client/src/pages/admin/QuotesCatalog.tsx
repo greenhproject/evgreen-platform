@@ -39,6 +39,7 @@ interface ChargerFormData {
   cableMetersIncluded: number;
   warrantyYears: number;
   sortOrder: number;
+  commissionPercent: number;
 }
 
 const defaultForm: ChargerFormData = {
@@ -55,6 +56,7 @@ const defaultForm: ChargerFormData = {
   cableMetersIncluded: 10,
   warrantyYears: 2,
   sortOrder: 0,
+  commissionPercent: 0,
 };
 
 export default function QuotesCatalog() {
@@ -132,6 +134,7 @@ export default function QuotesCatalog() {
       cableMetersIncluded: item.cableMetersIncluded || 10,
       warrantyYears: item.warrantyYears || 2,
       sortOrder: item.sortOrder || 0,
+      commissionPercent: parseFloat(item.commissionPercent) || 0,
     });
     setFeaturesText((item.features || []).join("\n"));
     setEditingId(item.id);
@@ -212,6 +215,9 @@ export default function QuotesCatalog() {
                 <div><span className="text-muted-foreground">Tipo:</span> {item.chargeType}</div>
                 <div><span className="text-muted-foreground">Conector:</span> {item.connectorType}</div>
                 <div><span className="text-muted-foreground">Garantía:</span> {item.warrantyYears} años</div>
+                {parseFloat(item.commissionPercent) > 0 && (
+                  <div><span className="text-muted-foreground">Comisión:</span> <span className="text-emerald-400 font-medium">{item.commissionPercent}%</span></div>
+                )}
               </div>
               {item.includesTransformer && (
                 <div className="text-xs bg-blue-500/10 text-blue-500 px-2 py-1 rounded inline-block">
@@ -321,6 +327,29 @@ export default function QuotesCatalog() {
                   onChange={(e) => setForm({ ...form, sortOrder: parseInt(e.target.value) || 0 })}
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Comisión Comercial (%)</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="100"
+                  value={form.commissionPercent || ""}
+                  onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })}
+                  placeholder="5"
+                  className="w-32"
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+                {form.price > 0 && form.commissionPercent > 0 && (
+                  <span className="text-sm text-emerald-400">
+                    = {formatCOP(Math.round(form.price * form.commissionPercent / 100))} por unidad
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">Porcentaje que gana el comercial sobre el valor de venta de este producto</p>
             </div>
 
             <div className="space-y-2">
