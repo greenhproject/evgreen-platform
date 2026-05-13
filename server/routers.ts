@@ -169,7 +169,7 @@ const authRouter = router({
 const usersRouter = router({
   list: adminProcedure
     .input(z.object({
-      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer"]).optional(),
+      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host"]).optional(),
     }).optional())
     .query(async ({ input }) => {
       return db.getAllUsers(input?.role);
@@ -184,7 +184,7 @@ const usersRouter = router({
   updateRole: adminProcedure
     .input(z.object({
       userId: z.number(),
-      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer"]),
+      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host"]),
     }))
     .mutation(async ({ input, ctx }) => {
       // Proteger la cuenta maestra
@@ -353,7 +353,7 @@ const usersRouter = router({
         name: z.string().optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
-        role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer"]).optional(),
+        role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host"]).optional(),
         isActive: z.boolean().optional(),
         companyName: z.string().optional(),
         taxId: z.string().optional(),

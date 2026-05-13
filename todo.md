@@ -3398,3 +3398,17 @@
 - [x] Frontend: panel de comercial con sus cotizaciones y estadísticas de comisiones (integrado en /admin/quotes)
 - [x] Frontend: comercial accede vía AdminLayout con rol 'comercial' (solo ve Cotizaciones)
 - [x] Frontend: estadísticas de comisión acumulada, pendiente, por producto en panel de cotizaciones
+
+## Bug Fix - Rol comercial faltante (Mayo 2026)
+- [ ] Agregar rol 'comercial' al enum de roles en drizzle/schema.ts
+- [ ] Migrar DB para agregar el nuevo valor al enum
+- [ ] Agregar 'Comercial' al selector de roles en frontend admin/Users
+
+## Bug Fix + Feature - Rol comercial completo (Mayo 2026)
+- [x] Agregar rol 'comercial' al enum de roles en drizzle/schema.ts (ya existía)
+- [x] Migrar DB para agregar el nuevo valor al enum (ya existía)
+- [x] Agregar 'Comercial' al selector de roles en frontend admin/Users
+- [x] Verificar dashboard propio para comerciales (redirige a /admin/quotes con AdminLayout filtrado)
+- [x] Asegurar que comercial solo vea sus propias cotizaciones (ya implementado en advisorProcedure)
+- [x] Agregar 'comercial' y 'host' a validaciones z.enum en backend routers.ts
+- [x] Agregar badge, stats card, filtro y quick-action para rol comercial en admin/Users
