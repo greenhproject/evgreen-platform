@@ -895,6 +895,40 @@ export default function Investors() {
       return overlay;
     }, []);
 
+    // Clustering logic: group nearby markers at low zoom
+    const clusterSpaces = useCallback((spaces: any[], zoom: number) => {
+      if (zoom >= 10 || spaces.length <= 5) return spaces.map(s => ({ type: 'single' as const, spaces: [s], lat: parseFloat(s.latitude || '0'), lng: parseFloat(s.longitude || '0') }));
+      
+      const clusters: { type: 'cluster' | 'single'; spaces: any[]; lat: number; lng: number }[] = [];
+      const used = new Set<number>();
+      const threshold = zoom <= 6 ? 2.0 : zoom <= 8 ? 1.0 : 0.5;
+
+      spaces.forEach((space, i) => {
+        if (used.has(i) || !space.latitude || !space.longitude) return;
+        const lat = parseFloat(space.latitude);
+        const lng = parseFloat(space.longitude);
+        if (isNaN(lat) || isNaN(lng)) return;
+
+        const cluster: { type: 'cluster' | 'single'; spaces: any[]; lat: number; lng: number } = { type: 'cluster', spaces: [space], lat, lng };
+        used.add(i);
+
+        spaces.forEach((other, j) => {
+          if (used.has(j) || !other.latitude || !other.longitude) return;
+          const oLat = parseFloat(other.latitude);
+          const oLng = parseFloat(other.longitude);
+          if (isNaN(oLat) || isNaN(oLng)) return;
+          if (Math.abs(lat - oLat) < threshold && Math.abs(lng - oLng) < threshold) {
+            cluster.spaces.push(other);
+            used.add(j);
+          }
+        });
+
+        if (cluster.spaces.length === 1) cluster.type = 'single';
+        clusters.push(cluster);
+      });
+      return clusters;
+    }, []);
+
     // Add markers when spaces load and map is ready
     useEffect(() => {
       if (!mapRef.current || !mapReady || !filteredSpaces?.length) return;
@@ -904,55 +938,135 @@ export default function Investors() {
       markersRef.current.forEach(m => m.setMap(null));
       markersRef.current = [];
 
+      const renderMarkers = () => {
+        overlaysRef.current.forEach(o => o.setMap(null));
+        overlaysRef.current = [];
+
+        const zoom = mapRef.current!.getZoom() || 6;
+        const clusters = clusterSpaces(filteredSpaces, zoom);
+
+        clusters.forEach((cluster) => {
+          if (cluster.type === 'cluster' && cluster.spaces.length > 1) {
+            // Render cluster marker
+            const totalKw = cluster.spaces.reduce((sum: number, s: any) => sum + (s.estimatedPowerKw || 0), 0);
+            const position = new google.maps.LatLng(cluster.lat, cluster.lng);
+            const count = cluster.spaces.length;
+            const clusterHtml = `
+              <div style="position:relative;">
+                <div style="
+                  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                  width:56px; height:56px; border-radius:50%;
+                  background: rgba(16, 185, 129, 0.2);
+                  animation: markerPulse 2.5s ease-out infinite;
+                "></div>
+                <div style="
+                  position:relative;
+                  background: linear-gradient(135deg, #059669, #10b981);
+                  color: white; width:44px; height:44px; border-radius:50%;
+                  font-weight: 800; box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 24px rgba(16,185,129,0.4);
+                  display: flex; align-items: center; justify-content: center; flex-direction: column;
+                  border: 3px solid #047857;
+                  animation: markerBounce 3s ease-in-out infinite;
+                ">
+                  <span style="font-size:14px;line-height:1;">${count}</span>
+                  <span style="font-size:8px;opacity:0.8;line-height:1;">puntos</span>
+                </div>
+                <div style="text-align:center;margin-top:2px;">
+                  <span style="background:rgba(0,0,0,0.7);color:#10b981;font-size:9px;padding:1px 5px;border-radius:6px;font-weight:600;">${totalKw}kW</span>
+                </div>
+              </div>
+            `;
+            const overlay = createCustomOverlay(
+              mapRef.current!,
+              position,
+              clusterHtml,
+              () => {
+                mapRef.current!.setZoom(Math.min(14, zoom + 3));
+                mapRef.current!.panTo(position);
+              }
+            );
+            overlaysRef.current.push(overlay);
+          } else {
+            // Render single marker
+            const space = cluster.spaces[0];
+            if (!space.latitude || !space.longitude) return;
+            const lat = parseFloat(space.latitude);
+            const lng = parseFloat(space.longitude);
+            if (isNaN(lat) || isNaN(lng)) return;
+            const position = new google.maps.LatLng(lat, lng);
+
+            const fundingPct = space.crowdfunding
+              ? Math.min(100, Math.round((space.crowdfunding.raisedAmount / space.crowdfunding.targetAmount) * 100))
+              : 0;
+            const score = space.aiScore || 0;
+            const bgColor = fundingPct >= 100 ? '#059669' : fundingPct >= 50 ? '#d97706' : '#10b981';
+            const borderColor = fundingPct >= 100 ? '#047857' : fundingPct >= 50 ? '#b45309' : '#059669';
+
+        const html = `
+          <div style="position:relative;">
+            <div style="
+              position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+              width:48px; height:48px; border-radius:50%;
+              background: ${bgColor}33;
+              animation: markerPulse 2s ease-out infinite;
+            "></div>
+            <div style="
+              position:relative;
+              background: ${bgColor};
+              color: white; padding: 6px 12px; border-radius: 16px; font-size: 12px;
+              font-weight: 700; box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 20px ${bgColor}44;
+              display: flex; align-items: center; gap: 5px; white-space: nowrap;
+              border: 2px solid ${borderColor};
+              animation: markerBounce 3s ease-in-out infinite;
+            ">
+              <span style="font-size:14px;">\u26a1</span>
+              <span>${space.estimatedPowerKw || '?'}kW</span>
+              ${score ? `<span style="background:rgba(0,0,0,0.3);padding:1px 5px;border-radius:8px;font-size:10px;margin-left:2px;">${score}pts</span>` : ''}
+            </div>
+            <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;
+              border-top:8px solid ${bgColor};
+              margin:0 auto; position:relative;"></div>
+          </div>
+        `;
+
+            const overlay = createCustomOverlay(
+              mapRef.current!,
+              position,
+              html,
+              () => setSelectedSpace(space)
+            );
+            overlaysRef.current.push(overlay);
+          }
+        });
+      };
+
+      // Initial render
+      renderMarkers();
+
+      // Re-render on zoom change for clustering
+      const zoomListener = mapRef.current.addListener('zoom_changed', () => {
+        renderMarkers();
+      });
+
+      // Fit bounds
       const bounds = new google.maps.LatLngBounds();
       let hasValidCoords = false;
-
       filteredSpaces.forEach((space: any) => {
         if (!space.latitude || !space.longitude) return;
         const lat = parseFloat(space.latitude);
         const lng = parseFloat(space.longitude);
         if (isNaN(lat) || isNaN(lng)) return;
-        const position = new google.maps.LatLng(lat, lng);
-        bounds.extend(position);
+        bounds.extend(new google.maps.LatLng(lat, lng));
         hasValidCoords = true;
-
-        const fundingPct = space.crowdfunding
-          ? Math.min(100, Math.round((space.crowdfunding.raisedAmount / space.crowdfunding.targetAmount) * 100))
-          : 0;
-        const score = space.aiScore || 0;
-        const bgColor = fundingPct >= 100 ? '#059669' : fundingPct >= 50 ? '#d97706' : '#10b981';
-        const borderColor = fundingPct >= 100 ? '#047857' : fundingPct >= 50 ? '#b45309' : '#059669';
-
-        const html = `
-          <div style="
-            background: ${bgColor};
-            color: white; padding: 6px 10px; border-radius: 12px; font-size: 12px;
-            font-weight: 700; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            display: flex; align-items: center; gap: 4px; white-space: nowrap;
-            border: 2px solid ${borderColor};
-          ">
-            <span style="font-size:14px;">\u26a1</span>
-            <span>${space.estimatedPowerKw || '?'}kW</span>
-            ${score ? `<span style="opacity:0.8;font-size:10px;margin-left:2px;">${score}pts</span>` : ''}
-          </div>
-          <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;
-            border-top:8px solid ${bgColor};
-            margin:0 auto;"></div>
-        `;
-
-        const overlay = createCustomOverlay(
-          mapRef.current!,
-          position,
-          html,
-          () => setSelectedSpace(space)
-        );
-        overlaysRef.current.push(overlay);
       });
-
       if (hasValidCoords) {
         mapRef.current.fitBounds(bounds, 60);
       }
-    }, [filteredSpaces, mapReady, createCustomOverlay]);
+
+      return () => {
+        google.maps.event.removeListener(zoomListener);
+      };
+    }, [filteredSpaces, mapReady, createCustomOverlay, clusterSpaces]);
 
     const contactAdvisor = (space: any) => {
       const message = encodeURIComponent(
