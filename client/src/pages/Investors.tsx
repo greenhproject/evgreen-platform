@@ -828,7 +828,9 @@ export default function Investors() {
     const [spaceFilter, setSpaceFilter] = useState<string>("all");
     const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
     const mapRef = useRef<google.maps.Map | null>(null);
-    const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+    const markersRef = useRef<google.maps.Marker[]>([]);
+    const overlaysRef = useRef<google.maps.OverlayView[]>([]);
+    const [mapReady, setMapReady] = useState(false);
 
     const filteredSpaces = useMemo(() => {
       if (!spaces) return [];
@@ -838,13 +840,70 @@ export default function Investors() {
 
     const handleMapReady = useCallback((map: google.maps.Map) => {
       mapRef.current = map;
+      setMapReady(true);
     }, []);
 
-    // Add markers when spaces load
+    // Custom overlay class for rich HTML markers
+    const createCustomOverlay = useCallback((map: google.maps.Map, position: google.maps.LatLng, html: string, onClick: () => void) => {
+      class CustomOverlay extends google.maps.OverlayView {
+        private div: HTMLDivElement | null = null;
+        private pos: google.maps.LatLng;
+        private htmlContent: string;
+        private clickHandler: () => void;
+
+        constructor(pos: google.maps.LatLng, htmlContent: string, clickHandler: () => void) {
+          super();
+          this.pos = pos;
+          this.htmlContent = htmlContent;
+          this.clickHandler = clickHandler;
+        }
+
+        onAdd() {
+          this.div = document.createElement("div");
+          this.div.style.position = "absolute";
+          this.div.style.cursor = "pointer";
+          this.div.style.transform = "translate(-50%, -100%)";
+          this.div.innerHTML = this.htmlContent;
+          this.div.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.clickHandler();
+          });
+          const panes = this.getPanes();
+          panes?.overlayMouseTarget.appendChild(this.div);
+        }
+
+        draw() {
+          if (!this.div) return;
+          const overlayProjection = this.getProjection();
+          const point = overlayProjection.fromLatLngToDivPixel(this.pos);
+          if (point) {
+            this.div.style.left = point.x + "px";
+            this.div.style.top = point.y + "px";
+          }
+        }
+
+        onRemove() {
+          if (this.div?.parentNode) {
+            this.div.parentNode.removeChild(this.div);
+          }
+          this.div = null;
+        }
+      }
+
+      const overlay = new CustomOverlay(position, html, onClick);
+      overlay.setMap(map);
+      return overlay;
+    }, []);
+
+    // Add markers when spaces load and map is ready
     useEffect(() => {
-      if (!mapRef.current || !filteredSpaces?.length) return;
-      markersRef.current.forEach(m => (m.map = null));
+      if (!mapRef.current || !mapReady || !filteredSpaces?.length) return;
+      // Clear old overlays
+      overlaysRef.current.forEach(o => o.setMap(null));
+      overlaysRef.current = [];
+      markersRef.current.forEach(m => m.setMap(null));
       markersRef.current = [];
+
       const bounds = new google.maps.LatLngBounds();
       let hasValidCoords = false;
 
@@ -853,7 +912,7 @@ export default function Investors() {
         const lat = parseFloat(space.latitude);
         const lng = parseFloat(space.longitude);
         if (isNaN(lat) || isNaN(lng)) return;
-        const position = { lat, lng };
+        const position = new google.maps.LatLng(lat, lng);
         bounds.extend(position);
         hasValidCoords = true;
 
@@ -861,38 +920,39 @@ export default function Investors() {
           ? Math.min(100, Math.round((space.crowdfunding.raisedAmount / space.crowdfunding.targetAmount) * 100))
           : 0;
         const score = space.aiScore || 0;
+        const bgColor = fundingPct >= 100 ? '#059669' : fundingPct >= 50 ? '#d97706' : '#10b981';
+        const borderColor = fundingPct >= 100 ? '#047857' : fundingPct >= 50 ? '#b45309' : '#059669';
 
-        const markerEl = document.createElement("div");
-        markerEl.className = "cursor-pointer";
-        markerEl.innerHTML = `
+        const html = `
           <div style="
-            background: ${fundingPct >= 100 ? '#059669' : fundingPct >= 50 ? '#d97706' : '#10b981'};
+            background: ${bgColor};
             color: white; padding: 6px 10px; border-radius: 12px; font-size: 12px;
             font-weight: 700; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             display: flex; align-items: center; gap: 4px; white-space: nowrap;
-            border: 2px solid ${fundingPct >= 100 ? '#047857' : fundingPct >= 50 ? '#b45309' : '#059669'};
+            border: 2px solid ${borderColor};
           ">
             <span style="font-size:14px;">\u26a1</span>
             <span>${space.estimatedPowerKw || '?'}kW</span>
             ${score ? `<span style="opacity:0.8;font-size:10px;margin-left:2px;">${score}pts</span>` : ''}
           </div>
           <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;
-            border-top:8px solid ${fundingPct >= 100 ? '#059669' : fundingPct >= 50 ? '#d97706' : '#10b981'};
+            border-top:8px solid ${bgColor};
             margin:0 auto;"></div>
         `;
 
-        const marker = new google.maps.marker.AdvancedMarkerElement({
-          map: mapRef.current!,
+        const overlay = createCustomOverlay(
+          mapRef.current!,
           position,
-          content: markerEl,
-          title: space.spaceName,
-        });
-        marker.addListener("click", () => setSelectedSpace(space));
-        markersRef.current.push(marker);
+          html,
+          () => setSelectedSpace(space)
+        );
+        overlaysRef.current.push(overlay);
       });
 
-      if (hasValidCoords) mapRef.current.fitBounds(bounds, 60);
-    }, [filteredSpaces]);
+      if (hasValidCoords) {
+        mapRef.current.fitBounds(bounds, 60);
+      }
+    }, [filteredSpaces, mapReady, createCustomOverlay]);
 
     const contactAdvisor = (space: any) => {
       const message = encodeURIComponent(
