@@ -3208,3 +3208,9 @@
 - [x] Actualizar router backend para guardar/servir datos del modelo financiero por cotización
 - [x] Agregar campos de configuración de proyección por defecto en QuotesSettings
 - [x] Tests unitarios para modelo financiero y proyección (5 tests nuevos)
+
+## Bugs Modelo Financiero PDF (Mayo 12)
+- [x] BUG: Porcentajes personalizados en PDF - VERIFICADO: el PDF sí muestra los valores correctos (92/8)
+- [x] BUG: Proyección financiera en PDF - VERIFICADO: sí aparece correctamente en el PDF
+- [x] BUG: Vista web pública de cotización muestra 30/70 hardcodeado en vez de los porcentajes personalizados
+- [x] BUG: Vista web pública no muestra la sección de proyección de ingresos
