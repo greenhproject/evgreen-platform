@@ -30,7 +30,9 @@ import {
   LineChart,
   Bot,
   Lightbulb,
-  Target
+  Target,
+  Building2,
+  ArrowRight
 } from "lucide-react";
 import { InstallButton } from "@/components/InstallBanner";
 
@@ -715,6 +717,130 @@ export default function Landing() {
               <p className="text-muted-foreground">
                 Asistencia en vivo por chat o llamada cuando lo necesites
               </p>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA - Postula tu Espacio */}
+      <section className="py-16 sm:py-24 px-4 relative overflow-hidden">
+        {/* Background animado */}
+        <div className="absolute inset-0 bg-gradient-to-br from-cyan-600/10 via-emerald-600/15 to-teal-600/10" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/15 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-teal-500/15 rounded-full blur-3xl" />
+        
+        <div className="container relative z-10">
+          <div className="max-w-4xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.7 }}
+              className="relative rounded-3xl overflow-hidden"
+            >
+              {/* Borde brillante animado */}
+              <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-emerald-500/30 via-cyan-500/30 to-teal-500/30 p-[1px]">
+                <div className="w-full h-full rounded-3xl bg-[#0a1a12]" />
+              </div>
+
+              <div className="relative z-10 p-8 sm:p-12 md:p-16">
+                <div className="grid md:grid-cols-2 gap-8 items-center">
+                  {/* Texto */}
+                  <div>
+                    <motion.div
+                      initial={{ opacity: 0, x: -20 }}
+                      whileInView={{ opacity: 1, x: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ duration: 0.5, delay: 0.2 }}
+                    >
+                      <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-sm font-medium mb-5">
+                        <Building2 className="w-4 h-4" />
+                        <span>OPORTUNIDAD PARA TU NEGOCIO</span>
+                      </div>
+                      
+                      <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4 leading-tight">
+                        ¿Tienes un espacio?{" "}
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-cyan-400 to-teal-400">
+                          ¡Postúlalo!
+                        </span>
+                      </h2>
+                      
+                      <p className="text-gray-300 text-lg mb-6 leading-relaxed">
+                        Parqueaderos, centros comerciales, estaciones de servicio, hoteles... 
+                        Si tienes un espacio con potencial, nosotros instalamos y operamos el cargador. 
+                        <strong className="text-emerald-300">Tú ganas un porcentaje de cada carga.</strong>
+                      </p>
+
+                      <ul className="space-y-3 mb-8">
+                        {[
+                          "Evaluación técnica gratuita con IA",
+                          "Instalación y mantenimiento sin costo",
+                          "Ingresos pasivos mensuales garantizados",
+                        ].map((item, i) => (
+                          <li key={i} className="flex items-center gap-3 text-gray-300">
+                            <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                            </div>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+
+                      <Link href="/postula-tu-espacio">
+                        <Button
+                          size="lg"
+                          className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white px-8 py-6 text-lg rounded-xl shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all group"
+                        >
+                          <Building2 className="w-5 h-5 mr-2" />
+                          Postular mi espacio
+                          <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+                        </Button>
+                      </Link>
+                    </motion.div>
+                  </div>
+
+                  {/* Visual - Mini mapa con puntos */}
+                  <motion.div
+                    initial={{ opacity: 0, x: 20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.5, delay: 0.3 }}
+                    className="hidden md:block"
+                  >
+                    <div className="relative aspect-square rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 p-6 flex flex-col items-center justify-center">
+                      {/* Efecto de glow */}
+                      <div className="absolute top-6 right-6 w-20 h-20 bg-emerald-400/20 rounded-full blur-2xl animate-pulse" />
+                      <div className="absolute bottom-8 left-8 w-16 h-16 bg-cyan-400/20 rounded-full blur-2xl animate-pulse" style={{ animationDelay: '1s' }} />
+                      
+                      {/* Icono central */}
+                      <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-teal-500/30 border border-emerald-500/30 flex items-center justify-center mb-6">
+                        <MapPin className="w-12 h-12 text-emerald-400" />
+                      </div>
+                      
+                      {/* Stats del programa */}
+                      <div className="grid grid-cols-2 gap-4 w-full">
+                        <div className="bg-[#0a1a12]/80 rounded-xl p-4 text-center border border-emerald-500/10">
+                          <div className="text-2xl font-bold text-emerald-400">50+</div>
+                          <div className="text-xs text-gray-400">Espacios postulados</div>
+                        </div>
+                        <div className="bg-[#0a1a12]/80 rounded-xl p-4 text-center border border-emerald-500/10">
+                          <div className="text-2xl font-bold text-cyan-400">15+</div>
+                          <div className="text-xs text-gray-400">Ciudades</div>
+                        </div>
+                        <div className="bg-[#0a1a12]/80 rounded-xl p-4 text-center border border-emerald-500/10">
+                          <div className="text-2xl font-bold text-teal-400">100%</div>
+                          <div className="text-xs text-gray-400">Gratis postular</div>
+                        </div>
+                        <div className="bg-[#0a1a12]/80 rounded-xl p-4 text-center border border-emerald-500/10">
+                          <div className="text-2xl font-bold text-emerald-300">IA</div>
+                          <div className="text-xs text-gray-400">Evaluación instantánea</div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+              </div>
             </motion.div>
           </div>
         </div>

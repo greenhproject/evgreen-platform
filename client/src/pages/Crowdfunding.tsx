@@ -1,7 +1,7 @@
 /**
  * EVGreen - Muro de Crowdfunding
  * Mapa interactivo de puntos de inversión para cargadores EV en Colombia
- * Muestra espacios publicados con scoring IA, datos de inversión y contacto
+ * Muestra espacios publicados con scoring IA, datos de inversión, galería de fotos y contacto
  */
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
@@ -10,12 +10,19 @@ import { Button } from "@/components/ui/button";
 import {
   Zap, MapPin, TrendingUp, DollarSign, Battery, Users, Star,
   X, ExternalLink, MessageCircle, ChevronRight, Building2, Car,
-  Loader2, Filter, BarChart3, ArrowRight,
+  Loader2, Filter, BarChart3, ArrowRight, Camera, ChevronLeft,
+  Image as ImageIcon,
 } from "lucide-react";
 
 // ============================================================================
 // TYPES
 // ============================================================================
+
+interface SpacePhoto {
+  url: string;
+  type: string;
+  caption: string | null;
+}
 
 interface PublishedSpace {
   id: number;
@@ -39,6 +46,7 @@ interface PublishedSpace {
   estimatedDailyVehicles: number | null;
   parkingSpots: number | null;
   thumbnailUrl: string | null;
+  photos: SpacePhoto[];
   crowdfunding: {
     raisedAmount: number;
     targetAmount: number;
@@ -60,6 +68,16 @@ const SPACE_TYPE_LABELS: Record<string, string> = {
   airport: "Aeropuerto",
   highway_rest: "Parador",
   other: "Otro",
+};
+
+const PHOTO_TYPE_LABELS: Record<string, string> = {
+  general: "Vista general",
+  electrical_panel: "Tablero eléctrico",
+  transformer: "Transformador",
+  parking_area: "Área de parqueo",
+  access_road: "Vía de acceso",
+  surroundings: "Alrededores",
+  other: "Otra",
 };
 
 function formatCOP(value: number): string {
@@ -89,6 +107,108 @@ function getFundingPercent(space: PublishedSpace): number {
 }
 
 // ============================================================================
+// PHOTO GALLERY COMPONENT
+// ============================================================================
+
+function PhotoGallery({ photos }: { photos: SpacePhoto[] }) {
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+
+  if (!photos || photos.length === 0) return null;
+
+  return (
+    <>
+      {/* Thumbnail Grid */}
+      <div className="space-y-2">
+        <h4 className="text-sm font-medium text-emerald-400 flex items-center gap-1.5">
+          <Camera className="w-4 h-4" />
+          Fotos del espacio ({photos.length})
+        </h4>
+        <div className="grid grid-cols-3 gap-2">
+          {photos.map((photo, i) => (
+            <button
+              key={i}
+              onClick={() => setLightboxIdx(i)}
+              className="relative aspect-square rounded-lg overflow-hidden group cursor-pointer border border-[#1f2937] hover:border-emerald-500/40 transition-colors"
+            >
+              <img
+                src={photo.url}
+                alt={photo.caption || PHOTO_TYPE_LABELS[photo.type] || "Foto del espacio"}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                <ImageIcon className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+              {/* Photo type badge */}
+              <div className="absolute bottom-1 left-1 right-1">
+                <span className="text-[10px] bg-black/60 text-gray-300 px-1.5 py-0.5 rounded-md backdrop-blur-sm truncate block text-center">
+                  {PHOTO_TYPE_LABELS[photo.type] || photo.type}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Lightbox */}
+      {lightboxIdx !== null && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-sm flex items-center justify-center"
+          onClick={() => setLightboxIdx(null)}
+        >
+          <div className="relative w-full max-w-4xl mx-4" onClick={e => e.stopPropagation()}>
+            {/* Close */}
+            <button
+              onClick={() => setLightboxIdx(null)}
+              className="absolute -top-12 right-0 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors z-10"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Navigation arrows */}
+            {photos.length > 1 && (
+              <>
+                <button
+                  onClick={() => setLightboxIdx((lightboxIdx - 1 + photos.length) % photos.length)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors z-10"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setLightboxIdx((lightboxIdx + 1) % photos.length)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors z-10"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </>
+            )}
+
+            {/* Image */}
+            <img
+              src={photos[lightboxIdx].url}
+              alt={photos[lightboxIdx].caption || "Foto del espacio"}
+              className="w-full max-h-[80vh] object-contain rounded-xl"
+            />
+
+            {/* Caption */}
+            <div className="text-center mt-4">
+              <span className="text-sm text-emerald-400 font-medium">
+                {PHOTO_TYPE_LABELS[photos[lightboxIdx].type] || photos[lightboxIdx].type}
+              </span>
+              {photos[lightboxIdx].caption && (
+                <p className="text-sm text-gray-400 mt-1">{photos[lightboxIdx].caption}</p>
+              )}
+              <p className="text-xs text-gray-600 mt-1">
+                {lightboxIdx + 1} / {photos.length}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -101,8 +221,8 @@ export default function Crowdfunding() {
 
   const filteredSpaces = useMemo(() => {
     if (!spaces) return [];
-    if (filter === "all") return spaces;
-    return spaces.filter(s => s.spaceType === filter);
+    if (filter === "all") return spaces as PublishedSpace[];
+    return (spaces as PublishedSpace[]).filter(s => s.spaceType === filter);
   }, [spaces, filter]);
 
   // ========================================================================
@@ -266,7 +386,7 @@ export default function Crowdfunding() {
                 <Battery className="w-4 h-4 text-emerald-400" />
                 <span className="text-sm text-gray-300">
                   <strong className="text-white">
-                    {spaces?.reduce((sum, s) => sum + (s.estimatedPowerKw || 0), 0) || 0}
+                    {(spaces as PublishedSpace[] | undefined)?.reduce((sum, s) => sum + (s.estimatedPowerKw || 0), 0) || 0}
                   </strong> kW totales
                 </span>
               </div>
@@ -274,7 +394,7 @@ export default function Crowdfunding() {
                 <Building2 className="w-4 h-4 text-emerald-400" />
                 <span className="text-sm text-gray-300">
                   <strong className="text-white">
-                    {new Set(spaces?.map(s => s.city)).size || 0}
+                    {new Set((spaces as PublishedSpace[] | undefined)?.map(s => s.city) || []).size}
                   </strong> ciudades
                 </span>
               </div>
@@ -284,115 +404,87 @@ export default function Crowdfunding() {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 pb-12">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Map */}
+      <div className="max-w-7xl mx-auto px-4 pb-8">
+        <div className="grid lg:grid-cols-3 gap-4">
+          {/* Left: Map */}
           <div className="lg:col-span-2">
-            <div className="rounded-2xl overflow-hidden border border-[#1f2937] bg-[#111827]">
-              <MapView
-                className="h-[500px] lg:h-[600px]"
-                initialCenter={{ lat: 4.5709, lng: -74.2973 }}
-                initialZoom={6}
-                onMapReady={handleMapReady}
-              />
+            {/* Filters */}
+            <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-2">
+              <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
+              {["all", "parking", "mall", "gas_station", "hotel", "restaurant", "office_building"].map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                    filter === f
+                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                      : "bg-[#111827] text-gray-400 border border-[#1f2937] hover:border-gray-600"
+                  }`}
+                >
+                  {f === "all" ? "Todos" : SPACE_TYPE_LABELS[f] || f}
+                </button>
+              ))}
             </div>
 
-            {/* Filter chips */}
-            <div className="flex items-center gap-2 mt-4 overflow-x-auto pb-2">
-              <button
-                onClick={() => setFilter("all")}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                  filter === "all"
-                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                    : "bg-[#1f2937] text-gray-400 border border-[#374151] hover:border-[#4b5563]"
-                }`}
-              >
-                Todos ({spaces?.length || 0})
-              </button>
-              {Object.entries(SPACE_TYPE_LABELS).map(([key, label]) => {
-                const count = spaces?.filter(s => s.spaceType === key).length || 0;
-                if (count === 0) return null;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setFilter(key)}
-                    className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                      filter === key
-                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                        : "bg-[#1f2937] text-gray-400 border border-[#374151] hover:border-[#4b5563]"
-                    }`}
-                  >
-                    {label} ({count})
-                  </button>
-                );
-              })}
+            {/* Map */}
+            <div className="rounded-xl overflow-hidden border border-[#1f2937] h-[500px] lg:h-[600px]">
+              <MapView
+                onMapReady={handleMapReady}
+                initialCenter={{ lat: 4.6, lng: -74.08 }}
+                initialZoom={6}
+              />
             </div>
           </div>
 
-          {/* Sidebar - Space list or detail */}
-          <div className="lg:col-span-1">
-            {selectedSpace ? (
+          {/* Right: List or Detail */}
+          <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+              </div>
+            ) : selectedSpace ? (
               <SpaceDetail
                 space={selectedSpace}
                 onClose={() => setSelectedSpace(null)}
                 onContact={() => contactAdvisor(selectedSpace)}
                 parseAI={parseAIAnalysis}
               />
-            ) : (
-              <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
-                <h3 className="text-sm font-medium text-gray-400 mb-2">
-                  {filteredSpaces.length} puntos de inversión
-                </h3>
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
-                  </div>
-                ) : filteredSpaces.length === 0 ? (
-                  <div className="text-center py-12">
-                    <MapPin className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-                    <p className="text-gray-400">No hay puntos disponibles aún</p>
-                    <a href="/postula-tu-espacio" className="text-sm text-emerald-400 hover:underline mt-2 inline-block">
-                      Postula tu espacio
-                    </a>
-                  </div>
-                ) : (
-                  filteredSpaces.map(space => (
-                    <SpaceCard
-                      key={space.id}
-                      space={space}
-                      onClick={() => {
-                        setSelectedSpace(space);
-                        // Center map on space
-                        if (mapRef.current && space.latitude && space.longitude) {
-                          mapRef.current.panTo({
-                            lat: parseFloat(space.latitude),
-                            lng: parseFloat(space.longitude),
-                          });
-                          mapRef.current.setZoom(14);
-                        }
-                      }}
-                    />
-                  ))
-                )}
+            ) : filteredSpaces.length === 0 ? (
+              <div className="text-center py-20">
+                <MapPin className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                <p className="text-gray-400">No hay puntos disponibles con este filtro</p>
               </div>
+            ) : (
+              filteredSpaces.map(space => (
+                <SpaceCard
+                  key={space.id}
+                  space={space}
+                  onClick={() => {
+                    setSelectedSpace(space);
+                    if (space.latitude && space.longitude && mapRef.current) {
+                      mapRef.current.panTo({
+                        lat: parseFloat(space.latitude),
+                        lng: parseFloat(space.longitude),
+                      });
+                      mapRef.current.setZoom(14);
+                    }
+                  }}
+                />
+              ))
             )}
           </div>
         </div>
-      </div>
 
-      {/* CTA Section */}
-      <div className="border-t border-[#1f2937] bg-[#111827]">
-        <div className="max-w-5xl mx-auto px-4 py-12 text-center">
-          <h2 className="text-2xl font-bold text-white mb-3">
-            ¿Tienes un espacio ideal para un cargador EV?
-          </h2>
-          <p className="text-gray-400 mb-6 max-w-xl mx-auto">
-            Postula tu espacio y genera ingresos pasivos sin inversión. 
-            Nosotros nos encargamos de todo: instalación, operación y mantenimiento.
+        {/* CTA bottom */}
+        <div className="mt-8 text-center bg-gradient-to-r from-emerald-600/10 via-emerald-500/5 to-emerald-600/10 rounded-2xl border border-emerald-500/20 p-8">
+          <h3 className="text-xl font-bold text-white mb-2">¿Tienes un espacio ideal para un cargador?</h3>
+          <p className="text-gray-400 mb-4 max-w-lg mx-auto">
+            Postula tu espacio y recibe una evaluación técnica gratuita con IA. Si es viable, lo publicamos aquí para que inversionistas lo financien.
           </p>
           <a href="/postula-tu-espacio">
-            <Button className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white px-8 py-3">
-              Postula tu espacio
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Building2 className="w-4 h-4 mr-2" />
+              Postular mi espacio
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </a>
@@ -414,6 +506,19 @@ function SpaceCard({ space, onClick }: { space: PublishedSpace; onClick: () => v
       onClick={onClick}
       className="w-full text-left bg-[#111827] border border-[#1f2937] rounded-xl p-4 hover:border-emerald-500/30 transition-all group"
     >
+      {/* Thumbnail preview */}
+      {space.thumbnailUrl && (
+        <div className="relative w-full h-28 rounded-lg overflow-hidden mb-3">
+          <img src={space.thumbnailUrl} alt={space.spaceName} className="w-full h-full object-cover" />
+          {space.photos && space.photos.length > 1 && (
+            <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-full backdrop-blur-sm">
+              <Camera className="w-3 h-3" />
+              {space.photos.length}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
           <h4 className="text-sm font-semibold text-white truncate group-hover:text-emerald-300 transition-colors">
@@ -511,6 +616,13 @@ function SpaceDetail({
             <span className={getScoreColor(space.aiScore)}>{space.aiScore}/100</span>
           </div>
         )}
+        {/* Photo count badge */}
+        {space.photos && space.photos.length > 1 && (
+          <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-black/60 text-white text-xs px-2.5 py-1 rounded-full backdrop-blur-sm">
+            <Camera className="w-3.5 h-3.5" />
+            {space.photos.length} fotos
+          </div>
+        )}
       </div>
 
       <div className="p-5 space-y-4">
@@ -570,6 +682,9 @@ function SpaceDetail({
             </div>
           </div>
         )}
+
+        {/* Photo Gallery */}
+        <PhotoGallery photos={space.photos} />
 
         {/* AI Analysis */}
         {aiData && (
