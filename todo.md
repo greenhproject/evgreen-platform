@@ -3221,3 +3221,105 @@
 - [x] Tabla comparativa de los 3 escenarios
 - [x] Variación estacional en la proyección mensual
 - [x] Clases Tailwind corregidas (sin dynamic class generation)
+
+## Sistema de Postulación de Espacios para Cargadores (Mayo 2026)
+
+### Fase 1: Esquema de BD y Arquitectura
+- [x] Tabla spaceSubmissions (postulaciones de espacios) - 55 columnas
+- [x] Tabla spacePhotos (fotos de evidencia por postulación) - 8 columnas
+- [x] Evaluación técnica integrada en spaceSubmissions (technicalScore, notes, viability, etc.)
+- [x] Flujo de estados: pending → under_review → approved → letter_sent → letter_accepted → published → funded
+
+### Fase 2: Formulario Público de Postulación
+- [ ] Landing/formulario público "Postula tu espacio" con campos completos
+- [ ] Validación de campos y upload de fotos a S3
+- [ ] Confirmación por email al postulante
+
+### Fase 3: Panel Admin de Validación
+- [ ] Vista de postulaciones con filtros por estado, ciudad, fecha
+- [ ] Detalle de postulación con fotos, mapa, datos del postulante
+- [ ] Formulario de evaluación técnica (viabilidad eléctrica, accesibilidad, potencial)
+- [ ] Botón aprobar/rechazar con comentarios
+- [ ] Envío de email de resultado al postulante
+
+### Fase 4: Carta de Intención por Email
+- [ ] Generación automática de carta de intención con datos del espacio
+- [ ] Envío por email con link de aceptación digital
+- [ ] Página de aceptación de términos con firma digital
+- [ ] Registro de aceptación en BD con timestamp
+
+### Fase 5: Muro de Crowdfunding con Mapa Interactivo
+- [ ] Mapa interactivo con marcadores de puntos disponibles para inversión
+- [ ] Colores según nivel de recaudo (rojo=0%, amarillo=parcial, verde=fondeado)
+- [ ] Tarjetas de punto con: valor, potencia, calificación IA, estrato, flujo vehicular
+- [ ] Filtros por ciudad, rango de inversión, potencia, estado de recaudo
+- [ ] Calificación automática del punto con IA
+
+### Fase 6: Vista Detallada del Punto
+- [ ] Página de detalle con estadísticas completas, fotos, mapa
+- [ ] Proyección de ingresos del punto específico
+- [ ] Botón "Más información" → contacto directo con asesor
+- [ ] Indicador de progreso de recaudo del punto
+
+
+## Sistema de Postulación de Espacios y Crowdfunding - 13 Mayo 2026
+
+### Backend - Router de Espacios
+- [x] Crear router `spaces` con procedimientos públicos y admin
+- [x] Procedimiento `submit` para postulación pública con fotos S3
+- [x] Procedimiento `getStatus` para consulta de estado por código
+- [x] Procedimiento `acceptLetter` para firma digital de carta de intención
+- [x] Procedimiento `listPublished` para muro de crowdfunding público
+- [x] Procedimiento admin `list` con filtros por estado y búsqueda
+- [x] Procedimiento admin `getById` con fotos adjuntas
+- [x] Procedimiento admin `updateStatus` con evaluación técnica
+- [x] Procedimiento admin `sendLetter` con email HTML profesional
+- [x] Procedimiento admin `generateAIScore` con LLM para evaluación
+- [x] Procedimiento admin `publishToCrowdfunding` que crea proyecto CF
+- [x] Generación automática de código de seguimiento (SPE-YYYY-NNNN)
+- [x] Notificación al owner en cada evento importante
+- [x] Tests unitarios (15 tests pasando)
+
+### Frontend - Formulario Público de Postulación
+- [x] Página multi-paso (6 pasos) en `/postula-tu-espacio`
+- [x] Paso 1: Datos del postulante (nombre, email, teléfono, empresa, documento)
+- [x] Paso 2: Datos del espacio (nombre, tipo, dirección, ciudad, departamento, mapa)
+- [x] Paso 3: Especificaciones técnicas (área, parqueos, transformador, tablero, internet, horario)
+- [x] Paso 4: Tráfico y contexto (vehículos diarios, % EV, estrato, puntos cercanos)
+- [x] Paso 5: Fotos con upload múltiple, tipo y caption
+- [x] Paso 6: Resumen y confirmación
+- [x] Mapa interactivo con click para seleccionar ubicación y reverse geocoding
+- [x] Validación por paso antes de avanzar
+- [x] Vista de éxito con código de seguimiento
+
+### Frontend - Carta de Intención
+- [x] Página pública `/carta-intencion/:token` para firma digital
+- [x] Texto legal completo de la carta de intención
+- [x] Formulario de firma (nombre, documento, checkbox de aceptación)
+- [x] Registro de IP del firmante
+- [x] Vista de éxito con próximos pasos
+
+### Frontend - Muro de Crowdfunding
+- [x] Página pública `/crowdfunding` con mapa interactivo
+- [x] Marcadores personalizados con potencia y score IA
+- [x] Colores según nivel de financiamiento
+- [x] Panel lateral con lista de puntos de inversión
+- [x] Filtros por tipo de espacio
+- [x] Detalle expandido con métricas, análisis IA, progreso de financiamiento
+- [x] Botón de contacto por WhatsApp con mensaje pre-armado
+- [x] Estadísticas globales (puntos, kW totales, ciudades)
+- [x] CTA para postular nuevos espacios
+
+### Frontend - Panel Admin de Espacios
+- [x] Página `/admin/spaces` con tabla de postulaciones
+- [x] Filtros por estado con conteo
+- [x] Búsqueda por código, nombre, postulante o ciudad
+- [x] Paginación
+- [x] Dialog de detalle con toda la información
+- [x] Botones de acción según estado (revisar, scoring IA, aprobar, rechazar, enviar carta, publicar)
+- [x] Dialog de rechazo con motivo
+- [x] Dialog de publicación con meta de inversión
+- [x] Visualización de fotos del espacio
+- [x] Visualización de análisis IA con fortalezas/debilidades
+- [x] Historial de eventos (creación, evaluación, carta, firma)
+- [x] Menú en sidebar del admin
