@@ -3214,3 +3214,10 @@
 - [x] BUG: Proyección financiera en PDF - VERIFICADO: sí aparece correctamente en el PDF
 - [x] BUG: Vista web pública de cotización muestra 30/70 hardcodeado en vez de los porcentajes personalizados
 - [x] BUG: Vista web pública no muestra la sección de proyección de ingresos
+
+## Mejoras Vista Pública Proyección (Mayo 12)
+- [x] Selector interactivo de escenarios (Pesimista/Realista/Optimista) en vista web pública
+- [x] Gráfico de barras a 12 meses con proyección de ingresos mensuales del inversionista
+- [x] Tabla comparativa de los 3 escenarios
+- [x] Variación estacional en la proyección mensual
+- [x] Clases Tailwind corregidas (sin dynamic class generation)

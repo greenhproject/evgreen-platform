@@ -26,45 +26,146 @@ function formatDate(date: string | Date | null): string {
   });
 }
 
+type Scenario = 'pessimistic' | 'realistic' | 'optimistic';
+
+const SCENARIO_CONFIG: Record<Scenario, { label: string; icon: string; factor: number; desc: string; color: string }> = {
+  pessimistic: { label: 'Pesimista', icon: '⚠️', factor: 0.5, desc: 'Bajo tráfico vehicular', color: 'amber' },
+  realistic:   { label: 'Realista',  icon: '⚖️', factor: 1.0, desc: 'Proyección base con parámetros actuales', color: 'emerald' },
+  optimistic:  { label: 'Optimista', icon: '🚀', factor: 1.8, desc: 'Ubicación premium, alto tráfico', color: 'cyan' },
+};
+
+const MONTH_LABELS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+function calcProjection(quote: any, items: any[], scenarioFactor: number) {
+  const totalKw = items.reduce((sum: number, it: any) => sum + Number(it.productPowerKw || 0) * (it.quantity || 1), 0);
+  const baseDailyHours = Number(quote.projDailyHours || 4);
+  const dailyHours = baseDailyHours * scenarioFactor;
+  const energyCost = Number(quote.projEnergyCost || 700);
+  const salePrice = Number(quote.projSalePrice || 1800);
+  const investorPct = Number(quote.investorSharePercent || 70);
+  const evgreenPct = Number(quote.evgreenSharePercent || 30);
+  const hostPct = Number(quote.hostSharePercent || 0);
+  const totalInvestment = Number(quote.total || 0);
+
+  const dailyKwh = totalKw * dailyHours;
+  const monthlyKwh = dailyKwh * 30;
+  const yearlyKwh = monthlyKwh * 12;
+
+  const grossMarginPerKwh = salePrice - energyCost;
+  const dailyGrossRevenue = dailyKwh * grossMarginPerKwh;
+
+  const hostCut = dailyGrossRevenue * (hostPct / 100);
+  const netAfterHost = dailyGrossRevenue - hostCut;
+
+  const dailyInvestorIncome = netAfterHost * (investorPct / (investorPct + evgreenPct));
+  const monthlyInvestorIncome = dailyInvestorIncome * 30;
+  const yearlyInvestorIncome = monthlyInvestorIncome * 12;
+
+  const roiAnnual = totalInvestment > 0 ? (yearlyInvestorIncome / totalInvestment) * 100 : 0;
+  const paybackMonths = monthlyInvestorIncome > 0 ? totalInvestment / monthlyInvestorIncome : 0;
+
+  // Monthly projection with seasonal variation
+  const seasonalFactors = [0.85, 0.88, 0.95, 1.0, 1.05, 1.08, 1.1, 1.08, 1.02, 0.98, 0.92, 0.9];
+  const monthlyData = seasonalFactors.map(sf => Math.round(monthlyInvestorIncome * sf));
+  const cumulativeData = monthlyData.reduce<number[]>((acc, val) => {
+    acc.push((acc.length > 0 ? acc[acc.length - 1] : 0) + val);
+    return acc;
+  }, []);
+
+  return {
+    totalKw, dailyHours: Math.round(dailyHours * 10) / 10, energyCost, salePrice,
+    dailyKwh, monthlyKwh, yearlyKwh, grossMarginPerKwh,
+    dailyInvestorIncome, monthlyInvestorIncome, yearlyInvestorIncome,
+    roiAnnual, paybackMonths, totalInvestment,
+    monthlyData, cumulativeData,
+  };
+}
+
+/** Mini bar chart rendered with pure CSS */
+function BarChartMini({ data, scenario }: { data: number[]; scenario: Scenario }) {
+  const maxVal = Math.max(...data, 1);
+  const barColor = scenario === 'pessimistic' ? 'bg-amber-500' : scenario === 'optimistic' ? 'bg-cyan-400' : 'bg-emerald-400';
+  const barColorLight = scenario === 'pessimistic' ? 'bg-amber-500/20' : scenario === 'optimistic' ? 'bg-cyan-400/20' : 'bg-emerald-400/20';
+
+  return (
+    <div className="w-full">
+      <div className="flex items-end gap-1.5 h-40 px-1">
+        {data.map((val, i) => {
+          const pct = (val / maxVal) * 100;
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end group relative">
+              {/* Tooltip */}
+              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-[9px] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+                {formatCOP(val)}
+              </div>
+              <div
+                className={`w-full rounded-t-sm ${barColor} transition-all duration-500 ease-out relative overflow-hidden`}
+                style={{ height: `${Math.max(pct, 3)}%` }}
+              >
+                <div className={`absolute inset-0 ${barColorLight} animate-pulse`} style={{ animationDelay: `${i * 100}ms` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-1.5 px-1 mt-1.5">
+        {MONTH_LABELS.map((m, i) => (
+          <div key={i} className="flex-1 text-center text-[8px] text-gray-600">{m}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Componente de Proyección de Ingresos para la vista pública */
 function IncomeProjection({ quote, items }: { quote: any; items: any[] }) {
+  const [scenario, setScenario] = useState<Scenario>('realistic');
+
   const projection = useMemo(() => {
-    const totalKw = items.reduce((sum: number, it: any) => sum + Number(it.productPowerKw || 0) * (it.quantity || 1), 0);
-    const dailyHours = Number(quote.projDailyHours || 4);
-    const energyCost = Number(quote.projEnergyCost || 700);
-    const salePrice = Number(quote.projSalePrice || 1800);
-    const investorPct = Number(quote.investorSharePercent || 70);
-    const evgreenPct = Number(quote.evgreenSharePercent || 30);
-    const hostPct = Number(quote.hostSharePercent || 0);
-    const totalInvestment = Number(quote.total || 0);
+    return calcProjection(quote, items, SCENARIO_CONFIG[scenario].factor);
+  }, [quote, items, scenario]);
 
-    const dailyKwh = totalKw * dailyHours;
-    const monthlyKwh = dailyKwh * 30;
-    const yearlyKwh = monthlyKwh * 12;
+  // All 3 scenarios for comparison
+  const allScenarios = useMemo(() => ({
+    pessimistic: calcProjection(quote, items, SCENARIO_CONFIG.pessimistic.factor),
+    realistic: calcProjection(quote, items, SCENARIO_CONFIG.realistic.factor),
+    optimistic: calcProjection(quote, items, SCENARIO_CONFIG.optimistic.factor),
+  }), [quote, items]);
 
-    const grossMarginPerKwh = salePrice - energyCost;
-    const dailyGrossRevenue = dailyKwh * grossMarginPerKwh;
-
-    // Descuento aliado comercial primero (sobre margen bruto)
-    const hostCut = dailyGrossRevenue * (hostPct / 100);
-    const netAfterHost = dailyGrossRevenue - hostCut;
-
-    // Reparto del neto entre EVGreen e Inversionista
-    const dailyInvestorIncome = netAfterHost * (investorPct / (investorPct + evgreenPct));
-    const monthlyInvestorIncome = dailyInvestorIncome * 30;
-    const yearlyInvestorIncome = monthlyInvestorIncome * 12;
-
-    const roiAnnual = totalInvestment > 0 ? (yearlyInvestorIncome / totalInvestment) * 100 : 0;
-    const paybackMonths = monthlyInvestorIncome > 0 ? totalInvestment / monthlyInvestorIncome : 0;
-
-    return {
-      totalKw, dailyHours, energyCost, salePrice,
-      dailyKwh, monthlyKwh, yearlyKwh,
-      grossMarginPerKwh,
-      dailyInvestorIncome, monthlyInvestorIncome, yearlyInvestorIncome,
-      roiAnnual, paybackMonths, totalInvestment,
+  // Pre-computed class maps to avoid dynamic Tailwind class generation
+  const colorClasses = useMemo(() => {
+    const map: Record<Scenario, {
+      cardBg: string; cardBorder: string; iconText: string; valueText: string; gradientText: string; summaryText: string;
+    }> = {
+      pessimistic: {
+        cardBg: 'bg-gradient-to-br from-amber-500/10 to-amber-500/5',
+        cardBorder: 'border border-amber-500/20',
+        iconText: 'text-amber-400',
+        valueText: 'text-amber-400',
+        gradientText: 'bg-gradient-to-r from-amber-400 to-amber-400 bg-clip-text text-transparent',
+        summaryText: 'text-amber-400',
+      },
+      realistic: {
+        cardBg: 'bg-gradient-to-br from-emerald-500/10 to-emerald-500/5',
+        cardBorder: 'border border-emerald-500/20',
+        iconText: 'text-emerald-400',
+        valueText: 'text-emerald-400',
+        gradientText: 'bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent',
+        summaryText: 'text-emerald-400',
+      },
+      optimistic: {
+        cardBg: 'bg-gradient-to-br from-cyan-500/10 to-cyan-500/5',
+        cardBorder: 'border border-cyan-500/20',
+        iconText: 'text-cyan-400',
+        valueText: 'text-cyan-400',
+        gradientText: 'bg-gradient-to-r from-cyan-400 to-cyan-400 bg-clip-text text-transparent',
+        summaryText: 'text-cyan-400',
+      },
     };
-  }, [quote, items]);
+    return map;
+  }, []);
+
+  const cc = colorClasses[scenario];
 
   return (
     <section>
@@ -75,8 +176,36 @@ function IncomeProjection({ quote, items }: { quote: any; items: any[] }) {
         Proyección de Ingresos Estimada
       </h2>
 
-      <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-7 space-y-6">
-        {/* Supuestos */}
+      <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-5 md:p-7 space-y-6">
+
+        {/* === SCENARIO SELECTOR === */}
+        <div>
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-3 font-semibold">Escenario de Proyección</p>
+          <div className="grid grid-cols-3 gap-2">
+            {(Object.keys(SCENARIO_CONFIG) as Scenario[]).map((key) => {
+              const cfg = SCENARIO_CONFIG[key];
+              const isActive = scenario === key;
+              const borderClass = isActive
+                ? key === 'pessimistic' ? 'border-amber-500/60 bg-amber-500/10'
+                : key === 'optimistic' ? 'border-cyan-500/60 bg-cyan-500/10'
+                : 'border-emerald-500/60 bg-emerald-500/10'
+                : 'border-[#1f2937] bg-[#0d1b2a] hover:border-gray-600';
+              return (
+                <button
+                  key={key}
+                  onClick={() => setScenario(key)}
+                  className={`relative rounded-xl border-2 p-3 md:p-4 text-center transition-all duration-300 cursor-pointer ${borderClass}`}
+                >
+                  <span className="text-xl md:text-2xl block mb-1">{cfg.icon}</span>
+                  <span className={`text-xs md:text-sm font-bold block ${isActive ? 'text-white' : 'text-gray-400'}`}>{cfg.label}</span>
+                  <span className="text-[9px] text-gray-500 block mt-0.5 leading-tight">{cfg.desc}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* === SUPUESTOS === */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
             <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Potencia total</p>
@@ -84,7 +213,7 @@ function IncomeProjection({ quote, items }: { quote: any; items: any[] }) {
           </div>
           <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
             <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Uso diario</p>
-            <p className="text-lg font-bold text-white">{projection.dailyHours}h</p>
+            <p className={`text-lg font-bold ${scenario === 'pessimistic' ? 'text-amber-400' : scenario === 'optimistic' ? 'text-cyan-400' : 'text-white'}`}>{projection.dailyHours}h</p>
           </div>
           <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
             <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Precio venta</p>
@@ -96,44 +225,105 @@ function IncomeProjection({ quote, items }: { quote: any; items: any[] }) {
           </div>
         </div>
 
-        {/* KPIs principales */}
+        {/* === KPIs principales === */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 text-center">
-            <DollarSign className="h-5 w-5 text-emerald-400 mx-auto mb-2" />
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ingreso Diario</p>
-            <p className="text-2xl font-black bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-              {formatCOP(Math.round(projection.dailyInvestorIncome))}
-            </p>
-          </div>
-          <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 text-center">
-            <BarChart3 className="h-5 w-5 text-emerald-400 mx-auto mb-2" />
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ingreso Mensual</p>
-            <p className="text-2xl font-black bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-              {formatCOP(Math.round(projection.monthlyInvestorIncome))}
-            </p>
-          </div>
-          <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 text-center">
-            <TrendingUp className="h-5 w-5 text-emerald-400 mx-auto mb-2" />
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ingreso Anual</p>
-            <p className="text-2xl font-black bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-              {formatCOP(Math.round(projection.yearlyInvestorIncome))}
-            </p>
-          </div>
+          {[
+            { icon: DollarSign, label: 'Ingreso Diario', value: projection.dailyInvestorIncome },
+            { icon: BarChart3, label: 'Ingreso Mensual', value: projection.monthlyInvestorIncome },
+            { icon: TrendingUp, label: 'Ingreso Anual', value: projection.yearlyInvestorIncome },
+          ].map(({ icon: Icon, label, value }, idx) => (
+            <div key={idx} className={`${cc.cardBg} ${cc.cardBorder} rounded-xl p-5 text-center`}>
+              <Icon className={`h-5 w-5 ${cc.iconText} mx-auto mb-2`} />
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">{label}</p>
+              <p className={`text-2xl font-black ${cc.gradientText}`}>
+                {formatCOP(Math.round(value))}
+              </p>
+            </div>
+          ))}
         </div>
 
-        {/* ROI y Recuperación */}
+        {/* === ROI y Recuperación === */}
         <div className="grid grid-cols-2 gap-4">
-          <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border border-cyan-500/20 rounded-xl p-5 text-center">
+          <div className={`${cc.cardBg} ${cc.cardBorder} rounded-xl p-5 text-center`}>
             <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">ROI Anual Estimado</p>
-            <p className="text-3xl font-black text-cyan-400">{projection.roiAnnual.toFixed(1)}%</p>
+            <p className={`text-3xl font-black ${cc.valueText}`}>{projection.roiAnnual.toFixed(1)}%</p>
           </div>
-          <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border border-cyan-500/20 rounded-xl p-5 text-center">
+          <div className={`${cc.cardBg} ${cc.cardBorder} rounded-xl p-5 text-center`}>
             <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Recuperación de Inversión</p>
-            <p className="text-3xl font-black text-cyan-400">{projection.paybackMonths.toFixed(1)} meses</p>
+            <p className={`text-3xl font-black ${cc.valueText}`}>{projection.paybackMonths.toFixed(1)} meses</p>
           </div>
         </div>
 
-        {/* Energía generada */}
+        {/* === GRÁFICO DE BARRAS 12 MESES === */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Proyección Mensual a 12 Meses</p>
+            <p className="text-[10px] text-gray-600">Ingreso neto del inversionista</p>
+          </div>
+          <div className="bg-[#0d1b2a] rounded-xl p-4">
+            <BarChartMini data={projection.monthlyData} scenario={scenario} />
+            <div className="flex justify-between mt-3 pt-3 border-t border-gray-800">
+              <div className="text-center">
+                <p className="text-[9px] text-gray-600 uppercase">Total 12 meses</p>
+                <p className={`text-sm font-bold ${cc.summaryText}`}>{formatCOP(projection.cumulativeData[11] || 0)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[9px] text-gray-600 uppercase">Promedio mensual</p>
+                <p className={`text-sm font-bold ${cc.summaryText}`}>{formatCOP(Math.round((projection.cumulativeData[11] || 0) / 12))}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[9px] text-gray-600 uppercase">Inversión total</p>
+                <p className="text-sm font-bold text-white">{formatCOP(projection.totalInvestment)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* === COMPARATIVA ESCENARIOS === */}
+        <div>
+          <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-3">Comparativa de Escenarios</p>
+          <div className="bg-[#0d1b2a] rounded-xl overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-800">
+                  <th className="text-left p-3 text-gray-500 font-medium">Escenario</th>
+                  <th className="text-right p-3 text-gray-500 font-medium">Ingreso Mensual</th>
+                  <th className="text-right p-3 text-gray-500 font-medium hidden md:table-cell">Ingreso Anual</th>
+                  <th className="text-right p-3 text-gray-500 font-medium">ROI</th>
+                  <th className="text-right p-3 text-gray-500 font-medium">Recuperación</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(Object.keys(SCENARIO_CONFIG) as Scenario[]).map((key) => {
+                  const cfg = SCENARIO_CONFIG[key];
+                  const sc = allScenarios[key];
+                  const isActive = scenario === key;
+                  const textColor = key === 'pessimistic' ? 'text-amber-400' : key === 'optimistic' ? 'text-cyan-400' : 'text-emerald-400';
+                  return (
+                    <tr
+                      key={key}
+                      onClick={() => setScenario(key)}
+                      className={`border-b border-gray-800/50 cursor-pointer transition-colors ${
+                        isActive ? 'bg-gray-800/40' : 'hover:bg-gray-800/20'
+                      }`}
+                    >
+                      <td className="p-3">
+                        <span className="mr-1.5">{cfg.icon}</span>
+                        <span className={`font-semibold ${isActive ? 'text-white' : 'text-gray-400'}`}>{cfg.label}</span>
+                      </td>
+                      <td className={`p-3 text-right font-bold ${textColor}`}>{formatCOP(Math.round(sc.monthlyInvestorIncome))}</td>
+                      <td className={`p-3 text-right font-bold ${textColor} hidden md:table-cell`}>{formatCOP(Math.round(sc.yearlyInvestorIncome))}</td>
+                      <td className={`p-3 text-right font-bold ${textColor}`}>{sc.roiAnnual.toFixed(0)}%</td>
+                      <td className={`p-3 text-right font-bold ${textColor}`}>{sc.paybackMonths.toFixed(1)} m</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* === ENERGÍA GENERADA === */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-[#0d1b2a] rounded-lg p-3 text-center">
             <p className="text-lg font-bold text-white">{Math.round(projection.dailyKwh).toLocaleString('es-CO')}</p>
@@ -149,11 +339,12 @@ function IncomeProjection({ quote, items }: { quote: any; items: any[] }) {
           </div>
         </div>
 
-        {/* Disclaimer */}
+        {/* === DISCLAIMER === */}
         <div className="flex items-start gap-2.5 bg-amber-500/5 border border-amber-500/15 rounded-lg p-4">
           <Info className="h-4 w-4 text-amber-400 mt-0.5 flex-shrink-0" />
           <p className="text-[11px] text-amber-200/70 leading-relaxed">
             <strong className="text-amber-300">Nota informativa:</strong> Esta proyección es estimativa y se basa en supuestos de uso promedio.
+            Los escenarios presentados consideran variaciones en las horas de utilización diaria.
             Los ingresos reales pueden variar según la ubicación, el tráfico vehicular, las tarifas de energía vigentes
             y las condiciones del mercado. No constituye una garantía de retorno.
           </p>
