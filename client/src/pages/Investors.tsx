@@ -796,15 +796,15 @@ export default function Investors() {
   // ============================================================================
 
   const SPACE_TYPE_LABELS: Record<string, string> = {
-    parking: "Parqueadero", mall: "Centro comercial", gas_station: "Estaci\u00f3n de servicio",
+    parking: "Parqueadero", mall: "Centro comercial", gas_station: "Estación de servicio",
     hotel: "Hotel", restaurant: "Restaurante", office_building: "Oficinas",
     residential: "Residencial", supermarket: "Supermercado", hospital: "Hospital",
     university: "Universidad", airport: "Aeropuerto", highway_rest: "Parador", other: "Otro",
   };
 
   const PHOTO_TYPE_LABELS: Record<string, string> = {
-    general: "Vista general", electrical_panel: "Tablero el\u00e9ctrico", transformer: "Transformador",
-    parking_area: "\u00c1rea de parqueo", access_road: "V\u00eda de acceso", surroundings: "Alrededores", other: "Otra",
+    general: "Vista general", electrical_panel: "Tablero eléctrico", transformer: "Transformador",
+    parking_area: "Área de parqueo", access_road: "Vía de acceso", surroundings: "Alrededores", other: "Otra",
   };
 
   function getScoreColor(score: number): string {
@@ -841,7 +841,7 @@ export default function Investors() {
     const submitLeadMut = trpc.spaces.submitLead.useMutation({
       onSuccess: () => {
         setContactSent(true);
-        toast.success("\u00a1Solicitud enviada! Te contactaremos pronto.");
+        toast.success("¡Solicitud enviada! Te contactaremos pronto.");
         setContactForm({ name: "", email: "", phone: "", interestedAmount: "", message: "" });
       },
       onError: (err) => {
@@ -1113,7 +1113,7 @@ export default function Investors() {
 
     const contactAdvisor = (space: any) => {
       const message = encodeURIComponent(
-        `Hola, estoy interesado en el punto de inversi\u00f3n "${space.spaceName}" en ${space.city} (C\u00f3digo: ${space.code}). Me gustar\u00eda recibir m\u00e1s informaci\u00f3n.`
+        `Hola, estoy interesado en el punto de inversión "${space.spaceName}" en ${space.city} (Código: ${space.code}). Me gustaría recibir más información.`
       );
       window.open(`https://wa.me/573054124009?text=${message}`, "_blank");
     };
@@ -1129,7 +1129,7 @@ export default function Investors() {
           <section className="py-16 bg-gradient-to-b from-slate-900 to-black">
             <div className="container mx-auto px-4 text-center">
               <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
-              <p className="text-white/60 mt-3">Cargando puntos de inversi\u00f3n...</p>
+              <p className="text-white/60 mt-3">Cargando puntos de inversión...</p>
             </div>
           </section>
         );
@@ -1154,7 +1154,7 @@ export default function Investors() {
             </h2>
             <p className="text-white/60 text-lg max-w-2xl mx-auto">
               Explora puntos de carga verificados y evaluados por IA en toda Colombia.
-              Cada punto ha sido aprobado t\u00e9cnicamente y cuenta con carta de intenci\u00f3n firmada.
+              Cada punto ha sido aprobado técnicamente y cuenta con carta de intención firmada.
             </p>
             {/* Stats */}
             <div className="flex items-center justify-center gap-6 flex-wrap mt-4">
@@ -1254,7 +1254,7 @@ export default function Investors() {
                     <div>
                       <h3 className="text-lg font-bold text-white">{selectedSpace.spaceName}</h3>
                       <p className="text-sm text-gray-400">
-                        {selectedSpace.city}{selectedSpace.department ? `, ${selectedSpace.department}` : ""} \u00b7 {SPACE_TYPE_LABELS[selectedSpace.spaceType] || selectedSpace.spaceType}
+                        {selectedSpace.city}{selectedSpace.department ? `, ${selectedSpace.department}` : ""} · {SPACE_TYPE_LABELS[selectedSpace.spaceType] || selectedSpace.spaceType}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">{selectedSpace.address}</p>
                     </div>
@@ -1263,7 +1263,7 @@ export default function Investors() {
                     <div className="grid grid-cols-2 gap-2">
                       {selectedSpace.estimatedInvestmentCop && (
                         <div className="bg-black/30 rounded-xl p-3">
-                          <p className="text-xs text-gray-500 mb-1">Inversi\u00f3n total</p>
+                          <p className="text-xs text-gray-500 mb-1">Inversión total</p>
                           <p className="text-base font-bold text-white">{formatCOPMap(selectedSpace.estimatedInvestmentCop)}</p>
                         </div>
                       )}
@@ -1350,7 +1350,7 @@ export default function Investors() {
                         <div className="space-y-2">
                           <h4 className="text-sm font-medium text-emerald-400 flex items-center gap-1.5">
                             <BarChart3 className="w-4 h-4" />
-                            An\u00e1lisis IA
+                            Análisis IA
                           </h4>
                           {aiData.summary && <p className="text-sm text-gray-300">{aiData.summary}</p>}
                           {aiData.strengths && aiData.strengths.length > 0 && (
@@ -1414,8 +1414,8 @@ export default function Investors() {
                           <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
                             <CheckCircle2 className="w-6 h-6 text-emerald-400" />
                           </div>
-                          <p className="text-sm font-medium text-white">\u00a1Solicitud enviada!</p>
-                          <p className="text-xs text-gray-400 mt-1">Te contactaremos en 24-48 horas h\u00e1biles</p>
+                          <p className="text-sm font-medium text-white">¡Solicitud enviada!</p>
+                          <p className="text-xs text-gray-400 mt-1">Te contactaremos en 24-48 horas hábiles</p>
                           <Button
                             onClick={() => { setContactSent(false); setShowContactForm(false); }}
                             variant="ghost"
@@ -1446,7 +1446,7 @@ export default function Investors() {
                               className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 h-9 text-sm"
                             />
                             <Input
-                              placeholder="Tel\u00e9fono (opcional)"
+                              placeholder="Teléfono (opcional)"
                               value={contactForm.phone}
                               onChange={(e) => setContactForm(prev => ({ ...prev, phone: e.target.value }))}
                               className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 h-9 text-sm"
@@ -1549,7 +1549,7 @@ export default function Investors() {
                             {space.spaceName}
                           </h4>
                           <p className="text-xs text-gray-500">
-                            {space.city}{space.department ? `, ${space.department}` : ""} \u00b7 {SPACE_TYPE_LABELS[space.spaceType] || space.spaceType}
+                            {space.city}{space.department ? `, ${space.department}` : ""} · {SPACE_TYPE_LABELS[space.spaceType] || space.spaceType}
                           </p>
                         </div>
                         {space.aiScore && (
@@ -1668,7 +1668,7 @@ export default function Investors() {
   };
 
   // ============================================================================
-  // MURO DE FUNDADORES - Secci\u00f3n p\u00fablica en la landing de inversi\u00f3n
+  // MURO DE FUNDADORES - Sección pública en la landing de inversión
   // ============================================================================
   
   const FoundersWallSection = () => {

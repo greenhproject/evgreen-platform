@@ -1341,6 +1341,9 @@ export const crowdfundingProjects = mysqlTable("crowdfunding_projects", {
   // Prioridad y orden
   priority: int("priority").default(0).notNull(),
   
+  // Relación con espacio postulado (origen del proyecto)
+  spaceSubmissionId: int("spaceSubmissionId"), // FK a space_submissions
+  
   // Relación con estación (cuando se construye)
   stationId: int("stationId"), // FK a charging_stations (cuando esté operativa)
   
