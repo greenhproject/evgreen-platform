@@ -237,3 +237,78 @@ describe("Quote Email Generation", () => {
     expect(subject).toContain("EVGreen");
   });
 });
+
+describe("Commission Calculations", () => {
+  it("calculates commission amount correctly from percentage and line total", () => {
+    const lineTotal = 85000000;
+    const commissionPercent = 5;
+    const commissionAmount = Math.round(lineTotal * commissionPercent / 100);
+    expect(commissionAmount).toBe(4250000);
+  });
+
+  it("calculates zero commission when percent is zero", () => {
+    const lineTotal = 85000000;
+    const commissionPercent = 0;
+    const commissionAmount = Math.round(lineTotal * commissionPercent / 100);
+    expect(commissionAmount).toBe(0);
+  });
+
+  it("calculates total commission across multiple items", () => {
+    const items = [
+      { lineTotal: 85000000, commissionPercent: 5 },
+      { lineTotal: 45000000, commissionPercent: 3 },
+      { lineTotal: 120000000, commissionPercent: 2 },
+    ];
+    const totalCommission = items.reduce((sum, item) => {
+      return sum + Math.round(item.lineTotal * item.commissionPercent / 100);
+    }, 0);
+    // 4,250,000 + 1,350,000 + 2,400,000 = 8,000,000
+    expect(totalCommission).toBe(8000000);
+  });
+
+  it("handles decimal commission percentages", () => {
+    const lineTotal = 100000000;
+    const commissionPercent = 2.5;
+    const commissionAmount = Math.round(lineTotal * commissionPercent / 100);
+    expect(commissionAmount).toBe(2500000);
+  });
+
+  it("aggregates commission stats by quote status", () => {
+    const allQuotes = [
+      { status: "ACCEPTED", totalCommission: 4250000, total: 85000000 },
+      { status: "SENT", totalCommission: 1350000, total: 45000000 },
+      { status: "DRAFT", totalCommission: 2400000, total: 120000000 },
+      { status: "REJECTED", totalCommission: 500000, total: 10000000 },
+    ];
+
+    const totalCommission = allQuotes.reduce((sum, q) => sum + (q.totalCommission || 0), 0);
+    const acceptedCommission = allQuotes
+      .filter(q => q.status === "ACCEPTED")
+      .reduce((sum, q) => sum + (q.totalCommission || 0), 0);
+    const pendingCommission = allQuotes
+      .filter(q => ["SENT", "VIEWED", "DRAFT"].includes(q.status))
+      .reduce((sum, q) => sum + (q.totalCommission || 0), 0);
+
+    expect(totalCommission).toBe(8500000);
+    expect(acceptedCommission).toBe(4250000);
+    expect(pendingCommission).toBe(3750000);
+  });
+
+  it("parses commissionPercent from string correctly", () => {
+    const commissionPercentStr = "5.00";
+    const parsed = parseFloat(commissionPercentStr);
+    expect(parsed).toBe(5);
+    expect(parsed).toBeGreaterThan(0);
+  });
+
+  it("handles null/undefined totalCommission gracefully", () => {
+    const allQuotes = [
+      { status: "ACCEPTED", totalCommission: null, total: 85000000 },
+      { status: "SENT", totalCommission: undefined, total: 45000000 },
+      { status: "ACCEPTED", totalCommission: 2000000, total: 50000000 },
+    ];
+
+    const totalCommission = allQuotes.reduce((sum: number, q: any) => sum + (q.totalCommission || 0), 0);
+    expect(totalCommission).toBe(2000000);
+  });
+});
