@@ -3426,3 +3426,13 @@
 - [x] Conectar datos de crowdfunding con sección pública de financiamientos
 - [x] Conectar datos de crowdfunding con mapa de oportunidades
 - [x] Fix caracteres escapados en textos del mapa de oportunidades (\u00e9, \u00f3n)
+
+## Diferenciación visual Mapa de Oportunidades (Mayo 2026)
+
+- [x] Estaciones Premium con marcador estrella dorada en el mapa (además de tarjetas)
+- [x] Puntos individuales solo en mapa con marcador rayo verde estándar
+- [x] Agregar datos de crowdfunding al mapa para estaciones Premium
+- [x] Popup diferenciado: Premium muestra progreso/meta/inversionistas, Individual muestra puntuación/potencia
+- [x] Leyenda visual en el mapa (estrella = Premium, rayo = Individual)
+- [x] Filtro Premium/Individual/Todos en el mapa
+- [x] Backend: getCrowdfundingProjects con COALESCE lat/lng de space_submissions + charging_stations
