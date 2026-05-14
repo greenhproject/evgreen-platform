@@ -22,9 +22,12 @@ export async function setupVite(app: Express, server: Server) {
 
   const viteServer = await vite.createServer({
     plugins: [react(), tailwindcss()],
+    root: path.resolve(import.meta.dirname, "../../client"),
     resolve: {
       alias: {
         "@": path.resolve(import.meta.dirname, "../../client/src"),
+        "@shared": path.resolve(import.meta.dirname, "../../shared"),
+        "@assets": path.resolve(import.meta.dirname, "../../attached_assets"),
       },
     },
     configFile: false,

@@ -396,6 +396,10 @@ async function startServer() {
     // Soportar tanto /ocpp/ como /api/ocpp/ para compatibilidad
     const isOcppRoute = url.pathname.startsWith("/ocpp/") || url.pathname.startsWith("/api/ocpp/ws/");
     
+    // Permitir conexiones Vite HMR (Hot Module Replacement) - no son OCPP
+    const isViteHmr = request.headers["sec-websocket-protocol"]?.includes("vite-hmr") || 
+                      request.headers["sec-websocket-protocol"]?.includes("vite-ping");
+    
     if (isOcppRoute) {
       console.log(`[OCPP] Handling upgrade for: ${url.pathname}`);
       
@@ -433,8 +437,13 @@ async function startServer() {
         
         wss.emit("connection", ws, request);
       });
+    } else if (isViteHmr) {
+      // Permitir Vite HMR - simplemente dejar pasar la conexión sin interferir
+      console.log(`[OCPP] Allowing Vite HMR connection (not handling upgrade)`);
+      // No hacer nada - Vite manejará esta conexión internamente
+      return;
     } else {
-      // No es una ruta OCPP, cerrar la conexión
+      // No es una ruta OCPP ni Vite HMR, cerrar la conexión
       console.log(`[OCPP] Ignoring non-OCPP upgrade request: ${url.pathname}`);
       socket.destroy();
     }
