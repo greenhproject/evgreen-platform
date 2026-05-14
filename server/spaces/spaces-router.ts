@@ -348,6 +348,7 @@ export const spacesRouter = router({
           if (resendApiKey) {
             const resend = new Resend(resendApiKey);
             const emailParams = buildEmailParams({
+              from: "EVGreen <notificaciones@evgreen.lat>",
               to: submission.submitterEmail,
               subject: `Constancia de Firma - Carta de Intención EVGreen (${submission.spaceName})`,
               html: `
