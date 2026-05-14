@@ -830,12 +830,28 @@ export default function Investors() {
 
   const PublishedSpacesMapSection = () => {
     const { data: spaces, isLoading: spacesLoading } = trpc.spaces.listPublished.useQuery();
+    const { data: cfProjects } = trpc.crowdfunding.getProjects.useQuery();
     const [selectedSpace, setSelectedSpace] = useState<any>(null);
+    const [selectedPremium, setSelectedPremium] = useState<any>(null);
     const [spaceFilter, setSpaceFilter] = useState<string>("all");
+    const [mapFilter, setMapFilter] = useState<string>("all"); // "all" | "premium" | "individual"
     const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
     const [showContactForm, setShowContactForm] = useState(false);
     const [contactForm, setContactForm] = useState({ name: "", email: "", phone: "", interestedAmount: "", message: "" });
     const [contactSent, setContactSent] = useState(false);
+
+    // Premium stations from crowdfunding (OPEN, ACTIVE, IN_PROGRESS, FUNDED) with coordinates
+    const premiumStations = useMemo(() => {
+      if (!cfProjects) return [];
+      return (cfProjects as any[]).filter((p: any) => 
+        p.status !== 'DRAFT' && p.linkedLatitude && p.linkedLongitude
+      ).map((p: any) => ({
+        ...p,
+        _isPremium: true,
+        latitude: p.linkedLatitude,
+        longitude: p.linkedLongitude,
+      }));
+    }, [cfProjects]);
 
     const incrementViewMut = trpc.spaces.incrementView.useMutation();
     const submitLeadMut = trpc.spaces.submitLead.useMutation({
@@ -978,101 +994,168 @@ export default function Investors() {
 
         if (!mapRef.current) return;
         const zoom = mapRef.current.getZoom() || 6;
-        const clusters = clusterSpaces(filteredSpaces, zoom);
 
-        clusters.forEach((cluster) => {
-          if (cluster.type === 'cluster' && cluster.spaces.length > 1) {
-            // Render cluster marker
-            const totalKw = cluster.spaces.reduce((sum: number, s: any) => sum + (s.estimatedPowerKw || 0), 0);
-            const position = new google.maps.LatLng(cluster.lat, cluster.lng);
-            const count = cluster.spaces.length;
-            const clusterHtml = `
-              <div style="position:relative;">
-                <div style="
-                  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-                  width:56px; height:56px; border-radius:50%;
-                  background: rgba(16, 185, 129, 0.2);
-                  animation: markerPulse 2.5s ease-out infinite;
-                "></div>
-                <div style="
-                  position:relative;
-                  background: linear-gradient(135deg, #059669, #10b981);
-                  color: white; width:44px; height:44px; border-radius:50%;
-                  font-weight: 800; box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 24px rgba(16,185,129,0.4);
-                  display: flex; align-items: center; justify-content: center; flex-direction: column;
-                  border: 3px solid #047857;
-                  animation: markerBounce 3s ease-in-out infinite;
-                ">
-                  <span style="font-size:14px;line-height:1;">${count}</span>
-                  <span style="font-size:8px;opacity:0.8;line-height:1;">puntos</span>
-                </div>
-                <div style="text-align:center;margin-top:2px;">
-                  <span style="background:rgba(0,0,0,0.7);color:#10b981;font-size:9px;padding:1px 5px;border-radius:6px;font-weight:600;">${totalKw}kW</span>
-                </div>
-              </div>
-            `;
-            const overlay = createCustomOverlay(
-              mapRef.current!,
-              position,
-              clusterHtml,
-              () => {
-                mapRef.current!.setZoom(Math.min(14, zoom + 3));
-                mapRef.current!.panTo(position);
-              }
-            );
-            overlaysRef.current.push(overlay);
-          } else {
-            // Render single marker
-            const space = cluster.spaces[0];
-            if (!space.latitude || !space.longitude) return;
-            const lat = parseFloat(space.latitude);
-            const lng = parseFloat(space.longitude);
+        // ========== PREMIUM STATION MARKERS (Gold Star) ==========
+        if (mapFilter === 'all' || mapFilter === 'premium') {
+          premiumStations.forEach((project: any) => {
+            const lat = parseFloat(project.latitude);
+            const lng = parseFloat(project.longitude);
             if (isNaN(lat) || isNaN(lng)) return;
             const position = new google.maps.LatLng(lat, lng);
 
-            const fundingPct = space.crowdfunding
-              ? Math.min(100, Math.round((space.crowdfunding.raisedAmount / space.crowdfunding.targetAmount) * 100))
+            const fundingPct = project.targetAmount > 0
+              ? Math.min(100, Math.round((Number(project.raisedAmount) / Number(project.targetAmount)) * 100))
               : 0;
-            const score = space.aiScore || 0;
-            const bgColor = fundingPct >= 100 ? '#059669' : fundingPct >= 50 ? '#d97706' : '#10b981';
-            const borderColor = fundingPct >= 100 ? '#047857' : fundingPct >= 50 ? '#b45309' : '#059669';
+            const investors = project.investorCount || 0;
 
-        const html = `
-          <div style="position:relative;">
-            <div style="
-              position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-              width:48px; height:48px; border-radius:50%;
-              background: ${bgColor}33;
-              animation: markerPulse 2s ease-out infinite;
-            "></div>
-            <div style="
-              position:relative;
-              background: ${bgColor};
-              color: white; padding: 6px 12px; border-radius: 16px; font-size: 12px;
-              font-weight: 700; box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 20px ${bgColor}44;
-              display: flex; align-items: center; gap: 5px; white-space: nowrap;
-              border: 2px solid ${borderColor};
-              animation: markerBounce 3s ease-in-out infinite;
-            ">
-              <span style="font-size:14px;">\u26a1</span>
-              <span>${space.estimatedPowerKw || '?'}kW</span>
-              ${score ? `<span style="background:rgba(0,0,0,0.3);padding:1px 5px;border-radius:8px;font-size:10px;margin-left:2px;">${score}pts</span>` : ''}
-            </div>
-            <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;
-              border-top:8px solid ${bgColor};
-              margin:0 auto; position:relative;"></div>
-          </div>
-        `;
+            const premiumHtml = `
+              <div style="position:relative;">
+                <div style="
+                  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                  width:64px; height:64px; border-radius:50%;
+                  background: rgba(245, 158, 11, 0.25);
+                  animation: markerPulse 2s ease-out infinite;
+                "></div>
+                <div style="
+                  position:relative;
+                  background: linear-gradient(135deg, #f59e0b, #d97706);
+                  color: white; padding: 8px 14px; border-radius: 18px; font-size: 12px;
+                  font-weight: 800; box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 30px rgba(245,158,11,0.4);
+                  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+                  border: 2.5px solid #b45309;
+                  animation: markerBounce 3s ease-in-out infinite;
+                ">
+                  <span style="font-size:16px;">\u2B50</span>
+                  <span style="font-size:13px;">${project.city}</span>
+                  <span style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:8px;font-size:10px;">${fundingPct}%</span>
+                </div>
+                <div style="width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;
+                  border-top:9px solid #d97706;
+                  margin:0 auto; position:relative;"></div>
+                <div style="text-align:center;margin-top:2px;">
+                  <span style="background:rgba(0,0,0,0.8);color:#fbbf24;font-size:9px;padding:2px 6px;border-radius:6px;font-weight:700;letter-spacing:0.5px;">PREMIUM</span>
+                </div>
+              </div>
+            `;
 
             const overlay = createCustomOverlay(
               mapRef.current!,
               position,
-              html,
-              () => handleSelectSpace(space)
+              premiumHtml,
+              () => {
+                setSelectedSpace(null);
+                setSelectedPremium(project);
+                if (mapRef.current) {
+                  mapRef.current.panTo(position);
+                  mapRef.current.setZoom(Math.max(zoom, 12));
+                }
+              }
             );
             overlaysRef.current.push(overlay);
-          }
-        });
+          });
+        }
+
+        // ========== INDIVIDUAL SPACE MARKERS (Green Bolt) ==========
+        if (mapFilter === 'all' || mapFilter === 'individual') {
+          const clusters = clusterSpaces(filteredSpaces, zoom);
+
+          clusters.forEach((cluster) => {
+            if (cluster.type === 'cluster' && cluster.spaces.length > 1) {
+              // Render cluster marker
+              const totalKw = cluster.spaces.reduce((sum: number, s: any) => sum + (s.estimatedPowerKw || 0), 0);
+              const position = new google.maps.LatLng(cluster.lat, cluster.lng);
+              const count = cluster.spaces.length;
+              const clusterHtml = `
+                <div style="position:relative;">
+                  <div style="
+                    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                    width:56px; height:56px; border-radius:50%;
+                    background: rgba(16, 185, 129, 0.2);
+                    animation: markerPulse 2.5s ease-out infinite;
+                  "></div>
+                  <div style="
+                    position:relative;
+                    background: linear-gradient(135deg, #059669, #10b981);
+                    color: white; width:44px; height:44px; border-radius:50%;
+                    font-weight: 800; box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 24px rgba(16,185,129,0.4);
+                    display: flex; align-items: center; justify-content: center; flex-direction: column;
+                    border: 3px solid #047857;
+                    animation: markerBounce 3s ease-in-out infinite;
+                  ">
+                    <span style="font-size:14px;line-height:1;">${count}</span>
+                    <span style="font-size:8px;opacity:0.8;line-height:1;">puntos</span>
+                  </div>
+                  <div style="text-align:center;margin-top:2px;">
+                    <span style="background:rgba(0,0,0,0.7);color:#10b981;font-size:9px;padding:1px 5px;border-radius:6px;font-weight:600;">${totalKw}kW</span>
+                  </div>
+                </div>
+              `;
+              const overlay = createCustomOverlay(
+                mapRef.current!,
+                position,
+                clusterHtml,
+                () => {
+                  mapRef.current!.setZoom(Math.min(14, zoom + 3));
+                  mapRef.current!.panTo(position);
+                }
+              );
+              overlaysRef.current.push(overlay);
+            } else {
+              // Render single individual marker
+              const space = cluster.spaces[0];
+              if (!space.latitude || !space.longitude) return;
+              const lat = parseFloat(space.latitude);
+              const lng = parseFloat(space.longitude);
+              if (isNaN(lat) || isNaN(lng)) return;
+              const position = new google.maps.LatLng(lat, lng);
+
+              const fundingPct = space.crowdfunding
+                ? Math.min(100, Math.round((space.crowdfunding.raisedAmount / space.crowdfunding.targetAmount) * 100))
+                : 0;
+              const score = space.aiScore || 0;
+              const bgColor = fundingPct >= 100 ? '#059669' : fundingPct >= 50 ? '#d97706' : '#10b981';
+              const borderColor = fundingPct >= 100 ? '#047857' : fundingPct >= 50 ? '#b45309' : '#059669';
+
+              const html = `
+                <div style="position:relative;">
+                  <div style="
+                    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                    width:48px; height:48px; border-radius:50%;
+                    background: ${bgColor}33;
+                    animation: markerPulse 2s ease-out infinite;
+                  "></div>
+                  <div style="
+                    position:relative;
+                    background: ${bgColor};
+                    color: white; padding: 6px 12px; border-radius: 16px; font-size: 12px;
+                    font-weight: 700; box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 20px ${bgColor}44;
+                    display: flex; align-items: center; gap: 5px; white-space: nowrap;
+                    border: 2px solid ${borderColor};
+                    animation: markerBounce 3s ease-in-out infinite;
+                  ">
+                    <span style="font-size:14px;">\u26a1</span>
+                    <span>${space.estimatedPowerKw || '?'}kW</span>
+                    ${score ? `<span style="background:rgba(0,0,0,0.3);padding:1px 5px;border-radius:8px;font-size:10px;margin-left:2px;">${score}pts</span>` : ''}
+                  </div>
+                  <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;
+                    border-top:8px solid ${bgColor};
+                    margin:0 auto; position:relative;"></div>
+                </div>
+              `;
+
+              const overlay = createCustomOverlay(
+                mapRef.current!,
+                position,
+                html,
+                () => {
+                  setSelectedPremium(null);
+                  handleSelectSpace(space);
+                }
+              );
+              overlaysRef.current.push(overlay);
+            }
+          });
+        }
       };
 
       // Initial render
@@ -1109,7 +1192,7 @@ export default function Investors() {
       return () => {
         try { google.maps.event.removeListener(zoomListener); } catch {}
       };
-    }, [filteredSpaces, mapReady, createCustomOverlay, clusterSpaces]);
+    }, [filteredSpaces, mapReady, createCustomOverlay, clusterSpaces, premiumStations, mapFilter]);
 
     const contactAdvisor = (space: any) => {
       const message = encodeURIComponent(
@@ -1159,9 +1242,15 @@ export default function Investors() {
             {/* Stats */}
             <div className="flex items-center justify-center gap-6 flex-wrap mt-4">
               <div className="flex items-center gap-2">
+                <Star className="w-4 h-4 text-amber-400" />
+                <span className="text-sm text-gray-300">
+                  <strong className="text-amber-400">{premiumStations.length}</strong> estaciones Premium
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-emerald-400" />
                 <span className="text-sm text-gray-300">
-                  <strong className="text-white">{spaces?.length || 0}</strong> puntos disponibles
+                  <strong className="text-white">{spaces?.length || 0}</strong> puntos individuales
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -1187,26 +1276,63 @@ export default function Investors() {
           <div className="grid lg:grid-cols-3 gap-4 max-w-7xl mx-auto">
             {/* Left: Map */}
             <div className="lg:col-span-2">
-              {/* Filters */}
-              <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-2">
+              {/* Map Type Filter: Premium / Individual / Todos */}
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                {["all", "parking", "mall", "gas_station", "hotel", "restaurant", "residential", "office_building"].map(f => (
+                {[
+                  { key: "all", label: "Todos", icon: "\uD83D\uDCCD", activeClass: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+                  { key: "premium", label: "Premium", icon: "\u2B50", activeClass: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+                  { key: "individual", label: "Individual", icon: "\u26A1", activeClass: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+                ].map(f => (
                   <button
-                    key={f}
-                    onClick={() => setSpaceFilter(f)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                      spaceFilter === f
-                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                        : "bg-slate-800 text-gray-400 border border-slate-700 hover:border-gray-600"
+                    key={f.key}
+                    onClick={() => setMapFilter(f.key)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors border ${
+                      mapFilter === f.key
+                        ? f.activeClass
+                        : "bg-slate-800 text-gray-400 border-slate-700 hover:border-gray-600"
                     }`}
                   >
-                    {f === "all" ? "Todos" : SPACE_TYPE_LABELS[f] || f}
+                    {f.icon} {f.label}
+                  </button>
+                ))}
+                <span className="text-gray-600 text-xs">|</span>
+                {/* Space type sub-filter (only for individual) */}
+                {(mapFilter === 'all' || mapFilter === 'individual') && [
+                  { key: "all", label: "Todos tipos" },
+                  { key: "parking", label: "Parqueadero" },
+                  { key: "mall", label: "C. Comercial" },
+                  { key: "gas_station", label: "E. Servicio" },
+                ].map(f => (
+                  <button
+                    key={`type-${f.key}`}
+                    onClick={() => setSpaceFilter(f.key)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors border ${
+                      spaceFilter === f.key
+                        ? "bg-slate-700 text-white border-slate-600"
+                        : "bg-slate-800/50 text-gray-500 border-slate-700/50 hover:border-gray-600"
+                    }`}
+                  >
+                    {f.label}
                   </button>
                 ))}
               </div>
 
               {/* Map */}
-              <div className="rounded-xl overflow-hidden border border-slate-700 h-[400px] lg:h-[550px]">
+              <div className="relative rounded-xl overflow-hidden border border-slate-700 h-[400px] lg:h-[550px]">
+                {/* Legend overlay */}
+                <div className="absolute bottom-3 left-3 z-10 bg-black/80 backdrop-blur-sm rounded-lg px-3 py-2 border border-slate-700/50">
+                  <div className="flex items-center gap-4 text-[11px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block w-3 h-3 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 border border-amber-700" />
+                      <span className="text-amber-400 font-medium">Premium (Colectiva)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block w-3 h-3 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 border border-emerald-700" />
+                      <span className="text-emerald-400 font-medium">Individual</span>
+                    </div>
+                  </div>
+                </div>
                 <MapView
                   onMapReady={handleMapReady}
                   initialCenter={{ lat: 4.6, lng: -74.08 }}
@@ -1217,7 +1343,110 @@ export default function Investors() {
 
             {/* Right: List or Detail */}
             <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
-              {selectedSpace ? (
+              {selectedPremium ? (
+                /* PREMIUM DETAIL VIEW */
+                <div className="bg-gradient-to-br from-amber-900/30 to-slate-800/80 border border-amber-500/30 rounded-2xl overflow-hidden">
+                  <div className="relative h-36 bg-gradient-to-br from-amber-600/30 to-amber-800/30 flex items-center justify-center">
+                    <div className="text-center">
+                      <Star className="w-12 h-12 text-amber-400 mx-auto mb-1" />
+                      <span className="text-amber-400 text-xs font-bold tracking-wider">ESTACIÓN PREMIUM</span>
+                    </div>
+                    <button
+                      onClick={() => setSelectedPremium(null)}
+                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/70"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-white">{selectedPremium.name || `Estación ${selectedPremium.city}`}</h3>
+                      <p className="text-sm text-amber-400/80">{selectedPremium.city} • {selectedPremium.zone}</p>
+                      {selectedPremium.address && <p className="text-xs text-gray-500 mt-1">{selectedPremium.address}</p>}
+                    </div>
+
+                    {/* Key metrics */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-black/30 rounded-xl p-3">
+                        <p className="text-xs text-gray-500 mb-1">Meta inversión</p>
+                        <p className="text-base font-bold text-amber-400">{formatCOPMap(Number(selectedPremium.targetAmount))}</p>
+                      </div>
+                      <div className="bg-black/30 rounded-xl p-3">
+                        <p className="text-xs text-gray-500 mb-1">Recaudado</p>
+                        <p className="text-base font-bold text-emerald-400">{formatCOPMap(Number(selectedPremium.raisedAmount))}</p>
+                      </div>
+                      <div className="bg-black/30 rounded-xl p-3">
+                        <p className="text-xs text-gray-500 mb-1">Potencia total</p>
+                        <p className="text-base font-bold text-white">{selectedPremium.totalPowerKw} kW</p>
+                      </div>
+                      <div className="bg-black/30 rounded-xl p-3">
+                        <p className="text-xs text-gray-500 mb-1">Inversionistas</p>
+                        <p className="text-base font-bold text-white">{selectedPremium.investorCount || 0}</p>
+                      </div>
+                    </div>
+
+                    {/* Funding progress */}
+                    <div className="bg-black/30 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-400">Progreso de financiamiento</span>
+                        <span className="text-sm font-bold text-amber-400">
+                          {Math.min(100, Math.round((Number(selectedPremium.raisedAmount) / Number(selectedPremium.targetAmount)) * 100))}%
+                        </span>
+                      </div>
+                      <div className="w-full h-2.5 bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all"
+                          style={{ width: `${Math.min(100, Math.round((Number(selectedPremium.raisedAmount) / Number(selectedPremium.targetAmount)) * 100))}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-gray-500 mt-2">
+                        <span>{formatCOPMap(Number(selectedPremium.raisedAmount))}</span>
+                        <span>Meta: {formatCOPMap(Number(selectedPremium.targetAmount))}</span>
+                      </div>
+                    </div>
+
+                    {/* Specs */}
+                    <div className="bg-black/30 rounded-xl p-3 space-y-2">
+                      <h4 className="text-sm font-medium text-amber-400 flex items-center gap-1.5">
+                        <Zap className="w-4 h-4" />
+                        Especificaciones
+                      </h4>
+                      <div className="grid grid-cols-2 gap-y-1.5 text-xs">
+                        <span className="text-gray-500">Cargadores:</span>
+                        <span className="text-white font-medium">{selectedPremium.chargerCount} DC</span>
+                        <span className="text-gray-500">Potencia/cargador:</span>
+                        <span className="text-white font-medium">{selectedPremium.chargerPowerKw} kW</span>
+                        <span className="text-gray-500">Paneles solares:</span>
+                        <span className="text-white font-medium">{selectedPremium.hasSolarPanels ? 'Sí' : 'No'}</span>
+                        <span className="text-gray-500">ROI estimado:</span>
+                        <span className="text-emerald-400 font-medium">{selectedPremium.estimatedRoiPercent}%</span>
+                        <span className="text-gray-500">Recuperación:</span>
+                        <span className="text-white font-medium">{selectedPremium.estimatedPaybackMonths} meses</span>
+                      </div>
+                    </div>
+
+                    {/* CTA */}
+                    <div className="flex gap-2">
+                      <Link href={`/crowdfunding/${selectedPremium.id}`} className="flex-1">
+                        <Button className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold">
+                          <DollarSign className="w-4 h-4 mr-1" />
+                          Invertir ahora
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="outline"
+                        className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                        onClick={() => {
+                          const msg = encodeURIComponent(`Hola, estoy interesado en la estación Premium de ${selectedPremium.city} (${selectedPremium.zone}). Me gustaría recibir más información.`);
+                          window.open(`https://wa.me/573054124009?text=${msg}`, '_blank');
+                        }}
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedSpace ? (
                 /* DETAIL VIEW */
                 <div className="bg-slate-800/80 border border-slate-700 rounded-2xl overflow-hidden">
                   {/* Header image */}

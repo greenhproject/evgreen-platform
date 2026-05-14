@@ -4255,9 +4255,12 @@ export async function getCrowdfundingProjects(options?: {
         s.spaceName as linkedSpaceName,
         s.city as linkedSpaceCity,
         s.submitterName as linkedSubmitterName,
-        s.space_status as linkedSpaceStatus
+        s.space_status as linkedSpaceStatus,
+        COALESCE(s.latitude, cs.latitude) as linkedLatitude,
+        COALESCE(s.longitude, cs.longitude) as linkedLongitude
       FROM crowdfunding_projects p
       LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
+      LEFT JOIN charging_stations cs ON cs.id = p.stationId
     `;
     
     if (sanitizedStatus) {
