@@ -286,27 +286,103 @@ export const spacesRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Esta postulación no está en estado de firma de carta" });
       }
 
-      // Obtener IP del request
+      // Obtener IP y User-Agent del request
       const clientIp = ctx.req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim()
         || ctx.req.socket.remoteAddress
         || "unknown";
+      const userAgent = ctx.req.headers["user-agent"] || "unknown";
 
+      const signedAt = new Date();
+
+      // Generar PDF de constancia de firma
+      let pdfUrl = "";
+      let pdfKey = "";
+      try {
+        const { generateSignedLetterPdf } = await import("./letter-pdf-service");
+        const pdfBuffer = generateSignedLetterPdf({
+          spaceName: submission.spaceName,
+          spaceType: submission.spaceType || "No especificado",
+          city: submission.city,
+          department: submission.department || "Colombia",
+          address: submission.address,
+          code: submission.code,
+          signerName: input.signerName,
+          signerDocument: input.signerDocument,
+          signerIp: clientIp,
+          signerUserAgent: userAgent,
+          signedAt,
+          submitterName: submission.submitterName,
+          submitterEmail: submission.submitterEmail,
+          submitterPhone: submission.submitterPhone || "",
+        });
+
+        // Subir PDF a S3 con key único
+        const randomSuffix = randomBytes(8).toString("hex");
+        const fileKey = `spaces/cartas-firmadas/${submission.code}-${randomSuffix}.pdf`;
+        const result = await storagePut(fileKey, pdfBuffer, "application/pdf");
+        pdfUrl = result.url;
+        pdfKey = result.key;
+        console.log(`[Spaces] PDF de constancia generado y subido: ${pdfUrl}`);
+      } catch (pdfErr) {
+        console.error("[Spaces] Error generando PDF de constancia:", pdfErr);
+        // No bloquear la firma si el PDF falla
+      }
+
+      // Actualizar BD con todos los datos de la firma
       await db.update(spaceSubmissions)
         .set({
           status: "letter_accepted",
-          letterAcceptedAt: new Date(),
+          letterAcceptedAt: signedAt,
           letterSignerName: input.signerName,
           letterSignerDocument: input.signerDocument,
           letterSignerIp: clientIp,
+          letterSignerUserAgent: userAgent,
+          ...(pdfUrl ? { signedLetterPdfUrl: pdfUrl, signedLetterPdfKey: pdfKey } : {}),
         })
         .where(eq(spaceSubmissions.id, submission.id));
+
+      // Enviar copia del PDF al firmante por email (trazabilidad)
+      try {
+        if (pdfUrl && submission.submitterEmail) {
+          const resendApiKey = process.env.Resend;
+          if (resendApiKey) {
+            const resend = new Resend(resendApiKey);
+            const emailParams = buildEmailParams({
+              to: submission.submitterEmail,
+              subject: `Constancia de Firma - Carta de Intención EVGreen (${submission.spaceName})`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                  <div style="background: linear-gradient(135deg, #10b981, #059669); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
+                    <h1 style="color: white; margin: 0; font-size: 24px;">\u26a1 EVGreen</h1>
+                    <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 13px;">Green House Project S.A.S.</p>
+                  </div>
+                  <div style="padding: 24px; background: #f9fafb; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+                    <h2 style="color: #111827; font-size: 18px; margin: 0 0 12px;">Carta de Intención Firmada</h2>
+                    <p style="color: #4b5563; font-size: 14px; line-height: 1.6;">Estimado(a) <strong>${input.signerName}</strong>,</p>
+                    <p style="color: #4b5563; font-size: 14px; line-height: 1.6;">Adjuntamos la constancia de firma digital de la carta de intención para el espacio <strong>${submission.spaceName}</strong> (Código: ${submission.code}).</p>
+                    <p style="color: #4b5563; font-size: 14px; line-height: 1.6;">Este documento sirve como evidencia legal de su aceptación y contiene todos los datos de la firma digital.</p>
+                    <div style="text-align: center; margin: 24px 0;">
+                      <a href="${pdfUrl}" style="display: inline-block; background: #10b981; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">\ud83d\udcc4 Descargar Constancia PDF</a>
+                    </div>
+                    <p style="color: #9ca3af; font-size: 12px; text-align: center;">Conserve este documento para sus registros.</p>
+                  </div>
+                </div>
+              `,
+            });
+            await resend.emails.send(emailParams as any);
+            console.log(`[Spaces] Email con constancia PDF enviado a ${submission.submitterEmail}`);
+          }
+        }
+      } catch (emailErr) {
+        console.error("[Spaces] Error enviando email con constancia:", emailErr);
+      }
 
       // Notificar al admin
       try {
         const { notifyOwner } = await import("../_core/notification");
         await notifyOwner({
           title: `Carta de intención aceptada: ${submission.spaceName}`,
-          content: `${input.signerName} (${input.signerDocument}) ha aceptado la carta de intención para "${submission.spaceName}" en ${submission.city}. Código: ${submission.code}. Ya puede publicar el espacio en el muro de crowdfunding.`,
+          content: `${input.signerName} (${input.signerDocument}) ha aceptado la carta de intención para "${submission.spaceName}" en ${submission.city}. Código: ${submission.code}.${pdfUrl ? ` PDF de constancia: ${pdfUrl}` : ""} Ya puede publicar el espacio en el muro de crowdfunding.`,
         });
       } catch (err) {
         console.error("[Spaces] Error notifying owner:", err);
