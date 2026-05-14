@@ -3436,3 +3436,17 @@
 - [x] Leyenda visual en el mapa (estrella = Premium, rayo = Individual)
 - [x] Filtro Premium/Individual/Todos en el mapa
 - [x] Backend: getCrowdfundingProjects con COALESCE lat/lng de space_submissions + charging_stations
+
+## Constancia PDF de Firma de Carta de Intención (Mayo 2026)
+
+- [x] Generar PDF con constancia de firma al aceptar carta de intención
+- [x] Incluir datos del firmante (nombre, documento, IP, fecha/hora, user-agent)
+- [x] Incluir hash SHA-256 de verificación de integridad
+- [x] Incluir contenido completo de la carta de intención en el PDF
+- [x] Almacenar PDF en S3 como evidencia permanente
+- [x] Guardar URL del PDF en la tabla space_submissions (signedLetterPdfUrl, signedLetterPdfKey)
+- [x] Guardar letterSignerUserAgent en BD
+- [x] Mostrar/descargar PDF de constancia desde el admin de espacios (botón "Descargar Constancia PDF")
+- [x] Mostrar IP de firma en el detalle admin
+- [x] Enviar copia del PDF al firmante por email (trazabilidad)
+- [x] Página de éxito de firma muestra info de constancia y envío por email

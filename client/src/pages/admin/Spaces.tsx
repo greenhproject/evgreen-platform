@@ -19,7 +19,7 @@ import {
   CheckCircle2, XCircle, Clock, FileText, Loader2, ChevronLeft,
   ChevronRight, Building2, Phone, Mail, Camera, BarChart3,
   TrendingUp, DollarSign, ArrowUpRight, ExternalLink, RefreshCw,
-  ChevronDown, X, Pencil, Trash2, AlertTriangle, Users,
+  ChevronDown, X, Pencil, Trash2, AlertTriangle, Users, Download,
 } from "lucide-react";
 
 // ============================================================================
@@ -621,6 +621,21 @@ function SpaceDetailDialog({
                   {space.letterSentAt && <DetailRow label="Carta enviada" value={formatDate(space.letterSentAt)} />}
                   {space.letterAcceptedAt && <DetailRow label="Carta aceptada" value={formatDate(space.letterAcceptedAt)} />}
                   {space.letterSignerName && <DetailRow label="Firmante" value={`${space.letterSignerName} (${space.letterSignerDocument})`} />}
+                  {space.letterSignerIp && <DetailRow label="IP de firma" value={space.letterSignerIp} />}
+                  {(space as any).signedLetterPdfUrl && (
+                    <div className="mt-3 pt-3 border-t border-gray-700/50">
+                      <a
+                        href={(space as any).signedLetterPdfUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 rounded-xl text-emerald-300 text-sm font-medium transition-all hover:border-emerald-500/50"
+                      >
+                        <Download className="w-4 h-4" />
+                        Descargar Constancia PDF
+                      </a>
+                      <p className="text-[11px] text-gray-500 mt-1.5 ml-1">Documento legal con firma digital, fecha, IP y hash de verificación</p>
+                    </div>
+                  )}
                 </DetailSection>
               </div>
             </div>
