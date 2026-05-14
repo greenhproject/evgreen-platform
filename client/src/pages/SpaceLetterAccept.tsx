@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Zap, CheckCircle2, FileText, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
+import { Zap, CheckCircle2, FileText, Loader2, ShieldCheck, AlertTriangle, Download, Mail } from "lucide-react";
 
 export default function SpaceLetterAccept() {
   const [, params] = useRoute("/carta-intencion/:token");
@@ -71,6 +71,26 @@ export default function SpaceLetterAccept() {
           <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6 mb-6">
             <p className="text-sm text-gray-400 mb-2">Código de postulación</p>
             <p className="text-xl font-mono font-bold text-emerald-400">{result.code}</p>
+          </div>
+
+          {/* Constancia PDF */}
+          <div className="bg-[#111827] border border-emerald-500/30 rounded-2xl p-6 mb-6">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                <FileText className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-white">Constancia de Firma Digital</h3>
+                <p className="text-xs text-gray-500">Documento PDF generado automáticamente</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-400 mb-4">
+              Se ha generado un PDF con la constancia de su firma digital que incluye sus datos, fecha, hora, IP y hash de verificación. <strong className="text-gray-300">También se ha enviado una copia a su correo electrónico.</strong>
+            </p>
+            <div className="flex items-center gap-2 text-xs text-emerald-400/70">
+              <Mail className="w-3.5 h-3.5" />
+              <span>Revise su bandeja de entrada para la copia del documento</span>
+            </div>
           </div>
 
           <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 mb-6 text-left">

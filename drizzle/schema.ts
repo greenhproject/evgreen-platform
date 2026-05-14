@@ -3263,6 +3263,9 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
   letterSignerName: varchar("letterSignerName", { length: 255 }), // Nombre de quien firma
   letterSignerDocument: varchar("letterSignerDocument", { length: 50 }), // Documento de quien firma
   letterSignerIp: varchar("letterSignerIp", { length: 50 }), // IP desde donde se firmó
+  signedLetterPdfUrl: text("signedLetterPdfUrl"), // URL del PDF firmado en S3
+  signedLetterPdfKey: varchar("signedLetterPdfKey", { length: 500 }), // Key del PDF en S3
+  letterSignerUserAgent: text("letterSignerUserAgent"), // User-Agent del navegador del firmante
   
   // Conexión con crowdfunding (cuando se publica)
   crowdfundingProjectId: int("crowdfundingProjectId"), // FK a crowdfunding_projects
