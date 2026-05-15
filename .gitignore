@@ -109,3 +109,8 @@ run-*.mjs
 .manus/
 .manus/
 .manus/
+
+# Environment variables
+.env
+.env.*
+!.env.example
