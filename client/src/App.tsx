@@ -202,6 +202,11 @@ function RoleBasedRedirect() {
     return <Landing />;
   }
 
+  // Fallback para cuando no está autenticado pero sí "instalado" (Capacitor)
+  if (!isAuthenticated) {
+    return <Landing />;
+  }
+
   return (
     <LoadingGuard isLoading={true} timeoutMs={10000} onRetry={() => refresh()}>
       <div />

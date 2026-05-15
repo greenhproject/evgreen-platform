@@ -3,6 +3,7 @@ import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
+import { getApiUrl } from "@/lib/utils";
 import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
@@ -54,7 +55,7 @@ queryClient.getMutationCache().subscribe(event => {
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: "/api/trpc",
+      url: getApiUrl("/api/trpc"),
       transformer: superjson,
       fetch(input, init) {
         // Agregar AbortController con timeout de 15s para evitar peticiones colgadas
