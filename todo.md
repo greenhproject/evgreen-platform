@@ -3450,3 +3450,12 @@
 - [x] Mostrar IP de firma en el detalle admin
 - [x] Enviar copia del PDF al firmante por email (trazabilidad)
 - [x] Página de éxito de firma muestra info de constancia y envío por email
+
+## Fix: Cargador Livoltek muestra Desconectado con Heartbeats activos - Mayo 2026
+
+- [x] ROOT CAUSE: getChargerDetail no consultaba dualCSMS (solo usaba connection-manager). La lista usaba dualCSMS pero el detalle no.
+- [x] Agregar consulta a dualCSMS.getConnectionsStatus() y getDetailedDiagnostics() en getChargerDetail
+- [x] Usar csmsConn como fuente de datos de conexión cuando connection-manager no tiene la conexión
+- [x] Usar csmsDiag para uptime, heartbeatAge y pendingCalls cuando está disponible
+- [x] Agregar fallback: si hay heartbeats recientes (< 3 min) en logs, considerar conectado
+- [x] Mostrar estado RECONNECTING en vez de CLOSED cuando hay heartbeats recientes pero WS no está OPEN
