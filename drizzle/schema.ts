@@ -3364,3 +3364,120 @@ export const investorLeadsRelations = relations(investorLeads, ({ one }) => ({
     references: [spaceSubmissions.id],
   }),
 }));
+
+
+// ============================================================================
+// LOCAL AUTHORIZATION LIST - Gestión de listas locales RFID para modo offline
+// ============================================================================
+// Permite que los cargadores operen en modo offline usando tarjetas RFID
+// pre-autorizadas almacenadas localmente en el firmware del cargador.
+
+export const localAuthListStatusEnum = mysqlEnum("local_auth_list_status", [
+  "SYNCED",      // Lista sincronizada con el cargador
+  "PENDING",     // Pendiente de enviar al cargador
+  "FAILED",      // Falló el envío al cargador
+  "OUTDATED",    // Lista desactualizada (se agregaron/removieron tarjetas)
+]);
+
+export const localAuthLists = mysqlTable("local_auth_lists", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  // Versión actual de la lista local (incrementa con cada actualización)
+  listVersion: int("listVersion").default(0).notNull(),
+  // Versión confirmada por el cargador (GetLocalListVersion response)
+  chargerListVersion: int("chargerListVersion").default(0),
+  // Estado de sincronización
+  status: localAuthListStatusEnum.default("PENDING").notNull(),
+  // Última vez que se envió la lista al cargador
+  lastSyncAt: timestamp("lastSyncAt"),
+  // Última respuesta del cargador al SendLocalList
+  lastSyncResult: varchar("lastSyncResult", { length: 50 }), // Accepted, Failed, VersionMismatch, NotSupported
+  // Configuración de comportamiento offline
+  offlinePolicy: mysqlEnum("offline_policy", [
+    "LOCAL_LIST_ONLY",  // Solo acepta tags de la lista local
+    "FREE_VENDING",     // Acepta cualquier tag (modo libre)
+    "REJECT_ALL",       // Rechaza todo si no hay conexión
+  ]).default("LOCAL_LIST_ONLY").notNull(),
+  // Número de entradas en la lista
+  entryCount: int("entryCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LocalAuthList = typeof localAuthLists.$inferSelect;
+export type InsertLocalAuthList = typeof localAuthLists.$inferInsert;
+
+export const localAuthEntries = mysqlTable("local_auth_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  listId: int("listId").notNull(), // FK a local_auth_lists
+  stationId: int("stationId").notNull(), // FK a charging_stations (denormalizado)
+  // El idTag que se envía al cargador
+  idTag: varchar("idTag", { length: 50 }).notNull(),
+  // Referencia al idTag en la tabla principal (puede ser null para tags maestros sin usuario)
+  idTagRefId: int("idTagRefId"), // FK a id_tags
+  // Estado de autorización en la lista local
+  authStatus: mysqlEnum("auth_status", ["Accepted", "Blocked", "Expired", "ConcurrentTx"]).default("Accepted").notNull(),
+  // Fecha de expiración en la lista local del cargador
+  expiryDate: timestamp("expiryDate"),
+  // Es tarjeta maestra del dueño de la estación
+  isMasterCard: boolean("isMasterCard").default(false).notNull(),
+  // Etiqueta descriptiva
+  label: varchar("label", { length: 100 }),
+  // Auditoría
+  addedBy: int("addedBy"), // userId del admin que la agregó
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type LocalAuthEntry = typeof localAuthEntries.$inferSelect;
+export type InsertLocalAuthEntry = typeof localAuthEntries.$inferInsert;
+
+// Tabla para registrar transacciones offline pendientes de sincronización
+export const offlineTransactions = mysqlTable("offline_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  stationId: int("stationId").notNull(), // FK a charging_stations
+  // Datos de la transacción como la reportó el cargador al reconectarse
+  ocppTransactionId: varchar("ocppTransactionId", { length: 100 }),
+  idTag: varchar("idTag", { length: 50 }),
+  connectorId: int("connectorId"),
+  meterStart: decimal("meterStart", { precision: 12, scale: 4 }),
+  meterEnd: decimal("meterEnd", { precision: 12, scale: 4 }),
+  startTimestamp: timestamp("startTimestamp"),
+  endTimestamp: timestamp("endTimestamp"),
+  // Estado de reconciliación
+  reconciled: boolean("reconciled").default(false).notNull(),
+  reconciledAt: timestamp("reconciledAt"),
+  reconciledTransactionId: int("reconciledTransactionId"), // FK a transactions (si se logró asociar)
+  // Notas de reconciliación
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OfflineTransaction = typeof offlineTransactions.$inferSelect;
+export type InsertOfflineTransaction = typeof offlineTransactions.$inferInsert;
+
+// Relations
+export const localAuthListsRelations = relations(localAuthLists, ({ one, many }) => ({
+  station: one(chargingStations, {
+    fields: [localAuthLists.stationId],
+    references: [chargingStations.id],
+  }),
+  entries: many(localAuthEntries),
+}));
+
+export const localAuthEntriesRelations = relations(localAuthEntries, ({ one }) => ({
+  list: one(localAuthLists, {
+    fields: [localAuthEntries.listId],
+    references: [localAuthLists.id],
+  }),
+  station: one(chargingStations, {
+    fields: [localAuthEntries.stationId],
+    references: [chargingStations.id],
+  }),
+}));
+
+export const offlineTransactionsRelations = relations(offlineTransactions, ({ one }) => ({
+  station: one(chargingStations, {
+    fields: [offlineTransactions.stationId],
+    references: [chargingStations.id],
+  }),
+}));

@@ -1147,4 +1147,169 @@ export const ocppRouter = router({
     const count = await generateOfflineAlerts();
     return { alertsGenerated: count };
   }),
+
+  // ============================================================================
+  // LOCAL AUTHORIZATION LIST - Gestión de tarjetas RFID y modo offline
+  // ============================================================================
+
+  /**
+   * Obtener la lista local de autorización de una estación con sus entradas
+   */
+  getLocalAuthList: ocppProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ input }) => {
+      const { list, entries } = await db.getLocalAuthListWithEntries(input.stationId);
+      return { list, entries };
+    }),
+
+  /**
+   * Agregar una tarjeta RFID a la lista local de una estación
+   */
+  addLocalAuthEntry: ocppProcedure
+    .input(z.object({
+      stationId: z.number(),
+      idTag: z.string().min(1).max(50),
+      isMasterCard: z.boolean().default(false),
+      label: z.string().optional(),
+      expiryDate: z.string().optional(), // ISO date string
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const entry = await db.addLocalAuthEntry({
+        stationId: input.stationId,
+        idTag: input.idTag,
+        isMasterCard: input.isMasterCard,
+        label: input.label,
+        expiryDate: input.expiryDate ? new Date(input.expiryDate) : undefined,
+        addedBy: ctx.user.id,
+      });
+      return entry;
+    }),
+
+  /**
+   * Eliminar una tarjeta de la lista local
+   */
+  removeLocalAuthEntry: ocppProcedure
+    .input(z.object({
+      entryId: z.number(),
+      stationId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.removeLocalAuthEntry(input.entryId, input.stationId);
+      return { success: true };
+    }),
+
+  /**
+   * Enviar la lista local al cargador vía OCPP SendLocalList
+   */
+  syncLocalList: ocppProcedure
+    .input(z.object({
+      stationId: z.number(),
+      ocppIdentity: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      // Obtener la lista y entradas
+      const { list, entries } = await db.getLocalAuthListWithEntries(input.stationId);
+
+      if (entries.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "No hay tarjetas en la lista local. Agrega al menos una tarjeta antes de sincronizar.",
+        });
+      }
+
+      // Formatear entradas para OCPP
+      const authList = entries.map(entry => ({
+        idTag: entry.idTag,
+        idTagInfo: {
+          status: entry.authStatus,
+          ...(entry.expiryDate ? { expiryDate: entry.expiryDate.toISOString() } : {}),
+        },
+      }));
+
+      try {
+        // Enviar lista completa al cargador
+        const result = await dualCSMS.sendLocalList(
+          input.ocppIdentity,
+          list.listVersion,
+          "Full",
+          authList
+        );
+
+        // Actualizar estado en BD
+        await db.markLocalAuthListSynced(input.stationId, result.status);
+
+        return {
+          success: result.status === "Accepted",
+          status: result.status,
+          entriesSent: entries.length,
+          listVersion: list.listVersion,
+        };
+      } catch (error: any) {
+        await db.markLocalAuthListSynced(input.stationId, "Failed");
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Error al enviar lista local: ${error.message}`,
+        });
+      }
+    }),
+
+  /**
+   * Consultar la versión de la lista local en el cargador
+   */
+  getChargerLocalListVersion: ocppProcedure
+    .input(z.object({ ocppIdentity: z.string() }))
+    .mutation(async ({ input }) => {
+      try {
+        const result = await dualCSMS.getLocalListVersion(input.ocppIdentity);
+        return result;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Error: ${error.message}`,
+        });
+      }
+    }),
+
+  /**
+   * Actualizar la política offline de una estación
+   */
+  updateOfflinePolicy: ocppProcedure
+    .input(z.object({
+      stationId: z.number(),
+      policy: z.enum(["LOCAL_LIST_ONLY", "FREE_VENDING", "REJECT_ALL"]),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateOfflinePolicy(input.stationId, input.policy);
+      return { success: true };
+    }),
+
+  /**
+   * Obtener transacciones offline pendientes de reconciliación
+   */
+  getOfflineTransactions: ocppProcedure
+    .input(z.object({ stationId: z.number().optional() }))
+    .query(async ({ input }) => {
+      return db.getPendingOfflineTransactions(input.stationId);
+    }),
+
+  /**
+   * Reconciliar una transacción offline (marcarla como procesada)
+   */
+  reconcileOfflineTransaction: ocppProcedure
+    .input(z.object({
+      offlineTxId: z.number(),
+      transactionId: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.reconcileOfflineTransaction(input.offlineTxId, input.transactionId, input.notes);
+      return { success: true };
+    }),
+
+  /**
+   * Obtener resumen del estado de listas locales de todas las estaciones
+   */
+  getAllLocalAuthListsStatus: ocppProcedure.query(async () => {
+    return db.getAllLocalAuthListsStatus();
+  }),
 });

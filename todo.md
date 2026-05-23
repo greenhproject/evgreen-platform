@@ -3459,3 +3459,18 @@
 - [x] Usar csmsDiag para uptime, heartbeatAge y pendingCalls cuando está disponible
 - [x] Agregar fallback: si hay heartbeats recientes (< 3 min) en logs, considerar conectado
 - [x] Mostrar estado RECONNECTING en vez de CLOSED cuando hay heartbeats recientes pero WS no está OPEN
+
+## RFID Local Authorization List (Modo Offline / Contingencia)
+- [x] Schema: tabla local_auth_lists para rastrear versiones de lista local por estación
+- [x] Schema: tabla local_auth_entries para las tarjetas asignadas a cada estación
+- [x] Backend: procedimiento sendLocalList para enviar lista al cargador vía OCPP
+- [x] Backend: procedimiento getLocalListVersion para consultar versión actual del cargador
+- [x] Backend: CRUD de tarjetas RFID maestras por estación (asignar/desasignar)
+- [x] Backend: lógica de sincronización de transacciones offline
+- [x] Backend: método en csms-dual para SendLocalList (OCPP 1.6 y 2.0.1)
+- [x] Admin UI: pestaña RFID/Offline en monitor OCPP por cargador
+- [x] Admin UI: botón para enviar/actualizar lista local al cargador
+- [x] Admin UI: indicador de estado de sincronización y política offline
+- [x] Admin UI: panel de tarjetas maestras y regulares con gestión completa
+- [x] Admin UI: panel informativo de cómo funciona el modo offline
+- [x] Tests: 10 tests pasando (métodos OCPP + funciones BD)

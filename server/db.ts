@@ -120,6 +120,15 @@ import {
   claims,
   Claim,
   InsertClaim,
+  localAuthLists,
+  LocalAuthList,
+  InsertLocalAuthList,
+  localAuthEntries,
+  LocalAuthEntry,
+  InsertLocalAuthEntry,
+  offlineTransactions,
+  OfflineTransaction,
+  InsertOfflineTransaction,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -7479,4 +7488,233 @@ export async function cleanExpiredPendingSessions() {
       lt(pendingChargeSessions.expiresAt, now),
       eq(pendingChargeSessions.consumed, false)
     ));
+}
+
+
+// ============================================================================
+// LOCAL AUTHORIZATION LIST - Funciones para gestión de listas locales RFID
+// ============================================================================
+
+/**
+ * Obtener o crear la lista local de autorización de una estación
+ */
+export async function getOrCreateLocalAuthList(stationId: number): Promise<LocalAuthList> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  
+  const existing = await database.select().from(localAuthLists)
+    .where(eq(localAuthLists.stationId, stationId)).limit(1);
+  
+  if (existing.length > 0) return existing[0];
+  
+  // Crear nueva lista
+  const result = await database.insert(localAuthLists).values({
+    stationId,
+    listVersion: 0,
+    status: "PENDING",
+    entryCount: 0,
+  });
+  
+  const newList = await database.select().from(localAuthLists)
+    .where(eq(localAuthLists.id, Number(result[0].insertId))).limit(1);
+  return newList[0];
+}
+
+/**
+ * Obtener la lista local de una estación con sus entradas
+ */
+export async function getLocalAuthListWithEntries(stationId: number): Promise<{
+  list: LocalAuthList;
+  entries: LocalAuthEntry[];
+}> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  
+  const list = await getOrCreateLocalAuthList(stationId);
+  const entries = await database.select().from(localAuthEntries)
+    .where(eq(localAuthEntries.listId, list.id));
+  
+  return { list, entries };
+}
+
+/**
+ * Agregar una entrada a la lista local de una estación
+ */
+export async function addLocalAuthEntry(data: {
+  stationId: number;
+  idTag: string;
+  isMasterCard?: boolean;
+  label?: string;
+  expiryDate?: Date;
+  addedBy?: number;
+}): Promise<LocalAuthEntry> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  
+  const list = await getOrCreateLocalAuthList(data.stationId);
+  
+  // Verificar si ya existe
+  const existing = await database.select().from(localAuthEntries)
+    .where(and(
+      eq(localAuthEntries.listId, list.id),
+      eq(localAuthEntries.idTag, data.idTag)
+    )).limit(1);
+  
+  if (existing.length > 0) {
+    throw new Error(`El idTag "${data.idTag}" ya existe en la lista local de esta estación`);
+  }
+  
+  // Buscar referencia en tabla id_tags
+  const idTagRef = await getIdTag(data.idTag);
+  
+  const result = await database.insert(localAuthEntries).values({
+    listId: list.id,
+    stationId: data.stationId,
+    idTag: data.idTag,
+    idTagRefId: idTagRef?.id || null,
+    isMasterCard: data.isMasterCard || false,
+    label: data.label || null,
+    expiryDate: data.expiryDate || null,
+    addedBy: data.addedBy || null,
+    authStatus: "Accepted",
+  });
+  
+  // Actualizar conteo y marcar como desactualizada
+  await database.update(localAuthLists).set({
+    entryCount: list.entryCount + 1,
+    listVersion: list.listVersion + 1,
+    status: "OUTDATED",
+  }).where(eq(localAuthLists.id, list.id));
+  
+  const newEntry = await database.select().from(localAuthEntries)
+    .where(eq(localAuthEntries.id, Number(result[0].insertId))).limit(1);
+  return newEntry[0];
+}
+
+/**
+ * Eliminar una entrada de la lista local
+ */
+export async function removeLocalAuthEntry(entryId: number, stationId: number): Promise<void> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  
+  const entry = await database.select().from(localAuthEntries)
+    .where(and(
+      eq(localAuthEntries.id, entryId),
+      eq(localAuthEntries.stationId, stationId)
+    )).limit(1);
+  
+  if (entry.length === 0) throw new Error("Entrada no encontrada");
+  
+  await database.delete(localAuthEntries).where(eq(localAuthEntries.id, entryId));
+  
+  // Actualizar conteo y marcar como desactualizada
+  const list = await getOrCreateLocalAuthList(stationId);
+  await database.update(localAuthLists).set({
+    entryCount: Math.max(0, list.entryCount - 1),
+    listVersion: list.listVersion + 1,
+    status: "OUTDATED",
+  }).where(eq(localAuthLists.id, list.id));
+}
+
+/**
+ * Marcar la lista como sincronizada después de un SendLocalList exitoso
+ */
+export async function markLocalAuthListSynced(stationId: number, result: string): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  
+  const list = await getOrCreateLocalAuthList(stationId);
+  await database.update(localAuthLists).set({
+    status: result === "Accepted" ? "SYNCED" : "FAILED",
+    lastSyncAt: new Date(),
+    lastSyncResult: result,
+    chargerListVersion: result === "Accepted" ? list.listVersion : list.chargerListVersion,
+  }).where(eq(localAuthLists.id, list.id));
+}
+
+/**
+ * Obtener todas las estaciones con su estado de lista local (para admin)
+ */
+export async function getAllLocalAuthListsStatus(): Promise<LocalAuthList[]> {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(localAuthLists);
+}
+
+/**
+ * Registrar una transacción offline para reconciliación posterior
+ */
+export async function createOfflineTransaction(data: InsertOfflineTransaction): Promise<number> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const result = await database.insert(offlineTransactions).values(data);
+  return Number(result[0].insertId);
+}
+
+/**
+ * Obtener transacciones offline pendientes de reconciliación
+ */
+export async function getPendingOfflineTransactions(stationId?: number): Promise<OfflineTransaction[]> {
+  const database = await getDb();
+  if (!database) return [];
+  
+  if (stationId) {
+    return database.select().from(offlineTransactions)
+      .where(and(
+        eq(offlineTransactions.stationId, stationId),
+        eq(offlineTransactions.reconciled, false)
+      ));
+  }
+  return database.select().from(offlineTransactions)
+    .where(eq(offlineTransactions.reconciled, false));
+}
+
+/**
+ * Marcar una transacción offline como reconciliada
+ */
+export async function reconcileOfflineTransaction(
+  offlineTxId: number, 
+  transactionId?: number, 
+  notes?: string
+): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  await database.update(offlineTransactions).set({
+    reconciled: true,
+    reconciledAt: new Date(),
+    reconciledTransactionId: transactionId || null,
+    notes: notes || null,
+  }).where(eq(offlineTransactions.id, offlineTxId));
+}
+
+/**
+ * Obtener tarjetas maestras de una estación
+ */
+export async function getMasterCards(stationId: number): Promise<LocalAuthEntry[]> {
+  const database = await getDb();
+  if (!database) return [];
+  
+  const list = await getOrCreateLocalAuthList(stationId);
+  return database.select().from(localAuthEntries)
+    .where(and(
+      eq(localAuthEntries.listId, list.id),
+      eq(localAuthEntries.isMasterCard, true)
+    ));
+}
+
+/**
+ * Actualizar política offline de una estación
+ */
+export async function updateOfflinePolicy(
+  stationId: number, 
+  policy: "LOCAL_LIST_ONLY" | "FREE_VENDING" | "REJECT_ALL"
+): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  
+  const list = await getOrCreateLocalAuthList(stationId);
+  await database.update(localAuthLists).set({
+    offlinePolicy: policy,
+  }).where(eq(localAuthLists.id, list.id));
 }
