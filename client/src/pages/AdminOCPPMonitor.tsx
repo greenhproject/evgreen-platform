@@ -50,6 +50,11 @@ import {
   Shield,
   Timer,
   Signal,
+  KeyRound,
+  CreditCard,
+  ShieldCheck,
+  Trash2,
+  Plus,
 } from "lucide-react";
 import {
   Chart as ChartJS,
@@ -678,6 +683,11 @@ function ChargerDetailView({
             <Signal className="h-4 w-4 mr-1 sm:mr-2" />
             <span className="hidden sm:inline">Estabilidad</span>
             <span className="sm:hidden">Estab.</span>
+          </TabsTrigger>
+          <TabsTrigger value="rfid" className="text-xs sm:text-sm">
+            <KeyRound className="h-4 w-4 mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">RFID / Offline</span>
+            <span className="sm:hidden">RFID</span>
           </TabsTrigger>
         </TabsList>
 
@@ -1405,6 +1415,11 @@ function ChargerDetailView({
         <TabsContent value="stability" className="space-y-4">
           <ConnectionStabilityTab ocppIdentity={ocppIdentity} formatUptime={formatUptime} />
         </TabsContent>
+
+        {/* ==================== TAB: RFID / OFFLINE ==================== */}
+        <TabsContent value="rfid" className="space-y-4">
+          <LocalAuthListTab stationId={station?.id || 0} ocppIdentity={ocppIdentity} isConnected={isConnected} />
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -1850,5 +1865,377 @@ function ConnectionStabilityOverview({ formatUptime }: { formatUptime: (s: numbe
         </CardContent>
       )}
     </Card>
+  );
+}
+
+
+// ============================================================================
+// LOCAL AUTH LIST TAB - Gestión de tarjetas RFID y modo offline
+// ============================================================================
+
+function LocalAuthListTab({
+  stationId,
+  ocppIdentity,
+  isConnected,
+}: {
+  stationId: number;
+  ocppIdentity: string;
+  isConnected: boolean;
+}) {
+  const [newIdTag, setNewIdTag] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [isMasterCard, setIsMasterCard] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  // Query: obtener lista local con entradas
+  const { data: localAuthData, refetch: refetchList } = trpc.ocpp.getLocalAuthList.useQuery(
+    { stationId },
+    { enabled: stationId > 0 }
+  );
+
+  // Mutations
+  const addEntryMutation = trpc.ocpp.addLocalAuthEntry.useMutation({
+    onSuccess: () => {
+      toast.success("Tarjeta agregada a la lista local");
+      refetchList();
+      setNewIdTag("");
+      setNewLabel("");
+      setIsMasterCard(false);
+      setShowAddForm(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const removeEntryMutation = trpc.ocpp.removeLocalAuthEntry.useMutation({
+    onSuccess: () => {
+      toast.success("Tarjeta eliminada de la lista local");
+      refetchList();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const syncListMutation = trpc.ocpp.syncLocalList.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(`Lista sincronizada: ${data.entriesSent} tarjetas enviadas al cargador (v${data.listVersion})`);
+      } else {
+        toast.error(`El cargador rechazó la lista: ${data.status}`);
+      }
+      refetchList();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const getVersionMutation = trpc.ocpp.getChargerLocalListVersion.useMutation({
+    onSuccess: (data) => {
+      toast.info(`Versión de lista en el cargador: ${data.listVersion}`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const updatePolicyMutation = trpc.ocpp.updateOfflinePolicy.useMutation({
+    onSuccess: () => {
+      toast.success("Política offline actualizada");
+      refetchList();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const list = localAuthData?.list;
+  const entries = localAuthData?.entries || [];
+  const masterCards = entries.filter(e => e.isMasterCard);
+  const regularCards = entries.filter(e => !e.isMasterCard);
+
+  if (stationId === 0) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-muted-foreground">
+          <ShieldCheck className="h-12 w-12 mx-auto mb-3 opacity-50" />
+          <p>Esta estación no está registrada en la base de datos.</p>
+          <p className="text-sm">Registra la estación primero para gestionar tarjetas RFID.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header con estado de sincronización */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <KeyRound className="h-4 w-4" />
+                Lista de Autorización Local (RFID)
+              </CardTitle>
+              <CardDescription>
+                Tarjetas pre-autorizadas para operación offline / contingencia
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {list && (
+                <Badge variant={
+                  list.status === "SYNCED" ? "default" :
+                  list.status === "OUTDATED" ? "secondary" :
+                  list.status === "FAILED" ? "destructive" : "outline"
+                }>
+                  {list.status === "SYNCED" && "Sincronizada"}
+                  {list.status === "OUTDATED" && "Desactualizada"}
+                  {list.status === "PENDING" && "Pendiente"}
+                  {list.status === "FAILED" && "Falló"}
+                </Badge>
+              )}
+              <Badge variant="outline">v{list?.listVersion || 0}</Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Política offline */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-3 bg-muted/50 rounded-lg">
+            <div className="flex-1">
+              <p className="text-sm font-medium">Política Offline</p>
+              <p className="text-xs text-muted-foreground">
+                Comportamiento cuando el cargador pierde conexión con la plataforma
+              </p>
+            </div>
+            <Select
+              value={list?.offlinePolicy || "LOCAL_LIST_ONLY"}
+              onValueChange={(val) => updatePolicyMutation.mutate({
+                stationId,
+                policy: val as "LOCAL_LIST_ONLY" | "FREE_VENDING" | "REJECT_ALL",
+              })}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="LOCAL_LIST_ONLY">Solo lista local</SelectItem>
+                <SelectItem value="FREE_VENDING">Libre (cualquiera)</SelectItem>
+                <SelectItem value="REJECT_ALL">Rechazar todo</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Acciones de sincronización */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              onClick={() => syncListMutation.mutate({ stationId, ocppIdentity })}
+              disabled={!isConnected || entries.length === 0 || syncListMutation.isPending}
+            >
+              <Send className="h-4 w-4 mr-1" />
+              {syncListMutation.isPending ? "Enviando..." : "Sincronizar con cargador"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => getVersionMutation.mutate({ ocppIdentity })}
+              disabled={!isConnected || getVersionMutation.isPending}
+            >
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Consultar versión
+            </Button>
+            {!isConnected && (
+              <p className="text-xs text-amber-500 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                Cargador desconectado - no se puede sincronizar
+              </p>
+            )}
+          </div>
+
+          {list?.lastSyncAt && (
+            <p className="text-xs text-muted-foreground">
+              Última sincronización: {new Date(list.lastSyncAt).toLocaleString('es-CO')}
+              {list.lastSyncResult && ` — Resultado: ${list.lastSyncResult}`}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Tarjetas Maestras */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-amber-500" />
+            Tarjetas Maestras ({masterCards.length})
+          </CardTitle>
+          <CardDescription>
+            Tarjetas del dueño/operador para autorizar cargas en modo contingencia
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {masterCards.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No hay tarjetas maestras configuradas. Agrega una para operar en contingencia.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {masterCards.map((entry) => (
+                <div key={entry.id} className="flex items-center justify-between p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <CreditCard className="h-5 w-5 text-amber-500" />
+                    <div>
+                      <p className="font-mono text-sm font-medium">{entry.idTag}</p>
+                      <p className="text-xs text-muted-foreground">{entry.label || "Tarjeta maestra"}</p>
+                    </div>
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-destructive"
+                    onClick={() => removeEntryMutation.mutate({ entryId: entry.id, stationId })}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Tarjetas de Usuarios */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <CreditCard className="h-4 w-4" />
+                Tarjetas Autorizadas ({regularCards.length})
+              </CardTitle>
+              <CardDescription>
+                Tarjetas de usuarios que pueden cargar en modo offline
+              </CardDescription>
+            </div>
+            <Button size="sm" onClick={() => setShowAddForm(!showAddForm)}>
+              <Plus className="h-4 w-4 mr-1" />
+              Agregar
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* Formulario para agregar */}
+          {showAddForm && (
+            <div className="p-4 border rounded-lg space-y-3 bg-muted/30">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium">ID Tag (RFID)</label>
+                  <Input
+                    placeholder="Ej: RFID-001 o número de tarjeta"
+                    value={newIdTag}
+                    onChange={(e) => setNewIdTag(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Etiqueta (opcional)</label>
+                  <Input
+                    placeholder="Ej: Tarjeta operador Juan"
+                    value={newLabel}
+                    onChange={(e) => setNewLabel(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="isMasterCard"
+                  checked={isMasterCard}
+                  onChange={(e) => setIsMasterCard(e.target.checked)}
+                  className="rounded"
+                />
+                <label htmlFor="isMasterCard" className="text-sm">
+                  Es tarjeta maestra (dueño/operador de la estación)
+                </label>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => addEntryMutation.mutate({
+                    stationId,
+                    idTag: newIdTag,
+                    isMasterCard,
+                    label: newLabel || undefined,
+                  })}
+                  disabled={!newIdTag.trim() || addEntryMutation.isPending}
+                >
+                  {addEntryMutation.isPending ? "Guardando..." : "Guardar"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setShowAddForm(false)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Lista de tarjetas */}
+          {regularCards.length === 0 && !showAddForm ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No hay tarjetas de usuario configuradas.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {regularCards.map((entry) => (
+                <div key={entry.id} className="flex items-center justify-between p-2 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <CreditCard className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="font-mono text-sm">{entry.idTag}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {entry.label || "Sin etiqueta"}
+                        {entry.expiryDate && ` · Expira: ${new Date(entry.expiryDate).toLocaleDateString('es-CO')}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      {entry.authStatus}
+                    </Badge>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-destructive"
+                      onClick={() => removeEntryMutation.mutate({ entryId: entry.id, stationId })}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Información sobre modo offline */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Info className="h-4 w-4" />
+            Cómo funciona el modo offline
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-500 flex items-center justify-center text-xs font-bold">1</div>
+              <p><strong className="text-foreground">Configura tarjetas:</strong> Agrega las tarjetas RFID del dueño de la estación como "maestras" y las de usuarios frecuentes como regulares.</p>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-500 flex items-center justify-center text-xs font-bold">2</div>
+              <p><strong className="text-foreground">Sincroniza:</strong> Envía la lista al cargador con el botón "Sincronizar". La lista se almacena en el firmware del cargador.</p>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-500 flex items-center justify-center text-xs font-bold">3</div>
+              <p><strong className="text-foreground">Contingencia:</strong> Si la plataforma se cae, el cargador autoriza cargas usando la lista local. Las transacciones se almacenan en el buffer interno.</p>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-500 flex items-center justify-center text-xs font-bold">4</div>
+              <p><strong className="text-foreground">Reconciliación:</strong> Al reconectarse, el cargador envía automáticamente las transacciones pendientes y se sincronizan con los usuarios.</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

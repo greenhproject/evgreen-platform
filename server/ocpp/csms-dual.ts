@@ -2885,6 +2885,102 @@ export class DualCSMS {
   }
 
   // ============================================================================
+  // LOCAL AUTHORIZATION LIST - Envío de listas locales RFID al cargador
+  // ============================================================================
+
+  /**
+   * Envía la lista de autorización local al cargador (OCPP 1.6: SendLocalList)
+   * Permite que el cargador opere offline autorizando tarjetas RFID sin conexión al CSMS.
+   * 
+   * @param ocppIdentity - Identidad OCPP del cargador
+   * @param listVersion - Versión de la lista (debe ser mayor que la actual en el cargador)
+   * @param updateType - "Full" para reemplazar toda la lista, "Differential" para agregar/remover
+   * @param localAuthorizationList - Array de {idTag, idTagInfo: {status, expiryDate?}}
+   */
+  async sendLocalList(
+    ocppIdentity: string,
+    listVersion: number,
+    updateType: "Full" | "Differential",
+    localAuthorizationList: Array<{
+      idTag: string;
+      idTagInfo: { status: string; expiryDate?: string };
+    }>
+  ): Promise<{ status: string }> {
+    const conn = this.connections.get(ocppIdentity);
+    if (!conn) {
+      throw new Error(`Charger ${ocppIdentity} is not connected`);
+    }
+
+    let response: any;
+
+    if (conn.ocppVersion === "1.6") {
+      // OCPP 1.6: SendLocalList.req
+      response = await this.sendCall(conn, "SendLocalList", {
+        listVersion,
+        updateType,
+        localAuthorizationList: localAuthorizationList.map(entry => ({
+          idTag: entry.idTag,
+          idTagInfo: {
+            status: entry.idTagInfo.status,
+            ...(entry.idTagInfo.expiryDate ? { expiryDate: entry.idTagInfo.expiryDate } : {}),
+          },
+        })),
+      });
+    } else {
+      // OCPP 2.0.1: SendLocalList.req (formato ligeramente diferente)
+      response = await this.sendCall(conn, "SendLocalList", {
+        versionNumber: listVersion,
+        updateType,
+        localAuthorizationList: localAuthorizationList.map(entry => ({
+          idToken: { idToken: entry.idTag, type: "Central" },
+          idTokenInfo: {
+            status: entry.idTagInfo.status,
+            ...(entry.idTagInfo.expiryDate ? { cacheExpiryDateTime: entry.idTagInfo.expiryDate } : {}),
+          },
+        })),
+      });
+    }
+
+    await db.createOcppLog({
+      ocppIdentity,
+      stationId: conn.stationId || 0,
+      direction: "OUT",
+      messageType: "SendLocalList",
+      payload: { listVersion, updateType, entriesCount: localAuthorizationList.length, response },
+    });
+
+    return { status: response?.status || "Failed" };
+  }
+
+  /**
+   * Consulta la versión actual de la lista local en el cargador (OCPP 1.6: GetLocalListVersion)
+   */
+  async getLocalListVersion(ocppIdentity: string): Promise<{ listVersion: number }> {
+    const conn = this.connections.get(ocppIdentity);
+    if (!conn) {
+      throw new Error(`Charger ${ocppIdentity} is not connected`);
+    }
+
+    let response: any;
+
+    if (conn.ocppVersion === "1.6") {
+      response = await this.sendCall(conn, "GetLocalListVersion", {});
+    } else {
+      response = await this.sendCall(conn, "GetLocalListVersion", {});
+    }
+
+    await db.createOcppLog({
+      ocppIdentity,
+      stationId: conn.stationId || 0,
+      direction: "OUT",
+      messageType: "GetLocalListVersion",
+      payload: response,
+    });
+
+    return { listVersion: response?.listVersion ?? response?.versionNumber ?? -1 };
+  }
+
+  // ============================================================================
   // BRIDGE: Registrar conexiones externas (desde index.ts WebSocket handler)
   // ============================================================================
 
