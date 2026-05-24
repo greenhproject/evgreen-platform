@@ -3474,3 +3474,13 @@
 - [x] Admin UI: panel de tarjetas maestras y regulares con gestión completa
 - [x] Admin UI: panel informativo de cómo funciona el modo offline
 - [x] Tests: 10 tests pasando (métodos OCPP + funciones BD)
+
+## Mejora Landing "Postula tu Espacio" (Más persuasiva)
+- [x] Hero: Propuesta de valor impactante con estadísticas ($0 inversión, 10% margen, +207% crec. EV)
+- [x] Sección: Oferta clara - 10% del margen bruto del punto (~$145 COP/kWh), cero inversión
+- [x] Sección: Proyección de ingresos realista con 3 escenarios ($87K/$174K/$348K COP/mes)
+- [x] Disclaimer: Aviso legal - ingresos dependen de facturación, no se prometen ingresos fijos
+- [x] Sección: Beneficios (tráfico premium 30+ min, valorización, cero mantenimiento)
+- [x] Sección: Cómo funciona (4 pasos: Postulas → Evaluamos → Instalamos → Generas)
+- [x] Checkbox: Aceptación tratamiento datos (Ley 1581/2012, con email datos@evgreen.lat)
+- [ ] Social proof: Testimonios o datos de la red actual (pendiente datos reales)
