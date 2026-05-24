@@ -149,6 +149,7 @@ export default function SpaceSubmission() {
   const [photos, setPhotos] = useState<PhotoFile[]>([]);
   const [submittedCode, setSubmittedCode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [acceptsDataTreatment, setAcceptsDataTreatment] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
 
@@ -405,20 +406,159 @@ export default function SpaceSubmission() {
       {/* Hero Section */}
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-emerald-600/10 to-transparent" />
-        <div className="max-w-5xl mx-auto px-4 pt-12 pb-8 relative">
-          <div className="text-center mb-8">
+        <div className="max-w-5xl mx-auto px-4 pt-10 pb-6 relative">
+          <div className="text-center mb-6">
             <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-1.5 mb-4">
               <Zap className="w-4 h-4 text-emerald-400" />
               <span className="text-sm text-emerald-300">Red de carga EV en Colombia</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-bold text-white mb-3">
-              Postula tu espacio para un
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-300"> cargador EV</span>
+              Genera ingresos pasivos con tu
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-300"> espacio disponible</span>
             </h1>
-            <p className="text-gray-400 max-w-2xl mx-auto">
-              Convierte tu espacio en un punto de carga para vehículos eléctricos. 
-              Sin inversión de tu parte, genera ingresos pasivos y contribuye a la movilidad sostenible.
+            <p className="text-gray-400 max-w-2xl mx-auto text-base">
+              Instala un cargador de vehículos eléctricos sin inversión y recibe el <strong className="text-emerald-300">10% del margen bruto</strong> de cada carga realizada en tu punto. Nosotros ponemos el equipo, la tecnología y la operación.
             </p>
+          </div>
+
+          {/* Stats bar */}
+          <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto mb-6">
+            <div className="text-center bg-[#111827]/80 border border-[#1f2937] rounded-xl p-3">
+              <p className="text-xl font-bold text-emerald-400">$0</p>
+              <p className="text-xs text-gray-400">Inversión</p>
+            </div>
+            <div className="text-center bg-[#111827]/80 border border-[#1f2937] rounded-xl p-3">
+              <p className="text-xl font-bold text-emerald-400">10%</p>
+              <p className="text-xs text-gray-400">Margen bruto</p>
+            </div>
+            <div className="text-center bg-[#111827]/80 border border-[#1f2937] rounded-xl p-3">
+              <p className="text-xl font-bold text-emerald-400">+207%</p>
+              <p className="text-xs text-gray-400">Crec. EV 2024</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Value Proposition Section */}
+      <div className="max-w-5xl mx-auto px-4 mb-8">
+        <div className="bg-gradient-to-br from-[#111827] to-[#0d1525] border border-[#1f2937] rounded-2xl p-6">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-emerald-400" />
+            ¿Qué recibes?
+          </h2>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                <Zap className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">10% del margen bruto</p>
+                <p className="text-xs text-gray-400">Por cada kWh vendido en tu punto (~$145 COP/kWh de margen)</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                <Car className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">Tráfico premium</p>
+                <p className="text-xs text-gray-400">Conductores EV permanecen 30+ min mientras cargan</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                <Building2 className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">Valorización del espacio</p>
+                <p className="text-xs text-gray-400">Tu propiedad se posiciona como punto EV-friendly</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                <Clock className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">Cero mantenimiento</p>
+                <p className="text-xs text-gray-400">EVGreen opera, mantiene y monitorea 24/7</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Income Projection */}
+          <div className="bg-[#0a0f1a] border border-[#374151] rounded-xl p-4 mb-4">
+            <p className="text-sm font-medium text-white mb-3 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
+              Proyección de ingresos (escenario realista)
+            </p>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Conservador</p>
+                <p className="text-lg font-bold text-white">$87K</p>
+                <p className="text-xs text-gray-400">COP/mes</p>
+                <p className="text-[10px] text-gray-500">~4 cargas/día</p>
+              </div>
+              <div className="border-x border-[#374151]">
+                <p className="text-xs text-gray-500 mb-1">Moderado</p>
+                <p className="text-lg font-bold text-emerald-400">$174K</p>
+                <p className="text-xs text-gray-400">COP/mes</p>
+                <p className="text-[10px] text-gray-500">~8 cargas/día</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Optimista</p>
+                <p className="text-lg font-bold text-white">$348K</p>
+                <p className="text-xs text-gray-400">COP/mes</p>
+                <p className="text-[10px] text-gray-500">~16 cargas/día</p>
+              </div>
+            </div>
+            <p className="text-[10px] text-gray-500 mt-3 leading-relaxed">
+              * Basado en carga promedio de 15 kWh por sesión, margen bruto de ~$145 COP/kWh, participación del 10%. Cálculo: cargas/día × 15 kWh × $145 × 10% × 30 días.
+            </p>
+          </div>
+
+          {/* Disclaimer */}
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+            <p className="text-[11px] text-amber-200/70 leading-relaxed">
+              <strong className="text-amber-300">Importante:</strong> Los ingresos proyectados son estimaciones basadas en promedios del mercado y no constituyen una promesa de ingresos fijos. Los ingresos reales dependen de la ubicación, tráfico vehicular, demanda de carga EV y facturación efectiva del punto. EVGreen no garantiza un monto mínimo de ingresos.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* How it works */}
+      <div className="max-w-5xl mx-auto px-4 mb-8">
+        <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6">
+          <h2 className="text-lg font-semibold text-white mb-4">¿Cómo funciona?</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="w-10 h-10 mx-auto rounded-full bg-emerald-500/20 flex items-center justify-center mb-2">
+                <span className="text-sm font-bold text-emerald-400">1</span>
+              </div>
+              <p className="text-sm font-medium text-white">Postulas</p>
+              <p className="text-xs text-gray-400">Llenas este formulario con los datos de tu espacio</p>
+            </div>
+            <div className="text-center">
+              <div className="w-10 h-10 mx-auto rounded-full bg-emerald-500/20 flex items-center justify-center mb-2">
+                <span className="text-sm font-bold text-emerald-400">2</span>
+              </div>
+              <p className="text-sm font-medium text-white">Evaluamos</p>
+              <p className="text-xs text-gray-400">Nuestro equipo técnico visita y evalúa la viabilidad</p>
+            </div>
+            <div className="text-center">
+              <div className="w-10 h-10 mx-auto rounded-full bg-emerald-500/20 flex items-center justify-center mb-2">
+                <span className="text-sm font-bold text-emerald-400">3</span>
+              </div>
+              <p className="text-sm font-medium text-white">Instalamos</p>
+              <p className="text-xs text-gray-400">Instalamos el cargador sin costo para ti</p>
+            </div>
+            <div className="text-center">
+              <div className="w-10 h-10 mx-auto rounded-full bg-emerald-500/20 flex items-center justify-center mb-2">
+                <span className="text-sm font-bold text-emerald-400">4</span>
+              </div>
+              <p className="text-sm font-medium text-white">Generas</p>
+              <p className="text-xs text-gray-400">Recibes el 10% del margen por cada carga</p>
+            </div>
           </div>
         </div>
       </div>
@@ -1013,6 +1153,28 @@ export default function SpaceSubmission() {
                   El proceso puede tomar entre 3 y 7 días hábiles.
                 </p>
               </div>
+
+              {/* Data Treatment Consent */}
+              <div className="bg-[#0a0f1a] border border-[#374151] rounded-xl p-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={acceptsDataTreatment}
+                    onChange={e => setAcceptsDataTreatment(e.target.checked)}
+                    className="mt-1 w-4 h-4 rounded border-[#374151] bg-[#111827] text-emerald-500 focus:ring-emerald-500 flex-shrink-0"
+                  />
+                  <span className="text-xs text-gray-400 leading-relaxed">
+                    Autorizo a EVGreen S.A.S. el tratamiento de mis datos personales conforme a la Ley 1581 de 2012 y su Decreto Reglamentario 1377 de 2013. Mis datos serán utilizados para evaluar la viabilidad del espacio postulado, contactarme con información sobre el programa, y enviar comunicaciones comerciales relacionadas. Puedo ejercer mis derechos de acceso, corrección, supresión y revocatoria escribiendo a <strong className="text-gray-300">datos@evgreen.lat</strong>.
+                  </span>
+                </label>
+              </div>
+
+              {/* Income disclaimer */}
+              <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+                <p className="text-[11px] text-amber-200/70 leading-relaxed">
+                  <strong className="text-amber-300">Aviso legal:</strong> La participación del 10% sobre el margen bruto está sujeta a la firma de un contrato de comodato o alianza comercial. Los ingresos dependen exclusivamente de la facturación real del punto de carga y no constituyen una renta fija garantizada. EVGreen se reserva el derecho de evaluar y aprobar los espacios según criterios técnicos y comerciales.
+                </p>
+              </div>
             </div>
           )}
 
@@ -1042,8 +1204,8 @@ export default function SpaceSubmission() {
             ) : (
               <Button
                 onClick={handleSubmit}
-                disabled={isSubmitting}
-                className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white px-8"
+                disabled={isSubmitting || !acceptsDataTreatment}
+                className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white px-8 disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
