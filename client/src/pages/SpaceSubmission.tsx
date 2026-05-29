@@ -858,6 +858,7 @@ export default function SpaceSubmission() {
                     className="h-[300px]"
                     initialCenter={{ lat: 4.7110, lng: -74.0721 }}
                     initialZoom={6}
+                    mapTypeId="hybrid"
                     onMapReady={handleMapReady}
                   />
                 </div>
