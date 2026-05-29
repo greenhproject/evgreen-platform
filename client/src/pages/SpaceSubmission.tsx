@@ -160,10 +160,70 @@ export default function SpaceSubmission() {
   };
 
   // ========================================================================
+  // PLACES AUTOCOMPLETE
+  // ========================================================================
+  const addressInputRef = useRef<HTMLInputElement | null>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+
+  const initAutocomplete = useCallback(() => {
+    if (!addressInputRef.current || !window.google?.maps?.places || autocompleteRef.current) return;
+
+    const autocomplete = new google.maps.places.Autocomplete(addressInputRef.current, {
+      componentRestrictions: { country: "co" },
+      fields: ["formatted_address", "geometry", "address_components"],
+      types: ["address"],
+    });
+
+    autocomplete.addListener("place_changed", () => {
+      const place = autocomplete.getPlace();
+      if (!place.geometry?.location) return;
+
+      const lat = place.geometry.location.lat().toFixed(8);
+      const lng = place.geometry.location.lng().toFixed(8);
+      const addr = place.formatted_address || "";
+
+      let city = "";
+      let department = "";
+      if (place.address_components) {
+        for (const comp of place.address_components) {
+          if (comp.types.includes("locality")) city = comp.long_name;
+          if (comp.types.includes("administrative_area_level_1")) department = comp.long_name;
+        }
+      }
+
+      setForm(prev => ({
+        ...prev,
+        address: addr,
+        latitude: lat,
+        longitude: lng,
+        ...(city ? { city } : {}),
+        ...(department ? { department } : {}),
+      }));
+
+      if (mapRef.current) {
+        mapRef.current.setCenter(place.geometry.location);
+        mapRef.current.setZoom(16);
+        if (markerRef.current) {
+          markerRef.current.position = place.geometry.location;
+        } else {
+          markerRef.current = new google.maps.marker.AdvancedMarkerElement({
+            map: mapRef.current,
+            position: place.geometry.location,
+            title: "Ubicación del espacio",
+          });
+        }
+      }
+    });
+
+    autocompleteRef.current = autocomplete;
+  }, []);
+
+  // ========================================================================
   // MAP HANDLER
   // ========================================================================
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
+    initAutocomplete();
 
     // Agregar click listener para seleccionar ubicación
     map.addListener("click", (e: google.maps.MapMouseEvent) => {
@@ -750,11 +810,16 @@ export default function SpaceSubmission() {
                 <div className="sm:col-span-2">
                   <Label className="text-gray-300 mb-1.5 block">Dirección *</Label>
                   <Input
+                    ref={(el) => {
+                      addressInputRef.current = el;
+                      if (el) initAutocomplete();
+                    }}
                     value={form.address}
                     onChange={e => updateForm("address", e.target.value)}
-                    placeholder="Calle, carrera, número..."
+                    placeholder="Escribe una dirección para buscar..."
                     className="bg-[#0a0f1a] border-[#374151] text-white placeholder:text-gray-600"
                   />
+                  <p className="text-xs text-gray-500 mt-1">Escribe y selecciona de las sugerencias de Google Maps</p>
                 </div>
 
                 <div>
