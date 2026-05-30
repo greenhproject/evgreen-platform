@@ -422,6 +422,7 @@ export const spacesRouter = router({
           estimatedDailyVehicles: spaceSubmissions.estimatedDailyVehicles,
           parkingSpots: spaceSubmissions.parkingSpots,
           viewCount: spaceSubmissions.viewCount,
+          investmentType: spaceSubmissions.investmentType,
         })
         .from(spaceSubmissions)
         .where(
@@ -996,6 +997,7 @@ Responde en formato JSON con la siguiente estructura:`;
         estimatedPowerKw: z.number().int().optional(),
         estimatedChargerCount: z.number().int().optional(),
         recommendedChargerType: z.string().optional(),
+        investmentType: z.enum(["individual", "colectiva"]).optional(),
       }))
       .mutation(async ({ input }) => {
         const db = await getDatabase();

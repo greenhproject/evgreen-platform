@@ -879,8 +879,10 @@ export default function Investors() {
 
     const filteredSpaces = useMemo(() => {
       if (!spaces) return [];
-      if (spaceFilter === "all") return spaces as any[];
-      return (spaces as any[]).filter((s: any) => s.spaceType === spaceFilter);
+      // Excluir espacios de tipo "colectiva" - esos solo aparecen como Premium (marcadores naranjas)
+      const individualSpaces = (spaces as any[]).filter((s: any) => s.investmentType !== "colectiva");
+      if (spaceFilter === "all") return individualSpaces;
+      return individualSpaces.filter((s: any) => s.spaceType === spaceFilter);
     }, [spaces, spaceFilter]);
 
     const handleMapReady = useCallback((map: google.maps.Map) => {
@@ -1250,7 +1252,7 @@ export default function Investors() {
               <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-emerald-400" />
                 <span className="text-sm text-gray-300">
-                  <strong className="text-white">{spaces?.length || 0}</strong> puntos individuales
+                  <strong className="text-white">{filteredSpaces?.length || 0}</strong> puntos individuales
                 </span>
               </div>
               <div className="flex items-center gap-2">

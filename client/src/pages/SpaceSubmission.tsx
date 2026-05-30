@@ -18,6 +18,7 @@ import {
   Upload, X, Loader2, Phone, Mail, User, FileText, Clock, Wifi, Car,
   TrendingUp, Info, ChevronDown,
 } from "lucide-react";
+import { COLOMBIA_DEPARTMENTS, DEPARTMENT_NAMES } from "@/data/colombiaCities";
 
 // ============================================================================
 // TYPES
@@ -121,14 +122,7 @@ const PHOTO_TYPES = [
   { value: "other", label: "Otra" },
 ];
 
-const DEPARTMENTS = [
-  "Amazonas", "Antioquia", "Arauca", "Atlántico", "Bolívar", "Boyacá",
-  "Caldas", "Caquetá", "Casanare", "Cauca", "Cesar", "Chocó", "Córdoba",
-  "Cundinamarca", "Guainía", "Guaviare", "Huila", "La Guajira", "Magdalena",
-  "Meta", "Nariño", "Norte de Santander", "Putumayo", "Quindío", "Risaralda",
-  "San Andrés y Providencia", "Santander", "Sucre", "Tolima", "Valle del Cauca",
-  "Vaupés", "Vichada", "Bogotá D.C.",
-];
+// Ciudades disponibles según departamento seleccionado (cascading)
 
 const STEPS = [
   { id: 1, title: "Tus datos", icon: User, desc: "Información de contacto" },
@@ -191,13 +185,39 @@ export default function SpaceSubmission() {
         }
       }
 
+      // Match department name from Google to our data
+      let matchedDept = department;
+      if (department) {
+        const found = DEPARTMENT_NAMES.find(d => 
+          d.toLowerCase() === department.toLowerCase() ||
+          department.toLowerCase().includes(d.toLowerCase()) ||
+          d.toLowerCase().includes(department.toLowerCase())
+        );
+        if (found) matchedDept = found;
+        // Special case: Bogotá from Google comes as "Bogotá"
+        if (department.toLowerCase().includes("bogotá") || department.toLowerCase().includes("bogota")) {
+          matchedDept = "Bogotá D.C.";
+        }
+      }
+
+      // Match city to our list if possible
+      let matchedCity = city;
+      if (matchedDept && city && COLOMBIA_DEPARTMENTS[matchedDept]) {
+        const foundCity = COLOMBIA_DEPARTMENTS[matchedDept].find(c =>
+          c.toLowerCase() === city.toLowerCase() ||
+          city.toLowerCase().includes(c.toLowerCase()) ||
+          c.toLowerCase().includes(city.toLowerCase())
+        );
+        if (foundCity) matchedCity = foundCity;
+      }
+
       setForm(prev => ({
         ...prev,
         address: addr,
         latitude: lat,
         longitude: lng,
-        ...(city ? { city } : {}),
-        ...(department ? { department } : {}),
+        ...(matchedCity ? { city: matchedCity } : {}),
+        ...(matchedDept ? { department: matchedDept } : {}),
       }));
 
       if (mapRef.current) {
@@ -823,27 +843,40 @@ export default function SpaceSubmission() {
                 </div>
 
                 <div>
-                  <Label className="text-gray-300 mb-1.5 block">Ciudad *</Label>
-                  <Input
-                    value={form.city}
-                    onChange={e => updateForm("city", e.target.value)}
-                    placeholder="Ej: Bogotá"
-                    className="bg-[#0a0f1a] border-[#374151] text-white placeholder:text-gray-600"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-gray-300 mb-1.5 block">Departamento</Label>
-                  <Select value={form.department} onValueChange={v => updateForm("department", v)}>
+                  <Label className="text-gray-300 mb-1.5 block">Departamento *</Label>
+                  <Select value={form.department} onValueChange={v => { updateForm("department", v); updateForm("city", ""); }}>
                     <SelectTrigger className="bg-[#0a0f1a] border-[#374151] text-white">
-                      <SelectValue placeholder="Seleccione..." />
+                      <SelectValue placeholder="Seleccione departamento..." />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#1f2937] border-[#374151]">
-                      {DEPARTMENTS.map(d => (
+                    <SelectContent className="bg-[#1f2937] border-[#374151] max-h-[300px]">
+                      {DEPARTMENT_NAMES.map(d => (
                         <SelectItem key={d} value={d} className="text-white">{d}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div>
+                  <Label className="text-gray-300 mb-1.5 block">Ciudad *</Label>
+                  <Select value={form.city} onValueChange={v => updateForm("city", v)} disabled={!form.department}>
+                    <SelectTrigger className="bg-[#0a0f1a] border-[#374151] text-white">
+                      <SelectValue placeholder={form.department ? "Seleccione ciudad..." : "Primero seleccione departamento"} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1f2937] border-[#374151] max-h-[300px]">
+                      {(form.department && COLOMBIA_DEPARTMENTS[form.department] || []).map(c => (
+                        <SelectItem key={c} value={c} className="text-white">{c}</SelectItem>
+                      ))}
+                      <SelectItem value="__other__" className="text-gray-400 italic">Otra ciudad...</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {form.city === "__other__" && (
+                    <Input
+                      value={form.city === "__other__" ? "" : form.city}
+                      onChange={e => updateForm("city", e.target.value)}
+                      placeholder="Escriba el nombre de la ciudad"
+                      className="bg-[#0a0f1a] border-[#374151] text-white placeholder:text-gray-600 mt-2"
+                    />
+                  )}
                 </div>
               </div>
 

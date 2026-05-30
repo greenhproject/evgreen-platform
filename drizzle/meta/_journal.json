@@ -260,6 +260,13 @@
       "when": 1779559131436,
       "tag": "0036_eager_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "5",
+      "when": 1780177106330,
+      "tag": "0037_eminent_firebird",
+      "breakpoints": true
     }
   ]
 }
