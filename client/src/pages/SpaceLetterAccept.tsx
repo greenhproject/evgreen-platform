@@ -19,7 +19,7 @@ export default function SpaceLetterAccept() {
   const [signerDocument, setSignerDocument] = useState("");
   const [accepted, setAccepted] = useState(false);
   const [termsChecked, setTermsChecked] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; spaceName?: string; code?: string } | null>(null);
+  const [result, setResult] = useState<{ success: boolean; spaceName?: string; code?: string; pdfUrl?: string } | null>(null);
 
   const acceptMutation = trpc.spaces.acceptLetter.useMutation();
 
@@ -87,9 +87,20 @@ export default function SpaceLetterAccept() {
             <p className="text-sm text-gray-400 mb-4">
               Se ha generado un PDF con la constancia de su firma digital que incluye sus datos, fecha, hora, IP y hash de verificación. <strong className="text-gray-300">También se ha enviado una copia a su correo electrónico.</strong>
             </p>
+            {result.pdfUrl && (
+              <a
+                href={result.pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 w-full justify-center px-4 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-white text-sm font-medium transition-colors mb-3"
+              >
+                <Download className="w-4 h-4" />
+                Descargar Constancia PDF
+              </a>
+            )}
             <div className="flex items-center gap-2 text-xs text-emerald-400/70">
               <Mail className="w-3.5 h-3.5" />
-              <span>Revise su bandeja de entrada para la copia del documento</span>
+              <span>También se ha enviado una copia a su correo electrónico</span>
             </div>
           </div>
 

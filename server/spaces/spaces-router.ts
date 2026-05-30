@@ -389,7 +389,7 @@ export const spacesRouter = router({
         console.error("[Spaces] Error notifying owner:", err);
       }
 
-      return { success: true, spaceName: submission.spaceName, code: submission.code };
+      return { success: true, spaceName: submission.spaceName, code: submission.code, pdfUrl: pdfUrl || undefined };
     }),
 
   // ========================================================================
