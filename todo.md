@@ -3484,3 +3484,11 @@
 - [x] Sección: Cómo funciona (4 pasos: Postulas → Evaluamos → Instalamos → Generas)
 - [x] Checkbox: Aceptación tratamiento datos (Ley 1581/2012, con email datos@evgreen.lat)
 - [ ] Social proof: Testimonios o datos de la red actual (pendiente datos reales)
+
+## Fix: Cascading Department/City + Investment Type Classification (30 Mayo 2026)
+- [x] Cascading department → city selects in SpaceSubmission (prevent incoherent city/department)
+- [x] Station investment type field in schema (individual vs colectiva)
+- [x] Admin edit dialog: investmentType selector to classify spaces
+- [x] Fix investor map: mutual exclusion (individual OR colectiva, not both)
+- [x] Satellite/hybrid map view by default in SpaceSubmission
+- [x] Google Places Autocomplete graceful fallback

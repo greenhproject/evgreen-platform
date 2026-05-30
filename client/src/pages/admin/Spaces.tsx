@@ -501,7 +501,7 @@ function SpaceDetailDialog({
                 </Button>
               )}
               {/* Edit & Delete */}
-              <Button size="sm" variant="outline" onClick={() => { setEditForm({ spaceName: space.spaceName, address: space.address, city: space.city, department: space.department || "", submitterName: space.submitterName, submitterEmail: space.submitterEmail, submitterPhone: space.submitterPhone || "", estimatedInvestmentCop: space.estimatedInvestmentCop || "", estimatedPowerKw: space.estimatedPowerKw || "", estimatedChargerCount: space.estimatedChargerCount || "", additionalNotes: space.additionalNotes || "" }); setShowEditDialog(true); }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-shrink-0 text-xs">
+              <Button size="sm" variant="outline" onClick={() => { setEditForm({ spaceName: space.spaceName, address: space.address, city: space.city, department: space.department || "", submitterName: space.submitterName, submitterEmail: space.submitterEmail, submitterPhone: space.submitterPhone || "", estimatedInvestmentCop: space.estimatedInvestmentCop || "", estimatedPowerKw: space.estimatedPowerKw || "", estimatedChargerCount: space.estimatedChargerCount || "", additionalNotes: space.additionalNotes || "", investmentType: (space as any).investmentType || "individual" }); setShowEditDialog(true); }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-shrink-0 text-xs">
                 <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
               </Button>
               <Button size="sm" variant="outline" onClick={() => setShowDeleteDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 flex-shrink-0 text-xs">
@@ -742,6 +742,18 @@ function SpaceDetailDialog({
                 <Label className="text-gray-300 text-xs mb-1 block">Cargadores</Label>
                 <Input type="number" value={editForm.estimatedChargerCount || ""} onChange={e => setEditForm(p => ({ ...p, estimatedChargerCount: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
               </div>
+              <div>
+                <Label className="text-gray-300 text-xs mb-1 block">Tipo de inversión</Label>
+                <Select value={editForm.investmentType || "individual"} onValueChange={v => setEditForm(p => ({ ...p, investmentType: v }))}>
+                  <SelectTrigger className="bg-[#0a0f1a] border-[#374151] text-white text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1f2937] border-[#374151]">
+                    <SelectItem value="individual" className="text-white">Individual</SelectItem>
+                    <SelectItem value="colectiva" className="text-white">Colectiva (Premium)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div>
               <Label className="text-gray-300 text-xs mb-1 block">Notas adicionales</Label>
@@ -766,6 +778,7 @@ function SpaceDetailDialog({
                 if (editForm.estimatedPowerKw) payload.estimatedPowerKw = parseInt(editForm.estimatedPowerKw);
                 if (editForm.estimatedChargerCount) payload.estimatedChargerCount = parseInt(editForm.estimatedChargerCount);
                 if (editForm.additionalNotes !== undefined) payload.additionalNotes = editForm.additionalNotes;
+                if (editForm.investmentType) payload.investmentType = editForm.investmentType;
                 await updateSpaceMutation.mutateAsync(payload as any);
                 toast.success("Espacio actualizado correctamente");
                 setShowEditDialog(false);

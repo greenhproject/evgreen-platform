@@ -3276,6 +3276,9 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
   estimatedChargerCount: int("estimatedChargerCount"), // Número de cargadores estimados
   recommendedChargerType: varchar("recommendedChargerType", { length: 50 }), // AC/DC recomendado
   
+  // Tipo de inversión (clasificación en mapa de inversionistas)
+  investmentType: mysqlEnum("investment_type", ["individual", "colectiva"]).default("individual").notNull(),
+  
   // Contador de visitas de inversionistas
   viewCount: int("viewCount").default(0).notNull(),
   
