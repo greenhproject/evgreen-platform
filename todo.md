@@ -3492,3 +3492,10 @@
 - [x] Fix investor map: mutual exclusion (individual OR colectiva, not both)
 - [x] Satellite/hybrid map view by default in SpaceSubmission
 - [x] Google Places Autocomplete graceful fallback
+
+## Bug Crítico: Desconexión Simultánea de Cargadores - 31 Mayo 2026
+- [x] FIX: Ping/pong agresivo causa desconexión simultánea de todos los cargadores cuando el event loop se retrasa
+- [x] Implementar sistema de missed-pong counter con 3 reintentos antes de terminar
+- [x] Usar timestamps de última actividad en vez de flag booleano isAlive
+- [x] Agregar logging mejorado para diagnóstico de desconexiones
+- [ ] Verificar y hacer push a GitHub

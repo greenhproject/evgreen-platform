@@ -352,28 +352,48 @@ async function startServer() {
   // Capa 3: OCPP ChangeConfiguration HeartbeatInterval=30 - el cargador envía heartbeats frecuentes
   // ============================================================================
 
-  // CAPA 1: WebSocket ping/pong estándar (frame de control)
-  const WS_PING_INTERVAL_MS = 20000; // 20 segundos
+  // CAPA 1: WebSocket ping/pong con tolerancia a retrasos del event loop
+  // PROBLEMA RESUELTO: El sistema anterior usaba un flag booleano isAlive que se
+  // reseteaba a false cada 20s. Si el event loop se retrasaba (GC, query pesada),
+  // TODOS los cargadores tenían isAlive=false simultáneamente y se terminaban al
+  // mismo tiempo. Ahora usamos un contador de pongs perdidos con 3 reintentos.
+  const WS_PING_INTERVAL_MS = 25000; // 25 segundos (más tolerante)
+  const MAX_MISSED_PONGS = 3; // Permitir hasta 3 pings sin respuesta antes de terminar (75s total)
   let pingCount = 0;
   const pingInterval = setInterval(() => {
     const clientCount = wss.clients.size;
     if (clientCount > 0) {
       pingCount++;
-      if (pingCount % 15 === 0) {
+      if (pingCount % 12 === 0) {
         console.log(`[OCPP] Ping keepalive #${pingCount} - ${clientCount} client(s) connected`);
       }
     }
+    const now = Date.now();
     wss.clients.forEach((ws) => {
-      if ((ws as any).isAlive === false) {
-        const identity = (ws as any)._ocppIdentity || 'unknown';
-        console.log(`[OCPP] Terminating inactive connection (no pong received): ${identity}`);
+      const identity = (ws as any)._ocppIdentity || 'unknown';
+      const missedPongs: number = (ws as any)._missedPongs || 0;
+      const lastActivity: number = (ws as any)._lastActivity || (ws as any)._connectedAt || now;
+      
+      // Si el cargador ha enviado CUALQUIER dato recientemente (heartbeat, meter values, etc.)
+      // resetear el contador de missed pongs — la conexión está viva
+      const timeSinceActivity = now - lastActivity;
+      if (timeSinceActivity < WS_PING_INTERVAL_MS * 2) {
+        // Actividad reciente detectada, resetear contador
+        (ws as any)._missedPongs = 0;
+      } else if (missedPongs >= MAX_MISSED_PONGS) {
+        // 3 pings consecutivos sin respuesta Y sin actividad de datos → conexión muerta
+        const totalSilence = Math.round(timeSinceActivity / 1000);
+        console.log(`[OCPP] Terminating dead connection: ${identity} (${missedPongs} missed pongs, ${totalSilence}s since last activity)`);
+        (ws as any)._missedPongs = 0; // Reset para evitar doble-terminate
         return ws.terminate();
       }
-      (ws as any).isAlive = false;
+      
+      // Incrementar contador y enviar ping
+      (ws as any)._missedPongs = missedPongs + 1;
       try {
         ws.ping();
       } catch (err) {
-        console.error(`[OCPP] Error sending ping:`, err);
+        console.error(`[OCPP] Error sending ping to ${identity}:`, err);
       }
     });
   }, WS_PING_INTERVAL_MS);
@@ -487,9 +507,13 @@ async function startServer() {
     (ws as any).isAlive = true;
     (ws as any)._ocppIdentity = ocppIdentity;
     (ws as any)._connectedAt = Date.now();
+    (ws as any)._missedPongs = 0; // Contador de pings sin respuesta
+    (ws as any)._lastActivity = Date.now(); // Timestamp de última actividad (datos o pong)
     
     ws.on("pong", () => {
       (ws as any).isAlive = true;
+      (ws as any)._missedPongs = 0; // Resetear contador de pongs perdidos
+      (ws as any)._lastActivity = Date.now(); // Actualizar timestamp de actividad
       // Actualizar timestamp de última actividad en el connection manager
       ocppManager.updateLastMessage(ocppIdentity);
     });
@@ -624,7 +648,9 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
 
   // Registrar el event listener PRIMERO, antes de cualquier operación async
   ws.on("message", async (data) => {
-      // Actualizar timestamp de último mensaje
+      // Actualizar timestamps de actividad (crítico para evitar desconexiones falsas)
+      (ws as any)._lastActivity = Date.now();
+      (ws as any)._missedPongs = 0; // Cualquier dato recibido = conexión viva
       ocppManager.updateLastMessage(ocppIdentity);
       try {
         const message = JSON.parse(data.toString());
