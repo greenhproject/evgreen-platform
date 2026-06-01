@@ -3499,3 +3499,8 @@
 - [x] Usar timestamps de última actividad en vez de flag booleano isAlive
 - [x] Agregar logging mejorado para diagnóstico de desconexiones
 - [ ] Verificar y hacer push a GitHub
+
+## Fix Deployment OOM - 1 Junio 2026
+- [x] Optimizar Vite build para reducir consumo de memoria (7974 módulos, OOM kill en 512 MiB)
+- [x] Verificar build exitoso localmente
+- [ ] Push a GitHub y confirmar deploy exitoso
