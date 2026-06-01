@@ -54,32 +54,10 @@ export default defineConfig(({ command }) => {
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
         output: {
-          manualChunks(id: string) {
-            // Separar vendor chunks para reducir pico de memoria durante el build
-            if (id.includes('node_modules')) {
-              // React ecosystem
-              if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
-                return 'vendor-react';
-              }
-              // UI components (radix, shadcn deps)
-              if (id.includes('@radix-ui') || id.includes('class-variance-authority') || id.includes('clsx') || id.includes('tailwind-merge')) {
-                return 'vendor-ui';
-              }
-              // Charts and visualization
-              if (id.includes('recharts') || id.includes('d3') || id.includes('chart')) {
-                return 'vendor-charts';
-              }
-              // Maps
-              if (id.includes('google') || id.includes('maps') || id.includes('@vis.gl')) {
-                return 'vendor-maps';
-              }
-              // Icons
-              if (id.includes('lucide')) {
-                return 'vendor-icons';
-              }
-              // Everything else from node_modules
-              return 'vendor-misc';
-            }
+          // Let Rollup handle chunk splitting automatically to avoid circular dependency issues
+          // Only split React core which is safe and reduces initial load
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom'],
           },
         },
       },

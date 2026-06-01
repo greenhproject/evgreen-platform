@@ -3504,3 +3504,9 @@
 - [x] Optimizar Vite build para reducir consumo de memoria (7974 módulos, OOM kill en 512 MiB)
 - [x] Verificar build exitoso localmente
 - [ ] Push a GitHub y confirmar deploy exitoso
+
+## Fix Crítico Frontend - 1 Junio 2026
+- [x] FIX: App no carga - ReferenceError "Cannot access 'r' before initialization" en vendor-maps chunk
+- [x] Causa: manualChunks agresivo en vite.config.ts creaba dependencias circulares entre chunks
+- [x] Solución: Simplificar manualChunks a solo separar react/react-dom, dejar que Rollup maneje el resto
+- [x] Build verificado exitosamente (1m 17s)
