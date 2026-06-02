@@ -3510,3 +3510,8 @@
 - [x] Causa: manualChunks agresivo en vite.config.ts creaba dependencias circulares entre chunks
 - [x] Solución: Simplificar manualChunks a solo separar react/react-dom, dejar que Rollup maneje el resto
 - [x] Build verificado exitosamente (1m 17s)
+
+## Fix Cotización: Seguro/Póliza - 2 Junio 2026
+- [x] Eliminar "Seguro contra daños y vandalismo" del array benefitsDescription por defecto (venta individual = comprador asume seguro)
+- [x] Agregar nota en exclusiones: "Seguros y pólizas contra daños, vandalismo o robo son responsabilidad exclusiva del comprador"
+- [ ] Push a GitHub y confirmar deploy

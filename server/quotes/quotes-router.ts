@@ -241,10 +241,9 @@ export const quotesRouter = router({
             "App móvil para usuarios con mapa, reservas y pagos",
             "Tarifa dinámica inteligente para maximizar ingresos",
             "Reportes y analítica en tiempo real",
-            "Seguro contra daños y vandalismo",
             "Actualizaciones de firmware y software sin costo",
           ]),
-          exclusions: "No incluye obras civiles adicionales, cableado o tubería superior a 10 metros desde el punto de conexión hasta el cargador, ni adecuaciones estructurales. Estos costos serán validados y cotizados por separado tras la visita técnica previa.",
+          exclusions: "No incluye obras civiles adicionales, cableado o tubería superior a 10 metros desde el punto de conexión hasta el cargador, ni adecuaciones estructurales. Estos costos serán validados y cotizados por separado tras la visita técnica previa. Seguros y pólizas contra daños, vandalismo o robo son responsabilidad exclusiva del comprador.",
           termsAndConditions: "Precios válidos por 30 días calendario. Incluye instalación llave en mano: cargador(es), transformador (cuando aplique), hasta 10 metros de cableado y tubería desde el punto de conexión hasta el cargador. Se requiere visita técnica previa para validar condiciones del sitio (la visita tiene costo pero se descuenta del valor total al momento de la compra). Garantía de 2 años en equipos. Tiempo de instalación estimado: 15-30 días hábiles tras aprobación.",
         });
         const [newSettings] = await db.select().from(quoteSettings).where(eq(quoteSettings.id, result.insertId));
