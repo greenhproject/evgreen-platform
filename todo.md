@@ -3515,3 +3515,13 @@
 - [x] Eliminar "Seguro contra daños y vandalismo" del array benefitsDescription por defecto (venta individual = comprador asume seguro)
 - [x] Agregar nota en exclusiones: "Seguros y pólizas contra daños, vandalismo o robo son responsabilidad exclusiva del comprador"
 - [ ] Push a GitHub y confirmar deploy
+
+## Espacios Postulados: Filtros Avanzados y Acciones Masivas - 4 Junio 2026
+- [x] Filtros avanzados: ciudad, tipo, rango de fechas, score (sin calificar/calificados)
+- [x] Backend: endpoint bulk delete (eliminar múltiples espacios)
+- [x] Backend: endpoint bulk change status (cambiar estado de múltiples espacios)
+- [x] Backend: endpoint bulk assign score (calificar múltiples espacios)
+- [x] Frontend: checkboxes de selección individual + seleccionar todos
+- [x] Frontend: barra de acciones masivas (eliminar, cambiar estado, asignar score)
+- [x] Frontend: panel de filtros colapsable con dropdowns
+- [x] Test y deploy

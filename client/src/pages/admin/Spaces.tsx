@@ -3,6 +3,7 @@
  * Gestión completa: revisión, evaluación técnica, scoring IA,
  * envío de carta de intención y publicación en crowdfunding
  * 
+ * FEATURES: Filtros avanzados, selección múltiple, acciones masivas
  * RESPONSIVE: Optimizado para desktop, tablet y móvil
  */
 import { useState, useMemo } from "react";
@@ -20,6 +21,7 @@ import {
   ChevronRight, Building2, Phone, Mail, Camera, BarChart3,
   TrendingUp, DollarSign, ArrowUpRight, ExternalLink, RefreshCw,
   ChevronDown, X, Pencil, Trash2, AlertTriangle, Users, Download,
+  CheckSquare, Square, Minus, SlidersHorizontal, Calendar,
 } from "lucide-react";
 
 // ============================================================================
@@ -71,16 +73,102 @@ export default function AdminSpaces() {
   const [offset, setOffset] = useState(0);
   const limit = 30;
 
+  // Advanced filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [cityFilter, setCityFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [scoreFilter, setScoreFilter] = useState<"all" | "scored" | "unscored">("all");
+
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showBulkStatusDialog, setShowBulkStatusDialog] = useState(false);
+  const [showBulkScoreDialog, setShowBulkScoreDialog] = useState(false);
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState("under_review");
+  const [bulkScore, setBulkScore] = useState(50);
+
+  const activeFiltersCount = [cityFilter, typeFilter, dateFrom, dateTo, scoreFilter !== "all" ? scoreFilter : ""].filter(Boolean).length;
+
   const { data, isLoading, refetch } = trpc.spaces.admin.list.useQuery({
     status: statusFilter,
     search: search || undefined,
+    city: cityFilter || undefined,
+    spaceType: typeFilter || undefined,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    hasScore: scoreFilter !== "all" ? scoreFilter : undefined,
     limit,
     offset,
+  });
+
+  const bulkDeleteMutation = trpc.spaces.admin.bulkDelete.useMutation({
+    onSuccess: (res) => {
+      toast.success(`${res.deletedCount} espacios eliminados`);
+      setSelectedIds(new Set());
+      setShowBulkDeleteDialog(false);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const bulkUpdateStatusMutation = trpc.spaces.admin.bulkUpdateStatus.useMutation({
+    onSuccess: (res) => {
+      toast.success(`${res.updatedCount} espacios actualizados`);
+      setSelectedIds(new Set());
+      setShowBulkStatusDialog(false);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const bulkAssignScoreMutation = trpc.spaces.admin.bulkAssignScore.useMutation({
+    onSuccess: (res) => {
+      toast.success(`Score asignado a ${res.updatedCount} espacios`);
+      setSelectedIds(new Set());
+      setShowBulkScoreDialog(false);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
   });
 
   const submissions = data?.submissions || [];
   const total = data?.total || 0;
   const statusCounts = data?.statusCounts || {};
+  const filterOptions = data?.filterOptions || { cities: [], types: [] };
+
+  const allVisibleIds = submissions.map((s: any) => s.id);
+  const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id: number) => selectedIds.has(id));
+  const someSelected = allVisibleIds.some((id: number) => selectedIds.has(id));
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      const newSet = new Set(selectedIds);
+      allVisibleIds.forEach((id: number) => newSet.delete(id));
+      setSelectedIds(newSet);
+    } else {
+      const newSet = new Set(selectedIds);
+      allVisibleIds.forEach((id: number) => newSet.add(id));
+      setSelectedIds(newSet);
+    }
+  }
+
+  function toggleSelect(id: number) {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedIds(newSet);
+  }
+
+  function clearFilters() {
+    setCityFilter("");
+    setTypeFilter("");
+    setDateFrom("");
+    setDateTo("");
+    setScoreFilter("all");
+    setOffset(0);
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -95,11 +183,160 @@ export default function AdminSpaces() {
             Gestión de postulaciones para cargadores EV
           </p>
         </div>
-        <Button onClick={() => refetch()} variant="outline" size="sm" className="border-[#374151] text-gray-300 self-start sm:self-auto">
-          <RefreshCw className="w-4 h-4 mr-1.5" />
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button
+            onClick={() => setShowFilters(!showFilters)}
+            variant="outline"
+            size="sm"
+            className={`border-[#374151] text-gray-300 ${showFilters ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : ""}`}
+          >
+            <SlidersHorizontal className="w-4 h-4 mr-1.5" />
+            Filtros
+            {activeFiltersCount > 0 && (
+              <span className="ml-1.5 bg-emerald-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
+                {activeFiltersCount}
+              </span>
+            )}
+          </Button>
+          <Button onClick={() => refetch()} variant="outline" size="sm" className="border-[#374151] text-gray-300">
+            <RefreshCw className="w-4 h-4 mr-1.5" />
+            Actualizar
+          </Button>
+        </div>
       </div>
+
+      {/* Advanced Filters Panel */}
+      {showFilters && (
+        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-white flex items-center gap-2">
+              <Filter className="w-4 h-4 text-emerald-400" />
+              Filtros Avanzados
+            </h3>
+            {activeFiltersCount > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-gray-400 hover:text-white h-7 text-xs">
+                <X className="w-3 h-3 mr-1" />
+                Limpiar filtros
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* City filter */}
+            <div>
+              <Label className="text-xs text-gray-400 mb-1 block">Ciudad</Label>
+              <Select value={cityFilter} onValueChange={(v) => { setCityFilter(v === "__all__" ? "" : v); setOffset(0); }}>
+                <SelectTrigger className="bg-[#0a0f1a] border-[#374151] text-white h-9 text-xs">
+                  <SelectValue placeholder="Todas las ciudades" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1f2937] border-[#374151]">
+                  <SelectItem value="__all__" className="text-gray-300">Todas las ciudades</SelectItem>
+                  {filterOptions.cities.map((city: string) => (
+                    <SelectItem key={city} value={city} className="text-gray-300">{city}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Type filter */}
+            <div>
+              <Label className="text-xs text-gray-400 mb-1 block">Tipo</Label>
+              <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v === "__all__" ? "" : v); setOffset(0); }}>
+                <SelectTrigger className="bg-[#0a0f1a] border-[#374151] text-white h-9 text-xs">
+                  <SelectValue placeholder="Todos los tipos" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1f2937] border-[#374151]">
+                  <SelectItem value="__all__" className="text-gray-300">Todos los tipos</SelectItem>
+                  {filterOptions.types.map((type: string) => (
+                    <SelectItem key={type} value={type} className="text-gray-300">{SPACE_TYPE_LABELS[type] || type}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Date from */}
+            <div>
+              <Label className="text-xs text-gray-400 mb-1 block">Desde</Label>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => { setDateFrom(e.target.value); setOffset(0); }}
+                className="bg-[#0a0f1a] border-[#374151] text-white h-9 text-xs"
+              />
+            </div>
+
+            {/* Date to */}
+            <div>
+              <Label className="text-xs text-gray-400 mb-1 block">Hasta</Label>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => { setDateTo(e.target.value); setOffset(0); }}
+                className="bg-[#0a0f1a] border-[#374151] text-white h-9 text-xs"
+              />
+            </div>
+
+            {/* Score filter */}
+            <div>
+              <Label className="text-xs text-gray-400 mb-1 block">Score IA</Label>
+              <Select value={scoreFilter} onValueChange={(v: any) => { setScoreFilter(v); setOffset(0); }}>
+                <SelectTrigger className="bg-[#0a0f1a] border-[#374151] text-white h-9 text-xs">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1f2937] border-[#374151]">
+                  <SelectItem value="all" className="text-gray-300">Todos</SelectItem>
+                  <SelectItem value="scored" className="text-gray-300">Con score</SelectItem>
+                  <SelectItem value="unscored" className="text-gray-300">Sin calificar</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <CheckSquare className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm text-emerald-300 font-medium">
+              {selectedIds.size} espacio{selectedIds.size !== 1 ? "s" : ""} seleccionado{selectedIds.size !== 1 ? "s" : ""}
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())} className="text-gray-400 hover:text-white h-6 text-xs px-2">
+              <X className="w-3 h-3 mr-1" />
+              Deseleccionar
+            </Button>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowBulkStatusDialog(true)}
+              className="border-blue-500/30 text-blue-300 hover:bg-blue-500/10 h-7 text-xs"
+            >
+              <Pencil className="w-3 h-3 mr-1" />
+              Cambiar Estado
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowBulkScoreDialog(true)}
+              className="border-amber-500/30 text-amber-300 hover:bg-amber-500/10 h-7 text-xs"
+            >
+              <Star className="w-3 h-3 mr-1" />
+              Asignar Score
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowBulkDeleteDialog(true)}
+              className="border-red-500/30 text-red-300 hover:bg-red-500/10 h-7 text-xs"
+            >
+              <Trash2 className="w-3 h-3 mr-1" />
+              Eliminar
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Status tabs - scrollable on mobile */}
       <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-thin">
@@ -137,7 +374,7 @@ export default function AdminSpaces() {
         <Input
           value={search}
           onChange={e => { setSearch(e.target.value); setOffset(0); }}
-          placeholder="Buscar por código, nombre, ciudad..."
+          placeholder="Buscar por código, nombre, email, ciudad..."
           className="pl-10 bg-[#111827] border-[#374151] text-white placeholder:text-gray-600 text-sm"
         />
       </div>
@@ -148,6 +385,17 @@ export default function AdminSpaces() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#1f2937]">
+                <th className="text-left px-3 py-3 w-10">
+                  <button onClick={toggleSelectAll} className="text-gray-400 hover:text-emerald-400 transition-colors">
+                    {allSelected ? (
+                      <CheckSquare className="w-4 h-4 text-emerald-400" />
+                    ) : someSelected ? (
+                      <Minus className="w-4 h-4 text-emerald-400" />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                  </button>
+                </th>
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Código</th>
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Espacio</th>
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Postulante</th>
@@ -162,13 +410,13 @@ export default function AdminSpaces() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-12">
+                  <td colSpan={10} className="text-center py-12">
                     <Loader2 className="w-6 h-6 text-emerald-400 animate-spin mx-auto" />
                   </td>
                 </tr>
               ) : submissions.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-gray-500">
+                  <td colSpan={10} className="text-center py-12 text-gray-500">
                     No se encontraron postulaciones
                   </td>
                 </tr>
@@ -176,8 +424,18 @@ export default function AdminSpaces() {
                 submissions.map((sub: any) => {
                   const statusInfo = STATUS_LABELS[sub.status] || STATUS_LABELS.pending;
                   const StatusIcon = statusInfo.icon;
+                  const isSelected = selectedIds.has(sub.id);
                   return (
-                    <tr key={sub.id} className="border-b border-[#1f2937]/50 hover:bg-[#1f2937]/30 transition-colors">
+                    <tr key={sub.id} className={`border-b border-[#1f2937]/50 hover:bg-[#1f2937]/30 transition-colors ${isSelected ? "bg-emerald-500/5" : ""}`}>
+                      <td className="px-3 py-3">
+                        <button onClick={() => toggleSelect(sub.id)} className="text-gray-400 hover:text-emerald-400 transition-colors">
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      </td>
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs text-emerald-400">{sub.code}</span>
                       </td>
@@ -249,6 +507,17 @@ export default function AdminSpaces() {
 
       {/* Mobile Card List (visible only on mobile) */}
       <div className="md:hidden space-y-3">
+        {/* Mobile select all */}
+        <div className="flex items-center justify-between px-1">
+          <button onClick={toggleSelectAll} className="flex items-center gap-2 text-xs text-gray-400 hover:text-emerald-400 transition-colors">
+            {allSelected ? <CheckSquare className="w-4 h-4 text-emerald-400" /> : <Square className="w-4 h-4" />}
+            <span>Seleccionar todos</span>
+          </button>
+          {selectedIds.size > 0 && (
+            <span className="text-xs text-emerald-400">{selectedIds.size} seleccionados</span>
+          )}
+        </div>
+
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
@@ -261,50 +530,57 @@ export default function AdminSpaces() {
           submissions.map((sub: any) => {
             const statusInfo = STATUS_LABELS[sub.status] || STATUS_LABELS.pending;
             const StatusIcon = statusInfo.icon;
+            const isSelected = selectedIds.has(sub.id);
             return (
-              <button
+              <div
                 key={sub.id}
-                onClick={() => setSelectedId(sub.id)}
-                className="w-full text-left bg-[#111827] border border-[#1f2937] rounded-xl p-4 hover:border-emerald-500/30 transition-colors active:bg-[#1f2937]/50"
+                className={`w-full text-left bg-[#111827] border rounded-xl p-4 transition-colors ${isSelected ? "border-emerald-500/50 bg-emerald-500/5" : "border-[#1f2937]"}`}
               >
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-white font-medium text-sm truncate">{sub.spaceName}</p>
-                    <p className="font-mono text-[11px] text-emerald-400 mt-0.5">{sub.code}</p>
+                <div className="flex items-start gap-3">
+                  <button onClick={() => toggleSelect(sub.id)} className="mt-0.5 text-gray-400 hover:text-emerald-400 transition-colors flex-shrink-0">
+                    {isSelected ? <CheckSquare className="w-4 h-4 text-emerald-400" /> : <Square className="w-4 h-4" />}
+                  </button>
+                  <div className="flex-1 min-w-0" onClick={() => setSelectedId(sub.id)}>
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-medium text-sm truncate">{sub.spaceName}</p>
+                        <p className="font-mono text-[11px] text-emerald-400 mt-0.5">{sub.code}</p>
+                      </div>
+                      <span className={`flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${statusInfo.color}`}>
+                        <StatusIcon className="w-3 h-3" />
+                        {statusInfo.label}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap text-xs text-gray-400 mt-2">
+                      <span className="flex items-center gap-1 max-w-[45%] truncate">
+                        <Mail className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{sub.submitterName}</span>
+                      </span>
+                      <span className="flex items-center gap-1 flex-shrink-0">
+                        <MapPin className="w-3 h-3" />
+                        {sub.city}
+                      </span>
+                      {sub.aiScore && (
+                        <span className={`flex items-center gap-1 flex-shrink-0 font-bold ${sub.aiScore >= 80 ? "text-emerald-400" : sub.aiScore >= 60 ? "text-yellow-400" : "text-orange-400"}`}>
+                          <Brain className="w-3 h-3" />
+                          {sub.aiScore}
+                        </span>
+                      )}
+                      {sub.spaceType && (
+                        <span className="flex items-center gap-1 flex-shrink-0 text-gray-500">
+                          {SPACE_TYPE_LABELS[sub.spaceType] || sub.spaceType}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-[11px] text-gray-600">{formatDateShort(sub.createdAt)}</p>
+                      {sub.estimatedInvestmentCop && (
+                        <span className="text-[11px] text-emerald-400 font-medium">{formatCOP(sub.estimatedInvestmentCop)}</span>
+                      )}
+                    </div>
                   </div>
-                  <span className={`flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${statusInfo.color}`}>
-                    <StatusIcon className="w-3 h-3" />
-                    {statusInfo.label}
-                  </span>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap text-xs text-gray-400 mt-2">
-                  <span className="flex items-center gap-1 max-w-[45%] truncate">
-                    <Mail className="w-3 h-3 flex-shrink-0" />
-                    <span className="truncate">{sub.submitterName}</span>
-                  </span>
-                  <span className="flex items-center gap-1 flex-shrink-0">
-                    <MapPin className="w-3 h-3" />
-                    {sub.city}
-                  </span>
-                  {sub.aiScore && (
-                    <span className={`flex items-center gap-1 flex-shrink-0 font-bold ${sub.aiScore >= 80 ? "text-emerald-400" : sub.aiScore >= 60 ? "text-yellow-400" : "text-orange-400"}`}>
-                      <Brain className="w-3 h-3" />
-                      {sub.aiScore}
-                    </span>
-                  )}
-                  {sub.spaceType && (
-                    <span className="flex items-center gap-1 flex-shrink-0 text-gray-500">
-                      {SPACE_TYPE_LABELS[sub.spaceType] || sub.spaceType}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center justify-between mt-2">
-                  <p className="text-[11px] text-gray-600">{formatDateShort(sub.createdAt)}</p>
-                  {sub.estimatedInvestmentCop && (
-                    <span className="text-[11px] text-emerald-400 font-medium">{formatCOP(sub.estimatedInvestmentCop)}</span>
-                  )}
-                </div>
-              </button>
+              </div>
             );
           })
         )}
@@ -335,6 +611,121 @@ export default function AdminSpaces() {
           onRefresh={() => refetch()}
         />
       )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-400 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              Eliminar {selectedIds.size} espacio{selectedIds.size !== 1 ? "s" : ""}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-300">
+            Esta acción es <strong className="text-red-400">irreversible</strong>. Se eliminarán las postulaciones seleccionadas junto con sus fotos y leads de inversionistas asociados.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowBulkDeleteDialog(false)} className="border-[#374151] text-gray-300">
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => bulkDeleteMutation.mutate({ ids: Array.from(selectedIds) })}
+              disabled={bulkDeleteMutation.isPending}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {bulkDeleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Trash2 className="w-4 h-4 mr-1" />}
+              Eliminar {selectedIds.size}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Status Change Dialog */}
+      <Dialog open={showBulkStatusDialog} onOpenChange={setShowBulkStatusDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-blue-400 flex items-center gap-2">
+              <Pencil className="w-5 h-5" />
+              Cambiar estado de {selectedIds.size} espacio{selectedIds.size !== 1 ? "s" : ""}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label className="text-sm text-gray-300">Nuevo estado:</Label>
+            <Select value={bulkStatus} onValueChange={setBulkStatus}>
+              <SelectTrigger className="bg-[#0a0f1a] border-[#374151] text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1f2937] border-[#374151]">
+                {Object.entries(STATUS_LABELS).map(([key, { label }]) => (
+                  <SelectItem key={key} value={key} className="text-gray-300">{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowBulkStatusDialog(false)} className="border-[#374151] text-gray-300">
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => bulkUpdateStatusMutation.mutate({ ids: Array.from(selectedIds), status: bulkStatus as any })}
+              disabled={bulkUpdateStatusMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {bulkUpdateStatusMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
+              Aplicar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Score Assignment Dialog */}
+      <Dialog open={showBulkScoreDialog} onOpenChange={setShowBulkScoreDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-amber-400 flex items-center gap-2">
+              <Star className="w-5 h-5" />
+              Asignar Score a {selectedIds.size} espacio{selectedIds.size !== 1 ? "s" : ""}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label className="text-sm text-gray-300">Score técnico (0-100):</Label>
+            <div className="flex items-center gap-3">
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={bulkScore}
+                onChange={(e) => setBulkScore(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                className="bg-[#0a0f1a] border-[#374151] text-white w-24"
+              />
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={bulkScore}
+                onChange={(e) => setBulkScore(parseInt(e.target.value))}
+                className="flex-1 accent-emerald-500"
+              />
+            </div>
+            <p className="text-xs text-gray-500">
+              Este score se asignará como puntaje técnico manual a todos los espacios seleccionados.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowBulkScoreDialog(false)} className="border-[#374151] text-gray-300">
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => bulkAssignScoreMutation.mutate({ ids: Array.from(selectedIds), technicalScore: bulkScore })}
+              disabled={bulkAssignScoreMutation.isPending}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {bulkAssignScoreMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Star className="w-4 h-4 mr-1" />}
+              Asignar Score
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
