@@ -14,7 +14,7 @@ import {
   crowdfundingProjects,
   investorLeads,
 } from "../../drizzle/schema";
-import { eq, desc, and, sql, like, or, inArray, count } from "drizzle-orm";
+import { eq, desc, and, sql, like, or, inArray, count, gte, lte, isNull, isNotNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { storagePut } from "../storage";
 import { invokeLLM } from "../_core/llm";
@@ -498,6 +498,11 @@ export const spacesRouter = router({
       .input(z.object({
         status: z.string().optional(),
         search: z.string().optional(),
+        city: z.string().optional(),
+        spaceType: z.string().optional(),
+        dateFrom: z.string().optional(), // ISO date string
+        dateTo: z.string().optional(), // ISO date string
+        hasScore: z.enum(["all", "scored", "unscored"]).optional(),
         limit: z.number().min(1).max(200).optional(),
         offset: z.number().min(0).optional(),
       }).optional())
@@ -520,8 +525,34 @@ export const spacesRouter = router({
               like(spaceSubmissions.spaceName, searchTerm),
               like(spaceSubmissions.submitterName, searchTerm),
               like(spaceSubmissions.city, searchTerm),
+              like(spaceSubmissions.submitterEmail, searchTerm),
             )
           );
+        }
+
+        // Advanced filters
+        if (input?.city) {
+          conditions.push(eq(spaceSubmissions.city, input.city));
+        }
+
+        if (input?.spaceType) {
+          conditions.push(eq(spaceSubmissions.spaceType, input.spaceType as any));
+        }
+
+        if (input?.dateFrom) {
+          conditions.push(gte(spaceSubmissions.createdAt, new Date(input.dateFrom)));
+        }
+
+        if (input?.dateTo) {
+          const endDate = new Date(input.dateTo);
+          endDate.setHours(23, 59, 59, 999);
+          conditions.push(lte(spaceSubmissions.createdAt, endDate));
+        }
+
+        if (input?.hasScore === "scored") {
+          conditions.push(isNotNull(spaceSubmissions.aiScore));
+        } else if (input?.hasScore === "unscored") {
+          conditions.push(isNull(spaceSubmissions.aiScore));
         }
 
         const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -549,10 +580,20 @@ export const spacesRouter = router({
           .from(spaceSubmissions)
           .groupBy(spaceSubmissions.status);
 
+        // Obtener ciudades y tipos únicos para los filtros
+        const [cities, types] = await Promise.all([
+          db.selectDistinct({ city: spaceSubmissions.city }).from(spaceSubmissions).orderBy(spaceSubmissions.city),
+          db.selectDistinct({ spaceType: spaceSubmissions.spaceType }).from(spaceSubmissions).orderBy(spaceSubmissions.spaceType),
+        ]);
+
         return {
           submissions,
           total: totalResult?.count || 0,
           statusCounts: Object.fromEntries(statusCounts.map(s => [s.status, s.count])),
+          filterOptions: {
+            cities: cities.map(c => c.city),
+            types: types.map(t => t.spaceType),
+          },
         };
       }),
 
@@ -1044,6 +1085,75 @@ Responde en formato JSON con la siguiente estructura:`;
         await db.delete(spaceSubmissions).where(eq(spaceSubmissions.id, input.id));
 
         return { success: true, deletedName: submission.spaceName };
+      }),
+
+    // ========================================================================
+    // ADMIN: Eliminar múltiples espacios en masa
+    // ========================================================================
+    bulkDelete: adminProcedure
+      .input(z.object({ ids: z.array(z.number()).min(1).max(500) }))
+      .mutation(async ({ input }) => {
+        const db = await getDatabase();
+        const { ids } = input;
+
+        // Eliminar leads, fotos y submissions en masa
+        await db.delete(investorLeads).where(inArray(investorLeads.spaceId, ids));
+        await db.delete(spacePhotos).where(inArray(spacePhotos.submissionId, ids));
+        await db.delete(spaceSubmissions).where(inArray(spaceSubmissions.id, ids));
+
+        return { success: true, deletedCount: ids.length };
+      }),
+
+    // ========================================================================
+    // ADMIN: Cambiar estado de múltiples espacios en masa
+    // ========================================================================
+    bulkUpdateStatus: adminProcedure
+      .input(z.object({
+        ids: z.array(z.number()).min(1).max(500),
+        status: z.enum([
+          "pending", "under_review", "approved", "rejected",
+          "letter_sent", "letter_accepted", "published",
+          "funded", "in_construction", "operational",
+        ]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDatabase();
+        const { ids, status } = input;
+
+        const updateData: any = { status };
+        if (["under_review", "approved", "rejected"].includes(status)) {
+          updateData.evaluatedBy = ctx.user.id;
+          updateData.evaluatedAt = new Date();
+        }
+
+        await db.update(spaceSubmissions)
+          .set(updateData)
+          .where(inArray(spaceSubmissions.id, ids));
+
+        return { success: true, updatedCount: ids.length };
+      }),
+
+    // ========================================================================
+    // ADMIN: Asignar score manual a múltiples espacios en masa
+    // ========================================================================
+    bulkAssignScore: adminProcedure
+      .input(z.object({
+        ids: z.array(z.number()).min(1).max(500),
+        technicalScore: z.number().int().min(0).max(100),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDatabase();
+        const { ids, technicalScore } = input;
+
+        await db.update(spaceSubmissions)
+          .set({
+            technicalScore,
+            evaluatedBy: ctx.user.id,
+            evaluatedAt: new Date(),
+          })
+          .where(inArray(spaceSubmissions.id, ids));
+
+        return { success: true, updatedCount: ids.length };
       }),
 
     // ========================================================================
