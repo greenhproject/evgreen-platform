@@ -3525,3 +3525,18 @@
 - [x] Frontend: barra de acciones masivas (eliminar, cambiar estado, asignar score)
 - [x] Frontend: panel de filtros colapsable con dropdowns
 - [x] Test y deploy
+
+## Página Pública /partners - Landing Page Partners Program - 5 Junio 2026
+- [ ] Crear página pública /partners con diseño EVGreen (fondo oscuro, neón verde)
+- [ ] Sección Hero: EVGREEN Partners - "Deja de vender solo hardware"
+- [ ] Sección Problema: por qué vender hardware solo no funciona
+- [ ] Sección Solución: Paquete EVGREEN Ready (hardware + ecosistema + licencia)
+- [ ] Sección Beneficios: comisiones 20-30%, diferenciación, leads, ingresos recurrentes
+- [ ] Sección Niveles: Silver, Gold, Platinum con requisitos y beneficios
+- [ ] Sección Cómo Funciona: flujo Partner vende → EVGreen opera → Partner cobra
+- [ ] Sección Red/Network: efecto de red europeo
+- [ ] Sección Comunidad: EVGREEN Certified Partner
+- [ ] Formulario de aplicación/contacto para distribuidores interesados
+- [ ] Registrar ruta en App.tsx como ruta pública
+- [ ] Backend: endpoint para recibir aplicaciones de partners
+- [ ] Push a GitHub para deploy en Railway
