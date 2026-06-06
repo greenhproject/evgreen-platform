@@ -3484,3 +3484,24 @@ export const offlineTransactionsRelations = relations(offlineTransactions, ({ on
     references: [chargingStations.id],
   }),
 }));
+
+
+// ============================================================================
+// PARTNER APPLICATIONS
+// ============================================================================
+export const partnerApplications = mysqlTable("partner_applications", {
+  id: int("id").primaryKey().autoincrement(),
+  companyName: text("company_name").notNull(),
+  contactName: text("contact_name").notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 50 }).notNull(),
+  city: varchar("city", { length: 100 }),
+  currentBrands: text("current_brands"),
+  annualVolume: varchar("annual_volume", { length: 100 }),
+  message: text("message"),
+  status: mysqlEnum("partner_app_status", ["pending", "contacted", "approved", "rejected"]).default("pending").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }),
+});
+export type PartnerApplication = typeof partnerApplications.$inferSelect;
+export type InsertPartnerApplication = typeof partnerApplications.$inferInsert;

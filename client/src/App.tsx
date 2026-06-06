@@ -38,6 +38,7 @@ function LazySpinner() {
 // Páginas públicas secundarias
 const Investors = lazy(() => import("./pages/Investors"));
 const ThankYouInvestors = lazy(() => import("./pages/ThankYouInvestors"));
+const Partners = lazy(() => import("./pages/Partners"));
 
 // Páginas de usuario
 const UserMap = lazy(() => import("./pages/user/Map"));
@@ -273,10 +274,19 @@ function ProtectedRoute({
   return <>{children}</>;
 }
 
+// Rutas públicas que NO necesitan esperar autenticación
+const PUBLIC_PATHS = ["/partners", "/investors", "/landing", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding"];
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + "/"));
+}
+
 function Router() {
   const { loading, refresh } = useAuth();
+  const [currentPath] = useLocation();
 
-  if (loading) {
+  // No bloquear rutas públicas mientras auth carga
+  if (loading && !isPublicPath(currentPath)) {
     return (
       <LoadingGuard isLoading={true} timeoutMs={10000} onRetry={() => refresh()}>
         <div />
@@ -295,6 +305,7 @@ function Router() {
         {/* Rutas públicas */}
         <Route path="/landing" component={Landing} />
         <Route path="/investors" component={Investors} />
+        <Route path="/partners" component={Partners} />
         <Route path="/gracias-inversionistas" component={ThankYouInvestors} />
         
         {/* Ruta para códigos QR - Redirige a StartCharge */}
@@ -885,13 +896,19 @@ function Router() {
   );
 }
 
+
+
 function App() {
   const { showOnboarding, isLoading: onboardingLoading, completeOnboarding } = useOnboarding();
   const { isAuthenticated, loading: authLoading, refresh } = useAuth();
+  const [location] = useLocation();
+
+  // Las rutas públicas se renderizan inmediatamente sin esperar auth
+  const isPublic = isPublicPath(location);
 
   // Protección principal: si auth tarda más de 10s, mostrar opciones de recuperación
-  const isInitialLoading = authLoading || onboardingLoading;
-  const shouldShowOnboarding = !onboardingLoading && !authLoading && isAuthenticated && showOnboarding;
+  const isInitialLoading = !isPublic && (authLoading || onboardingLoading);
+  const shouldShowOnboarding = !isPublic && !onboardingLoading && !authLoading && isAuthenticated && showOnboarding;
 
   return (
     <ErrorBoundary>
