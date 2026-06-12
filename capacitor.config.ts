@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.evgreen.app',
+  appId: 'com.greenhproject.evgreen',
   appName: 'Green EV Platform',
   webDir: 'dist/public',
   server: {

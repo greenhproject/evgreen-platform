@@ -1,4 +1,4 @@
-package com.evgreen.app;
+package com.greenhproject.evgreen;
 
 import com.getcapacitor.BridgeActivity;
 

@@ -3,14 +3,24 @@
 .pnpm-store/
 
 # Build outputs
-dist/
-build/
+**/dist/
+**/build/
+**/bin/
+**/obj/
 *.dist
 
+# Android specific
+android/.gradle/
+android/local.properties
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+*.keystore
+!debug.keystore
 
 # IDE and editor files
 .vscode/
 .idea/
+*.iml
 *.swp
 *.swo
 *~

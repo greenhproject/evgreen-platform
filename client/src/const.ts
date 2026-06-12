@@ -2,8 +2,10 @@ import { getBaseUrl } from "./lib/utils";
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
 /**
- * Generate login URL - ahora apunta a la ruta absoluta si estamos en Capacitor
+ * Generate login URL - detecta si estamos en Capacitor/Móvil para usar el flujo nativo
  */
 export const getLoginUrl = () => {
-  return `${getBaseUrl()}/api/auth/login`;
+  const isCapacitor = window.hasOwnProperty('Capacitor');
+  const platformParam = isCapacitor ? '?platform=mobile' : '';
+  return `${getBaseUrl()}/api/auth/login${platformParam}`;
 };

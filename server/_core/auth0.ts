@@ -13,30 +13,39 @@ import { ENV } from "./env";
 // Auth0 configuration from environment variables
 const AUTH0_DOMAIN = ENV.auth0Domain;
 const AUTH0_CLIENT_ID = ENV.auth0ClientId;
+const AUTH0_MOBILE_CLIENT_ID = (ENV as any).auth0MobileClientId;
 const AUTH0_CLIENT_SECRET = ENV.auth0ClientSecret;
 
-let auth0Client: any = null;
+let webClient: any = null;
+let mobileClient: any = null;
 
-async function getAuth0Client() {
-  if (auth0Client) return auth0Client;
+async function getAuth0Client(isMobile = false) {
+  if (isMobile && mobileClient) return mobileClient;
+  if (!isMobile && webClient) return webClient;
 
-  if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID || !AUTH0_CLIENT_SECRET) {
-    console.error("[Auth0] Missing configuration. Set AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET");
+  const clientId = isMobile ? AUTH0_MOBILE_CLIENT_ID : AUTH0_CLIENT_ID;
+
+  if (!AUTH0_DOMAIN || !clientId) {
+    console.error(`[Auth0] Missing configuration for ${isMobile ? "mobile" : "web"}.`);
     return null;
   }
 
   try {
     const issuer = await Issuer.discover(`https://${AUTH0_DOMAIN}`);
-    auth0Client = new issuer.Client({
-      client_id: AUTH0_CLIENT_ID,
-      client_secret: AUTH0_CLIENT_SECRET,
+    const client = new issuer.Client({
+      client_id: clientId,
+      client_secret: isMobile ? undefined : AUTH0_CLIENT_SECRET, // Las apps nativas no suelen usar secret en el cliente
       redirect_uris: [],
       response_types: ["code"],
     });
-    console.log("[Auth0] Client initialized for domain:", AUTH0_DOMAIN);
-    return auth0Client;
+
+    if (isMobile) mobileClient = client;
+    else webClient = client;
+
+    console.log(`[Auth0] ${isMobile ? "Mobile" : "Web"} client initialized for domain:`, AUTH0_DOMAIN);
+    return client;
   } catch (error) {
-    console.error("[Auth0] Failed to initialize client:", error);
+    console.error(`[Auth0] Failed to initialize ${isMobile ? "mobile" : "web"} client:`, error);
     return null;
   }
 }
@@ -62,14 +71,15 @@ export function registerAuth0Routes(app: Express) {
   // Login route - redirects to Auth0
   app.get("/api/auth/login", async (req: Request, res: Response) => {
     try {
-      const client = await getAuth0Client();
+      const isMobile = req.query.platform === "mobile";
+      const client = await getAuth0Client(isMobile);
       if (!client) {
         res.status(500).json({ error: "Auth0 not configured" });
         return;
       }
 
       const origin = getOrigin(req);
-      const redirectUri = `${origin}/api/auth/callback`;
+      const redirectUri = `${origin}/api/auth/callback${isMobile ? "?platform=mobile" : ""}`;
 
       // Generate state for CSRF protection
       const state = generators.state();
@@ -88,7 +98,7 @@ export function registerAuth0Routes(app: Express) {
         scope: "openid profile email",
         redirect_uri: redirectUri,
         state,
-        prompt: "login", // Force login screen (no auto-login with cached session)
+        prompt: "login",
       });
 
       res.redirect(authUrl);
@@ -101,14 +111,15 @@ export function registerAuth0Routes(app: Express) {
   // Callback route - handles Auth0 response
   app.get("/api/auth/callback", async (req: Request, res: Response) => {
     try {
-      const client = await getAuth0Client();
+      const isMobile = req.query.platform === "mobile";
+      const client = await getAuth0Client(isMobile);
       if (!client) {
         res.status(500).json({ error: "Auth0 not configured" });
         return;
       }
 
       const origin = getOrigin(req);
-      const redirectUri = `${origin}/api/auth/callback`;
+      const redirectUri = `${origin}/api/auth/callback${isMobile ? "?platform=mobile" : ""}`;
 
       // Get the state from cookie
       const storedState = req.cookies?.auth0_state;
