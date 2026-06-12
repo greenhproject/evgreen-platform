@@ -2027,6 +2027,22 @@ export const userConsumptionProfile = mysqlTable("user_consumption_profile", {
   // Suscripción recomendada basada en consumo
   recommendedTier: varchar("recommendedTier", { length: 20 }), // FREE, BASIC, PREMIUM, ENTERPRISE
   estimatedMonthlySavingsWithUpgrade: decimal("estimatedMonthlySavingsWithUpgrade", { precision: 10, scale: 2 }).default("0"),
+  // --- Perfilamiento IA avanzado (Fase 2) ---
+  // Distribución de cargas por hora del día (24 valores)
+  hourlyDistribution: json("hourlyDistribution").$type<number[]>(),
+  // Distribución por día de la semana (7 valores, 0 = domingo)
+  weekdayDistribution: json("weekdayDistribution").$type<number[]>(),
+  peakHour: int("peakHour"),
+  peakWeekday: int("peakWeekday"),
+  sessionsPerWeek: decimal("sessionsPerWeek", { precision: 5, scale: 2 }),
+  // Sensibilidad al precio (> 0.3 = sensible → candidato para ofertas valle)
+  priceSensitivity: decimal("priceSensitivity", { precision: 4, scale: 3 }),
+  avgPricePaidPerKwh: decimal("avgPricePaidPerKwh", { precision: 10, scale: 2 }),
+  // Metadatos del cálculo
+  sessionsAnalyzed: int("sessionsAnalyzed").default(0).notNull(),
+  windowDays: int("windowDays").default(90).notNull(),
+  confidence: mysqlEnum("profile_confidence", ["LOW", "MEDIUM", "HIGH"]).default("LOW").notNull(),
+  computedAt: timestamp("computedAt").defaultNow(),
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -3505,3 +3521,85 @@ export const partnerApplications = mysqlTable("partner_applications", {
 });
 export type PartnerApplication = typeof partnerApplications.$inferSelect;
 export type InsertPartnerApplication = typeof partnerApplications.$inferInsert;
+
+
+// ============================================================================
+// CONSENTIMIENTO DE TRATAMIENTO DE DATOS (Ley 1581/2012 Colombia)
+// ============================================================================
+
+export const consentTypeEnum = mysqlEnum("consent_type", [
+  "AI_PROFILING",      // Perfilamiento de hábitos de consumo con IA
+  "MARKETING",         // Ofertas y comunicaciones comerciales
+  "LOCATION_HISTORY",  // Historial de ubicaciones de carga
+]);
+
+export const userDataConsents = mysqlTable("user_data_consents", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK a users
+
+  consentType: consentTypeEnum.notNull(),
+
+  // Estado actual
+  granted: boolean("granted").notNull(),
+
+  // Auditoría legal: QUÉ versión del texto aceptó, CUÁNDO y DESDE DÓNDE.
+  policyVersion: varchar("policyVersion", { length: 20 }).notNull(), // ej: "2026-06-v1"
+  grantedAt: timestamp("grantedAt"),
+  revokedAt: timestamp("revokedAt"),
+  ipAddress: varchar("ipAddress", { length: 45 }),   // IPv4/IPv6
+  userAgent: varchar("userAgent", { length: 512 }),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserDataConsent = typeof userDataConsents.$inferSelect;
+export type InsertUserDataConsent = typeof userDataConsents.$inferInsert;
+
+export const userDataConsentsRelations = relations(userDataConsents, ({ one }) => ({
+  user: one(users, {
+    fields: [userDataConsents.userId],
+    references: [users.id],
+  }),
+}));
+
+// ============================================================================
+// OFERTAS PERSONALIZADAS GENERADAS (auditable)
+// ============================================================================
+
+export const offerStatusEnum = mysqlEnum("offer_status", ["ACTIVE", "REDEEMED", "EXPIRED", "DISMISSED"]);
+
+export const personalizedOffers = mysqlTable("personalized_offers", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+
+  // Regla determinística que disparó la oferta (auditable — el LLM NO decide
+  // descuentos, solo redacta el mensaje)
+  triggerRule: varchar("triggerRule", { length: 100 }).notNull(),
+  // ej: "OFF_PEAK_SHIFT", "FREQUENT_STATION_REWARD", "WINBACK_14D"
+
+  // Parámetros económicos decididos por la regla (NO por el LLM)
+  discountPercent: int("discountPercent"),
+  stationId: int("stationId"),
+  validFrom: timestamp("validFrom"),
+  validUntil: timestamp("validUntil"),
+
+  // Mensaje redactado por el LLM a partir del perfil
+  title: varchar("title", { length: 200 }).notNull(),
+  message: text("message").notNull(),
+
+  status: offerStatusEnum.notNull().default("ACTIVE"),
+  redeemedAt: timestamp("redeemedAt"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PersonalizedOffer = typeof personalizedOffers.$inferSelect;
+export type InsertPersonalizedOffer = typeof personalizedOffers.$inferInsert;
+
+export const personalizedOffersRelations = relations(personalizedOffers, ({ one }) => ({
+  user: one(users, {
+    fields: [personalizedOffers.userId],
+    references: [users.id],
+  }),
+}));

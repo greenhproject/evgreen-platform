@@ -824,6 +824,22 @@ CREATE TABLE `pending_charge_sessions` (
 	CONSTRAINT `pending_charge_sessions_sessionId_unique` UNIQUE(`sessionId`)
 );
 --> statement-breakpoint
+CREATE TABLE `personalized_offers` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`userId` int NOT NULL,
+	`triggerRule` varchar(100) NOT NULL,
+	`discountPercent` int,
+	`stationId` int,
+	`validFrom` timestamp,
+	`validUntil` timestamp,
+	`title` varchar(200) NOT NULL,
+	`message` text NOT NULL,
+	`offer_status` enum('ACTIVE','REDEEMED','EXPIRED','DISMISSED') NOT NULL DEFAULT 'ACTIVE',
+	`redeemedAt` timestamp,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `personalized_offers_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
 CREATE TABLE `platform_settings` (
 	`id` int AUTO_INCREMENT NOT NULL,
 	`companyName` varchar(255) DEFAULT 'Green House Project',
@@ -1407,6 +1423,21 @@ CREATE TABLE `user_consumption_profile` (
 	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
 	CONSTRAINT `user_consumption_profile_id` PRIMARY KEY(`id`),
 	CONSTRAINT `user_consumption_profile_userId_unique` UNIQUE(`userId`)
+);
+--> statement-breakpoint
+CREATE TABLE `user_data_consents` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`userId` int NOT NULL,
+	`consent_type` enum('AI_PROFILING','MARKETING','LOCATION_HISTORY') NOT NULL,
+	`granted` boolean NOT NULL,
+	`policyVersion` varchar(20) NOT NULL,
+	`grantedAt` timestamp,
+	`revokedAt` timestamp,
+	`ipAddress` varchar(45),
+	`userAgent` varchar(512),
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `user_data_consents_id` PRIMARY KEY(`id`)
 );
 --> statement-breakpoint
 CREATE TABLE `user_debts` (
