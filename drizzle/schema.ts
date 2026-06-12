@@ -567,7 +567,11 @@ export const ocppLogs = mysqlTable("ocpp_logs", {
   errorCode: varchar("errorCode", { length: 50 }),
   errorDescription: text("errorDescription"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ([
+  // Performance indexes for 1M+ rows
+  { name: "idx_ocpp_logs_identity_type_created", columns: [table.ocppIdentity, table.messageType, table.createdAt] },
+  { name: "idx_ocpp_logs_created", columns: [table.createdAt] },
+]));
 
 export type OcppLog = typeof ocppLogs.$inferSelect;
 export type InsertOcppLog = typeof ocppLogs.$inferInsert;

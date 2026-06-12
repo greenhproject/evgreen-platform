@@ -732,24 +732,36 @@ export async function getEvsesByStationId(stationId: number) {
   // Verificar reservas activas para cada EVSE
   const now = new Date();
   const in15Min = new Date(now.getTime() + 15 * 60 * 1000);
-  const enriched = await Promise.all(evseList.map(async (evse) => {
-    if (evse.status === 'AVAILABLE' || evse.status === 'RESERVED') {
-      // Buscar reservas activas para este EVSE
-      const activeResList = await db.select().from(reservations)
+  
+  // Batch: obtener TODAS las reservas activas de estos EVSEs en una sola query
+  const evseIds = evseList.map(e => e.id);
+  const allActiveReservations = evseIds.length > 0
+    ? await db.select().from(reservations)
         .where(and(
-          eq(reservations.evseId, evse.id),
+          inArray(reservations.evseId, evseIds),
           eq(reservations.status, 'ACTIVE')
         ))
-        .orderBy(reservations.startTime);
+        .orderBy(reservations.startTime)
+    : [];
+  
+  // Agrupar reservas por evseId
+  const reservationsByEvse = new Map<number, typeof allActiveReservations>();
+  for (const r of allActiveReservations) {
+    const list = reservationsByEvse.get(r.evseId) || [];
+    list.push(r);
+    reservationsByEvse.set(r.evseId, list);
+  }
+  
+  const enriched = evseList.map((evse) => {
+    if (evse.status === 'AVAILABLE' || evse.status === 'RESERVED') {
+      const activeResList = reservationsByEvse.get(evse.id) || [];
       
       if (activeResList.length > 0) {
-        // Buscar reserva que esté en curso o empiece en los próximos 15 min
         const currentOrImminent = activeResList.find(r => 
           r.startTime <= in15Min && r.endTime > now
         );
         
         if (currentOrImminent) {
-          // Reserva en curso o inminente: marcar como RESERVED
           return { 
             ...evse, 
             status: 'RESERVED' as typeof evse.status, 
@@ -759,12 +771,10 @@ export async function getEvsesByStationId(stationId: number) {
           };
         }
         
-        // Solo hay reservas futuras (>15 min): conector sigue AVAILABLE
-        // pero incluimos info de la próxima reserva para referencia
         const nextRes = activeResList[0];
         return { 
           ...evse, 
-          status: evse.status, // Mantener estado actual (AVAILABLE)
+          status: evse.status,
           activeReservationId: null, 
           activeReservationUserId: null,
           nextReservation: {
@@ -777,8 +787,88 @@ export async function getEvsesByStationId(stationId: number) {
       }
     }
     return { ...evse, activeReservationId: null, activeReservationUserId: null, nextReservation: null };
-  }));
+  });
   return enriched;
+}
+
+/**
+ * Batch version: Get all EVSEs for multiple stations in a single query.
+ * Eliminates N+1 pattern in stations.listAll.
+ */
+export async function getAllEvsesForStations(stationIds: number[]) {
+  const db = await getDb();
+  if (!db || stationIds.length === 0) return new Map<number, any[]>();
+  
+  // Single query for all EVSEs
+  const allEvses = await db.select().from(evses)
+    .where(inArray(evses.stationId, stationIds))
+    .orderBy(evses.stationId, evses.evseIdLocal);
+  
+  // Single query for all active reservations for these EVSEs
+  const evseIds = allEvses.map(e => e.id);
+  const allActiveReservations = evseIds.length > 0
+    ? await db.select().from(reservations)
+        .where(and(
+          inArray(reservations.evseId, evseIds),
+          eq(reservations.status, 'ACTIVE')
+        ))
+        .orderBy(reservations.startTime)
+    : [];
+  
+  // Group reservations by evseId
+  const reservationsByEvse = new Map<number, typeof allActiveReservations>();
+  for (const r of allActiveReservations) {
+    const list = reservationsByEvse.get(r.evseId) || [];
+    list.push(r);
+    reservationsByEvse.set(r.evseId, list);
+  }
+  
+  // Enrich and group by stationId
+  const now = new Date();
+  const in15Min = new Date(now.getTime() + 15 * 60 * 1000);
+  const result = new Map<number, any[]>();
+  
+  for (const evse of allEvses) {
+    let enriched: any = { ...evse, activeReservationId: null, activeReservationUserId: null, nextReservation: null };
+    
+    if (evse.status === 'AVAILABLE' || evse.status === 'RESERVED') {
+      const activeResList = reservationsByEvse.get(evse.id) || [];
+      if (activeResList.length > 0) {
+        const currentOrImminent = activeResList.find(r => 
+          r.startTime <= in15Min && r.endTime > now
+        );
+        if (currentOrImminent) {
+          enriched = { 
+            ...evse, 
+            status: 'RESERVED' as typeof evse.status, 
+            activeReservationId: currentOrImminent.id, 
+            activeReservationUserId: currentOrImminent.userId,
+            nextReservation: null,
+          };
+        } else {
+          const nextRes = activeResList[0];
+          enriched = { 
+            ...evse, 
+            status: evse.status,
+            activeReservationId: null, 
+            activeReservationUserId: null,
+            nextReservation: {
+              id: nextRes.id,
+              userId: nextRes.userId,
+              startTime: nextRes.startTime,
+              endTime: nextRes.endTime,
+            },
+          };
+        }
+      }
+    }
+    
+    const stationEvses = result.get(evse.stationId) || [];
+    stationEvses.push(enriched);
+    result.set(evse.stationId, stationEvses);
+  }
+  
+  return result;
 }
 
 export async function updateEvseStatus(id: number, status: Evse["status"]) {
@@ -1695,19 +1785,20 @@ export async function getOcppMessageTypes() {
 }
 
 /**
- * Obtener conexiones activas basadas en logs de BD
+ * Obtener conexiones activas basadas en logs de BD (OPTIMIZADO)
  * Un cargador se considera activo si:
  * - Tiene un Heartbeat o StatusNotification en los últimos 5 minutos
  * - O tiene CONNECTION sin DISCONNECTION posterior
+ * 
+ * Usa queries batch en lugar de N+1 para rendimiento con 1M+ logs.
  */
 export async function getActiveConnectionsFromLogs() {
   const db = await getDb();
   if (!db) return [];
   
-  // Obtener cargadores con actividad en los últimos 5 minutos
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
   
-  // Obtener cargadores únicos con actividad reciente
+  // 1. Obtener cargadores únicos con actividad reciente (usa índice compuesto)
   const recentActivity = await db.selectDistinct({
     ocppIdentity: ocppLogs.ocppIdentity,
     stationId: ocppLogs.stationId,
@@ -1721,90 +1812,110 @@ export async function getActiveConnectionsFromLogs() {
       )
     );
   
-  // Obtener info adicional de cada cargador activo
-  const activeConnections = [];
+  if (recentActivity.length === 0) return [];
   
-  for (const activity of recentActivity) {
-    if (!activity.ocppIdentity) continue;
-    
-    // Verificar si hay una desconexión reciente (en los últimos 5 minutos)
-    const disconnection = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          eq(ocppLogs.messageType, 'DISCONNECTION'),
-          gte(ocppLogs.createdAt, fiveMinutesAgo)
-        )
+  const identities = recentActivity.map(a => a.ocppIdentity).filter(Boolean) as string[];
+  if (identities.length === 0) return [];
+  
+  // 2. Batch: obtener desconexiones recientes para TODOS los cargadores activos
+  const recentDisconnections = await db.select({
+    ocppIdentity: ocppLogs.ocppIdentity,
+    createdAt: ocppLogs.createdAt,
+  })
+    .from(ocppLogs)
+    .where(
+      and(
+        inArray(ocppLogs.ocppIdentity, identities),
+        eq(ocppLogs.messageType, 'DISCONNECTION'),
+        gte(ocppLogs.createdAt, fiveMinutesAgo)
       )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(1);
-    
-    // Obtener la última actividad (conexión o mensaje)
-    const lastActivityLog = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          inArray(ocppLogs.messageType, ['Heartbeat', 'StatusNotification', 'BootNotification', 'CONNECTION'])
-        )
-      )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(1);
-    
-    // Si hay desconexión más reciente que la última actividad, está desconectado
-    if (disconnection.length > 0 && lastActivityLog.length > 0) {
-      if (disconnection[0].createdAt > lastActivityLog[0].createdAt) {
-        continue; // Está desconectado
-      }
-      // Si la última actividad es más reciente que la desconexión, se reconectó
-    } else if (disconnection.length > 0 && lastActivityLog.length === 0) {
-      continue; // Hay desconexión sin actividad posterior
+    )
+    .orderBy(desc(ocppLogs.createdAt));
+  
+  // Agrupar: última desconexión por identity
+  const lastDisconnectionMap = new Map<string, Date>();
+  for (const d of recentDisconnections) {
+    if (d.ocppIdentity && !lastDisconnectionMap.has(d.ocppIdentity)) {
+      lastDisconnectionMap.set(d.ocppIdentity, d.createdAt);
     }
-    
-    // Obtener el último BootNotification para info del cargador
-    const bootInfo = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          eq(ocppLogs.messageType, 'BootNotification'),
-          eq(ocppLogs.direction, 'IN')
-        )
+  }
+  
+  // 3. Batch: obtener última actividad para TODOS los cargadores
+  const lastActivities = await db.select({
+    ocppIdentity: ocppLogs.ocppIdentity,
+    createdAt: ocppLogs.createdAt,
+  })
+    .from(ocppLogs)
+    .where(
+      and(
+        inArray(ocppLogs.ocppIdentity, identities),
+        inArray(ocppLogs.messageType, ['Heartbeat', 'StatusNotification', 'BootNotification', 'CONNECTION'])
       )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(1);
-    
-    // Obtener el último Heartbeat
-    const lastHeartbeat = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          eq(ocppLogs.messageType, 'Heartbeat')
-        )
+    )
+    .orderBy(desc(ocppLogs.createdAt))
+    .limit(identities.length * 2); // Suficiente para obtener al menos 1 por identity
+  
+  const lastActivityMap = new Map<string, Date>();
+  for (const a of lastActivities) {
+    if (a.ocppIdentity && !lastActivityMap.has(a.ocppIdentity)) {
+      lastActivityMap.set(a.ocppIdentity, a.createdAt);
+    }
+  }
+  
+  // 4. Filtrar desconectados
+  const activeIdentities = identities.filter(id => {
+    const lastDisc = lastDisconnectionMap.get(id);
+    const lastAct = lastActivityMap.get(id);
+    if (!lastDisc) return true; // Sin desconexión = activo
+    if (!lastAct) return false; // Desconexión sin actividad = desconectado
+    return lastAct > lastDisc; // Actividad más reciente que desconexión = reconectado
+  });
+  
+  if (activeIdentities.length === 0) return [];
+  
+  // 5. Batch: obtener logs relevantes para todos los activos en UNA query
+  //    (BootNotification, Heartbeat, StatusNotification, CONNECTION)
+  const relevantLogs = await db.select()
+    .from(ocppLogs)
+    .where(
+      and(
+        inArray(ocppLogs.ocppIdentity, activeIdentities),
+        inArray(ocppLogs.messageType, ['BootNotification', 'Heartbeat', 'StatusNotification', 'CONNECTION'])
       )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(1);
+    )
+    .orderBy(desc(ocppLogs.createdAt))
+    .limit(activeIdentities.length * 15); // ~15 logs por cargador es suficiente
+  
+  // Agrupar por identity y tipo
+  const logsByIdentity = new Map<string, typeof relevantLogs>();
+  for (const log of relevantLogs) {
+    if (!log.ocppIdentity) continue;
+    const list = logsByIdentity.get(log.ocppIdentity) || [];
+    list.push(log);
+    logsByIdentity.set(log.ocppIdentity, list);
+  }
+  
+  // 6. Construir resultado
+  const activeConnections = [];
+  const activityMap = new Map(recentActivity.map(a => [a.ocppIdentity, a]));
+  
+  for (const identity of activeIdentities) {
+    const activity = activityMap.get(identity);
+    if (!activity) continue;
     
-    // Obtener estados de conectores
-    const connectorStatuses = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          eq(ocppLogs.messageType, 'StatusNotification'),
-          eq(ocppLogs.direction, 'IN')
-        )
-      )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(10);
+    const logs = logsByIdentity.get(identity) || [];
     
-    // Construir objeto de conexión
-    const bootPayload = bootInfo[0]?.payload as any;
+    const bootLog = logs.find(l => l.messageType === 'BootNotification' && l.direction === 'IN');
+    const heartbeatLog = logs.find(l => l.messageType === 'Heartbeat');
+    const connectionLog = logs.find(l => l.messageType === 'CONNECTION');
+    const statusLogs = logs.filter(l => l.messageType === 'StatusNotification' && l.direction === 'IN').slice(0, 10);
+    
+    const bootPayload = bootLog?.payload as any;
+    const connectionPayload = connectionLog?.payload as any;
+    const ocppVersion = connectionPayload?.ocppVersion || '1.6';
+    
     const connectorStatusMap: Record<number, string> = {};
-    
-    for (const cs of connectorStatuses) {
+    for (const cs of statusLogs) {
       const payload = cs.payload as any;
       const connectorId = payload?.connectorId || payload?.evseId || 0;
       if (!connectorStatusMap[connectorId]) {
@@ -1812,29 +1923,14 @@ export async function getActiveConnectionsFromLogs() {
       }
     }
     
-    // Determinar versión OCPP
-    const connectionLog = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          eq(ocppLogs.messageType, 'CONNECTION')
-        )
-      )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(1);
-    
-    const connectionPayload = connectionLog[0]?.payload as any;
-    const ocppVersion = connectionPayload?.ocppVersion || '1.6';
-    
-    const lastActivityTime = lastActivityLog[0]?.createdAt || new Date();
+    const lastActivityTime = lastActivityMap.get(identity) || new Date();
     
     activeConnections.push({
-      ocppIdentity: activity.ocppIdentity,
+      ocppIdentity: identity,
       ocppVersion,
       stationId: activity.stationId,
-      connectedAt: connectionLog[0]?.createdAt?.toISOString() || lastActivityTime.toISOString(),
-      lastHeartbeat: lastHeartbeat[0]?.createdAt?.toISOString() || lastActivityTime.toISOString(),
+      connectedAt: connectionLog?.createdAt?.toISOString() || lastActivityTime.toISOString(),
+      lastHeartbeat: heartbeatLog?.createdAt?.toISOString() || lastActivityTime.toISOString(),
       lastMessage: lastActivityTime.toISOString(),
       connectorStatuses: connectorStatusMap,
       bootInfo: bootPayload ? {
@@ -1843,7 +1939,7 @@ export async function getActiveConnectionsFromLogs() {
         serialNumber: bootPayload.chargePointSerialNumber || bootPayload.chargeBoxSerialNumber || bootPayload.chargingStation?.serialNumber,
         firmwareVersion: bootPayload.firmwareVersion || bootPayload.chargingStation?.firmwareVersion,
       } : undefined,
-      isConnected: true, // Si llegó aquí, está activo
+      isConnected: true,
     });
   }
   

@@ -455,7 +455,7 @@ const stationsRouter = router({
       return stationsWithData;
     }),
   
-  // Admin/Técnico: listar todas las estaciones
+  // Admin/Técnico: listar todas las estaciones (optimizado: batch EVSEs)
   listAll: technicianProcedure.query(async () => {
     const stations = await db.getAllChargingStations();
     // Obtener conexiones OCPP activas para enriquecer con lastHeartbeat
@@ -464,24 +464,25 @@ const stationsRouter = router({
     for (const conn of csmsConnections) {
       csmsMap.set(conn.ocppIdentity, conn);
     }
-    // Agregar evses y datos de conexión OCPP a cada estación
-    const stationsWithEvses = await Promise.all(
-      stations.map(async (station: any) => {
-        const evses = await db.getEvsesByStationId(station.id);
-        const ocppId = station.ocppIdentity || station.id?.toString();
-        const ocppConn = csmsMap.get(ocppId);
-        return {
-          ...station,
-          evses,
-          // Última actividad OCPP: heartbeat > bootNotification > null
-          lastHeartbeat: ocppConn?.lastHeartbeat
-            ? (ocppConn.lastHeartbeat instanceof Date ? ocppConn.lastHeartbeat.toISOString() : String(ocppConn.lastHeartbeat))
-            : (station.lastBootNotification
-              ? (station.lastBootNotification instanceof Date ? station.lastBootNotification.toISOString() : String(station.lastBootNotification))
-              : null),
-        };
-      })
-    );
+    // Batch: obtener TODOS los EVSEs de todas las estaciones en 2 queries (no N+1)
+    const stationIds = stations.map((s: any) => s.id);
+    const evsesMap = await db.getAllEvsesForStations(stationIds);
+    
+    // Enriquecer estaciones con EVSEs y datos OCPP (sin queries adicionales)
+    const stationsWithEvses = stations.map((station: any) => {
+      const stationEvses = evsesMap.get(station.id) || [];
+      const ocppId = station.ocppIdentity || station.id?.toString();
+      const ocppConn = csmsMap.get(ocppId);
+      return {
+        ...station,
+        evses: stationEvses,
+        lastHeartbeat: ocppConn?.lastHeartbeat
+          ? (ocppConn.lastHeartbeat instanceof Date ? ocppConn.lastHeartbeat.toISOString() : String(ocppConn.lastHeartbeat))
+          : (station.lastBootNotification
+            ? (station.lastBootNotification instanceof Date ? station.lastBootNotification.toISOString() : String(station.lastBootNotification))
+            : null),
+      };
+    });
     return stationsWithEvses;
   }),
   
