@@ -1,1 +1,0 @@
-ALTER TABLE `quote_items` ADD `productImageUrl` text;

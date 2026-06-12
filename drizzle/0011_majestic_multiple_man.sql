@@ -1,1 +1,0 @@
-ALTER TABLE `tariffs` ADD `autoPricing` boolean DEFAULT false NOT NULL;

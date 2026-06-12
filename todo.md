@@ -3540,3 +3540,12 @@
 - [ ] Registrar ruta en App.tsx como ruta pública
 - [ ] Backend: endpoint para recibir aplicaciones de partners
 - [ ] Push a GitHub para deploy en Railway
+
+## Parche: Idempotencia Pagos + Perfiles IA + Consentimiento (Jun 2026)
+- [x] Fase 1: Copiar idempotency.ts y aplicar cambios en webhook.ts (fix pagos duplicados)
+- [x] Fase 2: Agregar tablas user_data_consents, personalized_offers al schema + columnas avanzadas en user_consumption_profile
+- [x] Fase 3: Crear server/profiles/ con consumption-profile-service.ts y profiles-router.ts
+- [x] Fase 4: Conectar buildPersonalizationContext al asistente IA (ai-service.ts)
+- [x] Fase 5: Agregar DataConsentDialog.tsx y sección de Privacidad en perfil de usuario (/settings/privacy)
+- [x] Tests para perfiles (14 tests pasando)
+- [ ] Push a GitHub

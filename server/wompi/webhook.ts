@@ -14,6 +14,7 @@ import {
 } from "./config";
 import * as db from "../db";
 import { sendPushNotification } from "../firebase/fcm";
+import { claimWompiTransaction, releaseWompiClaim } from "./idempotency";
 
 export async function handleWompiWebhook(req: Request, res: Response) {
   try {
@@ -47,34 +48,64 @@ export async function handleWompiWebhook(req: Request, res: Response) {
       const { id, reference, status, amount_in_cents, payment_method_type } = transaction;
       console.log(`[Wompi Webhook] Transacción ${id} - Estado: ${status} - Ref: ${reference}`);
 
-      // Actualizar transacción en nuestra BD
-      try {
-        await db.updateWompiTransactionByReference(reference, {
-          wompiTransactionId: id,
-          status,
-          paymentMethodType: payment_method_type,
-          webhookReceivedAt: new Date(),
-          processedAt: status === WOMPI_TRANSACTION_STATUS.APPROVED ? new Date() : undefined,
-        });
-      } catch (err) {
-        console.error("[Wompi Webhook] Error actualizando transacción en BD:", err);
-      }
-
       // Procesar según el estado
       if (status === WOMPI_TRANSACTION_STATUS.APPROVED) {
-        if (reference.startsWith("WLT-")) {
-          await processWalletRecharge(reference, amount_in_cents / 100, payment_method_type, id, transaction);
-        } else if (reference.startsWith("QRC-") || reference.startsWith("ATC-")) {
-          // Recarga rápida con tarjeta (QRC) o auto-cobro (ATC) - acreditar billetera
-          await processQuickRecharge(reference, amount_in_cents / 100, id);
-        } else if (reference.startsWith("CHG-")) {
-          await processChargingPayment(reference, amount_in_cents / 100);
-        } else if (reference.startsWith("INV-")) {
-          await processInvestmentDeposit(reference, amount_in_cents / 100, id);
-        } else if (reference.startsWith("SUB-")) {
-          await processSubscriptionPayment(reference, amount_in_cents / 100, payment_method_type, id, transaction);
+        // ============================================================
+        // CLAIM ATÓMICO: garantiza procesamiento exactamente-una-vez.
+        // El claim TAMBIÉN actualiza status/processedAt/wompiTransactionId,
+        // reemplazando el updateWompiTransactionByReference anterior.
+        // ============================================================
+        let claim;
+        try {
+          claim = await claimWompiTransaction(reference, id, payment_method_type);
+        } catch (err) {
+          // Error de BD: responder 500 para que Wompi REINTENTE.
+          console.error("[Wompi Webhook] Error en claim, solicitando reintento:", err);
+          return res.status(500).json({ error: "Temporary error, please retry" });
+        }
+
+        if (!claim.claimed) {
+          if (claim.reason === "db_unavailable") {
+            return res.status(500).json({ error: "Database unavailable, please retry" });
+          }
+          // Duplicado o referencia desconocida: confirmar 200 (no reintentar).
+          console.log(
+            `[Wompi Webhook] Evento ignorado (${claim.reason}): ${reference}`
+          );
+          return res.json({ received: true, duplicate: claim.reason === "already_processed" });
+        }
+
+        // Solo UNA ejecución llega aquí por transacción ✅
+        try {
+          if (reference.startsWith("WLT-")) {
+            await processWalletRecharge(reference, amount_in_cents / 100, payment_method_type, id, transaction);
+          } else if (reference.startsWith("QRC-") || reference.startsWith("ATC-")) {
+            await processQuickRecharge(reference, amount_in_cents / 100, id);
+          } else if (reference.startsWith("CHG-")) {
+            await processChargingPayment(reference, amount_in_cents / 100);
+          } else if (reference.startsWith("INV-")) {
+            await processInvestmentDeposit(reference, amount_in_cents / 100, id);
+          } else if (reference.startsWith("SUB-")) {
+            await processSubscriptionPayment(reference, amount_in_cents / 100, payment_method_type, id, transaction);
+          }
+        } catch (processingErr) {
+          // Si falla el procesamiento post-claim, liberar para reintento
+          console.error(`[Wompi Webhook] Error procesando ${reference}, liberando claim:`, processingErr);
+          await releaseWompiClaim(reference);
+          return res.status(500).json({ error: "Processing failed, please retry" });
         }
       } else if (status === WOMPI_TRANSACTION_STATUS.DECLINED || status === WOMPI_TRANSACTION_STATUS.ERROR) {
+        // Para estados no-aprobados actualizamos sin claim (no mueven dinero)
+        try {
+          await db.updateWompiTransactionByReference(reference, {
+            wompiTransactionId: id,
+            status,
+            paymentMethodType: payment_method_type,
+            webhookReceivedAt: new Date(),
+          });
+        } catch (err) {
+          console.error("[Wompi Webhook] Error actualizando tx declinada:", err);
+        }
         console.log(`[Wompi Webhook] Pago ${status}: ${reference}`);
         await notifyPaymentFailed(reference, status);
       }

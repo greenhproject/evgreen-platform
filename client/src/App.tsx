@@ -63,6 +63,7 @@ const UserSettingsPersonalInfo = lazy(() => import("./pages/user/settings/Person
 const UserSettingsVehicles = lazy(() => import("./pages/user/settings/Vehicles"));
 const UserSettingsPaymentMethods = lazy(() => import("./pages/user/settings/PaymentMethods"));
 const UserSettingsConfig = lazy(() => import("./pages/user/settings/Config"));
+const UserPrivacySettings = lazy(() => import("./pages/user/PrivacySettings"));
 const UserSubscription = lazy(() => import("./pages/user/Subscription"));
 const SocAccuracyHistory = lazy(() => import("./pages/user/SocAccuracyHistory"));
 
@@ -364,6 +365,7 @@ function Router() {
         <Route path="/vehicles" component={UserSettingsVehicles} />
         <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
         <Route path="/settings/config" component={UserSettingsConfig} />
+        <Route path="/settings/privacy" component={UserPrivacySettings} />
         <Route path="/subscription" component={UserSubscription} />
         <Route path="/soc-accuracy" component={SocAccuracyHistory} />
 

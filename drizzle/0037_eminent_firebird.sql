@@ -1,1 +1,0 @@
-ALTER TABLE `space_submissions` ADD `investment_type` enum('individual','colectiva') DEFAULT 'individual' NOT NULL;

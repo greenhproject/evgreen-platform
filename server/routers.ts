@@ -41,6 +41,7 @@ import { buildApiKeysRouter } from "./api/api-keys-router";
 import { quotesRouter } from "./quotes/quotes-router";
 import { spacesRouter } from "./spaces/spaces-router";
 import { partnersRouter } from "./partners/partners-router";
+import { profilesRouter } from "./profiles/profiles-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -6528,6 +6529,7 @@ export const appRouter = router({
   quotes: quotesRouter,
   spaces: spacesRouter,
   partners: partnersRouter,
+  profiles: profilesRouter,
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

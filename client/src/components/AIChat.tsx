@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { DataConsentDialog, useConsentGate } from "@/components/DataConsentDialog";
 import { Streamdown } from "streamdown";
 import {
   Bot,
@@ -618,6 +619,8 @@ export function openAIChatWithQuestion(question: string) {
 export function AIChatWidget() {
   const { user, isAuthenticated } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [showConsentDialog, setShowConsentDialog] = useState(false);
+  const { shouldShow: needsConsent } = useConsentGate();
   const [message, setMessage] = useState("");
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -810,7 +813,13 @@ export function AIChatWidget() {
       {!hideFloatingButton && (
         <button
           data-ai-chat-trigger
-          onClick={() => setIsOpen(true)}
+          onClick={() => {
+            if (needsConsent) {
+              setShowConsentDialog(true);
+            } else {
+              setIsOpen(true);
+            }
+          }}
           className="fixed bottom-24 sm:bottom-6 right-4 sm:right-6 z-40 h-12 w-12 sm:h-14 sm:w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all hover:scale-105 flex items-center justify-center"
           aria-label="Abrir asistente de IA"
         >
@@ -818,6 +827,13 @@ export function AIChatWidget() {
           <span className="absolute -top-1 -right-1 h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-green-500 border-2 border-background" />
         </button>
       )}
+
+      {/* Diálogo de consentimiento de datos (Ley 1581/2012) */}
+      <DataConsentDialog
+        open={showConsentDialog}
+        onOpenChange={setShowConsentDialog}
+        onCompleted={() => setShowConsentDialog(false)}
+      />
 
       {/* Panel de chat */}
       <Sheet open={isOpen} onOpenChange={setIsOpen}>
