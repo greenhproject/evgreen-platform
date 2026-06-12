@@ -3549,3 +3549,11 @@
 - [x] Fase 5: Agregar DataConsentDialog.tsx y sección de Privacidad en perfil de usuario (/settings/privacy)
 - [x] Tests para perfiles (14 tests pasando)
 - [ ] Push a GitHub
+
+## Fix: Estaciones cargando lento (Performance Jun 2026)
+- [x] Agregar índices a ocpp_logs (ocppIdentity + messageType + createdAt) — query de 18ms vs full scan
+- [x] Agregar índice a reservations (evseId + reservation_status)
+- [x] Agregar índice a evses (stationId)
+- [x] Optimizar stations.listAll: batch EVSEs en una sola query (2 queries vs 9+36)
+- [x] Optimizar getActiveConnectionsFromLogs: batch queries (5 queries vs ~50+)
+- [x] Verificar mejora de rendimiento (EVSEs: 14ms, Reservations: 7ms, Activity: 18ms)
