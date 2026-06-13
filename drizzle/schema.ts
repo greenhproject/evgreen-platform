@@ -3607,3 +3607,139 @@ export const personalizedOffersRelations = relations(personalizedOffers, ({ one 
     references: [users.id],
   }),
 }));
+
+
+// ============================================================================
+// MULTI-TENANT SaaS MODEL
+// ============================================================================
+
+export const orgPlanEnum = mysqlEnum("org_plan", ["starter", "professional", "enterprise"]);
+export const orgStatusEnum = mysqlEnum("org_status", ["active", "suspended", "trial", "cancelled"]);
+
+/**
+ * organizations - Tabla principal de tenants (clientes SaaS)
+ * Cada organización representa un operador de cargadores que licencia la plataforma.
+ */
+export const organizations = mysqlTable("organizations", {
+  id: int("id").primaryKey().autoincrement(),
+  name: varchar("name", { length: 200 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull(), // subdominio: slug.evgreen.lat
+  plan: orgPlanEnum.notNull().default("starter"),
+  status: orgStatusEnum.notNull().default("trial"),
+  
+  // Contacto
+  contactName: varchar("contact_name", { length: 200 }),
+  contactEmail: varchar("contact_email", { length: 200 }),
+  contactPhone: varchar("contact_phone", { length: 50 }),
+  nit: varchar("nit", { length: 50 }),
+  
+  // Branding / White-label
+  logoUrl: text("logo_url"),
+  primaryColor: varchar("primary_color", { length: 20 }).default("#22c55e"),
+  secondaryColor: varchar("secondary_color", { length: 20 }).default("#1e40af"),
+  customDomain: varchar("custom_domain", { length: 200 }),
+  appName: varchar("app_name", { length: 100 }),
+  
+  // Red
+  networkMember: boolean("network_member").default(true).notNull(),
+  
+  // Pricing (override por organización — si es null, usa defaults globales)
+  setupFeePerCharger: decimal("setup_fee_per_charger", { precision: 10, scale: 2 }),
+  annualFeePerCharger: decimal("annual_fee_per_charger", { precision: 10, scale: 2 }),
+  transactionFeePercent: decimal("transaction_fee_percent", { precision: 5, scale: 2 }),
+  supportFeePercent: decimal("support_fee_percent", { precision: 5, scale: 2 }),
+  networkDiscount: decimal("network_discount", { precision: 5, scale: 2 }).default("1.00"),
+  minMonthlyFeePerCharger: decimal("min_monthly_fee_per_charger", { precision: 10, scale: 2 }),
+  supportIncluded: boolean("support_included").default(false).notNull(),
+  
+  // Límites
+  maxChargers: int("max_chargers").default(10),
+  
+  // Roaming
+  roamingOwnerPercent: decimal("roaming_owner_percent", { precision: 5, scale: 2 }).default("80.00"),
+  roamingPlatformPercent: decimal("roaming_platform_percent", { precision: 5, scale: 2 }).default("15.00"),
+  roamingReferralPercent: decimal("roaming_referral_percent", { precision: 5, scale: 2 }).default("5.00"),
+  
+  // Facturación
+  billingEmail: varchar("billing_email", { length: 200 }),
+  nextBillingDate: timestamp("next_billing_date"),
+  trialEndsAt: timestamp("trial_ends_at"),
+  
+  // Metadata
+  notes: text("notes"),
+  ownerId: varchar("owner_id", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = typeof organizations.$inferInsert;
+
+/**
+ * platform_pricing_defaults - Valores globales configurables por el superadmin
+ * Si una organización no tiene override, se usan estos valores.
+ */
+export const platformPricingDefaults = mysqlTable("platform_pricing_defaults", {
+  id: int("id").primaryKey().autoincrement(),
+  plan: orgPlanEnum.notNull(),
+  
+  setupFeePerCharger: decimal("setup_fee_per_charger", { precision: 10, scale: 2 }).notNull(),
+  annualFeePerCharger: decimal("annual_fee_per_charger", { precision: 10, scale: 2 }).notNull(),
+  transactionFeePercent: decimal("transaction_fee_percent", { precision: 5, scale: 2 }).notNull(),
+  supportFeePercent: decimal("support_fee_percent", { precision: 5, scale: 2 }).notNull(),
+  networkDiscount: decimal("network_discount", { precision: 5, scale: 2 }).notNull().default("1.00"),
+  minMonthlyFeePerCharger: decimal("min_monthly_fee_per_charger", { precision: 10, scale: 2 }).notNull(),
+  maxChargers: int("max_chargers").notNull(),
+  
+  // Roaming defaults
+  roamingOwnerPercent: decimal("roaming_owner_percent", { precision: 5, scale: 2 }).notNull().default("80.00"),
+  roamingPlatformPercent: decimal("roaming_platform_percent", { precision: 5, scale: 2 }).notNull().default("15.00"),
+  roamingReferralPercent: decimal("roaming_referral_percent", { precision: 5, scale: 2 }).notNull().default("5.00"),
+  
+  uptimeSla: decimal("uptime_sla", { precision: 5, scale: 2 }).notNull(),
+  
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PlatformPricingDefault = typeof platformPricingDefaults.$inferSelect;
+export type InsertPlatformPricingDefault = typeof platformPricingDefaults.$inferInsert;
+
+/**
+ * org_billing_records - Registro de cobros realizados a cada organización
+ */
+export const orgBillingRecords = mysqlTable("org_billing_records", {
+  id: int("id").primaryKey().autoincrement(),
+  organizationId: int("organization_id").notNull(),
+  
+  type: mysqlEnum("billing_type", ["setup", "annual_renewal", "transaction_fee", "support_fee", "minimum_fee"]).notNull(),
+  description: varchar("description", { length: 500 }),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 3 }).default("USD").notNull(),
+  
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  
+  transactionCount: int("transaction_count"),
+  totalTransactionVolume: decimal("total_transaction_volume", { precision: 14, scale: 2 }),
+  
+  status: mysqlEnum("billing_status", ["pending", "paid", "overdue", "cancelled"]).default("pending").notNull(),
+  paidAt: timestamp("paid_at"),
+  invoiceUrl: text("invoice_url"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type OrgBillingRecord = typeof orgBillingRecords.$inferSelect;
+export type InsertOrgBillingRecord = typeof orgBillingRecords.$inferInsert;
+
+// Relations
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  billingRecords: many(orgBillingRecords),
+}));
+
+export const orgBillingRecordsRelations = relations(orgBillingRecords, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [orgBillingRecords.organizationId],
+    references: [organizations.id],
+  }),
+}));

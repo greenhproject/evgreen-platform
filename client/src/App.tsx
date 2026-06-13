@@ -39,6 +39,8 @@ function LazySpinner() {
 const Investors = lazy(() => import("./pages/Investors"));
 const ThankYouInvestors = lazy(() => import("./pages/ThankYouInvestors"));
 const Partners = lazy(() => import("./pages/Partners"));
+const SaaSLanding = lazy(() => import("./pages/SaaSLanding"));
+const AdminOrganizations = lazy(() => import("./pages/admin/Organizations"));
 
 // Páginas de usuario
 const UserMap = lazy(() => import("./pages/user/Map"));
@@ -276,7 +278,7 @@ function ProtectedRoute({
 }
 
 // Rutas públicas que NO necesitan esperar autenticación
-const PUBLIC_PATHS = ["/partners", "/investors", "/landing", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding"];
+const PUBLIC_PATHS = ["/partners", "/investors", "/landing", "/saas", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + "/"));
@@ -307,6 +309,7 @@ function Router() {
         <Route path="/landing" component={Landing} />
         <Route path="/investors" component={Investors} />
         <Route path="/partners" component={Partners} />
+        <Route path="/saas" component={SaaSLanding} />
         <Route path="/gracias-inversionistas" component={ThankYouInvestors} />
         
         {/* Ruta para códigos QR - Redirige a StartCharge */}
@@ -801,6 +804,15 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin", "staff"]}>
             <AdminLayout>
               <AdminSpaces />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* Administración de Organizaciones SaaS */}
+        <Route path="/admin/organizations">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminOrganizations />
             </AdminLayout>
           </ProtectedRoute>
         </Route>
