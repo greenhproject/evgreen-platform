@@ -3557,3 +3557,14 @@
 - [x] Optimizar stations.listAll: batch EVSEs en una sola query (2 queries vs 9+36)
 - [x] Optimizar getActiveConnectionsFromLogs: batch queries (5 queries vs ~50+)
 - [x] Verificar mejora de rendimiento (EVSEs: 14ms, Reservations: 7ms, Activity: 18ms)
+
+## SaaS Landing Page + Modelo Multi-Tenant (Jun 2026)
+- [x] Crear página /saas con landing profesional del modelo de negocio (pricing, features, CTA)
+- [x] Agregar botón/enlace en la navegación principal hacia la landing SaaS (footer "Empresas")
+- [x] Implementar tabla organizations con pricing_config en el schema
+- [x] Implementar tabla platform_pricing_defaults para valores globales configurables
+- [x] Implementar tabla org_billing_records para historial de facturación
+- [x] Crear router organizations con CRUD, stats, pricing, billing
+- [x] Crear panel de superadmin /admin/organizations para gestionar organizaciones y precios
+- [x] Agregar menú "Organizaciones SaaS" en sidebar admin
+- [ ] Crear middleware de tenant context (pendiente para multi-tenant completo)

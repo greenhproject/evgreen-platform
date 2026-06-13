@@ -1021,6 +1021,7 @@ export default function Landing() {
               <span className="text-muted-foreground text-sm">by Green House Project</span>
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
+              <Link href="/saas" className="hover:text-green-400 transition-colors font-medium">Empresas</Link>
               <a href="#" className="hover:text-foreground transition-colors">Términos</a>
               <a href="#" className="hover:text-foreground transition-colors">Privacidad</a>
               <a href="#" className="hover:text-foreground transition-colors">Contacto</a>
