@@ -3567,4 +3567,4 @@
 - [x] Crear router organizations con CRUD, stats, pricing, billing
 - [x] Crear panel de superadmin /admin/organizations para gestionar organizaciones y precios
 - [x] Agregar menú "Organizaciones SaaS" en sidebar admin
-- [ ] Crear middleware de tenant context (pendiente para multi-tenant completo)
+- [x] Crear middleware de tenant context (tenant-middleware.ts: resolveTenantContext, getEffectiveFees, canAddCharger, getOrgBranding)
