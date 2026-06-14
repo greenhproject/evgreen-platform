@@ -26,6 +26,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sparkles, ShieldCheck } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 const POLICY_VERSION = "2026-06-v1"; // Debe coincidir con CURRENT_POLICY_VERSION del backend
 
@@ -193,13 +194,15 @@ export function DataConsentDialog({
  * <DataConsentDialog open={shouldShow} ... />
  */
 export function useConsentGate() {
+  const { isAuthenticated } = useAuth();
   const { data, isLoading } = trpc.profiles.getConsentStatus.useQuery(undefined, {
     // Solo consultar si el usuario está autenticado (evitar errores en login)
     retry: false,
+    enabled: isAuthenticated,
   });
   return {
-    isLoading,
-    shouldShow: !isLoading && data ? !data.aiProfiling : false,
+    isLoading: isAuthenticated ? isLoading : false,
+    shouldShow: isAuthenticated && !isLoading && data ? !data.aiProfiling : false,
     aiConsented: data?.aiProfiling ?? false,
   };
 }
