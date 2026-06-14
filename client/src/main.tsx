@@ -24,6 +24,14 @@ const queryClient = new QueryClient({
   },
 });
 
+// Rutas donde NUNCA se debe redirigir automáticamente a login
+const NO_REDIRECT_PATHS = ["/", "/landing", "/partners", "/investors", "/saas", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding", "/c/"];
+
+function isNoRedirectPath(): boolean {
+  const path = window.location.pathname;
+  return NO_REDIRECT_PATHS.some(p => path === p || path.startsWith(p + "/") || (p.endsWith("/") && path.startsWith(p)));
+}
+
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
@@ -31,6 +39,13 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
 
   if (!isUnauthorized) return;
+
+  // NO redirigir si estamos en una ruta pública o en la landing
+  if (isNoRedirectPath()) return;
+
+  // NO redirigir si no hay evidencia de sesión previa (usuario nunca logueado)
+  const hadSession = document.cookie.includes('session') || localStorage.getItem('manus-runtime-user-info') !== 'null';
+  if (!hadSession) return;
 
   window.location.href = getLoginUrl();
 };
