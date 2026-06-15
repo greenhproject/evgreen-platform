@@ -19,7 +19,7 @@
 
 import * as db from "../db";
 import { transactions, evses, tariffs, overstayLocks } from "../../drizzle/schema";
-import { eq, and, or, desc, lt } from "drizzle-orm";
+import { eq, and, desc, lt } from "drizzle-orm";
 import { sendUserPush } from "../push/unified-push";
 import { autoChargeIfNeeded } from "../wompi/auto-charge";
 import crypto from "crypto";
@@ -247,23 +247,25 @@ export async function onChargingFinished(evseId: number, stationId: number) {
     const dbInstance = await db.getDb();
     if (!dbInstance) return;
 
-    // Prioridad: transacción activa (IN_PROGRESS) > transacción completada más reciente
+    // GUARD: Si hay una transacción activa (IN_PROGRESS), NO iniciar overstay.
+    // Esto significa que la carga aún está en curso (el cargador reportó Finishing
+    // pero la transacción no se ha completado aún en nuestro sistema).
     const activeTx = await db.getActiveTransaction(evseId);
-    
-    let transaction = activeTx;
-    
-    if (!transaction) {
-      // Si no hay transacción activa, buscar la más reciente completada (DESC = más nueva primero)
-      const recentTx = await dbInstance.select()
-        .from(transactions)
-        .where(and(
-          eq(transactions.evseId, evseId),
-          eq(transactions.status, "COMPLETED")
-        ))
-        .orderBy(desc(transactions.endTime))
-        .limit(1);
-      transaction = recentTx.length > 0 ? recentTx[0] : undefined;
+    if (activeTx) {
+      console.log(`[OverstayMonitor] EVSE ${evseId} has active IN_PROGRESS transaction (id=${activeTx.id}). NOT starting overstay - charge may still be in progress.`);
+      return;
     }
+    
+    // Buscar la transacción completada más reciente
+    const recentTx = await dbInstance.select()
+      .from(transactions)
+      .where(and(
+        eq(transactions.evseId, evseId),
+        eq(transactions.status, "COMPLETED")
+      ))
+      .orderBy(desc(transactions.endTime))
+      .limit(1);
+    const transaction = recentTx.length > 0 ? recentTx[0] : undefined;
     
     if (!transaction) {
       console.warn(`[OverstayMonitor] No transaction found for EVSE ${evseId} in Finishing state`);
@@ -431,14 +433,14 @@ async function scanForUnmonitoredOverstay() {
   if (!dbInstance) return;
 
   try {
-    // Find EVSEs in FINISHING or SUSPENDED_EV state
+    // Find EVSEs in FINISHING state only
+    // IMPORTANTE: SUSPENDED_EV NO debe incluirse aquí porque indica que el BMS del
+    // vehículo redujo la corriente temporalmente (fase taper en AC, ~80-90% SoC).
+    // El carro puede seguir cargando después de SuspendedEV.
     const finishingEvses = await dbInstance.select()
       .from(evses)
       .where(
-        or(
-          eq(evses.status, "FINISHING"),
-          eq(evses.status, "SUSPENDED_EV")
-        )
+        eq(evses.status, "FINISHING")
       );
 
     for (const evse of finishingEvses) {
@@ -504,10 +506,11 @@ async function processOverstaySessions() {
   for (const [evseId, session] of entries) {
     try {
       // First, verify the EVSE is still in FINISHING state
+      // NOTA: Solo FINISHING es válido para overstay. SUSPENDED_EV indica taper (carga aún en curso).
       const evse = await db.getEvseById(evseId);
-      if (!evse || (evse.status !== "FINISHING" && evse.status !== "SUSPENDED_EV")) {
-        // Cable was disconnected or status changed - finalize
-        console.log(`[OverstayMonitor] EVSE ${evseId} no longer in FINISHING/SUSPENDED_EV (status=${evse?.status}). Removing session.`);
+      if (!evse || evse.status !== "FINISHING") {
+        // Cable was disconnected, status changed, or car resumed charging - finalize
+        console.log(`[OverstayMonitor] EVSE ${evseId} no longer in FINISHING (status=${evse?.status}). Removing session.`);
         await releaseOverstayLock(evseId);
         activeOverstaySessions.delete(evseId);
         continue;

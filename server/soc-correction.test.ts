@@ -69,35 +69,46 @@ describe("SoC Correction - Energy-based SoC Calculation", () => {
 });
 
 describe("SoC Correction - Battery Full Detection by Power Drop", () => {
-  const LOW_POWER_THRESHOLD_KW = 0.5;
-  const LOW_POWER_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+  // UPDATED: Umbrales más conservadores para evitar falsos positivos en fase taper AC
+  // 0.15 kW = ~0.6A en 220V (prácticamente cero corriente)
+  // 10 min = suficiente para confirmar que la batería realmente terminó
+  const LOW_POWER_THRESHOLD_KW = 0.15;
+  const LOW_POWER_DURATION_MS = 10 * 60 * 1000; // 10 minutes
 
-  it("should detect low power when power drops below threshold", () => {
-    const currentPower = 0.3; // kW
+  it("should detect low power when power drops below threshold (near zero)", () => {
+    const currentPower = 0.1; // kW - prácticamente cero
     const currentKwh = 15; // Some energy already delivered
     
     const isLowPower = currentPower < LOW_POWER_THRESHOLD_KW && currentKwh > 0.5;
     expect(isLowPower).toBe(true);
   });
 
+  it("should NOT detect low power during AC taper phase (0.3-0.5 kW is normal)", () => {
+    const currentPower = 0.35; // kW - fase taper normal en AC
+    const currentKwh = 15;
+    
+    const isLowPower = currentPower < LOW_POWER_THRESHOLD_KW && currentKwh > 0.5;
+    expect(isLowPower).toBe(false); // 0.35 kW > 0.15 kW threshold
+  });
+
   it("should NOT detect low power at the start of charging (no energy delivered)", () => {
-    const currentPower = 0.3;
+    const currentPower = 0.1;
     const currentKwh = 0.1; // Very little energy
     
     const isLowPower = currentPower < LOW_POWER_THRESHOLD_KW && currentKwh > 0.5;
     expect(isLowPower).toBe(false);
   });
 
-  it("should detect battery full after 5 minutes of low power", () => {
-    const lowPowerSince = new Date(Date.now() - 6 * 60 * 1000); // 6 minutes ago
+  it("should detect battery full after 10 minutes of near-zero power", () => {
+    const lowPowerSince = new Date(Date.now() - 11 * 60 * 1000); // 11 minutes ago
     const lowPowerDuration = Date.now() - lowPowerSince.getTime();
     
     const isBatteryFull = lowPowerDuration >= LOW_POWER_DURATION_MS;
     expect(isBatteryFull).toBe(true);
   });
 
-  it("should NOT detect battery full before 5 minutes of low power", () => {
-    const lowPowerSince = new Date(Date.now() - 3 * 60 * 1000); // 3 minutes ago
+  it("should NOT detect battery full before 10 minutes of near-zero power", () => {
+    const lowPowerSince = new Date(Date.now() - 7 * 60 * 1000); // 7 minutes ago
     const lowPowerDuration = Date.now() - lowPowerSince.getTime();
     
     const isBatteryFull = lowPowerDuration >= LOW_POWER_DURATION_MS;
