@@ -67,7 +67,8 @@ ENV VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY
 # CRÍTICO: NODE_ENV=production durante build para que vite.config.ts
 # excluya el plugin manus-runtime (que inyecta una copia de React en el HTML
 # causando conflictos y pantalla negra en producción)
-RUN NODE_ENV=production pnpm build
+# NODE_OPTIONS: Aumentar memoria del heap para Vite build (7974+ módulos requieren ~2GB)
+RUN NODE_ENV=production NODE_OPTIONS='--max-old-space-size=2048' pnpm build
 
 # --- Etapa 2: Producción ---
 FROM node:22-slim AS production

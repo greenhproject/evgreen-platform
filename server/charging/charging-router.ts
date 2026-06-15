@@ -673,7 +673,7 @@ export const chargingRouter = router({
         // Generar ID único para la sesión
         const sessionId = uuidv4();
         
-        // Guardar sesión pendiente
+        // Guardar sesión pendiente (memoria + BD para multi-instancia)
         console.log(`[startCharge] Creating pending session: sessionId=${sessionId}, userId=${ctx.user.id}, stationId=${stationId}, connectorId=${connectorId}, ocppIdentity=${ocppIdentityForCommand}`);
         pendingChargeSessions.set(sessionId, {
           userId: ctx.user.id,
@@ -685,6 +685,18 @@ export const chargingRouter = router({
           pricePerKwh,
           createdAt: new Date(),
           ocppIdentity: ocppIdentityForCommand,
+        });
+        // Persistir en BD para que otras instancias puedan encontrarla
+        await db.savePendingChargeSession({
+          sessionId,
+          userId: ctx.user.id,
+          stationId,
+          connectorId,
+          ocppIdentity: ocppIdentityForCommand,
+          chargeMode,
+          targetValue,
+          estimatedCost,
+          pricePerKwh,
         });
         
         // Enviar RemoteStartTransaction al cargador usando el método robusto
@@ -1341,13 +1353,18 @@ export const chargingRouter = router({
         const currentKwh = activeTransaction.kwhConsumed ? parseFloat(activeTransaction.kwhConsumed) : 0;
         const currentCost = activeTransaction.totalCost ? parseFloat(activeTransaction.totalCost) : 0;
         
+        // Restaurar chargeMode y targetValue desde la BD (NO hardcodear full_charge)
+        const restoredChargeMode = (activeTransaction.chargeMode as "fixed_amount" | "percentage" | "full_charge") || "full_charge";
+        const restoredTargetValue = activeTransaction.targetValue ? parseFloat(String(activeTransaction.targetValue)) : (restoredChargeMode === "full_charge" ? 100 : 0);
+        console.log(`[setManualSoc] Restoring session from DB: chargeMode=${restoredChargeMode}, targetValue=${restoredTargetValue}`);
+        
         setActiveSession(activeTransaction.id, {
           transactionId: activeTransaction.id,
           userId: ctx.user.id,
           stationId: activeTransaction.stationId,
           connectorId: activeTransaction.evseId,
-          chargeMode: "full_charge" as const,
-          targetValue: 100,
+          chargeMode: restoredChargeMode,
+          targetValue: restoredTargetValue,
           startTime,
           currentKwh,
           currentCost,
@@ -1757,6 +1774,64 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   session.lastMeterUpdate = new Date();
   
   // ============================================================
+  // AUTO-STOP POR VALOR FIJO ALCANZADO (fixed_amount)
+  // Si el costo actual >= targetValue, detener la carga automáticamente
+  // ============================================================
+  if (session.chargeMode === "fixed_amount" && session.targetValue > 0 && !session.autoStopSent) {
+    if (session.currentCost >= session.targetValue) {
+      session.autoStopSent = true;
+      console.log(`[AutoStop] Transaction ${transactionId}: FIXED_AMOUNT TARGET REACHED - cost $${session.currentCost.toFixed(0)} >= target $${session.targetValue}. Sending RemoteStopTransaction.`);
+      
+      // Enviar RemoteStopTransaction al cargador
+      db.getTransactionById(transactionId).then(async (txRecord) => {
+        if (!txRecord) {
+          console.warn(`[AutoStop] Transaction ${transactionId}: skipped - not found in DB`);
+          return;
+        }
+        const stationRecord = await db.getChargingStationById(session.stationId);
+        const ocppIdentityStr = stationRecord?.ocppIdentity || null;
+        const ocppTxId = txRecord.ocppNumericTxId || transactionId;
+        
+        if (ocppIdentityStr) {
+          const messageId = uuidv4();
+          const sent = sendOcppCommand(ocppIdentityStr, messageId, "RemoteStopTransaction", { transactionId: ocppTxId });
+          if (sent) {
+            console.log(`[AutoStop] Transaction ${transactionId}: RemoteStopTransaction sent (ocppTxId=${ocppTxId}) to "${ocppIdentityStr}"`);
+          } else {
+            console.warn(`[AutoStop] Transaction ${transactionId}: Failed to send RemoteStopTransaction to "${ocppIdentityStr}"`);
+          }
+        } else {
+          console.warn(`[AutoStop] Transaction ${transactionId}: No OCPP identity for station ${session.stationId}`);
+        }
+        
+        // Notificar al usuario que la carga se detuvo por alcanzar el monto
+        if (session.userId) {
+          const kwhDelivered = session.currentKwh.toFixed(2);
+          sendUserPush(session.userId, {
+            type: "charging_complete" as any,
+            title: "✅ Carga completada - Monto alcanzado",
+            body: `Tu carga se detuvo al alcanzar $${session.targetValue.toLocaleString()} COP. ${kwhDelivered} kWh entregados.`,
+            clickAction: "/charging-monitor",
+            data: {
+              transactionId: transactionId.toString(),
+              kwhDelivered,
+              totalCost: Math.round(session.currentCost).toString(),
+              detectionMethod: "fixed_amount_reached",
+            },
+          }).catch(err => console.error(`[AutoStop] Push notification error:`, err));
+          
+          db.createNotification({
+            userId: session.userId,
+            title: "✅ Carga completada",
+            message: `Tu carga se detuvo automáticamente al alcanzar el monto de $${session.targetValue.toLocaleString()} COP. ${kwhDelivered} kWh entregados. Desconecta para evitar tarifa de ocupación.`,
+            type: "CHARGING",
+          }).catch(err => console.error(`[AutoStop] Notification error:`, err));
+        }
+      }).catch(err => console.error(`[AutoStop] Error:`, err));
+    }
+  }
+  
+  // ============================================================
   // CÁLCULO DE SoC BASADO EN ENERGÍA REAL DEL OCPP
   // Independiente del SoC manual - usa kWh reales / capacidad batería
   // ============================================================
@@ -1914,12 +1989,42 @@ export function findPendingSessionByOcppIdentity(ocppIdentity: string, connector
     console.log(`[findPendingSession] Checking session ${sessionId}: ocppIdentity="${session.ocppIdentity}", connectorId=${session.connectorId}, userId=${session.userId}`);
     // Si connectorId es undefined, buscar cualquier sesión para esta estación
     if (session.ocppIdentity === ocppIdentity && (connectorId === undefined || session.connectorId === connectorId)) {
-      console.log(`[findPendingSession] MATCH FOUND! sessionId=${sessionId}, userId=${session.userId}`);
+      console.log(`[findPendingSession] MATCH FOUND in memory! sessionId=${sessionId}, userId=${session.userId}`);
       return { sessionId, session };
     }
   }
-  console.log(`[findPendingSession] NO MATCH found for ocppIdentity="${ocppIdentity}", connectorId=${connectorId ?? 'ANY'}`);
-  return null;
+  console.log(`[findPendingSession] NO MATCH in memory for ocppIdentity="${ocppIdentity}", connectorId=${connectorId ?? 'ANY'}. Will check DB...`);
+  return null; // El caller debe hacer fallback a DB con findPendingSessionFromDb
+}
+
+/**
+ * Fallback: buscar sesión pendiente en BD cuando no se encuentra en memoria local.
+ * Esto resuelve el problema de múltiples instancias donde la sesión se creó en otra instancia.
+ */
+export async function findPendingSessionFromDb(ocppIdentity: string, connectorId?: number): Promise<{ sessionId: string; session: any } | null> {
+  const dbSession = await db.findPendingChargeSessionByOcppIdentity(ocppIdentity, connectorId);
+  if (!dbSession) {
+    console.log(`[findPendingSession] NO MATCH in DB either for ocppIdentity="${ocppIdentity}", connectorId=${connectorId ?? 'ANY'}`);
+    return null;
+  }
+  console.log(`[findPendingSession] MATCH FOUND in DB! sessionId=${dbSession.sessionId}, userId=${dbSession.userId}, chargeMode=${dbSession.chargeMode}`);
+  // Marcar como consumida en BD
+  await db.consumePendingChargeSession(dbSession.sessionId);
+  // Convertir al formato esperado
+  return {
+    sessionId: dbSession.sessionId,
+    session: {
+      userId: dbSession.userId,
+      stationId: dbSession.stationId,
+      connectorId: dbSession.connectorId,
+      chargeMode: dbSession.chargeMode as ChargeMode,
+      targetValue: Number(dbSession.targetValue),
+      estimatedCost: Number(dbSession.estimatedCost),
+      pricePerKwh: Number(dbSession.pricePerKwh),
+      createdAt: dbSession.createdAt,
+      ocppIdentity: dbSession.ocppIdentity,
+    },
+  };
 }
 /**
  * Completar una transacción localmente cuando no hay conexión OCPP
@@ -2022,6 +2127,54 @@ async function completeTransactionLocally(transactionId: number, transaction: an
       }
     }
     
+    // =========================================================================
+    // REGISTRO DE PRECISIÓN DE SOC (mismo que csms-dual.ts StopTransaction)
+    // =========================================================================
+    try {
+      const manualSocValue = transaction.manualSoc ?? activeSession?.manualSoc ?? null;
+      const batteryCapKwh = transaction.manualBatteryCapacityKwh
+        ? parseFloat(transaction.manualBatteryCapacityKwh)
+        : activeSession?.manualBatteryCapacityKwh ?? null;
+
+      if (manualSocValue !== null && batteryCapKwh && batteryCapKwh > 0 && energyDelivered > 0) {
+        const calculatedSocEnd = Math.min(100, Math.round(manualSocValue + (energyDelivered / batteryCapKwh) * 100));
+        const chargerSocEnd = activeSession?.soc ?? null;
+        let estimatedErrorKwh: number | null = null;
+        let estimatedErrorSocPct: number | null = null;
+        if (chargerSocEnd !== null) {
+          estimatedErrorSocPct = calculatedSocEnd - chargerSocEnd;
+          estimatedErrorKwh = Math.round((estimatedErrorSocPct / 100) * batteryCapKwh * 10) / 10;
+        }
+        let vehicleId: number | null = null;
+        try {
+          const defaultVehicle = await db.getDefaultVehicle(transaction.userId);
+          vehicleId = defaultVehicle?.id ?? null;
+        } catch (_) { /* no-op */ }
+
+        await db.createSocAccuracyLog({
+          userId: transaction.userId,
+          transactionId,
+          vehicleId,
+          manualSocStart: manualSocValue,
+          manualBatteryCapacityKwh: batteryCapKwh,
+          realKwhDelivered: Math.round(energyDelivered * 100) / 100,
+          calculatedSocEnd,
+          chargerSocEnd,
+          batteryFullDetected: activeSession?.chargeCompleteDetected ?? false,
+          detectionMethod: activeSession?.chargeCompleteDetected
+            ? (activeSession.soc !== null ? 'charger_soc' : 'power_drop')
+            : 'user_stop',
+          estimatedErrorKwh,
+          estimatedErrorSocPct,
+        });
+        console.log(`[completeTransactionLocally] SoC accuracy logged: tx=${transactionId}, manualSoc=${manualSocValue}%, calcEnd=${calculatedSocEnd}%, chargerEnd=${chargerSocEnd ?? 'N/A'}%`);
+      } else {
+        console.log(`[completeTransactionLocally] SoC accuracy skipped: manualSoc=${manualSocValue}, batteryCapKwh=${batteryCapKwh}, energyDelivered=${energyDelivered}`);
+      }
+    } catch (socAccErr) {
+      console.error(`[completeTransactionLocally] Error logging SoC accuracy:`, socAccErr);
+    }
+
     // Limpiar sesión activa de memoria
     activeChargeSessions.delete(transactionId);
     

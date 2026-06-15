@@ -196,6 +196,7 @@ export async function getUnreadCountForUser(userId: number) {
 export async function getUnreadCountForAdmin() {
   const db = await getDb();
   if (!db) return 0;
+  // Count ALL unread user messages (tech now sees all tickets including AI_HANDLING)
   const result = await db.select({ cnt: count() })
     .from(supportMessages)
     .where(and(

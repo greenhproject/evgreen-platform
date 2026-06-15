@@ -48,6 +48,19 @@ export default defineConfig(({ command }) => {
     build: {
       outDir: path.resolve(import.meta.dirname, "dist/public"),
       emptyOutDir: true,
+      sourcemap: false,
+      // Reducir consumo de memoria durante el build
+      minify: 'esbuild',
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          // Let Rollup handle chunk splitting automatically to avoid circular dependency issues
+          // Only split React core which is safe and reduces initial load
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom'],
+          },
+        },
+      },
     },
     server: {
       host: true,

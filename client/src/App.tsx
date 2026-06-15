@@ -38,6 +38,9 @@ function LazySpinner() {
 // Páginas públicas secundarias
 const Investors = lazy(() => import("./pages/Investors"));
 const ThankYouInvestors = lazy(() => import("./pages/ThankYouInvestors"));
+const Partners = lazy(() => import("./pages/Partners"));
+const SaaSLanding = lazy(() => import("./pages/SaaSLanding"));
+const AdminOrganizations = lazy(() => import("./pages/admin/Organizations"));
 
 // Páginas de usuario
 const UserMap = lazy(() => import("./pages/user/Map"));
@@ -55,12 +58,14 @@ const QRRedirect = lazy(() => import("./pages/QRRedirect"));
 const ChargingMonitor = lazy(() => import("./pages/user/ChargingMonitor"));
 const OverstayMonitor = lazy(() => import("./pages/user/OverstayMonitor"));
 const ChargingSummary = lazy(() => import("./pages/user/ChargingSummary"));
+const UserClaimForm = lazy(() => import("./pages/user/ClaimForm"));
 const ChargingWaiting = lazy(() => import("./pages/user/ChargingWaiting"));
 const UserSettingsNotifications = lazy(() => import("./pages/user/settings/Notifications"));
 const UserSettingsPersonalInfo = lazy(() => import("./pages/user/settings/PersonalInfo"));
 const UserSettingsVehicles = lazy(() => import("./pages/user/settings/Vehicles"));
 const UserSettingsPaymentMethods = lazy(() => import("./pages/user/settings/PaymentMethods"));
 const UserSettingsConfig = lazy(() => import("./pages/user/settings/Config"));
+const UserPrivacySettings = lazy(() => import("./pages/user/PrivacySettings"));
 const UserSubscription = lazy(() => import("./pages/user/Subscription"));
 const SocAccuracyHistory = lazy(() => import("./pages/user/SocAccuracyHistory"));
 
@@ -72,6 +77,8 @@ const InvestorReports = lazy(() => import("./pages/investor/Reports"));
 const InvestorSettings = lazy(() => import("./pages/investor/Settings"));
 const InvestorEarnings = lazy(() => import("./pages/investor/Earnings"));
 const InvestorSettlements = lazy(() => import("./pages/investor/Settlements"));
+const InvestorFinancial = lazy(() => import("./pages/investor/Financial"));
+const InvestorOnboarding = lazy(() => import("./pages/investor/InvestorOnboarding"));
 
 // Páginas de técnico
 const TechnicianDashboard = lazy(() => import("./pages/technician/Dashboard"));
@@ -89,6 +96,7 @@ const TechnicianSupport = lazy(() => import("./pages/technician/Support"));
 const EngineerDashboard = lazy(() => import("./pages/engineer/Dashboard"));
 const EngineerTickets = lazy(() => import("./pages/engineer/Tickets"));
 const EngineerTechnicians = lazy(() => import("./pages/engineer/Technicians"));
+const PreventiveMaintenance = lazy(() => import("./pages/engineer/PreventiveMaintenance"));
 
 // Páginas de administración
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
@@ -108,6 +116,29 @@ const AdminOverstayHistory = lazy(() => import("./pages/admin/OverstayHistory"))
 const AdminInvestorManagement = lazy(() => import("./pages/admin/InvestorManagement"));
 const AdminDebts = lazy(() => import("./pages/admin/Debts"));
 const AdminSupport = lazy(() => import("./pages/admin/Support"));
+const AdminRemoteStart = lazy(() => import("./pages/admin/RemoteStart"));
+const AdminFinancial = lazy(() => import("./pages/admin/Financial"));
+const AdminMaintenanceFund = lazy(() => import("./pages/admin/MaintenanceFund"));
+const AdminOnboardingDashboard = lazy(() => import("./pages/admin/OnboardingDashboard"));
+const AdminBackupDashboard = lazy(() => import("./pages/admin/BackupDashboard"));
+const AdminRefunds = lazy(() => import("./pages/admin/Refunds"));
+const AdminClaims = lazy(() => import("./pages/admin/Claims"));
+const AdminQuotes = lazy(() => import("./pages/admin/Quotes"));
+const AdminQuotesCatalog = lazy(() => import("./pages/admin/QuotesCatalog"));
+const AdminQuotesSettings = lazy(() => import("./pages/admin/QuotesSettings"));
+const QuotePublic = lazy(() => import("./pages/QuotePublic"));
+const SpaceSubmission = lazy(() => import("./pages/SpaceSubmission"));
+const SpaceLetterAccept = lazy(() => import("./pages/SpaceLetterAccept"));
+const Crowdfunding = lazy(() => import("./pages/Crowdfunding"));
+const AdminSpaces = lazy(() => import("./pages/admin/Spaces"));
+
+// Páginas de Aliado Comercial (Host)
+const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
+const HostSpaces = lazy(() => import("./pages/host/Spaces"));
+const HostTransactions = lazy(() => import("./pages/host/Transactions"));
+const HostSettlements = lazy(() => import("./pages/host/Settlements"));
+const HostReports = lazy(() => import("./pages/host/Reports"));
+const HostSettings = lazy(() => import("./pages/host/Settings"));
 
 // Páginas de Staff (Evento)
 const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
@@ -122,6 +153,7 @@ import InvestorLayout from "./layouts/InvestorLayout";
 import TechnicianLayout from "./layouts/TechnicianLayout";
 import EngineerLayout from "./layouts/EngineerLayout";
 import StaffLayout from "./layouts/StaffLayout";
+import HostLayout from "./layouts/HostLayout";
 
 // Widgets (carga diferida)
 const AIChatWidget = lazy(() => import("./components/AIChat").then(m => ({ default: m.AIChatWidget })));
@@ -141,6 +173,10 @@ function getHomeRouteByRole(role: string | undefined): string {
       return "/technician";
     case "engineer":
       return "/engineer";
+    case "host":
+      return "/host";
+    case "comercial":
+      return "/admin/quotes";
     case "user":
     default:
       return "/map";
@@ -246,10 +282,19 @@ function ProtectedRoute({
   return <>{children}</>;
 }
 
+// Rutas públicas que NO necesitan esperar autenticación
+const PUBLIC_PATHS = ["/partners", "/investors", "/landing", "/saas", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding"];
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + "/"));
+}
+
 function Router() {
   const { loading, refresh } = useAuth();
+  const [currentPath] = useLocation();
 
-  if (loading) {
+  // No bloquear rutas públicas mientras auth carga
+  if (loading && !isPublicPath(currentPath)) {
     return (
       <LoadingGuard isLoading={true} timeoutMs={10000} onRetry={() => refresh()}>
         <div />
@@ -268,10 +313,40 @@ function Router() {
         {/* Rutas públicas */}
         <Route path="/landing" component={Landing} />
         <Route path="/investors" component={Investors} />
+        <Route path="/partners" component={Partners} />
+        <Route path="/saas" component={SaaSLanding} />
         <Route path="/gracias-inversionistas" component={ThankYouInvestors} />
         
         {/* Ruta para códigos QR - Redirige a StartCharge */}
         <Route path="/c/:code" component={QRRedirect} />
+
+        {/* Cotización pública (sin login) */}
+        <Route path="/cotizacion/:token">
+          <Suspense fallback={<LazySpinner />}>
+            <QuotePublic />
+          </Suspense>
+        </Route>
+
+        {/* Postulación de espacios (público) */}
+        <Route path="/postula-tu-espacio">
+          <Suspense fallback={<LazySpinner />}>
+            <SpaceSubmission />
+          </Suspense>
+        </Route>
+
+        {/* Carta de intención (público, por token) */}
+        <Route path="/carta-intencion/:token">
+          <Suspense fallback={<LazySpinner />}>
+            <SpaceLetterAccept />
+          </Suspense>
+        </Route>
+
+        {/* Muro de crowdfunding (público) */}
+        <Route path="/crowdfunding">
+          <Suspense fallback={<LazySpinner />}>
+            <Crowdfunding />
+          </Suspense>
+        </Route>
 
         {/* ============================================
             RUTAS DE USUARIO (App móvil principal)
@@ -294,9 +369,11 @@ function Router() {
         <Route path="/charging-monitor" component={ChargingMonitor} />
         <Route path="/overstay" component={OverstayMonitor} />
         <Route path="/charging-summary/:transactionId" component={ChargingSummary} />
+        <Route path="/user/claim/:transactionId" component={UserClaimForm} />
         <Route path="/vehicles" component={UserSettingsVehicles} />
         <Route path="/settings/payment" component={UserSettingsPaymentMethods} />
         <Route path="/settings/config" component={UserSettingsConfig} />
+        <Route path="/settings/privacy" component={UserPrivacySettings} />
         <Route path="/subscription" component={UserSubscription} />
         <Route path="/soc-accuracy" component={SocAccuracyHistory} />
 
@@ -350,6 +427,18 @@ function Router() {
             <InvestorLayout>
               <InvestorSettlements />
             </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/investor/financial">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorLayout>
+              <InvestorFinancial />
+            </InvestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/investor/onboarding">
+          <ProtectedRoute allowedRoles={["investor", "admin"]}>
+            <InvestorOnboarding />
           </ProtectedRoute>
         </Route>
 
@@ -416,6 +505,13 @@ function Router() {
             </EngineerLayout>
           </ProtectedRoute>
         </Route>
+        <Route path="/engineer/preventive-maintenance">
+          <ProtectedRoute allowedRoles={["engineer", "admin"]}>
+            <EngineerLayout>
+              <PreventiveMaintenance />
+            </EngineerLayout>
+          </ProtectedRoute>
+        </Route>
         <Route path="/engineer/firmware">
           <ProtectedRoute allowedRoles={["engineer", "admin"]}>
             <EngineerLayout>
@@ -462,10 +558,11 @@ function Router() {
             </TechnicianLayout>
           </ProtectedRoute>
         </Route>
+        {/* Redirigir /technician/maintenance a /technician/tickets (unificado) */}
         <Route path="/technician/maintenance">
           <ProtectedRoute allowedRoles={["technician", "admin"]}>
             <TechnicianLayout>
-              <TechnicianMaintenance />
+              <TechnicianTickets />
             </TechnicianLayout>
           </ProtectedRoute>
         </Route>
@@ -609,6 +706,21 @@ function Router() {
             </AdminLayout>
           </ProtectedRoute>
         </Route>
+        <Route path="/admin/onboarding">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminOnboardingDashboard />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        <Route path="/admin/backup">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminBackupDashboard />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
 
         <Route path="/admin/overstay">
           <ProtectedRoute allowedRoles={["admin"]}>
@@ -630,6 +742,129 @@ function Router() {
             <AdminLayout>
               <AdminSupport />
             </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/remote-start">
+          <ProtectedRoute allowedRoles={["admin", "engineer", "technician"]}>
+            <AdminLayout>
+              <AdminRemoteStart />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/financial">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminFinancial />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/maintenance-fund">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminMaintenanceFund />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        <Route path="/admin/refunds">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminRefunds />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/claims">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminClaims />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* Cotizaciones */}
+        <Route path="/admin/quotes">
+          <ProtectedRoute allowedRoles={["admin", "staff", "host", "comercial"]}>
+            <AdminLayout>
+              <AdminQuotes />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/quotes/catalog">
+          <ProtectedRoute allowedRoles={["admin", "staff", "comercial"]}>
+            <AdminLayout>
+              <AdminQuotesCatalog />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/quotes/settings">
+          <ProtectedRoute allowedRoles={["admin", "staff", "comercial"]}>
+            <AdminLayout>
+              <AdminQuotesSettings />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* Administración de Espacios */}
+        <Route path="/admin/spaces">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminSpaces />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* Administración de Organizaciones SaaS */}
+        <Route path="/admin/organizations">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminOrganizations />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* ============================================
+            RUTAS DE ALIADO COMERCIAL (Host)
+            ============================================ */}
+        <Route path="/host">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostDashboard />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/spaces">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostSpaces />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/transactions">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostTransactions />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/settlements">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostSettlements />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/reports">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostReports />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/settings">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostSettings />
+            </HostLayout>
           </ProtectedRoute>
         </Route>
 
@@ -680,13 +915,19 @@ function Router() {
   );
 }
 
+
+
 function App() {
   const { showOnboarding, isLoading: onboardingLoading, completeOnboarding } = useOnboarding();
   const { isAuthenticated, loading: authLoading, refresh } = useAuth();
+  const [location] = useLocation();
+
+  // Las rutas públicas se renderizan inmediatamente sin esperar auth
+  const isPublic = isPublicPath(location);
 
   // Protección principal: si auth tarda más de 10s, mostrar opciones de recuperación
-  const isInitialLoading = authLoading || onboardingLoading;
-  const shouldShowOnboarding = !onboardingLoading && !authLoading && isAuthenticated && showOnboarding;
+  const isInitialLoading = !isPublic && (authLoading || onboardingLoading);
+  const shouldShowOnboarding = !isPublic && !onboardingLoading && !authLoading && isAuthenticated && showOnboarding;
 
   return (
     <ErrorBoundary>

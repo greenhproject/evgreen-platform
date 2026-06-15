@@ -24,11 +24,21 @@ export default function TechnicianDashboard() {
   const { data: alertData } = trpc.ocpp.getAlertStats.useQuery();
 
   const assignedStations = stations?.length || 0;
-  const onlineStations = ocppConnections?.length || 0;
   
-  // Estaciones con problemas (no conectadas por OCPP)
-  const connectedIds = new Set(ocppConnections?.map((c: any) => c.stationId) || []);
-  const stationsWithIssues = stations?.filter((s: any) => s.isActive && !connectedIds.has(s.id)) || [];
+  // Helper: verificar si una estación está conectada por OCPP (match por stationId O ocppIdentity)
+  const isStationConnected = (station: any) => {
+    if (!ocppConnections) return false;
+    const ocppId = station.ocppIdentity || station.id?.toString();
+    return ocppConnections.some((conn: any) => 
+      (conn.stationId != null && conn.stationId === station.id) ||
+      conn.ocppIdentity === ocppId
+    );
+  };
+  
+  const onlineStations = stations?.filter((s: any) => isStationConnected(s)).length || 0;
+  
+  // Estaciones con problemas (activas pero no conectadas por OCPP)
+  const stationsWithIssues = stations?.filter((s: any) => s.isActive && !isStationConnected(s)) || [];
 
   // Formatear tiempo promedio de resolución
   const formatAvgTime = (ms: number) => {
@@ -146,27 +156,34 @@ export default function TechnicianDashboard() {
         </div>
         {ocppConnections && ocppConnections.length > 0 ? (
           <div className="space-y-3">
-            {ocppConnections.slice(0, 5).map((conn: any) => (
-              <div key={conn.chargePointId} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                    <Zap className="w-4 h-4 text-green-600 dark:text-green-400" />
+            {ocppConnections.filter((c: any) => c.isConnected).slice(0, 5).map((conn: any) => {
+              // Buscar nombre de estación desde la lista de estaciones
+              const matchedStation = stations?.find((s: any) => 
+                (conn.stationId != null && conn.stationId === s.id) ||
+                conn.ocppIdentity === s.ocppIdentity
+              );
+              return (
+                <div key={conn.ocppIdentity} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                      <Zap className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div>
+                      <div className="font-medium">{matchedStation?.name || conn.ocppIdentity}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {conn.ocppIdentity} - OCPP {conn.ocppVersion || '1.6'}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-medium">{conn.chargePointId}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {conn.vendor} {conn.model} - OCPP {conn.ocppVersion}
+                  <div className="text-right">
+                    <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Conectado</Badge>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {conn.lastHeartbeat ? new Date(conn.lastHeartbeat).toLocaleString('es-CO') : ''}
                     </div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Conectado</Badge>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {conn.connectors?.length || 0} conectores
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-8 text-muted-foreground">

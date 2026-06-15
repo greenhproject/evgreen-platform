@@ -20,9 +20,11 @@ export async function setupVite(app: Express, server: Server) {
     allowedHosts: true as const,
   };
 
+  const clientRoot = path.resolve(import.meta.dirname, "../../client");
+
   const viteServer = await vite.createServer({
     plugins: [react(), tailwindcss()],
-    root: path.resolve(import.meta.dirname, "../../client"),
+    root: clientRoot,
     resolve: {
       alias: {
         "@": path.resolve(import.meta.dirname, "../../client/src"),

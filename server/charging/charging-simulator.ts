@@ -14,6 +14,7 @@
 import * as db from "../db";
 import { nanoid } from "nanoid";
 import { sendChargingCompleteNotification, sendHighDemandNotification } from "../firebase/fcm";
+import { sendUserPush } from "../push/unified-push";
 import { incrementActiveSimulations, decrementActiveSimulations } from "../pricing/dynamic-pricing";
 
 // Emails de usuarios de prueba que activan la simulación
@@ -314,15 +315,18 @@ export async function startSimulation(params: {
       const station = await db.getChargingStationById(stationId);
       if (station?.ownerId) {
         const owner = await db.getUserById(station.ownerId);
-        if (owner?.fcmToken) {
-          await sendHighDemandNotification(owner.fcmToken, {
+        await sendUserPush(station.ownerId, {
+          type: "system_alert",
+          title: "📈 Alta demanda en tu estación",
+          body: `${station.name}: Demanda ${demandLevel}, ocupación ${occupancyData.occupancyRate}%. Precio actual: $${pricePerKwh.toLocaleString("es-CO")}/kWh`,
+          clickAction: "/investor/stations",
+          data: {
             stationName: station.name,
             demandLevel,
-            occupancyRate: occupancyData.occupancyRate,
-            currentPrice: pricePerKwh,
-          });
-          console.log(`[Simulator] High demand notification sent to investor ${station.ownerId}`);
-        }
+            occupancyRate: occupancyData.occupancyRate.toString(),
+          },
+        });
+        console.log(`[Simulator] High demand notification sent to investor ${station.ownerId}`);
       }
     }
     
@@ -331,19 +335,22 @@ export async function startSimulation(params: {
       const station = await db.getChargingStationById(stationId);
       if (station?.ownerId) {
         const owner = await db.getUserById(station.ownerId);
-        if (owner?.fcmToken) {
-          // Calcular descuento sugerido basado en la ocupación
-          // Menor ocupación = mayor descuento sugerido
-          const suggestedDiscount = Math.min(30, Math.max(10, Math.round((20 - occupancyData.occupancyRate) * 1.5)));
-          
-          const { sendLowDemandNotification } = await import("../firebase/fcm");
-          await sendLowDemandNotification(owner.fcmToken, {
+        // Calcular descuento sugerido basado en la ocupación
+        // Menor ocupación = mayor descuento sugerido
+        const suggestedDiscount = Math.min(30, Math.max(10, Math.round((20 - occupancyData.occupancyRate) * 1.5)));
+        
+        await sendUserPush(station.ownerId, {
+          type: "promotion",
+          title: "📉 Baja demanda - Sugerencia de descuento",
+          body: `${station.name}: Ocupación ${occupancyData.occupancyRate}%. Sugerimos un descuento del ${suggestedDiscount}% para atraer más usuarios.`,
+          clickAction: "/investor/stations",
+          data: {
             stationName: station.name,
-            occupancyRate: occupancyData.occupancyRate,
-            suggestedDiscount,
-          });
-          console.log(`[Simulator] Low demand notification sent to investor ${station.ownerId}, suggested ${suggestedDiscount}% discount`);
-        }
+            occupancyRate: occupancyData.occupancyRate.toString(),
+            suggestedDiscount: suggestedDiscount.toString(),
+          },
+        });
+        console.log(`[Simulator] Low demand notification sent to investor ${station.ownerId}, suggested ${suggestedDiscount}% discount`);
       }
     }
   } catch (error) {
@@ -541,19 +548,23 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
     referenceId: session.transactionId,
   });
   
-  // Enviar notificación push si el usuario tiene token FCM
+  // Enviar notificación push al usuario (Web Push + FCM unificado)
   try {
-    const user = await db.getUserById(session.userId);
-    if (user?.fcmToken) {
-      const station = await db.getChargingStationById(session.stationId);
-      await sendChargingCompleteNotification(user.fcmToken, {
-        stationName: station?.name || "Estación EVGreen",
-        energyDelivered: kwhConsumed,
-        totalCost: Math.round(totalCost),
-        duration,
-      });
-      console.log(`[Simulator] Push notification sent to user ${session.userId}`);
-    }
+    const station = await db.getChargingStationById(session.stationId);
+    const stationName = station?.name || "Estación EVGreen";
+    await sendUserPush(session.userId, {
+      type: "charging_complete",
+      title: "¡Carga completada!",
+      body: `Tu vehículo está listo. ${kwhConsumed.toFixed(2)} kWh en ${stationName}. Total: $${Math.round(totalCost).toLocaleString("es-CO")}`,
+      clickAction: "/history",
+      data: {
+        stationName,
+        energyDelivered: kwhConsumed.toString(),
+        totalCost: Math.round(totalCost).toString(),
+        duration: duration.toString(),
+      },
+    });
+    console.log(`[Simulator] Push notification sent to user ${session.userId}`);
   } catch (error) {
     console.error(`[Simulator] Error sending push notification:`, error);
   }

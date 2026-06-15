@@ -10,7 +10,7 @@
  * NO hay valores hardcodeados de costos de energía, márgenes ni ROI.
  */
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,8 +50,23 @@ import {
   Flame,
   Timer,
   TrendingDown,
-  Crown
+  Crown,
+  Star,
+  Camera,
+  ChevronLeft,
+  MessageCircle,
+  Filter,
+  Loader2,
+  X,
+  Image as ImageIcon,
+  Eye,
+  Send,
+  User
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import { MapView } from "@/components/Map";
 
 // ============================================================================
 // NOTA: Todos los parámetros financieros (costos de energía, precios de venta,
@@ -247,6 +262,7 @@ export default function Investors() {
     precioVentaMin: calcParams?.precioVentaMin ?? 1400,
     precioVentaMax: calcParams?.precioVentaMax ?? 2200,
     inversionistaPct: (calcParams?.investorPercentage ?? 70) / 100,
+    aliadoPct: (calcParams?.hostPercentage ?? 10) / 100,
   }), [calcParams]);
 
   // Sincronizar precio de venta con el backend cuando se carguen los params
@@ -262,7 +278,8 @@ export default function Investors() {
       const potencia = 'potenciaTotal' in paquete ? (paquete as any).potenciaTotal : paquete.potenciaKw * paquete.cantidadCargadores;
       const eficiencia = paquete.tipo.includes('AC') ? params.eficienciaAC : params.eficienciaDC;
       const energiaDia = potencia * horasBase * factorUtil * eficiencia;
-      const margenDia = energiaDia * (params.precioVentaDefault - costoEnergia) * (1 - costosOpPct) * params.inversionistaPct;
+      // Para colectivo: (PV-CE) × 90% aliado × 70% tu parte (sin costos op separados)
+      const margenDia = energiaDia * (params.precioVentaDefault - costoEnergia) * (1 - params.aliadoPct) * (1 - costosOpPct) * params.inversionistaPct;
       const inversion = 'participacionMinima' in paquete ? (paquete as any).participacionMinima : paquete.precio;
       const participacion = 'participacionMinima' in paquete ? (paquete as any).participacionMinima / paquete.precio : 1;
       const ingresoDia = margenDia * participacion;
@@ -273,7 +290,7 @@ export default function Investors() {
     return {
       AC: calcROI(PAQUETES.AC, params.costoEnergiaRed, params.costosOpAC, PAQUETES.AC.horasUsoConservador),
       INDIVIDUAL: calcROI(PAQUETES.INDIVIDUAL, params.costoEnergiaRed, params.costosOpIndividual, PAQUETES.INDIVIDUAL.horasUsoConservador),
-      COLECTIVO: calcROI(PAQUETES.COLECTIVO, params.costoEnergiaSolar, params.costosOpColectivo, PAQUETES.COLECTIVO.horasUsoConservador, params.factorUtilizacionPremium),
+      COLECTIVO: calcROI(PAQUETES.COLECTIVO, params.costoEnergiaSolar, 0, PAQUETES.COLECTIVO.horasUsoConservador, params.factorUtilizacionPremium), // Sin costos op separados en colectivo
     };
   }, [params]);
 
@@ -301,8 +318,10 @@ export default function Investors() {
     const costoEnergia = paquete.conSolar ? params.costoEnergiaSolar : params.costoEnergiaRed;
     
     // Costos operativos diferenciados (desde backend)
+    // NOTA: Para COLECTIVO no aplican costos operativos separados (economías de escala)
+    // Fórmula colectiva: (PV - CE) × 90% aliado × 70% tu parte
     const costosOperativosPct = paqueteSeleccionado === "COLECTIVO" 
-      ? params.costosOpColectivo 
+      ? 0  // Sin costos operativos separados en modelo colectivo
       : paqueteSeleccionado === "AC" 
         ? params.costosOpAC 
         : params.costosOpIndividual;
@@ -370,8 +389,14 @@ export default function Investors() {
     // Costos operativos de la estación (mantenimiento, seguros, etc.)
     const costosOperativosDiariosEstacion = margenBrutoDiarioEstacion * costosOperativosPct;
     
+    // Descuento del aliado comercial (% del margen bruto, se descuenta PRIMERO)
+    const aliadoComercialDiarioEstacion = margenBrutoDiarioEstacion * params.aliadoPct;
+    
+    // Margen después del aliado
+    const margenDespuesAliadoEstacion = margenBrutoDiarioEstacion - aliadoComercialDiarioEstacion;
+    
     // Margen neto disponible para distribución de la estación
-    const margenNetoDistribuibleEstacion = margenBrutoDiarioEstacion - costosOperativosDiariosEstacion;
+    const margenNetoDistribuibleEstacion = margenDespuesAliadoEstacion - costosOperativosDiariosEstacion;
     
     // Margen para inversionistas (% del margen neto de la estación, desde backend)
     const margenInversionistasEstacion = margenNetoDistribuibleEstacion * params.inversionistaPct;
@@ -403,11 +428,11 @@ export default function Investors() {
     const roiAnual = inversionTotal > 0 ? (ingresoAnual / inversionTotal) * 100 : 0;
 
     // Margen neto por kWh para el inversionista (con factor de escenario)
-    const margenNetoPorKwhInversionista = (margenBrutoPorKwh * (1 - costosOperativosPct)) * params.inversionistaPct;
+    const margenNetoPorKwhInversionista = (margenBrutoPorKwh * (1 - params.aliadoPct) * (1 - costosOperativosPct)) * params.inversionistaPct;
     
     // Margen neto BASE por kWh (sin factor de escenario, para mostrar en info box)
     const margenBrutoBase = precioVenta - costoEnergia;
-    const margenNetoBaseInversionista = (margenBrutoBase * (1 - costosOperativosPct)) * params.inversionistaPct;
+    const margenNetoBaseInversionista = (margenBrutoBase * (1 - params.aliadoPct) * (1 - costosOperativosPct)) * params.inversionistaPct;
     
     // Potencia efectiva del inversionista (para mostrar)
     const potenciaEfectiva = potenciaTotal * porcentajeParticipacion;
@@ -547,7 +572,7 @@ export default function Investors() {
   const estadisticas = [
     { valor: "115%", descripcion: "Crecimiento anual del mercado EV en Colombia" },
     { valor: "1:125", descripcion: "Déficit actual de cargadores por vehículo" },
-    { valor: `${Math.round(params.inversionistaPct * 100)}%`, descripcion: "De los ingresos para el inversionista" },
+    { valor: `${Math.round(params.inversionistaPct * 100)}%`, descripcion: "Del neto para el inversionista" },
     { valor: "480kW", descripcion: "Potencia total estación colectiva" }
   ];
 
@@ -749,7 +774,7 @@ export default function Investors() {
                       </li>
                       <li className="flex items-start gap-2">
                         <CheckCircle2 className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-                        <span>Recibes el <strong className="text-white">{Math.round(params.inversionistaPct * 100)}% de los ingresos</strong> según tu porcentaje de participación</span>
+                        <span>Recibes el <strong className="text-white">{Math.round(params.inversionistaPct * 100)}% del neto</strong> (después de aliado comercial) según tu participación</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <CheckCircle2 className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
@@ -762,6 +787,1113 @@ export default function Investors() {
             </Card>
           </div>
         </div>
+      </section>
+    );
+  };
+
+  // ============================================================================
+  // MAPA INTERACTIVO DE ESPACIOS PUBLICADOS
+  // ============================================================================
+
+  const SPACE_TYPE_LABELS: Record<string, string> = {
+    parking: "Parqueadero", mall: "Centro comercial", gas_station: "Estación de servicio",
+    hotel: "Hotel", restaurant: "Restaurante", office_building: "Oficinas",
+    residential: "Residencial", supermarket: "Supermercado", hospital: "Hospital",
+    university: "Universidad", airport: "Aeropuerto", highway_rest: "Parador", other: "Otro",
+  };
+
+  const PHOTO_TYPE_LABELS: Record<string, string> = {
+    general: "Vista general", electrical_panel: "Tablero eléctrico", transformer: "Transformador",
+    parking_area: "Área de parqueo", access_road: "Vía de acceso", surroundings: "Alrededores", other: "Otra",
+  };
+
+  function getScoreColor(score: number): string {
+    if (score >= 80) return "text-emerald-400";
+    if (score >= 60) return "text-yellow-400";
+    if (score >= 40) return "text-orange-400";
+    return "text-red-400";
+  }
+
+  function getScoreBg(score: number): string {
+    if (score >= 80) return "bg-emerald-500/20 border-emerald-500/30";
+    if (score >= 60) return "bg-yellow-500/20 border-yellow-500/30";
+    if (score >= 40) return "bg-orange-500/20 border-orange-500/30";
+    return "bg-red-500/20 border-red-500/30";
+  }
+
+  function formatCOPMap(value: number): string {
+    if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`;
+    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(0)}M`;
+    if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+    return `$${value.toLocaleString("es-CO")}`;
+  }
+
+  const PublishedSpacesMapSection = () => {
+    const { data: spaces, isLoading: spacesLoading } = trpc.spaces.listPublished.useQuery();
+    const { data: cfProjects } = trpc.crowdfunding.getProjects.useQuery();
+    const [selectedSpace, setSelectedSpace] = useState<any>(null);
+    const [selectedPremium, setSelectedPremium] = useState<any>(null);
+    const [spaceFilter, setSpaceFilter] = useState<string>("all");
+    const [mapFilter, setMapFilter] = useState<string>("all"); // "all" | "premium" | "individual"
+    const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+    const [showContactForm, setShowContactForm] = useState(false);
+    const [contactForm, setContactForm] = useState({ name: "", email: "", phone: "", interestedAmount: "", message: "" });
+    const [contactSent, setContactSent] = useState(false);
+
+    // Premium stations from crowdfunding (OPEN, ACTIVE, IN_PROGRESS, FUNDED) with coordinates
+    const premiumStations = useMemo(() => {
+      if (!cfProjects) return [];
+      return (cfProjects as any[]).filter((p: any) => 
+        p.status !== 'DRAFT' && p.linkedLatitude && p.linkedLongitude
+      ).map((p: any) => ({
+        ...p,
+        _isPremium: true,
+        latitude: p.linkedLatitude,
+        longitude: p.linkedLongitude,
+      }));
+    }, [cfProjects]);
+
+    const incrementViewMut = trpc.spaces.incrementView.useMutation();
+    const submitLeadMut = trpc.spaces.submitLead.useMutation({
+      onSuccess: () => {
+        setContactSent(true);
+        toast.success("¡Solicitud enviada! Te contactaremos pronto.");
+        setContactForm({ name: "", email: "", phone: "", interestedAmount: "", message: "" });
+      },
+      onError: (err) => {
+        toast.error(err.message || "Error al enviar la solicitud");
+      },
+    });
+
+    // Increment view when selecting a space
+    const handleSelectSpace = useCallback((space: any) => {
+      setSelectedSpace(space);
+      setShowContactForm(false);
+      setContactSent(false);
+      incrementViewMut.mutate({ id: space.id });
+    }, [incrementViewMut]);
+    const mapRef = useRef<google.maps.Map | null>(null);
+    const markersRef = useRef<google.maps.Marker[]>([]);
+    const overlaysRef = useRef<google.maps.OverlayView[]>([]);
+    const [mapReady, setMapReady] = useState(false);
+
+    const filteredSpaces = useMemo(() => {
+      if (!spaces) return [];
+      // Excluir espacios de tipo "colectiva" - esos solo aparecen como Premium (marcadores naranjas)
+      const individualSpaces = (spaces as any[]).filter((s: any) => s.investmentType !== "colectiva");
+      if (spaceFilter === "all") return individualSpaces;
+      return individualSpaces.filter((s: any) => s.spaceType === spaceFilter);
+    }, [spaces, spaceFilter]);
+
+    const handleMapReady = useCallback((map: google.maps.Map) => {
+      mapRef.current = map;
+      setMapReady(true);
+    }, []);
+
+    // Custom overlay class for rich HTML markers
+    const createCustomOverlay = useCallback((map: google.maps.Map, position: google.maps.LatLng, html: string, onClick: () => void) => {
+      class CustomOverlay extends google.maps.OverlayView {
+        private div: HTMLDivElement | null = null;
+        private pos: google.maps.LatLng;
+        private htmlContent: string;
+        private clickHandler: () => void;
+
+        constructor(pos: google.maps.LatLng, htmlContent: string, clickHandler: () => void) {
+          super();
+          this.pos = pos;
+          this.htmlContent = htmlContent;
+          this.clickHandler = clickHandler;
+        }
+
+        onAdd() {
+          this.div = document.createElement("div");
+          this.div.style.position = "absolute";
+          this.div.style.cursor = "pointer";
+          this.div.style.transform = "translate(-50%, -100%)";
+          this.div.innerHTML = this.htmlContent;
+          this.div.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.clickHandler();
+          });
+          const panes = this.getPanes();
+          panes?.overlayMouseTarget.appendChild(this.div);
+        }
+
+        draw() {
+          if (!this.div) return;
+          const overlayProjection = this.getProjection();
+          const point = overlayProjection.fromLatLngToDivPixel(this.pos);
+          if (point) {
+            this.div.style.left = point.x + "px";
+            this.div.style.top = point.y + "px";
+          }
+        }
+
+        onRemove() {
+          if (this.div?.parentNode) {
+            this.div.parentNode.removeChild(this.div);
+          }
+          this.div = null;
+        }
+      }
+
+      const overlay = new CustomOverlay(position, html, onClick);
+      overlay.setMap(map);
+      return overlay;
+    }, []);
+
+    // Clustering logic: group nearby markers at low zoom
+    const clusterSpaces = useCallback((spaces: any[], zoom: number) => {
+      if (zoom >= 10 || spaces.length <= 5) return spaces.map(s => ({ type: 'single' as const, spaces: [s], lat: parseFloat(s.latitude || '0'), lng: parseFloat(s.longitude || '0') }));
+      
+      const clusters: { type: 'cluster' | 'single'; spaces: any[]; lat: number; lng: number }[] = [];
+      const used = new Set<number>();
+      const threshold = zoom <= 6 ? 2.0 : zoom <= 8 ? 1.0 : 0.5;
+
+      spaces.forEach((space, i) => {
+        if (used.has(i) || !space.latitude || !space.longitude) return;
+        const lat = parseFloat(space.latitude);
+        const lng = parseFloat(space.longitude);
+        if (isNaN(lat) || isNaN(lng)) return;
+
+        const cluster: { type: 'cluster' | 'single'; spaces: any[]; lat: number; lng: number } = { type: 'cluster', spaces: [space], lat, lng };
+        used.add(i);
+
+        spaces.forEach((other, j) => {
+          if (used.has(j) || !other.latitude || !other.longitude) return;
+          const oLat = parseFloat(other.latitude);
+          const oLng = parseFloat(other.longitude);
+          if (isNaN(oLat) || isNaN(oLng)) return;
+          if (Math.abs(lat - oLat) < threshold && Math.abs(lng - oLng) < threshold) {
+            cluster.spaces.push(other);
+            used.add(j);
+          }
+        });
+
+        if (cluster.spaces.length === 1) cluster.type = 'single';
+        clusters.push(cluster);
+      });
+      return clusters;
+    }, []);
+
+    // Add markers when spaces load and map is ready
+    useEffect(() => {
+      if (!mapRef.current || !mapReady || !filteredSpaces?.length) return;
+      if (!window.google?.maps) return;
+      // Clear old overlays
+      try {
+        overlaysRef.current.forEach(o => { try { o.setMap(null); } catch {} });
+      } catch {}
+      overlaysRef.current = [];
+      try {
+        markersRef.current.forEach(m => { try { m.setMap(null); } catch {} });
+      } catch {}
+      markersRef.current = [];
+
+      const renderMarkers = () => {
+        try { overlaysRef.current.forEach(o => { try { o.setMap(null); } catch {} }); } catch {}
+        overlaysRef.current = [];
+
+        if (!mapRef.current) return;
+        const zoom = mapRef.current.getZoom() || 6;
+
+        // ========== PREMIUM STATION MARKERS (Gold Star) ==========
+        if (mapFilter === 'all' || mapFilter === 'premium') {
+          premiumStations.forEach((project: any) => {
+            const lat = parseFloat(project.latitude);
+            const lng = parseFloat(project.longitude);
+            if (isNaN(lat) || isNaN(lng)) return;
+            const position = new google.maps.LatLng(lat, lng);
+
+            const fundingPct = project.targetAmount > 0
+              ? Math.min(100, Math.round((Number(project.raisedAmount) / Number(project.targetAmount)) * 100))
+              : 0;
+            const investors = project.investorCount || 0;
+
+            const premiumHtml = `
+              <div style="position:relative;">
+                <div style="
+                  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                  width:64px; height:64px; border-radius:50%;
+                  background: rgba(245, 158, 11, 0.25);
+                  animation: markerPulse 2s ease-out infinite;
+                "></div>
+                <div style="
+                  position:relative;
+                  background: linear-gradient(135deg, #f59e0b, #d97706);
+                  color: white; padding: 8px 14px; border-radius: 18px; font-size: 12px;
+                  font-weight: 800; box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 30px rgba(245,158,11,0.4);
+                  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+                  border: 2.5px solid #b45309;
+                  animation: markerBounce 3s ease-in-out infinite;
+                ">
+                  <span style="font-size:16px;">\u2B50</span>
+                  <span style="font-size:13px;">${project.city}</span>
+                  <span style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:8px;font-size:10px;">${fundingPct}%</span>
+                </div>
+                <div style="width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;
+                  border-top:9px solid #d97706;
+                  margin:0 auto; position:relative;"></div>
+                <div style="text-align:center;margin-top:2px;">
+                  <span style="background:rgba(0,0,0,0.8);color:#fbbf24;font-size:9px;padding:2px 6px;border-radius:6px;font-weight:700;letter-spacing:0.5px;">PREMIUM</span>
+                </div>
+              </div>
+            `;
+
+            const overlay = createCustomOverlay(
+              mapRef.current!,
+              position,
+              premiumHtml,
+              () => {
+                setSelectedSpace(null);
+                setSelectedPremium(project);
+                if (mapRef.current) {
+                  mapRef.current.panTo(position);
+                  mapRef.current.setZoom(Math.max(zoom, 12));
+                }
+              }
+            );
+            overlaysRef.current.push(overlay);
+          });
+        }
+
+        // ========== INDIVIDUAL SPACE MARKERS (Green Bolt) ==========
+        if (mapFilter === 'all' || mapFilter === 'individual') {
+          const clusters = clusterSpaces(filteredSpaces, zoom);
+
+          clusters.forEach((cluster) => {
+            if (cluster.type === 'cluster' && cluster.spaces.length > 1) {
+              // Render cluster marker
+              const totalKw = cluster.spaces.reduce((sum: number, s: any) => sum + (s.estimatedPowerKw || 0), 0);
+              const position = new google.maps.LatLng(cluster.lat, cluster.lng);
+              const count = cluster.spaces.length;
+              const clusterHtml = `
+                <div style="position:relative;">
+                  <div style="
+                    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                    width:56px; height:56px; border-radius:50%;
+                    background: rgba(16, 185, 129, 0.2);
+                    animation: markerPulse 2.5s ease-out infinite;
+                  "></div>
+                  <div style="
+                    position:relative;
+                    background: linear-gradient(135deg, #059669, #10b981);
+                    color: white; width:44px; height:44px; border-radius:50%;
+                    font-weight: 800; box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 24px rgba(16,185,129,0.4);
+                    display: flex; align-items: center; justify-content: center; flex-direction: column;
+                    border: 3px solid #047857;
+                    animation: markerBounce 3s ease-in-out infinite;
+                  ">
+                    <span style="font-size:14px;line-height:1;">${count}</span>
+                    <span style="font-size:8px;opacity:0.8;line-height:1;">puntos</span>
+                  </div>
+                  <div style="text-align:center;margin-top:2px;">
+                    <span style="background:rgba(0,0,0,0.7);color:#10b981;font-size:9px;padding:1px 5px;border-radius:6px;font-weight:600;">${totalKw}kW</span>
+                  </div>
+                </div>
+              `;
+              const overlay = createCustomOverlay(
+                mapRef.current!,
+                position,
+                clusterHtml,
+                () => {
+                  mapRef.current!.setZoom(Math.min(14, zoom + 3));
+                  mapRef.current!.panTo(position);
+                }
+              );
+              overlaysRef.current.push(overlay);
+            } else {
+              // Render single individual marker
+              const space = cluster.spaces[0];
+              if (!space.latitude || !space.longitude) return;
+              const lat = parseFloat(space.latitude);
+              const lng = parseFloat(space.longitude);
+              if (isNaN(lat) || isNaN(lng)) return;
+              const position = new google.maps.LatLng(lat, lng);
+
+              const fundingPct = space.crowdfunding
+                ? Math.min(100, Math.round((space.crowdfunding.raisedAmount / space.crowdfunding.targetAmount) * 100))
+                : 0;
+              const score = space.aiScore || 0;
+              const bgColor = fundingPct >= 100 ? '#059669' : fundingPct >= 50 ? '#d97706' : '#10b981';
+              const borderColor = fundingPct >= 100 ? '#047857' : fundingPct >= 50 ? '#b45309' : '#059669';
+
+              const html = `
+                <div style="position:relative;">
+                  <div style="
+                    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                    width:48px; height:48px; border-radius:50%;
+                    background: ${bgColor}33;
+                    animation: markerPulse 2s ease-out infinite;
+                  "></div>
+                  <div style="
+                    position:relative;
+                    background: ${bgColor};
+                    color: white; padding: 6px 12px; border-radius: 16px; font-size: 12px;
+                    font-weight: 700; box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 20px ${bgColor}44;
+                    display: flex; align-items: center; gap: 5px; white-space: nowrap;
+                    border: 2px solid ${borderColor};
+                    animation: markerBounce 3s ease-in-out infinite;
+                  ">
+                    <span style="font-size:14px;">\u26a1</span>
+                    <span>${space.estimatedPowerKw || '?'}kW</span>
+                    ${score ? `<span style="background:rgba(0,0,0,0.3);padding:1px 5px;border-radius:8px;font-size:10px;margin-left:2px;">${score}pts</span>` : ''}
+                  </div>
+                  <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;
+                    border-top:8px solid ${bgColor};
+                    margin:0 auto; position:relative;"></div>
+                </div>
+              `;
+
+              const overlay = createCustomOverlay(
+                mapRef.current!,
+                position,
+                html,
+                () => {
+                  setSelectedPremium(null);
+                  handleSelectSpace(space);
+                }
+              );
+              overlaysRef.current.push(overlay);
+            }
+          });
+        }
+      };
+
+      // Initial render
+      renderMarkers();
+
+      // Re-render on zoom change for clustering
+      const zoomListener = mapRef.current.addListener('zoom_changed', () => {
+        renderMarkers();
+      });
+
+      // Fit bounds - wrapped in try-catch to prevent crash on stale map instances
+      try {
+        const bounds = new google.maps.LatLngBounds();
+        let hasValidCoords = false;
+        filteredSpaces.forEach((space: any) => {
+          if (!space.latitude || !space.longitude) return;
+          const lat = parseFloat(space.latitude);
+          const lng = parseFloat(space.longitude);
+          if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
+          bounds.extend({ lat, lng });
+          hasValidCoords = true;
+        });
+        if (hasValidCoords && mapRef.current) {
+          const ne = bounds.getNorthEast();
+          const sw = bounds.getSouthWest();
+          if (ne && sw && typeof ne.lat === 'function' && typeof sw.lat === 'function') {
+            mapRef.current.fitBounds(bounds, 60);
+          }
+        }
+      } catch (e) {
+        console.warn('[EVGreen] fitBounds error (non-fatal):', e);
+      }
+
+      return () => {
+        try { google.maps.event.removeListener(zoomListener); } catch {}
+      };
+    }, [filteredSpaces, mapReady, createCustomOverlay, clusterSpaces, premiumStations, mapFilter]);
+
+    const contactAdvisor = (space: any) => {
+      const message = encodeURIComponent(
+        `Hola, estoy interesado en el punto de inversión "${space.spaceName}" en ${space.city} (Código: ${space.code}). Me gustaría recibir más información.`
+      );
+      window.open(`https://wa.me/573054124009?text=${message}`, "_blank");
+    };
+
+    const parseAIAnalysis = (analysis: string | null): any => {
+      if (!analysis) return null;
+      try { return JSON.parse(analysis); } catch { return null; }
+    };
+
+    if (!spaces || spaces.length === 0) {
+      if (spacesLoading) {
+        return (
+          <section className="py-16 bg-gradient-to-b from-slate-900 to-black">
+            <div className="container mx-auto px-4 text-center">
+              <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
+              <p className="text-white/60 mt-3">Cargando puntos de inversión...</p>
+            </div>
+          </section>
+        );
+      }
+      return null; // No published spaces yet, don't show section
+    }
+
+    return (
+      <section id="mapa-espacios" className="py-20 bg-gradient-to-b from-black to-slate-900">
+        <div className="container mx-auto px-4">
+          {/* Header */}
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-4">
+              <MapPin className="w-4 h-4 text-emerald-400" />
+              <span className="text-emerald-400 text-sm font-medium">Puntos Verificados por IA</span>
+            </div>
+            <h2 className="text-4xl font-bold mb-4">
+              Mapa de{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-300">
+                Oportunidades
+              </span>
+            </h2>
+            <p className="text-white/60 text-lg max-w-2xl mx-auto">
+              Explora puntos de carga verificados y evaluados por IA en toda Colombia.
+              Cada punto ha sido aprobado técnicamente y cuenta con carta de intención firmada.
+            </p>
+            {/* Stats */}
+            <div className="flex items-center justify-center gap-6 flex-wrap mt-4">
+              <div className="flex items-center gap-2">
+                <Star className="w-4 h-4 text-amber-400" />
+                <span className="text-sm text-gray-300">
+                  <strong className="text-amber-400">{premiumStations.length}</strong> estaciones Premium
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-emerald-400" />
+                <span className="text-sm text-gray-300">
+                  <strong className="text-white">{filteredSpaces?.length || 0}</strong> puntos individuales
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Battery className="w-4 h-4 text-emerald-400" />
+                <span className="text-sm text-gray-300">
+                  <strong className="text-white">
+                    {(spaces as any[])?.reduce((sum: number, s: any) => sum + (s.estimatedPowerKw || 0), 0) || 0}
+                  </strong> kW totales
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-emerald-400" />
+                <span className="text-sm text-gray-300">
+                  <strong className="text-white">
+                    {new Set((spaces as any[])?.map((s: any) => s.city) || []).size}
+                  </strong> ciudades
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Content: Map + List */}
+          <div className="grid lg:grid-cols-3 gap-4 max-w-7xl mx-auto">
+            {/* Left: Map */}
+            <div className="lg:col-span-2">
+              {/* Map Type Filter: Premium / Individual / Todos */}
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                {[
+                  { key: "all", label: "Todos", icon: "\uD83D\uDCCD", activeClass: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+                  { key: "premium", label: "Premium", icon: "\u2B50", activeClass: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+                  { key: "individual", label: "Individual", icon: "\u26A1", activeClass: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+                ].map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setMapFilter(f.key)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors border ${
+                      mapFilter === f.key
+                        ? f.activeClass
+                        : "bg-slate-800 text-gray-400 border-slate-700 hover:border-gray-600"
+                    }`}
+                  >
+                    {f.icon} {f.label}
+                  </button>
+                ))}
+                <span className="text-gray-600 text-xs">|</span>
+                {/* Space type sub-filter (only for individual) */}
+                {(mapFilter === 'all' || mapFilter === 'individual') && [
+                  { key: "all", label: "Todos tipos" },
+                  { key: "parking", label: "Parqueadero" },
+                  { key: "mall", label: "C. Comercial" },
+                  { key: "gas_station", label: "E. Servicio" },
+                ].map(f => (
+                  <button
+                    key={`type-${f.key}`}
+                    onClick={() => setSpaceFilter(f.key)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors border ${
+                      spaceFilter === f.key
+                        ? "bg-slate-700 text-white border-slate-600"
+                        : "bg-slate-800/50 text-gray-500 border-slate-700/50 hover:border-gray-600"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Map */}
+              <div className="relative rounded-xl overflow-hidden border border-slate-700 h-[400px] lg:h-[550px]">
+                {/* Legend overlay */}
+                <div className="absolute bottom-3 left-3 z-10 bg-black/80 backdrop-blur-sm rounded-lg px-3 py-2 border border-slate-700/50">
+                  <div className="flex items-center gap-4 text-[11px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block w-3 h-3 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 border border-amber-700" />
+                      <span className="text-amber-400 font-medium">Premium (Colectiva)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block w-3 h-3 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 border border-emerald-700" />
+                      <span className="text-emerald-400 font-medium">Individual</span>
+                    </div>
+                  </div>
+                </div>
+                <MapView
+                  onMapReady={handleMapReady}
+                  initialCenter={{ lat: 4.6, lng: -74.08 }}
+                  initialZoom={6}
+                />
+              </div>
+            </div>
+
+            {/* Right: List or Detail */}
+            <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
+              {selectedPremium ? (
+                /* PREMIUM DETAIL VIEW */
+                <div className="bg-gradient-to-br from-amber-900/30 to-slate-800/80 border border-amber-500/30 rounded-2xl overflow-hidden">
+                  <div className="relative h-36 bg-gradient-to-br from-amber-600/30 to-amber-800/30 flex items-center justify-center">
+                    <div className="text-center">
+                      <Star className="w-12 h-12 text-amber-400 mx-auto mb-1" />
+                      <span className="text-amber-400 text-xs font-bold tracking-wider">ESTACIÓN PREMIUM</span>
+                    </div>
+                    <button
+                      onClick={() => setSelectedPremium(null)}
+                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/70"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-white">{selectedPremium.name || `Estación ${selectedPremium.city}`}</h3>
+                      <p className="text-sm text-amber-400/80">{selectedPremium.city} • {selectedPremium.zone}</p>
+                      {selectedPremium.address && <p className="text-xs text-gray-500 mt-1">{selectedPremium.address}</p>}
+                    </div>
+
+                    {/* Key metrics */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-black/30 rounded-xl p-3">
+                        <p className="text-xs text-gray-500 mb-1">Meta inversión</p>
+                        <p className="text-base font-bold text-amber-400">{formatCOPMap(Number(selectedPremium.targetAmount))}</p>
+                      </div>
+                      <div className="bg-black/30 rounded-xl p-3">
+                        <p className="text-xs text-gray-500 mb-1">Recaudado</p>
+                        <p className="text-base font-bold text-emerald-400">{formatCOPMap(Number(selectedPremium.raisedAmount))}</p>
+                      </div>
+                      <div className="bg-black/30 rounded-xl p-3">
+                        <p className="text-xs text-gray-500 mb-1">Potencia total</p>
+                        <p className="text-base font-bold text-white">{selectedPremium.totalPowerKw} kW</p>
+                      </div>
+                      <div className="bg-black/30 rounded-xl p-3">
+                        <p className="text-xs text-gray-500 mb-1">Inversionistas</p>
+                        <p className="text-base font-bold text-white">{selectedPremium.investorCount || 0}</p>
+                      </div>
+                    </div>
+
+                    {/* Funding progress */}
+                    <div className="bg-black/30 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-400">Progreso de financiamiento</span>
+                        <span className="text-sm font-bold text-amber-400">
+                          {Math.min(100, Math.round((Number(selectedPremium.raisedAmount) / Number(selectedPremium.targetAmount)) * 100))}%
+                        </span>
+                      </div>
+                      <div className="w-full h-2.5 bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all"
+                          style={{ width: `${Math.min(100, Math.round((Number(selectedPremium.raisedAmount) / Number(selectedPremium.targetAmount)) * 100))}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-gray-500 mt-2">
+                        <span>{formatCOPMap(Number(selectedPremium.raisedAmount))}</span>
+                        <span>Meta: {formatCOPMap(Number(selectedPremium.targetAmount))}</span>
+                      </div>
+                    </div>
+
+                    {/* Specs */}
+                    <div className="bg-black/30 rounded-xl p-3 space-y-2">
+                      <h4 className="text-sm font-medium text-amber-400 flex items-center gap-1.5">
+                        <Zap className="w-4 h-4" />
+                        Especificaciones
+                      </h4>
+                      <div className="grid grid-cols-2 gap-y-1.5 text-xs">
+                        <span className="text-gray-500">Cargadores:</span>
+                        <span className="text-white font-medium">{selectedPremium.chargerCount} DC</span>
+                        <span className="text-gray-500">Potencia/cargador:</span>
+                        <span className="text-white font-medium">{selectedPremium.chargerPowerKw} kW</span>
+                        <span className="text-gray-500">Paneles solares:</span>
+                        <span className="text-white font-medium">{selectedPremium.hasSolarPanels ? 'Sí' : 'No'}</span>
+                        <span className="text-gray-500">ROI estimado:</span>
+                        <span className="text-emerald-400 font-medium">{selectedPremium.estimatedRoiPercent}%</span>
+                        <span className="text-gray-500">Recuperación:</span>
+                        <span className="text-white font-medium">{selectedPremium.estimatedPaybackMonths} meses</span>
+                      </div>
+                    </div>
+
+                    {/* CTA */}
+                    <div className="flex gap-2">
+                      <Link href={`/crowdfunding/${selectedPremium.id}`} className="flex-1">
+                        <Button className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold">
+                          <DollarSign className="w-4 h-4 mr-1" />
+                          Invertir ahora
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="outline"
+                        className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                        onClick={() => {
+                          const msg = encodeURIComponent(`Hola, estoy interesado en la estación Premium de ${selectedPremium.city} (${selectedPremium.zone}). Me gustaría recibir más información.`);
+                          window.open(`https://wa.me/573054124009?text=${msg}`, '_blank');
+                        }}
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedSpace ? (
+                /* DETAIL VIEW */
+                <div className="bg-slate-800/80 border border-slate-700 rounded-2xl overflow-hidden">
+                  {/* Header image */}
+                  <div className="relative">
+                    {selectedSpace.thumbnailUrl ? (
+                      <img src={selectedSpace.thumbnailUrl} alt={selectedSpace.spaceName} className="w-full h-36 object-cover" />
+                    ) : (
+                      <div className="w-full h-36 bg-gradient-to-br from-emerald-600/30 to-green-800/30 flex items-center justify-center">
+                        <Zap className="w-10 h-10 text-emerald-400/50" />
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setSelectedSpace(null)}
+                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/70"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    {selectedSpace.aiScore && (
+                      <div className={`absolute top-3 left-3 flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold border backdrop-blur-sm ${getScoreBg(selectedSpace.aiScore)}`}>
+                        <Star className="w-4 h-4" />
+                        <span className={getScoreColor(selectedSpace.aiScore)}>{selectedSpace.aiScore}/100</span>
+                      </div>
+                    )}
+                    {selectedSpace.photos && selectedSpace.photos.length > 1 && (
+                      <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-black/60 text-white text-xs px-2.5 py-1 rounded-full backdrop-blur-sm">
+                        <Camera className="w-3.5 h-3.5" />
+                        {selectedSpace.photos.length} fotos
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 space-y-4">
+                    {/* Title */}
+                    <div>
+                      <h3 className="text-lg font-bold text-white">{selectedSpace.spaceName}</h3>
+                      <p className="text-sm text-gray-400">
+                        {selectedSpace.city}{selectedSpace.department ? `, ${selectedSpace.department}` : ""} · {SPACE_TYPE_LABELS[selectedSpace.spaceType] || selectedSpace.spaceType}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">{selectedSpace.address}</p>
+                    </div>
+
+                    {/* Key metrics */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {selectedSpace.estimatedInvestmentCop && (
+                        <div className="bg-black/30 rounded-xl p-3">
+                          <p className="text-xs text-gray-500 mb-1">Inversión total</p>
+                          <p className="text-base font-bold text-white">{formatCOPMap(selectedSpace.estimatedInvestmentCop)}</p>
+                        </div>
+                      )}
+                      {selectedSpace.estimatedPowerKw && (
+                        <div className="bg-black/30 rounded-xl p-3">
+                          <p className="text-xs text-gray-500 mb-1">Potencia</p>
+                          <p className="text-base font-bold text-emerald-400">{selectedSpace.estimatedPowerKw} kW</p>
+                        </div>
+                      )}
+                      {selectedSpace.estimatedChargerCount && (
+                        <div className="bg-black/30 rounded-xl p-3">
+                          <p className="text-xs text-gray-500 mb-1">Cargadores</p>
+                          <p className="text-base font-bold text-white">{selectedSpace.estimatedChargerCount}</p>
+                        </div>
+                      )}
+                      {selectedSpace.socioeconomicStratum && (
+                        <div className="bg-black/30 rounded-xl p-3">
+                          <p className="text-xs text-gray-500 mb-1">Estrato</p>
+                          <p className="text-base font-bold text-white">{selectedSpace.socioeconomicStratum}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Funding progress */}
+                    {selectedSpace.crowdfunding && (
+                      <div className="bg-black/30 rounded-xl p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm text-gray-400">Financiamiento</span>
+                          <span className="text-sm font-bold text-emerald-400">
+                            {Math.min(100, Math.round((selectedSpace.crowdfunding.raisedAmount / selectedSpace.crowdfunding.targetAmount) * 100))}%
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden mb-2">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-400 transition-all"
+                            style={{ width: `${Math.min(100, Math.round((selectedSpace.crowdfunding.raisedAmount / selectedSpace.crowdfunding.targetAmount) * 100))}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>{formatCOPMap(selectedSpace.crowdfunding.raisedAmount)} recaudado</span>
+                          <span>Meta: {formatCOPMap(selectedSpace.crowdfunding.targetAmount)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Photo Gallery */}
+                    {selectedSpace.photos && selectedSpace.photos.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-medium text-emerald-400 flex items-center gap-1.5">
+                          <Camera className="w-4 h-4" />
+                          Fotos del espacio ({selectedSpace.photos.length})
+                        </h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          {selectedSpace.photos.map((photo: any, i: number) => (
+                            <button
+                              key={i}
+                              onClick={() => setLightboxIdx(i)}
+                              className="relative aspect-square rounded-lg overflow-hidden group cursor-pointer border border-slate-700 hover:border-emerald-500/40 transition-colors"
+                            >
+                              <img
+                                src={photo.url}
+                                alt={photo.caption || PHOTO_TYPE_LABELS[photo.type] || "Foto"}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                                <ImageIcon className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </div>
+                              <div className="absolute bottom-1 left-1 right-1">
+                                <span className="text-[10px] bg-black/60 text-gray-300 px-1.5 py-0.5 rounded-md backdrop-blur-sm truncate block text-center">
+                                  {PHOTO_TYPE_LABELS[photo.type] || photo.type}
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI Analysis */}
+                    {(() => {
+                      const aiData = parseAIAnalysis(selectedSpace.aiAnalysis);
+                      if (!aiData) return null;
+                      return (
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-medium text-emerald-400 flex items-center gap-1.5">
+                            <BarChart3 className="w-4 h-4" />
+                            Análisis IA
+                          </h4>
+                          {aiData.summary && <p className="text-sm text-gray-300">{aiData.summary}</p>}
+                          {aiData.strengths && aiData.strengths.length > 0 && (
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Fortalezas</p>
+                              <ul className="space-y-1">
+                                {aiData.strengths.slice(0, 3).map((s: string, i: number) => (
+                                  <li key={i} className="text-xs text-gray-300 flex items-start gap-1.5">
+                                    <span className="text-emerald-400 mt-0.5">+</span>
+                                    {s}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {aiData.investmentAppeal && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500">Atractivo:</span>
+                              <span className={`text-xs font-bold ${
+                                aiData.investmentAppeal === "alto" ? "text-emerald-400" :
+                                aiData.investmentAppeal === "medio" ? "text-yellow-400" : "text-red-400"
+                              }`}>
+                                {aiData.investmentAppeal.charAt(0).toUpperCase() + aiData.investmentAppeal.slice(1)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* View count */}
+                    {selectedSpace.viewCount > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>{selectedSpace.viewCount} {selectedSpace.viewCount === 1 ? 'vista' : 'vistas'}</span>
+                      </div>
+                    )}
+
+                    {/* CTA */}
+                    <div className="space-y-2 pt-2">
+                      {!showContactForm && !contactSent ? (
+                        <>
+                          <Button
+                            onClick={() => setShowContactForm(true)}
+                            className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white"
+                          >
+                            <Send className="w-4 h-4 mr-2" />
+                            Quiero invertir en este punto
+                          </Button>
+                          <Button
+                            onClick={() => contactAdvisor(selectedSpace)}
+                            variant="outline"
+                            className="w-full border-slate-600 text-gray-300 hover:bg-slate-700"
+                          >
+                            <MessageCircle className="w-4 h-4 mr-2" />
+                            Hablar con asesor por WhatsApp
+                          </Button>
+                        </>
+                      ) : contactSent ? (
+                        <div className="text-center py-4">
+                          <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                            <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                          </div>
+                          <p className="text-sm font-medium text-white">¡Solicitud enviada!</p>
+                          <p className="text-xs text-gray-400 mt-1">Te contactaremos en 24-48 horas hábiles</p>
+                          <Button
+                            onClick={() => { setContactSent(false); setShowContactForm(false); }}
+                            variant="ghost"
+                            size="sm"
+                            className="mt-3 text-emerald-400 hover:text-emerald-300"
+                          >
+                            Volver al detalle
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="bg-black/30 rounded-xl p-4 space-y-3">
+                          <h4 className="text-sm font-semibold text-emerald-400 flex items-center gap-2">
+                            <User className="w-4 h-4" />
+                            Formulario de contacto
+                          </h4>
+                          <div className="space-y-2">
+                            <Input
+                              placeholder="Tu nombre completo *"
+                              value={contactForm.name}
+                              onChange={(e) => setContactForm(prev => ({ ...prev, name: e.target.value }))}
+                              className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 h-9 text-sm"
+                            />
+                            <Input
+                              placeholder="Email *"
+                              type="email"
+                              value={contactForm.email}
+                              onChange={(e) => setContactForm(prev => ({ ...prev, email: e.target.value }))}
+                              className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 h-9 text-sm"
+                            />
+                            <Input
+                              placeholder="Teléfono (opcional)"
+                              value={contactForm.phone}
+                              onChange={(e) => setContactForm(prev => ({ ...prev, phone: e.target.value }))}
+                              className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 h-9 text-sm"
+                            />
+                            <Input
+                              placeholder="Monto a invertir (COP, opcional)"
+                              type="number"
+                              value={contactForm.interestedAmount}
+                              onChange={(e) => setContactForm(prev => ({ ...prev, interestedAmount: e.target.value }))}
+                              className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 h-9 text-sm"
+                            />
+                            <Textarea
+                              placeholder="Mensaje o preguntas (opcional)"
+                              value={contactForm.message}
+                              onChange={(e) => setContactForm(prev => ({ ...prev, message: e.target.value }))}
+                              className="bg-slate-800 border-slate-600 text-white placeholder:text-gray-500 text-sm min-h-[60px] resize-none"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => setShowContactForm(false)}
+                              variant="ghost"
+                              size="sm"
+                              className="text-gray-400 hover:text-white"
+                            >
+                              Cancelar
+                            </Button>
+                            <Button
+                              onClick={() => {
+                                if (!contactForm.name || !contactForm.email) {
+                                  toast.error("Nombre y email son requeridos");
+                                  return;
+                                }
+                                submitLeadMut.mutate({
+                                  spaceId: selectedSpace.id,
+                                  name: contactForm.name,
+                                  email: contactForm.email,
+                                  phone: contactForm.phone || undefined,
+                                  interestedAmount: contactForm.interestedAmount ? parseInt(contactForm.interestedAmount) : undefined,
+                                  message: contactForm.message || undefined,
+                                });
+                              }}
+                              disabled={submitLeadMut.isPending}
+                              size="sm"
+                              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                              {submitLeadMut.isPending ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <Send className="w-3.5 h-3.5 mr-1.5" />
+                                  Enviar solicitud
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : filteredSpaces.length === 0 ? (
+                <div className="text-center py-16">
+                  <MapPin className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                  <p className="text-gray-400">No hay puntos disponibles con este filtro</p>
+                </div>
+              ) : (
+                /* LIST VIEW */
+                filteredSpaces.map((space: any) => {
+                  const fundingPct = space.crowdfunding
+                    ? Math.min(100, Math.round((space.crowdfunding.raisedAmount / space.crowdfunding.targetAmount) * 100))
+                    : 0;
+                  return (
+                    <button
+                      key={space.id}
+                      onClick={() => {
+                        handleSelectSpace(space);
+                        if (space.latitude && space.longitude && mapRef.current) {
+                          mapRef.current.panTo({ lat: parseFloat(space.latitude), lng: parseFloat(space.longitude) });
+                          mapRef.current.setZoom(14);
+                        }
+                      }}
+                      className="w-full text-left bg-slate-800/60 border border-slate-700 rounded-xl p-4 hover:border-emerald-500/30 transition-all group"
+                    >
+                      {/* Thumbnail */}
+                      {space.thumbnailUrl && (
+                        <div className="relative w-full h-28 rounded-lg overflow-hidden mb-3">
+                          <img src={space.thumbnailUrl} alt={space.spaceName} className="w-full h-full object-cover" />
+                          {space.photos && space.photos.length > 1 && (
+                            <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-full backdrop-blur-sm">
+                              <Camera className="w-3 h-3" />
+                              {space.photos.length}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-semibold text-white truncate group-hover:text-emerald-300 transition-colors">
+                            {space.spaceName}
+                          </h4>
+                          <p className="text-xs text-gray-500">
+                            {space.city}{space.department ? `, ${space.department}` : ""} · {SPACE_TYPE_LABELS[space.spaceType] || space.spaceType}
+                          </p>
+                        </div>
+                        {space.aiScore && (
+                          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${getScoreBg(space.aiScore)}`}>
+                            <Star className="w-3 h-3" />
+                            <span className={getScoreColor(space.aiScore)}>{space.aiScore}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-gray-400 mb-3">
+                        {space.estimatedPowerKw && (
+                          <span className="flex items-center gap-1">
+                            <Zap className="w-3 h-3 text-emerald-400" />
+                            {space.estimatedPowerKw} kW
+                          </span>
+                        )}
+                        {space.estimatedChargerCount && (
+                          <span className="flex items-center gap-1">
+                            <Battery className="w-3 h-3 text-blue-400" />
+                            {space.estimatedChargerCount} cargadores
+                          </span>
+                        )}
+                        {space.estimatedInvestmentCop && (
+                          <span className="flex items-center gap-1">
+                            <DollarSign className="w-3 h-3 text-yellow-400" />
+                            {formatCOPMap(space.estimatedInvestmentCop)}
+                          </span>
+                        )}
+                        {space.viewCount > 0 && (
+                          <span className="flex items-center gap-1">
+                            <Eye className="w-3 h-3 text-gray-500" />
+                            {space.viewCount}
+                          </span>
+                        )}
+                      </div>
+                      {space.crowdfunding && (
+                        <div>
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="text-gray-500">Financiamiento</span>
+                            <span className="text-emerald-400 font-medium">{fundingPct}%</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all bg-gradient-to-r from-emerald-500 to-green-400"
+                              style={{ width: `${fundingPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Link to full crowdfunding page */}
+          <div className="mt-8 text-center">
+            <Link href="/crowdfunding">
+              <Button variant="outline" className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10">
+                Ver mapa completo de oportunidades
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+
+        {/* Lightbox */}
+        {lightboxIdx !== null && selectedSpace?.photos && (
+          <div
+            className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-sm flex items-center justify-center"
+            onClick={() => setLightboxIdx(null)}
+          >
+            <div className="relative w-full max-w-4xl mx-4" onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => setLightboxIdx(null)}
+                className="absolute -top-12 right-0 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors z-10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              {selectedSpace.photos.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setLightboxIdx((lightboxIdx - 1 + selectedSpace.photos.length) % selectedSpace.photos.length)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors z-10"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => setLightboxIdx((lightboxIdx + 1) % selectedSpace.photos.length)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors z-10"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+              <img
+                src={selectedSpace.photos[lightboxIdx].url}
+                alt={selectedSpace.photos[lightboxIdx].caption || "Foto del espacio"}
+                className="w-full max-h-[80vh] object-contain rounded-xl"
+              />
+              <div className="text-center mt-4">
+                <span className="text-sm text-emerald-400 font-medium">
+                  {PHOTO_TYPE_LABELS[selectedSpace.photos[lightboxIdx].type] || selectedSpace.photos[lightboxIdx].type}
+                </span>
+                {selectedSpace.photos[lightboxIdx].caption && (
+                  <p className="text-sm text-gray-400 mt-1">{selectedSpace.photos[lightboxIdx].caption}</p>
+                )}
+                <p className="text-xs text-gray-600 mt-1">{lightboxIdx + 1} / {selectedSpace.photos.length}</p>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
     );
   };
@@ -959,6 +2091,9 @@ export default function Investors() {
 
       {/* Sección de Crowdfunding - Estaciones por Ciudad */}
       <CrowdfundingSection />
+
+      {/* Mapa Interactivo de Espacios Publicados */}
+      <PublishedSpacesMapSection />
 
       {/* Paquetes de inversión */}
       <section className="py-20 bg-slate-900">
@@ -1362,9 +2497,19 @@ export default function Investors() {
                     )}
                   </p>
                   <p className="text-xs text-white/40 mt-2">
-                    * Margen = (Precio venta - Costo energía) × {100 - Math.round(calculos.costosOperativosPct * 100)}% (después de costos operativos) × {Math.round(params.inversionistaPct * 100)}% (tu parte)
-                    {paqueteSeleccionado === "COLECTIVO" && " — economías de escala"}
+                    {paqueteSeleccionado === "COLECTIVO" 
+                      ? `* Margen = (Precio venta - Costo energía) × ${100 - Math.round(params.aliadoPct * 100)}% (después de aliado comercial) × ${Math.round(params.inversionistaPct * 100)}% (tu parte) — economías de escala`
+                      : `* Margen = (Precio venta - Costo energía) × ${100 - Math.round(params.aliadoPct * 100)}% (después de aliado comercial) × ${100 - Math.round(calculos.costosOperativosPct * 100)}% (después de costos operativos) × ${Math.round(params.inversionistaPct * 100)}% (tu parte)`
+                    }
                   </p>
+                  {paqueteSeleccionado === "COLECTIVO" && (
+                    <div className="flex items-start gap-2 mt-3 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/15">
+                      <Shield className="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0" />
+                      <p className="text-[11px] text-amber-300/70 leading-relaxed">
+                        Los ingresos proyectados son antes de gastos operativos fijos (pólizas, gastos fiduciarios), los cuales se descuentan proporcionalmente en cada liquidación mensual. Del 30% de gestión EVGreen, un 5% se destina al fondo de imprevistos y mantenimiento.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1578,8 +2723,9 @@ export default function Investors() {
                   const horasCol = PAQUETES.COLECTIVO.horasUsoConservador * params.factorUtilizacionPremium;
                   const energiaInd = PAQUETES.INDIVIDUAL.potenciaKw * horasInd * params.eficienciaDC;
                   const energiaCol = (PAQUETES.COLECTIVO as any).potenciaTotal * horasCol * params.eficienciaDC;
-                  const ingresoIndDia = (energiaInd * (precioBase - costoIndividual) * (1 - params.costosOpIndividual) * params.inversionistaPct);
-                  const ingresoColDia = (energiaCol * (precioBase - costoColectivo) * (1 - params.costosOpColectivo) * params.inversionistaPct);
+                  const ingresoIndDia = (energiaInd * (precioBase - costoIndividual) * (1 - params.aliadoPct) * (1 - params.costosOpIndividual) * params.inversionistaPct);
+                  // Colectivo: sin costos operativos separados (economías de escala)
+                  const ingresoColDia = (energiaCol * (precioBase - costoColectivo) * (1 - params.aliadoPct) * params.inversionistaPct);
                   const roiIndAnual = PAQUETES.INDIVIDUAL.precio > 0 ? ((ingresoIndDia * 365) / PAQUETES.INDIVIDUAL.precio * 100) : 0;
                   const roiColAnual = PAQUETES.COLECTIVO.participacionMinima > 0 ? ((ingresoColDia * 365 * (PAQUETES.COLECTIVO.participacionMinima / PAQUETES.COLECTIVO.precio)) / PAQUETES.COLECTIVO.participacionMinima * 100) : 0;
                   const paybackInd = ingresoIndDia > 0 ? (PAQUETES.INDIVIDUAL.precio / (ingresoIndDia * 30)) : 999;
@@ -1591,7 +2737,8 @@ export default function Investors() {
                     { label: "Fuente de Energía", individual: "Red Eléctrica", colectivo: "Solar + Red", winner: "colectivo" },
                     { label: "Costo Energía/kWh", individual: `${formatCOP(costoIndividual)} COP`, colectivo: `${formatCOP(costoColectivo)} COP (${ahorroSolar}% ahorro)`, winner: "colectivo" },
                     { label: "Margen por kWh", individual: `${formatCOP(margenIndividual)} COP`, colectivo: `${formatCOP(margenColectivo)} COP (+${margenDiff}%)`, winner: "colectivo" },
-                    { label: "Costos Operativos", individual: `${Math.round(params.costosOpIndividual * 100)}%`, colectivo: `${Math.round(params.costosOpColectivo * 100)}% (escala)`, winner: "colectivo" },
+                    { label: "Costos Operativos", individual: `${Math.round(params.costosOpIndividual * 100)}%`, colectivo: "Incluidos (economías de escala)", winner: "colectivo" },
+                    { label: "Gastos Fijos", individual: "A tu cargo (pólizas, mantenimiento)", colectivo: "Prorrateados en liquidación mensual", winner: "colectivo" },
                     { label: "Ubicación", individual: "A elección", colectivo: "Premium garantizada", winner: "colectivo" },
                     { label: "Utilización Esperada", individual: `${horasInd}h/día`, colectivo: `${horasCol.toFixed(0)}h/día (${params.factorUtilizacionPremium}x tráfico)`, winner: "colectivo" },
                     { label: "ROI Anual Estimado", individual: `~${roiIndAnual.toFixed(0)}%`, colectivo: `~${roiColAnual.toFixed(0)}%`, winner: roiColAnual > roiIndAnual ? "colectivo" : "individual" },

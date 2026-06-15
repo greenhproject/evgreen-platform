@@ -68,6 +68,9 @@ export default function InvestorSettings() {
       // Empresa
       setCompanyName(user.companyName || "");
       setCompanyNit(user.taxId || "");
+      setCompanyAddress((user as any).fiscalAddress || "");
+      setCompanyCity((user as any).fiscalCity || "");
+      setCompanyDepartment((user as any).fiscalDepartment || "");
       
       // Datos bancarios
       setBankName(user.bankName || "");
@@ -88,6 +91,9 @@ export default function InvestorSettings() {
     updateProfileMutation.mutate({
       companyName: companyName || undefined,
       taxId: companyNit || undefined,
+      fiscalAddress: companyAddress || undefined,
+      fiscalCity: companyCity || undefined,
+      fiscalDepartment: companyDepartment || undefined,
     });
   };
 
@@ -257,7 +263,7 @@ export default function InvestorSettings() {
             <div>
               <h3 className="font-semibold mb-2">Datos bancarios para pagos</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Aquí recibirás el 80% de los ingresos generados por tus estaciones.
+                Aquí recibirás tu porcentaje correspondiente de los ingresos generados por tus estaciones, según la configuración de cada activo.
                 Estos datos se usarán automáticamente al solicitar liquidaciones.
               </p>
               

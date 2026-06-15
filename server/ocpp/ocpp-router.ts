@@ -38,6 +38,13 @@ export const ocppRouter = router({
     // Fuente terciaria: conexiones inferidas de logs de BD (persistente)
     const dbConnections = await db.getActiveConnectionsFromLogs();
     
+    // Pre-cargar todas las estaciones para resolver stationId por ocppIdentity
+    const allStations = await db.getAllChargingStations();
+    const stationByOcppId = new Map<string, number>();
+    for (const s of allStations) {
+      if (s.ocppIdentity) stationByOcppId.set(s.ocppIdentity, s.id);
+    }
+    
     // Combinar: dualCSMS > legacy > BD
     const connectionMap = new Map<string, any>();
     
@@ -52,15 +59,26 @@ export const ocppRouter = router({
     }
     
     // Finalmente dualCSMS (mayor prioridad, fuente real)
+    // Obtener connector statuses del connection-manager para cada conexión
     for (const conn of csmsConnections) {
+      // Resolver stationId desde BD si es null
+      const resolvedStationId = conn.stationId ?? stationByOcppId.get(conn.ocppIdentity) ?? null;
+      // Obtener estados de conectores desde connection-manager
+      const liveConn = ocppManager.getConnection(conn.ocppIdentity);
+      const connectorStatuses: Record<string, string> = {};
+      if (liveConn?.connectorStatuses) {
+        for (const [k, v] of Object.entries(liveConn.connectorStatuses)) {
+          connectorStatuses[k] = v as string;
+        }
+      }
       connectionMap.set(conn.ocppIdentity, {
         ocppIdentity: conn.ocppIdentity,
         ocppVersion: conn.ocppVersion,
-        stationId: conn.stationId,
+        stationId: resolvedStationId,
         connectedAt: conn.connectedAt.toISOString(),
         lastHeartbeat: conn.lastHeartbeat.toISOString(),
         lastMessage: conn.lastHeartbeat.toISOString(),
-        connectorStatuses: {},
+        connectorStatuses,
         isConnected: true, // Si está en dualCSMS, está conectado
       });
     }
@@ -191,6 +209,14 @@ export const ocppRouter = router({
         diagMap.set(diag.ocppIdentity, diag);
       }
       
+      // 2b. Obtener estados del connection-manager (incluye grace period)
+      // Esto cubre el caso donde dualCSMS eliminó la conexión pero el cargador está reconectando
+      const cmConnections = ocppManager.getAllConnections();
+      const cmMap = new Map<string, any>();
+      for (const conn of cmConnections) {
+        cmMap.set(conn.ocppIdentity, conn);
+      }
+      
       // 3. Obtener última actividad de logs para cada estación (fallback si no hay WS)
       const recentActivityMap = new Map<string, { lastLogAt: Date; lastAction: string }>();
       for (const station of stations) {
@@ -225,13 +251,17 @@ export const ocppRouter = router({
           
           // Determinar estado de conexión:
           // 1. WebSocket activo en dualCSMS = conectado (fuente principal)
-          // 2. Log reciente < 5 minutos = probablemente conectado (fallback)
-          // 3. isOnline en BD = último estado conocido
+          // 2. Connection-manager en grace period = reconectando (cubre proxy cycling)
+          // 3. Log reciente < 5 minutos = probablemente conectado (fallback)
+          // 4. isOnline en BD = último estado conocido
           const hasActiveWs = !!wsConn;
+          const cmConn = cmMap.get(ocppId);
+          const isInGrace = ocppManager.isInGracePeriod(ocppId);
           const hasRecentLog = recentActivity 
             ? (Date.now() - recentActivity.lastLogAt.getTime()) < 5 * 60 * 1000 
             : false;
-          const isConnected = hasActiveWs || hasRecentLog;
+          const isConnected = hasActiveWs || isInGrace || hasRecentLog;
+          const isReconnecting = !hasActiveWs && isInGrace;
           
           return {
             id: station.id,
@@ -245,16 +275,17 @@ export const ocppRouter = router({
             isOnline: station.isOnline,
             // Estado de conexión
             isConnected,
-            connectionSource: hasActiveWs ? "websocket" : hasRecentLog ? "recent_log" : "none",
-            // Datos de WebSocket (si hay conexión activa)
-            ocppVersion: wsConn?.ocppVersion || null,
-            connectedAt: wsConn?.connectedAt?.toISOString() || null,
-            lastHeartbeat: wsConn?.lastHeartbeat?.toISOString() || null,
+            isReconnecting,
+            connectionSource: hasActiveWs ? "websocket" : isInGrace ? "grace_period" : hasRecentLog ? "recent_log" : "none",
+            // Datos de WebSocket (si hay conexión activa o en grace period)
+            ocppVersion: wsConn?.ocppVersion || cmConn?.ocppVersion || null,
+            connectedAt: wsConn?.connectedAt?.toISOString() || cmConn?.connectedAt || null,
+            lastHeartbeat: wsConn?.lastHeartbeat?.toISOString() || cmConn?.lastHeartbeat || null,
             // Datos de diagnóstico
-            wsReadyState: diag?.wsReadyState ?? null,
-            uptimeSeconds: diag?.uptimeSeconds ?? null,
+            wsReadyState: diag?.wsReadyState ?? (isInGrace ? 0 : null),
+            uptimeSeconds: diag?.uptimeSeconds ?? (cmConn ? Math.floor((Date.now() - new Date(cmConn.connectedAt).getTime()) / 1000) : null),
             pendingCallsCount: diag?.pendingCallsCount ?? 0,
-            isHealthy: diag?.isHealthy ?? false,
+            isHealthy: diag?.isHealthy ?? isInGrace,
             // Última actividad de logs
             lastActivity: recentActivity?.lastLogAt?.toISOString() || station.lastBootNotification?.toISOString() || null,
             lastAction: recentActivity?.lastAction || null,
@@ -721,6 +752,17 @@ export const ocppRouter = router({
       const liveConn = ocppManager.getConnection(input.ocppIdentity);
       const liveConnInfo = ocppManager.getAllConnections().find(c => c.ocppIdentity === input.ocppIdentity);
       
+      // TAMBIÉN verificar dualCSMS (fuente principal que usa la lista)
+      // Esto asegura consistencia entre la lista y el detalle
+      const csmsConnections = dualCSMS.getConnectionsStatus();
+      const csmsDiagnostics = dualCSMS.getDetailedDiagnostics();
+      const csmsConn = csmsConnections.find(c => c.ocppIdentity === input.ocppIdentity);
+      const csmsDiag = csmsDiagnostics.find(d => d.ocppIdentity === input.ocppIdentity);
+      
+      // Verificar si está en grace period (reconectando tras cierre cíclico del proxy)
+      const inGracePeriod = ocppManager.isInGracePeriod(input.ocppIdentity);
+      const persistentState = ocppManager.getPersistentState(input.ocppIdentity);
+      
       // Datos de BD
       const station = await db.getChargingStationByOcppIdentity(input.ocppIdentity);
       const evses = station ? await db.getEvsesByStationId(station.id) : [];
@@ -733,24 +775,80 @@ export const ocppRouter = router({
       });
       
       // Calcular campos derivados para el frontend
-      const wsReadyState = liveConn ? liveConn.ws.readyState : 3;
+      // Prioridad: liveConn (connection-manager) > csmsConn (dualCSMS) > gracePeriod > CLOSED
+      const hasCsmsActiveWs = csmsDiag ? csmsDiag.wsReadyState === 1 : false;
+      const wsReadyState = liveConn 
+        ? liveConn.ws.readyState 
+        : (hasCsmsActiveWs ? 1 : (inGracePeriod ? 0 : 3));
       const wsReadyStateLabels: Record<number, string> = { 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED' };
+      const wsLabel = liveConn 
+        ? (wsReadyStateLabels[liveConn.ws.readyState] || 'UNKNOWN')
+        : (hasCsmsActiveWs ? 'OPEN' : (inGracePeriod ? 'RECONNECTING' : 'CLOSED'));
       const now = Date.now();
-      const connectedAtMs = liveConnInfo ? new Date(liveConnInfo.connectedAt).getTime() : 0;
-      const lastHeartbeatMs = liveConnInfo ? new Date(liveConnInfo.lastHeartbeat).getTime() : 0;
       
-      const enrichedConnection = liveConnInfo ? {
-        ...liveConnInfo,
+      // Usar datos del estado persistente cuando está en grace period
+      // Prioridad: liveConnInfo (connection-manager) > csmsConn (dualCSMS) > persistentState
+      const effectiveConnInfo = liveConnInfo || (csmsConn ? {
+        ocppIdentity: csmsConn.ocppIdentity,
+        ocppVersion: csmsConn.ocppVersion,
+        stationId: csmsConn.stationId,
+        connectedAt: csmsConn.connectedAt.toISOString(),
+        lastHeartbeat: csmsConn.lastHeartbeat.toISOString(),
+        lastMessage: csmsConn.lastHeartbeat.toISOString(),
+        connectorStatuses: {},
+        bootInfo: null,
+        isConnected: hasCsmsActiveWs,
+        seamlessReconnections: 0,
+        lastSeamlessReconnect: null,
+      } : (persistentState ? {
+        ocppIdentity: persistentState.ocppIdentity,
+        ocppVersion: persistentState.ocppVersion,
+        stationId: persistentState.stationId,
+        connectedAt: persistentState.originalConnectedAt.toISOString(),
+        lastHeartbeat: persistentState.lastHeartbeat.toISOString(),
+        lastMessage: persistentState.lastMessage.toISOString(),
+        connectorStatuses: Object.fromEntries(persistentState.connectorStatuses),
+        bootInfo: persistentState.bootInfo,
+        isConnected: false,
+        seamlessReconnections: persistentState.seamlessReconnections,
+        lastSeamlessReconnect: persistentState.lastSeamlessReconnect?.toISOString() || null,
+      } : null));
+      
+      const connectedAtMs = effectiveConnInfo ? new Date(effectiveConnInfo.connectedAt).getTime() : 0;
+      const lastHeartbeatMs = effectiveConnInfo ? new Date(effectiveConnInfo.lastHeartbeat).getTime() : 0;
+      
+      const enrichedConnection = effectiveConnInfo ? {
+        ...effectiveConnInfo,
         wsReadyState,
-        wsReadyStateLabel: wsReadyStateLabels[wsReadyState] || 'UNKNOWN',
-        uptimeSeconds: Math.floor((now - connectedAtMs) / 1000),
-        heartbeatAgeSeconds: lastHeartbeatMs > 0 ? Math.floor((now - lastHeartbeatMs) / 1000) : -1,
-        pendingCallsCount: 0, // El connection-manager no trackea pending calls
+        wsReadyStateLabel: wsLabel,
+        uptimeSeconds: csmsDiag?.uptimeSeconds ?? Math.floor((now - connectedAtMs) / 1000),
+        heartbeatAgeSeconds: csmsDiag?.heartbeatAgeSeconds ?? (lastHeartbeatMs > 0 ? Math.floor((now - lastHeartbeatMs) / 1000) : -1),
+        pendingCallsCount: csmsDiag?.pendingCallsCount ?? 0,
+        isReconnecting: inGracePeriod && !hasCsmsActiveWs,
       } : null;
+      
+      // isConnected: true si hay WS activo O si está en grace period (reconectando)
+      // FALLBACK: Si hay heartbeats recientes en logs (< 3 min), considerar conectado
+      // Esto cubre el caso donde el proxy recicla la conexión pero el cargador sigue activo
+      const hasActiveWs = (!!liveConn && liveConn.ws.readyState === 1) || hasCsmsActiveWs;
+      const hasRecentHeartbeat = recentLogs.logs?.some((log: any) => {
+        if (log.messageType !== 'Heartbeat') return false;
+        const logTime = new Date(log.createdAt).getTime();
+        return (now - logTime) < 3 * 60 * 1000; // < 3 minutos
+      }) || false;
+      const effectivelyConnected = hasActiveWs || inGracePeriod || hasRecentHeartbeat;
+      
+      // Si hay heartbeats recientes pero no WS activo, actualizar enrichedConnection
+      if (enrichedConnection && !hasActiveWs && hasRecentHeartbeat) {
+        enrichedConnection.wsReadyStateLabel = 'RECONNECTING';
+        enrichedConnection.wsReadyState = 0;
+        enrichedConnection.isReconnecting = true;
+      }
       
       return {
         ocppIdentity: input.ocppIdentity,
-        isConnected: !!liveConn && liveConn.ws.readyState === 1,
+        isConnected: effectivelyConnected,
+        isReconnecting: inGracePeriod || (!hasActiveWs && hasRecentHeartbeat),
         // Datos de conexión en tiempo real con campos calculados
         connection: enrichedConnection,
         // Datos de BD
@@ -1048,5 +1146,170 @@ export const ocppRouter = router({
   generateOfflineAlerts: ocppProcedure.mutation(async () => {
     const count = await generateOfflineAlerts();
     return { alertsGenerated: count };
+  }),
+
+  // ============================================================================
+  // LOCAL AUTHORIZATION LIST - Gestión de tarjetas RFID y modo offline
+  // ============================================================================
+
+  /**
+   * Obtener la lista local de autorización de una estación con sus entradas
+   */
+  getLocalAuthList: ocppProcedure
+    .input(z.object({ stationId: z.number() }))
+    .query(async ({ input }) => {
+      const { list, entries } = await db.getLocalAuthListWithEntries(input.stationId);
+      return { list, entries };
+    }),
+
+  /**
+   * Agregar una tarjeta RFID a la lista local de una estación
+   */
+  addLocalAuthEntry: ocppProcedure
+    .input(z.object({
+      stationId: z.number(),
+      idTag: z.string().min(1).max(50),
+      isMasterCard: z.boolean().default(false),
+      label: z.string().optional(),
+      expiryDate: z.string().optional(), // ISO date string
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const entry = await db.addLocalAuthEntry({
+        stationId: input.stationId,
+        idTag: input.idTag,
+        isMasterCard: input.isMasterCard,
+        label: input.label,
+        expiryDate: input.expiryDate ? new Date(input.expiryDate) : undefined,
+        addedBy: ctx.user.id,
+      });
+      return entry;
+    }),
+
+  /**
+   * Eliminar una tarjeta de la lista local
+   */
+  removeLocalAuthEntry: ocppProcedure
+    .input(z.object({
+      entryId: z.number(),
+      stationId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.removeLocalAuthEntry(input.entryId, input.stationId);
+      return { success: true };
+    }),
+
+  /**
+   * Enviar la lista local al cargador vía OCPP SendLocalList
+   */
+  syncLocalList: ocppProcedure
+    .input(z.object({
+      stationId: z.number(),
+      ocppIdentity: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      // Obtener la lista y entradas
+      const { list, entries } = await db.getLocalAuthListWithEntries(input.stationId);
+
+      if (entries.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "No hay tarjetas en la lista local. Agrega al menos una tarjeta antes de sincronizar.",
+        });
+      }
+
+      // Formatear entradas para OCPP
+      const authList = entries.map(entry => ({
+        idTag: entry.idTag,
+        idTagInfo: {
+          status: entry.authStatus,
+          ...(entry.expiryDate ? { expiryDate: entry.expiryDate.toISOString() } : {}),
+        },
+      }));
+
+      try {
+        // Enviar lista completa al cargador
+        const result = await dualCSMS.sendLocalList(
+          input.ocppIdentity,
+          list.listVersion,
+          "Full",
+          authList
+        );
+
+        // Actualizar estado en BD
+        await db.markLocalAuthListSynced(input.stationId, result.status);
+
+        return {
+          success: result.status === "Accepted",
+          status: result.status,
+          entriesSent: entries.length,
+          listVersion: list.listVersion,
+        };
+      } catch (error: any) {
+        await db.markLocalAuthListSynced(input.stationId, "Failed");
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Error al enviar lista local: ${error.message}`,
+        });
+      }
+    }),
+
+  /**
+   * Consultar la versión de la lista local en el cargador
+   */
+  getChargerLocalListVersion: ocppProcedure
+    .input(z.object({ ocppIdentity: z.string() }))
+    .mutation(async ({ input }) => {
+      try {
+        const result = await dualCSMS.getLocalListVersion(input.ocppIdentity);
+        return result;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Error: ${error.message}`,
+        });
+      }
+    }),
+
+  /**
+   * Actualizar la política offline de una estación
+   */
+  updateOfflinePolicy: ocppProcedure
+    .input(z.object({
+      stationId: z.number(),
+      policy: z.enum(["LOCAL_LIST_ONLY", "FREE_VENDING", "REJECT_ALL"]),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateOfflinePolicy(input.stationId, input.policy);
+      return { success: true };
+    }),
+
+  /**
+   * Obtener transacciones offline pendientes de reconciliación
+   */
+  getOfflineTransactions: ocppProcedure
+    .input(z.object({ stationId: z.number().optional() }))
+    .query(async ({ input }) => {
+      return db.getPendingOfflineTransactions(input.stationId);
+    }),
+
+  /**
+   * Reconciliar una transacción offline (marcarla como procesada)
+   */
+  reconcileOfflineTransaction: ocppProcedure
+    .input(z.object({
+      offlineTxId: z.number(),
+      transactionId: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.reconcileOfflineTransaction(input.offlineTxId, input.transactionId, input.notes);
+      return { success: true };
+    }),
+
+  /**
+   * Obtener resumen del estado de listas locales de todas las estaciones
+   */
+  getAllLocalAuthListsStatus: ocppProcedure.query(async () => {
+    return db.getAllLocalAuthListsStatus();
   }),
 });

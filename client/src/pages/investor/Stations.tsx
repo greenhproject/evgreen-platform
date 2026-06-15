@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, MapPin, Zap, Settings, Eye, TrendingUp, ExternalLink, Battery, Clock, DollarSign, Sparkles, Brain, Info, ArrowRight, BarChart3, Activity, Download } from "lucide-react";
+import { Search, MapPin, Zap, Settings, Eye, TrendingUp, ExternalLink, Battery, Clock, DollarSign, Sparkles, Brain, Info, ArrowRight, BarChart3, Activity, Download, Lock } from "lucide-react";
 import { toast } from "sonner";
 
 // Tipo para estación
@@ -46,6 +46,11 @@ interface Station {
   isPublic: boolean;
   description?: string | null;
   isConnectedOCPP?: boolean;
+  // Tipo de propiedad
+  ownershipType?: 'owned' | 'crowdfunding';
+  participationPercent?: string;
+  crowdfundingProjectId?: number | null;
+  crowdfundingProjectName?: string | null;
   ocppConnection?: {
     ocppVersion: string;
     connectedAt: string;
@@ -248,7 +253,13 @@ export default function InvestorStations() {
     setShowDetailsModal(true);
   };
 
+  const isCollectiveStation = (station: Station) => !!station.crowdfundingProjectId;
+
   const handleOpenConfig = (station: Station) => {
+    if (isCollectiveStation(station)) {
+      toast.error("Las tarifas de estaciones colectivas son configuradas exclusivamente por el administrador de EVGreen.");
+      return;
+    }
     setSelectedStation(station);
     // Cargar valores actuales de tarifa
     if (station.tariff) {
@@ -306,7 +317,9 @@ export default function InvestorStations() {
   // Calcular estadísticas
   const totalStations = stations?.length || 0;
   const onlineStations = stations?.filter((s) => s.isOnline).length || 0;
-  const totalConnectors = 0; // Se calculará cuando se agregue evses a listOwned
+  const ownedStations = stations?.filter((s: any) => s.ownershipType !== 'crowdfunding').length || 0;
+  const crowdfundingStations = stations?.filter((s: any) => s.ownershipType === 'crowdfunding').length || 0;
+  const totalConnectors = stations?.reduce((sum, s: any) => sum + (s.evses?.length || 0), 0) || 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -363,6 +376,16 @@ export default function InvestorStations() {
             </div>
           </div>
         </Card>
+        {crowdfundingStations > 0 && (
+          <Card className="p-4 sm:col-span-2 lg:col-span-4 border-blue-500/20 bg-blue-500/5">
+            <div className="flex items-center gap-2 text-sm">
+              <Info className="w-4 h-4 text-blue-500" />
+              <span className="text-muted-foreground">
+                Tienes <strong className="text-foreground">{ownedStations}</strong> estación(es) propia(s) y <strong className="text-foreground">{crowdfundingStations}</strong> estación(es) por participación colectiva (crowdfunding)
+              </span>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Filtros */}
@@ -407,10 +430,21 @@ export default function InvestorStations() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredStations?.map((station) => (
+              filteredStations?.map((station: any) => (
                 <TableRow key={station.id}>
                   <TableCell>
-                    <div className="font-medium">{station.name}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium">{station.name}</div>
+                      {station.ownershipType === 'crowdfunding' ? (
+                        <Badge variant="outline" className="text-xs border-blue-500/50 text-blue-400">
+                          Colectiva {station.participationPercent ? `${parseFloat(station.participationPercent).toFixed(1)}%` : ''}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs border-green-500/50 text-green-400">
+                          Propia
+                        </Badge>
+                      )}
+                    </div>
                     <div className="text-sm text-muted-foreground">
                       ID: {station.ocppIdentity || `GEV-${station.id}`}
                     </div>
@@ -424,7 +458,7 @@ export default function InvestorStations() {
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Zap className="w-3 h-3 text-muted-foreground" />
-                      -
+                      {station.evses?.length || 0}
                     </div>
                   </TableCell>
                   <TableCell>{getStatusBadge(station.isOnline, station.isActive)}</TableCell>
@@ -452,14 +486,16 @@ export default function InvestorStations() {
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleOpenConfig(station)}
-                        title="Configurar tarifas"
-                      >
-                        <Settings className="w-4 h-4" />
-                      </Button>
+                      {!isCollectiveStation(station) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleOpenConfig(station)}
+                          title="Configurar tarifas"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -648,17 +684,23 @@ export default function InvestorStations() {
 
               {/* Acciones */}
               <div className="flex gap-2 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    setShowDetailsModal(false);
-                    handleOpenConfig(selectedStation);
-                  }}
-                >
-                  <Settings className="w-4 h-4 mr-2" />
-                  Configurar Tarifas
-                </Button>
+                {selectedStation && !isCollectiveStation(selectedStation) ? (
+                  <Button
+                    className="flex-1"
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleOpenConfig(selectedStation);
+                    }}
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    Configurar Tarifas
+                  </Button>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md py-2 px-3">
+                    <Lock className="w-3.5 h-3.5" />
+                    Tarifas gestionadas por Admin
+                  </div>
+                )}
                 <Button
                   className="flex-1"
                   onClick={() => window.open(

@@ -77,11 +77,16 @@ export default function UserProfile() {
       ],
     },
     {
+      title: "Privacidad y datos",
+      items: [
+        { icon: Shield, label: "Mis datos y consentimientos", path: "/settings/privacy" },
+      ],
+    },
+    {
       title: "Soporte",
       items: [
         { icon: HelpCircle, label: "Centro de ayuda", path: "/support" },
         { icon: FileText, label: "Términos y condiciones", path: "/support" },
-        { icon: Shield, label: "Política de privacidad", path: "/support" },
       ],
     },
   ];

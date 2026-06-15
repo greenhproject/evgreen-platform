@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, lt, gt, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
 /**
  * ============================================================================
  * EVGreen Platform - Funciones de Base de Datos (db.ts)
@@ -7,7 +7,7 @@ import { eq, and, desc, gte, lte, lt, gt, sql, or, count, sum, ne, inArray, isNu
  * Contiene TODAS las queries SQL organizadas por dominio.
  * 
  * NOTA: columnas BD usan snake_case, código usa camelCase.
- * En queries raw usar: crowdfunding_status, payment_status, payment_reference
+ * En queries raw usar: status (crowdfunding_projects), payment_status, payment_reference
  * 
  * @author Green House Project
  * @version 2.0.0 (Marzo 2026)
@@ -97,6 +97,38 @@ import {
   userConsumptionProfile,
   UserConsumptionProfile,
   InsertUserConsumptionProfile,
+  stationFixedExpenses,
+  StationFixedExpense,
+  InsertStationFixedExpense,
+  financialSettlements,
+  FinancialSettlement,
+  InsertFinancialSettlement,
+  settlementExpenseItems,
+  SettlementExpenseItem,
+  InsertSettlementExpenseItem,
+  investorSettlementShares,
+  InvestorSettlementShare,
+  InsertInvestorSettlementShare,
+  operationalMetrics,
+  OperationalMetric,
+  InsertOperationalMetric,
+  maintenanceFundRecords,
+  InsertMaintenanceFundRecord,
+  refunds,
+  Refund,
+  InsertRefund,
+  claims,
+  Claim,
+  InsertClaim,
+  localAuthLists,
+  LocalAuthList,
+  InsertLocalAuthList,
+  localAuthEntries,
+  LocalAuthEntry,
+  InsertLocalAuthEntry,
+  offlineTransactions,
+  OfflineTransaction,
+  InsertOfflineTransaction,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -464,6 +496,60 @@ export async function deleteUser(userId: number) {
   await db.delete(users).where(eq(users.id, userId));
 }
 
+// Eliminar un inversionista: limpia participaciones, payouts, datos de onboarding y perfil de inversionista
+// Opcionalmente elimina la cuenta de usuario completa
+export async function deleteInvestor(userId: number, deleteUserAccount: boolean = false): Promise<{ deletedParticipations: number; deletedPayouts: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // 1. Eliminar participaciones de crowdfunding del inversionista
+  const partResult = await db.execute(sql`
+    DELETE FROM crowdfunding_participations WHERE investorId = ${userId}
+  `);
+  const deletedParticipations = (partResult[0] as any)?.affectedRows || 0;
+  
+  // 2. Eliminar liquidaciones (payouts) del inversionista
+  await db.delete(investorPayouts).where(eq(investorPayouts.investorId, userId));
+  const payoutResult = await db.execute(sql`
+    SELECT ROW_COUNT() as cnt
+  `);
+  const deletedPayouts = 0; // Approximate - delete already executed
+  
+  // 3. Limpiar campos de inversionista del usuario (resetear perfil)
+  await db.update(users).set({
+    role: deleteUserAccount ? 'user' : 'user', // Cambiar rol a usuario normal
+    investorType: null,
+    isFounder: false,
+    founderTitle: null,
+    founderOrder: null,
+    investorPhotoUrl: null,
+    investorQuote: null,
+    investorBio: null,
+    investorBadge: null,
+    investorJoinedAt: null,
+    investorTotalInvested: null,
+    investorShowInWall: false,
+    onboardingCompleted: false,
+    onboardingStep: 0,
+    onboardingStartedAt: null,
+    onboardingCompletedAt: null,
+    welcomeEmailSent: false,
+  } as any).where(eq(users.id, userId));
+  
+  // 4. Limpiar investorTypes JSON via SQL directo
+  await db.execute(sql`UPDATE users SET investorTypes = NULL WHERE id = ${userId}`);
+  
+  // 5. Si se solicita, eliminar la cuenta de usuario completa
+  if (deleteUserAccount) {
+    // Eliminar datos relacionados
+    await db.delete(wallets).where(eq(wallets.userId, userId));
+    await db.delete(notifications).where(eq(notifications.userId, userId));
+    await db.delete(users).where(eq(users.id, userId));
+  }
+  
+  return { deletedParticipations, deletedPayouts };
+}
+
 // Vincular un usuario existente con un nuevo openId de Manus OAuth
 export async function linkUserOpenId(userId: number, newOpenId: string) {
   const db = await getDb();
@@ -509,6 +595,92 @@ export async function getAllChargingStations(filters?: { ownerId?: number; isAct
     return db.select().from(chargingStations).where(and(...conditions)).orderBy(desc(chargingStations.createdAt));
   }
   return db.select().from(chargingStations).orderBy(desc(chargingStations.createdAt));
+}
+
+/**
+ * Get ALL station IDs an investor has access to:
+ * 1. Stations they own directly (ownerId = investorId)
+ * 2. Stations linked to crowdfunding projects where they have a participation
+ * Returns a deduplicated array of station IDs.
+ */
+export async function getInvestorAllStationIds(investorId: number): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // 1. Stations owned directly
+  const ownedStations = await db.select({ id: chargingStations.id })
+    .from(chargingStations)
+    .where(eq(chargingStations.ownerId, investorId));
+  
+  // 2. Stations linked via crowdfunding participations
+  const crowdfundingStations = await db.execute(sql`
+    SELECT DISTINCT cfp.stationId
+    FROM crowdfunding_participations cp
+    JOIN crowdfunding_projects cfp ON cp.projectId = cfp.id
+    WHERE cp.investorId = ${investorId}
+      AND cp.paymentStatus = 'COMPLETED'
+      AND cfp.stationId IS NOT NULL
+  `);
+  
+  const crowdfundingIds = ((crowdfundingStations as any)[0] || []).map((r: any) => r.stationId).filter(Boolean);
+  const ownedIds = ownedStations.map(s => s.id);
+  
+  // Deduplicate station IDs
+  return Array.from(new Set([...ownedIds, ...crowdfundingIds]));
+}
+
+/**
+ * Get ALL stations an investor has access to (owned + crowdfunding participations).
+ * Each station includes an `ownershipType` field: 'owned' | 'crowdfunding'
+ * and a `participationPercent` for crowdfunding stations.
+ */
+export async function getInvestorAllStations(investorId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // 1. Stations owned directly
+  const ownedStations = await db.select()
+    .from(chargingStations)
+    .where(eq(chargingStations.ownerId, investorId))
+    .orderBy(desc(chargingStations.createdAt));
+  
+  const ownedWithType = ownedStations.map(s => ({
+    ...s,
+    ownershipType: 'owned' as const,
+    participationPercent: '100.0000',
+    crowdfundingProjectId: null as number | null,
+    crowdfundingProjectName: null as string | null,
+  }));
+  
+  // 2. Stations linked via crowdfunding participations
+  const crowdfundingResult = await db.execute(sql`
+    SELECT 
+      cs.*,
+      cp.participationPercent,
+      cfp.id as crowdfundingProjectId,
+      cfp.name as crowdfundingProjectName
+    FROM crowdfunding_participations cp
+    JOIN crowdfunding_projects cfp ON cp.projectId = cfp.id
+    JOIN charging_stations cs ON cfp.stationId = cs.id
+    WHERE cp.investorId = ${investorId}
+      AND cp.paymentStatus = 'COMPLETED'
+      AND cfp.stationId IS NOT NULL
+    ORDER BY cs.createdAt DESC
+  `);
+  
+  const crowdfundingRows = ((crowdfundingResult as any)[0] || []).map((r: any) => ({
+    ...r,
+    ownershipType: 'crowdfunding' as const,
+    participationPercent: r.participationPercent || '0',
+    crowdfundingProjectId: r.crowdfundingProjectId,
+    crowdfundingProjectName: r.crowdfundingProjectName,
+  }));
+  
+  // Deduplicate: if a station appears in both (owner + crowdfunding), keep the owned version
+  const ownedIds = new Set(ownedStations.map(s => s.id));
+  const uniqueCrowdfunding = crowdfundingRows.filter((s: any) => !ownedIds.has(s.id));
+  
+  return [...ownedWithType, ...uniqueCrowdfunding];
 }
 
 export async function updateChargingStation(id: number, data: Partial<InsertChargingStation>) {
@@ -560,24 +732,36 @@ export async function getEvsesByStationId(stationId: number) {
   // Verificar reservas activas para cada EVSE
   const now = new Date();
   const in15Min = new Date(now.getTime() + 15 * 60 * 1000);
-  const enriched = await Promise.all(evseList.map(async (evse) => {
-    if (evse.status === 'AVAILABLE' || evse.status === 'RESERVED') {
-      // Buscar reservas activas para este EVSE
-      const activeResList = await db.select().from(reservations)
+  
+  // Batch: obtener TODAS las reservas activas de estos EVSEs en una sola query
+  const evseIds = evseList.map(e => e.id);
+  const allActiveReservations = evseIds.length > 0
+    ? await db.select().from(reservations)
         .where(and(
-          eq(reservations.evseId, evse.id),
+          inArray(reservations.evseId, evseIds),
           eq(reservations.status, 'ACTIVE')
         ))
-        .orderBy(reservations.startTime);
+        .orderBy(reservations.startTime)
+    : [];
+  
+  // Agrupar reservas por evseId
+  const reservationsByEvse = new Map<number, typeof allActiveReservations>();
+  for (const r of allActiveReservations) {
+    const list = reservationsByEvse.get(r.evseId) || [];
+    list.push(r);
+    reservationsByEvse.set(r.evseId, list);
+  }
+  
+  const enriched = evseList.map((evse) => {
+    if (evse.status === 'AVAILABLE' || evse.status === 'RESERVED') {
+      const activeResList = reservationsByEvse.get(evse.id) || [];
       
       if (activeResList.length > 0) {
-        // Buscar reserva que esté en curso o empiece en los próximos 15 min
         const currentOrImminent = activeResList.find(r => 
           r.startTime <= in15Min && r.endTime > now
         );
         
         if (currentOrImminent) {
-          // Reserva en curso o inminente: marcar como RESERVED
           return { 
             ...evse, 
             status: 'RESERVED' as typeof evse.status, 
@@ -587,12 +771,10 @@ export async function getEvsesByStationId(stationId: number) {
           };
         }
         
-        // Solo hay reservas futuras (>15 min): conector sigue AVAILABLE
-        // pero incluimos info de la próxima reserva para referencia
         const nextRes = activeResList[0];
         return { 
           ...evse, 
-          status: evse.status, // Mantener estado actual (AVAILABLE)
+          status: evse.status,
           activeReservationId: null, 
           activeReservationUserId: null,
           nextReservation: {
@@ -605,8 +787,88 @@ export async function getEvsesByStationId(stationId: number) {
       }
     }
     return { ...evse, activeReservationId: null, activeReservationUserId: null, nextReservation: null };
-  }));
+  });
   return enriched;
+}
+
+/**
+ * Batch version: Get all EVSEs for multiple stations in a single query.
+ * Eliminates N+1 pattern in stations.listAll.
+ */
+export async function getAllEvsesForStations(stationIds: number[]) {
+  const db = await getDb();
+  if (!db || stationIds.length === 0) return new Map<number, any[]>();
+  
+  // Single query for all EVSEs
+  const allEvses = await db.select().from(evses)
+    .where(inArray(evses.stationId, stationIds))
+    .orderBy(evses.stationId, evses.evseIdLocal);
+  
+  // Single query for all active reservations for these EVSEs
+  const evseIds = allEvses.map(e => e.id);
+  const allActiveReservations = evseIds.length > 0
+    ? await db.select().from(reservations)
+        .where(and(
+          inArray(reservations.evseId, evseIds),
+          eq(reservations.status, 'ACTIVE')
+        ))
+        .orderBy(reservations.startTime)
+    : [];
+  
+  // Group reservations by evseId
+  const reservationsByEvse = new Map<number, typeof allActiveReservations>();
+  for (const r of allActiveReservations) {
+    const list = reservationsByEvse.get(r.evseId) || [];
+    list.push(r);
+    reservationsByEvse.set(r.evseId, list);
+  }
+  
+  // Enrich and group by stationId
+  const now = new Date();
+  const in15Min = new Date(now.getTime() + 15 * 60 * 1000);
+  const result = new Map<number, any[]>();
+  
+  for (const evse of allEvses) {
+    let enriched: any = { ...evse, activeReservationId: null, activeReservationUserId: null, nextReservation: null };
+    
+    if (evse.status === 'AVAILABLE' || evse.status === 'RESERVED') {
+      const activeResList = reservationsByEvse.get(evse.id) || [];
+      if (activeResList.length > 0) {
+        const currentOrImminent = activeResList.find(r => 
+          r.startTime <= in15Min && r.endTime > now
+        );
+        if (currentOrImminent) {
+          enriched = { 
+            ...evse, 
+            status: 'RESERVED' as typeof evse.status, 
+            activeReservationId: currentOrImminent.id, 
+            activeReservationUserId: currentOrImminent.userId,
+            nextReservation: null,
+          };
+        } else {
+          const nextRes = activeResList[0];
+          enriched = { 
+            ...evse, 
+            status: evse.status,
+            activeReservationId: null, 
+            activeReservationUserId: null,
+            nextReservation: {
+              id: nextRes.id,
+              userId: nextRes.userId,
+              startTime: nextRes.startTime,
+              endTime: nextRes.endTime,
+            },
+          };
+        }
+      }
+    }
+    
+    const stationEvses = result.get(evse.stationId) || [];
+    stationEvses.push(enriched);
+    result.set(evse.stationId, stationEvses);
+  }
+  
+  return result;
 }
 
 export async function updateEvseStatus(id: number, status: Evse["status"]) {
@@ -769,9 +1031,8 @@ export async function getTransactionsByInvestor(investorId: number, filters?: { 
   const db = await getDb();
   if (!db) return { data: [], total: 0 };
   
-  // Primero obtener las estaciones del inversionista
-  const investorStations = await db.select({ id: chargingStations.id }).from(chargingStations).where(eq(chargingStations.ownerId, investorId));
-  const stationIds = investorStations.map(s => s.id);
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const stationIds = await getInvestorAllStationIds(investorId);
   
   if (stationIds.length === 0) return { data: [], total: 0 };
   
@@ -798,8 +1059,8 @@ export async function getAllTransactionsByInvestor(investorId: number, filters?:
   const db = await getDb();
   if (!db) return [];
   
-  const investorStations = await db.select({ id: chargingStations.id }).from(chargingStations).where(eq(chargingStations.ownerId, investorId));
-  const stationIds = investorStations.map(s => s.id);
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const stationIds = await getInvestorAllStationIds(investorId);
   
   if (stationIds.length === 0) return [];
   
@@ -1385,7 +1646,7 @@ export async function getInvestorPendingBalance(investorId: number) {
   
   // Obtener configuración de porcentaje
   const settings = await db.select().from(platformSettings).limit(1);
-  const investorPercentage = settings[0]?.investorPercentage || 80;
+  const investorPercentage = settings[0]?.investorPercentage || 70;
   
   // Obtener todas las transacciones completadas
   // Nota: El campo 'status' en el schema de drizzle mapea a 'transaction_status' en la BD
@@ -1524,19 +1785,20 @@ export async function getOcppMessageTypes() {
 }
 
 /**
- * Obtener conexiones activas basadas en logs de BD
+ * Obtener conexiones activas basadas en logs de BD (OPTIMIZADO)
  * Un cargador se considera activo si:
  * - Tiene un Heartbeat o StatusNotification en los últimos 5 minutos
  * - O tiene CONNECTION sin DISCONNECTION posterior
+ * 
+ * Usa queries batch en lugar de N+1 para rendimiento con 1M+ logs.
  */
 export async function getActiveConnectionsFromLogs() {
   const db = await getDb();
   if (!db) return [];
   
-  // Obtener cargadores con actividad en los últimos 5 minutos
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
   
-  // Obtener cargadores únicos con actividad reciente
+  // 1. Obtener cargadores únicos con actividad reciente (usa índice compuesto)
   const recentActivity = await db.selectDistinct({
     ocppIdentity: ocppLogs.ocppIdentity,
     stationId: ocppLogs.stationId,
@@ -1550,90 +1812,110 @@ export async function getActiveConnectionsFromLogs() {
       )
     );
   
-  // Obtener info adicional de cada cargador activo
-  const activeConnections = [];
+  if (recentActivity.length === 0) return [];
   
-  for (const activity of recentActivity) {
-    if (!activity.ocppIdentity) continue;
-    
-    // Verificar si hay una desconexión reciente (en los últimos 5 minutos)
-    const disconnection = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          eq(ocppLogs.messageType, 'DISCONNECTION'),
-          gte(ocppLogs.createdAt, fiveMinutesAgo)
-        )
+  const identities = recentActivity.map(a => a.ocppIdentity).filter(Boolean) as string[];
+  if (identities.length === 0) return [];
+  
+  // 2. Batch: obtener desconexiones recientes para TODOS los cargadores activos
+  const recentDisconnections = await db.select({
+    ocppIdentity: ocppLogs.ocppIdentity,
+    createdAt: ocppLogs.createdAt,
+  })
+    .from(ocppLogs)
+    .where(
+      and(
+        inArray(ocppLogs.ocppIdentity, identities),
+        eq(ocppLogs.messageType, 'DISCONNECTION'),
+        gte(ocppLogs.createdAt, fiveMinutesAgo)
       )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(1);
-    
-    // Obtener la última actividad (conexión o mensaje)
-    const lastActivityLog = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          inArray(ocppLogs.messageType, ['Heartbeat', 'StatusNotification', 'BootNotification', 'CONNECTION'])
-        )
-      )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(1);
-    
-    // Si hay desconexión más reciente que la última actividad, está desconectado
-    if (disconnection.length > 0 && lastActivityLog.length > 0) {
-      if (disconnection[0].createdAt > lastActivityLog[0].createdAt) {
-        continue; // Está desconectado
-      }
-      // Si la última actividad es más reciente que la desconexión, se reconectó
-    } else if (disconnection.length > 0 && lastActivityLog.length === 0) {
-      continue; // Hay desconexión sin actividad posterior
+    )
+    .orderBy(desc(ocppLogs.createdAt));
+  
+  // Agrupar: última desconexión por identity
+  const lastDisconnectionMap = new Map<string, Date>();
+  for (const d of recentDisconnections) {
+    if (d.ocppIdentity && !lastDisconnectionMap.has(d.ocppIdentity)) {
+      lastDisconnectionMap.set(d.ocppIdentity, d.createdAt);
     }
-    
-    // Obtener el último BootNotification para info del cargador
-    const bootInfo = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          eq(ocppLogs.messageType, 'BootNotification'),
-          eq(ocppLogs.direction, 'IN')
-        )
+  }
+  
+  // 3. Batch: obtener última actividad para TODOS los cargadores
+  const lastActivities = await db.select({
+    ocppIdentity: ocppLogs.ocppIdentity,
+    createdAt: ocppLogs.createdAt,
+  })
+    .from(ocppLogs)
+    .where(
+      and(
+        inArray(ocppLogs.ocppIdentity, identities),
+        inArray(ocppLogs.messageType, ['Heartbeat', 'StatusNotification', 'BootNotification', 'CONNECTION'])
       )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(1);
-    
-    // Obtener el último Heartbeat
-    const lastHeartbeat = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          eq(ocppLogs.messageType, 'Heartbeat')
-        )
+    )
+    .orderBy(desc(ocppLogs.createdAt))
+    .limit(identities.length * 2); // Suficiente para obtener al menos 1 por identity
+  
+  const lastActivityMap = new Map<string, Date>();
+  for (const a of lastActivities) {
+    if (a.ocppIdentity && !lastActivityMap.has(a.ocppIdentity)) {
+      lastActivityMap.set(a.ocppIdentity, a.createdAt);
+    }
+  }
+  
+  // 4. Filtrar desconectados
+  const activeIdentities = identities.filter(id => {
+    const lastDisc = lastDisconnectionMap.get(id);
+    const lastAct = lastActivityMap.get(id);
+    if (!lastDisc) return true; // Sin desconexión = activo
+    if (!lastAct) return false; // Desconexión sin actividad = desconectado
+    return lastAct > lastDisc; // Actividad más reciente que desconexión = reconectado
+  });
+  
+  if (activeIdentities.length === 0) return [];
+  
+  // 5. Batch: obtener logs relevantes para todos los activos en UNA query
+  //    (BootNotification, Heartbeat, StatusNotification, CONNECTION)
+  const relevantLogs = await db.select()
+    .from(ocppLogs)
+    .where(
+      and(
+        inArray(ocppLogs.ocppIdentity, activeIdentities),
+        inArray(ocppLogs.messageType, ['BootNotification', 'Heartbeat', 'StatusNotification', 'CONNECTION'])
       )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(1);
+    )
+    .orderBy(desc(ocppLogs.createdAt))
+    .limit(activeIdentities.length * 15); // ~15 logs por cargador es suficiente
+  
+  // Agrupar por identity y tipo
+  const logsByIdentity = new Map<string, typeof relevantLogs>();
+  for (const log of relevantLogs) {
+    if (!log.ocppIdentity) continue;
+    const list = logsByIdentity.get(log.ocppIdentity) || [];
+    list.push(log);
+    logsByIdentity.set(log.ocppIdentity, list);
+  }
+  
+  // 6. Construir resultado
+  const activeConnections = [];
+  const activityMap = new Map(recentActivity.map(a => [a.ocppIdentity, a]));
+  
+  for (const identity of activeIdentities) {
+    const activity = activityMap.get(identity);
+    if (!activity) continue;
     
-    // Obtener estados de conectores
-    const connectorStatuses = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          eq(ocppLogs.messageType, 'StatusNotification'),
-          eq(ocppLogs.direction, 'IN')
-        )
-      )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(10);
+    const logs = logsByIdentity.get(identity) || [];
     
-    // Construir objeto de conexión
-    const bootPayload = bootInfo[0]?.payload as any;
+    const bootLog = logs.find(l => l.messageType === 'BootNotification' && l.direction === 'IN');
+    const heartbeatLog = logs.find(l => l.messageType === 'Heartbeat');
+    const connectionLog = logs.find(l => l.messageType === 'CONNECTION');
+    const statusLogs = logs.filter(l => l.messageType === 'StatusNotification' && l.direction === 'IN').slice(0, 10);
+    
+    const bootPayload = bootLog?.payload as any;
+    const connectionPayload = connectionLog?.payload as any;
+    const ocppVersion = connectionPayload?.ocppVersion || '1.6';
+    
     const connectorStatusMap: Record<number, string> = {};
-    
-    for (const cs of connectorStatuses) {
+    for (const cs of statusLogs) {
       const payload = cs.payload as any;
       const connectorId = payload?.connectorId || payload?.evseId || 0;
       if (!connectorStatusMap[connectorId]) {
@@ -1641,29 +1923,14 @@ export async function getActiveConnectionsFromLogs() {
       }
     }
     
-    // Determinar versión OCPP
-    const connectionLog = await db.select()
-      .from(ocppLogs)
-      .where(
-        and(
-          eq(ocppLogs.ocppIdentity, activity.ocppIdentity),
-          eq(ocppLogs.messageType, 'CONNECTION')
-        )
-      )
-      .orderBy(desc(ocppLogs.createdAt))
-      .limit(1);
-    
-    const connectionPayload = connectionLog[0]?.payload as any;
-    const ocppVersion = connectionPayload?.ocppVersion || '1.6';
-    
-    const lastActivityTime = lastActivityLog[0]?.createdAt || new Date();
+    const lastActivityTime = lastActivityMap.get(identity) || new Date();
     
     activeConnections.push({
-      ocppIdentity: activity.ocppIdentity,
+      ocppIdentity: identity,
       ocppVersion,
       stationId: activity.stationId,
-      connectedAt: connectionLog[0]?.createdAt?.toISOString() || lastActivityTime.toISOString(),
-      lastHeartbeat: lastHeartbeat[0]?.createdAt?.toISOString() || lastActivityTime.toISOString(),
+      connectedAt: connectionLog?.createdAt?.toISOString() || lastActivityTime.toISOString(),
+      lastHeartbeat: heartbeatLog?.createdAt?.toISOString() || lastActivityTime.toISOString(),
       lastMessage: lastActivityTime.toISOString(),
       connectorStatuses: connectorStatusMap,
       bootInfo: bootPayload ? {
@@ -1672,7 +1939,7 @@ export async function getActiveConnectionsFromLogs() {
         serialNumber: bootPayload.chargePointSerialNumber || bootPayload.chargeBoxSerialNumber || bootPayload.chargingStation?.serialNumber,
         firmwareVersion: bootPayload.firmwareVersion || bootPayload.chargingStation?.firmwareVersion,
       } : undefined,
-      isConnected: true, // Si llegó aquí, está activo
+      isConnected: true,
     });
   }
   
@@ -1687,9 +1954,9 @@ export async function getInvestorStats(investorId: number, startDate?: Date, end
   const db = await getDb();
   if (!db) return null;
   
-  // Obtener estaciones del inversionista
-  const investorStations = await db.select().from(chargingStations).where(eq(chargingStations.ownerId, investorId));
-  const stationIds = investorStations.map(s => s.id);
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const allStations = await getInvestorAllStations(investorId);
+  const stationIds = allStations.map(s => s.id);
   
   if (stationIds.length === 0) {
     return {
@@ -1719,7 +1986,7 @@ export async function getInvestorStats(investorId: number, startDate?: Date, end
   const platformFee = txs.reduce((sum, tx) => sum + parseFloat(tx.platformFee || "0"), 0);
   
   return {
-    totalStations: investorStations.length,
+    totalStations: allStations.length,
     totalEvses: stationEvses.length,
     totalTransactions: txs.length,
     totalKwh,
@@ -2165,14 +2432,16 @@ export async function getInvestorAnalytics(
     case "year": startDate.setFullYear(startDate.getFullYear() - 1); break;
   }
   
-  // Obtener estaciones del inversionista
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const allInvestorStationIds = await getInvestorAllStationIds(investorId);
   let investorStations;
   if (stationIds && stationIds.length > 0) {
+    // Filtrar solo las estaciones solicitadas que pertenezcan al inversionista
     investorStations = await db.select().from(chargingStations)
-      .where(and(eq(chargingStations.ownerId, investorId), inArray(chargingStations.id, stationIds)));
+      .where(and(inArray(chargingStations.id, allInvestorStationIds), inArray(chargingStations.id, stationIds)));
   } else {
     investorStations = await db.select().from(chargingStations)
-      .where(eq(chargingStations.ownerId, investorId));
+      .where(inArray(chargingStations.id, allInvestorStationIds));
   }
   
   const ids = investorStations.map(s => s.id);
@@ -2954,6 +3223,102 @@ export async function getAdminDashboardMetrics() {
   // Total de usuarios
   const totalUsers = await db.select({ count: count() }).from(users);
   
+  // Ingresos por mes (últimos 6 meses)
+  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  const revenueByMonth = await db.select({
+    month: sql<number>`MONTH(startTime)`,
+    year: sql<number>`YEAR(startTime)`,
+    totalRevenue: sum(transactions.totalCost),
+    totalKwh: sum(transactions.kwhConsumed),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, sixMonthsAgo)
+      )
+    )
+    .groupBy(sql`YEAR(startTime)`, sql`MONTH(startTime)`)
+    .orderBy(sql`YEAR(startTime)`, sql`MONTH(startTime)`);
+  
+  // Energía por día de la semana (últimas 4 semanas)
+  const fourWeeksAgo = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
+  const energyByDayOfWeek = await db.select({
+    dayOfWeek: sql<number>`DAYOFWEEK(startTime)`,
+    totalKwh: sum(transactions.kwhConsumed),
+    count: count(),
+  })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "COMPLETED"),
+        gte(transactions.startTime, fourWeeksAgo)
+      )
+    )
+    .groupBy(sql`DAYOFWEEK(startTime)`)
+    .orderBy(sql`DAYOFWEEK(startTime)`);
+  
+  // Formatear datos de ingresos mensuales
+  const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  const revenueChartData = revenueByMonth.map((row) => ({
+    name: monthNames[(Number(row.month) || 1) - 1],
+    month: Number(row.month),
+    year: Number(row.year),
+    value: Number(row.totalRevenue) || 0,
+    kwh: Number(row.totalKwh) || 0,
+  }));
+  
+  // Formatear datos de energía semanal
+  const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  // MySQL DAYOFWEEK: 1=Sunday, 2=Monday, ..., 7=Saturday
+  const energyChartData = dayNames.map((name, idx) => {
+    const dayNum = idx + 1; // 1=Dom, 2=Lun, ..., 7=Sáb
+    const found = energyByDayOfWeek.find((r) => Number(r.dayOfWeek) === dayNum);
+    return {
+      name,
+      kwh: Number(found?.totalKwh) || 0,
+      sessions: Number(found?.count) || 0,
+    };
+  });
+  
+  // Tendencia de registros de usuarios (últimos 6 meses)
+  const usersByMonth = await db.select({
+    month: sql<number>`MONTH(createdAt)`,
+    year: sql<number>`YEAR(createdAt)`,
+    count: count(),
+  })
+    .from(users)
+    .where(gte(users.createdAt, sixMonthsAgo))
+    .groupBy(sql`YEAR(createdAt)`, sql`MONTH(createdAt)`)
+    .orderBy(sql`YEAR(createdAt)`, sql`MONTH(createdAt)`);
+  
+  const usersChartData = usersByMonth.map((row) => ({
+    name: monthNames[(Number(row.month) || 1) - 1],
+    month: Number(row.month),
+    year: Number(row.year),
+    users: Number(row.count) || 0,
+  }));
+  
+  // Distribución de ingresos por estación (top 8)
+  const revenueByStation = await db.select({
+    stationId: transactions.stationId,
+    stationName: chargingStations.name,
+    totalRevenue: sum(transactions.totalCost),
+    totalSessions: count(),
+  })
+    .from(transactions)
+    .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
+    .where(eq(transactions.status, "COMPLETED"))
+    .groupBy(transactions.stationId, chargingStations.name)
+    .orderBy(desc(sum(transactions.totalCost)))
+    .limit(8);
+  
+  const stationDistributionData = revenueByStation.map((row) => ({
+    name: row.stationName || `Estación ${row.stationId}`,
+    value: Number(row.totalRevenue) || 0,
+    sessions: Number(row.totalSessions) || 0,
+  }));
+  
   return {
     totalTransactions: totalTransactions[0]?.count || 0,
     activeTransactions: activeTransactions[0]?.count || 0,
@@ -2975,6 +3340,10 @@ export async function getAdminDashboardMetrics() {
     users: {
       total: totalUsers[0]?.count || 0,
     },
+    revenueChart: revenueChartData,
+    energyChart: energyChartData,
+    usersChart: usersChartData,
+    stationDistribution: stationDistributionData,
   };
 }
 
@@ -2985,12 +3354,8 @@ export async function getInvestorDashboardMetrics(investorId: number) {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   
-  // Obtener estaciones del inversor
-  const investorStations = await db.select({ id: chargingStations.id })
-    .from(chargingStations)
-    .where(eq(chargingStations.ownerId, investorId));
-  
-  const stationIds = investorStations.map(s => s.id);
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const stationIds = await getInvestorAllStationIds(investorId);
   
   if (stationIds.length === 0) {
     return {
@@ -3798,11 +4163,11 @@ export async function getInvestorStationsDemand(investorId: number): Promise<Arr
   const db = await getDb();
   if (!db) return [];
   
-  // Obtener estaciones del inversor
-  const investorStations = await db.select().from(chargingStations).where(eq(chargingStations.ownerId, investorId));
+  // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
+  const allStations = await getInvestorAllStations(investorId);
   
   const results = [];
-  for (const station of investorStations) {
+  for (const station of allStations) {
     const demandStats = await getStationDemandStats(station.id);
     results.push({
       stationId: station.id,
@@ -3821,8 +4186,8 @@ export async function getInvestorStationsDemand(investorId: number): Promise<Arr
 
 export async function getRevenueShareConfig(): Promise<{ investorPercent: number; platformPercent: number }> {
   const settings = await getPlatformSettings();
-  const investorPercent = settings?.investorPercentage ?? 80;
-  const platformPercent = settings?.platformFeePercentage ?? 20;
+  const investorPercent = settings?.investorPercentage ?? 70;
+  const platformPercent = settings?.platformFeePercentage ?? 30;
   return { investorPercent, platformPercent };
 }
 
@@ -3972,6 +4337,9 @@ export interface CrowdfundingParticipation {
 }
 
 // Obtener todos los proyectos de crowdfunding (públicos)
+// SEGURIDAD: Whitelist de status válidos para prevenir SQL injection
+const VALID_CROWDFUNDING_STATUSES = ['OPEN', 'ACTIVE', 'IN_PROGRESS', 'FUNDED', 'COMPLETED', 'CANCELLED', 'CLOSED', 'DRAFT'] as const;
+
 export async function getCrowdfundingProjects(options?: {
   status?: string;
   includePrivate?: boolean;
@@ -3980,23 +4348,30 @@ export async function getCrowdfundingProjects(options?: {
   if (!db) return [];
   
   try {
+    // Validar status contra whitelist para prevenir SQL injection
+    const sanitizedStatus = options?.status && VALID_CROWDFUNDING_STATUSES.includes(options.status as any)
+      ? options.status
+      : null;
+    
     let query = `
       SELECT 
         p.*,
-        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
+        (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount,
+        s.spaceName as linkedSpaceName,
+        s.city as linkedSpaceCity,
+        s.submitterName as linkedSubmitterName,
+        s.space_status as linkedSpaceStatus,
+        COALESCE(s.latitude, cs.latitude) as linkedLatitude,
+        COALESCE(s.longitude, cs.longitude) as linkedLongitude
       FROM crowdfunding_projects p
+      LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
+      LEFT JOIN charging_stations cs ON cs.id = p.stationId
     `;
     
-    const conditions = [];
-    
-    if (options?.status) {
-      conditions.push(`p.status = '${options.status}'`);
+    if (sanitizedStatus) {
+      query += ` WHERE p.status = '${sanitizedStatus}'`;
     } else if (!options?.includePrivate) {
-      conditions.push(`p.status != 'DRAFT'`);
-    }
-    
-    if (conditions.length > 0) {
-      query += ` WHERE ${conditions.join(' AND ')}`;
+      query += ` WHERE p.status != 'DRAFT'`;
     }
     
     query += ` ORDER BY p.priority ASC, p.createdAt DESC`;
@@ -4017,14 +4392,14 @@ export async function getCrowdfundingProjectById(projectId: number): Promise<Cro
   if (!db) return null;
   
   try {
-    const result = await db.execute(sql.raw(`
+    const result = await db.execute(sql`
       SELECT 
         p.*,
         (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount
       FROM crowdfunding_projects p
       WHERE p.id = ${projectId}
       LIMIT 1
-    `));
+    `);
     
     const rows = (result as any)[0] as CrowdfundingProject[];
     const row = rows[0] || null;
@@ -4207,37 +4582,93 @@ export async function getInvestorParticipations(investorId: number): Promise<any
         p.totalPowerKw as projectTotalPowerKw,
         p.hasSolarPanels as projectHasSolarPanels,
         p.stationId as projectStationId,
-        p.estimatedRoiPercent as projectEstimatedRoiPercent
+        p.estimatedRoiPercent as projectEstimatedRoiPercent,
+        cs.isOnline as stationIsOnline,
+        cs.isActive as stationIsActive,
+        cs.name as stationName,
+        cs.investorSharePercent as stationInvestorSharePercent,
+        cs.evgreenSharePercent as stationEvgreenSharePercent,
+        cs.hostSharePercent as stationHostSharePercent,
+        cs.energyPurchaseCostPerKwh as stationEnergyCostPerKwh
       FROM crowdfunding_participations cp
       LEFT JOIN crowdfunding_projects p ON cp.projectId = p.id
+      LEFT JOIN charging_stations cs ON p.stationId = cs.id
       WHERE cp.investorId = ${investorId}
       ORDER BY cp.createdAt DESC
     `);
     
     // Transformar los resultados para incluir el proyecto como objeto anidado
     const rows = ((result as any)[0] as any[]) || [];
-    return rows.map(row => ({
-      id: row.id,
-      projectId: row.projectId,
-      investorId: row.investorId,
-      amount: row.amount,
-      participationPercent: row.participationPercent,
-      paymentStatus: row.paymentStatus,
-      paymentDate: row.paymentDate,
-      createdAt: row.createdAt,
-      project: {
-        name: row.projectName,
-        city: row.projectCity,
-        zone: row.projectZone,
-        status: row.projectStatus,
-        targetAmount: row.projectTargetAmount,
-        raisedAmount: row.projectRaisedAmount,
-        totalPowerKw: row.projectTotalPowerKw,
-        hasSolarPanels: !!row.projectHasSolarPanels,
-        stationId: row.projectStationId,
-        estimatedRoiPercent: row.projectEstimatedRoiPercent,
+    // For each participation, get real transaction-based earnings
+    const enrichedRows = [];
+    for (const row of rows) {
+      let realEarnings = { totalGross: 0, totalNet: 0, txCount: 0, totalKwh: 0 };
+      if (row.projectStationId) {
+        try {
+          const earningsResult = await db.execute(sql`
+            SELECT 
+              COUNT(*) as txCount,
+              COALESCE(SUM(totalCost), 0) as totalGross,
+              COALESCE(SUM(kwhConsumed), 0) as totalKwh
+            FROM transactions
+            WHERE stationId = ${row.projectStationId}
+              AND status = 'COMPLETED'
+          `);
+          const er = (earningsResult as any)[0]?.[0] || {};
+          realEarnings.totalGross = Number(er.totalGross || 0);
+          realEarnings.txCount = Number(er.txCount || 0);
+          realEarnings.totalKwh = Number(er.totalKwh || 0);
+          
+          // Waterfall correcto del modelo colectivo:
+          // Margen = (Ingreso bruto - Costo energía) × 90% (después aliado) × 70% (tu parte)
+          // El 70% ya incluye costos operativos (economías de escala)
+          const energyCost = realEarnings.totalKwh * Number(row.stationEnergyCostPerKwh || 850);
+          const grossMargin = Math.max(0, realEarnings.totalGross - energyCost);
+          const hostPct = Number(row.stationHostSharePercent || 10);
+          const netAfterHost = grossMargin * (1 - hostPct / 100);
+          // 70% es la parte del inversionista (costos op incluidos en modelo colectivo)
+          const investorModelPct = 0.70;
+          const investorPool = netAfterHost * investorModelPct;
+          const myPct = Number(row.participationPercent || 0);
+          realEarnings.totalNet = investorPool * (myPct / 100);
+        } catch (e) {
+          console.error('[DB] Error getting real earnings for participation:', e);
+        }
       }
-    }));
+      
+      enrichedRows.push({
+        id: row.id,
+        projectId: row.projectId,
+        investorId: row.investorId,
+        amount: row.amount,
+        participationPercent: row.participationPercent,
+        paymentStatus: row.paymentStatus,
+        paymentDate: row.paymentDate,
+        createdAt: row.createdAt,
+        project: {
+          name: row.projectName,
+          city: row.projectCity,
+          zone: row.projectZone,
+          status: row.projectStatus,
+          targetAmount: row.projectTargetAmount,
+          raisedAmount: row.projectRaisedAmount,
+          totalPowerKw: row.projectTotalPowerKw,
+          hasSolarPanels: !!row.projectHasSolarPanels,
+          stationId: row.projectStationId,
+          estimatedRoiPercent: row.projectEstimatedRoiPercent,
+        },
+        station: {
+          isOnline: !!row.stationIsOnline,
+          isActive: !!row.stationIsActive,
+          name: row.stationName || null,
+          investorSharePercent: Number(row.stationInvestorSharePercent || 70),
+          evgreenSharePercent: Number(row.stationEvgreenSharePercent || 30),
+          hostSharePercent: Number(row.stationHostSharePercent || 10),
+        },
+        realEarnings,
+      });
+    }
+    return enrichedRows;
   } catch (error) {
     console.error('[DB] Error getting investor participations:', error);
     return [];
@@ -5997,4 +6428,1389 @@ export async function adminManualPayDebt(debtId: number, paymentReference: strin
     .where(eq(userDebts.id, debtId));
 
   console.log(`[Debt] Admin manual payment for debt #${debtId}: $${debt.originalAmount} COP (ref: ${paymentReference})`);
+}
+
+
+// ============================================================================
+// CROWDFUNDING - FUNCIONES ADICIONALES
+// ============================================================================
+
+// Buscar usuarios por nombre o email (para vincular inversionistas)
+export async function searchUsers(query: string, limit: number = 10): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  try {
+    const searchTerm = `%${query}%`;
+    const results = await db.select().from(users)
+      .where(
+        or(
+          like(users.name, searchTerm),
+          like(users.email, searchTerm),
+          like(users.phone, searchTerm),
+          like(users.idTag, searchTerm),
+        )
+      )
+      .orderBy(asc(users.name))
+      .limit(limit);
+    return results;
+  } catch (error) {
+    console.error('[DB] Error searching users:', error);
+    return [];
+  }
+}
+
+// Eliminar participación de crowdfunding
+export async function deleteCrowdfundingParticipation(participationId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.execute(sql`
+    DELETE FROM crowdfunding_participations WHERE id = ${participationId}
+  `);
+}
+
+// Eliminar todas las participaciones de un proyecto de crowdfunding
+export async function deleteCrowdfundingProjectParticipations(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.execute(sql`
+    DELETE FROM crowdfunding_participations WHERE projectId = ${projectId}
+  `);
+}
+
+// Eliminar un proyecto de crowdfunding
+export async function deleteCrowdfundingProject(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.execute(sql`
+    DELETE FROM crowdfunding_projects WHERE id = ${projectId}
+  `);
+}
+
+// Actualizar participación de crowdfunding (campos extendidos: monto, estado, etc.)
+export async function updateCrowdfundingParticipationFull(
+  participationId: number,
+  data: {
+    amount?: number;
+    participationPercent?: number;
+    paymentStatus?: string;
+    paymentDate?: Date | null;
+    paymentReference?: string;
+    investorId?: number;
+  }
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const setClauses: string[] = [];
+  
+  if (data.amount !== undefined) {
+    setClauses.push(`amount = ${data.amount}`);
+  }
+  if (data.participationPercent !== undefined) {
+    setClauses.push(`participationPercent = ${data.participationPercent}`);
+  }
+  if (data.paymentStatus !== undefined) {
+    setClauses.push(`paymentStatus = '${data.paymentStatus.replace(/'/g, "''")}'`);
+  }
+  if (data.paymentDate !== undefined) {
+    if (data.paymentDate === null) {
+      setClauses.push(`paymentDate = NULL`);
+    } else {
+      setClauses.push(`paymentDate = '${data.paymentDate.toISOString().slice(0, 19).replace('T', ' ')}'`);
+    }
+  }
+  if (data.paymentReference !== undefined) {
+    setClauses.push(`paymentReference = '${data.paymentReference.replace(/'/g, "''")}'`);
+  }
+  if (data.investorId !== undefined) {
+    setClauses.push(`investorId = ${data.investorId}`);
+  }
+  
+  if (setClauses.length === 0) return;
+  
+  await db.execute(sql.raw(`
+    UPDATE crowdfunding_participations 
+    SET ${setClauses.join(', ')}
+    WHERE id = ${participationId}
+  `));
+}
+
+
+// ============================================================================
+// FINANCIAL SYSTEM - Gastos Fijos, Liquidaciones, Distribución, Métricas SLA
+// ============================================================================
+
+// --- STATION FIXED EXPENSES (CRUD) ---
+
+export async function createFixedExpense(data: InsertStationFixedExpense): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(stationFixedExpenses).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getFixedExpensesByStation(stationId: number): Promise<StationFixedExpense[]> {
+  const db = (await getDb())!;
+  return db.select().from(stationFixedExpenses)
+    .where(eq(stationFixedExpenses.stationId, stationId))
+    .orderBy(asc(stationFixedExpenses.waterfallPriority));
+}
+
+export async function getActiveFixedExpensesByStation(stationId: number): Promise<StationFixedExpense[]> {
+  const db = (await getDb())!;
+  return db.select().from(stationFixedExpenses)
+    .where(and(
+      eq(stationFixedExpenses.stationId, stationId),
+      eq(stationFixedExpenses.isActive, true),
+    ))
+    .orderBy(asc(stationFixedExpenses.waterfallPriority));
+}
+
+export async function updateFixedExpense(id: number, data: Partial<InsertStationFixedExpense>): Promise<void> {
+  const db = (await getDb())!;
+  await db.update(stationFixedExpenses).set(data).where(eq(stationFixedExpenses.id, id));
+}
+
+export async function deleteFixedExpense(id: number): Promise<void> {
+  const db = (await getDb())!;
+  await db.delete(stationFixedExpenses).where(eq(stationFixedExpenses.id, id));
+}
+
+export async function getFixedExpenseById(id: number): Promise<StationFixedExpense | undefined> {
+  const db = (await getDb())!;
+  const rows = await db.select().from(stationFixedExpenses).where(eq(stationFixedExpenses.id, id));
+  return rows[0];
+}
+
+// --- FINANCIAL SETTLEMENTS ---
+
+export async function createSettlement(data: InsertFinancialSettlement): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(financialSettlements).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getSettlementById(id: number): Promise<FinancialSettlement | undefined> {
+  const db = (await getDb())!;
+  const rows = await db.select().from(financialSettlements).where(eq(financialSettlements.id, id));
+  return rows[0];
+}
+
+export async function getSettlementsByStation(stationId: number, limit = 20): Promise<FinancialSettlement[]> {
+  const db = (await getDb())!;
+  return db.select().from(financialSettlements)
+    .where(eq(financialSettlements.stationId, stationId))
+    .orderBy(desc(financialSettlements.periodEnd))
+    .limit(limit);
+}
+
+export async function updateSettlement(id: number, data: Partial<InsertFinancialSettlement>): Promise<void> {
+  const db = (await getDb())!;
+  await db.update(financialSettlements).set(data).where(eq(financialSettlements.id, id));
+}
+
+export async function getSettlementWithDetails(id: number) {
+  const db = (await getDb())!;
+  const settlement = await db.select().from(financialSettlements).where(eq(financialSettlements.id, id));
+  if (!settlement[0]) return null;
+  
+  const expenses = await db.select().from(settlementExpenseItems)
+    .where(eq(settlementExpenseItems.settlementId, id))
+    .orderBy(asc(settlementExpenseItems.waterfallPriority));
+  
+  const shares = await db.select().from(investorSettlementShares)
+    .where(eq(investorSettlementShares.settlementId, id));
+  
+  // Get investor names
+  const sharesWithNames = await Promise.all(shares.map(async (share) => {
+    const userRows = await db.select({ name: users.name, email: users.email })
+      .from(users).where(eq(users.id, share.investorUserId));
+    return {
+      ...share,
+      investorName: userRows[0]?.name || 'Desconocido',
+      investorEmail: userRows[0]?.email || '',
+    };
+  }));
+  
+  return {
+    ...settlement[0],
+    expenseItems: expenses,
+    investorShares: sharesWithNames,
+  };
+}
+
+// --- SETTLEMENT EXPENSE ITEMS ---
+
+export async function createSettlementExpenseItem(data: InsertSettlementExpenseItem): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(settlementExpenseItems).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getSettlementExpenseItems(settlementId: number): Promise<SettlementExpenseItem[]> {
+  const db = (await getDb())!;
+  return db.select().from(settlementExpenseItems)
+    .where(eq(settlementExpenseItems.settlementId, settlementId))
+    .orderBy(asc(settlementExpenseItems.waterfallPriority));
+}
+
+// --- INVESTOR SETTLEMENT SHARES ---
+
+export async function createInvestorShare(data: InsertInvestorSettlementShare): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(investorSettlementShares).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getInvestorShares(settlementId: number): Promise<InvestorSettlementShare[]> {
+  const db = (await getDb())!;
+  return db.select().from(investorSettlementShares)
+    .where(eq(investorSettlementShares.settlementId, settlementId));
+}
+
+export async function getInvestorSettlementHistory(investorUserId: number, limit = 20) {
+  const db = (await getDb())!;
+  const shares = await db.select().from(investorSettlementShares)
+    .where(eq(investorSettlementShares.investorUserId, investorUserId))
+    .orderBy(desc(investorSettlementShares.createdAt))
+    .limit(limit);
+  
+  // Enrich with settlement data
+  const enriched = await Promise.all(shares.map(async (share) => {
+    const settlement = await db.select().from(financialSettlements)
+      .where(eq(financialSettlements.id, share.settlementId));
+    const station = settlement[0] ? await db.select({ name: chargingStations.name })
+      .from(chargingStations).where(eq(chargingStations.id, settlement[0].stationId)) : [];
+    return {
+      ...share,
+      settlement: settlement[0] || null,
+      stationName: station[0]?.name || 'Desconocida',
+    };
+  }));
+  
+  return enriched;
+}
+
+export async function updateInvestorShare(id: number, data: Partial<InsertInvestorSettlementShare>): Promise<void> {
+  const db = (await getDb())!;
+  await db.update(investorSettlementShares).set(data).where(eq(investorSettlementShares.id, id));
+}
+
+// --- OPERATIONAL METRICS ---
+
+export async function createOperationalMetric(data: InsertOperationalMetric): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(operationalMetrics).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getOperationalMetricsByStation(stationId: number, limit = 12): Promise<OperationalMetric[]> {
+  const db = (await getDb())!;
+  return db.select().from(operationalMetrics)
+    .where(eq(operationalMetrics.stationId, stationId))
+    .orderBy(desc(operationalMetrics.periodEnd))
+    .limit(limit);
+}
+
+export async function getLatestOperationalMetric(stationId: number): Promise<OperationalMetric | undefined> {
+  const db = (await getDb())!;
+  const rows = await db.select().from(operationalMetrics)
+    .where(eq(operationalMetrics.stationId, stationId))
+    .orderBy(desc(operationalMetrics.periodEnd))
+    .limit(1);
+  return rows[0];
+}
+
+export async function updateOperationalMetric(id: number, data: Partial<InsertOperationalMetric>): Promise<void> {
+  const db = (await getDb())!;
+  await db.update(operationalMetrics).set(data).where(eq(operationalMetrics.id, id));
+}
+
+// --- FINANCIAL AGGREGATION HELPERS ---
+
+/**
+ * Get revenue data for a station within a date range (from completed transactions)
+ * Now includes breakdown by revenue source: energy, penalties (overstay), reservations
+ */
+export async function getStationRevenueForPeriod(stationId: number, startDate: Date, endDate: Date) {
+  const db = (await getDb())!;
+  const startStr = startDate.toISOString().slice(0, 19).replace('T', ' ');
+  const endStr = endDate.toISOString().slice(0, 19).replace('T', ' ');
+
+  // 1. Transaction revenue (energy sales + overstay penalties)
+  const txResults = await db.execute(sql.raw(`
+    SELECT 
+      COUNT(*) as totalSessions,
+      COALESCE(SUM(CAST(totalCost AS DECIMAL(14,2))), 0) as grossRevenue,
+      COALESCE(SUM(CAST(kwhConsumed AS DECIMAL(12,4))), 0) as totalKwh,
+      COALESCE(AVG(CAST(appliedPricePerKwh AS DECIMAL(10,2))), 0) as avgPricePerKwh,
+      COALESCE(SUM(CAST(energyCost AS DECIMAL(14,2))), 0) as energyRevenue,
+      COALESCE(SUM(CAST(overstayCost AS DECIMAL(14,2))), 0) as overstayRevenue,
+      COALESCE(SUM(CAST(sessionCost AS DECIMAL(14,2))), 0) as sessionRevenue,
+      COALESCE(SUM(CAST(timeCost AS DECIMAL(14,2))), 0) as timeRevenue
+    FROM transactions 
+    WHERE stationId = ${stationId}
+      AND transaction_status = 'COMPLETED'
+      AND startTime >= '${startStr}'
+      AND startTime < '${endStr}'
+  `));
+  const txRow = (txResults as any)[0]?.[0] || {};
+
+  // 2. Reservation fees (from reservations that were used or no-show penalized)
+  const resResults = await db.execute(sql.raw(`
+    SELECT 
+      COALESCE(SUM(CAST(reservationFee AS DECIMAL(14,2))), 0) as reservationFeeTotal,
+      COALESCE(SUM(CASE WHEN isPenaltyApplied = 1 THEN CAST(noShowPenalty AS DECIMAL(14,2)) ELSE 0 END), 0) as noShowPenaltyTotal
+    FROM reservations 
+    WHERE stationId = ${stationId}
+      AND startTime >= '${startStr}'
+      AND startTime < '${endStr}'
+  `));
+  const resRow = (resResults as any)[0]?.[0] || {};
+
+  // 3. Advertising revenue (from banner views in this period)
+  const adResults = await db.execute(sql.raw(`
+    SELECT COALESCE(SUM(CAST(b.pricePerView AS DECIMAL(14,2)) * bv.viewCount), 0) as adRevenue
+    FROM banner_views bv
+    JOIN banners b ON b.id = bv.bannerId
+    WHERE bv.stationId = ${stationId}
+      AND bv.viewDate >= '${startStr}'
+      AND bv.viewDate < '${endStr}'
+  `)).catch(() => [[{ adRevenue: 0 }]]);
+  const adRow = (adResults as any)[0]?.[0] || {};
+
+  const revenueFromEnergy = Number(txRow.energyRevenue || 0) + Number(txRow.sessionRevenue || 0) + Number(txRow.timeRevenue || 0);
+  const revenueFromPenalties = Number(txRow.overstayRevenue || 0) + Number(resRow.noShowPenaltyTotal || 0);
+  const revenueFromReservations = Number(resRow.reservationFeeTotal || 0);
+  const revenueFromAdvertising = Number(adRow.adRevenue || 0);
+  const grossRevenue = revenueFromEnergy + revenueFromPenalties + revenueFromReservations + revenueFromAdvertising;
+
+  return {
+    totalSessions: Number(txRow.totalSessions || 0),
+    grossRevenue,
+    totalKwh: Number(txRow.totalKwh || 0),
+    avgPricePerKwh: Number(txRow.avgPricePerKwh || 0),
+    // Revenue breakdown by source
+    revenueFromEnergy,
+    revenueFromPenalties,
+    revenueFromReservations,
+    revenueFromAdvertising,
+  };
+}
+
+/**
+ * Calculate prorated amount for a fixed expense based on the settlement period
+ */
+export function prorateExpense(expense: StationFixedExpense, periodStartDate: Date, periodEndDate: Date): number {
+  const periodDays = Math.ceil((periodEndDate.getTime() - periodStartDate.getTime()) / (1000 * 60 * 60 * 24));
+  const amount = Number(expense.amountCop);
+  
+  // Check if expense is active during this period
+  const expStart = expense.startDate ? new Date(expense.startDate) : new Date(0);
+  const expEnd = expense.endDate ? new Date(expense.endDate) : new Date('2099-12-31');
+  
+  if (expStart > periodEndDate || expEnd < periodStartDate) return 0;
+  
+  switch (expense.periodicity) {
+    case 'MONTHLY': return amount; // Already monthly
+    case 'BIMONTHLY': return amount / 2; // Half per month
+    case 'QUARTERLY': return amount / 3;
+    case 'SEMIANNUAL': return amount / 6;
+    case 'ANNUAL': return amount / 12;
+    case 'ONE_TIME': return amount; // Full amount in the period it falls
+    default: return amount;
+  }
+}
+
+/**
+ * Get investors and their participation % for a station (from crowdfunding)
+ */
+export async function getStationInvestors(stationId: number) {
+  const db = (await getDb())!;
+  // Get the crowdfunding project for this station
+  const projects = await db.execute(sql.raw(`
+    SELECT id, targetAmount as goalAmount FROM crowdfunding_projects 
+    WHERE stationId = ${stationId} AND status IN ('OPEN', 'IN_PROGRESS', 'FUNDED', 'COMPLETED')
+    ORDER BY id DESC LIMIT 1
+  `));
+  const project = (projects as any)[0]?.[0];
+  if (!project) return [];
+  
+  // Get confirmed participations
+  const participations = await db.execute(sql.raw(`
+    SELECT cp.investorId, cp.amount, u.name, u.email,
+      (cp.amount / ${Number(project.goalAmount)}) * 100 as participationPercent
+    FROM crowdfunding_participations cp
+    JOIN users u ON u.id = cp.investorId
+    WHERE cp.projectId = ${project.id}
+      AND cp.paymentStatus = 'COMPLETED'
+    ORDER BY cp.amount DESC
+  `));
+  
+  return ((participations as any)[0] || []).map((row: any) => ({
+    investorId: Number(row.investorId),
+    name: row.name || 'Inversionista',
+    email: row.email || '',
+    amount: Number(row.amount),
+    participationPercent: Number(row.participationPercent),
+  }));
+}
+
+/**
+ * Get all settlements for an investor across all stations
+ */
+export async function getInvestorAllSettlements(investorUserId: number, limit = 50) {
+  const db = (await getDb())!;
+  const shares = await db.select().from(investorSettlementShares)
+    .where(eq(investorSettlementShares.investorUserId, investorUserId))
+    .orderBy(desc(investorSettlementShares.createdAt))
+    .limit(limit);
+  
+  if (shares.length === 0) return [];
+  
+  const enriched = await Promise.all(shares.map(async (share) => {
+    const settlement = await db.select().from(financialSettlements)
+      .where(eq(financialSettlements.id, share.settlementId));
+    if (!settlement[0]) return null;
+    
+    const station = await db.select({ name: chargingStations.name })
+      .from(chargingStations).where(eq(chargingStations.id, settlement[0].stationId));
+    
+    return {
+      ...share,
+      periodStart: settlement[0].periodStart,
+      periodEnd: settlement[0].periodEnd,
+      periodType: settlement[0].periodType,
+      grossRevenue: settlement[0].grossRevenue,
+      totalFixedExpenses: settlement[0].totalFixedExpenses,
+      netRevenue: settlement[0].netRevenue,
+      settlementStatus: settlement[0].status,
+      stationId: settlement[0].stationId,
+      stationName: station[0]?.name || 'Desconocida',
+    };
+  }));
+  
+  return enriched.filter(Boolean);
+}
+
+/**
+ * Get financial summary for an investor (totals across all settlements)
+ */
+export async function getInvestorFinancialSummary(investorUserId: number) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      COUNT(*) as totalSettlements,
+      COALESCE(SUM(grossShare), 0) as totalGrossEarnings,
+      COALESCE(SUM(netShare), 0) as totalNetEarnings,
+      COALESCE(SUM(expenseShare), 0) as totalExpenseShare
+    FROM investor_settlement_shares
+    WHERE investorUserId = ${investorUserId}
+      AND investor_share_status IN ('CREDITED', 'PAID')
+  `));
+  const row = (results as any)[0]?.[0] || {};
+  
+  // Get total invested amount
+  const invested = await db.execute(sql.raw(`
+    SELECT COALESCE(SUM(amount), 0) as totalInvested
+    FROM crowdfunding_participations
+    WHERE investorId = ${investorUserId}
+      AND paymentStatus = 'COMPLETED'
+  `));
+  const investedRow = (invested as any)[0]?.[0] || {};
+  
+  return {
+    totalSettlements: Number(row.totalSettlements || 0),
+    totalGrossEarnings: Number(row.totalGrossEarnings || 0),
+    totalNetEarnings: Number(row.totalNetEarnings || 0),
+    totalExpenseShare: Number(row.totalExpenseShare || 0),
+    totalInvested: Number(investedRow.totalInvested || 0),
+    roi: Number(investedRow.totalInvested) > 0 
+      ? (Number(row.totalNetEarnings || 0) / Number(investedRow.totalInvested)) * 100 
+      : 0,
+  };
+}
+
+
+// --- HOST (ALIADO COMERCIAL) FINANCIAL HELPERS ---
+
+/**
+ * Get all stations where a user is the host (Aliado Comercial)
+ */
+export async function getHostStations(hostUserId: number) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT id, name, city, address, hostSharePercent, energyPurchaseCostPerKwh,
+      evgreenSharePercent, investorSharePercent, isOnline
+    FROM charging_stations
+    WHERE hostUserId = ${hostUserId} AND isActive = 1
+    ORDER BY name
+  `));
+  return ((results as any)[0] || []).map((r: any) => ({
+    id: Number(r.id),
+    name: r.name,
+    city: r.city,
+    address: r.address,
+    hostSharePercent: Number(r.hostSharePercent || 0),
+    energyPurchaseCostPerKwh: Number(r.energyPurchaseCostPerKwh || 850),
+    evgreenSharePercent: Number(r.evgreenSharePercent || 30),
+    investorSharePercent: Number(r.investorSharePercent || 70),
+    isOnline: Boolean(r.isOnline),
+  }));
+}
+
+/**
+ * Get financial summary for a host across all their stations
+ */
+export async function getHostFinancialSummary(hostUserId: number) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      COUNT(DISTINCT fs.id) as totalSettlements,
+      COALESCE(SUM(fs.hostTotalAmount), 0) as totalHostEarnings,
+      COALESCE(SUM(fs.grossRevenue), 0) as totalGrossRevenue,
+      COALESCE(SUM(fs.totalEnergyCost), 0) as totalEnergyCost,
+      COALESCE(SUM(fs.revenueFromEnergy), 0) as totalRevenueFromEnergy,
+      COALESCE(SUM(fs.revenueFromPenalties), 0) as totalRevenueFromPenalties,
+      COALESCE(SUM(fs.revenueFromReservations), 0) as totalRevenueFromReservations,
+      COALESCE(SUM(fs.revenueFromAdvertising), 0) as totalRevenueFromAdvertising,
+      COUNT(DISTINCT cs.id) as stationCount
+    FROM financial_settlements fs
+    JOIN charging_stations cs ON cs.id = fs.stationId
+    WHERE cs.hostUserId = ${hostUserId}
+      AND fs.status IN ('APPROVED', 'DISTRIBUTED')
+  `));
+  const row = (results as any)[0]?.[0] || {};
+  return {
+    totalSettlements: Number(row.totalSettlements || 0),
+    totalHostEarnings: Number(row.totalHostEarnings || 0),
+    totalGrossRevenue: Number(row.totalGrossRevenue || 0),
+    totalEnergyCost: Number(row.totalEnergyCost || 0),
+    totalRevenueFromEnergy: Number(row.totalRevenueFromEnergy || 0),
+    totalRevenueFromPenalties: Number(row.totalRevenueFromPenalties || 0),
+    totalRevenueFromReservations: Number(row.totalRevenueFromReservations || 0),
+    totalRevenueFromAdvertising: Number(row.totalRevenueFromAdvertising || 0),
+    stationCount: Number(row.stationCount || 0),
+  };
+}
+
+/**
+ * Get settlement history for a host (Aliado Comercial)
+ */
+export async function getHostSettlementHistory(hostUserId: number, limit = 50) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT fs.*, cs.name as stationName, cs.city as stationCity,
+      cs.hostSharePercent as configuredHostPercent
+    FROM financial_settlements fs
+    JOIN charging_stations cs ON cs.id = fs.stationId
+    WHERE cs.hostUserId = ${hostUserId}
+    ORDER BY fs.periodEnd DESC
+    LIMIT ${limit}
+  `));
+  return ((results as any)[0] || []).map((r: any) => ({
+    id: Number(r.id),
+    stationId: Number(r.stationId),
+    stationName: r.stationName || 'Estación',
+    stationCity: r.stationCity || '',
+    periodStart: r.periodStart,
+    periodEnd: r.periodEnd,
+    periodType: r.periodType,
+    grossRevenue: Number(r.grossRevenue || 0),
+    totalEnergyCost: Number(r.totalEnergyCost || 0),
+    revenueFromEnergy: Number(r.revenueFromEnergy || 0),
+    revenueFromPenalties: Number(r.revenueFromPenalties || 0),
+    revenueFromReservations: Number(r.revenueFromReservations || 0),
+    revenueFromAdvertising: Number(r.revenueFromAdvertising || 0),
+    hostSharePercent: Number(r.hostSharePercent || 0),
+    hostTotalAmount: Number(r.hostTotalAmount || 0),
+    investorTotalAmount: Number(r.investorTotalAmount || 0),
+    platformTotalAmount: Number(r.platformTotalAmount || 0),
+    status: r.status,
+  }));
+}
+
+
+// --- MAINTENANCE FUND HELPERS ---
+
+/**
+ * Get current balance of the maintenance fund for a station
+ */
+export async function getMaintenanceFundBalance(stationId: number): Promise<number> {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT balanceAfter FROM maintenance_fund_records
+    WHERE stationId = ${stationId}
+    ORDER BY id DESC LIMIT 1
+  `));
+  const row = (results as any)[0]?.[0];
+  return row ? Number(row.balanceAfter) : 0;
+}
+
+/**
+ * Create a maintenance fund record (deposit or withdrawal)
+ */
+export async function createMaintenanceFundRecord(data: {
+  stationId: number;
+  type: 'deposit' | 'withdrawal';
+  amount: number;
+  description: string;
+  maintenanceType?: string;
+  maintenanceDetail?: string;
+  technicianName?: string;
+  invoiceNumber?: string;
+  settlementId?: number;
+  balanceAfter: number;
+  createdBy?: number;
+}): Promise<number> {
+  const db = (await getDb())!;
+  const result = await db.insert(maintenanceFundRecords).values({
+    stationId: data.stationId,
+    type: data.type,
+    amount: data.amount,
+    description: data.description,
+    maintenanceType: data.maintenanceType || null,
+    maintenanceDetail: data.maintenanceDetail || null,
+    technicianName: data.technicianName || null,
+    invoiceNumber: data.invoiceNumber || null,
+    settlementId: data.settlementId || null,
+    balanceAfter: data.balanceAfter,
+    createdBy: data.createdBy || null,
+  });
+  return Number(result[0].insertId);
+}
+
+/**
+ * Get maintenance fund records for a station (history)
+ */
+export async function getMaintenanceFundRecords(stationId: number, limit = 50) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT mfr.*, u.name as creatorName
+    FROM maintenance_fund_records mfr
+    LEFT JOIN users u ON u.id = mfr.createdBy
+    WHERE mfr.stationId = ${stationId}
+    ORDER BY mfr.id DESC
+    LIMIT ${limit}
+  `));
+  return ((results as any)[0] || []).map((r: any) => ({
+    id: Number(r.id),
+    stationId: Number(r.stationId),
+    type: r.maintenance_fund_type,
+    amount: Number(r.amount),
+    description: r.description,
+    maintenanceType: r.maintenanceType,
+    maintenanceDetail: r.maintenanceDetail,
+    technicianName: r.technicianName,
+    invoiceNumber: r.invoiceNumber,
+    settlementId: r.settlementId ? Number(r.settlementId) : null,
+    balanceAfter: Number(r.balanceAfter),
+    creatorName: r.creatorName || 'Sistema',
+    createdAt: r.createdAt,
+  }));
+}
+
+/**
+ * Get maintenance fund summary for a station
+ */
+export async function getMaintenanceFundSummary(stationId: number) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      COALESCE(SUM(CASE WHEN maintenance_fund_type = 'deposit' THEN amount ELSE 0 END), 0) as totalDeposits,
+      COALESCE(SUM(CASE WHEN maintenance_fund_type = 'withdrawal' THEN amount ELSE 0 END), 0) as totalWithdrawals,
+      COUNT(CASE WHEN maintenance_fund_type = 'deposit' THEN 1 END) as depositCount,
+      COUNT(CASE WHEN maintenance_fund_type = 'withdrawal' THEN 1 END) as withdrawalCount
+    FROM maintenance_fund_records
+    WHERE stationId = ${stationId}
+  `));
+  const row = (results as any)[0]?.[0] || {};
+  const totalDeposits = Number(row.totalDeposits || 0);
+  const totalWithdrawals = Number(row.totalWithdrawals || 0);
+  return {
+    totalDeposits,
+    totalWithdrawals,
+    currentBalance: totalDeposits - totalWithdrawals,
+    depositCount: Number(row.depositCount || 0),
+    withdrawalCount: Number(row.withdrawalCount || 0),
+  };
+}
+
+
+/**
+ * Get monthly trend data for a station's maintenance fund
+ * Returns deposits and withdrawals grouped by month for the last N months
+ */
+export async function getMaintenanceFundMonthlyTrend(stationId: number, months = 12) {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      DATE_FORMAT(createdAt, '%Y-%m') as month,
+      COALESCE(SUM(CASE WHEN maintenance_fund_type = 'deposit' THEN amount ELSE 0 END), 0) as deposits,
+      COALESCE(SUM(CASE WHEN maintenance_fund_type = 'withdrawal' THEN amount ELSE 0 END), 0) as withdrawals,
+      COUNT(CASE WHEN maintenance_fund_type = 'deposit' THEN 1 END) as depositCount,
+      COUNT(CASE WHEN maintenance_fund_type = 'withdrawal' THEN 1 END) as withdrawalCount
+    FROM maintenance_fund_records
+    WHERE stationId = ${stationId}
+      AND createdAt >= DATE_SUB(NOW(), INTERVAL ${months} MONTH)
+    GROUP BY DATE_FORMAT(createdAt, '%Y-%m')
+    ORDER BY month ASC
+  `));
+  return ((results as any)[0] || []).map((r: any) => ({
+    month: r.month,
+    deposits: Number(r.deposits || 0),
+    withdrawals: Number(r.withdrawals || 0),
+    depositCount: Number(r.depositCount || 0),
+    withdrawalCount: Number(r.withdrawalCount || 0),
+    net: Number(r.deposits || 0) - Number(r.withdrawals || 0),
+  }));
+}
+
+/**
+ * Update the maintenance fund alert threshold for a station (in COP)
+ */
+export async function updateMaintenanceFundAlertThreshold(stationId: number, thresholdCOP: number): Promise<void> {
+  const db = (await getDb())!;
+  await db.execute(sql.raw(`
+    UPDATE charging_stations 
+    SET maintenanceFundAlertThreshold = ${thresholdCOP}
+    WHERE id = ${stationId}
+  `));
+}
+
+/**
+ * Get consolidated maintenance fund summary across all collective stations
+ */
+export async function getConsolidatedMaintenanceFundSummary() {
+  const db = (await getDb())!;
+  const results = await db.execute(sql.raw(`
+    SELECT 
+      mfr.stationId,
+      cs.name as stationName,
+      cs.city as stationCity,
+      cs.maintenanceFundAlertThreshold as alertThreshold,
+      COALESCE(SUM(CASE WHEN mfr.maintenance_fund_type = 'deposit' THEN mfr.amount ELSE 0 END), 0) as totalDeposits,
+      COALESCE(SUM(CASE WHEN mfr.maintenance_fund_type = 'withdrawal' THEN mfr.amount ELSE 0 END), 0) as totalWithdrawals,
+      COUNT(CASE WHEN mfr.maintenance_fund_type = 'deposit' THEN 1 END) as depositCount,
+      COUNT(CASE WHEN mfr.maintenance_fund_type = 'withdrawal' THEN 1 END) as withdrawalCount,
+      MAX(mfr.createdAt) as lastMovement
+    FROM maintenance_fund_records mfr
+    JOIN charging_stations cs ON cs.id = mfr.stationId
+    GROUP BY mfr.stationId, cs.name, cs.city, cs.maintenanceFundAlertThreshold
+    ORDER BY cs.name ASC
+  `));
+  return ((results as any)[0] || []).map((r: any) => {
+    const totalDeposits = Number(r.totalDeposits || 0);
+    const totalWithdrawals = Number(r.totalWithdrawals || 0);
+    const currentBalance = totalDeposits - totalWithdrawals;
+    const alertThreshold = r.alertThreshold ? Number(r.alertThreshold) : 500000;
+    return {
+      stationId: Number(r.stationId),
+      stationName: r.stationName,
+      stationCity: r.stationCity || '',
+      totalDeposits,
+      totalWithdrawals,
+      currentBalance,
+      depositCount: Number(r.depositCount || 0),
+      withdrawalCount: Number(r.withdrawalCount || 0),
+      alertThreshold,
+      isLowBalance: currentBalance < alertThreshold,
+      lastMovement: r.lastMovement,
+    };
+  });
+}
+
+
+// ============================================================================
+// ENRICHED INVESTOR TRANSACTIONS (with waterfall breakdown per station)
+// ============================================================================
+
+export interface InvestorStationInfo {
+  stationId: number;
+  stationName: string;
+  isCollective: boolean;
+  investorParticipationPercent: number; // 100% for own stations, proportional for collective
+  investorSharePercent: number; // e.g. 70% - investor share of net after host
+  evgreenSharePercent: number; // e.g. 30% - evgreen share of net after host
+  hostSharePercent: number; // e.g. 10% - host share of gross margin
+  energyCostPerKwh: number; // energy purchase cost
+}
+
+/**
+ * Get station info map for an investor, including participation percentages
+ * For own stations: participationPercent = 100%
+ * For collective stations: participationPercent = their crowdfunding participation %
+ */
+export async function getInvestorStationInfoMap(investorId: number): Promise<Map<number, InvestorStationInfo>> {
+  const db = await getDb();
+  if (!db) return new Map();
+  
+  const stationMap = new Map<number, InvestorStationInfo>();
+  
+  // 1. Own stations (100% participation)
+  const ownedStations = await db.execute(sql`
+    SELECT id, name, investorSharePercent, evgreenSharePercent, hostSharePercent, energyPurchaseCostPerKwh
+    FROM charging_stations
+    WHERE ownerId = ${investorId} AND isActive = 1
+  `);
+  
+  for (const s of ((ownedStations as any)[0] || []) as any[]) {
+    stationMap.set(Number(s.id), {
+      stationId: Number(s.id),
+      stationName: s.name || `Estación ${s.id}`,
+      isCollective: false,
+      investorParticipationPercent: 100,
+      investorSharePercent: Number(s.investorSharePercent || 70),
+      evgreenSharePercent: Number(s.evgreenSharePercent || 30),
+      hostSharePercent: Number(s.hostSharePercent || 0),
+      energyCostPerKwh: Number(s.energyPurchaseCostPerKwh || 850),
+    });
+  }
+  
+  // 2. Collective stations via crowdfunding
+  const collectiveStations = await db.execute(sql`
+    SELECT 
+      cs.id, cs.name, cs.investorSharePercent, cs.evgreenSharePercent, cs.hostSharePercent, cs.energyPurchaseCostPerKwh,
+      cp.participationPercent
+    FROM crowdfunding_participations cp
+    JOIN crowdfunding_projects cfp ON cp.projectId = cfp.id
+    JOIN charging_stations cs ON cfp.stationId = cs.id
+    WHERE cp.investorId = ${investorId}
+      AND cp.paymentStatus = 'COMPLETED'
+      AND cfp.stationId IS NOT NULL
+      AND cs.isActive = 1
+  `);
+  
+  for (const s of ((collectiveStations as any)[0] || []) as any[]) {
+    const stationId = Number(s.id);
+    // Don't overwrite if already added as owned station
+    if (!stationMap.has(stationId)) {
+      stationMap.set(stationId, {
+        stationId,
+        stationName: s.name || `Estación ${stationId}`,
+        isCollective: true,
+        investorParticipationPercent: Number(s.participationPercent || 0),
+        investorSharePercent: Number(s.investorSharePercent || 70),
+        evgreenSharePercent: Number(s.evgreenSharePercent || 30),
+        hostSharePercent: Number(s.hostSharePercent || 0),
+        energyCostPerKwh: Number(s.energyPurchaseCostPerKwh || 850),
+      });
+    }
+  }
+  
+  return stationMap;
+}
+
+/**
+ * Get enriched transactions for an investor with waterfall breakdown
+ */
+export async function getEnrichedTransactionsByInvestor(
+  investorId: number,
+  filters?: { startDate?: Date; endDate?: Date; status?: string; stationId?: number; limit?: number; offset?: number }
+) {
+  const db = await getDb();
+  if (!db) return { data: [], total: 0, stations: [] as InvestorStationInfo[] };
+  
+  const stationMap = await getInvestorStationInfoMap(investorId);
+  const stationIds = Array.from(stationMap.keys());
+  
+  if (stationIds.length === 0) return { data: [], total: 0, stations: [] as InvestorStationInfo[] };
+  
+  // Filter by specific station if requested
+  const targetIds = filters?.stationId ? [filters.stationId].filter(id => stationIds.includes(id)) : stationIds;
+  if (targetIds.length === 0) return { data: [], total: 0, stations: Array.from(stationMap.values()) };
+  
+  const conditions: any[] = [inArray(transactions.stationId, targetIds)];
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  if (filters?.status) conditions.push(eq(transactions.status, filters.status as any));
+  
+  const whereClause = and(...conditions);
+  
+  const countResult = await db.select({ count: sql<number>`COUNT(*)` }).from(transactions).where(whereClause);
+  const total = Number(countResult[0]?.count || 0);
+  
+  const limit = filters?.limit || 20;
+  const offset = filters?.offset || 0;
+  
+  const rawData = await db.select().from(transactions).where(whereClause).orderBy(desc(transactions.startTime)).limit(limit).offset(offset);
+  
+  // Enrich each transaction with waterfall breakdown
+  const enrichedData = rawData.map(tx => {
+    const stationInfo = stationMap.get(tx.stationId);
+    if (!stationInfo) return { ...tx, waterfall: null, stationInfo: null };
+    
+    const totalCost = Number(tx.totalCost || 0);
+    const kwhConsumed = Number(tx.kwhConsumed || 0);
+    
+    // Revenue source breakdown from transaction fields
+    const txEnergyCostField = Number(tx.energyCost || 0); // energy sale revenue (what user paid for energy)
+    const txTimeCost = Number(tx.timeCost || 0);
+    const txSessionCost = Number(tx.sessionCost || 0);
+    const txOverstayCost = Number(tx.overstayCost || 0);
+    const revenueFromEnergy = txEnergyCostField + txTimeCost + txSessionCost;
+    const revenueFromPenalties = txOverstayCost;
+    
+    // Waterfall calculation (matching the corrected financial model)
+    const grossRevenue = totalCost;
+    const energyCostPurchase = kwhConsumed * stationInfo.energyCostPerKwh;
+    const grossMargin = Math.max(0, grossRevenue - energyCostPurchase);
+    
+    // Host gets their % from gross margin FIRST
+    const hostAmount = grossMargin * (stationInfo.hostSharePercent / 100);
+    
+    // Net after host
+    const netAfterHost = grossMargin - hostAmount;
+    
+    // Modelo correcto: (PV - CE) × 90% aliado × 70% tu parte
+    // Para colectivas: el 70% ya incluye costos operativos (economías de escala)
+    // Para propias: se usa el investorSharePercent de la BD
+    const effectiveInvestorPct = stationInfo.isCollective ? 70 : stationInfo.investorSharePercent;
+    const effectiveEvgreenPct = stationInfo.isCollective ? 30 : stationInfo.evgreenSharePercent;
+    const totalInvestorPool = netAfterHost * (effectiveInvestorPct / 100);
+    const evgreenAmount = netAfterHost * (effectiveEvgreenPct / 100);
+    
+    // For collective stations, investor gets their proportional share of the investor pool
+    const myShare = totalInvestorPool * (stationInfo.investorParticipationPercent / 100);
+    
+    return {
+      ...tx,
+      stationName: stationInfo.stationName,
+      stationInfo: {
+        stationId: stationInfo.stationId,
+        stationName: stationInfo.stationName,
+        isCollective: stationInfo.isCollective,
+        investorParticipationPercent: stationInfo.investorParticipationPercent,
+        investorSharePercent: stationInfo.investorSharePercent,
+        evgreenSharePercent: stationInfo.evgreenSharePercent,
+        hostSharePercent: stationInfo.hostSharePercent,
+        energyCostPerKwh: stationInfo.energyCostPerKwh,
+      },
+      waterfall: {
+        grossRevenue,
+        energyCost: energyCostPurchase,
+        grossMargin,
+        hostPercent: stationInfo.hostSharePercent,
+        hostAmount,
+        netAfterHost,
+        investorPoolPercent: effectiveInvestorPct,
+        totalInvestorPool,
+        evgreenPercent: effectiveEvgreenPct,
+        evgreenAmount,
+        participationPercent: stationInfo.investorParticipationPercent,
+        myShare,
+        isCollective: stationInfo.isCollective,
+        // Revenue source breakdown
+        revenueFromEnergy,
+        revenueFromPenalties,
+      },
+    };
+  });
+  
+  return {
+    data: enrichedData,
+    total,
+    stations: Array.from(stationMap.values()),
+  };
+}
+
+
+// ============================================================================
+// REFUNDS (Historial de reembolsos para auditoría)
+// ============================================================================
+
+export async function createRefund(data: InsertRefund): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(refunds).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getRefunds(opts: { limit?: number; offset?: number; adminId?: number; userId?: number; transactionId?: number }): Promise<{ data: Refund[]; total: number }> {
+  const db = await getDb();
+  if (!db) return { data: [], total: 0 };
+  const { eq, and, desc, sql, count } = await import("drizzle-orm");
+  
+  const conditions: any[] = [];
+  if (opts.adminId) conditions.push(eq(refunds.adminId, opts.adminId));
+  if (opts.userId) conditions.push(eq(refunds.userId, opts.userId));
+  if (opts.transactionId) conditions.push(eq(refunds.transactionId, opts.transactionId));
+  
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const [data, totalResult] = await Promise.all([
+    db.select().from(refunds).where(where).orderBy(desc(refunds.createdAt)).limit(opts.limit || 50).offset(opts.offset || 0),
+    db.select({ count: count() }).from(refunds).where(where),
+  ]);
+  
+  return { data, total: totalResult[0]?.count || 0 };
+}
+
+export async function getRefundById(id: number): Promise<Refund | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const { eq } = await import("drizzle-orm");
+  const result = await db.select().from(refunds).where(eq(refunds.id, id));
+  return result[0] || null;
+}
+
+// ============================================================================
+// CLAIMS (Reclamos de cobro incorrecto)
+// ============================================================================
+
+export async function createClaim(data: InsertClaim): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(claims).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getClaims(opts: { limit?: number; offset?: number; status?: string; userId?: number }): Promise<{ data: Claim[]; total: number }> {
+  const db = await getDb();
+  if (!db) return { data: [], total: 0 };
+  const { eq, and, desc, count } = await import("drizzle-orm");
+  
+  const conditions: any[] = [];
+  if (opts.status) conditions.push(eq(claims.status, opts.status));
+  if (opts.userId) conditions.push(eq(claims.userId, opts.userId));
+  
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const [data, totalResult] = await Promise.all([
+    db.select().from(claims).where(where).orderBy(desc(claims.createdAt)).limit(opts.limit || 50).offset(opts.offset || 0),
+    db.select({ count: count() }).from(claims).where(where),
+  ]);
+  
+  return { data, total: totalResult[0]?.count || 0 };
+}
+
+export async function getClaimById(id: number): Promise<Claim | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const { eq } = await import("drizzle-orm");
+  const result = await db.select().from(claims).where(eq(claims.id, id));
+  return result[0] || null;
+}
+
+export async function updateClaim(id: number, data: Partial<InsertClaim>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const { eq } = await import("drizzle-orm");
+  await db.update(claims).set(data).where(eq(claims.id, id));
+}
+
+export async function getClaimsByTransactionId(transactionId: number): Promise<Claim[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq, desc } = await import("drizzle-orm");
+  return db.select().from(claims).where(eq(claims.transactionId, transactionId)).orderBy(desc(claims.createdAt));
+}
+
+
+
+// ============================================================
+// PENDING CHARGE SESSIONS - Persistencia en BD
+// ============================================================
+import { pendingChargeSessions } from "../drizzle/schema";
+
+export async function savePendingChargeSession(data: {
+  sessionId: string;
+  userId: number;
+  stationId: number;
+  connectorId: number;
+  ocppIdentity: string;
+  chargeMode: string;
+  targetValue: number;
+  estimatedCost: number;
+  pricePerKwh: number;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutos
+  await db.insert(pendingChargeSessions).values({
+    sessionId: data.sessionId,
+    userId: data.userId,
+    stationId: data.stationId,
+    connectorId: data.connectorId,
+    ocppIdentity: data.ocppIdentity,
+    chargeMode: data.chargeMode,
+    targetValue: String(data.targetValue),
+    estimatedCost: String(data.estimatedCost),
+    pricePerKwh: String(data.pricePerKwh),
+    expiresAt,
+  });
+}
+
+export async function findPendingChargeSessionByOcppIdentity(ocppIdentity: string, connectorId?: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const now = new Date();
+  let conditions = [
+    eq(pendingChargeSessions.ocppIdentity, ocppIdentity),
+    eq(pendingChargeSessions.consumed, false),
+    gt(pendingChargeSessions.expiresAt, now),
+  ];
+  if (connectorId !== undefined) {
+    conditions.push(eq(pendingChargeSessions.connectorId, connectorId));
+  }
+  const results = await db
+    .select()
+    .from(pendingChargeSessions)
+    .where(and(...conditions))
+    .orderBy(desc(pendingChargeSessions.createdAt))
+    .limit(1);
+  return results.length > 0 ? results[0] : null;
+}
+
+export async function consumePendingChargeSession(sessionId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(pendingChargeSessions)
+    .set({ consumed: true })
+    .where(eq(pendingChargeSessions.sessionId, sessionId));
+}
+
+export async function cleanExpiredPendingSessions() {
+  const db = await getDb();
+  if (!db) return;
+  const now = new Date();
+  await db
+    .delete(pendingChargeSessions)
+    .where(and(
+      lt(pendingChargeSessions.expiresAt, now),
+      eq(pendingChargeSessions.consumed, false)
+    ));
+}
+
+
+// ============================================================================
+// LOCAL AUTHORIZATION LIST - Funciones para gestión de listas locales RFID
+// ============================================================================
+
+/**
+ * Obtener o crear la lista local de autorización de una estación
+ */
+export async function getOrCreateLocalAuthList(stationId: number): Promise<LocalAuthList> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  
+  const existing = await database.select().from(localAuthLists)
+    .where(eq(localAuthLists.stationId, stationId)).limit(1);
+  
+  if (existing.length > 0) return existing[0];
+  
+  // Crear nueva lista
+  const result = await database.insert(localAuthLists).values({
+    stationId,
+    listVersion: 0,
+    status: "PENDING",
+    entryCount: 0,
+  });
+  
+  const newList = await database.select().from(localAuthLists)
+    .where(eq(localAuthLists.id, Number(result[0].insertId))).limit(1);
+  return newList[0];
+}
+
+/**
+ * Obtener la lista local de una estación con sus entradas
+ */
+export async function getLocalAuthListWithEntries(stationId: number): Promise<{
+  list: LocalAuthList;
+  entries: LocalAuthEntry[];
+}> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  
+  const list = await getOrCreateLocalAuthList(stationId);
+  const entries = await database.select().from(localAuthEntries)
+    .where(eq(localAuthEntries.listId, list.id));
+  
+  return { list, entries };
+}
+
+/**
+ * Agregar una entrada a la lista local de una estación
+ */
+export async function addLocalAuthEntry(data: {
+  stationId: number;
+  idTag: string;
+  isMasterCard?: boolean;
+  label?: string;
+  expiryDate?: Date;
+  addedBy?: number;
+}): Promise<LocalAuthEntry> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  
+  const list = await getOrCreateLocalAuthList(data.stationId);
+  
+  // Verificar si ya existe
+  const existing = await database.select().from(localAuthEntries)
+    .where(and(
+      eq(localAuthEntries.listId, list.id),
+      eq(localAuthEntries.idTag, data.idTag)
+    )).limit(1);
+  
+  if (existing.length > 0) {
+    throw new Error(`El idTag "${data.idTag}" ya existe en la lista local de esta estación`);
+  }
+  
+  // Buscar referencia en tabla id_tags
+  const idTagRef = await getIdTag(data.idTag);
+  
+  const result = await database.insert(localAuthEntries).values({
+    listId: list.id,
+    stationId: data.stationId,
+    idTag: data.idTag,
+    idTagRefId: idTagRef?.id || null,
+    isMasterCard: data.isMasterCard || false,
+    label: data.label || null,
+    expiryDate: data.expiryDate || null,
+    addedBy: data.addedBy || null,
+    authStatus: "Accepted",
+  });
+  
+  // Actualizar conteo y marcar como desactualizada
+  await database.update(localAuthLists).set({
+    entryCount: list.entryCount + 1,
+    listVersion: list.listVersion + 1,
+    status: "OUTDATED",
+  }).where(eq(localAuthLists.id, list.id));
+  
+  const newEntry = await database.select().from(localAuthEntries)
+    .where(eq(localAuthEntries.id, Number(result[0].insertId))).limit(1);
+  return newEntry[0];
+}
+
+/**
+ * Eliminar una entrada de la lista local
+ */
+export async function removeLocalAuthEntry(entryId: number, stationId: number): Promise<void> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  
+  const entry = await database.select().from(localAuthEntries)
+    .where(and(
+      eq(localAuthEntries.id, entryId),
+      eq(localAuthEntries.stationId, stationId)
+    )).limit(1);
+  
+  if (entry.length === 0) throw new Error("Entrada no encontrada");
+  
+  await database.delete(localAuthEntries).where(eq(localAuthEntries.id, entryId));
+  
+  // Actualizar conteo y marcar como desactualizada
+  const list = await getOrCreateLocalAuthList(stationId);
+  await database.update(localAuthLists).set({
+    entryCount: Math.max(0, list.entryCount - 1),
+    listVersion: list.listVersion + 1,
+    status: "OUTDATED",
+  }).where(eq(localAuthLists.id, list.id));
+}
+
+/**
+ * Marcar la lista como sincronizada después de un SendLocalList exitoso
+ */
+export async function markLocalAuthListSynced(stationId: number, result: string): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  
+  const list = await getOrCreateLocalAuthList(stationId);
+  await database.update(localAuthLists).set({
+    status: result === "Accepted" ? "SYNCED" : "FAILED",
+    lastSyncAt: new Date(),
+    lastSyncResult: result,
+    chargerListVersion: result === "Accepted" ? list.listVersion : list.chargerListVersion,
+  }).where(eq(localAuthLists.id, list.id));
+}
+
+/**
+ * Obtener todas las estaciones con su estado de lista local (para admin)
+ */
+export async function getAllLocalAuthListsStatus(): Promise<LocalAuthList[]> {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(localAuthLists);
+}
+
+/**
+ * Registrar una transacción offline para reconciliación posterior
+ */
+export async function createOfflineTransaction(data: InsertOfflineTransaction): Promise<number> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const result = await database.insert(offlineTransactions).values(data);
+  return Number(result[0].insertId);
+}
+
+/**
+ * Obtener transacciones offline pendientes de reconciliación
+ */
+export async function getPendingOfflineTransactions(stationId?: number): Promise<OfflineTransaction[]> {
+  const database = await getDb();
+  if (!database) return [];
+  
+  if (stationId) {
+    return database.select().from(offlineTransactions)
+      .where(and(
+        eq(offlineTransactions.stationId, stationId),
+        eq(offlineTransactions.reconciled, false)
+      ));
+  }
+  return database.select().from(offlineTransactions)
+    .where(eq(offlineTransactions.reconciled, false));
+}
+
+/**
+ * Marcar una transacción offline como reconciliada
+ */
+export async function reconcileOfflineTransaction(
+  offlineTxId: number, 
+  transactionId?: number, 
+  notes?: string
+): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  await database.update(offlineTransactions).set({
+    reconciled: true,
+    reconciledAt: new Date(),
+    reconciledTransactionId: transactionId || null,
+    notes: notes || null,
+  }).where(eq(offlineTransactions.id, offlineTxId));
+}
+
+/**
+ * Obtener tarjetas maestras de una estación
+ */
+export async function getMasterCards(stationId: number): Promise<LocalAuthEntry[]> {
+  const database = await getDb();
+  if (!database) return [];
+  
+  const list = await getOrCreateLocalAuthList(stationId);
+  return database.select().from(localAuthEntries)
+    .where(and(
+      eq(localAuthEntries.listId, list.id),
+      eq(localAuthEntries.isMasterCard, true)
+    ));
+}
+
+/**
+ * Actualizar política offline de una estación
+ */
+export async function updateOfflinePolicy(
+  stationId: number, 
+  policy: "LOCAL_LIST_ONLY" | "FREE_VENDING" | "REJECT_ALL"
+): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  
+  const list = await getOrCreateLocalAuthList(stationId);
+  await database.update(localAuthLists).set({
+    offlinePolicy: policy,
+  }).where(eq(localAuthLists.id, list.id));
 }

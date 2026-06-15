@@ -87,9 +87,30 @@ async function startServer() {
   // RATE LIMITING para API endpoints (protección contra brute force)
   // ============================================
   const apiRateLimits = new Map<string, { count: number; resetTime: number }>();
+  
+  // SEGURIDAD: Rate limit separado para webhook/OCPP (más permisivo pero existente)
+  const webhookRateLimits = new Map<string, { count: number; resetTime: number }>();
   app.use('/api/', (req, res, next) => {
-    // No limitar webhooks ni OCPP
-    if (req.path.includes('/webhook') || req.path.includes('/ocpp')) return next();
+    if (req.path.includes('/webhook') || req.path.includes('/ocpp')) {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const key = `wh:${ip}`;
+      const now = Date.now();
+      const windowMs = 60000; // 1 minuto
+      const maxRequests = 600; // 600 req/min para webhook/OCPP (operacional pero con límite)
+      
+      const entry = webhookRateLimits.get(key);
+      if (!entry || now > entry.resetTime) {
+        webhookRateLimits.set(key, { count: 1, resetTime: now + windowMs });
+      } else {
+        entry.count++;
+        if (entry.count > maxRequests) {
+          console.warn(`[Security] Rate limit exceeded for webhook/OCPP from IP: ${ip}`);
+          res.status(429).json({ error: 'Too many requests' });
+          return;
+        }
+      }
+      return next();
+    }
     
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const key = `${ip}:${req.path}`;
@@ -133,6 +154,16 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Wompi webhook
   app.post("/api/wompi/webhook", express.json(), handleWompiWebhook);
+
+  // API Pública REST v1 para integración externa
+  const { default: publicApiRouter } = await import("../api/public-api");
+  app.use("/api/v1", express.json(), publicApiRouter);
+
+  // Página de documentación de API
+  app.get("/api-docs", (_req, res) => {
+    const currentDir = path.dirname(new URL(import.meta.url).pathname);
+    res.sendFile("api-docs.html", { root: path.join(currentDir, "../../client/public") });
+  });
   
   // Auth0 authentication routes
   registerAuth0Routes(app);
@@ -306,6 +337,9 @@ async function startServer() {
     }
   });
 
+  // Registrar el WSS principal en dualCSMS para auto-recovery de conexiones
+  dualCSMS.setMainWss(wss);
+
   // ============================================================================
   // ESTRATEGIA ANTI-PROXY-TIMEOUT (3 capas)
   // ============================================================================
@@ -318,28 +352,48 @@ async function startServer() {
   // Capa 3: OCPP ChangeConfiguration HeartbeatInterval=30 - el cargador envía heartbeats frecuentes
   // ============================================================================
 
-  // CAPA 1: WebSocket ping/pong estándar (frame de control)
-  const WS_PING_INTERVAL_MS = 20000; // 20 segundos
+  // CAPA 1: WebSocket ping/pong con tolerancia a retrasos del event loop
+  // PROBLEMA RESUELTO: El sistema anterior usaba un flag booleano isAlive que se
+  // reseteaba a false cada 20s. Si el event loop se retrasaba (GC, query pesada),
+  // TODOS los cargadores tenían isAlive=false simultáneamente y se terminaban al
+  // mismo tiempo. Ahora usamos un contador de pongs perdidos con 3 reintentos.
+  const WS_PING_INTERVAL_MS = 25000; // 25 segundos (más tolerante)
+  const MAX_MISSED_PONGS = 3; // Permitir hasta 3 pings sin respuesta antes de terminar (75s total)
   let pingCount = 0;
   const pingInterval = setInterval(() => {
     const clientCount = wss.clients.size;
     if (clientCount > 0) {
       pingCount++;
-      if (pingCount % 15 === 0) {
+      if (pingCount % 12 === 0) {
         console.log(`[OCPP] Ping keepalive #${pingCount} - ${clientCount} client(s) connected`);
       }
     }
+    const now = Date.now();
     wss.clients.forEach((ws) => {
-      if ((ws as any).isAlive === false) {
-        const identity = (ws as any)._ocppIdentity || 'unknown';
-        console.log(`[OCPP] Terminating inactive connection (no pong received): ${identity}`);
+      const identity = (ws as any)._ocppIdentity || 'unknown';
+      const missedPongs: number = (ws as any)._missedPongs || 0;
+      const lastActivity: number = (ws as any)._lastActivity || (ws as any)._connectedAt || now;
+      
+      // Si el cargador ha enviado CUALQUIER dato recientemente (heartbeat, meter values, etc.)
+      // resetear el contador de missed pongs — la conexión está viva
+      const timeSinceActivity = now - lastActivity;
+      if (timeSinceActivity < WS_PING_INTERVAL_MS * 2) {
+        // Actividad reciente detectada, resetear contador
+        (ws as any)._missedPongs = 0;
+      } else if (missedPongs >= MAX_MISSED_PONGS) {
+        // 3 pings consecutivos sin respuesta Y sin actividad de datos → conexión muerta
+        const totalSilence = Math.round(timeSinceActivity / 1000);
+        console.log(`[OCPP] Terminating dead connection: ${identity} (${missedPongs} missed pongs, ${totalSilence}s since last activity)`);
+        (ws as any)._missedPongs = 0; // Reset para evitar doble-terminate
         return ws.terminate();
       }
-      (ws as any).isAlive = false;
+      
+      // Incrementar contador y enviar ping
+      (ws as any)._missedPongs = missedPongs + 1;
       try {
         ws.ping();
       } catch (err) {
-        console.error(`[OCPP] Error sending ping:`, err);
+        console.error(`[OCPP] Error sending ping to ${identity}:`, err);
       }
     });
   }, WS_PING_INTERVAL_MS);
@@ -462,9 +516,13 @@ async function startServer() {
     (ws as any).isAlive = true;
     (ws as any)._ocppIdentity = ocppIdentity;
     (ws as any)._connectedAt = Date.now();
+    (ws as any)._missedPongs = 0; // Contador de pings sin respuesta
+    (ws as any)._lastActivity = Date.now(); // Timestamp de última actividad (datos o pong)
     
     ws.on("pong", () => {
       (ws as any).isAlive = true;
+      (ws as any)._missedPongs = 0; // Resetear contador de pongs perdidos
+      (ws as any)._lastActivity = Date.now(); // Actualizar timestamp de actividad
       // Actualizar timestamp de última actividad en el connection manager
       ocppManager.updateLastMessage(ocppIdentity);
     });
@@ -586,6 +644,10 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       console.log(`[OCPP] Pre-resolved stationId=${stationId} for ${ocppIdentity} at connection time (updated in connection-manager)`);
       // Marcar como online
       await db.updateStationOnlineStatus(ocppIdentity, true);
+      
+      // Auto-resolver alertas de desconexión activas al reconectar
+      alertsService.handleReconnection(ocppIdentity)
+        .catch(err => console.error(`[OCPP Alert] Error auto-resolving on reconnect for ${ocppIdentity}:`, err));
     } else {
       console.warn(`[OCPP] Could not pre-resolve stationId for ${ocppIdentity} - station not found in DB`);
     }
@@ -595,7 +657,9 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
 
   // Registrar el event listener PRIMERO, antes de cualquier operación async
   ws.on("message", async (data) => {
-      // Actualizar timestamp de último mensaje
+      // Actualizar timestamps de actividad (crítico para evitar desconexiones falsas)
+      (ws as any)._lastActivity = Date.now();
+      (ws as any)._missedPongs = 0; // Cualquier dato recibido = conexión viva
       ocppManager.updateLastMessage(ocppIdentity);
       try {
         const message = JSON.parse(data.toString());
@@ -774,7 +838,8 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
 
     ws.on("close", async (code: number, reason: Buffer) => {
       // BRIDGE: Limpiar conexión en dualCSMS cuando el WebSocket se cierra
-      dualCSMS.removeExternalConnection(ocppIdentity);
+      // Pasar el ws que se cerró para evitar race condition con reconexiones rápidas
+      dualCSMS.removeExternalConnection(ocppIdentity, ws);
       
       const connectedAt = (ws as any)._connectedAt || 0;
       const durationSec = connectedAt ? Math.round((Date.now() - connectedAt) / 1000) : 0;
@@ -794,7 +859,10 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       const { isGracePeriod } = ocppManager.handleDisconnection(ocppIdentity, code, reasonStr);
       
       // Registrar log de desconexión (para auditoría, marcado como proxy_cycle si es código 1006)
-      const isProxyCycle = code === 1006 && durationSec >= 170 && durationSec <= 200;
+      // Proxy Cycle: Railway/proxy recicla la conexión WebSocket periódicamente.
+      // Rango ampliado: 60-300s cubre variaciones del proxy timeout (no solo 170-200s)
+      // También considerar código 1001 (Going Away) que algunos proxies usan
+      const isProxyCycle = (code === 1006 || code === 1001) && durationSec >= 60 && durationSec <= 300;
       await db.createOcppLog({
         ocppIdentity,
         stationId,
@@ -838,6 +906,9 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
             .catch(err => console.error("[OCPP Alert] Error:", err));
         } else if (currentConn) {
           console.log(`[OCPP] ⚡ Seamless reconnection confirmed: ${ocppIdentity}`);
+          // Auto-resolver alertas pendientes también en reconexiones seamless
+          alertsService.handleReconnection(ocppIdentity)
+            .catch(err => console.error(`[OCPP Alert] Error auto-resolving on seamless reconnect for ${ocppIdentity}:`, err));
         }
         legacyDisconnectGrace.delete(ocppIdentity);
       }, LEGACY_DISCONNECT_GRACE_MS);
@@ -1086,9 +1157,20 @@ async function handleOCPP16Message(
       const { nanoid } = await import("nanoid");
       const internalTransactionId = nanoid();
       
-      // Buscar sesión pendiente para obtener chargeMode/targetValue
-      const { findPendingSessionByOcppIdentity: findPendingOcpp } = await import("../charging/charging-router");
-      const pendingSessionForTx = findPendingOcpp(ocppIdentity, payload.connectorId);
+      // Buscar sesión pendiente para obtener chargeMode/targetValue (memoria + BD fallback)
+      const { findPendingSessionByOcppIdentity: findPendingOcpp, findPendingSessionFromDb: findPendingDb } = await import("../charging/charging-router");
+      let pendingSessionForTx = findPendingOcpp(ocppIdentity, payload.connectorId);
+      if (!pendingSessionForTx) {
+        // Fallback: buscar en BD (multi-instancia)
+        pendingSessionForTx = await findPendingDb(ocppIdentity, payload.connectorId);
+      }
+      if (!pendingSessionForTx) {
+        // Intentar sin connectorId
+        pendingSessionForTx = findPendingOcpp(ocppIdentity);
+        if (!pendingSessionForTx) {
+          pendingSessionForTx = await findPendingDb(ocppIdentity);
+        }
+      }
       const txChargeMode = pendingSessionForTx?.session?.chargeMode || "full_charge";
       const txTargetValue = pendingSessionForTx?.session?.targetValue || 0;
       const txPricePerKwh = pendingSessionForTx?.session?.pricePerKwh || (tariff ? parseFloat(tariff.pricePerKwh) : 1800);
@@ -1312,6 +1394,62 @@ async function handleOCPP16Message(
           console.error(`[OCPP] Error deducting user wallet:`, walletErr?.message || walletErr);
           // No lanzar error - la transacción ya se completó
         }
+      }
+      
+      // ============================================================
+      // REGISTRO DE PRECISIÓN DE SOC (antes de limpiar la sesión)
+      // Registra la comparación entre el SoC manual del usuario y los datos reales
+      // ============================================================
+      try {
+        const { getActiveSessionById } = await import("../charging/charging-router");
+        const activeSession = getActiveSessionById(transaction.id);
+        
+        // Obtener SoC manual: priorizar sesión en memoria, luego DB
+        const manualSocValue = activeSession?.manualSoc ?? (transaction as any).manualSoc ?? null;
+        const batteryCapKwh = activeSession?.manualBatteryCapacityKwh 
+          ?? ((transaction as any).manualBatteryCapacityKwh ? parseFloat(String((transaction as any).manualBatteryCapacityKwh)) : null);
+        
+        if (manualSocValue !== null && batteryCapKwh && batteryCapKwh > 0 && energyDelivered > 0) {
+          const calculatedSocEnd = Math.min(100, Math.round(manualSocValue + (energyDelivered / batteryCapKwh) * 100));
+          const chargerSocEnd = activeSession?.soc ?? null;
+          let estimatedErrorKwh: number | null = null;
+          let estimatedErrorSocPct: number | null = null;
+          if (chargerSocEnd !== null) {
+            estimatedErrorSocPct = calculatedSocEnd - chargerSocEnd;
+            estimatedErrorKwh = Math.round((estimatedErrorSocPct / 100) * batteryCapKwh * 10) / 10;
+          }
+          
+          // Obtener vehículo del usuario para vincular
+          let vehicleId: number | null = null;
+          try {
+            const defaultVehicle = await db.getDefaultVehicle(transaction.userId);
+            if (defaultVehicle) vehicleId = defaultVehicle.id;
+          } catch (e) { /* ignore */ }
+          
+          const detectionMethod = activeSession?.chargeCompleteDetected
+            ? (activeSession.soc !== null ? 'charger_soc' : 'power_drop')
+            : (payload.reason === 'Remote' ? 'target_reached' : 'user_stop');
+          
+          await db.createSocAccuracyLog({
+            userId: transaction.userId,
+            transactionId: transaction.id,
+            vehicleId,
+            manualSocStart: manualSocValue,
+            manualBatteryCapacityKwh: batteryCapKwh,
+            realKwhDelivered: Math.round(energyDelivered * 100) / 100,
+            calculatedSocEnd,
+            chargerSocEnd,
+            batteryFullDetected: activeSession?.chargeCompleteDetected ?? false,
+            detectionMethod,
+            estimatedErrorKwh,
+            estimatedErrorSocPct,
+          });
+          console.log(`[OCPP] StopTransaction - SoC accuracy logged: manual=${manualSocValue}%, calculated=${calculatedSocEnd}%, charger=${chargerSocEnd ?? 'N/A'}%, error=${estimatedErrorSocPct ?? 'N/A'}%`);
+        } else {
+          console.log(`[OCPP] StopTransaction - SoC accuracy NOT logged: manualSoc=${manualSocValue}, batteryCapKwh=${batteryCapKwh}, energyDelivered=${energyDelivered.toFixed(4)}`);
+        }
+      } catch (socErr) {
+        console.error(`[OCPP] Error logging SoC accuracy:`, socErr);
       }
       
       // Limpiar sesión activa de memoria

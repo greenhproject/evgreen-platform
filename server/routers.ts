@@ -29,9 +29,20 @@ import { pushRouter } from "./push/push-router";
 import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
 import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } from "./notifications/broadcast-service";
 import { checkAndNotifyMilestones } from "./crowdfunding/progress-notifications";
+import { triggerInvestorWelcome } from "./investor-onboarding/email-service";
 import { eventRouter } from "./event/event-router";
 import { idTagRouter } from "./idtags/idtag-router";
 import { supportRouterV2 } from "./support/support-router";
+import { buildFinancialRouter } from "./financial/financial-router";
+import { onboardingRouter } from "./investor-onboarding/onboarding-router";
+import { backupRouter, startAutomaticBackups } from "./backup/backup-router";
+import { maintenanceScheduleRouter } from "./maintenance/maintenance-schedule-router";
+import { buildApiKeysRouter } from "./api/api-keys-router";
+import { quotesRouter } from "./quotes/quotes-router";
+import { spacesRouter } from "./spaces/spaces-router";
+import { partnersRouter } from "./partners/partners-router";
+import { profilesRouter } from "./profiles/profiles-router";
+import { buildOrganizationsRouter } from "./organizations/organizations-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -161,7 +172,7 @@ const authRouter = router({
 const usersRouter = router({
   list: adminProcedure
     .input(z.object({
-      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer"]).optional(),
+      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host"]).optional(),
     }).optional())
     .query(async ({ input }) => {
       return db.getAllUsers(input?.role);
@@ -176,7 +187,7 @@ const usersRouter = router({
   updateRole: adminProcedure
     .input(z.object({
       userId: z.number(),
-      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer"]),
+      role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host"]),
     }))
     .mutation(async ({ input, ctx }) => {
       // Proteger la cuenta maestra
@@ -345,7 +356,7 @@ const usersRouter = router({
         name: z.string().optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
-        role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer"]).optional(),
+        role: z.enum(["staff", "technician", "investor", "user", "admin", "engineer", "comercial", "host"]).optional(),
         isActive: z.boolean().optional(),
         companyName: z.string().optional(),
         taxId: z.string().optional(),
@@ -397,6 +408,7 @@ const stationsRouter = router({
       
       // Agregar tarifa activa y EVSEs a cada estación
       const { isDemoStation } = await import("./charging/charging-simulator");
+      const ocppManager = await import("./ocpp/connection-manager");
       const stationsWithData = await Promise.all(
         stations.map(async (station: any) => {
           const tariff = await db.getActiveTariffByStationId(station.id);
@@ -404,12 +416,29 @@ const stationsRouter = router({
           const effectivePrice = await db.getEffectiveStationPrice(station.id);
           
           // Verificar si es estación demo para forzar online y conectores AVAILABLE
-          // Pero respetar el estado RESERVED si hay reservas activas
           const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
+          
+          // Determinar estado online real usando connection-manager (fuente de verdad)
+          // Prioridad: 1) Conexión activa en connection-manager, 2) Grace period (reconectando), 3) BD como fallback
+          let realIsOnline = station.isOnline;
+          if (!isDemo && station.ocppIdentity) {
+            const liveConn = ocppManager.getConnection(station.ocppIdentity);
+            const inGracePeriod = ocppManager.isInGracePeriod(station.ocppIdentity);
+            if (liveConn && liveConn.ws.readyState === 1) {
+              // WebSocket activo = online
+              realIsOnline = true;
+            } else if (inGracePeriod) {
+              // En grace period = reconectando, mostrar como online para no confundir usuarios
+              realIsOnline = true;
+            } else if (liveConn === undefined && !inGracePeriod) {
+              // Sin conexión activa y sin grace period = realmente offline
+              realIsOnline = false;
+            }
+          }
           
           return {
             ...station,
-            isOnline: isDemo ? true : station.isOnline,
+            isOnline: isDemo ? true : realIsOnline,
             evses: isDemo ? evses.map((e: any) => ({ 
               ...e, 
               status: e.status === 'RESERVED' ? 'RESERVED' : 'AVAILABLE' 
@@ -427,22 +456,41 @@ const stationsRouter = router({
       return stationsWithData;
     }),
   
-  // Admin/Técnico: listar todas las estaciones
+  // Admin/Técnico: listar todas las estaciones (optimizado: batch EVSEs)
   listAll: technicianProcedure.query(async () => {
     const stations = await db.getAllChargingStations();
-    // Agregar evses a cada estación
-    const stationsWithEvses = await Promise.all(
-      stations.map(async (station: any) => {
-        const evses = await db.getEvsesByStationId(station.id);
-        return { ...station, evses };
-      })
-    );
+    // Obtener conexiones OCPP activas para enriquecer con lastHeartbeat
+    const csmsConnections = dualCSMS.getConnectionsStatus();
+    const csmsMap = new Map<string, any>();
+    for (const conn of csmsConnections) {
+      csmsMap.set(conn.ocppIdentity, conn);
+    }
+    // Batch: obtener TODOS los EVSEs de todas las estaciones en 2 queries (no N+1)
+    const stationIds = stations.map((s: any) => s.id);
+    const evsesMap = await db.getAllEvsesForStations(stationIds);
+    
+    // Enriquecer estaciones con EVSEs y datos OCPP (sin queries adicionales)
+    const stationsWithEvses = stations.map((station: any) => {
+      const stationEvses = evsesMap.get(station.id) || [];
+      const ocppId = station.ocppIdentity || station.id?.toString();
+      const ocppConn = csmsMap.get(ocppId);
+      return {
+        ...station,
+        evses: stationEvses,
+        lastHeartbeat: ocppConn?.lastHeartbeat
+          ? (ocppConn.lastHeartbeat instanceof Date ? ocppConn.lastHeartbeat.toISOString() : String(ocppConn.lastHeartbeat))
+          : (station.lastBootNotification
+            ? (station.lastBootNotification instanceof Date ? station.lastBootNotification.toISOString() : String(station.lastBootNotification))
+            : null),
+      };
+    });
     return stationsWithEvses;
   }),
   
   // Inversionista: listar sus estaciones con tarifas y EVSEs
   listOwned: investorProcedure.query(async ({ ctx }) => {
-    const stations = await db.getAllChargingStations({ ownerId: ctx.user.id });
+    // Obtener TODAS las estaciones: propias + participaciones crowdfunding
+    const allStations = await db.getInvestorAllStations(ctx.user.id);
     const { isDemoStation } = await import("./charging/charging-simulator");
     
     // Obtener conexiones OCPP activas para estado en tiempo real
@@ -451,7 +499,7 @@ const stationsRouter = router({
     
     // Enriquecer con tarifas, EVSEs y estado real de conexión
     const enrichedStations = await Promise.all(
-      stations.map(async (station) => {
+      allStations.map(async (station) => {
         const tariff = await db.getActiveTariffByStationId(station.id);
         const evses = await db.getEvsesByStationId(station.id);
         
@@ -476,6 +524,11 @@ const stationsRouter = router({
           // Usar estado real de OCPP en lugar de solo isOnline de BD (demo siempre online)
           isOnline: isDemo || isConnectedOCPP || station.isOnline,
           isConnectedOCPP,
+          // Tipo de propiedad: 'owned' (propia) o 'crowdfunding' (participación colectiva)
+          ownershipType: (station as any).ownershipType || 'owned',
+          participationPercent: (station as any).participationPercent || '100.0000',
+          crowdfundingProjectId: (station as any).crowdfundingProjectId || null,
+          crowdfundingProjectName: (station as any).crowdfundingProjectName || null,
           ocppConnection: ocppConn ? {
             ocppVersion: ocppConn.ocppVersion,
             connectedAt: ocppConn.connectedAt instanceof Date ? ocppConn.connectedAt.toISOString() : String(ocppConn.connectedAt),
@@ -533,6 +586,13 @@ const stationsRouter = router({
       amenities: z.array(z.string()).optional(),
       chargerBrandId: z.number().optional(),
       imageUrl: z.string().optional(),
+      // Modelo financiero configurable
+      evgreenSharePercent: z.string().optional(),
+      investorSharePercent: z.string().optional(),
+      hostSharePercent: z.string().optional(),
+      energyPurchaseCostPerKwh: z.string().optional(),
+      hostName: z.string().optional(),
+      hostUserId: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
       // Si se seleccionó un perfil de marca, autoconfigurar manufacturer y model
@@ -569,6 +629,13 @@ const stationsRouter = router({
         isActive: z.boolean().optional(),
         isPublic: z.boolean().optional(),
         imageUrl: z.string().nullable().optional(),
+        // Modelo financiero configurable
+        evgreenSharePercent: z.string().optional(),
+        investorSharePercent: z.string().optional(),
+        hostSharePercent: z.string().optional(),
+        energyPurchaseCostPerKwh: z.string().optional(),
+        hostName: z.string().optional(),
+        hostUserId: z.number().optional(),
       }),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -1338,6 +1405,39 @@ const transactionsRouter = router({
       };
     }),
 
+  // Inversionista: transacciones enriquecidas con waterfall por estación
+  investorTransactionsEnriched: investorProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      status: z.string().optional(),
+      stationId: z.number().optional(),
+      limit: z.number().min(1).max(100).default(20),
+      page: z.number().min(1).default(1),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      const limit = input?.limit || 20;
+      const page = input?.page || 1;
+      const offset = (page - 1) * limit;
+      
+      const result = await db.getEnrichedTransactionsByInvestor(ctx.user.id, {
+        startDate: input?.startDate,
+        endDate: input?.endDate,
+        status: input?.status,
+        stationId: input?.stationId,
+        limit,
+        offset,
+      });
+      return {
+        data: result.data,
+        total: result.total,
+        stations: result.stations,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(result.total / limit),
+      };
+    }),
+
   // Exportar transacciones del inversionista en Excel o PDF
   exportInvestorTransactions: investorProcedure
     .input(z.object({
@@ -1352,8 +1452,8 @@ const transactionsRouter = router({
       });
 
       const settings = await db.getPlatformSettings();
-      const investorPercentage = settings?.investorPercentage ?? 80;
-      const platformFeePercentage = settings?.platformFeePercentage ?? 20;
+      const investorPercentage = settings?.investorPercentage ?? 70;
+      const platformFeePercentage = settings?.platformFeePercentage ?? 30;
 
       const stationIds = Array.from(new Set(transactions.map(t => t.stationId)));
       const stationsMap: Record<number, string> = {};
@@ -1645,6 +1745,590 @@ const transactionsRouter = router({
         message: `Carga completada. Total: $${totalCost.toLocaleString()} COP por ${kwhConsumed.toFixed(2)} kWh`,
       };
     }),
+
+  // ============================================================================
+  // DETALLE DE TRANSACCIÓN (para soporte y admin - resolver reclamos)
+  // ============================================================================
+  getDetail: adminProcedure
+    .input(z.object({ transactionId: z.number() }))
+    .query(async ({ input }) => {
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+      }
+
+      // Obtener datos relacionados
+      const station = await db.getChargingStationById(transaction.stationId);
+      const evse = await db.getEvseById(transaction.evseId);
+      const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
+      const user = await db.getUserById(transaction.userId);
+      const meterValuesData = await db.getMeterValuesByTransactionId(input.transactionId);
+
+      // Obtener wallet transactions relacionadas a esta transacción (pagos + overstay)
+      const dbInstance = await db.getDb();
+      let relatedWalletTxs: any[] = [];
+      if (dbInstance) {
+        const { walletTransactions: wtTable } = await import("../drizzle/schema");
+        const { eq: eqOp, and: andOp, desc: descOp } = await import("drizzle-orm");
+        relatedWalletTxs = await dbInstance.select().from(wtTable)
+          .where(andOp(
+            eqOp(wtTable.userId, transaction.userId),
+            eqOp(wtTable.referenceId, input.transactionId)
+          ))
+          .orderBy(descOp(wtTable.createdAt));
+      }
+
+      // Obtener deudas asociadas
+      let relatedDebts: any[] = [];
+      if (dbInstance) {
+        const { userDebts: debtsTable } = await import("../drizzle/schema");
+        const { eq: eqOp2, and: andOp2 } = await import("drizzle-orm");
+        relatedDebts = await dbInstance.select().from(debtsTable)
+          .where(andOp2(
+            eqOp2(debtsTable.userId, transaction.userId),
+            eqOp2(debtsTable.transactionId, input.transactionId)
+          ));
+      }
+
+      // Reconstruir timeline de overstay
+      const gracePeriodMinutes = tariff?.overstayGracePeriodMinutes ?? 10;
+      const overstayPenaltyPerMin = tariff?.overstayPenaltyPerMinute
+        ? parseFloat(tariff.overstayPenaltyPerMinute.toString())
+        : 0;
+
+      const startTime = transaction.startTime;
+      const endTime = transaction.endTime;
+      const overstayCost = parseFloat(transaction.overstayCost?.toString() || "0");
+
+      // Calcular overstay start time = endTime + gracePeriodMinutes
+      let overstayStartTime: Date | null = null;
+      let overstayMinutesBilled = 0;
+      if (endTime && overstayCost > 0) {
+        overstayStartTime = new Date(endTime.getTime() + gracePeriodMinutes * 60 * 1000);
+        if (overstayPenaltyPerMin > 0) {
+          overstayMinutesBilled = Math.round(overstayCost / overstayPenaltyPerMin);
+        }
+      }
+
+      // Calcular duración de carga
+      const chargeDurationMs = endTime ? endTime.getTime() - startTime.getTime() : 0;
+      const chargeDurationMinutes = Math.round(chargeDurationMs / 60000);
+
+      // Obtener precio efectivo de la estación para contexto
+      const effectivePrice = await db.getEffectiveStationPrice(transaction.stationId);
+
+      return {
+        // Datos básicos de la transacción
+        id: transaction.id,
+        status: transaction.status,
+        ocppTransactionId: transaction.ocppTransactionId,
+        startMethod: transaction.startMethod || "APP",
+        stopReason: transaction.stopReason || "",
+        chargeMode: transaction.chargeMode || "full_charge",
+
+        // Timestamps exactos
+        startTime: startTime.toISOString(),
+        endTime: endTime?.toISOString() || null,
+        chargeDurationMinutes,
+
+        // Consumo
+        kwhConsumed: parseFloat(transaction.kwhConsumed?.toString() || "0"),
+        meterStart: transaction.meterStart ? parseFloat(transaction.meterStart.toString()) : null,
+        meterEnd: transaction.meterEnd ? parseFloat(transaction.meterEnd.toString()) : null,
+
+        // Desglose de costos
+        energyCost: parseFloat(transaction.energyCost?.toString() || "0"),
+        timeCost: parseFloat(transaction.timeCost?.toString() || "0"),
+        sessionCost: parseFloat(transaction.sessionCost?.toString() || "0"),
+        overstayCost,
+        totalCost: parseFloat(transaction.totalCost?.toString() || "0"),
+
+        // Tarifas aplicadas
+        appliedPricePerKwh: transaction.appliedPricePerKwh
+          ? parseFloat(transaction.appliedPricePerKwh.toString())
+          : effectivePrice.pricePerKwh,
+        overstayPenaltyPerMin: overstayPenaltyPerMin || effectivePrice.overstayPenaltyPerMin,
+        gracePeriodMinutes,
+
+        // Timeline de overstay
+        overstay: overstayCost > 0 ? {
+          gracePeriodEnd: endTime ? new Date(endTime.getTime() + gracePeriodMinutes * 60 * 1000).toISOString() : null,
+          overstayStartTime: overstayStartTime?.toISOString() || null,
+          minutesBilled: overstayMinutesBilled,
+          ratePerMinute: overstayPenaltyPerMin || effectivePrice.overstayPenaltyPerMin,
+          totalCharged: overstayCost,
+        } : null,
+
+        // Info de estación y conector
+        station: {
+          id: transaction.stationId,
+          name: station?.name || "Estación",
+          address: station?.address || "",
+          city: station?.city || "",
+        },
+        connector: {
+          id: evse?.id || 0,
+          connectorId: evse?.connectorId || 1,
+          connectorType: evse?.connectorType || "TYPE_2",
+          chargeType: evse?.chargeType || "AC",
+          powerKw: evse?.powerKw ? parseFloat(evse.powerKw.toString()) : 0,
+        },
+
+        // Info del usuario
+        user: {
+          id: user?.id || transaction.userId,
+          name: user?.name || "Usuario",
+          email: user?.email || "",
+          phone: user?.phone || "",
+        },
+
+        // Movimientos de billetera relacionados
+        walletMovements: relatedWalletTxs.map(wt => ({
+          id: wt.id,
+          type: wt.type,
+          amount: parseFloat(wt.amount?.toString() || "0"),
+          description: wt.description || "",
+          createdAt: wt.createdAt?.toISOString() || "",
+          status: wt.status,
+        })),
+
+        // Deudas asociadas
+        debts: relatedDebts.map(d => ({
+          id: d.id,
+          originalAmount: parseFloat(d.originalAmount?.toString() || "0"),
+          remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
+          reason: d.reason,
+          status: d.status,
+          createdAt: d.createdAt?.toISOString() || "",
+        })),
+
+        // Distribución de ingresos
+        investorShare: parseFloat(transaction.investorShare?.toString() || "0"),
+        platformFee: parseFloat(transaction.platformFee?.toString() || "0"),
+
+        // Meter values (últimos 20 para gráfico de potencia)
+        meterValues: meterValuesData.slice(-20).map(mv => ({
+          timestamp: mv.timestamp.toISOString(),
+          energyKwh: mv.energyKwh ? parseFloat(mv.energyKwh.toString()) : null,
+          powerKw: mv.powerKw ? parseFloat(mv.powerKw.toString()) : null,
+          soc: mv.soc,
+        })),
+      };
+    }),
+
+  // ============================================================================
+  // REEMBOLSO PARCIAL (para soporte - resolver reclamos)
+  // ============================================================================
+  partialRefund: adminProcedure
+    .input(z.object({
+      transactionId: z.number(),
+      refundAmount: z.number().min(1, "El monto debe ser mayor a 0"),
+      reason: z.string().min(3, "Debe indicar un motivo"),
+      refundType: z.enum(["overstay", "energy", "general"]).default("general"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+
+      const totalCost = parseFloat(transaction.totalCost?.toString() || "0");
+      if (input.refundAmount > totalCost) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `El reembolso ($${input.refundAmount.toLocaleString()}) no puede superar el total de la transacción ($${totalCost.toLocaleString()})` });
+      }
+
+      // Si es reembolso de overstay, actualizar el campo overstayCost
+      if (input.refundType === "overstay") {
+        const currentOverstay = parseFloat(transaction.overstayCost?.toString() || "0");
+        if (input.refundAmount > currentOverstay) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `El reembolso de sobreestadía ($${input.refundAmount.toLocaleString()}) no puede superar el cobro de sobreestadía ($${currentOverstay.toLocaleString()})` });
+        }
+        const newOverstay = currentOverstay - input.refundAmount;
+        const newTotal = totalCost - input.refundAmount;
+        await db.updateTransaction(input.transactionId, {
+          overstayCost: newOverstay.toFixed(2),
+          totalCost: Math.max(0, newTotal).toFixed(2),
+        });
+      } else {
+        // Reembolso general: solo reducir totalCost
+        const newTotal = totalCost - input.refundAmount;
+        await db.updateTransaction(input.transactionId, {
+          totalCost: Math.max(0, newTotal).toFixed(2),
+        });
+      }
+
+      // Reembolsar al usuario en billetera
+      const wallet = await db.getWalletByUserId(transaction.userId);
+      if (wallet) {
+        const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+        const newBalance = currentBalance + input.refundAmount;
+        await db.updateWalletBalance(transaction.userId, newBalance.toString());
+        await db.createWalletTransaction({
+          walletId: wallet.id,
+          userId: transaction.userId,
+          type: "ADMIN_REFUND",
+          amount: input.refundAmount.toString(),
+          balanceBefore: currentBalance.toString(),
+          balanceAfter: newBalance.toString(),
+          referenceId: input.transactionId,
+          referenceType: "TRANSACTION",
+          status: "COMPLETED",
+          description: `[Admin: ${ctx.user.name || ctx.user.email}] Reembolso parcial (${input.refundType}). Motivo: ${input.reason}`,
+        });
+      }
+
+      // Condonar deudas asociadas si el reembolso cubre la deuda
+      if (input.refundType === "overstay") {
+        const debts = await db.getUserPendingDebts(transaction.userId);
+        for (const debt of debts) {
+          if (debt.transactionId === input.transactionId) {
+            const remaining = parseFloat(debt.remainingAmount?.toString() || "0");
+            if (input.refundAmount >= remaining) {
+              await db.waiveUserDebt(debt.id);
+            } else {
+              // Reducir deuda parcialmente
+              const dbInst = await db.getDb();
+              if (dbInst) {
+                const { userDebts: debtsTable } = await import("../drizzle/schema");
+                const { eq: eqOp3 } = await import("drizzle-orm");
+                await dbInst.update(debtsTable).set({
+                  remainingAmount: (remaining - input.refundAmount).toFixed(2),
+                  updatedAt: new Date(),
+                }).where(eqOp3(debtsTable.id, debt.id));
+              }
+            }
+          }
+        }
+      }
+
+      // Notificar al usuario
+      await db.createNotification({
+        userId: transaction.userId,
+        title: "💰 Reembolso aplicado",
+        message: `Se te ha reembolsado $${input.refundAmount.toLocaleString("es-CO")} COP de tu sesión de carga #${input.transactionId}. Motivo: ${input.reason}`,
+        type: "PAYMENT",
+        isRead: false,
+      });
+
+      // Registrar reembolso en tabla de auditoría
+      const refundId = await db.createRefund({
+        transactionId: input.transactionId,
+        userId: transaction.userId,
+        adminId: ctx.user.id,
+        adminName: ctx.user.name || ctx.user.email || `Admin #${ctx.user.id}`,
+        amount: input.refundAmount.toString(),
+        refundType: input.refundType,
+        reason: input.reason,
+        claimId: (input as any).claimId || null,
+        walletTransactionId: null,
+      });
+
+      console.log(`[Refund] Admin ${ctx.user.name} refunded $${input.refundAmount} (${input.refundType}) for tx #${input.transactionId}. Reason: ${input.reason}. RefundId: ${refundId}`);
+
+      return {
+        success: true,
+        refundedAmount: input.refundAmount,
+        refundType: input.refundType,
+        newTotalCost: totalCost - input.refundAmount,
+        refundId,
+      };
+    }),
+});
+
+// ============================================================================
+// REFUNDS ROUTER (Historial de reembolsos para auditoría)
+// ============================================================================
+
+const refundsRouter = router({
+  // Listar todos los reembolsos (admin)
+  list: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      offset: z.number().min(0).default(0),
+      adminId: z.number().optional(),
+      userId: z.number().optional(),
+      transactionId: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const opts = input || {};
+      const result = await db.getRefunds(opts);
+      // Enriquecer con datos del usuario
+      const enriched = await Promise.all(
+        result.data.map(async (refund) => {
+          const user = await db.getUserById(refund.userId);
+          const transaction = await db.getTransactionById(refund.transactionId);
+          return {
+            ...refund,
+            amount: parseFloat(refund.amount?.toString() || "0"),
+            userName: user?.name || user?.email || `Usuario #${refund.userId}`,
+            userEmail: user?.email || null,
+            transactionTotal: transaction ? parseFloat(transaction.totalCost?.toString() || "0") : null,
+            stationName: transaction ? (await db.getChargingStationById(transaction.stationId))?.name || null : null,
+          };
+        })
+      );
+      return { data: enriched, total: result.total };
+    }),
+
+  // Obtener un reembolso por ID
+  getById: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const refund = await db.getRefundById(input.id);
+      if (!refund) throw new TRPCError({ code: "NOT_FOUND", message: "Reembolso no encontrado" });
+      return refund;
+    }),
+
+  // Estadísticas de reembolsos
+  stats: adminProcedure.query(async () => {
+    const allRefunds = await db.getRefunds({ limit: 10000 });
+    const totalAmount = allRefunds.data.reduce((sum, r) => sum + parseFloat(r.amount?.toString() || "0"), 0);
+    const byType = allRefunds.data.reduce((acc, r) => {
+      acc[r.refundType] = (acc[r.refundType] || 0) + parseFloat(r.amount?.toString() || "0");
+      return acc;
+    }, {} as Record<string, number>);
+    return {
+      totalRefunds: allRefunds.total,
+      totalAmount,
+      byType,
+      last30Days: allRefunds.data.filter(r => {
+        const d = new Date(r.createdAt);
+        return d > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      }).length,
+    };
+  }),
+});
+
+// ============================================================================
+// CLAIMS ROUTER (Reclamos de cobro incorrecto)
+// ============================================================================
+
+const claimsRouter = router({
+  // Crear reclamo (usuario)
+  create: protectedProcedure
+    .input(z.object({
+      transactionId: z.number(),
+      category: z.enum(["overcharge", "overstay_unfair", "wrong_kwh", "double_charge", "other"]),
+      description: z.string().min(10, "Describe el problema con al menos 10 caracteres"),
+      requestedAmount: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // Verificar que la transacción pertenece al usuario
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+      if (transaction.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "No puedes reclamar una transacción que no te pertenece" });
+      }
+
+      // Verificar que no haya un reclamo pendiente para esta transacción
+      const existingClaims = await db.getClaimsByTransactionId(input.transactionId);
+      const pendingClaim = existingClaims.find(c => c.status === "PENDING" || c.status === "IN_REVIEW");
+      if (pendingClaim) {
+        throw new TRPCError({ code: "CONFLICT", message: "Ya tienes un reclamo pendiente para esta transacción" });
+      }
+
+      const claimId = await db.createClaim({
+        userId: ctx.user.id,
+        userName: ctx.user.name || ctx.user.email || `Usuario #${ctx.user.id}`,
+        transactionId: input.transactionId,
+        category: input.category,
+        description: input.description,
+        requestedAmount: input.requestedAmount?.toString() || null,
+        status: "PENDING",
+      });
+
+      // Notificar a todos los admins/staff
+      const allUsers = await db.getAllUsers();
+      const admins = allUsers.filter((u: any) => u.role === "admin" || u.role === "staff");
+      for (const admin of admins) {
+        await db.createNotification({
+          userId: admin.id,
+          title: "⚠️ Nuevo reclamo de cobro",
+          message: `${ctx.user.name || ctx.user.email} reportó un cobro incorrecto en la transacción #${input.transactionId}. Categoría: ${input.category}. Revisa el panel de reclamos.`,
+          type: "SYSTEM",
+          referenceId: claimId,
+          referenceType: "CLAIM",
+          isRead: false,
+        });
+      }
+
+      return { success: true, claimId };
+    }),
+
+  // Mis reclamos (usuario)
+  myClaims: protectedProcedure.query(async ({ ctx }) => {
+    const result = await db.getClaims({ userId: ctx.user.id });
+    // Enriquecer con datos de la transacción
+    const enriched = await Promise.all(
+      result.data.map(async (claim) => {
+        const transaction = await db.getTransactionById(claim.transactionId);
+        const station = transaction ? await db.getChargingStationById(transaction.stationId) : null;
+        return {
+          ...claim,
+          requestedAmount: claim.requestedAmount ? parseFloat(claim.requestedAmount.toString()) : null,
+          transactionTotal: transaction ? parseFloat(transaction.totalCost?.toString() || "0") : null,
+          stationName: station?.name || null,
+          transactionDate: transaction?.startTime || null,
+        };
+      })
+    );
+    return enriched;
+  }),
+
+  // Listar reclamos (admin)
+  list: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      offset: z.number().min(0).default(0),
+      status: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const opts = input || {};
+      const result = await db.getClaims(opts);
+      // Enriquecer con datos de la transacción
+      const enriched = await Promise.all(
+        result.data.map(async (claim) => {
+          const transaction = await db.getTransactionById(claim.transactionId);
+          const station = transaction ? await db.getChargingStationById(transaction.stationId) : null;
+          return {
+            ...claim,
+            requestedAmount: claim.requestedAmount ? parseFloat(claim.requestedAmount.toString()) : null,
+            transactionTotal: transaction ? parseFloat(transaction.totalCost?.toString() || "0") : null,
+            stationName: station?.name || null,
+            transactionDate: transaction?.startTime || null,
+            kwhConsumed: transaction ? parseFloat(transaction.kwhConsumed?.toString() || "0") : null,
+            overstayCost: transaction ? parseFloat(transaction.overstayCost?.toString() || "0") : null,
+          };
+        })
+      );
+      return { data: enriched, total: result.total };
+    }),
+
+  // Resolver reclamo (admin)
+  resolve: adminProcedure
+    .input(z.object({
+      claimId: z.number(),
+      resolution: z.string().min(3, "Debe indicar la resolución"),
+      status: z.enum(["RESOLVED", "REJECTED"]),
+      refundAmount: z.number().optional(), // Si se aprueba reembolso
+      refundType: z.enum(["overstay", "energy", "general"]).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const claim = await db.getClaimById(input.claimId);
+      if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Reclamo no encontrado" });
+      if (claim.status !== "PENDING" && claim.status !== "IN_REVIEW") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Este reclamo ya fue resuelto" });
+      }
+
+      let refundId: number | null = null;
+
+      // Si se aprueba con reembolso, ejecutar el reembolso
+      if (input.status === "RESOLVED" && input.refundAmount && input.refundAmount > 0) {
+        const transaction = await db.getTransactionById(claim.transactionId);
+        if (!transaction) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+
+        const totalCost = parseFloat(transaction.totalCost?.toString() || "0");
+        if (input.refundAmount > totalCost) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "El reembolso no puede superar el total" });
+        }
+
+        // Ejecutar reembolso en billetera
+        const wallet = await db.getWalletByUserId(transaction.userId);
+        if (wallet) {
+          const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+          const newBalance = currentBalance + input.refundAmount;
+          await db.updateWalletBalance(transaction.userId, newBalance.toString());
+          await db.createWalletTransaction({
+            walletId: wallet.id,
+            userId: transaction.userId,
+            type: "ADMIN_REFUND",
+            amount: input.refundAmount.toString(),
+            balanceBefore: currentBalance.toString(),
+            balanceAfter: newBalance.toString(),
+            referenceId: claim.transactionId,
+            referenceType: "TRANSACTION",
+            status: "COMPLETED",
+            description: `[Reclamo #${claim.id}] Reembolso aprobado por ${ctx.user.name || ctx.user.email}. Motivo: ${input.resolution}`,
+          });
+        }
+
+        // Actualizar transacción
+        const refundType = input.refundType || "general";
+        if (refundType === "overstay") {
+          const currentOverstay = parseFloat(transaction.overstayCost?.toString() || "0");
+          await db.updateTransaction(claim.transactionId, {
+            overstayCost: Math.max(0, currentOverstay - input.refundAmount).toFixed(2),
+            totalCost: Math.max(0, totalCost - input.refundAmount).toFixed(2),
+          });
+        } else {
+          await db.updateTransaction(claim.transactionId, {
+            totalCost: Math.max(0, totalCost - input.refundAmount).toFixed(2),
+          });
+        }
+
+        // Registrar en tabla de reembolsos
+        refundId = await db.createRefund({
+          transactionId: claim.transactionId,
+          userId: transaction.userId,
+          adminId: ctx.user.id,
+          adminName: ctx.user.name || ctx.user.email || `Admin #${ctx.user.id}`,
+          amount: input.refundAmount.toString(),
+          refundType: refundType,
+          reason: `[Reclamo #${claim.id}] ${input.resolution}`,
+          claimId: claim.id,
+          walletTransactionId: null,
+        });
+      }
+
+      // Actualizar reclamo
+      await db.updateClaim(input.claimId, {
+        status: input.status,
+        resolution: input.resolution,
+        resolvedByAdminId: ctx.user.id,
+        resolvedByAdminName: ctx.user.name || ctx.user.email || `Admin #${ctx.user.id}`,
+        refundId,
+        resolvedAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Notificar al usuario
+      const statusText = input.status === "RESOLVED" ? "aprobado" : "rechazado";
+      const refundText = input.refundAmount ? ` Se reembolsó $${input.refundAmount.toLocaleString("es-CO")} COP.` : "";
+      await db.createNotification({
+        userId: claim.userId,
+        title: input.status === "RESOLVED" ? "✅ Reclamo resuelto" : "❌ Reclamo rechazado",
+        message: `Tu reclamo sobre la transacción #${claim.transactionId} fue ${statusText}.${refundText} Resolución: ${input.resolution}`,
+        type: "PAYMENT",
+        referenceId: input.claimId,
+        referenceType: "CLAIM",
+        isRead: false,
+      });
+
+      return { success: true, status: input.status, refundId };
+    }),
+
+  // Marcar como en revisión (admin)
+  markInReview: adminProcedure
+    .input(z.object({ claimId: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.updateClaim(input.claimId, { status: "IN_REVIEW", updatedAt: new Date() });
+      return { success: true };
+    }),
+
+  // Estadísticas de reclamos
+  stats: adminProcedure.query(async () => {
+    const [pending, inReview, resolved, rejected] = await Promise.all([
+      db.getClaims({ status: "PENDING" }),
+      db.getClaims({ status: "IN_REVIEW" }),
+      db.getClaims({ status: "RESOLVED" }),
+      db.getClaims({ status: "REJECTED" }),
+    ]);
+    return {
+      pending: pending.total,
+      inReview: inReview.total,
+      resolved: resolved.total,
+      rejected: rejected.total,
+      total: pending.total + inReview.total + resolved.total + rejected.total,
+    };
+  }),
 });
 
 // ============================================================================
@@ -2606,8 +3290,8 @@ const settingsRouter = router({
   getInvestorPercentage: publicProcedure.query(async () => {
     const settings = await db.getPlatformSettings();
     return {
-      investorPercentage: settings?.investorPercentage ?? 80,
-      platformFeePercentage: settings?.platformFeePercentage ?? 20,
+      investorPercentage: settings?.investorPercentage ?? 70,
+      platformFeePercentage: settings?.platformFeePercentage ?? 30,
     };
   }),
 
@@ -2627,6 +3311,7 @@ const settingsRouter = router({
       precioVentaDefault: settings?.precioVentaDefault ?? 1800,
       precioVentaMin: settings?.precioVentaMin ?? 1400,
       precioVentaMax: settings?.precioVentaMax ?? 2200,
+      hostPercentage: 10, // Default aliado comercial % (per-station config overrides this)
     };
   }),
   
@@ -2640,8 +3325,8 @@ const settingsRouter = router({
         businessLine: "Green EV",
         nit: "",
         contactEmail: "",
-        investorPercentage: 80,
-        platformFeePercentage: 20,
+        investorPercentage: 70,
+        platformFeePercentage: 30,
         wompiPublicKey: "",
         wompiPrivateKey: "",
         wompiIntegritySecret: "",
@@ -3025,7 +3710,7 @@ const payoutsRouter = router({
       const periodStart = balance.lastPayout?.periodEnd || new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const periodEnd = now;
       
-      const platformFee = input.amount * ((100 - (balance.investorPercentage || 80)) / (balance.investorPercentage || 80));
+      const platformFee = input.amount * ((100 - (balance.investorPercentage || 70)) / (balance.investorPercentage || 70));
       const totalRevenue = input.amount + platformFee;
       
       const payoutId = await db.createInvestorPayout({
@@ -3035,7 +3720,7 @@ const payoutsRouter = router({
         totalRevenue: totalRevenue.toFixed(2),
         investorShare: input.amount.toFixed(2),
         platformFee: platformFee.toFixed(2),
-        investorPercentage: balance.investorPercentage || 80,
+        investorPercentage: balance.investorPercentage || 70,
         transactionCount: balance.transactionCount || 0,
         totalKwh: '0', // Se puede calcular si es necesario
         bankName: input.bankName,
@@ -3153,7 +3838,7 @@ const crowdfundingRouter = router({
   // Obtener todos los proyectos públicos
   getProjects: publicProcedure
     .input(z.object({
-      status: z.string().optional(),
+      status: z.enum(['ACTIVE', 'FUNDED', 'COMPLETED', 'CANCELLED', 'DRAFT']).optional(),
     }).optional())
     .query(async ({ input }) => {
       return db.getCrowdfundingProjects({
@@ -3193,13 +3878,70 @@ const crowdfundingRouter = router({
       status: z.string().optional(),
       targetDate: z.date().optional(),
       priority: z.number().optional(),
+      // Modelo financiero para la estación auto-creada
+      evgreenSharePercent: z.string().optional(),
+      investorSharePercent: z.string().optional(),
+      hostSharePercent: z.string().optional(),
+      energyPurchaseCostPerKwh: z.string().optional(),
+      hostName: z.string().optional(),
+      hostUserId: z.number().optional(),
+      latitude: z.string().optional(),
+      longitude: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const { evgreenSharePercent, investorSharePercent, hostSharePercent, energyPurchaseCostPerKwh, hostName, hostUserId, latitude, longitude, ...projectInput } = input;
+      
+      // 1. Crear el proyecto crowdfunding
       const projectId = await db.createCrowdfundingProject({
-        ...input,
+        ...projectInput,
         createdById: ctx.user.id,
       });
-      return { success: true, projectId };
+      
+      // 2. Auto-crear estación física vinculada al proyecto
+      const stationName = `${input.name}`;
+      const stationId = await db.createChargingStation({
+        ownerId: ctx.user.id, // Admin es el owner temporal hasta que se asigne
+        name: stationName,
+        description: input.description || `Estación colectiva - Proyecto ${input.name}`,
+        address: input.address || `${input.zone}, ${input.city}`,
+        city: input.city,
+        department: '',
+        latitude: latitude || '4.6097',
+        longitude: longitude || '-74.0817',
+        country: 'Colombia',
+        isActive: false, // Inactiva hasta que se instale
+        isPublic: false,
+        // Modelo financiero
+        evgreenSharePercent: evgreenSharePercent || '30.00',
+        investorSharePercent: investorSharePercent || '70.00',
+        hostSharePercent: hostSharePercent || '10.00',
+        energyPurchaseCostPerKwh: energyPurchaseCostPerKwh || '800.00',
+        hostName: hostName || null,
+        hostUserId: hostUserId || null,
+      });
+      
+      // 3. Vincular la estación al proyecto crowdfunding
+      if (stationId) {
+        await db.updateCrowdfundingProject(projectId, { stationId });
+        console.log(`[Crowdfunding] Proyecto ${projectId} vinculado a estación ${stationId} automáticamente`);
+      }
+      
+      // 4. Crear EVSEs/conectores según especificaciones del proyecto
+      if (stationId && input.chargerCount) {
+        for (let i = 1; i <= input.chargerCount; i++) {
+          await db.createEvse({
+            stationId,
+            evseIdLocal: i,
+            connectorType: 'CCS_2',
+            chargeType: 'DC',
+            powerKw: String(input.chargerPowerKw || 120),
+            status: 'UNAVAILABLE',
+          });
+        }
+        console.log(`[Crowdfunding] ${input.chargerCount} conectores creados para estación ${stationId}`);
+      }
+      
+      return { success: true, projectId, stationId };
     }),
   
   // Admin: Actualizar proyecto
@@ -3235,7 +3977,15 @@ const crowdfundingRouter = router({
   getParticipations: adminProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ input }) => {
-      return db.getCrowdfundingParticipations(input.projectId);
+      const raw = await db.getCrowdfundingParticipations(input.projectId);
+      return raw.map((p: any) => ({
+        ...p,
+        investor: {
+          id: p.investorId,
+          name: p.investorName || p.name || 'N/A',
+          email: p.investorEmail || p.email || '',
+        },
+      }));
     }),
   
   // Inversionista: Obtener mis participaciones
@@ -3415,6 +4165,26 @@ const crowdfundingRouter = router({
         console.log(`[Crowdfunding] Inversionista ${investorId} vinculado a estación ${project.stationId}`);
       }
       
+      // Trigger onboarding welcome email if payment is confirmed
+      if (input.paymentConfirmed) {
+        try {
+          const investor = await db.getUserById(investorId);
+          if (investor && investor.email && !investor.welcomeEmailSent) {
+            await triggerInvestorWelcome(investorId, {
+              investorName: investor.name || input.name,
+              investorEmail: investor.email || input.email,
+              investmentAmount: input.amount,
+              investmentType: 'collective',
+              projectName: project.name,
+              participationPercent,
+            });
+            console.log(`[Onboarding] Welcome email sent to new investor ${investorId} via registerInvestor`);
+          }
+        } catch (onboardingError) {
+          console.error('[Onboarding] Error triggering welcome from registerInvestor:', onboardingError);
+        }
+      }
+      
       return { 
         success: true, 
         investorId, 
@@ -3424,6 +4194,94 @@ const crowdfundingRouter = router({
           ? 'Participación registrada para inversionista existente' 
           : 'Nuevo inversionista creado y participación registrada'
       };
+    }),
+
+  // Admin: Buscar usuarios para vincular como inversionistas
+  searchUsers: adminProcedure
+    .input(z.object({ query: z.string().min(1) }))
+    .query(async ({ input }) => {
+      return db.searchUsers(input.query, 15);
+    }),
+
+  // Admin: Editar participación existente
+  editParticipation: adminProcedure
+    .input(z.object({
+      participationId: z.number(),
+      amount: z.number().positive().optional(),
+      paymentStatus: z.enum(['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED']).optional(),
+      paymentReference: z.string().optional(),
+      investorId: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const participation = await db.getCrowdfundingParticipationById(input.participationId);
+      if (!participation) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Participación no encontrada' });
+      }
+      const project = await db.getCrowdfundingProjectById(participation.projectId);
+      if (!project) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Proyecto no encontrado' });
+      }
+      const updateData: any = {};
+      if (input.amount !== undefined) {
+        updateData.amount = input.amount;
+        updateData.participationPercent = (input.amount / Number(project.targetAmount)) * 100;
+      }
+      if (input.paymentStatus !== undefined) {
+        updateData.paymentStatus = input.paymentStatus;
+        if (input.paymentStatus === 'COMPLETED' && participation.paymentStatus !== 'COMPLETED') {
+          updateData.paymentDate = new Date();
+        }
+      }
+      if (input.paymentReference !== undefined) {
+        updateData.paymentReference = input.paymentReference;
+      }
+      if (input.investorId !== undefined) {
+        updateData.investorId = input.investorId;
+        // Update the linked user's role to investor if needed
+        const user = await db.getUserById(input.investorId);
+        if (user && user.role !== 'investor' && user.role !== 'admin') {
+          await db.updateUser(input.investorId, { role: 'investor' });
+        }
+      }
+      await db.updateCrowdfundingParticipationFull(input.participationId, updateData);
+      await db.updateProjectRaisedAmountByParticipation(input.participationId);
+      
+      // Trigger onboarding welcome email if payment status changed to COMPLETED
+      if (input.paymentStatus === 'COMPLETED' && participation.paymentStatus !== 'COMPLETED') {
+        try {
+          const investor = await db.getUserById(updateData.investorId || participation.investorId);
+          if (investor && investor.email && !investor.welcomeEmailSent) {
+            const project = await db.getCrowdfundingProjectById(participation.projectId);
+            await triggerInvestorWelcome(investor.id, {
+              investorName: investor.name || 'Inversionista',
+              investorEmail: investor.email,
+              investmentAmount: Number(participation.amount),
+              investmentType: 'collective',
+              projectName: project?.name,
+              participationPercent: Number(participation.participationPercent),
+            });
+            console.log(`[Onboarding] Welcome email sent to investor ${investor.id} via editParticipation`);
+          }
+        } catch (onboardingError) {
+          console.error('[Onboarding] Error triggering welcome from editParticipation:', onboardingError);
+        }
+      }
+      
+      return { success: true };
+    }),
+
+  // Admin: Eliminar participación
+  deleteParticipation: adminProcedure
+    .input(z.object({ participationId: z.number() }))
+    .mutation(async ({ input }) => {
+      const participation = await db.getCrowdfundingParticipationById(input.participationId);
+      if (!participation) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Participación no encontrada' });
+      }
+      const projectId = participation.projectId;
+      await db.deleteCrowdfundingParticipation(input.participationId);
+      await db.updateProjectRaisedAmount(projectId);
+      return { success: true };
     }),
 
   // Admin: Confirmar pago de participación
@@ -3475,7 +4333,44 @@ const crowdfundingRouter = router({
         }
       }
       
+      // Trigger onboarding welcome email for the investor
+      try {
+        const investor = await db.getUserById(participation.investorId);
+        if (investor && investor.email && !investor.welcomeEmailSent) {
+          const isIndividual = (investor.investorTypes || []).includes('individual');
+          await triggerInvestorWelcome(investor.id, {
+            investorName: investor.name || 'Inversionista',
+            investorEmail: investor.email,
+            investmentAmount: Number(participation.amount),
+            investmentType: isIndividual ? 'individual' : 'collective',
+            projectName: projectAfter?.name,
+            participationPercent: Number(participation.participationPercent),
+          });
+          console.log(`[Onboarding] Welcome email sent to investor ${investor.id}`);
+        }
+      } catch (onboardingError) {
+        console.error('[Onboarding] Error triggering welcome:', onboardingError);
+      }
+      
       return { success: true };
+    }),
+
+  // Admin: Eliminar proyecto de crowdfunding completo
+  deleteProject: adminProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ input }) => {
+      const project = await db.getCrowdfundingProjectById(input.projectId);
+      if (!project) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Proyecto no encontrado' });
+      }
+      
+      // 1. Eliminar todas las participaciones del proyecto
+      await db.deleteCrowdfundingProjectParticipations(input.projectId);
+      
+      // 2. Eliminar el proyecto
+      await db.deleteCrowdfundingProject(input.projectId);
+      
+      return { success: true, deletedProject: project.name };
     }),
 });
 
@@ -3962,6 +4857,43 @@ import {
   recordLoginSession,
 } from "./security/security-service";
 
+// SEGURIDAD: Rate limiting para intentos de 2FA (anti brute-force)
+const twoFaAttempts = new Map<number, { count: number; lockUntil: number }>();
+const TWO_FA_MAX_ATTEMPTS = 5;
+const TWO_FA_LOCKOUT_MS = 5 * 60 * 1000; // 5 minutos de bloqueo
+
+function check2FALimit(userId: number): void {
+  const now = Date.now();
+  const entry = twoFaAttempts.get(userId);
+  
+  if (entry && now < entry.lockUntil) {
+    const remainingSec = Math.ceil((entry.lockUntil - now) / 1000);
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: `Demasiados intentos. Intenta de nuevo en ${remainingSec} segundos.`,
+    });
+  }
+  
+  if (!entry || now >= entry.lockUntil) {
+    twoFaAttempts.set(userId, { count: 0, lockUntil: 0 });
+  }
+}
+
+function record2FAFailure(userId: number): void {
+  const entry = twoFaAttempts.get(userId) || { count: 0, lockUntil: 0 };
+  entry.count++;
+  if (entry.count >= TWO_FA_MAX_ATTEMPTS) {
+    entry.lockUntil = Date.now() + TWO_FA_LOCKOUT_MS;
+    entry.count = 0;
+    console.warn(`[Security] 2FA brute-force lockout for user ${userId}`);
+  }
+  twoFaAttempts.set(userId, entry);
+}
+
+function clear2FAAttempts(userId: number): void {
+  twoFaAttempts.delete(userId);
+}
+
 const securityRouter = router({
   // Obtener estado de 2FA
   get2FAStatus: protectedProcedure.query(async ({ ctx }) => {
@@ -3982,13 +4914,16 @@ const securityRouter = router({
   verify2FA: protectedProcedure
     .input(z.object({ token: z.string().length(6) }))
     .mutation(async ({ ctx, input }) => {
+      check2FALimit(ctx.user.id);
       const isValid = await verify2FAToken(ctx.user.id, input.token);
       if (!isValid) {
+        record2FAFailure(ctx.user.id);
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Código inválido. Verifica e intenta de nuevo.",
         });
       }
+      clear2FAAttempts(ctx.user.id);
       return { success: true, message: "2FA activado correctamente" };
     }),
 
@@ -3996,13 +4931,16 @@ const securityRouter = router({
   disable2FA: protectedProcedure
     .input(z.object({ token: z.string().length(6) }))
     .mutation(async ({ ctx, input }) => {
+      check2FALimit(ctx.user.id);
       const success = await disable2FA(ctx.user.id, input.token);
       if (!success) {
+        record2FAFailure(ctx.user.id);
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Código inválido. No se pudo desactivar 2FA.",
         });
       }
+      clear2FAAttempts(ctx.user.id);
       return { success: true, message: "2FA desactivado" };
     }),
 
@@ -4401,10 +5339,300 @@ const overstayRouter = router({
           count: data.count,
           total: Math.round(data.total),
         })),
+       };
+    }),
+
+  // Admin: cancelar/condonar penalización por overstay (falso positivo, corte de luz, etc.)
+  cancelPenalty: adminProcedure
+    .input(z.object({
+      transactionId: z.number(),
+      reason: z.string().min(3, "Debe indicar un motivo"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+      
+      const overstayCost = parseFloat(transaction.overstayCost?.toString() || "0");
+      if (overstayCost <= 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Esta transacción no tiene penalización por overstay" });
+      
+      // Guardar el costo original antes de cancelar
+      const originalOverstayCost = overstayCost;
+      const originalTotalCost = parseFloat(transaction.totalCost?.toString() || "0");
+      const newTotalCost = Math.max(0, originalTotalCost - originalOverstayCost);
+      
+      // Actualizar transacción: poner overstayCost en 0
+      await db.updateTransaction(input.transactionId, {
+        overstayCost: "0",
+        totalCost: newTotalCost.toString(),
+      });
+      
+      // Reembolsar al usuario en su billetera
+      const wallet = await db.getWalletByUserId(transaction.userId);
+      if (wallet) {
+        const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+        const newBalance = currentBalance + originalOverstayCost;
+        await db.updateWalletBalance(transaction.userId, newBalance.toString());
+        await db.createWalletTransaction({
+          walletId: wallet.id,
+          userId: transaction.userId,
+          type: "ADMIN_REFUND",
+          amount: originalOverstayCost.toString(),
+          balanceBefore: currentBalance.toString(),
+          balanceAfter: newBalance.toString(),
+          referenceId: input.transactionId,
+          referenceType: "TRANSACTION",
+          status: "COMPLETED",
+          description: `[Admin: ${ctx.user.name || ctx.user.email}] Cancelación de penalización por overstay. Motivo: ${input.reason}`,
+        });
+      }
+      
+      // Condonar deudas asociadas a esta transacción
+      const debts = await db.getUserPendingDebts(transaction.userId);
+      for (const debt of debts) {
+        if (debt.transactionId === input.transactionId) {
+          await db.waiveUserDebt(debt.id);
+        }
+      }
+      
+      // Notificar al usuario
+      await db.createNotification({
+        userId: transaction.userId,
+        title: "✅ Penalización cancelada",
+        message: `Se ha cancelado la penalización de $${originalOverstayCost.toLocaleString("es-CO")} COP de tu última sesión de carga. Se ha reembolsado el monto a tu billetera. Motivo: ${input.reason}`,
+        type: "PAYMENT",
+        isRead: false,
+      });
+      
+      console.log(`[Overstay] Admin ${ctx.user.name} cancelled penalty of $${originalOverstayCost} for tx #${input.transactionId}. Reason: ${input.reason}`);
+      
+      return {
+        success: true,
+        refundedAmount: originalOverstayCost,
+        newTotalCost,
+      };
+    }),
+
+  // Admin: ajustar monto de penalización (reducir parcialmente)
+  adjustPenalty: adminProcedure
+    .input(z.object({
+      transactionId: z.number(),
+      newOverstayCost: z.number().min(0, "El monto no puede ser negativo"),
+      reason: z.string().min(3, "Debe indicar un motivo"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const transaction = await db.getTransactionById(input.transactionId);
+      if (!transaction) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+      
+      const currentOverstayCost = parseFloat(transaction.overstayCost?.toString() || "0");
+      if (currentOverstayCost <= 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Esta transacción no tiene penalización" });
+      if (input.newOverstayCost >= currentOverstayCost) throw new TRPCError({ code: "BAD_REQUEST", message: "El nuevo monto debe ser menor al actual" });
+      
+      const refundAmount = currentOverstayCost - input.newOverstayCost;
+      const originalTotalCost = parseFloat(transaction.totalCost?.toString() || "0");
+      const newTotalCost = originalTotalCost - refundAmount;
+      
+      // Actualizar transacción
+      await db.updateTransaction(input.transactionId, {
+        overstayCost: input.newOverstayCost.toString(),
+        totalCost: Math.max(0, newTotalCost).toString(),
+      });
+      
+      // Reembolsar la diferencia al usuario
+      const wallet = await db.getWalletByUserId(transaction.userId);
+      if (wallet) {
+        const currentBalance = parseFloat(wallet.balance?.toString() || "0");
+        const newBalance = currentBalance + refundAmount;
+        await db.updateWalletBalance(transaction.userId, newBalance.toString());
+        await db.createWalletTransaction({
+          walletId: wallet.id,
+          userId: transaction.userId,
+          type: "ADMIN_REFUND",
+          amount: refundAmount.toString(),
+          balanceBefore: currentBalance.toString(),
+          balanceAfter: newBalance.toString(),
+          referenceId: input.transactionId,
+          referenceType: "TRANSACTION",
+          status: "COMPLETED",
+          description: `[Admin: ${ctx.user.name || ctx.user.email}] Ajuste de penalización: $${currentOverstayCost.toLocaleString("es-CO")} → $${input.newOverstayCost.toLocaleString("es-CO")}. Motivo: ${input.reason}`,
+        });
+      }
+      
+      // Ajustar deudas asociadas si existen
+      const debts = await db.getUserPendingDebts(transaction.userId);
+      for (const debt of debts) {
+        if (debt.transactionId === input.transactionId) {
+          const debtRemaining = parseFloat(debt.remainingAmount?.toString() || "0");
+          if (debtRemaining > refundAmount) {
+            // Reducir deuda parcialmente
+            const dbInstance = await db.getDb();
+            if (dbInstance) {
+              const { userDebts: userDebtsTable } = await import("../drizzle/schema");
+              const { eq: eqOp } = await import("drizzle-orm");
+              await dbInstance.update(userDebtsTable).set({
+                remainingAmount: (debtRemaining - refundAmount).toFixed(2),
+                updatedAt: new Date(),
+              }).where(eqOp(userDebtsTable.id, debt.id));
+            }
+          } else {
+            // Condonar deuda completamente
+            await db.waiveUserDebt(debt.id);
+          }
+        }
+      }
+      
+      // Notificar al usuario
+      await db.createNotification({
+        userId: transaction.userId,
+        title: "💰 Penalización ajustada",
+        message: `Se ha ajustado la penalización de tu sesión de carga de $${currentOverstayCost.toLocaleString("es-CO")} a $${input.newOverstayCost.toLocaleString("es-CO")} COP. Se reembolsaron $${refundAmount.toLocaleString("es-CO")} COP a tu billetera. Motivo: ${input.reason}`,
+        type: "PAYMENT",
+        isRead: false,
+      });
+      
+      console.log(`[Overstay] Admin ${ctx.user.name} adjusted penalty for tx #${input.transactionId}: $${currentOverstayCost} → $${input.newOverstayCost}. Refund: $${refundAmount}`);
+      
+      return {
+        success: true,
+        previousAmount: currentOverstayCost,
+        newAmount: input.newOverstayCost,
+        refundedAmount: refundAmount,
+      };
+    }),
+
+  // Admin: finalizar sesión fantasma remotamente (corte de luz, cargador colgado)
+  forceEndSession: adminProcedure
+    .input(z.object({
+      evseId: z.number(),
+      transactionId: z.number().optional(),
+      reason: z.string().min(3, "Debe indicar un motivo"),
+      cancelPenalty: z.boolean().default(true), // Por defecto cancela la penalización (es un falso positivo)
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const evse = await db.getEvseById(input.evseId);
+      if (!evse) throw new TRPCError({ code: "NOT_FOUND", message: "EVSE no encontrado" });
+      
+      const station = await db.getChargingStationById(evse.stationId || 0);
+      if (!station) throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+      
+      const results: string[] = [];
+      
+      // 1. Detener el tracking de overstay en memoria
+      const { onCableDisconnected, getOverstayInfo } = await import("./charging/overstay-monitor");
+      const overstayInfo = getOverstayInfo(input.evseId);
+      if (overstayInfo) {
+        // Si se debe cancelar la penalización, limpiar la sesión sin cobrar
+        if (input.cancelPenalty) {
+          // Importar el mapa de sesiones directamente para limpiar sin cobrar
+          const overstayModule = await import("./charging/overstay-monitor");
+          // Usar onCableDisconnected que hace el cobro final, luego reembolsamos
+          await onCableDisconnected(input.evseId);
+          results.push("Sesión de overstay finalizada");
+        } else {
+          await onCableDisconnected(input.evseId);
+          results.push("Sesión de overstay finalizada (con cobro)");
+        }
+      }
+      
+      // 2. Intentar enviar RemoteStop al cargador
+      try {
+        if (station.ocppIdentity) {
+          // Buscar transacción activa para el EVSE
+          const activeTx = await db.getActiveTransaction(input.evseId);
+          if (activeTx) {
+            const ocppTxId = (activeTx as any).ocppNumericTxId || activeTx.id;
+            await dualCSMS.requestStopTransaction(station.ocppIdentity, ocppTxId);
+            results.push("RemoteStop enviado al cargador");
+          }
+        }
+      } catch (err: any) {
+        results.push(`RemoteStop falló: ${err.message}`);
+      }
+      
+      // 3. Intentar Reset Soft del cargador
+      try {
+        if (station.ocppIdentity) {
+          await dualCSMS.reset(station.ocppIdentity, "Soft");
+          results.push("Reset Soft enviado al cargador");
+        }
+      } catch (err: any) {
+        results.push(`Reset falló: ${err.message}`);
+      }
+      
+      // 4. Actualizar estado del EVSE a AVAILABLE
+      await db.updateEvseStatus(input.evseId, "AVAILABLE");
+      results.push("EVSE marcado como AVAILABLE");
+      
+      // 5. Si hay transacción activa, completarla
+      const activeTx = await db.getActiveTransaction(input.evseId);
+      if (activeTx) {
+        await db.updateTransaction(activeTx.id, {
+          status: "COMPLETED",
+          endTime: new Date(),
+        });
+        results.push(`Transacción #${activeTx.id} completada`);
+      }
+      
+      // 6. Si se pidió cancelar la penalización y hay una transacción con overstay
+      if (input.cancelPenalty && input.transactionId) {
+        const tx = await db.getTransactionById(input.transactionId);
+        if (tx) {
+          const overstayCost = parseFloat(tx.overstayCost?.toString() || "0");
+          if (overstayCost > 0) {
+            const originalTotal = parseFloat(tx.totalCost?.toString() || "0");
+            await db.updateTransaction(input.transactionId, {
+              overstayCost: "0",
+              totalCost: Math.max(0, originalTotal - overstayCost).toString(),
+            });
+            
+            // Reembolsar
+            const wallet = await db.getWalletByUserId(tx.userId);
+            if (wallet) {
+              const bal = parseFloat(wallet.balance?.toString() || "0");
+              await db.updateWalletBalance(tx.userId, (bal + overstayCost).toString());
+              await db.createWalletTransaction({
+                walletId: wallet.id,
+                userId: tx.userId,
+                type: "ADMIN_REFUND",
+                amount: overstayCost.toString(),
+                balanceBefore: bal.toString(),
+                balanceAfter: (bal + overstayCost).toString(),
+                referenceId: input.transactionId,
+                referenceType: "TRANSACTION",
+                status: "COMPLETED",
+                description: `[Admin: ${ctx.user.name}] Reembolso por sesión fantasma. Motivo: ${input.reason}`,
+              });
+            }
+            
+            // Condonar deudas
+            const debts = await db.getUserPendingDebts(tx.userId);
+            for (const debt of debts) {
+              if (debt.transactionId === input.transactionId) {
+                await db.waiveUserDebt(debt.id);
+              }
+            }
+            
+            // Notificar
+            await db.createNotification({
+              userId: tx.userId,
+              title: "✅ Sesión corregida",
+              message: `Se detectó un problema con tu sesión de carga (posible corte de energía). La penalización de $${overstayCost.toLocaleString("es-CO")} COP ha sido cancelada y reembolsada. Motivo: ${input.reason}`,
+              type: "PAYMENT",
+              isRead: false,
+            });
+            
+            results.push(`Penalización de $${overstayCost} cancelada y reembolsada`);
+          }
+        }
+      }
+      
+      console.log(`[Overstay] Admin ${ctx.user.name} force-ended session on EVSE ${input.evseId}. Actions: ${results.join(", ")}. Reason: ${input.reason}`);
+      
+      return {
+        success: true,
+        actions: results,
       };
     }),
 });
-
 // ============================================================================
 // INVESTOR MANAGEMENT ROUTER (Admin)
 // ============================================================================
@@ -4595,6 +5823,35 @@ const investorManagementRouter = router({
       totalInvested: participations.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0) + (user.investorTotalInvested || 0),
     };
   }),
+
+  // Admin: eliminar inversionista (limpia participaciones, payouts, perfil)
+  deleteInvestor: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      deleteUserAccount: z.boolean().default(false), // Si true, elimina la cuenta de usuario completa
+    }))
+    .mutation(async ({ input }) => {
+      // Verificar que el usuario existe y es inversionista
+      const user = await db.getUserById(input.userId);
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+      }
+      if (user.role !== 'investor') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El usuario no es un inversionista' });
+      }
+      // No permitir eliminar al owner/admin principal
+      if (user.email === 'Admin@greenhproject.com' || user.email === 'greenhproject@gmail.com') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'No se puede eliminar la cuenta del administrador principal' });
+      }
+      const result = await db.deleteInvestor(input.userId, input.deleteUserAccount);
+      return {
+        success: true,
+        message: input.deleteUserAccount
+          ? `Inversionista y cuenta de usuario eliminados. ${result.deletedParticipations} participación(es) eliminada(s).`
+          : `Perfil de inversionista eliminado. ${result.deletedParticipations} participación(es) eliminada(s). La cuenta de usuario se mantuvo como usuario normal.`,
+        ...result,
+      };
+    }),
 });
 
 // ============================================================================
@@ -4834,6 +6091,398 @@ const debtRouter = router({
     }),
 });
 
+// ============================================================================
+// ADMIN REMOTE START ROUTER - Inicio remoto de carga desde panel admin/soporte
+// ============================================================================
+
+const adminRemoteStartRouter = router({
+  /**
+   * Buscar usuarios para vincular con inicio remoto de carga
+   * Busca por email, nombre o teléfono
+   */
+  searchUsers: adminProcedure
+    .input(z.object({ query: z.string().min(2) }))
+    .query(async ({ input }) => {
+      const results = await db.searchUsers(input.query, 15);
+      return results.map((u: any) => ({
+        id: u.id,
+        name: u.name || "Sin nombre",
+        email: u.email || "",
+        phone: u.phone || "",
+        role: u.role || "user",
+        idTag: u.idTag || `USER-${u.id}`,
+      }));
+    }),
+
+  /**
+   * Obtener estaciones con conectores disponibles para inicio remoto
+   */
+  getAvailableStations: adminProcedure
+    .query(async () => {
+      const stations = await db.getAllChargingStations({ isActive: true });
+      const enriched = await Promise.all(
+        stations.map(async (station: any) => {
+          const evsesList = await db.getEvsesByStationId(station.id);
+          const isConnected = dualCSMS.isStationConnected(station.ocppIdentity || "");
+          return {
+            id: station.id,
+            name: station.name,
+            address: station.address,
+            ocppIdentity: station.ocppIdentity,
+            isOnline: station.isOnline || isConnected,
+            isConnected,
+            connectors: evsesList.map((e: any) => ({
+              id: e.id,
+              connectorId: e.connectorId || e.evseIdLocal,
+              status: (e.status || "UNKNOWN").toUpperCase(),
+              connectorType: e.connectorType || "Type2",
+              maxPowerKw: (e as any).maxPowerKw || (e as any).powerKw || 0,
+            })),
+          };
+        })
+      );
+      return enriched;
+    }),
+
+  /**
+   * Obtener precio estimado para una estación y conector
+   */
+  getEstimatedPrice: adminProcedure
+    .input(z.object({
+      stationId: z.number(),
+      connectorId: z.number(),
+      userId: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const { stationId, connectorId, userId } = input;
+      const evsesList = await db.getEvsesByStationId(stationId);
+      const selectedConnector = evsesList.find((c: any) => c.connectorId === connectorId || c.evseIdLocal === connectorId) || evsesList[0];
+      const evseId = selectedConnector?.id || evsesList[0]?.id;
+
+      const tariff = await db.getActiveTariffByStationId(stationId);
+      const useAutoPricing = tariff?.autoPricing || false;
+      const effectivePriceData = await db.getEffectiveStationPrice(stationId);
+      const tariffSource = effectivePriceData.source;
+
+      let pricePerKwh: number;
+      if (useAutoPricing && evseId) {
+        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
+        pricePerKwh = priceByType.price;
+      } else {
+        const basePrice = effectivePriceData.pricePerKwh;
+        if (evseId) {
+          const priceByType = await db.getPriceByConnectorType(evseId, basePrice, tariffSource);
+          pricePerKwh = priceByType.price;
+        } else {
+          pricePerKwh = basePrice;
+        }
+      }
+
+      // Aplicar descuento de suscripción del usuario
+      let subscriptionDiscount = 0;
+      try {
+        const userSub = await db.getUserSubscription(userId);
+        if (userSub?.isActive && userSub.discountPercentage) {
+          const discountPct = parseFloat(userSub.discountPercentage);
+          if (discountPct > 0) {
+            subscriptionDiscount = discountPct;
+            pricePerKwh = Math.round(pricePerKwh * (1 - discountPct / 100));
+          }
+        }
+      } catch (e) { /* no-op */ }
+
+      // Obtener saldo del usuario
+      const wallet = await db.getWalletByUserId(userId);
+      const balance = wallet?.balance ? parseFloat(wallet.balance) : 0;
+
+      return {
+        pricePerKwh,
+        subscriptionDiscount,
+        userBalance: balance,
+        tariffSource,
+        useAutoPricing,
+        connectorType: selectedConnector?.connectorType || "Type2",
+        maxPowerKw: (selectedConnector as any)?.maxPowerKw || (selectedConnector as any)?.powerKw || 0,
+      };
+    }),
+
+  /**
+   * INICIAR CARGA REMOTA desde admin/soporte
+   * Crea la sesión pendiente + envía RemoteStartTransaction + auditoría
+   */
+  startRemoteCharge: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      stationId: z.number(),
+      connectorId: z.number(),
+      chargeMode: z.enum(["fixed_amount", "percentage", "full_charge", "by_kwh", "by_amount"]),
+      targetValue: z.number(),
+      reason: z.string().min(3, "Debe indicar un motivo para la asistencia remota"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { userId, stationId, connectorId, chargeMode, targetValue, reason } = input;
+      const adminName = ctx.user.name || ctx.user.email || "Admin";
+
+      // 1. Validar que el usuario existe
+      const targetUser = await db.getUserById(userId);
+      if (!targetUser) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Usuario no encontrado" });
+      }
+
+      // 2. Validar saldo del usuario
+      const wallet = await db.getWalletByUserId(userId);
+      const balance = wallet?.balance ? parseFloat(wallet.balance) : 0;
+
+      // 3. Calcular precio (misma lógica que startCharge)
+      const evsesList = await db.getEvsesByStationId(stationId);
+      const selectedConnector = evsesList.find((c: any) => c.connectorId === connectorId || c.evseIdLocal === connectorId) || evsesList[0];
+      const evseId = selectedConnector?.id || evsesList[0]?.id;
+
+      const tariff = await db.getActiveTariffByStationId(stationId);
+      const useAutoPricing = tariff?.autoPricing || false;
+      const effectivePriceData = await db.getEffectiveStationPrice(stationId);
+      const tariffSource = effectivePriceData.source;
+
+      let pricePerKwh: number;
+      if (useAutoPricing && evseId) {
+        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
+        pricePerKwh = priceByType.price;
+      } else {
+        const basePrice = effectivePriceData.pricePerKwh;
+        if (evseId) {
+          const priceByType = await db.getPriceByConnectorType(evseId, basePrice, tariffSource);
+          pricePerKwh = priceByType.price;
+        } else {
+          pricePerKwh = basePrice;
+        }
+      }
+
+      // Aplicar descuento de suscripción
+      let subscriptionDiscount = 0;
+      try {
+        const userSub = await db.getUserSubscription(userId);
+        if (userSub?.isActive && userSub.discountPercentage) {
+          const discountPct = parseFloat(userSub.discountPercentage);
+          if (discountPct > 0) {
+            subscriptionDiscount = discountPct;
+            pricePerKwh = Math.round(pricePerKwh * (1 - discountPct / 100));
+          }
+        }
+      } catch (e) { /* no-op */ }
+
+      // 4. Calcular costo estimado
+      let estimatedCost = 0;
+      let estimatedKwhTotal = 0;
+      const avgBatteryCapacity = 60; // kWh promedio de batería EV
+      switch (chargeMode) {
+        case "fixed_amount":
+          estimatedCost = targetValue;
+          estimatedKwhTotal = targetValue / pricePerKwh;
+          break;
+        case "by_amount":
+          estimatedCost = targetValue;
+          estimatedKwhTotal = targetValue / pricePerKwh;
+          break;
+        case "by_kwh":
+          estimatedKwhTotal = targetValue;
+          estimatedCost = targetValue * pricePerKwh;
+          break;
+        case "percentage":
+          estimatedKwhTotal = ((targetValue - 20) / 100) * avgBatteryCapacity;
+          estimatedCost = estimatedKwhTotal * pricePerKwh;
+          break;
+        case "full_charge":
+          estimatedKwhTotal = 0.8 * avgBatteryCapacity;
+          estimatedCost = estimatedKwhTotal * pricePerKwh;
+          break;
+      }
+
+      // 5. Validar saldo (advertir pero no bloquear - admin puede decidir)
+      const insufficientBalance = balance < estimatedCost;
+
+      // 6. Obtener datos de la estación
+      const stationData = await db.getChargingStationById(stationId);
+      if (!stationData) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+      }
+
+      const ocppIdentity = stationData.ocppIdentity || "";
+      if (!ocppIdentity) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La estación no tiene identidad OCPP configurada" });
+      }
+
+      // 7. Verificar conexión OCPP
+      const isConnected = dualCSMS.isStationConnected(ocppIdentity);
+      if (!isConnected && !stationData.isOnline) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "La estación no está conectada. Verifica que el cargador tenga conexión a internet.",
+        });
+      }
+
+      // 8. Crear sesión pendiente en memoria (reutilizando la estructura de charging-router)
+      const { v4: uuidv4 } = await import("uuid");
+      const sessionId = uuidv4();
+      const { getPendingSession } = await import("./charging/charging-router");
+
+      // Importar dinámicamente para acceder al Map de sesiones pendientes
+      // Necesitamos usar la misma referencia que charging-router para que el flujo OCPP funcione
+      const chargingModule = await import("./charging/charging-router");
+
+      // Crear la sesión pendiente directamente en el módulo de charging
+      // Usamos un truco: llamamos a la función interna que gestiona el Map
+      // Como no hay un "setPendingSession" exportado, lo hacemos via el módulo
+      // La sesión se crea en el Map interno del charging-router
+      const pendingSessionData = {
+        userId,
+        stationId,
+        connectorId,
+        chargeMode: chargeMode as any,
+        targetValue,
+        estimatedCost,
+        pricePerKwh,
+        createdAt: new Date(),
+        ocppIdentity,
+      };
+
+      // 9. Enviar RemoteStartTransaction al cargador
+      const idTag = targetUser.idTag || `USER-${userId}`;
+      let sent = false;
+      let remoteStartResponse: { status: string } | null = null;
+
+      console.log(`[AdminRemoteStart] Admin ${adminName} initiating remote charge for user ${targetUser.name || targetUser.email} (ID: ${userId}) at station ${stationData.name} (${ocppIdentity}), connector ${connectorId}`);
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          console.log(`[AdminRemoteStart] Attempt ${attempt}/3: Sending RemoteStartTransaction to ${ocppIdentity}, connectorId=${connectorId}, idTag=${idTag}`);
+          remoteStartResponse = await dualCSMS.requestStartTransaction(ocppIdentity, connectorId, idTag);
+          sent = true;
+          console.log(`[AdminRemoteStart] Response: ${JSON.stringify(remoteStartResponse)}`);
+
+          if (remoteStartResponse?.status === "Rejected") {
+            console.warn(`[AdminRemoteStart] Charger ${ocppIdentity} REJECTED RemoteStartTransaction`);
+            break;
+          }
+          break;
+        } catch (error: any) {
+          console.error(`[AdminRemoteStart] Attempt ${attempt}/3 failed: ${error.message}`);
+          if (attempt < 3) {
+            await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+      }
+
+      // 10. Si el cargador rechazó explícitamente
+      if (remoteStartResponse?.status === "Rejected") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "El cargador rechazó la solicitud. Verifica que el vehículo esté correctamente conectado al conector.",
+        });
+      }
+
+      // 11. Registrar auditoría OCPP
+      await db.createOcppLog({
+        ocppIdentity,
+        direction: "OUT",
+        messageType: "RemoteStartTransaction",
+        messageId: sessionId,
+        payload: {
+          connectorId,
+          idTag,
+          initiatedBy: "ADMIN_REMOTE",
+          adminId: ctx.user.id,
+          adminName,
+          targetUserId: userId,
+          targetUserName: targetUser.name || targetUser.email,
+          reason,
+          chargeMode,
+          targetValue,
+          pricePerKwh,
+          estimatedCost,
+          response: remoteStartResponse,
+        },
+      });
+
+      // 12. Notificar al usuario que se inició su carga remotamente
+      const stationName = stationData.name || "Estación EVGreen";
+      const formattedPrice = Math.round(pricePerKwh).toLocaleString("es-CO");
+      await db.createNotification({
+        userId,
+        title: "\u26a1 Carga iniciada por soporte",
+        message: `El equipo de soporte EVGreen ha iniciado una sesión de carga en ${stationName}, conector ${connectorId}. Tarifa: $${formattedPrice} COP/kWh. Motivo: ${reason}`,
+        type: "CHARGE_REQUESTED",
+        isRead: false,
+      });
+
+      // 13. Enviar push notification al usuario
+      try {
+        const { sendUserPush } = await import("./push/unified-push");
+        await sendUserPush(userId, {
+          type: "charging_started",
+          title: "\u26a1 Carga iniciada por soporte",
+          body: `Soporte EVGreen inició tu carga en ${stationName}. Tarifa: $${formattedPrice}/kWh`,
+          clickAction: "/charging-monitor",
+          data: { stationId: stationId.toString(), connectorId: connectorId.toString() },
+        });
+      } catch (pushErr) {
+        console.warn(`[AdminRemoteStart] Push notification failed:`, pushErr);
+      }
+
+      // 14. Notificar al admin que inició la carga (copia para trazabilidad)
+      await db.createNotification({
+        userId: ctx.user.id,
+        title: "\ud83d\udcdd Carga remota iniciada",
+        message: `Iniciaste carga remota para ${targetUser.name || targetUser.email} en ${stationName}, conector ${connectorId}. Motivo: ${reason}. Estado: ${sent ? "Enviado" : "Pendiente de reintento"}`,
+        type: "ADMIN_ACTION",
+        isRead: false,
+      });
+
+      console.log(`[AdminRemoteStart] Remote charge ${sent ? "sent" : "deferred"} for user ${userId} at ${ocppIdentity}:${connectorId} by admin ${adminName}. Reason: ${reason}`);
+
+      return {
+        success: true,
+        sessionId,
+        sent,
+        insufficientBalance,
+        pricePerKwh,
+        estimatedCost,
+        userBalance: balance,
+        stationName,
+        connectorId,
+        userName: targetUser.name || targetUser.email || "Usuario",
+        message: sent
+          ? `Carga iniciada exitosamente para ${targetUser.name || targetUser.email} en ${stationName}`
+          : `Comando enviado pero sin confirmación. El sistema reintentará automáticamente.`,
+      };
+    }),
+
+  /**
+   * Obtener historial de inicios remotos de carga (auditoría)
+   */
+  getRemoteStartHistory: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+    }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return [];
+
+      const logs = await database.execute(sql`
+        SELECT ol.*, u.name as adminName, u.email as adminEmail
+        FROM ocpp_logs ol
+        LEFT JOIN users u ON JSON_EXTRACT(ol.payload, '$.adminId') = u.id
+        WHERE ol.messageType = 'RemoteStartTransaction'
+          AND JSON_EXTRACT(ol.payload, '$.initiatedBy') = 'ADMIN_REMOTE'
+        ORDER BY ol.createdAt DESC
+        LIMIT ${input.limit}
+      `);
+
+      return ((logs as any)[0] as any[]) || [];
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -4871,6 +6520,22 @@ export const appRouter = router({
   overstay: overstayRouter,
   investorManagement: investorManagementRouter,
   debts: debtRouter,
+  adminRemoteStart: adminRemoteStartRouter,
+  financial: buildFinancialRouter(router, protectedProcedure, adminProcedure),
+  maintenanceSchedule: maintenanceScheduleRouter,
+  onboarding: onboardingRouter,
+  backup: backupRouter,
+  apiKeys: buildApiKeysRouter(router, adminProcedure),
+  refunds: refundsRouter,
+  claims: claimsRouter,
+  quotes: quotesRouter,
+  spaces: spacesRouter,
+  partners: partnersRouter,
+  profiles: profilesRouter,
+  organizations: buildOrganizationsRouter(router, adminProcedure),
 });
+
+// Iniciar sistema de backup automático al cargar el módulo
+startAutomaticBackups();
 
 export type AppRouter = typeof appRouter;

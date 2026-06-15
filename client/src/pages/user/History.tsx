@@ -1,4 +1,14 @@
 import { useState, useRef, ReactNode } from "react";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import UserLayout from "@/layouts/UserLayout";
@@ -70,6 +80,25 @@ export default function UserHistory() {
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionWithStation | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [claimDialogOpen, setClaimDialogOpen] = useState(false);
+  const [claimTxId, setClaimTxId] = useState<number | null>(null);
+  const [claimCategory, setClaimCategory] = useState<string>("");
+  const [claimDescription, setClaimDescription] = useState("");
+  const [claimAmount, setClaimAmount] = useState("");
+
+  const utils = trpc.useUtils();
+  const createClaimMutation = (trpc as any).claims.create.useMutation({
+    onSuccess: () => {
+      toast.success("Reclamo enviado", { description: "Nuestro equipo lo revisará y te notificará la resolución." });
+      setClaimDialogOpen(false);
+      setClaimCategory("");
+      setClaimDescription("");
+      setClaimAmount("");
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Error al enviar reclamo");
+    },
+  });
   const receiptRef = useRef<HTMLDivElement>(null);
   
   // Obtener historial de transacciones y estadísticas mensuales
@@ -698,6 +727,22 @@ export default function UserHistory() {
                   </div>
                 </div>
                 
+                {/* Botón de reclamo */}
+                <div className="p-4 border-t">
+                  <Button
+                    variant="outline"
+                    className="w-full border-red-600/30 text-red-500 hover:bg-red-950/20 hover:text-red-400"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setClaimTxId(selectedTransaction!.id);
+                      setClaimDialogOpen(true);
+                    }}
+                  >
+                    <AlertTriangle className="w-4 h-4 mr-2" />
+                    Reportar cobro incorrecto
+                  </Button>
+                </div>
+
                 {/* Acciones */}
                 <div className="p-4 bg-muted/30 space-y-3">
                   <p className="text-sm font-medium text-muted-foreground">Compartir recibo</p>
@@ -738,6 +783,74 @@ export default function UserHistory() {
               </>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+      {/* Dialog de reclamo */}
+      <Dialog open={claimDialogOpen} onOpenChange={setClaimDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              Reportar cobro incorrecto
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Categoría del problema</Label>
+              <Select value={claimCategory} onValueChange={setClaimCategory}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="overcharge">Cobro excesivo</SelectItem>
+                  <SelectItem value="overstay_unfair">Sobreestadía injusta</SelectItem>
+                  <SelectItem value="wrong_kwh">kWh registrados incorrectamente</SelectItem>
+                  <SelectItem value="double_charge">Cobro doble</SelectItem>
+                  <SelectItem value="other">Otro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Describe el problema</Label>
+              <Textarea
+                placeholder="Explica qué sucedió y por qué consideras que el cobro es incorrecto..."
+                value={claimDescription}
+                onChange={(e) => setClaimDescription(e.target.value)}
+                rows={4}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Monto que consideras correcto (opcional)</Label>
+              <Input
+                type="number"
+                placeholder="Ej: 5000"
+                value={claimAmount}
+                onChange={(e) => setClaimAmount(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Si no estás seguro, déjalo vacío</p>
+            </div>
+            <Button
+              className="w-full bg-red-700 hover:bg-red-600"
+              disabled={!claimCategory || claimDescription.length < 10 || createClaimMutation.isPending}
+              onClick={() => {
+                if (claimTxId) {
+                  createClaimMutation.mutate({
+                    transactionId: claimTxId,
+                    category: claimCategory,
+                    description: claimDescription,
+                    requestedAmount: claimAmount ? Number(claimAmount) : undefined,
+                  });
+                }
+              }}
+            >
+              {createClaimMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 mr-2" />
+              )}
+              Enviar reclamo
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </UserLayout>

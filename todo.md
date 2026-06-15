@@ -62,7 +62,7 @@
 ## Testing y Documentación
 - [x] Tests unitarios backend
 - [ ] Tests de integración
-- [ ] Documentación API
+- [x] Documentación API (/api-docs con endpoints REST v1)
 - [ ] Manual de usuario
 - [ ] Documentación técnica OCPP/OCPI
 
@@ -2536,3 +2536,1035 @@
 - [x] Corregir normalización de hasSolarPanels de tinyint(1) a boolean en getCrowdfundingProjects
 - [x] Corregir normalización en getCrowdfundingProjectById
 - [x] Corregir normalización en getInvestorParticipations
+
+## Bug: Estación de carga no conecta - CSMS-DUAL connections vacío (11 Abril 2026)
+- [x] Fix: dualCSMS.connections se vacía después de reconexión proxy - requestStartTransaction falla con "Active connections: []"
+- [x] Race condition fix: removeExternalConnection ahora verifica que el WS cerrado sea el mismo del mapa
+- [x] Auto-recovery: requestStartTransaction y requestStopTransaction buscan en wss.clients como fallback
+- [x] setMainWss: dualCSMS ahora tiene referencia al WSS principal para auto-recovery
+
+## Bug: Notificaciones push sin detalle (12 Abril 2026)
+- [x] Fix: Migrar broadcast-service.ts de FCM directo a unified push (Web Push + FCM)
+- [x] Fix: Migrar charging-simulator.ts de FCM directo a unified push con detalles completos
+- [x] Fix: Migrar support-router.ts de FCM directo a unified push
+- [x] Service worker (sw.js v8) ya procesaba correctamente los payloads - el problema era el backend
+- [x] Ahora todas las notificaciones incluyen título descriptivo, cuerpo con detalles y clickAction
+
+## Bug: Gráfica de carga - Energía (kWh) se pierde (12 Abril 2026)
+- [x] Fix: Agregar segundo eje Y (derecho) para Energía (kWh) con escala independiente de Potencia (kW)
+- [x] Eje izquierdo (naranja): Potencia kW | Eje derecho (azul): Energía kWh
+- [x] Ticks coloreados para identificar cada eje visualmente
+
+## Tabla de Participaciones - Bugs y Mejoras (12 Abril 2026)
+- [x] Fix: Tabla de participaciones - responsive pésimo en móvil
+- [x] Fix: Nombre del inversionista no se graba (muestra N/A)
+- [x] Feature: Agregar botones de editar y eliminar en tabla de participaciones
+- [x] Feature: Vincular inversionista con usuario registrado (buscar por correo) y asignar rol de inversionista desde el panel
+
+## Sistema de Gestión de Penalizaciones (Admin + Soporte) - 12 Abril 2026
+- [x] Feature: Panel de gestión de penalizaciones - cancelar/ajustar/reembolsar penalizaciones falsas (cortes de luz)
+- [x] Feature: Finalizar sesiones fantasma remotamente desde admin/soporte (liberar conector ocupado erróneamente)
+- [x] Feature: Ejecutar transacciones remotas desde panel admin/soporte para resolver problemas con clientes
+- [x] Feature: Historial de acciones administrativas sobre penalizaciones (audit log)
+- [x] Feature: Acceso al sistema de penalizaciones desde rol soporte además de admin
+
+## Bug Fix: Auth desconecta constantemente - 13 Abril 2026
+- [x] Fix: authenticateRequest() llama a api.manus.im pero el sistema usa Auth0 - eliminar dependencia de Manus OAuth API
+
+## Inicio Remoto de Carga desde Admin/Soporte - 12 Abril 2026
+- [x] Backend: Endpoint remoteStartCharge - crear sesión de carga + enviar OCPP RemoteStart + auditoría
+- [x] Frontend: Interfaz profesional de Inicio Remoto de Carga (buscar usuario, seleccionar estación/conector, modo de carga)
+- [x] Integrar accesos estratégicos: botón en panel admin/soporte sidebar "Inicio Remoto"
+- [x] Fix: searchUsers usando Drizzle ORM en lugar de raw SQL para compatibilidad
+- [x] Push a GitHub después de implementar
+
+## Modos de Carga Avanzados en Inicio Remoto - 12 Abril 2026
+- [x] Backend: Agregar modos by_kwh y by_amount al enum de chargeMode y lógica de estimación
+- [x] Frontend: Selector visual con tarjetas para 4 modos de carga (completa, kWh, monto, porcentaje)
+- [x] Frontend: Campos dinámicos con estimaciones en tiempo real (costo, energía, tiempo)
+- [x] Frontend: Botones rápidos de montos ($5k, $10k, $20k, $50k) y porcentajes (50%, 60%, 80%, 100%)
+- [x] Frontend: Alertas dinámicas de saldo insuficiente según configuración seleccionada
+- [x] Actualizar diálogo de confirmación con todos los modos de carga y estimaciones
+- [x] Fix: Permitir seleccionar conectores en estado CHARGING (admin override)
+- [x] Push a GitHub después de implementar
+
+## Sistema de Liquidación Financiera Waterfall + KPIs (Contrato V3.4) - 14 Abril 2026
+
+### Schema y Migraciones
+- [x] Tabla station_fixed_expenses: gastos fijos configurables por estación
+- [x] Tabla settlement_periods: liquidaciones periódicas con waterfall
+- [x] Tabla settlement_expense_lines: detalle de cada gasto deducido en una liquidación
+- [x] Tabla investor_distributions: distribución por inversionista
+- [x] Tabla operational_metrics: métricas operativas SLA por estación
+- [x] Tabla financial_reports: reportes financieros generados
+
+### Backend - Gastos Fijos y Liquidación
+- [x] CRUD gastos fijos por estación colectiva (crear, editar, eliminar, listar)
+- [x] Endpoint de liquidación waterfall: calcular ingresos - gastos = neto → 70% inversionistas / 30% gestor
+- [x] Distribución proporcional por % participación de cada inversionista
+- [x] Historial de liquidaciones con detalle de waterfall
+
+### Backend - Indicadores Financieros
+- [x] Cálculo de rentabilidad por período (mensual, trimestral, anual)
+- [x] Monitoreo de ROI (retorno sobre inversión acumulado)
+- [x] Valorización de la inversión en el tiempo
+
+### Backend - Indicadores Operativos SLA
+- [x] 6 KPIs operativos con cálculo de breach y consecuencias progresivas
+- [x] Registro y consulta de métricas operativas por estación
+
+### Frontend Admin - Configuración Gastos
+- [x] Módulo Centro Financiero Admin con 3 tabs (Gastos, Liquidaciones, Métricas)
+- [x] CRUD de gastos fijos con categorías y periodicidades
+- [x] Generación de liquidaciones waterfall desde admin
+- [x] Registro de métricas operativas SLA
+
+### Frontend Inversionista - Centro Financiero
+- [x] Tab 1: Liquidaciones/Waterfall con resumen, detalle y distribución
+- [x] Tab 2: Indicadores Financieros (ROI, rentabilidad, recuperación, valorización)
+- [x] Tab 3: Indicadores Operativos SLA (6 KPIs con gauges y alertas)
+- [x] Botones de descarga PDF y Excel en header
+
+### Reportes Descargables
+- [x] Generación de reporte financiero en PDF (P&L + Waterfall + Distribución)
+- [x] Generación de reporte financiero en Excel (múltiples hojas)
+- [x] Endpoint exportFinancialReport con base64 encoding
+
+### Tests
+- [x] 24 tests unitarios: waterfall, prorrateo, indicadores financieros, SLA, prelación
+- [ ] Push a GitHub después de implementar (pendiente: usar Management UI → GitHub)
+
+
+## Modelo Financiero Configurable + Rol Aliado Comercial (Abril 2026)
+
+### Schema DB - Campos configurables por estación
+- [x] Agregar campos a charging_stations: evgreenSharePercent, investorSharePercent, hostSharePercent, energyCostPerKwh, hostUserId
+- [x] Agregar nuevo rol "host" (Aliado Comercial) al userRoleEnum
+- [x] Actualizar financialSettlements con campos para hostShare y energyCost
+- [x] Migrar DB con pnpm db:push
+
+### Backend - Waterfall Engine mejorado
+- [x] Actualizar waterfall: Ingreso bruto → Costo energía → Gastos fijos → Split configurable (EVGreen/Inversionista/Aliado)
+- [x] Crear endpoints para Aliado Comercial (dashboard, resumen ingresos, historial)
+- [x] Actualizar getStationRevenueForPeriod para incluir todas las fuentes (energía, penalidades, reservas, publicidad)
+- [x] Actualizar investor financial summary con desglose por fuente de ingreso
+
+### Frontend - Formulario estación con campos financieros
+- [x] Agregar sección "Modelo Financiero" al formulario de crear/editar estación
+- [x] Campos: % EVGreen, % Inversionista, % Aliado Comercial, costo energía/kWh, usuario Aliado
+- [x] Validación que la suma de porcentajes = 100%
+
+### Frontend - Mejorar módulo Transacciones inversionista
+- [x] Mostrar desglose transparente: ingreso bruto → costo energía → % EVGreen → % Aliado → mi parte
+- [x] KPIs con datos reales por fuente de ingreso (energía, penalidades, reservas)
+
+### Frontend - Mejorar módulo Liquidaciones/Waterfall
+- [x] Waterfall visual con 3 actores: EVGreen, Inversionista, Aliado Comercial
+- [x] Mostrar costo de energía como línea separada del waterfall
+- [x] Desglose por fuente de ingreso en cada liquidación
+
+### Frontend - Dashboard Aliado Comercial
+- [x] Crear página principal del Aliado Comercial con resumen de ingresos acumulados
+- [x] Desglose por fuente: venta energía, penalidades, reservas, publicidad
+- [x] Mostrar liquidación mensual neta (ingresos - costo factura energía)
+- [x] Historial de liquidaciones y exportación
+
+### Frontend - Mejorar módulo Reportes
+- [x] Reportes con datos reales por fuente de ingreso
+- [x] Desglose transparente del modelo financiero en reportes exportados
+
+### Tests
+- [x] Tests unitarios para nuevo waterfall engine con 3 actores (12 tests)
+- [x] Tests para endpoints del Aliado Comercial
+
+## Bug Fix - Listado Estaciones Inversionista (Abril 2026)
+- [x] BUG: Listado "Mis Estaciones" solo muestra estaciones propias (ownerUserId), no incluye estaciones con participación colectiva (crowdfunding)
+- [x] Corregir query backend para unir estaciones propias + estaciones con participación via investor_participations/crowdfunding
+- [x] Auto-crear estación física (charging_station) al crear proyecto crowdfunding, vinculándola automáticamente
+- [x] Actualizar listOwned y demás queries del inversionista para incluir estaciones con participación crowdfunding
+- [x] Distinguir en UI estaciones propias vs participación colectiva
+- [x] Tests para combinación de estaciones propias + crowdfunding (9 tests)
+
+## Mejora Formulario Crowdfunding - Campos Financieros (Abril 2026)
+- [x] Agregar campos de modelo financiero al formulario de creación de proyecto crowdfunding
+- [x] Campos: % EVGreen, % Inversionista, % Aliado Comercial, costo energía/kWh
+- [x] Pasar campos financieros al backend para que la estación auto-creada tenga configuración correcta
+- [x] Validación que la suma de porcentajes = 100%
+
+## Bug Fix - Insignia Muro de Fundadores (Abril 2026)
+- [x] BUG: La insignia de "Muro de Fundadores" se superpone al menú lateral del inversionista, tapando opciones de navegación
+- [x] Reubicar la insignia para que no interfiera con el sidebar (creada versión compacta FoundersWallCompact)
+
+## Mejoras Financieras - Abril 2026 (Ronda 2)
+- [x] Quitar "80%" hardcodeado en datos bancarios, usar texto dinámico genérico
+- [x] Fondo de mantenimiento 5% dentro del 30% de EVGreen para estaciones colectivas
+- [x] Tabla maintenance_fund_records + endpoints (resumen, historial, retiro admin)
+- [x] Actualizar waterfall engine para calcular fondo de mantenimiento automáticamente
+- [x] Bloquear configuración de tarifas en estaciones colectivas para inversionistas (solo admin)
+
+## UI Admin - Gestión Fondo de Mantenimiento (Abril 2026)
+- [x] Crear página admin /admin/maintenance-fund con vista de fondos por estación colectiva
+- [x] Mostrar balance acumulado, depósitos totales y retiros totales por estación
+- [x] Formulario para registrar cobros de mantenimiento (retiros del fondo)
+- [x] Historial de movimientos (depósitos automáticos por liquidación + retiros por mantenimiento)
+- [x] Agregar ruta y enlace en navegación admin
+
+## Mejoras Fondo de Mantenimiento - Abril 2026 (Ronda 2)
+- [x] Notificaciones a inversionistas cuando se aprueba liquidación (depósito al fondo)
+- [x] Notificaciones a inversionistas cuando se registra cobro de mantenimiento (retiro del fondo)
+- [x] Copia de notificación al remitente (admin) para trazabilidad
+- [x] Endpoint para exportar historial del fondo en PDF
+- [x] Endpoint para exportar historial del fondo en Excel
+- [x] Botón de exportar en la UI de detalle del fondo
+- [x] Alertas automáticas cuando el balance del fondo baje del 10% del total acumulado
+- [x] Notificación push + in-app al admin cuando fondo está bajo
+
+## Mejoras Fondo de Mantenimiento - Abril 2026 (Ronda 3)
+- [x] Dashboard con gráficos de tendencia mensual (depósitos vs retiros) en vista detalle del fondo
+- [x] Campo de umbral de alerta configurable en COP por estación (no porcentaje, ya que el fondo crece con ventas)
+- [x] UI admin para configurar el umbral de alerta por estación
+- [x] Actualizar lógica de alerta para usar umbral en COP en lugar de porcentaje
+- [x] Reporte consolidado multi-estación (PDF/Excel) con todos los fondos de mantenimiento
+- [x] Botón de exportar reporte consolidado en la vista principal del fondo
+
+## Corrección Modelo Financiero - Abril 2026 (CRÍTICO)
+- [x] Corregir waterfall: primero restar costo energía de ingresos brutos = margen bruto
+- [x] Del margen bruto, descontar % aliado comercial (dueño del espacio) primero
+- [x] Del neto restante (90% si aliado=10%), repartir entre EVGreen e inversionistas según sus %
+- [x] Actualizar UI de configuración del modelo para reflejar el flujo correcto
+- [x] Actualizar reportes de liquidación y vistas de inversionista
+- [x] Actualizar cálculos en la landing/simulador si aplica
+- [x] Verificar que fondo de mantenimiento se calcule correctamente con nuevo modelo
+
+## Mantenimientos Preventivos Programados - Abril 2026
+- [x] Crear tabla de mantenimientos programados (scheduled_maintenances) en schema
+- [x] Endpoints CRUD para programar mantenimientos preventivos por estación
+- [x] UI de calendario de mantenimientos en perfil de soporte
+- [x] UI de calendario de mantenimientos visible en admin
+- [x] Recordatorios automáticos (notificación push/email) antes del mantenimiento programado
+- [x] Integración con fondo de mantenimiento (estimar costos)
+
+## Rediseño Transacciones Inversionista - Abril 2026
+- [x] Filtro/agrupación por estación en la página de transacciones
+- [x] Columnas dinámicas que reflejen el modelo real (margen bruto, host, neto, tu parte proporcional)
+- [x] Para estaciones colectivas: mostrar participación proporcional del inversionista (no % fijo)
+- [x] Panel expandible por transacción con waterfall completo (Ingreso → Costo energía → Margen → Host → Neto → Tu parte)
+- [x] Resumen por estación con indicador de participación del inversionista
+- [x] Actualizar distribución del período para reflejar modelo corregido
+- [x] Backend: endpoint que retorne datos agrupados por estación con shares proporcionales
+
+## Rediseño Módulo Ingresos Inversionista - Abril 2026
+- [x] KPIs superiores: sumatoria de ingresos netos de TODAS las estaciones (propias + colectivas proporcionales)
+- [x] Diferenciar estaciones propias vs colectivas con métricas según su modelo de negocio
+- [x] Waterfall correcto por estación: costo energía → aliado → neto → split proporcional
+- [x] Detalle de ingresos diarios con desglose por estación y tipo
+- [x] Backend: endpoint enriquecido de earnings con datos de waterfall por estación
+- [x] Selector de período con comparación vs período anterior
+
+## Fix: Inconsistencias Módulo Ingresos vs Reportes - 14 Abril 2026
+
+- [x] Fix: Unificar cálculo de ingresos netos entre Ingresos y Reportes (ambos deben usar mismo waterfall)
+- [x] Fix: Distribución de ingresos dinámica por configuración real de estación (no hardcoded 70/30)
+- [x] Fix: Conectar fuentes de ingreso (penalidades) a datos reales de transacciones
+- [x] Fix: Eliminar texto redundante en sección fuentes de ingreso de Reportes
+- [x] Fix: Diferenciar fuentes de ingreso por tipo de estación (propia vs colectiva)
+- [x] Mejora: Limpiar UI de Ingresos para estética profesional
+- [x] Fix: Gráficas de Reportes se cortan (eje Y no visible, pie chart labels superpuestas)
+
+## Fix: Tarjeta Inversiones Colectivas en Dashboard - 14 Abril 2026
+
+- [x] Fix: Eliminar "Tu potencia: 24kW" - modelo es % participación, no compra de potencia
+- [x] Fix: Mostrar estado real de estación (no hardcoded "Activa")
+- [x] Fix: Reemplazar proyecciones genéricas con datos reales del centro financiero
+- [x] Mejora: Agregar indicadores económicos/operativos del centro financiero de forma llamativa
+- [x] Fix: Distribución en tarjeta colectiva debe mostrar waterfall real del modelo: (PV-CE) × 90% aliado × 70% tu parte
+- [x] CRITICAL: Corregir fórmula modelo colectivo en TODA la plataforma: Margen = (PV - CE) × 90% aliado × 70% tu parte (SIN paso de costos operativos 10%)
+- [x] Agregar nota transparente de gastos fijos en calculadora pública (Investors.tsx)
+- [x] Agregar fila de gastos fijos en tabla comparativa Individual vs Colectivo
+- [x] Agregar tooltip/badge de gastos fijos en tarjeta colectiva del dashboard
+- [x] Eliminar contingencia como paso separado en liquidaciones (está dentro del 30% EVGreen)
+- [x] Fix: Contingencia debe ser sub-desglose del 30% EVGreen (no paso separado del waterfall)
+- [x] Fix: Mantener campo contingencia editable en admin pero como % del share de EVGreen
+- [x] Fix: Mostrar desglose transparente en vista inversionista: "Del 30% EVGreen: X% contingencia + Y% gestión"
+- [x] Fix: Nota de transparencia imprecisa - el 30% EVGreen solo absorbe 5% fondo imprevistos, NO todos los gastos fijos
+- [x] Fix: Fórmula colectiva - costos op se liquidan primero, luego se reparte 70% (no "costos op incluidos")
+- [x] Fix: Separar nota de gastos fijos y 5% fondo en renglones distintos
+- [x] Agregar KPI de fondo de mantenimiento acumulado (5%) en tarjeta colectiva
+- [x] Fix: Gráfica "Ingresos de la semana" barras negras invisibles contra fondo oscuro
+- [x] Fix: Gráficas no indican si son de estación colectiva o individual
+- [x] Agregar KPI de ingresos en parte superior del dashboard
+- [x] Fix: Error SQL al crear gasto fijo en Centro Financiero - columnas/valores no coinciden en insert station_fixed_expenses (tabla recreada con schema correcto)
+- [ ] Fix: Error SQL al crear liquidación - tabla financial_settlements no coincide con schema Drizzle
+- [ ] Fix: Verificar y corregir todas las tablas financieras (settlement_expenses, investor_distributions, sla_metrics)
+
+## Bug Fix - Configuración Empresa Inversionista (15 Abril 2026)
+- [x] FIX: Pestaña "Empresa" en Configuración del inversionista no guarda dirección, ciudad ni departamento
+- [x] Mapear campos de empresa (dirección, ciudad, departamento) a columnas fiscales existentes (fiscalAddress, fiscalCity, fiscalDepartment)
+- [x] Cargar datos fiscales existentes al abrir el formulario
+
+## Sistema de Onboarding Premium para Inversionistas (15 Abril 2026)
+
+### Email de Bienvenida
+- [x] Crear template HTML premium de email de bienvenida para nuevos inversionistas
+- [x] Enviar email automáticamente cuando se confirma el pago de inversión (crowdfunding o individual)
+- [x] Incluir datos de la inversión, nombre del inversionista, y enlace al onboarding
+
+### Onboarding Wizard (Multi-step)
+- [x] Paso 1: Bienvenida animada con confetti y resumen de inversión
+- [x] Paso 2: Datos personales (nombre, email, teléfono, documento de identidad)
+- [x] Paso 3: Información de empresa (razón social, NIT, dirección, ciudad, departamento)
+- [x] Paso 4: Datos bancarios (banco, tipo cuenta, número cuenta, titular)
+- [x] Paso 5: Tour interactivo de la plataforma (qué puede hacer como inversionista)
+- [x] Paso 6: Confirmación y dashboard
+
+### Backend
+- [x] Agregar campo onboardingCompleted y onboardingStep al schema de usuarios
+- [x] Crear procedimientos tRPC para el flujo de onboarding
+- [x] Trigger automático de email al confirmar pago de crowdfunding
+- [x] Tracking de progreso del onboarding
+
+### Integración
+- [x] Detectar inversionistas nuevos sin onboarding completado y redirigir al wizard
+- [x] Permitir completar el onboarding después si se cierra
+
+## Onboarding Fundadores - Paso Especial (15 Abril 2026)
+- [x] Agregar paso de "Perfil de Fundador" al wizard de onboarding (solo para isFounder=true)
+- [x] Campo para subir foto del fundador (upload a S3)
+- [x] Campo para título de fundador (ej. "Co-Fundador & CEO")
+- [x] Campo para frase inspiradora del inversionista
+- [x] Campo para biografía corta
+- [x] Guardar datos en campos existentes del schema (investorPhotoUrl, founderTitle, investorQuote, investorBio)
+- [x] Procedimiento tRPC para guardar perfil de fundador con upload de foto
+- [x] Preview en tiempo real de cómo se verá en el muro de fundadores
+
+## Fix: Trigger de Onboarding en todos los flujos de crowdfunding (15 Abril 2026)
+- [x] Agregar triggerInvestorWelcome a registerInvestor cuando paymentConfirmed=true
+- [x] Agregar triggerInvestorWelcome a editParticipation cuando paymentStatus cambia a COMPLETED
+- [x] Asegurar que el email no se envíe dos veces (verificar welcomeEmailSent)
+
+## Mejoras de Onboarding - Fase 2 (15 Abril 2026)
+### 1. Auto-redirección al onboarding
+- [x] Detectar inversionistas con onboardingCompleted=false en InvestorLayout
+- [x] Redirigir automáticamente al wizard /investor/onboarding al iniciar sesión
+- [x] Permitir acceso a /investor/onboarding sin bloquear (evitar loop)
+
+### 2. Botón reenviar email de bienvenida en admin
+- [x] Agregar procedimiento tRPC resendWelcomeEmail en onboarding router
+- [x] Agregar botón "Reenviar email" en la lista de participaciones del admin
+- [x] Resetear welcomeEmailSent para permitir reenvío
+
+### 3. Dashboard de onboarding en admin
+- [x] Crear procedimiento tRPC getOnboardingStats para obtener estadísticas
+- [x] Crear procedimiento tRPC getInvestorsOnboardingStatus para listar inversionistas
+- [x] Agregar sección/pestaña de "Estado Onboarding" en panel admin
+- [x] Mostrar: completados, pendientes, paso actual, fecha de inicio
+
+
+## Sistema de Backup y Recuperación de Datos
+- [x] Analizar tablas críticas y definir prioridades de backup (P1/P2/P3)
+- [x] Crear tabla backup_logs en BD para registrar historial de backups
+- [x] Servicio backend de backup: exportar tablas críticas a S3 como JSON comprimido
+- [x] Sistema de backup automático programado (diario para P1, semanal para P2/P3)
+- [x] Dashboard admin de backups: trigger manual, historial, descarga, estado
+- [x] Notificaciones por email de éxito/fallo de backups
+- [x] Endpoint de backup manual desde panel admin
+- [x] Clasificación de tablas por prioridad (P1: transacciones/usuarios/financiero, P2: estaciones/crowdfunding, P3: configuración)
+- [x] Compresión gzip de archivos de backup antes de subir a S3
+- [x] Procedimiento de restauración desde backup
+- [x] Retención configurable de backups (mantener últimos N backups)
+- [x] Indicador de salud del sistema de backups en dashboard admin
+
+## Bug: Fondo de Mantenimiento no muestra estaciones colectivas - 16 Abril 2026
+- [x] BUG: Página de Fondo de Mantenimiento dice "No hay estaciones colectivas registradas" aunque hay estaciones con inversionistas asociados
+- [x] Investigar query backend que obtiene estaciones colectivas para el fondo de mantenimiento
+- [x] Causa raíz: query usaba columna inexistente 'crowdfunding_status' (columna real es 'status') y valores incorrectos ('ACTIVE','FUNDED','COMPLETED' vs reales 'OPEN','IN_PROGRESS')
+- [x] Corregido: query ahora usa cp.status IN ('OPEN','IN_PROGRESS','FUNDED','COMPLETED','ACTIVE') - retorna 4 estaciones correctamente
+
+## Módulo Backup - Mejoras 17 Abril 2026
+- [x] Fix responsive móvil del módulo Backup & Recovery (textos cortados, layout roto)
+- [x] Agregar botón y funcionalidad de restauración de backup desde la interfaz
+- [x] Backend: endpoint para restaurar backup desde archivo JSON subido
+- [x] Frontend: UI de restauración con confirmación, progreso y validación
+
+## Bug: Gráficas del Dashboard Admin no muestran datos (17-Abr-2026)
+- [x] Bug: Gráficas "Ingresos mensuales" y "Energía semanal (kWh)" muestran $0 y vacías a pesar de 112 transacciones y $44K+ en ingresos
+- [x] Investigar query backend que alimenta las gráficas del dashboard (causa: datos hardcodeados en 0, no conectados al backend)
+- [x] Corregir: backend ahora devuelve revenueChart y energyChart con datos reales agrupados por mes/día
+
+## Mejoras Dashboard Admin - Gráficas avanzadas (17-Abr-2026)
+- [x] Gráfica de tendencia de usuarios (crecimiento de registros por mes, últimos 6 meses, AreaChart violeta)
+- [x] Gráfica de distribución de ingresos por estación (donut/pie chart con colores, top 8 estaciones)
+- [ ] Filtro de rango de fechas en las gráficas (3, 6, 12 meses) - pendiente para próxima iteración
+
+## Bug: Gráficas dashboard muestran $0 y mal contraste (17-Abr-2026)
+- [x] Diagnosticar por qué las queries del backend devuelven 0 - causa: columna created_at vs createdAt en users query hacía fallar todo el endpoint
+- [x] Mejorar contraste de gráficas para fondo oscuro (ejes #a1a1aa, grid rgba blanco 10%, tooltips oscuros, colores brillantes)
+- [x] Fix distribución por estación - corregido al arreglar el endpoint completo
+
+## Crowdfunding + Backup fixes (17-Abr-2026)
+- [x] Agregar botón de eliminar proyectos/estaciones de crowdfunding en la tabla de gestión (backend + frontend, con confirmación y advertencia de inversionistas)
+- [x] Corregir error 500 en backup.getStats - columna 'status' -> 'backup_status' en query SQL raw
+
+## Eliminar inversionistas desde admin (17-Abr-2026)
+- [x] Backend: endpoint para eliminar inversionista (eliminar participaciones, datos de onboarding, perfil de fundador, y registro de inversionista)
+- [x] Frontend: botón eliminar en tabla de Gestión de Inversionistas con diálogo de confirmación y advertencia de datos asociados
+
+## Bug: Email de bienvenida inversionistas no se envía (17-Abr-2026)
+- [x] Bug: Resend recibe GET /emails/0 en vez de POST /emails - Investigado: emails sí se envían y entregan correctamente (verified via API). El error 422 era una consulta GET del dashboard, no del envío. El email a Yahoo puede caer en spam.
+
+## Bug: Módulo Precisión de SoC no funciona (20-Abr-2026)
+- [x] Diagnosticado: createSocAccuracyLog existía en csms-dual.ts StopTransaction pero faltaba en completeTransactionLocally
+- [x] Agregada lógica de registro de SoC accuracy a completeTransactionLocally (para cuando cargador no responde StopTransaction)
+
+## Bug CRÍTICO: Notificaciones de otros usuarios aparecen en cuenta actual (20-Abr-2026)
+- [x] Investigar query de getNotifications - filtro por userId es correcto en BD
+- [x] Diagnosticado: bug en overstay-monitor.ts orderBy ASC en vez de DESC - tomaba transacción antigua de otro usuario
+- [x] Corregido orderBy a DESC y priorizado transacción activa sobre completada
+
+## Bug: Pantalla de carga pierde modo valor fijo (21-Abr-2026)
+- [x] Al seleccionar valor fijo de $50,000 como meta, la pantalla se actualiza y cambia a "carga total" perdiendo el modo valor fijo
+- [x] Causa: setManualSoc recreaba sesión en memoria con chargeMode hardcodeado a "full_charge" en vez de restaurar desde BD
+- [x] Corregido: ahora restaura chargeMode y targetValue desde activeTransaction en la BD
+
+## Bug: Decimales excesivos en pantalla de carga (21-Abr-2026)
+- [x] "Objetivo: 89.76666666666668%" muestra demasiados decimales — corregido con Math.round()
+- [x] Corregido formateo en ChargingGauge.tsx, ChargingMonitor.tsx (targetPercentage, progressPercentage, badges, auto-stop messages)
+
+## Auditoría de Seguridad - Implementación de mejoras (21-Abr-2026)
+- [x] [ALTO] SQL Injection en getCrowdfundingProjects: whitelist de status en router + query parametrizada en db.ts
+- [x] [MEDIO] XSS en InfoWindow de mapa: función escapeHtml() aplicada a todos los campos interpolados
+- [x] [MEDIO] Webhook de pagos: firma obligatoria, rechaza con 503 si no hay eventsSecret configurado
+- [x] [MEDIO] Rate limiting en webhook/OCPP: rate limit separado de 600 req/min (antes era ilimitado)
+- [x] [MEDIO-BAJO] 2FA brute-force: 5 intentos máx por usuario, lockout de 5 minutos
+- [x] [BAJO] Cookie policy: sameSite "lax" en producción (HTTPS), "none" solo en desarrollo local
+
+## Bug: Módulo Precisión de SoC no registra cargas - 25 Abril 2026
+
+- [x] Investigar por qué el módulo de Precisión de SoC muestra 0 cargas registradas
+- [x] Causa raíz: createSocAccuracyLog NO se llamaba en el handler StopTransaction de OCPP 1.6 en _core/index.ts
+- [x] Solo se llamaba desde charging-router.ts (cuando el usuario detiene desde la app), no cuando el cargador envía StopTransaction directamente
+- [x] Corrección: Agregada lógica completa de registro de SoC accuracy en StopTransaction de _core/index.ts (antes de limpiar sesión activa)
+- [x] Ahora registra: manualSocStart, batteryCapacity, realKwhDelivered, calculatedSocEnd, chargerSocEnd, detectionMethod, errores estimados
+
+## Rediseño Splash Screen - 26 Abril 2026
+- [x] Eliminar fondo blanco cuadrado del logo en splash screen (iconos convertidos a fondo transparente)
+- [x] Rediseñar splash screen completo con estética futurista y tecnológica
+- [x] Nuevo splash: anillo de energía cónico, órbita con partícula luminosa, grid tecnológico, estrellas, glow pulsante
+- [x] Logo circular sin puntas blancas (splash-logo.png con transparencia)
+- [x] Conservar banner publicitario/informativo
+- [x] Mantener línea de diseño EVGreen (verde, oscuro, eléctrico)
+
+## Bug Fixes
+- [x] Fix: WebSocket aparece CLOSED cuando cargador está en grace period (reconectando tras proxy cycling)
+  - Backend: getChargerDetail ahora usa connection-manager con grace period para mostrar estado real
+  - Backend: getRegisteredChargers ahora incluye fallback a connection-manager para estaciones en grace period
+  - Frontend: Badge muestra "Reconectando" (amarillo pulsante) en lugar de "Desconectado" durante grace period
+- [x] Fix: Mapa público muestra estaciones como "en línea" cuando están desconectadas según Monitor OCPP
+  - Backend: listPublic ahora verifica estado real OCPP via connection-manager (getConnection + isInGracePeriod) en vez de usar campo stale isOnline de BD
+  - Test: 5 tests verifican consistencia entre mapa público y Monitor OCPP
+
+## Bug: Columna "Última conexión" muestra "Nunca" para todas las estaciones (3-May-2026)
+- [x] La tabla de Estaciones muestra "Nunca" en la columna "Última conexión" incluso para estaciones conectadas
+- [x] Causa raíz: endpoint listAll no enriquecía estaciones con datos OCPP (lastHeartbeat). El campo lastHeartbeat no existía en el schema de BD, solo lastBootNotification
+- [x] Fix backend: listAll ahora obtiene conexiones OCPP activas de dualCSMS y agrega lastHeartbeat (prioridad: OCPP heartbeat > lastBootNotification)
+- [x] Fix frontend: columna usa prioridad lastHeartbeat del backend > connInfo OCPP > lastBootNotification
+- [x] Verificado: Livoltek MF120 muestra fecha real, EVG001 muestra fecha real, estaciones sin conexión muestran "Nunca" correctamente
+
+## Bug: Alertas de desconexión no se auto-resuelven al reconectar (3-May-2026)
+- [x] Las alertas DISCONNECTION no se auto-resuelven cuando el cargador se reconecta al servidor OCPP
+- [x] Causa raíz: handleReconnection() existía en alerts-service.ts pero NUNCA se llamaba desde index.ts
+- [x] Fix: Agregada llamada a alertsService.handleReconnection() en 2 puntos de index.ts:
+  1. Al conectar un cargador (pre-resolve stationId) - línea ~606
+  2. Al confirmar reconexion seamless (grace period) - línea ~862
+- [x] Tests: 16 tests pasan (4 nuevos para auto-resolución)
+
+## Bug: Bandeja de Soporte muestra "2 sin leer" pero no lista los tickets (3-May-2026)
+- [x] La bandeja de soporte muestra "2 sin leer" pero la lista de tickets está vacía
+- [x] Tickets creados por usuarios no aparecen en la vista de soporte del técnico/ingeniero
+- [x] Causa raíz: listAll excluía tickets AI_HANDLING por defecto, pero adminUnreadCount contaba mensajes de TODOS los tickets
+- [x] Fix backend: listAll ahora muestra TODOS los tickets (excludeAiHandling: false) para control total del técnico
+- [x] Fix frontend: tab "Pendientes" ahora incluye AI_HANDLING + filtro de estado incluye opción "IA atendiendo"
+
+## Unificación de Sistema de Tickets para Técnicos (3-May-2026)
+- [x] Analizar estructura actual de maintenance_tickets y support_tickets
+- [x] Unificar "Mis Tickets" para mostrar TODOS los tickets asignados (soporte + mantenimiento)
+  - Backend: nuevo endpoint support.mySupportTickets que filtra por assignedToId del técnico actual
+  - Frontend: Tickets.tsx reescrito con tabs Todos/Mantenimiento/Soporte, tabla unificada con tipo, filtros combinados
+- [x] "Soporte" se mantiene como Bandeja de entrada/chat con usuarios
+- [x] Eliminar "Mantenimiento" como sección separada del sidebar
+  - TechnicianLayout.tsx: removido item de menú "Mantenimiento"
+  - App.tsx: ruta /technician/maintenance redirige a TechnicianTickets
+- [x] Ajustar sidebar del técnico para reflejar la nueva estructura
+- [x] Verificar que los tickets de ambos tipos se muestran correctamente con sus estados
+  - Click en ticket de soporte navega al chat de Soporte
+  - Click en ticket de mantenimiento abre diálogo de detalle con fotos, timeline, resolución
+
+## Bug: Estaciones conectadas no aparecen en panel técnico (3-May-2026)
+- [x] Tabla de Estaciones del técnico muestra todas como "Inactiva"/"Sin conexión" aunque Monitor OCPP muestra 2 conectadas
+- [x] Mi Panel del técnico muestra "0/0 Estaciones en línea" y "No hay cargadores conectados"
+- [x] Causa raíz: getActiveConnections devolvía stationId=null para conexiones dualCSMS, match por stationId fallaba
+- [x] Fix backend: getActiveConnections resuelve stationId desde BD por ocppIdentity + agrega connectorStatuses
+- [x] Fix frontend Dashboard: isStationConnected() hace match por stationId O ocppIdentity, lista cargadores usa campos correctos
+- [x] Fix frontend Stations: columna último heartbeat usa fallback station.lastHeartbeat > lastBootNotification
+
+## Fix Responsive: Mis Tickets del técnico (3-May-2026)
+- [x] Contenido se desborda horizontalmente en móvil (overflow-x-hidden + padding reducido)
+- [x] Tabla se corta: columnas ID/Prioridad ocultas en <sm, Estación/Creado ocultas en <lg, título truncado
+- [x] Título y subtítulo: padding reducido, tamaños responsivos, botón shrink-0
+- [x] Tabs: w-full en móvil, flex-1 para distribuir, texto abreviado "Mant." en móvil
+
+
+## Unificación CSMS y Corrección de Alertas Falsas de Desconexión (2026-05-04)
+
+### Problema
+- El sistema genera alertas falsas de desconexión cuando Railway recicla el proxy WebSocket (Proxy Cycle)
+- Las reconexiones son transparentes (0s de duración) pero generan notificaciones al owner, emails y push a técnicos
+- Hay duplicación de lógica de desconexión entre index.ts, connection-manager.ts y csms-dual.ts
+
+### Tareas
+- [x] Auditar flujo completo de desconexión para identificar fuente exacta de alertas falsas
+- [x] Eliminar handleDisconnection duplicado de csms-dual.ts (solo index.ts + connection-manager deben manejar desconexiones)
+- [x] Asegurar que removeExternalConnection de csms-dual NO dispare alertas ni grace periods propios
+- [x] Mejorar filtrado: NO generar alertas si la reconexión ocurre dentro del grace period
+- [x] Verificar que notifyOwner y notifyTechniciansOfAlert solo se llamen para desconexiones REALES
+- [x] Tests para validar que Proxy Cycle no genera alertas (18 tests passing)
+- [x] Checkpoint guardado (1d450244) - Push a GitHub pendiente (usuario debe publicar desde UI)
+
+
+## Corrección 503 Service Unavailable en evgreen.lat (Cold Start)
+- [ ] Implementar manejo de error 503/non-JSON en el tRPC client (retry con backoff)
+- [ ] Agregar pantalla de "Servidor iniciando..." cuando se detecta 503
+- [ ] Evitar loop infinito de requests fallidos al backend
+- [x] Checkpoint (89859542) y push a GitHub completado
+
+## Keep-Alive para evitar 503 por inactividad
+- [x] Configurar scheduled task de ping cada 5 min a evgreen.lat/api/health
+
+## Documentación de API Pública para Integración Externa
+- [x] Auditar todos los endpoints existentes (tRPC + REST)
+- [x] Crear endpoints REST públicos para integración externa con API key
+- [x] Crear página de documentación de API (/api-docs) con ejemplos
+- [x] Sistema de API Keys con tabla en BD y gestión desde admin (tRPC)
+- [x] Endpoints: estaciones, transacciones, comandos remotos, estadísticas, webhooks, usuarios
+- [x] Checkpoint (89859542) y push a GitHub completado
+
+## Detalle de Transacción para Soporte (resolver reclamos rápidamente)
+- [x] Auditar esquema de datos de transacciones y sobreestadía en BD
+- [x] Crear endpoint tRPC de detalle de transacción con desglose (energía + sobreestadía + timeline)
+- [x] Crear componente UI expandible/modal con timeline visual y desglose de cobros
+- [x] Integrar botón de reembolso parcial directo desde el detalle
+- [x] Integrar modal en páginas de Transacciones y OverstayHistory
+- [x] Tests unitarios para getDetail y partialRefund (10 tests)
+- [x] Checkpoint (5b1c5d04) y push a GitHub completado
+
+## Historial de Reembolsos y Sistema de Reclamos (Auditoría + Soporte)
+- [x] Crear tabla de reembolsos en BD (refunds) con admin, motivo, monto, fecha, transacción
+- [x] Crear tabla de reclamos en BD (claims) con usuario, transacción, motivo, estado
+- [x] Endpoint para registrar reembolso (actualizar partialRefund para guardar en tabla)
+- [x] Endpoint para listar historial de reembolsos con filtros
+- [x] Endpoint para crear reclamo de cobro incorrecto (usuario)
+- [x] Endpoint para listar reclamos pendientes (admin)
+- [x] Endpoint para resolver reclamo (admin - aprobar con reembolso o rechazar)
+- [x] Vista de historial de reembolsos en admin (/admin/refunds)
+- [x] Vista de reclamos en admin (/admin/claims con gestión completa)
+- [x] Botón "Reportar cobro incorrecto" en historial de cargas del usuario
+- [x] Formulario de reclamo con selección de categoría y descripción (/user/claim/:id)
+- [x] Notificación push al admin cuando se crea un reclamo
+- [x] Notificación al usuario cuando se resuelve/rechaza su reclamo
+- [x] Tests unitarios (11 tests)
+- [x] Checkpoint (2f351557) y push a GitHub completado
+
+## Corrección de Bugs Críticos - Transacción #690003 Olga Lopez (05/05/2026)
+- [x] Limpiar deudas duplicadas de Olga Lopez (243 deudas → 1 deuda consolidada $77,674)
+- [x] Bug fix: Agregar lock en BD para evitar duplicación de deudas en overstay monitor (múltiples instancias)
+- [x] Bug fix: Persistir sesiones pendientes en BD para resolver pérdida de chargeMode entre instancias
+- [x] Bug fix: Fallback a BD en csms-dual.ts e index.ts cuando sesión pendiente no está en memoria local
+- [x] Tests unitarios para las correcciones (14 tests)
+- [x] Checkpoint (02f7a88e) y push a GitHub completado
+
+
+## Módulo de Cotizaciones Automatizadas - Mayo 2026
+
+### Base de Datos y Backend
+- [x] Crear tabla de productos/cargadores configurables (chargers_catalog)
+- [x] Crear tabla de cotizaciones (quotes) con número único EVG-2026-XXXX
+- [x] Crear tabla de items de cotización (quote_items)
+- [x] Crear tabla de configuración de cotización (quote_settings)
+- [x] Procedimientos tRPC para CRUD de catálogo de cargadores (admin)
+- [x] Procedimientos tRPC para crear/listar/enviar cotizaciones (asesor)
+- [x] Procedimiento para vista pública de cotización (link único)
+- [x] Generación de PDF profesional con diseño ejecutivo
+
+### Roles y Permisos
+- [x] Rol de asesor comercial (advisor) en el sistema
+- [x] Admin: configura catálogo, precios, parámetros, ve todas las cotizaciones
+- [x] Asesor: crea, envía y da seguimiento a sus cotizaciones
+
+### Configuración Admin (Catálogo de Cargadores)
+- [x] UI para agregar/editar/eliminar cargadores del catálogo de ventas
+- [x] Campos: nombre, potencia, precio, conector, descripción, imagen
+- [x] Configurar parámetros generales (vigencia, fee EVGreen 30%, modelo llave en mano)
+- [x] Configurar texto de condiciones comerciales y exclusiones
+
+### Formulario de Cotización (Asesor Comercial)
+- [x] Campos del cliente: nombre, correo, teléfono, empresa (opcional)
+- [x] Selector de cargador(es) del catálogo configurado
+- [x] Cantidad de unidades por cargador
+- [x] Cálculo automático de totales
+- [x] Preview en tiempo real de la cotización
+
+### Cotización Profesional (PDF + Vista Online)
+- [x] Diseño ejecutivo con portada, datos del cliente, especificaciones técnicas
+- [x] Incluir beneficios del modelo EVGreen (70/30, operación, soporte 24/7, IA)
+- [x] Justificación del fee 30% (operación, mantenimiento, soporte, licencia IA, tecnología)
+- [x] Detalle de qué incluye: llave en mano, instalación, transformador, 10m cableado
+- [x] Detalle de qué NO incluye: obras civiles, cableado adicional (validado en visita técnica)
+- [ ] Proyección de retorno de inversión
+- [x] Vigencia de la oferta (30 días)
+- [x] Número de cotización único (EVG-2026-XXXX)
+- [x] Vista online con link único (sin login)
+- [x] Botón de descargar PDF
+
+### Sistema de Email
+- [x] Template HTML premium para envío de cotización
+- [x] Adjuntar PDF generado al email
+- [x] Mensaje profesional y persuasivo
+- [x] Copia al asesor para trazabilidad
+- [x] Asunto personalizado con nombre del cliente
+
+### Dashboard de Seguimiento
+- [x] Lista de cotizaciones con estados (Borrador, Enviada, Vista, Aceptada, Vencida)
+- [x] Filtros por estado, fecha, asesor
+- [x] Indicador de cuándo el cliente abrió la cotización
+- [x] Acciones rápidas: reenviar, duplicar, marcar como aceptada
+
+## Correcciones Módulo Cotizaciones - Mayo 2026
+
+### Selector de Cargadores
+- [x] Corregir selector de cargadores en formulario de nueva cotización (muestra productos del catálogo)
+- [x] Agregar link directo al catálogo desde el formulario cuando no hay productos
+- [x] Mejorar UX: mostrar productos con precio, potencia y conector en el selector
+- [x] Agregar sub-navegación clara entre Cotizaciones, Catálogo y Configuración
+
+### Rol de Comercial/Asesor
+- [x] Agregar rol "comercial" al enum de roles en schema.ts
+- [x] Crear layout/sidebar específico para comercial con acceso solo a cotizaciones
+- [x] Comercial solo ve sus propias cotizaciones (no las de otros)
+- [ ] Admin puede asignar rol de comercial a usuarios desde gestión de usuarios
+
+## Mejoras Módulo Cotizaciones v2 - Mayo 2026
+
+- [x] Contador de vistas no se muestra en el dashboard (corregir)
+- [x] Iconos de copiar link y clonar son iguales (diferenciarlos: Copy vs CopyPlus)
+- [x] Agregar botón de editar cotización (corregir datos del cliente)
+- [x] Agregar botón de eliminar cotización
+- [x] Agregar botón de descargar PDF desde el dashboard
+
+## Rediseño Cotización Premium - Mayo 2026
+
+- [x] Rediseñar template HTML (quote-pdf.ts) con estética premium EVGreen
+- [x] Rediseñar página pública QuotePublic.tsx con diseño impactante y moderno
+- [x] Gradientes, glassmorphism, tipografía premium, iconografía profesional
+- [x] Alineado con identidad visual EVGreen (verde eléctrico, oscuro, futurista)
+
+## Corrección PDF + Imágenes Cargadores - Mayo 2026
+
+- [x] Generar PDF real descargable (abre diálogo de imprimir/guardar como PDF)
+- [x] Mostrar imágenes de los cargadores en la vista pública de cotización
+- [x] Mostrar imágenes de los cargadores en el template HTML/PDF
+- [x] Usar las URLs de imagen configuradas en el catálogo de cargadores
+- [x] Campo productImageUrl agregado a quoteItems para snapshot de imagen
+
+## Corrección PDF v3 (Mayo 12)
+- [x] Usar logo negro (letras negras) en el template HTML para PDF (fondo blanco)
+- [x] Agregar @media print con page-break-inside: avoid en secciones
+- [x] Eliminar headers/footers del navegador al imprimir (@page margin: 0)
+- [x] Generar PDF limpio sin URL, fecha ni numeración del navegador
+- [x] Evitar cortes de contenido entre páginas
+- [x] Eliminar hojas en blanco innecesarias al final (diseño compacto)
+
+## Fix Logo Footer PDF (Mayo 12)
+- [x] Reemplazar img externa del footer por SVG inline del logo EVGreen (no se rompe al imprimir)
+- [x] Reducción espacio en blanco última página PDF (padding/margin compactados, page-break-before:avoid en footer)
+
+## Fix Imágenes Cargadores en PDF + Upload Directo (Mayo 12)
+- [x] Convertir imágenes de producto a base64 en el servidor para que se rendericen al imprimir PDF
+- [x] Agregar upload directo de imagen en el formulario del catálogo de cargadores (sin pegar URL manualmente)
+
+## URGENTE: Error 500 en producción - Catálogo borrado (Mayo 12)
+- [x] Investigar por qué la query de chargers_catalog falla con 500 en producción
+  → Causa raíz: commit externo (27a4578) con columnas inexistentes (revenue_model, etc.) se desplegó en Railway
+- [x] Force push del código correcto (d12958d) a GitHub para sobreescribir el commit problemático
+- [x] Datos del catálogo NO se perdieron (4 cargadores siguen en BD)
+- [x] Estaciones funcionando correctamente después del redeploy
+
+## Modelo Financiero Configurable + Proyección de Ingresos (Mayo 12)
+- [x] Agregar campos de modelo financiero a tabla quotes (evgreenPercent, investorPercent, hostPercent, energyCostPerKwh, salePricePerKwh, dailyUsageHours)
+- [x] Paso/sección de "Modelo Financiero" en formulario Nueva Cotización con precarga desde configuración global
+- [x] Permitir editar porcentajes por cotización individual (flexibilidad de negociación)
+- [x] Implementar cálculos de proyección de ingresos (diario, mensual, anual, ROI, recuperación de inversión)
+- [x] Sección de Proyección de Ingresos en template PDF con disclaimer informativo
+- [x] Sección de Proyección de Ingresos en vista pública de cotización
+- [x] Actualizar router backend para guardar/servir datos del modelo financiero por cotización
+- [x] Agregar campos de configuración de proyección por defecto en QuotesSettings
+- [x] Tests unitarios para modelo financiero y proyección (5 tests nuevos)
+
+## Bugs Modelo Financiero PDF (Mayo 12)
+- [x] BUG: Porcentajes personalizados en PDF - VERIFICADO: el PDF sí muestra los valores correctos (92/8)
+- [x] BUG: Proyección financiera en PDF - VERIFICADO: sí aparece correctamente en el PDF
+- [x] BUG: Vista web pública de cotización muestra 30/70 hardcodeado en vez de los porcentajes personalizados
+- [x] BUG: Vista web pública no muestra la sección de proyección de ingresos
+
+## Mejoras Vista Pública Proyección (Mayo 12)
+- [x] Selector interactivo de escenarios (Pesimista/Realista/Optimista) en vista web pública
+- [x] Gráfico de barras a 12 meses con proyección de ingresos mensuales del inversionista
+- [x] Tabla comparativa de los 3 escenarios
+- [x] Variación estacional en la proyección mensual
+- [x] Clases Tailwind corregidas (sin dynamic class generation)
+
+## Sistema de Postulación de Espacios para Cargadores (Mayo 2026)
+
+### Fase 1: Esquema de BD y Arquitectura
+- [x] Tabla spaceSubmissions (postulaciones de espacios) - 55 columnas
+- [x] Tabla spacePhotos (fotos de evidencia por postulación) - 8 columnas
+- [x] Evaluación técnica integrada en spaceSubmissions (technicalScore, notes, viability, etc.)
+- [x] Flujo de estados: pending → under_review → approved → letter_sent → letter_accepted → published → funded
+
+### Fase 2: Formulario Público de Postulación
+- [x] Landing/formulario público "Postula tu espacio" con campos completos
+- [x] Validación de campos y upload de fotos a S3
+- [x] Confirmación por email al postulante
+
+### Fase 3: Panel Admin de Validación
+- [x] Vista de postulaciones con filtros por estado, ciudad, fecha
+- [x] Detalle de postulación con fotos, mapa, datos del postulante
+- [x] Formulario de evaluación técnica (viabilidad eléctrica, accesibilidad, potencial)
+- [x] Botón aprobar/rechazar con comentarios
+- [x] Envío de email de resultado al postulante
+
+### Fase 4: Carta de Intención por Email
+- [x] Generación automática de carta de intención con datos del espacio
+- [x] Envío por email con link de aceptación digital
+- [x] Página de aceptación de términos con firma digital
+- [x] Registro de aceptación en BD con timestamp
+
+### Fase 5: Muro de Crowdfunding con Mapa Interactivo
+- [x] Mapa interactivo con marcadores de puntos disponibles para inversión
+- [x] Colores según nivel de recaudo (rojo=0%, amarillo=parcial, verde=fondeado)
+- [x] Tarjetas de punto con: valor, potencia, calificación IA, estrato, flujo vehicular
+- [x] Filtros por ciudad, rango de inversión, potencia, estado de recaudo
+- [x] Calificación automática del punto con IA
+
+### Fase 6: Vista Detallada del Punto
+- [x] Página de detalle con estadísticas completas, fotos, mapa
+- [x] Proyección de ingresos del punto específico
+- [x] Botón "Más información" → contacto directo con asesor
+- [x] Indicador de progreso de recaudo del punto
+
+
+## Sistema de Postulación de Espacios y Crowdfunding - 13 Mayo 2026
+
+### Backend - Router de Espacios
+- [x] Crear router `spaces` con procedimientos públicos y admin
+- [x] Procedimiento `submit` para postulación pública con fotos S3
+- [x] Procedimiento `getStatus` para consulta de estado por código
+- [x] Procedimiento `acceptLetter` para firma digital de carta de intención
+- [x] Procedimiento `listPublished` para muro de crowdfunding público
+- [x] Procedimiento admin `list` con filtros por estado y búsqueda
+- [x] Procedimiento admin `getById` con fotos adjuntas
+- [x] Procedimiento admin `updateStatus` con evaluación técnica
+- [x] Procedimiento admin `sendLetter` con email HTML profesional
+- [x] Procedimiento admin `generateAIScore` con LLM para evaluación
+- [x] Procedimiento admin `publishToCrowdfunding` que crea proyecto CF
+- [x] Generación automática de código de seguimiento (SPE-YYYY-NNNN)
+- [x] Notificación al owner en cada evento importante
+- [x] Tests unitarios (15 tests pasando)
+
+### Frontend - Formulario Público de Postulación
+- [x] Página multi-paso (6 pasos) en `/postula-tu-espacio`
+- [x] Paso 1: Datos del postulante (nombre, email, teléfono, empresa, documento)
+- [x] Paso 2: Datos del espacio (nombre, tipo, dirección, ciudad, departamento, mapa)
+- [x] Paso 3: Especificaciones técnicas (área, parqueos, transformador, tablero, internet, horario)
+- [x] Paso 4: Tráfico y contexto (vehículos diarios, % EV, estrato, puntos cercanos)
+- [x] Paso 5: Fotos con upload múltiple, tipo y caption
+- [x] Paso 6: Resumen y confirmación
+- [x] Mapa interactivo con click para seleccionar ubicación y reverse geocoding
+- [x] Validación por paso antes de avanzar
+- [x] Vista de éxito con código de seguimiento
+
+### Frontend - Carta de Intención
+- [x] Página pública `/carta-intencion/:token` para firma digital
+- [x] Texto legal completo de la carta de intención
+- [x] Formulario de firma (nombre, documento, checkbox de aceptación)
+- [x] Registro de IP del firmante
+- [x] Vista de éxito con próximos pasos
+
+### Frontend - Muro de Crowdfunding
+- [x] Página pública `/crowdfunding` con mapa interactivo
+- [x] Marcadores personalizados con potencia y score IA
+- [x] Colores según nivel de financiamiento
+- [x] Panel lateral con lista de puntos de inversión
+- [x] Filtros por tipo de espacio
+- [x] Detalle expandido con métricas, análisis IA, progreso de financiamiento
+- [x] Botón de contacto por WhatsApp con mensaje pre-armado
+- [x] Estadísticas globales (puntos, kW totales, ciudades)
+- [x] CTA para postular nuevos espacios
+
+### Frontend - Panel Admin de Espacios
+- [x] Página `/admin/spaces` con tabla de postulaciones
+- [x] Filtros por estado con conteo
+- [x] Búsqueda por código, nombre, postulante o ciudad
+- [x] Paginación
+- [x] Dialog de detalle con toda la información
+- [x] Botones de acción según estado (revisar, scoring IA, aprobar, rechazar, enviar carta, publicar)
+- [x] Dialog de rechazo con motivo
+- [x] Dialog de publicación con meta de inversión
+- [x] Visualización de fotos del espacio
+- [x] Visualización de análisis IA con fortalezas/debilidades
+- [x] Historial de eventos (creación, evaluación, carta, firma)
+- [x] Menú en sidebar del admin
+
+## Mejoras Postulación de Espacios y Crowdfunding - 13 Mayo 2026 (Ronda 2)
+
+### Banner/CTA en Landing Principal
+- [x] Agregar sección CTA llamativa "¿Tienes un espacio? ¡Postúlalo!" en la landing
+- [x] Diseño con gradientes y animación sutil para captar atención
+- [x] Enlace directo a /postula-tu-espacio
+
+### Galería de Fotos en Crowdfunding
+- [x] Agregar galería de fotos del espacio en la vista detallada del crowdfunding
+- [x] Mostrar fotos con tipo/categoría y caption
+- [x] Lightbox para ver fotos en tamaño completo
+
+## Responsive Admin Espacios - 13 Mayo 2026
+
+- [x] Vista de tarjetas en móvil (reemplaza tabla) con info resumida
+- [x] Dialog de detalle responsive con max-w-[95vw] en móvil
+- [x] Botones de acción scrollable horizontalmente en móvil
+- [x] Grid de contenido 1 columna en móvil, 2 en desktop (lg breakpoint)
+- [x] Tamaños de texto adaptativos (text-xs en móvil, text-sm en desktop)
+- [x] Columnas de tabla ocultas progresivamente (lg:hidden, xl:hidden)
+- [x] Lightbox de fotos en el detalle admin
+- [x] Paginación adaptada para móvil
+- [x] DialogFooter con botones full-width en móvil
+
+## Bug: Mapa interactivo no aparece en sección Inversión - 13 Mayo 2026
+
+- [x] Investigar por qué el espacio publicado no aparece en la sección de inversión
+- [x] Integrar mapa interactivo de crowdfunding en la página de inversión existente
+- [x] Mostrar datos reales de espacios publicados junto con los proyectos existentes
+
+## Bug: Marcadores no aparecen en mapa de inversión - 13 Mayo 2026
+
+- [x] Cambiar AdvancedMarkerElement a CustomOverlay (OverlayView) para marcadores HTML ricos
+- [x] Agregar estado mapReady para sincronizar carga del mapa con datos
+
+## Google Maps API Key + Animación + Clustering - 13 Mayo 2026
+
+- [x] Configurar VITE_GOOGLE_MAPS_API_KEY con la key del usuario
+- [x] Agregar animación de pulso en los marcadores del mapa de inversión
+- [x] Implementar clustering de marcadores para muchos puntos
+- [x] Re-renderizar marcadores al cambiar zoom (zoom_changed listener)
+- [x] Marcadores cluster con contador de puntos y kW totales
+
+## Mejoras Espacios - Formulario Inversionistas y Admin (Mayo 2026)
+- [x] Formulario de contacto para inversionistas en detalle del espacio (captura leads sin depender de WhatsApp)
+- [x] Contador de visitas por espacio para medir interés de inversionistas
+- [x] Endpoint incrementView (público) para contabilizar vistas de cada espacio
+- [x] Endpoint submitLead (público) con notificación al admin y email de confirmación al inversionista
+- [x] Endpoint listLeads (admin) para ver todos los leads capturados
+- [x] Endpoint updateLead (admin) para cambiar estado/notas de leads
+- [x] Botón de Editar espacio desde el panel admin (dialog con campos editables)
+- [x] Botón de Eliminar espacio desde el panel admin (con confirmación)
+- [x] Fix responsive de tarjetas móviles en admin/Spaces (flex-wrap, tipo de espacio, inversión)
+- [x] Tabla investorLeads en BD con campos: nombre, email, teléfono, monto interesado, mensaje, estado
+- [x] Columna viewCount en spaceSubmissions
+
+## Bug Fix - Google Maps fitBounds crash en /investors (Mayo 2026)
+- [x] Fix error "not a LatLngBounds or LatLngBoundsLiteral: unknown property cj" en página de inversionistas
+- [x] Fix "Map container not found" error
+- [x] Fix "Cannot read properties of undefined (reading 'kO')"
+
+## Bug Fix - Responsive tarjetas detalle espacio en móvil (Mayo 2026)
+- [x] Fix texto de recomendación IA cortado palabra por palabra en móvil (DetailRow layout)
+
+## Módulo Comerciales - Comisiones y Panel (Mayo 2026)
+- [x] Schema: agregar commissionPercent a chargers_catalog
+- [x] Schema: agregar commissionPercent/commissionAmount a quote_items + totalCommission a quotes
+- [x] Backend: endpoint para configurar comisión por producto (admin)
+- [x] Backend: endpoint para calcular comisiones del comercial (stats)
+- [x] Backend: comisiones integradas en create quote y stats
+- [x] Frontend: campo de comisión % en catálogo de cargadores (admin)
+- [x] Frontend: panel de comercial con sus cotizaciones y estadísticas de comisiones (integrado en /admin/quotes)
+- [x] Frontend: comercial accede vía AdminLayout con rol 'comercial' (solo ve Cotizaciones)
+- [x] Frontend: estadísticas de comisión acumulada, pendiente, por producto en panel de cotizaciones
+
+## Bug Fix - Rol comercial faltante (Mayo 2026)
+- [ ] Agregar rol 'comercial' al enum de roles en drizzle/schema.ts
+- [ ] Migrar DB para agregar el nuevo valor al enum
+- [ ] Agregar 'Comercial' al selector de roles en frontend admin/Users
+
+## Bug Fix + Feature - Rol comercial completo (Mayo 2026)
+- [x] Agregar rol 'comercial' al enum de roles en drizzle/schema.ts (ya existía)
+- [x] Migrar DB para agregar el nuevo valor al enum (ya existía)
+- [x] Agregar 'Comercial' al selector de roles en frontend admin/Users
+- [x] Verificar dashboard propio para comerciales (redirige a /admin/quotes con AdminLayout filtrado)
+- [x] Asegurar que comercial solo vea sus propias cotizaciones (ya implementado en advisorProcedure)
+- [x] Agregar 'comercial' y 'host' a validaciones z.enum en backend routers.ts
+- [x] Agregar badge, stats card, filtro y quick-action para rol comercial en admin/Users
+## Integración Espacios ↔ Crowdfunding ↔ Financiamientos ↔ Mapa (Mayo 2026)
+
+- [x] Auto-crear proyecto crowdfunding DRAFT al aprobar espacio (updateStatus)
+- [x] Vincular spaceSubmission con crowdfunding project (spaceSubmissionId en crowdfunding_projects)
+- [x] Mostrar espacios aprobados en listado de crowdfunding automáticamente (tab "Espacios Aprobados")
+- [x] Auto-activar CF a OPEN cuando carta de intención es aceptada (letter_accepted)
+- [x] publishToCrowdfunding actualizado para manejar CF existentes (update vs create)
+- [x] getCrowdfundingProjects con LEFT JOIN a space_submissions (linkedSpaceName, linkedSpaceCity, etc.)
+- [x] Admin Crowdfunding con tabs: Proyectos Activos vs Espacios Aprobados (DRAFT)
+- [x] Botón "Publicar" en tab de espacios aprobados (cambia status a OPEN)
+- [x] Tests de integración: auto-creación CF, no duplicación, includePrivate, público sin DRAFT
+- [x] Conectar datos de crowdfunding con sección pública de financiamientos
+- [x] Conectar datos de crowdfunding con mapa de oportunidades
+- [x] Fix caracteres escapados en textos del mapa de oportunidades (\u00e9, \u00f3n)
+
+## Diferenciación visual Mapa de Oportunidades (Mayo 2026)
+
+- [x] Estaciones Premium con marcador estrella dorada en el mapa (además de tarjetas)
+- [x] Puntos individuales solo en mapa con marcador rayo verde estándar
+- [x] Agregar datos de crowdfunding al mapa para estaciones Premium
+- [x] Popup diferenciado: Premium muestra progreso/meta/inversionistas, Individual muestra puntuación/potencia
+- [x] Leyenda visual en el mapa (estrella = Premium, rayo = Individual)
+- [x] Filtro Premium/Individual/Todos en el mapa
+- [x] Backend: getCrowdfundingProjects con COALESCE lat/lng de space_submissions + charging_stations
+
+## Constancia PDF de Firma de Carta de Intención (Mayo 2026)
+
+- [x] Generar PDF con constancia de firma al aceptar carta de intención
+- [x] Incluir datos del firmante (nombre, documento, IP, fecha/hora, user-agent)
+- [x] Incluir hash SHA-256 de verificación de integridad
+- [x] Incluir contenido completo de la carta de intención en el PDF
+- [x] Almacenar PDF en S3 como evidencia permanente
+- [x] Guardar URL del PDF en la tabla space_submissions (signedLetterPdfUrl, signedLetterPdfKey)
+- [x] Guardar letterSignerUserAgent en BD
+- [x] Mostrar/descargar PDF de constancia desde el admin de espacios (botón "Descargar Constancia PDF")
+- [x] Mostrar IP de firma en el detalle admin
+- [x] Enviar copia del PDF al firmante por email (trazabilidad)
+- [x] Página de éxito de firma muestra info de constancia y envío por email
+
+## Fix: Cargador Livoltek muestra Desconectado con Heartbeats activos - Mayo 2026
+
+- [x] ROOT CAUSE: getChargerDetail no consultaba dualCSMS (solo usaba connection-manager). La lista usaba dualCSMS pero el detalle no.
+- [x] Agregar consulta a dualCSMS.getConnectionsStatus() y getDetailedDiagnostics() en getChargerDetail
+- [x] Usar csmsConn como fuente de datos de conexión cuando connection-manager no tiene la conexión
+- [x] Usar csmsDiag para uptime, heartbeatAge y pendingCalls cuando está disponible
+- [x] Agregar fallback: si hay heartbeats recientes (< 3 min) en logs, considerar conectado
+- [x] Mostrar estado RECONNECTING en vez de CLOSED cuando hay heartbeats recientes pero WS no está OPEN
+
+## RFID Local Authorization List (Modo Offline / Contingencia)
+- [x] Schema: tabla local_auth_lists para rastrear versiones de lista local por estación
+- [x] Schema: tabla local_auth_entries para las tarjetas asignadas a cada estación
+- [x] Backend: procedimiento sendLocalList para enviar lista al cargador vía OCPP
+- [x] Backend: procedimiento getLocalListVersion para consultar versión actual del cargador
+- [x] Backend: CRUD de tarjetas RFID maestras por estación (asignar/desasignar)
+- [x] Backend: lógica de sincronización de transacciones offline
+- [x] Backend: método en csms-dual para SendLocalList (OCPP 1.6 y 2.0.1)
+- [x] Admin UI: pestaña RFID/Offline en monitor OCPP por cargador
+- [x] Admin UI: botón para enviar/actualizar lista local al cargador
+- [x] Admin UI: indicador de estado de sincronización y política offline
+- [x] Admin UI: panel de tarjetas maestras y regulares con gestión completa
+- [x] Admin UI: panel informativo de cómo funciona el modo offline
+- [x] Tests: 10 tests pasando (métodos OCPP + funciones BD)
+
+## Mejora Landing "Postula tu Espacio" (Más persuasiva)
+- [x] Hero: Propuesta de valor impactante con estadísticas ($0 inversión, 10% margen, +207% crec. EV)
+- [x] Sección: Oferta clara - 10% del margen bruto del punto (~$145 COP/kWh), cero inversión
+- [x] Sección: Proyección de ingresos realista con 3 escenarios ($87K/$174K/$348K COP/mes)
+- [x] Disclaimer: Aviso legal - ingresos dependen de facturación, no se prometen ingresos fijos
+- [x] Sección: Beneficios (tráfico premium 30+ min, valorización, cero mantenimiento)
+- [x] Sección: Cómo funciona (4 pasos: Postulas → Evaluamos → Instalamos → Generas)
+- [x] Checkbox: Aceptación tratamiento datos (Ley 1581/2012, con email datos@evgreen.lat)
+- [ ] Social proof: Testimonios o datos de la red actual (pendiente datos reales)
+
+## Fix: Cascading Department/City + Investment Type Classification (30 Mayo 2026)
+- [x] Cascading department → city selects in SpaceSubmission (prevent incoherent city/department)
+- [x] Station investment type field in schema (individual vs colectiva)
+- [x] Admin edit dialog: investmentType selector to classify spaces
+- [x] Fix investor map: mutual exclusion (individual OR colectiva, not both)
+- [x] Satellite/hybrid map view by default in SpaceSubmission
+- [x] Google Places Autocomplete graceful fallback
+
+## Bug Crítico: Desconexión Simultánea de Cargadores - 31 Mayo 2026
+- [x] FIX: Ping/pong agresivo causa desconexión simultánea de todos los cargadores cuando el event loop se retrasa
+- [x] Implementar sistema de missed-pong counter con 3 reintentos antes de terminar
+- [x] Usar timestamps de última actividad en vez de flag booleano isAlive
+- [x] Agregar logging mejorado para diagnóstico de desconexiones
+- [ ] Verificar y hacer push a GitHub
+
+## Fix Deployment OOM - 1 Junio 2026
+- [x] Optimizar Vite build para reducir consumo de memoria (7974 módulos, OOM kill en 512 MiB)
+- [x] Verificar build exitoso localmente
+- [ ] Push a GitHub y confirmar deploy exitoso
+
+## Fix Crítico Frontend - 1 Junio 2026
+- [x] FIX: App no carga - ReferenceError "Cannot access 'r' before initialization" en vendor-maps chunk
+- [x] Causa: manualChunks agresivo en vite.config.ts creaba dependencias circulares entre chunks
+- [x] Solución: Simplificar manualChunks a solo separar react/react-dom, dejar que Rollup maneje el resto
+- [x] Build verificado exitosamente (1m 17s)
+
+## Fix Cotización: Seguro/Póliza - 2 Junio 2026
+- [x] Eliminar "Seguro contra daños y vandalismo" del array benefitsDescription por defecto (venta individual = comprador asume seguro)
+- [x] Agregar nota en exclusiones: "Seguros y pólizas contra daños, vandalismo o robo son responsabilidad exclusiva del comprador"
+- [ ] Push a GitHub y confirmar deploy
+
+## Espacios Postulados: Filtros Avanzados y Acciones Masivas - 4 Junio 2026
+- [x] Filtros avanzados: ciudad, tipo, rango de fechas, score (sin calificar/calificados)
+- [x] Backend: endpoint bulk delete (eliminar múltiples espacios)
+- [x] Backend: endpoint bulk change status (cambiar estado de múltiples espacios)
+- [x] Backend: endpoint bulk assign score (calificar múltiples espacios)
+- [x] Frontend: checkboxes de selección individual + seleccionar todos
+- [x] Frontend: barra de acciones masivas (eliminar, cambiar estado, asignar score)
+- [x] Frontend: panel de filtros colapsable con dropdowns
+- [x] Test y deploy
+
+## Página Pública /partners - Landing Page Partners Program - 5 Junio 2026
+- [ ] Crear página pública /partners con diseño EVGreen (fondo oscuro, neón verde)
+- [ ] Sección Hero: EVGREEN Partners - "Deja de vender solo hardware"
+- [ ] Sección Problema: por qué vender hardware solo no funciona
+- [ ] Sección Solución: Paquete EVGREEN Ready (hardware + ecosistema + licencia)
+- [ ] Sección Beneficios: comisiones 20-30%, diferenciación, leads, ingresos recurrentes
+- [ ] Sección Niveles: Silver, Gold, Platinum con requisitos y beneficios
+- [ ] Sección Cómo Funciona: flujo Partner vende → EVGreen opera → Partner cobra
+- [ ] Sección Red/Network: efecto de red europeo
+- [ ] Sección Comunidad: EVGREEN Certified Partner
+- [ ] Formulario de aplicación/contacto para distribuidores interesados
+- [ ] Registrar ruta en App.tsx como ruta pública
+- [ ] Backend: endpoint para recibir aplicaciones de partners
+- [ ] Push a GitHub para deploy en Railway
+
+## Parche: Idempotencia Pagos + Perfiles IA + Consentimiento (Jun 2026)
+- [x] Fase 1: Copiar idempotency.ts y aplicar cambios en webhook.ts (fix pagos duplicados)
+- [x] Fase 2: Agregar tablas user_data_consents, personalized_offers al schema + columnas avanzadas en user_consumption_profile
+- [x] Fase 3: Crear server/profiles/ con consumption-profile-service.ts y profiles-router.ts
+- [x] Fase 4: Conectar buildPersonalizationContext al asistente IA (ai-service.ts)
+- [x] Fase 5: Agregar DataConsentDialog.tsx y sección de Privacidad en perfil de usuario (/settings/privacy)
+- [x] Tests para perfiles (14 tests pasando)
+- [ ] Push a GitHub
+
+## Fix: Estaciones cargando lento (Performance Jun 2026)
+- [x] Agregar índices a ocpp_logs (ocppIdentity + messageType + createdAt) — query de 18ms vs full scan
+- [x] Agregar índice a reservations (evseId + reservation_status)
+- [x] Agregar índice a evses (stationId)
+- [x] Optimizar stations.listAll: batch EVSEs en una sola query (2 queries vs 9+36)
+- [x] Optimizar getActiveConnectionsFromLogs: batch queries (5 queries vs ~50+)
+- [x] Verificar mejora de rendimiento (EVSEs: 14ms, Reservations: 7ms, Activity: 18ms)
+
+## SaaS Landing Page + Modelo Multi-Tenant (Jun 2026)
+- [x] Crear página /saas con landing profesional del modelo de negocio (pricing, features, CTA)
+- [x] Agregar botón/enlace en la navegación principal hacia la landing SaaS (footer "Empresas")
+- [x] Implementar tabla organizations con pricing_config en el schema
+- [x] Implementar tabla platform_pricing_defaults para valores globales configurables
+- [x] Implementar tabla org_billing_records para historial de facturación
+- [x] Crear router organizations con CRUD, stats, pricing, billing
+- [x] Crear panel de superadmin /admin/organizations para gestionar organizaciones y precios
+- [x] Agregar menú "Organizaciones SaaS" en sidebar admin
+- [x] Crear middleware de tenant context (tenant-middleware.ts: resolveTenantContext, getEffectiveFees, canAddCharger, getOrgBranding)

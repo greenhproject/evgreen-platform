@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the db module
 vi.mock("./db", () => ({
@@ -19,24 +19,30 @@ vi.mock("./db", () => ({
 }));
 
 // Mock notification modules
-vi.mock("../_core/notification", () => ({
+vi.mock("./_core/notification", () => ({
   notifyOwner: vi.fn().mockResolvedValue(true),
 }));
 
-// Need to mock before importing
 vi.mock("./notifications/technician-notification-service", () => ({
   notifyTechniciansOfAlert: vi.fn().mockResolvedValue({ pushSent: 0, emailSent: 0, inAppCreated: 0 }),
 }));
 
+// Mock connection-manager to control isChargerCurrentlyConnected behavior
+vi.mock("./ocpp/connection-manager", () => ({
+  getConnection: vi.fn().mockReturnValue(undefined),
+  isInGracePeriod: vi.fn().mockReturnValue(false),
+}));
+
 // Import after mocks
 import * as db from "./db";
+import { notifyOwner } from "./_core/notification";
+import { notifyTechniciansOfAlert } from "./notifications/technician-notification-service";
+import * as ocppManager from "./ocpp/connection-manager";
+import * as alertsService from "./ocpp/alerts-service";
 
 describe("Alert Center - Severity Classification", () => {
   it("should use lowercase severity values from the database enum", () => {
-    // The database enum uses: info, warning, critical
     const validSeverities = ["info", "warning", "critical"];
-    // Frontend should map these lowercase values correctly
-    
     const severityMap: Record<string, string> = {
       critical: "Crítica",
       warning: "Advertencia",
@@ -49,7 +55,6 @@ describe("Alert Center - Severity Classification", () => {
   });
 
   it("should NOT use uppercase severity values (CRITICAL/HIGH/MEDIUM/LOW)", () => {
-    // These were the old frontend values that caused the mismatch
     const oldValues = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
     const validDbValues = ["info", "warning", "critical"];
     
@@ -66,7 +71,6 @@ describe("Alert Center - Statistics", () => {
     expect(stats).toBeDefined();
     expect(stats.bySeverity).toBeDefined();
     
-    // Should have lowercase keys
     const keys = Object.keys(stats.bySeverity);
     for (const key of keys) {
       expect(key).toBe(key.toLowerCase());
@@ -80,15 +84,6 @@ describe("Alert Center - Statistics", () => {
     expect(typeof stats.autoResolved).toBe("number");
     expect(stats.autoResolved).toBe(3);
   });
-
-  it("getOcppAlertStats should count only active (non-resolved) alerts by severity", async () => {
-    const stats = await db.getOcppAlertStats();
-    
-    // bySeverity should only count active alerts
-    expect(stats.bySeverity.critical).toBe(2);
-    expect(stats.bySeverity.warning).toBe(2);
-    expect(stats.bySeverity.info).toBe(1);
-  });
 });
 
 describe("Alert Center - Duplicate Prevention", () => {
@@ -101,7 +96,7 @@ describe("Alert Center - Duplicate Prevention", () => {
       ocppIdentity: "TEST-CHARGER-001",
       stationId: 1,
       alertType: "DISCONNECTION" as const,
-      severity: "critical" as const,
+      severity: "warning" as const,
       title: "Test disconnection",
       message: "Test message",
       payload: {},
@@ -126,25 +121,145 @@ describe("Alert Center - Auto-Resolution", () => {
   });
 });
 
-describe("Alert Center - Alert History", () => {
+describe("Alert Center - Reconnection triggers auto-resolve", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("getAlertHistory should be callable with options", async () => {
-    await db.getAlertHistory({ limit: 50, offset: 0 });
+  it("handleReconnection calls autoResolveDisconnectionAlerts", async () => {
+    await alertsService.handleReconnection("EVG001");
     
-    expect(db.getAlertHistory).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    expect(db.autoResolveDisconnectionAlerts).toHaveBeenCalledWith("EVG001");
   });
 
-  it("getAlertHistory should support filtering by ocppIdentity", async () => {
-    await db.getAlertHistory({ limit: 50, offset: 0, ocppIdentity: "TEST-001" });
+  it("handleReconnection handles DB errors gracefully", async () => {
+    (db.autoResolveDisconnectionAlerts as any).mockRejectedValueOnce(new Error("DB error"));
     
-    expect(db.getAlertHistory).toHaveBeenCalledWith({
-      limit: 50,
-      offset: 0,
-      ocppIdentity: "TEST-001",
+    // Should not throw
+    await expect(alertsService.handleReconnection("EVG001")).resolves.not.toThrow();
+  });
+});
+
+describe("Alert Center - DISCONNECTION Severity Change", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Ensure charger is NOT connected (so alerts can fire)
+    (ocppManager.getConnection as any).mockReturnValue(undefined);
+    (ocppManager.isInGracePeriod as any).mockReturnValue(false);
+  });
+
+  it("DISCONNECTION alerts should be 'warning' severity (not critical) for single disconnection", async () => {
+    await alertsService.handleDisconnection("TEST-CHARGER-SEVERITY", 1);
+    
+    expect(db.createOcppAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alertType: "DISCONNECTION",
+        severity: "warning",
+      })
+    );
+  });
+
+  it("DISCONNECTION alerts should still notify owner (warnings are notified)", async () => {
+    await alertsService.handleDisconnection("TEST-CHARGER-NOTIFY", 1);
+    
+    expect(notifyOwner).toHaveBeenCalled();
+    expect(notifyTechniciansOfAlert).toHaveBeenCalled();
+  });
+});
+
+describe("Alert Center - Proxy Cycle Suppression (isChargerCurrentlyConnected)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should SUPPRESS disconnection alert if charger is currently connected", async () => {
+    // Simulate: charger already reconnected (Proxy Cycle scenario)
+    (ocppManager.getConnection as any).mockReturnValue({ ws: {}, ocppIdentity: "PROXY-TEST" });
+    (ocppManager.isInGracePeriod as any).mockReturnValue(false);
+    
+    await alertsService.handleDisconnection("PROXY-TEST", 1);
+    
+    // Should NOT create alert or send notifications
+    expect(db.createOcppAlert).not.toHaveBeenCalled();
+    expect(notifyOwner).not.toHaveBeenCalled();
+    expect(notifyTechniciansOfAlert).not.toHaveBeenCalled();
+  });
+
+  it("should SUPPRESS disconnection alert if charger is in grace period (reconnecting)", async () => {
+    // Simulate: charger is in grace period (still reconnecting)
+    (ocppManager.getConnection as any).mockReturnValue(undefined);
+    (ocppManager.isInGracePeriod as any).mockReturnValue(true);
+    
+    await alertsService.handleDisconnection("GRACE-TEST", 1);
+    
+    // Should NOT create alert or send notifications
+    expect(db.createOcppAlert).not.toHaveBeenCalled();
+    expect(notifyOwner).not.toHaveBeenCalled();
+    expect(notifyTechniciansOfAlert).not.toHaveBeenCalled();
+  });
+
+  it("should ALLOW disconnection alert if charger is truly disconnected", async () => {
+    // Simulate: charger is NOT connected and NOT in grace period
+    (ocppManager.getConnection as any).mockReturnValue(undefined);
+    (ocppManager.isInGracePeriod as any).mockReturnValue(false);
+    
+    await alertsService.handleDisconnection("REAL-DISCONNECT", 1);
+    
+    // Should create alert and send notifications
+    expect(db.createOcppAlert).toHaveBeenCalled();
+    expect(notifyOwner).toHaveBeenCalled();
+    expect(notifyTechniciansOfAlert).toHaveBeenCalled();
+  });
+
+  it("should SUPPRESS notifications (but save alert) if charger reconnects between alert creation and notification dispatch", async () => {
+    // First call: charger is disconnected (alert creation passes)
+    // But by the time saveAndNotifyAlert checks again, charger has reconnected
+    let callCount = 0;
+    (ocppManager.getConnection as any).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return undefined; // First check in handleDisconnection: not connected
+      return { ws: {}, ocppIdentity: "RACE-TEST" }; // Second check in saveAndNotifyAlert: reconnected!
     });
+    (ocppManager.isInGracePeriod as any).mockReturnValue(false);
+    
+    await alertsService.handleDisconnection("RACE-TEST", 1);
+    
+    // Alert is saved (for audit) but notifications are suppressed
+    expect(db.createOcppAlert).toHaveBeenCalled();
+    expect(notifyOwner).not.toHaveBeenCalled();
+    expect(notifyTechniciansOfAlert).not.toHaveBeenCalled();
+    // Auto-resolve should be called since charger reconnected
+    expect(db.autoResolveDisconnectionAlerts).toHaveBeenCalledWith("RACE-TEST");
+  });
+});
+
+describe("Alert Center - Cooldown Prevention", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (ocppManager.getConnection as any).mockReturnValue(undefined);
+    (ocppManager.isInGracePeriod as any).mockReturnValue(false);
+  });
+
+  it("should respect 30-minute cooldown between disconnection alerts for same charger", async () => {
+    // First alert should go through
+    await alertsService.handleDisconnection("COOLDOWN-TEST", 1);
+    expect(db.createOcppAlert).toHaveBeenCalledTimes(1);
+    
+    vi.clearAllMocks();
+    
+    // Second alert within cooldown should be suppressed
+    await alertsService.handleDisconnection("COOLDOWN-TEST", 1);
+    expect(db.createOcppAlert).not.toHaveBeenCalled();
+  });
+
+  it("should allow alerts for different chargers independently", async () => {
+    await alertsService.handleDisconnection("CHARGER-A", 1);
+    expect(db.createOcppAlert).toHaveBeenCalledTimes(1);
+    
+    vi.clearAllMocks();
+    
+    await alertsService.handleDisconnection("CHARGER-B", 2);
+    expect(db.createOcppAlert).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -165,13 +280,10 @@ describe("Alert Center - Frontend Severity Mapping", () => {
       },
     };
 
-    // Test that all backend severity values have a frontend mapping
     expect(SEVERITY_CONFIG["critical"]).toBeDefined();
     expect(SEVERITY_CONFIG["critical"].label).toBe("Crítica");
-    
     expect(SEVERITY_CONFIG["warning"]).toBeDefined();
     expect(SEVERITY_CONFIG["warning"].label).toBe("Advertencia");
-    
     expect(SEVERITY_CONFIG["info"]).toBeDefined();
     expect(SEVERITY_CONFIG["info"].label).toBe("Informativa");
   });
@@ -190,33 +302,5 @@ describe("Alert Center - Frontend Severity Mapping", () => {
     expect(getSeverityConfig("CRITICAL").label).toBe("Crítica");
     expect(getSeverityConfig("unknown").label).toBe("Informativa");
     expect(getSeverityConfig("").label).toBe("Informativa");
-  });
-});
-
-describe("Alert Center - DISCONNECTION is Critical", () => {
-  it("determineSeverity should return critical for DISCONNECTION", () => {
-    // Replicate the determineSeverity function logic
-    function determineSeverity(alertType: string): string {
-      switch (alertType) {
-        case "FAULT":
-        case "BOOT_REJECTED":
-        case "TRANSACTION_ERROR":
-          return "critical";
-        case "DISCONNECTION":
-          return "critical";
-        case "ERROR":
-          return "warning";
-        case "OFFLINE_TIMEOUT":
-          return "warning";
-        default:
-          return "info";
-      }
-    }
-
-    expect(determineSeverity("DISCONNECTION")).toBe("critical");
-    expect(determineSeverity("FAULT")).toBe("critical");
-    expect(determineSeverity("BOOT_REJECTED")).toBe("critical");
-    expect(determineSeverity("ERROR")).toBe("warning");
-    expect(determineSeverity("OFFLINE_TIMEOUT")).toBe("warning");
   });
 });

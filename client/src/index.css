@@ -330,6 +330,18 @@
   50% { box-shadow: 0 0 25px oklch(0.55 0.18 145 / 0.8); }
 }
 
+@keyframes markerPulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  50% { transform: scale(1.05); }
+  70% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+@keyframes markerBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
 /* Safe area para dispositivos con notch */
 @supports (padding: max(0px)) {
   .safe-area-inset-top {
@@ -346,5 +358,37 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+/* === PRINT STYLES para Cotización Pública === */
+@media print {
+  @page {
+    margin: 10mm;
+    size: A4;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: white !important;
+  }
+
+  /* Ocultar elementos no imprimibles */
+  .no-print,
+  .fixed,
+  button,
+  [data-no-print] {
+    display: none !important;
+  }
+
+  /* Control de saltos de página */
+  .print-avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print-break-before {
+    page-break-before: always;
+    break-before: page;
   }
 }

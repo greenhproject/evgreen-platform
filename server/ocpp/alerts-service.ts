@@ -4,9 +4,11 @@
  * 
  * Flujo de notificación:
  * 1. Evento OCPP detectado (desconexión, error, falla, boot rechazado)
- * 2. Alerta guardada en BD (tabla ocpp_alerts)
- * 3. Notificación al owner de la plataforma
- * 4. Notificación a técnicos activos (FCM push + email + in-app)
+ * 2. VERIFICACIÓN: Si es desconexión, confirmar que el cargador NO está conectado actualmente
+ *    (previene alertas falsas por Proxy Cycle / reconexiones transparentes)
+ * 3. Alerta guardada en BD (tabla ocpp_alerts)
+ * 4. Notificación al owner de la plataforma
+ * 5. Notificación a técnicos activos (FCM push + email + in-app)
  *    - Respeta preferencias individuales de cada técnico
  *    - Respeta horario laboral y disponibilidad para emergencias
  */
@@ -14,6 +16,7 @@
 import { notifyOwner } from "../_core/notification";
 import * as db from "../db";
 import { notifyTechniciansOfAlert } from "../notifications/technician-notification-service";
+import * as ocppManager from "./connection-manager";
 
 // Tipos de alertas
 export type OcppAlertType = 
@@ -78,14 +81,16 @@ function registerAlert(ocppIdentity: string, alertType: OcppAlertType): void {
 /**
  * Determina la severidad basada en el tipo de alerta y datos
  */
-function determineSeverity(alertType: OcppAlertType, payload?: Record<string, unknown>): OcppAlertSeverity {
+function determineSeverity(alertType: OcppAlertType, _payload?: Record<string, unknown>): OcppAlertSeverity {
   switch (alertType) {
     case "FAULT":
     case "BOOT_REJECTED":
     case "TRANSACTION_ERROR":
       return "critical";
     case "DISCONNECTION":
-      return "critical";
+      // Desconexiones son warning, no critical — muchas son temporales (proxy cycle)
+      // Solo escalan a critical si hay múltiples desconexiones reales
+      return "warning";
     case "ERROR":
       return "warning";
     case "OFFLINE_TIMEOUT":
@@ -114,12 +119,45 @@ async function getStationName(ocppIdentity: string, stationId?: number | null): 
 }
 
 /**
- * Procesa un evento de desconexión
+ * Verifica si un cargador está actualmente conectado o en grace period (reconectando).
+ * Si está conectado o reconectando, NO se debe generar alerta de desconexión.
+ * 
+ * Esta es la DEFENSA PRINCIPAL contra alertas falsas por Proxy Cycle:
+ * - Proxy Cycle: el proxy recicla el WebSocket, el cargador se reconecta en ~0s
+ * - El grace period (5 min) en connection-manager cubre la reconexión
+ * - Si al momento de evaluar la alerta el cargador ya se reconectó, la alerta es falsa
+ */
+function isChargerCurrentlyConnected(ocppIdentity: string): boolean {
+  const connection = ocppManager.getConnection(ocppIdentity);
+  if (connection) {
+    return true; // Tiene conexión WebSocket activa
+  }
+  const inGrace = ocppManager.isInGracePeriod(ocppIdentity);
+  if (inGrace) {
+    return true; // Está en grace period (reconectando)
+  }
+  return false;
+}
+
+/**
+ * Procesa un evento de desconexión.
+ * 
+ * IMPORTANTE: Esta función SOLO debe llamarse después de que expire el grace period
+ * y se confirme que el cargador NO se reconectó. Antes de generar la alerta,
+ * hace una verificación adicional del estado actual de la conexión como safety net.
  */
 export async function handleDisconnection(
   ocppIdentity: string,
   stationId?: number
 ): Promise<void> {
+  // SAFETY NET: Verificar que el cargador realmente NO está conectado
+  // Esto previene alertas falsas por race conditions entre el grace period timer
+  // y la reconexión del cargador (especialmente en Proxy Cycle)
+  if (isChargerCurrentlyConnected(ocppIdentity)) {
+    console.log(`[OCPP Alert] SUPPRESSED disconnection alert for ${ocppIdentity}: charger is currently connected or in grace period (likely Proxy Cycle)`);
+    return;
+  }
+  
   if (isInCooldown(ocppIdentity, "DISCONNECTION")) {
     console.log(`[OCPP Alert] Disconnection alert for ${ocppIdentity} is in cooldown (30 min), skipping`);
     return;
@@ -135,17 +173,22 @@ export async function handleDisconnection(
   }
   reconnectionCounts.set(ocppIdentity, reconnInfo);
   
+  // Determinar severidad basada en el número de desconexiones
+  // 1 desconexión = warning, 3+ desconexiones en 1 hora = critical (inestabilidad real)
+  const severity: OcppAlertSeverity = reconnInfo.count >= 3 ? "critical" : "warning";
+  
   // Construir mensaje con info de estabilidad
   let message = `El cargador ${ocppIdentity} se ha desconectado del servidor OCPP.`;
   if (reconnInfo.count > 1) {
-    message += ` (${reconnInfo.count} desconexiones en la última hora - conexión inestable)`;
+    message += ` (${reconnInfo.count} desconexiones reales en la última hora - conexión inestable)`;
   }
+  message += ` Esta alerta se generó después de confirmar que el cargador no se reconectó dentro del período de gracia de 5 minutos.`;
   
   const alert: OcppAlert = {
     ocppIdentity,
     stationId,
     alertType: "DISCONNECTION",
-    severity: "critical",
+    severity,
     title: `Cargador ${ocppIdentity} desconectado`,
     message,
     payload: { disconnectionCount: reconnInfo.count, windowHours: 1 },
@@ -241,12 +284,32 @@ export async function handleBootRejected(
 }
 
 /**
- * Guarda la alerta en BD y envía notificaciones a owner + técnicos
+ * Guarda la alerta en BD y envía notificaciones a owner + técnicos.
+ * 
+ * Para alertas de DISCONNECTION, hace una verificación final antes de notificar:
+ * si el cargador ya se reconectó entre el momento de crear la alerta y el momento
+ * de enviar la notificación, suprime la notificación (la alerta queda en BD pero
+ * no se envía spam al owner/técnicos).
  */
 async function saveAndNotifyAlert(alert: OcppAlert): Promise<void> {
   try {
-    // Guardar en BD
+    // Guardar en BD (siempre, para auditoría)
     await db.createOcppAlert(alert);
+    
+    // VERIFICACIÓN FINAL para desconexiones: si el cargador ya se reconectó
+    // entre la creación de la alerta y ahora, NO enviar notificaciones
+    if (alert.alertType === "DISCONNECTION") {
+      if (isChargerCurrentlyConnected(alert.ocppIdentity)) {
+        console.log(`[OCPP Alert] SUPPRESSED notifications for ${alert.ocppIdentity}: charger reconnected before notification dispatch`);
+        // Auto-resolver la alerta que acabamos de crear
+        try {
+          await db.autoResolveDisconnectionAlerts(alert.ocppIdentity);
+        } catch (e) {
+          // Ignorar error de auto-resolve
+        }
+        return;
+      }
+    }
     
     // Obtener nombre de la estación para las notificaciones
     const stationName = await getStationName(alert.ocppIdentity, alert.stationId);

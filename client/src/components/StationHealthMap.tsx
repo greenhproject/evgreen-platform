@@ -129,9 +129,26 @@ function createMarkerContent(station: StationHealth): HTMLElement {
   return container;
 }
 
+// SEGURIDAD: Escapar HTML para prevenir XSS en InfoWindow del mapa
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function createInfoWindowContent(station: StationHealth): string {
   const colors = HEALTH_COLORS[station.healthStatus] || HEALTH_COLORS.offline;
   const label = HEALTH_LABELS[station.healthStatus] || "Desconocido";
+  
+  // Sanitizar todos los campos que vienen de BD
+  const safeName = escapeHtml(station.stationName || "");
+  const safeOcppId = station.ocppIdentity ? escapeHtml(station.ocppIdentity) : null;
+  const safeAddress = station.address ? escapeHtml(station.address) : null;
+  const safeCity = station.city ? escapeHtml(station.city) : null;
+  const safeIssue = station.issue ? escapeHtml(station.issue) : null;
   
   return `
     <div style="
@@ -149,7 +166,7 @@ function createInfoWindowContent(station: StationHealth): string {
           flex-shrink: 0;
         "></div>
         <h3 style="margin: 0; font-size: 15px; font-weight: 600; color: #1a1a2e;">
-          ${station.stationName}
+          ${safeName}
         </h3>
       </div>
       
@@ -164,17 +181,17 @@ function createInfoWindowContent(station: StationHealth): string {
             border-radius: 10px;
           ">${label}</span>
         </div>
-        ${station.ocppIdentity ? `
+        ${safeOcppId ? `
         <div style="display: flex; justify-content: space-between;">
           <span>OCPP ID:</span>
-          <span style="font-family: monospace; font-weight: 500;">${station.ocppIdentity}</span>
+          <span style="font-family: monospace; font-weight: 500;">${safeOcppId}</span>
         </div>` : ""}
-        ${station.address ? `
+        ${safeAddress ? `
         <div style="display: flex; justify-content: space-between; gap: 8px;">
           <span style="flex-shrink: 0;">Dirección:</span>
-          <span style="text-align: right;">${station.address}${station.city ? `, ${station.city}` : ""}</span>
+          <span style="text-align: right;">${safeAddress}${safeCity ? `, ${safeCity}` : ""}</span>
         </div>` : ""}
-        ${station.issue ? `
+        ${safeIssue ? `
         <div style="
           margin-top: 6px;
           padding: 6px 8px;
@@ -184,7 +201,7 @@ function createInfoWindowContent(station: StationHealth): string {
           font-size: 11px;
           font-weight: 500;
         ">
-          ⚠️ ${station.issue}
+          ⚠️ ${safeIssue}
         </div>` : ""}
       </div>
     </div>

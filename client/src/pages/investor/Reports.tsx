@@ -18,6 +18,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { 
   Download, 
   TrendingUp, 
@@ -29,12 +35,15 @@ import {
   MapPin,
   Activity,
   BarChart3,
-  PieChart,
   FileSpreadsheet,
   FileText,
   Loader2,
+  Building2,
   Users,
-  Battery
+  Battery,
+  AlertTriangle,
+  Bookmark,
+  Megaphone,
 } from "lucide-react";
 import {
   LineChart,
@@ -42,7 +51,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -54,7 +63,59 @@ import {
 import { toast } from "sonner";
 import { saveBlobCrossPlatform } from "@/lib/pdf-download";
 
-const COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+// ─── Types ───────────────────────────────────────────────────────
+interface StationInfo {
+  stationId: number;
+  stationName: string;
+  isCollective: boolean;
+  investorParticipationPercent: number;
+  investorSharePercent: number;
+  evgreenSharePercent: number;
+  hostSharePercent: number;
+  energyCostPerKwh: number;
+}
+
+interface Waterfall {
+  grossRevenue: number;
+  energyCost: number;
+  grossMargin: number;
+  hostPercent: number;
+  hostAmount: number;
+  netAfterHost: number;
+  investorPoolPercent: number;
+  totalInvestorPool: number;
+  evgreenPercent: number;
+  evgreenAmount: number;
+  participationPercent: number;
+  myShare: number;
+  isCollective: boolean;
+  revenueFromEnergy?: number;
+  revenueFromPenalties?: number;
+}
+
+interface EnrichedTransaction {
+  id: number;
+  stationId: number;
+  startTime: Date | string;
+  totalCost: string | number;
+  kwhConsumed: string | number;
+  status: string;
+  stationName?: string;
+  stationInfo?: StationInfo | null;
+  waterfall?: Waterfall | null;
+}
+
+const COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6"];
+
+const formatCOP = (amount: number) =>
+  new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+
+const formatPct = (pct: number) => `${pct.toFixed(1)}%`;
 
 export default function InvestorReports() {
   const [selectedStation, setSelectedStation] = useState<string>("all");
@@ -62,259 +123,218 @@ export default function InvestorReports() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Obtener estaciones del inversionista
-  const { data: stations } = trpc.stations.listOwned.useQuery();
-  
-  // Obtener transacciones del inversionista (sin paginación para reportes, traer muchas)
-  const { data: txResult, isLoading } = trpc.transactions.investorTransactions.useQuery({ limit: 100, page: 1 });
-  const transactions = txResult?.data || [];
-  
-  // Obtener configuración de porcentajes
-  const { data: platformSettings } = trpc.settings.getInvestorPercentage.useQuery();
-  const investorPercentage = platformSettings?.investorPercentage ?? 80;
-  const platformFeePercentage = platformSettings?.platformFeePercentage ?? 20;
-
-  const exportMutation = trpc.transactions.exportInvestorTransactions.useMutation();
-
-  // Calcular rango de fechas
+  // Date filter
   const dateFilter = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
     switch (dateRange) {
-      case "week":
-        const weekStart = new Date(today);
-        weekStart.setDate(today.getDate() - 7);
-        return { start: weekStart, end: now };
-      case "month":
-        const monthStart = new Date(today);
-        monthStart.setMonth(today.getMonth() - 1);
-        return { start: monthStart, end: now };
-      case "quarter":
-        const quarterStart = new Date(today);
-        quarterStart.setMonth(today.getMonth() - 3);
-        return { start: quarterStart, end: now };
-      case "year":
-        const yearStart = new Date(today);
-        yearStart.setFullYear(today.getFullYear() - 1);
-        return { start: yearStart, end: now };
-      default:
-        return { start: new Date(0), end: now };
+      case "week": { const s = new Date(today); s.setDate(today.getDate() - 7); return { start: s, end: now }; }
+      case "month": { const s = new Date(today); s.setMonth(today.getMonth() - 1); return { start: s, end: now }; }
+      case "quarter": { const s = new Date(today); s.setMonth(today.getMonth() - 3); return { start: s, end: now }; }
+      case "year": { const s = new Date(today); s.setFullYear(today.getFullYear() - 1); return { start: s, end: now }; }
+      default: return { start: new Date(0), end: now };
     }
   }, [dateRange]);
 
-  // Filtrar transacciones por estación y fecha
-  const filteredTransactions = useMemo(() => {
-    if (!transactions) return [];
-    return transactions.filter((tx: any) => {
-      const txDate = new Date(tx.startTime);
-      const matchesDate = txDate >= dateFilter.start && txDate <= dateFilter.end;
-      const matchesStation = selectedStation === "all" || tx.stationId.toString() === selectedStation;
-      return matchesDate && matchesStation && tx.status === "COMPLETED";
-    });
-  }, [transactions, dateFilter, selectedStation]);
+  // Use the SAME enriched endpoint as Earnings for consistent data
+  const { data: txResult, isLoading } = trpc.transactions.investorTransactionsEnriched.useQuery({
+    limit: 100,
+    page: 1,
+    startDate: dateFilter.start,
+    endDate: dateFilter.end,
+    status: "COMPLETED",
+    stationId: selectedStation !== "all" ? Number(selectedStation) : undefined,
+  });
 
-  // Calcular período anterior para comparación
-  const previousPeriodTransactions = useMemo(() => {
-    if (!transactions) return [];
-    const periodLength = dateFilter.end.getTime() - dateFilter.start.getTime();
-    const previousStart = new Date(dateFilter.start.getTime() - periodLength);
-    const previousEnd = new Date(dateFilter.start.getTime());
-    
-    return transactions.filter((tx: any) => {
-      const txDate = new Date(tx.startTime);
-      const matchesDate = txDate >= previousStart && txDate < previousEnd;
-      const matchesStation = selectedStation === "all" || tx.stationId.toString() === selectedStation;
-      return matchesDate && matchesStation && tx.status === "COMPLETED";
-    });
-  }, [transactions, dateFilter, selectedStation]);
+  // Previous period for comparison
+  const prevRange = useMemo(() => {
+    const len = dateFilter.end.getTime() - dateFilter.start.getTime();
+    return { start: new Date(dateFilter.start.getTime() - len), end: new Date(dateFilter.start.getTime()) };
+  }, [dateFilter]);
 
-  // Calcular métricas principales
+  const { data: prevResult } = trpc.transactions.investorTransactionsEnriched.useQuery({
+    limit: 100,
+    page: 1,
+    startDate: prevRange.start,
+    endDate: prevRange.end,
+    status: "COMPLETED",
+    stationId: selectedStation !== "all" ? Number(selectedStation) : undefined,
+  });
+
+  const allTransactions = (txResult?.data || []) as EnrichedTransaction[];
+  const prevTransactions = (prevResult?.data || []) as EnrichedTransaction[];
+  const stations = (txResult?.stations || []) as StationInfo[];
+
+  const exportMutation = trpc.transactions.exportInvestorTransactions.useMutation();
+
+  // ─── Aggregated metrics using waterfall ────────────────────────
   const metrics = useMemo(() => {
-    const totalGross = filteredTransactions.reduce((sum: number, tx: any) => 
-      sum + parseFloat(tx.totalCost || "0"), 0);
-    const totalEnergy = filteredTransactions.reduce((sum: number, tx: any) => 
-      sum + parseFloat(tx.kwhConsumed || "0"), 0);
-    const totalNet = totalGross * (investorPercentage / 100);
-    
-    const prevGross = previousPeriodTransactions.reduce((sum: number, tx: any) => 
-      sum + parseFloat(tx.totalCost || "0"), 0);
-    const prevEnergy = previousPeriodTransactions.reduce((sum: number, tx: any) => 
-      sum + parseFloat(tx.kwhConsumed || "0"), 0);
-    
-    const growthRevenue = prevGross > 0 ? ((totalGross - prevGross) / prevGross) * 100 : 0;
-    const growthEnergy = prevEnergy > 0 ? ((totalEnergy - prevEnergy) / prevEnergy) * 100 : 0;
-    
-    // Promedio por transacción
-    const avgPerTransaction = filteredTransactions.length > 0 
-      ? totalGross / filteredTransactions.length : 0;
-    
-    // Promedio de energía por carga
-    const avgEnergyPerCharge = filteredTransactions.length > 0 
-      ? totalEnergy / filteredTransactions.length : 0;
+    let totalMyShare = 0, totalGrossRevenue = 0, totalEnergyCostPurchase = 0;
+    let totalHostAmount = 0, totalEvgreenAmount = 0;
+    let totalEnergy = 0, txCount = 0;
+    let totalRevenueFromEnergy = 0, totalRevenueFromPenalties = 0;
+
+    allTransactions.forEach(tx => {
+      if (tx.waterfall) {
+        totalMyShare += tx.waterfall.myShare;
+        totalGrossRevenue += tx.waterfall.grossRevenue;
+        totalEnergyCostPurchase += tx.waterfall.energyCost;
+        totalHostAmount += tx.waterfall.hostAmount;
+        totalEvgreenAmount += tx.waterfall.evgreenAmount;
+        totalRevenueFromEnergy += tx.waterfall.revenueFromEnergy || 0;
+        totalRevenueFromPenalties += tx.waterfall.revenueFromPenalties || 0;
+      }
+      totalEnergy += Number(tx.kwhConsumed || 0);
+      txCount++;
+    });
+
+    // Previous period
+    let prevMyShare = 0, prevEnergy = 0;
+    prevTransactions.forEach(tx => {
+      if (tx.waterfall) prevMyShare += tx.waterfall.myShare;
+      prevEnergy += Number(tx.kwhConsumed || 0);
+    });
+
+    const growthRevenue = prevMyShare > 0 ? ((totalMyShare - prevMyShare) / prevMyShare) * 100 : (totalMyShare > 0 ? 100 : 0);
+    const growthEnergy = prevEnergy > 0 ? ((totalEnergy - prevEnergy) / prevEnergy) * 100 : (totalEnergy > 0 ? 100 : 0);
 
     return {
-      totalGross,
-      totalNet,
+      totalMyShare,
+      totalGrossRevenue,
+      totalEnergyCostPurchase,
+      totalHostAmount,
+      totalEvgreenAmount,
       totalEnergy,
-      totalTransactions: filteredTransactions.length,
+      txCount,
       growthRevenue,
       growthEnergy,
-      avgPerTransaction,
-      avgEnergyPerCharge,
+      avgPerTransaction: txCount > 0 ? totalMyShare / txCount : 0,
+      avgEnergyPerCharge: txCount > 0 ? totalEnergy / txCount : 0,
+      revenueFromEnergy: totalRevenueFromEnergy,
+      revenueFromPenalties: totalRevenueFromPenalties,
     };
-  }, [filteredTransactions, previousPeriodTransactions, investorPercentage]);
+  }, [allTransactions, prevTransactions]);
 
-  // Datos para gráfica de tendencia diaria
+  // ─── Per-station breakdown ─────────────────────────────────────
+  const stationBreakdown = useMemo(() => {
+    const map = new Map<number, {
+      station: StationInfo;
+      myShare: number;
+      grossRevenue: number;
+      energy: number;
+      txCount: number;
+    }>();
+
+    allTransactions.forEach(tx => {
+      if (!tx.stationInfo || !tx.waterfall) return;
+      const sid = tx.stationId;
+      const existing = map.get(sid);
+      if (existing) {
+        existing.myShare += tx.waterfall.myShare;
+        existing.grossRevenue += tx.waterfall.grossRevenue;
+        existing.energy += Number(tx.kwhConsumed || 0);
+        existing.txCount++;
+      } else {
+        map.set(sid, {
+          station: tx.stationInfo,
+          myShare: tx.waterfall.myShare,
+          grossRevenue: tx.waterfall.grossRevenue,
+          energy: Number(tx.kwhConsumed || 0),
+          txCount: 1,
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => b.myShare - a.myShare);
+  }, [allTransactions]);
+
+  // ─── Dynamic distribution for pie chart ────────────────────────
+  const revenueDistribution = useMemo(() => {
+    const items: { name: string; value: number }[] = [];
+    
+    if (metrics.totalMyShare > 0) {
+      items.push({ name: "Tu parte", value: metrics.totalMyShare });
+    }
+    if (metrics.totalEvgreenAmount > 0) {
+      items.push({ name: "EVGreen", value: metrics.totalEvgreenAmount });
+    }
+    if (metrics.totalHostAmount > 0) {
+      items.push({ name: "Aliado Comercial", value: metrics.totalHostAmount });
+    }
+    if (metrics.totalEnergyCostPurchase > 0) {
+      items.push({ name: "Costo Energía", value: metrics.totalEnergyCostPurchase });
+    }
+    
+    return items;
+  }, [metrics]);
+
+  // ─── Daily trend data using waterfall ──────────────────────────
   const dailyTrendData = useMemo(() => {
     const grouped: Record<string, { date: string; ingresos: number; energia: number; cargas: number }> = {};
     
-    filteredTransactions.forEach((tx: any) => {
-      const dateKey = new Date(tx.startTime).toLocaleDateString("es-CO", { 
-        day: "2-digit", 
-        month: "short" 
-      });
+    allTransactions.forEach((tx) => {
+      if (!tx.waterfall) return;
+      const dateKey = new Date(tx.startTime).toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
       if (!grouped[dateKey]) {
         grouped[dateKey] = { date: dateKey, ingresos: 0, energia: 0, cargas: 0 };
       }
-      grouped[dateKey].ingresos += parseFloat(tx.totalCost || "0") * (investorPercentage / 100);
-      grouped[dateKey].energia += parseFloat(tx.kwhConsumed || "0");
+      grouped[dateKey].ingresos += tx.waterfall.myShare;
+      grouped[dateKey].energia += Number(tx.kwhConsumed || 0);
       grouped[dateKey].cargas += 1;
     });
     
-    return Object.values(grouped).sort((a, b) => {
-      // Ordenar por fecha
-      return new Date(a.date).getTime() - new Date(b.date).getTime();
-    });
-  }, [filteredTransactions, investorPercentage]);
+    return Object.values(grouped);
+  }, [allTransactions]);
 
-  // Análisis por hora del día (ocupación)
+  // ─── Hourly analysis ──────────────────────────────────────────
   const hourlyAnalysis = useMemo(() => {
     const hours: Record<number, { hour: number; cargas: number; energia: number }> = {};
+    for (let i = 0; i < 24; i++) hours[i] = { hour: i, cargas: 0, energia: 0 };
     
-    for (let i = 0; i < 24; i++) {
-      hours[i] = { hour: i, cargas: 0, energia: 0 };
-    }
-    
-    filteredTransactions.forEach((tx: any) => {
+    allTransactions.forEach((tx) => {
       const hour = new Date(tx.startTime).getHours();
       hours[hour].cargas += 1;
-      hours[hour].energia += parseFloat(tx.kwhConsumed || "0");
+      hours[hour].energia += Number(tx.kwhConsumed || 0);
     });
     
-    return Object.values(hours).map(h => ({
-      ...h,
-      label: `${h.hour}:00`,
-    }));
-  }, [filteredTransactions]);
+    return Object.values(hours).map(h => ({ ...h, label: `${h.hour}:00` }));
+  }, [allTransactions]);
 
-  // Análisis por día de la semana
+  // ─── Weekday analysis ─────────────────────────────────────────
   const weekdayAnalysis = useMemo(() => {
     const days = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
     const weekdays: Record<number, { day: string; cargas: number; ingresos: number }> = {};
+    for (let i = 0; i < 7; i++) weekdays[i] = { day: days[i], cargas: 0, ingresos: 0 };
     
-    for (let i = 0; i < 7; i++) {
-      weekdays[i] = { day: days[i], cargas: 0, ingresos: 0 };
-    }
-    
-    filteredTransactions.forEach((tx: any) => {
+    allTransactions.forEach((tx) => {
+      if (!tx.waterfall) return;
       const dayOfWeek = new Date(tx.startTime).getDay();
       weekdays[dayOfWeek].cargas += 1;
-      weekdays[dayOfWeek].ingresos += parseFloat(tx.totalCost || "0") * (investorPercentage / 100);
+      weekdays[dayOfWeek].ingresos += tx.waterfall.myShare;
     });
     
     return Object.values(weekdays);
-  }, [filteredTransactions, investorPercentage]);
+  }, [allTransactions]);
 
-  // Rendimiento por estación
-  const stationPerformance = useMemo(() => {
-    if (!stations) return [];
-    
-    const stationMap: Record<number, { 
-      id: number; 
-      name: string; 
-      cargas: number; 
-      ingresos: number; 
-      energia: number 
-    }> = {};
-    
-    stations.forEach((station: any) => {
-      stationMap[station.id] = {
-        id: station.id,
-        name: station.name,
-        cargas: 0,
-        ingresos: 0,
-        energia: 0,
-      };
-    });
-    
-    // Solo filtrar por fecha, no por estación seleccionada
-    const allTransactionsInPeriod = transactions?.filter((tx: any) => {
-      const txDate = new Date(tx.startTime);
-      return txDate >= dateFilter.start && txDate <= dateFilter.end && tx.status === "COMPLETED";
-    }) || [];
-    
-    allTransactionsInPeriod.forEach((tx: any) => {
-      if (stationMap[tx.stationId]) {
-        stationMap[tx.stationId].cargas += 1;
-        stationMap[tx.stationId].ingresos += parseFloat(tx.totalCost || "0") * (investorPercentage / 100);
-        stationMap[tx.stationId].energia += parseFloat(tx.kwhConsumed || "0");
-      }
-    });
-    
-    return Object.values(stationMap).sort((a, b) => b.ingresos - a.ingresos);
-  }, [stations, transactions, dateFilter, investorPercentage]);
+  // Peak hour and day
+  const peakHour = useMemo(() => hourlyAnalysis.reduce((max, h) => h.cargas > max.cargas ? h : max, hourlyAnalysis[0]), [hourlyAnalysis]);
+  const peakDay = useMemo(() => weekdayAnalysis.reduce((max, d) => d.cargas > max.cargas ? d : max, weekdayAnalysis[0]), [weekdayAnalysis]);
 
-  // Distribución de ingresos para pie chart
-  const revenueDistribution = useMemo(() => {
-    return [
-      { name: `Tu parte (${investorPercentage}%)`, value: metrics.totalNet },
-      { name: `Plataforma (${platformFeePercentage}%)`, value: metrics.totalGross - metrics.totalNet },
-    ];
-  }, [metrics, investorPercentage, platformFeePercentage]);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-CO", {
-      style: "currency",
-      currency: "COP",
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
-  // Encontrar hora pico
-  const peakHour = useMemo(() => {
-    const maxHour = hourlyAnalysis.reduce((max, h) => h.cargas > max.cargas ? h : max, hourlyAnalysis[0]);
-    return maxHour;
-  }, [hourlyAnalysis]);
-
-  // Encontrar día más activo
-  const peakDay = useMemo(() => {
-    const maxDay = weekdayAnalysis.reduce((max, d) => d.cargas > max.cargas ? d : max, weekdayAnalysis[0]);
-    return maxDay;
-  }, [weekdayAnalysis]);
-
-  // Función para descargar el archivo (compatible iOS/Safari)
-  const downloadFile = (base64: string, filename: string, mimeType: string) => {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: mimeType });
-    saveBlobCrossPlatform(blob, filename);
-  };
-
+  // Export
   const handleExport = async (format: "excel" | "pdf") => {
     setIsExporting(true);
     try {
       const result = await exportMutation.mutateAsync({ format });
-      downloadFile(result.data, result.filename, result.mimeType);
-      toast.success(`Reporte ${format.toUpperCase()} descargado exitosamente`);
+      const byteCharacters = atob(result.data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: result.mimeType });
+      saveBlobCrossPlatform(blob, result.filename);
+      toast.success(`Reporte ${format.toUpperCase()} descargado`);
       setExportDialogOpen(false);
-    } catch (error) {
-      console.error("Error al exportar:", error);
-      toast.error("Error al generar el reporte. Intenta de nuevo.");
+    } catch {
+      toast.error("Error al generar el reporte");
     } finally {
       setIsExporting(false);
     }
@@ -329,393 +349,433 @@ export default function InvestorReports() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header con filtros */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Mis Reportes</h1>
-          <p className="text-muted-foreground">
-            Análisis detallado de rendimiento de tus estaciones
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select value={selectedStation} onValueChange={setSelectedStation}>
-            <SelectTrigger className="w-48">
-              <MapPin className="w-4 h-4 mr-2" />
-              <SelectValue placeholder="Estación" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las estaciones</SelectItem>
-              {stations?.map((station: any) => (
-                <SelectItem key={station.id} value={station.id.toString()}>
-                  {station.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={dateRange} onValueChange={setDateRange}>
-            <SelectTrigger className="w-40">
-              <Calendar className="w-4 h-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="week">Última semana</SelectItem>
-              <SelectItem value="month">Último mes</SelectItem>
-              <SelectItem value="quarter">Último trimestre</SelectItem>
-              <SelectItem value="year">Último año</SelectItem>
-            </SelectContent>
-          </Select>
-          <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Download className="w-4 h-4 mr-2" />
-                Exportar
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Exportar Reporte</DialogTitle>
-                <DialogDescription>
-                  Descarga un reporte completo con todos los análisis.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <Button
-                  variant="outline"
-                  className="h-20 flex flex-col items-center justify-center gap-2 hover:bg-green-50 hover:border-green-500"
-                  onClick={() => handleExport("excel")}
-                  disabled={isExporting}
-                >
-                  {isExporting ? (
-                    <Loader2 className="w-8 h-8 animate-spin text-green-600" />
-                  ) : (
-                    <FileSpreadsheet className="w-8 h-8 text-green-600" />
-                  )}
-                  <span className="font-medium">Excel (.xlsx)</span>
+    <TooltipProvider>
+      <div className="p-4 md:p-6 space-y-5">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">Mis Reportes</h1>
+            <p className="text-sm text-muted-foreground">Análisis de rendimiento de tus estaciones</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={selectedStation} onValueChange={setSelectedStation}>
+              <SelectTrigger className="w-48">
+                <MapPin className="w-3.5 h-3.5 mr-1.5" />
+                <SelectValue placeholder="Estación" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las estaciones</SelectItem>
+                {stations.map((station) => (
+                  <SelectItem key={station.stationId} value={station.stationId.toString()}>
+                    <span className="flex items-center gap-1.5">
+                      {station.stationName}
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">
+                        {station.isCollective ? `Col. ${formatPct(station.investorParticipationPercent)}` : "Propia"}
+                      </Badge>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={dateRange} onValueChange={setDateRange}>
+              <SelectTrigger className="w-40">
+                <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="week">Última semana</SelectItem>
+                <SelectItem value="month">Último mes</SelectItem>
+                <SelectItem value="quarter">Último trimestre</SelectItem>
+                <SelectItem value="year">Último año</SelectItem>
+              </SelectContent>
+            </Select>
+            <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Download className="w-4 h-4 mr-1.5" />
+                  Exportar
                 </Button>
-                <Button
-                  variant="outline"
-                  className="h-20 flex flex-col items-center justify-center gap-2 hover:bg-red-50 hover:border-red-500"
-                  onClick={() => handleExport("pdf")}
-                  disabled={isExporting}
-                >
-                  {isExporting ? (
-                    <Loader2 className="w-8 h-8 animate-spin text-red-600" />
-                  ) : (
-                    <FileText className="w-8 h-8 text-red-600" />
-                  )}
-                  <span className="font-medium">PDF</span>
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Exportar Reporte</DialogTitle>
+                  <DialogDescription>Descarga un reporte completo</DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-3 py-4">
+                  <Button variant="outline" className="h-16 flex flex-col items-center justify-center gap-1" onClick={() => handleExport("excel")} disabled={isExporting}>
+                    {isExporting ? <Loader2 className="w-6 h-6 animate-spin text-green-600" /> : <FileSpreadsheet className="w-6 h-6 text-green-600" />}
+                    <span className="font-medium text-sm">Excel (.xlsx)</span>
+                  </Button>
+                  <Button variant="outline" className="h-16 flex flex-col items-center justify-center gap-1" onClick={() => handleExport("pdf")} disabled={isExporting}>
+                    {isExporting ? <Loader2 className="w-6 h-6 animate-spin text-red-600" /> : <FileText className="w-6 h-6 text-red-600" />}
+                    <span className="font-medium text-sm">PDF</span>
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
-      </div>
 
-      {/* KPIs principales */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Ingresos netos</p>
-                <p className="text-2xl font-bold text-green-500">{formatCurrency(metrics.totalNet)}</p>
-                <p className={`text-xs flex items-center mt-1 ${metrics.growthRevenue >= 0 ? "text-green-500" : "text-red-500"}`}>
-                  {metrics.growthRevenue >= 0 ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
-                  {metrics.growthRevenue >= 0 ? "+" : ""}{metrics.growthRevenue.toFixed(1)}%
-                </p>
+        {/* ─── KPIs ───────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card className="bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">Ingresos netos</p>
+                  <p className="text-xl md:text-2xl font-bold text-green-500">{formatCOP(metrics.totalMyShare)}</p>
+                  <p className={`text-[11px] flex items-center mt-0.5 ${metrics.growthRevenue >= 0 ? "text-green-500" : "text-red-500"}`}>
+                    {metrics.growthRevenue >= 0 ? <TrendingUp className="w-3 h-3 mr-0.5" /> : <TrendingDown className="w-3 h-3 mr-0.5" />}
+                    {metrics.growthRevenue >= 0 ? "+" : ""}{metrics.growthRevenue.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                  <DollarSign className="w-5 h-5 text-green-500" />
+                </div>
               </div>
-              <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-green-500" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">Energía vendida</p>
+                  <p className="text-xl md:text-2xl font-bold">{metrics.totalEnergy.toFixed(1)} kWh</p>
+                  <p className={`text-[11px] flex items-center mt-0.5 ${metrics.growthEnergy >= 0 ? "text-green-500" : "text-red-500"}`}>
+                    {metrics.growthEnergy >= 0 ? <TrendingUp className="w-3 h-3 mr-0.5" /> : <TrendingDown className="w-3 h-3 mr-0.5" />}
+                    {metrics.growthEnergy >= 0 ? "+" : ""}{metrics.growthEnergy.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Zap className="w-5 h-5 text-primary" />
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Energía vendida</p>
-                <p className="text-2xl font-bold">{metrics.totalEnergy.toFixed(1)} kWh</p>
-                <p className={`text-xs flex items-center mt-1 ${metrics.growthEnergy >= 0 ? "text-green-500" : "text-red-500"}`}>
-                  {metrics.growthEnergy >= 0 ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
-                  {metrics.growthEnergy >= 0 ? "+" : ""}{metrics.growthEnergy.toFixed(1)}%
-                </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">Total cargas</p>
+                  <p className="text-xl md:text-2xl font-bold">{metrics.txCount}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{metrics.avgEnergyPerCharge.toFixed(1)} kWh/carga</p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                  <Battery className="w-5 h-5 text-blue-500" />
+                </div>
               </div>
-              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                <Zap className="w-6 h-6 text-primary" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">Ingreso promedio</p>
+                  <p className="text-xl md:text-2xl font-bold">{formatCOP(metrics.avgPerTransaction)}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Por transacción</p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
+                  <Activity className="w-5 h-5 text-purple-500" />
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total cargas</p>
-                <p className="text-2xl font-bold">{metrics.totalTransactions}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Promedio: {metrics.avgEnergyPerCharge.toFixed(1)} kWh/carga
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
-                <Battery className="w-6 h-6 text-blue-500" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Ingreso promedio</p>
-                <p className="text-2xl font-bold">{formatCurrency(metrics.avgPerTransaction * (investorPercentage / 100))}</p>
-                <p className="text-xs text-muted-foreground mt-1">Por transacción</p>
-              </div>
-              <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center">
-                <Activity className="w-6 h-6 text-purple-500" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+        </div>
 
-      {/* Insights de ocupación */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="border-primary/30 bg-primary/5">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                <Clock className="w-6 h-6 text-primary" />
+        {/* ─── Insights de ocupación ──────────────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Hora pico</p>
+                  <p className="text-lg font-bold">{peakHour?.label || "N/A"}</p>
+                  <p className="text-[11px] text-muted-foreground">{peakHour?.cargas || 0} cargas</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Hora pico</p>
-                <p className="text-xl font-bold">{peakHour?.label || "N/A"}</p>
-                <p className="text-xs text-muted-foreground">{peakHour?.cargas || 0} cargas en este horario</p>
+            </CardContent>
+          </Card>
+          <Card className="border-blue-500/30 bg-blue-500/5">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                  <Calendar className="w-5 h-5 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Día más activo</p>
+                  <p className="text-lg font-bold">{peakDay?.day || "N/A"}</p>
+                  <p className="text-[11px] text-muted-foreground">{peakDay?.cargas || 0} cargas</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-blue-500/30 bg-blue-500/5">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
-                <Calendar className="w-6 h-6 text-blue-500" />
+            </CardContent>
+          </Card>
+          <Card className="border-orange-500/30 bg-orange-500/5">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center">
+                  <Users className="w-5 h-5 text-orange-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Estaciones activas</p>
+                  <p className="text-lg font-bold">{stationBreakdown.filter(s => s.txCount > 0).length}</p>
+                  <p className="text-[11px] text-muted-foreground">de {stations.length} totales</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Día más activo</p>
-                <p className="text-xl font-bold">{peakDay?.day || "N/A"}</p>
-                <p className="text-xs text-muted-foreground">{peakDay?.cargas || 0} cargas promedio</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-orange-500/30 bg-orange-500/5">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center">
-                <Users className="w-6 h-6 text-orange-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Estaciones activas</p>
-                <p className="text-xl font-bold">{stationPerformance.filter(s => s.cargas > 0).length}</p>
-                <p className="text-xs text-muted-foreground">de {stations?.length || 0} totales</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+        </div>
 
-      {/* Gráficos principales */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Tendencia de ingresos */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5" />
-              Tendencia de Ingresos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {dailyTrendData.length === 0 ? (
-              <div className="h-[250px] flex items-center justify-center text-muted-foreground">
-                No hay datos para el período seleccionado
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={250}>
-                <LineChart data={dailyTrendData}>
+        {/* ─── Charts Row ─────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Trend */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <TrendingUp className="w-4 h-4" />
+                Tendencia de Ingresos Netos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {dailyTrendData.length === 0 ? (
+                <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">Sin datos</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={dailyTrendData} margin={{ top: 10, right: 20, left: 20, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} className="text-xs" tick={{ fontSize: 11 }} width={55} />
+                    <RechartsTooltip formatter={(value: number) => [formatCOP(value), "Tu ingreso neto"]} labelFormatter={(label) => `${label}`} />
+                    <Line type="monotone" dataKey="ingresos" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981", strokeWidth: 2 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Weekday */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BarChart3 className="w-4 h-4" />
+                Cargas por Día
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={weekdayAnalysis} margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="date" className="text-xs" />
-                  <YAxis tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} className="text-xs" />
-                  <Tooltip 
-                    formatter={(value: number) => [formatCurrency(value), "Ingresos"]}
-                    labelFormatter={(label) => `Fecha: ${label}`}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="ingresos"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    dot={{ fill: "#10b981", strokeWidth: 2 }}
-                  />
-                </LineChart>
+                  <XAxis dataKey="day" className="text-xs" tick={{ fontSize: 11 }} />
+                  <YAxis className="text-xs" tick={{ fontSize: 11 }} width={35} />
+                  <RechartsTooltip formatter={(value: number, name: string) => [name === "cargas" ? `${value} cargas` : formatCOP(value), name === "cargas" ? "Cargas" : "Ingresos"]} />
+                  <Bar dataKey="cargas" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
               </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Distribución por día de la semana */}
+        {/* ─── Hourly + Distribution ──────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Hourly */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Clock className="w-4 h-4" />
+                Ocupación por Hora
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={hourlyAnalysis} margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="label" className="text-xs" tick={{ fontSize: 10 }} interval={2} />
+                  <YAxis className="text-xs" tick={{ fontSize: 11 }} width={35} />
+                  <RechartsTooltip formatter={(value: number) => [`${value} cargas`, "Cargas"]} labelFormatter={(label) => `Hora: ${label}`} />
+                  <Bar dataKey="cargas" fill="#10b981" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Dynamic distribution pie */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <DollarSign className="w-4 h-4" />
+                Distribución Real del Ingreso
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {revenueDistribution.length === 0 || metrics.totalGrossRevenue === 0 ? (
+                <div className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">Sin datos</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <RechartsPie>
+                    <Pie
+                      data={revenueDistribution}
+                      cx="50%"
+                      cy="45%"
+                      innerRadius={50}
+                      outerRadius={85}
+                      paddingAngle={3}
+                      dataKey="value"
+                      label={false}
+                    >
+                      {revenueDistribution.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip formatter={(value: number) => formatCOP(value)} />
+                    <Legend
+                      verticalAlign="bottom"
+                      align="center"
+                      iconType="circle"
+                      iconSize={8}
+                      formatter={(value: string) => {
+                        const item = revenueDistribution.find(d => d.name === value);
+                        const total = revenueDistribution.reduce((s, d) => s + d.value, 0);
+                        const pct = item && total > 0 ? ((item.value / total) * 100).toFixed(0) : '0';
+                        return `${value} (${pct}%)`;
+                      }}
+                      wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }}
+                    />
+                  </RechartsPie>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ─── Revenue Sources ────────────────────────────────────── */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5" />
-              Cargas por Día de la Semana
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <DollarSign className="w-4 h-4" />
+              Fuentes de Ingreso
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={weekdayAnalysis}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="day" className="text-xs" />
-                <YAxis className="text-xs" />
-                <Tooltip 
-                  formatter={(value: number, name: string) => [
-                    name === "cargas" ? `${value} cargas` : formatCurrency(value),
-                    name === "cargas" ? "Cargas" : "Ingresos"
-                  ]}
-                />
-                <Bar dataKey="cargas" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Análisis por hora y distribución */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Ocupación por hora */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5" />
-              Ocupación por Hora del Día
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={hourlyAnalysis}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis 
-                  dataKey="label" 
-                  className="text-xs"
-                  interval={2}
-                />
-                <YAxis className="text-xs" />
-                <Tooltip 
-                  formatter={(value: number) => [`${value} cargas`, "Cargas"]}
-                  labelFormatter={(label) => `Hora: ${label}`}
-                />
-                <Bar dataKey="cargas" fill="#10b981" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Distribución de ingresos */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <PieChart className="w-5 h-5" />
-              Distribución de Ingresos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <RechartsPie>
-                <Pie
-                  data={revenueDistribution}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  labelLine={false}
-                >
-                  {revenueDistribution.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                <Legend />
-              </RechartsPie>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Rendimiento por estación */}
-      {stationPerformance.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="w-5 h-5" />
-              Rendimiento por Estación
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium">Estación</th>
-                    <th className="text-right py-3 px-4 font-medium">Cargas</th>
-                    <th className="text-right py-3 px-4 font-medium">Energía (kWh)</th>
-                    <th className="text-right py-3 px-4 font-medium">Ingresos Netos</th>
-                    <th className="text-right py-3 px-4 font-medium">% del Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stationPerformance.map((station, index) => (
-                    <tr key={station.id} className="border-b hover:bg-muted/50">
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="w-6 h-6 rounded-full flex items-center justify-center p-0">
-                            {index + 1}
-                          </Badge>
-                          {station.name}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-right">{station.cargas}</td>
-                      <td className="py-3 px-4 text-right">{station.energia.toFixed(1)}</td>
-                      <td className="py-3 px-4 text-right font-medium text-green-500">
-                        {formatCurrency(station.ingresos)}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <Badge variant={station.ingresos === Math.max(...stationPerformance.map(s => s.ingresos)) ? "default" : "secondary"}>
-                          {metrics.totalNet > 0 
-                            ? ((station.ingresos / metrics.totalNet) * 100).toFixed(1)
-                            : 0}%
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/30 font-semibold">
-                    <td className="py-3 px-4">Total</td>
-                    <td className="py-3 px-4 text-right">{metrics.totalTransactions}</td>
-                    <td className="py-3 px-4 text-right">{metrics.totalEnergy.toFixed(1)}</td>
-                    <td className="py-3 px-4 text-right text-green-500">{formatCurrency(metrics.totalNet)}</td>
-                    <td className="py-3 px-4 text-right">100%</td>
-                  </tr>
-                </tfoot>
-              </table>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-yellow-500/5 border border-yellow-500/10">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Zap className="h-3.5 w-3.5 text-yellow-500" />
+                    <span className="text-[11px] font-medium text-muted-foreground">Venta de Energía</span>
+                  </div>
+                  <p className="text-base font-bold">{formatCOP(metrics.revenueFromEnergy || metrics.totalGrossRevenue)}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-xl bg-red-500/5 border border-red-500/10">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                    <span className="text-[11px] font-medium text-muted-foreground">Penalidades</span>
+                  </div>
+                  <p className={`text-base font-bold ${metrics.revenueFromPenalties > 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                    {formatCOP(metrics.revenueFromPenalties)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-xl bg-blue-500/5 border border-blue-500/10">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Bookmark className="h-3.5 w-3.5 text-blue-500" />
+                    <span className="text-[11px] font-medium text-muted-foreground">Reservas</span>
+                  </div>
+                  <p className="text-base font-bold text-muted-foreground">{formatCOP(0)}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-xl bg-purple-500/5 border border-purple-500/10">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Megaphone className="h-3.5 w-3.5 text-purple-500" />
+                    <span className="text-[11px] font-medium text-muted-foreground">Publicidad</span>
+                  </div>
+                  <p className="text-base font-bold text-muted-foreground">{formatCOP(0)}</p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
-      )}
-    </div>
+
+        {/* ─── Station Performance Table ──────────────────────────── */}
+        {stationBreakdown.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MapPin className="w-4 h-4" />
+                Rendimiento por Estación
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2.5 px-3 font-medium">Estación</th>
+                      <th className="text-center py-2.5 px-3 font-medium">Tipo</th>
+                      <th className="text-right py-2.5 px-3 font-medium">Cargas</th>
+                      <th className="text-right py-2.5 px-3 font-medium">kWh</th>
+                      <th className="text-right py-2.5 px-3 font-medium">Tu Ingreso Neto</th>
+                      <th className="text-right py-2.5 px-3 font-medium">% Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stationBreakdown.map((s, index) => (
+                      <tr key={s.station.stationId} className="border-b hover:bg-muted/50">
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="w-5 h-5 rounded-full flex items-center justify-center p-0 text-[10px]">
+                              {index + 1}
+                            </Badge>
+                            <span>{s.station.stationName}</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <Badge variant={s.station.isCollective ? "secondary" : "outline"} className="text-[9px] px-1.5 py-0">
+                            {s.station.isCollective ? (
+                              <span className="flex items-center gap-0.5">
+                                <Users className="w-2.5 h-2.5" />
+                                {formatPct(s.station.investorParticipationPercent)}
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-0.5">
+                                <Building2 className="w-2.5 h-2.5" />
+                                Propia
+                              </span>
+                            )}
+                          </Badge>
+                        </td>
+                        <td className="py-2.5 px-3 text-right">{s.txCount}</td>
+                        <td className="py-2.5 px-3 text-right">{s.energy.toFixed(1)}</td>
+                        <td className="py-2.5 px-3 text-right font-medium text-green-500">{formatCOP(s.myShare)}</td>
+                        <td className="py-2.5 px-3 text-right">
+                          <Badge variant={index === 0 ? "default" : "secondary"} className="text-[10px]">
+                            {metrics.totalMyShare > 0 ? ((s.myShare / metrics.totalMyShare) * 100).toFixed(1) : 0}%
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-muted/30 font-semibold">
+                      <td className="py-2.5 px-3">Total</td>
+                      <td className="py-2.5 px-3" />
+                      <td className="py-2.5 px-3 text-right">{metrics.txCount}</td>
+                      <td className="py-2.5 px-3 text-right">{metrics.totalEnergy.toFixed(1)}</td>
+                      <td className="py-2.5 px-3 text-right text-green-500">{formatCOP(metrics.totalMyShare)}</td>
+                      <td className="py-2.5 px-3 text-right">100%</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </TooltipProvider>
   );
 }

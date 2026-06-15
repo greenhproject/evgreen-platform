@@ -25,6 +25,7 @@ import type {
   ConversationContext,
 } from "./types";
 import { getAIContext, type AIContext } from "./context-service";
+import { buildPersonalizationContext } from "../profiles/consumption-profile-service";
 
 // ============================================================================
 // SERVICIO DE IA
@@ -258,7 +259,15 @@ class AIService {
       console.error('[AIService] Error getting platform context:', error);
     }
 
-    const systemPrompt = this.buildChatSystemPromptWithContext(context, platformContext);
+    // Obtener perfil de personalización (solo si el usuario dio consentimiento AI_PROFILING)
+    let personalizationBlock: string | null = null;
+    try {
+      personalizationBlock = await buildPersonalizationContext(context.userId);
+    } catch (error) {
+      console.error('[AIService] Error getting personalization context:', error);
+    }
+
+    const systemPrompt = this.buildChatSystemPromptWithContext(context, platformContext, personalizationBlock);
     const messages: AIMessage[] = [
       { role: "system", content: systemPrompt },
       ...conversationHistory,
@@ -268,7 +277,7 @@ class AIService {
     return this.complete(messages);
   }
 
-  private buildChatSystemPromptWithContext(context: ConversationContext, platformContext: AIContext | null): string {
+  private buildChatSystemPromptWithContext(context: ConversationContext, platformContext: AIContext | null, personalizationBlock?: string | null): string {
     let prompt = `Eres el asistente virtual de Green EV, una plataforma de carga de vehículos eléctricos en Colombia.
 Tu nombre es "EV Assistant" y tu objetivo es ayudar a los usuarios con información REAL y ACTUALIZADA de nuestra plataforma.
 
@@ -410,6 +419,14 @@ ${estimatedRangeNow !== null ? `- AUTONOMÍA RESTANTE ESTIMADA: ~${estimatedRang
         prompt += `- ${loc.label} (${loc.count} visitas, ${loc.typicalHours})\n`;
       }
       prompt += `- Usa esta información para personalizar recomendaciones (ej: "como sueles ir a tu oficina...").
+`;
+    }
+
+    // Inyectar perfil de personalización IA (solo si hay consentimiento activo)
+    if (personalizationBlock) {
+      prompt += `
+=== PERSONALIZACIÓN IA (CONSENTIMIENTO ACTIVO — Ley 1581/2012) ===
+${personalizationBlock}
 `;
     }
 

@@ -89,31 +89,41 @@ declare global {
 // Use Google Maps API Key directly (set via VITE_GOOGLE_MAPS_API_KEY env var)
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
-function loadMapScript() {
-  return new Promise(resolve => {
-    // If Google Maps is already loaded, resolve immediately
-    if (window.google?.maps) {
-      resolve(null);
+let _mapScriptPromise: Promise<void> | null = null;
+
+function loadMapScript(): Promise<void> {
+  if (window.google?.maps) return Promise.resolve();
+  if (_mapScriptPromise) return _mapScriptPromise;
+  _mapScriptPromise = new Promise<void>((resolve) => {
+    // Check again in case it loaded between calls
+    if (window.google?.maps) { resolve(); return; }
+    // Check if script tag already exists
+    const existing = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      // If it already loaded
+      if (window.google?.maps) resolve();
       return;
     }
     const script = document.createElement("script");
     script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
     script.async = true;
-    script.onload = () => {
-      resolve(null);
-    };
+    script.onload = () => resolve();
     script.onerror = () => {
       console.error("Failed to load Google Maps script");
-      resolve(null);
+      _mapScriptPromise = null;
+      resolve();
     };
     document.head.appendChild(script);
   });
+  return _mapScriptPromise;
 }
 
 interface MapViewProps {
   className?: string;
   initialCenter?: google.maps.LatLngLiteral;
   initialZoom?: number;
+  mapTypeId?: string;
   onMapReady?: (map: google.maps.Map) => void;
 }
 
@@ -151,6 +161,7 @@ export function MapView({
   className,
   initialCenter = { lat: 4.7110, lng: -74.0721 },
   initialZoom = 12,
+  mapTypeId = "roadmap",
   onMapReady,
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -169,7 +180,13 @@ export function MapView({
     map.current = new window.google.maps.Map(mapContainer.current, {
       zoom: initialZoom,
       center: initialCenter,
-      mapTypeControl: false,
+      mapTypeId: mapTypeId as google.maps.MapTypeId,
+      mapTypeControl: true,
+      mapTypeControlOptions: {
+        style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
+        position: google.maps.ControlPosition.TOP_LEFT,
+        mapTypeIds: ["roadmap", "satellite", "hybrid"],
+      },
       fullscreenControl: false,
       zoomControl: true,
       streetViewControl: true,

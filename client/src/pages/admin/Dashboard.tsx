@@ -24,7 +24,15 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+  AreaChart,
+  Area,
 } from "recharts";
+import { useMemo, useState } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function AdminDashboard() {
   // Obtener métricas del dashboard
@@ -46,25 +54,43 @@ export default function AdminDashboard() {
     }).format(amount);
   };
 
-  // Datos de ejemplo para gráficos (se pueden reemplazar con datos reales)
-  const revenueData = [
-    { name: "Ene", value: 0 },
-    { name: "Feb", value: 0 },
-    { name: "Mar", value: 0 },
-    { name: "Abr", value: 0 },
-    { name: "May", value: 0 },
-    { name: "Jun", value: metrics?.monthly?.revenue || 0 },
-  ];
+  // Datos reales de gráficos desde el backend
+  const revenueData = useMemo(() => {
+    if (metrics?.revenueChart && metrics.revenueChart.length > 0) {
+      return metrics.revenueChart;
+    }
+    // Fallback: si no hay datos, mostrar meses vacíos
+    const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun"];
+    return monthNames.map((name) => ({ name, value: 0 }));
+  }, [metrics?.revenueChart]);
 
-  const energyData = [
-    { name: "Lun", kwh: 0 },
-    { name: "Mar", kwh: 0 },
-    { name: "Mié", kwh: 0 },
-    { name: "Jue", kwh: 0 },
-    { name: "Vie", kwh: 0 },
-    { name: "Sáb", kwh: 0 },
-    { name: "Dom", kwh: metrics?.today?.kwhSold || 0 },
-  ];
+  const energyData = useMemo(() => {
+    if (metrics?.energyChart && metrics.energyChart.length > 0) {
+      return metrics.energyChart;
+    }
+    const dayNames = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+    return dayNames.map((name) => ({ name, kwh: 0 }));
+  }, [metrics?.energyChart]);
+
+  // Datos de tendencia de usuarios
+  const usersData = useMemo(() => {
+    if (metrics?.usersChart && metrics.usersChart.length > 0) {
+      return metrics.usersChart;
+    }
+    const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun"];
+    return monthNames.map((name) => ({ name, users: 0 }));
+  }, [metrics?.usersChart]);
+
+  // Datos de distribución por estación
+  const stationDistData = useMemo(() => {
+    if (metrics?.stationDistribution && metrics.stationDistribution.length > 0) {
+      return metrics.stationDistribution;
+    }
+    return [];
+  }, [metrics?.stationDistribution]);
+
+  // Colores para el pie chart
+  const PIE_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316", "#14b8a6"];
 
   if (isLoading) {
     return (
@@ -222,17 +248,28 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <Card className="p-4 sm:p-6">
           <h3 className="font-semibold mb-4 text-sm sm:text-base">Ingresos mensuales</h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={220}>
             <LineChart data={revenueData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+              <XAxis dataKey="name" stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
+              <YAxis stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} tickFormatter={(value) => {
+                if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+                if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
+                return `$${value}`;
+              }} />
+              <Tooltip
+                formatter={(value: number) => [formatCurrency(value), "Ingresos"]}
+                labelFormatter={(label) => `Mes: ${label}`}
+                contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid #333', borderRadius: '8px', color: '#fff' }}
+                labelStyle={{ color: '#22c55e', fontWeight: 'bold' }}
+              />
               <Line
                 type="monotone"
                 dataKey="value"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2}
+                stroke="#22c55e"
+                strokeWidth={3}
+                dot={{ r: 5, fill: '#22c55e', stroke: '#fff', strokeWidth: 2 }}
+                activeDot={{ r: 7, fill: '#22c55e', stroke: '#fff', strokeWidth: 2 }}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -240,15 +277,95 @@ export default function AdminDashboard() {
 
         <Card className="p-4 sm:p-6">
           <h3 className="font-semibold mb-4 text-sm sm:text-base">Energía semanal (kWh)</h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={220}>
             <BarChart data={energyData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="kwh" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+              <XAxis dataKey="name" stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
+              <YAxis stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} tickFormatter={(value) => `${value.toFixed(1)}`} />
+              <Tooltip
+                formatter={(value: number) => [`${value.toFixed(2)} kWh`, "Energía"]}
+                labelFormatter={(label) => `Día: ${label}`}
+                contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid #333', borderRadius: '8px', color: '#fff' }}
+                labelStyle={{ color: '#3b82f6', fontWeight: 'bold' }}
+              />
+              <Bar dataKey="kwh" fill="#3b82f6" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+        </Card>
+      </div>
+
+      {/* Gráficas adicionales: Tendencia de usuarios + Distribución por estación */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <Card className="p-4 sm:p-6">
+          <h3 className="font-semibold mb-4 text-sm sm:text-base flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            Tendencia de usuarios
+          </h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={usersData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+              <XAxis dataKey="name" stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
+              <YAxis allowDecimals={false} stroke="#a1a1aa" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
+              <Tooltip
+                formatter={(value: number) => [`${value} usuarios`, "Registros"]}
+                labelFormatter={(label) => `Mes: ${label}`}
+                contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid #333', borderRadius: '8px', color: '#fff' }}
+                labelStyle={{ color: '#8b5cf6', fontWeight: 'bold' }}
+              />
+              <defs>
+                <linearGradient id="usersGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area
+                type="monotone"
+                dataKey="users"
+                stroke="#8b5cf6"
+                strokeWidth={3}
+                fill="url(#usersGradient)"
+                dot={{ r: 5, fill: '#8b5cf6', stroke: '#fff', strokeWidth: 2 }}
+                activeDot={{ r: 7 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </Card>
+
+        <Card className="p-4 sm:p-6">
+          <h3 className="font-semibold mb-4 text-sm sm:text-base flex items-center gap-2">
+            <MapPin className="w-4 h-4" />
+            Distribución de ingresos por estación
+          </h3>
+          {stationDistData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie
+                  data={stationDistData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={85}
+                  paddingAngle={3}
+                  dataKey="value"
+                  nameKey="name"
+                  label={({ name, percent }) => `${name.length > 15 ? name.slice(0, 15) + '...' : name} ${(percent * 100).toFixed(0)}%`}
+                  labelLine={{ stroke: '#a1a1aa' }}
+                >
+                  {stationDistData.map((_: any, index: number) => (
+                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => [formatCurrency(value), "Ingresos"]}
+                  contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid #333', borderRadius: '8px', color: '#fff' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[220px] text-muted-foreground text-sm">
+              No hay datos de distribución
+            </div>
+          )}
         </Card>
       </div>
 
@@ -275,25 +392,25 @@ export default function AdminDashboard() {
                       }`} />
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{item.user.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.station.name}</p>
+                      <p className="text-sm font-medium">{item.user?.name || 'Usuario'}</p>
+                      <p className="text-xs text-muted-foreground">{item.station?.name || 'Estación'}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold">
-                      {formatCurrency(parseFloat(item.transaction.totalCost || '0'))}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {parseFloat(item.transaction.kwhConsumed || '0').toFixed(2)} kWh
-                    </p>
+                    <p className="text-sm font-medium">{formatCurrency(Number(item.transaction.totalCost) || 0)}</p>
+                    <Badge variant={
+                      item.transaction.status === 'COMPLETED' ? 'default' : 
+                      item.transaction.status === 'IN_PROGRESS' ? 'secondary' : 'outline'
+                    } className="text-xs">
+                      {item.transaction.status === 'COMPLETED' ? 'Completada' : 
+                       item.transaction.status === 'IN_PROGRESS' ? 'En curso' : item.transaction.status}
+                    </Badge>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No hay transacciones recientes
-            </div>
+            <p className="text-sm text-muted-foreground text-center py-8">No hay transacciones recientes</p>
           )}
         </Card>
 
@@ -306,91 +423,25 @@ export default function AdminDashboard() {
           {topStations && topStations.length > 0 ? (
             <div className="space-y-3">
               {topStations.map((station: any, index: number) => (
-                <div key={station.stationId} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div key={station.id || index} className="flex items-center justify-between py-2 border-b last:border-0">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">
                       {index + 1}
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{station.stationName}</p>
-                      <p className="text-xs text-muted-foreground">{station.city}</p>
+                      <p className="text-sm font-medium">{station.name || 'Estación'}</p>
+                      <p className="text-xs text-muted-foreground">{station.city || station.address || ''}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold">{formatCurrency(station.totalRevenue)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {station.transactionCount} sesiones
-                    </p>
+                    <p className="text-sm font-medium">{formatCurrency(Number(station.totalRevenue) || 0)}</p>
+                    <p className="text-xs text-muted-foreground">{station.totalTransactions || 0} sesiones</p>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No hay datos de estaciones
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Estado del sistema */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        <Card className="p-4 sm:p-6">
-          <h3 className="font-semibold mb-4 flex items-center gap-2 text-sm sm:text-base">
-            <Activity className="w-4 h-4" />
-            Estado del sistema
-          </h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Servidor OCPP</span>
-              <Badge className="bg-green-100 text-green-700">
-                <CheckCircle className="w-3 h-3 mr-1" />
-                Operativo
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Base de datos</span>
-              <Badge className="bg-green-100 text-green-700">
-                <CheckCircle className="w-3 h-3 mr-1" />
-                Activa
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Pasarela de pagos</span>
-              <Badge className="bg-yellow-100 text-yellow-700">
-                <AlertTriangle className="w-3 h-3 mr-1" />
-                Pendiente
-              </Badge>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-4 sm:p-6">
-          <h3 className="font-semibold mb-4 flex items-center gap-2 text-sm sm:text-base">
-            <AlertTriangle className="w-4 h-4" />
-            Alertas recientes
-          </h3>
-          <div className="text-center py-8 text-muted-foreground">
-            No hay alertas pendientes
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <Zap className="w-4 h-4" />
-            Cargas en progreso
-          </h3>
-          {metrics?.activeTransactions && metrics.activeTransactions > 0 ? (
-            <div className="text-center">
-              <div className="text-4xl font-bold text-primary mb-2">
-                {metrics.activeTransactions}
-              </div>
-              <p className="text-sm text-muted-foreground">sesiones activas</p>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No hay cargas activas
-            </div>
+            <p className="text-sm text-muted-foreground text-center py-8">No hay datos de estaciones</p>
           )}
         </Card>
       </div>

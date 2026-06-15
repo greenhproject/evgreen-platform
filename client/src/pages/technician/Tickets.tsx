@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -19,8 +20,10 @@ import {
   Search, Plus, Clock, CheckCircle, Wrench, MapPin, User, Calendar,
   Play, XCircle, Loader2, FileText, DollarSign, Package, Timer,
   ChevronRight, Camera, Image, Trash2, X, Upload, Eye,
+  Headphones, Bot, MessageCircle, UserCheck, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 
 interface PhotoAttachment {
   url: string;
@@ -31,10 +34,55 @@ interface PhotoAttachment {
   uploadedAt: string;
 }
 
+// ============================================================================
+// STATUS / PRIORITY HELPERS
+// ============================================================================
+
+const maintenanceStatusStyles: Record<string, { bg: string; icon: any; label: string }> = {
+  PENDING: { bg: "bg-yellow-500/20 text-yellow-400", icon: Clock, label: "Pendiente" },
+  IN_PROGRESS: { bg: "bg-blue-500/20 text-blue-400", icon: Timer, label: "En progreso" },
+  COMPLETED: { bg: "bg-green-500/20 text-green-400", icon: CheckCircle, label: "Completado" },
+  CANCELLED: { bg: "bg-red-500/20 text-red-400", icon: XCircle, label: "Cancelado" },
+};
+
+const supportStatusStyles: Record<string, { bg: string; icon: any; label: string }> = {
+  AI_HANDLING: { bg: "bg-emerald-500/20 text-emerald-400", icon: Bot, label: "IA atendiendo" },
+  OPEN: { bg: "bg-orange-500/20 text-orange-400", icon: AlertTriangle, label: "Abierto" },
+  ASSIGNED: { bg: "bg-blue-500/20 text-blue-400", icon: UserCheck, label: "Asignado" },
+  WAITING_AGENT: { bg: "bg-yellow-500/20 text-yellow-400", icon: Clock, label: "Esperando agente" },
+  IN_PROGRESS: { bg: "bg-blue-500/20 text-blue-400", icon: Timer, label: "En progreso" },
+  RESOLVED: { bg: "bg-green-500/20 text-green-400", icon: CheckCircle, label: "Resuelto" },
+  CLOSED: { bg: "bg-gray-500/20 text-gray-400", icon: CheckCircle, label: "Cerrado" },
+};
+
+const priorityStyles: Record<string, { bg: string; label: string }> = {
+  CRITICAL: { bg: "bg-red-500/20 text-red-400 border-red-500/30", label: "Crítica" },
+  HIGH: { bg: "bg-orange-500/20 text-orange-400 border-orange-500/30", label: "Alta" },
+  MEDIUM: { bg: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", label: "Media" },
+  LOW: { bg: "bg-gray-500/20 text-gray-400 border-gray-500/30", label: "Baja" },
+  urgent: { bg: "bg-red-500/20 text-red-400 border-red-500/30", label: "Urgente" },
+  high: { bg: "bg-orange-500/20 text-orange-400 border-orange-500/30", label: "Alta" },
+  medium: { bg: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", label: "Media" },
+  low: { bg: "bg-gray-500/20 text-gray-400 border-gray-500/30", label: "Baja" },
+};
+
+const categoryLabels: Record<string, string> = {
+  HARDWARE: "Hardware", SOFTWARE: "Software", CONNECTIVITY: "Conectividad", VANDALISM: "Vandalismo",
+  GENERAL: "General", general: "General", CHARGING: "Carga", charging: "Carga",
+  BILLING: "Facturación", billing: "Facturación", TECHNICAL: "Técnico", technical: "Técnico",
+  ACCOUNT: "Cuenta", account: "Cuenta", CHARGER_PROBLEM: "Problema cargador", charger_problem: "Problema cargador",
+};
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
 export default function TechnicianTickets() {
+  const [activeTab, setActiveTab] = useState<"all" | "maintenance" | "support">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
+  const [selectedTicketType, setSelectedTicketType] = useState<"maintenance" | "support" | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showResolveDialog, setShowResolveDialog] = useState(false);
   const [resolution, setResolution] = useState("");
@@ -48,12 +96,16 @@ export default function TechnicianTickets() {
   const [newTask, setNewTask] = useState({
     title: "", description: "", stationId: "", priority: "MEDIUM" as string, category: "HARDWARE" as string,
   });
+  const [, navigate] = useLocation();
 
-  const { data: tickets, isLoading, refetch } = trpc.maintenance.myTickets.useQuery();
+  // Maintenance tickets
+  const { data: maintenanceTickets, isLoading: isLoadingMaintenance, refetch: refetchMaintenance } = trpc.maintenance.myTickets.useQuery();
+  // Support tickets assigned to me
+  const { data: supportTickets, isLoading: isLoadingSupport, refetch: refetchSupport } = trpc.support.mySupportTickets.useQuery();
   const { data: stations } = trpc.stations.listAll.useQuery();
   const { data: ticketDetail, isLoading: isLoadingDetail, refetch: refetchDetail } = trpc.maintenance.getById.useQuery(
     { id: selectedTicketId! },
-    { enabled: !!selectedTicketId && showDetailDialog }
+    { enabled: !!selectedTicketId && showDetailDialog && selectedTicketType === "maintenance" }
   );
 
   const createMutation = trpc.maintenance.create.useMutation({
@@ -61,7 +113,7 @@ export default function TechnicianTickets() {
       toast.success("Ticket creado exitosamente");
       setIsCreateOpen(false);
       setNewTask({ title: "", description: "", stationId: "", priority: "MEDIUM", category: "HARDWARE" });
-      refetch();
+      refetchMaintenance();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -69,7 +121,7 @@ export default function TechnicianTickets() {
   const updateMutation = trpc.maintenance.update.useMutation({
     onSuccess: () => {
       toast.success("Ticket actualizado");
-      refetch();
+      refetchMaintenance();
       refetchDetail();
     },
     onError: (err) => toast.error(err.message),
@@ -131,7 +183,7 @@ export default function TechnicianTickets() {
           setResolution("");
           setPartsUsed("");
           setLaborCost("");
-          refetch();
+          refetchMaintenance();
         },
       }
     );
@@ -140,7 +192,7 @@ export default function TechnicianTickets() {
   const handleCancelTicket = (id: number) => {
     updateMutation.mutate(
       { id, data: { status: "CANCELLED" } },
-      { onSuccess: () => { setShowDetailDialog(false); refetch(); } }
+      { onSuccess: () => { setShowDetailDialog(false); refetchMaintenance(); } }
     );
   };
 
@@ -175,7 +227,6 @@ export default function TechnicianTickets() {
       });
     };
     reader.readAsDataURL(file);
-    // Reset input so same file can be selected again
     e.target.value = "";
   };
 
@@ -184,30 +235,24 @@ export default function TechnicianTickets() {
     deletePhotoMutation.mutate({ ticketId: selectedTicketId, fileKey });
   };
 
-  const openDetail = (ticketId: number) => {
+  const openDetail = (ticketId: number, type: "maintenance" | "support") => {
+    if (type === "support") {
+      // Navigate to the support chat for this ticket
+      navigate(`/technician/support?ticket=${ticketId}`);
+      return;
+    }
     setSelectedTicketId(ticketId);
+    setSelectedTicketType(type);
     setShowDetailDialog(true);
   };
 
   const getPriorityBadge = (priority: string) => {
-    const styles: Record<string, { bg: string; label: string }> = {
-      CRITICAL: { bg: "bg-red-500/20 text-red-400 border-red-500/30", label: "Crítica" },
-      HIGH: { bg: "bg-orange-500/20 text-orange-400 border-orange-500/30", label: "Alta" },
-      MEDIUM: { bg: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", label: "Media" },
-      LOW: { bg: "bg-gray-500/20 text-gray-400 border-gray-500/30", label: "Baja" },
-    };
-    const style = styles[priority] || styles.MEDIUM;
+    const style = priorityStyles[priority] || priorityStyles.MEDIUM;
     return <Badge variant="outline" className={style.bg}>{style.label}</Badge>;
   };
 
-  const getStatusBadge = (status: string) => {
-    const styles: Record<string, { bg: string; icon: any; label: string }> = {
-      PENDING: { bg: "bg-yellow-500/20 text-yellow-400", icon: Clock, label: "Pendiente" },
-      IN_PROGRESS: { bg: "bg-blue-500/20 text-blue-400", icon: Timer, label: "En progreso" },
-      COMPLETED: { bg: "bg-green-500/20 text-green-400", icon: CheckCircle, label: "Completado" },
-      CANCELLED: { bg: "bg-red-500/20 text-red-400", icon: XCircle, label: "Cancelado" },
-    };
-    const style = styles[status] || styles.PENDING;
+  const getMaintenanceStatusBadge = (status: string) => {
+    const style = maintenanceStatusStyles[status] || maintenanceStatusStyles.PENDING;
     const Icon = style.icon;
     return (
       <Badge className={style.bg}>
@@ -217,12 +262,18 @@ export default function TechnicianTickets() {
     );
   };
 
-  const getCategoryLabel = (category: string) => {
-    const labels: Record<string, string> = {
-      HARDWARE: "Hardware", SOFTWARE: "Software", CONNECTIVITY: "Conectividad", VANDALISM: "Vandalismo",
-    };
-    return labels[category] || category;
+  const getSupportStatusBadge = (status: string) => {
+    const style = supportStatusStyles[status] || supportStatusStyles.OPEN;
+    const Icon = style.icon;
+    return (
+      <Badge className={style.bg}>
+        <Icon className="w-3 h-3 mr-1" />
+        {style.label}
+      </Badge>
+    );
   };
+
+  const getCategoryLabel = (category: string) => categoryLabels[category] || category;
 
   const getPhotoTypeLabel = (type: string) => {
     const labels: Record<string, { label: string; color: string }> = {
@@ -233,14 +284,63 @@ export default function TechnicianTickets() {
     return labels[type] || labels.evidence;
   };
 
-  const filteredTickets = (tickets || []).filter((ticket: any) => {
-    if (statusFilter !== "all" && ticket.status !== statusFilter) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return ticket.title?.toLowerCase().includes(q) || String(ticket.stationId).includes(q);
-    }
-    return true;
-  });
+  // Build unified ticket list
+  const maintenanceList = (maintenanceTickets || []).map((t: any) => ({
+    ...t,
+    _type: "maintenance" as const,
+    _title: t.title,
+    _station: t.station?.name || t.stationName || `Est. #${t.stationId}`,
+    _priority: t.priority || "MEDIUM",
+    _status: t.status,
+    _category: t.category,
+    _createdAt: t.createdAt,
+    _userName: null,
+  }));
+
+  const supportList = (supportTickets || []).map((t: any) => ({
+    ...t,
+    _type: "support" as const,
+    _title: t.subject || "Sin asunto",
+    _station: null,
+    _priority: t.priority || "medium",
+    _status: t.status,
+    _category: t.category,
+    _createdAt: t.createdAt,
+    _userName: t.userName || t.userEmail || "Usuario",
+  }));
+
+  let allTickets = [...maintenanceList, ...supportList];
+
+  // Filter by tab
+  if (activeTab === "maintenance") {
+    allTickets = allTickets.filter(t => t._type === "maintenance");
+  } else if (activeTab === "support") {
+    allTickets = allTickets.filter(t => t._type === "support");
+  }
+
+  // Filter by status
+  if (statusFilter !== "all") {
+    allTickets = allTickets.filter(t => t._status === statusFilter);
+  }
+
+  // Filter by search
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    allTickets = allTickets.filter(t =>
+      t._title.toLowerCase().includes(q) ||
+      (t._station && t._station.toLowerCase().includes(q)) ||
+      (t._userName && t._userName.toLowerCase().includes(q)) ||
+      String(t.id).includes(q)
+    );
+  }
+
+  // Sort by date descending
+  allTickets.sort((a, b) => new Date(b._createdAt).getTime() - new Date(a._createdAt).getTime());
+
+  const isLoading = isLoadingMaintenance || isLoadingSupport;
+
+  const maintenanceCount = maintenanceList.length;
+  const supportCount = supportList.length;
 
   const formatDate = (date: string | Date | null) => {
     if (!date) return "—";
@@ -266,90 +366,178 @@ export default function TechnicianTickets() {
 
   const attachments: PhotoAttachment[] = (ticketDetail?.attachments as any[]) || [];
 
+  // Get available statuses for filter based on active tab
+  const getStatusOptions = () => {
+    if (activeTab === "maintenance") {
+      return [
+        { value: "PENDING", label: "Pendientes" },
+        { value: "IN_PROGRESS", label: "En progreso" },
+        { value: "COMPLETED", label: "Completados" },
+        { value: "CANCELLED", label: "Cancelados" },
+      ];
+    }
+    if (activeTab === "support") {
+      return [
+        { value: "AI_HANDLING", label: "IA atendiendo" },
+        { value: "WAITING_AGENT", label: "Esperando agente" },
+        { value: "ASSIGNED", label: "Asignados" },
+        { value: "OPEN", label: "Abiertos" },
+        { value: "IN_PROGRESS", label: "En progreso" },
+        { value: "RESOLVED", label: "Resueltos" },
+      ];
+    }
+    // All - show combined
+    return [
+      { value: "PENDING", label: "Pendientes (Mant.)" },
+      { value: "IN_PROGRESS", label: "En progreso" },
+      { value: "COMPLETED", label: "Completados (Mant.)" },
+      { value: "ASSIGNED", label: "Asignados (Soporte)" },
+      { value: "WAITING_AGENT", label: "Esperando agente" },
+      { value: "AI_HANDLING", label: "IA atendiendo" },
+      { value: "RESOLVED", label: "Resueltos (Soporte)" },
+    ];
+  };
+
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-3 sm:space-y-6 overflow-x-hidden">
       {/* Hidden file input */}
       <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={onFileSelected} />
 
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Tickets de Mantenimiento</h1>
-          <p className="text-muted-foreground">Gestiona los tickets asignados</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold">Mis Tickets</h1>
+          <p className="text-muted-foreground text-xs sm:text-sm">Gestiona todos tus tickets asignados</p>
         </div>
-        <Button className="gradient-primary" onClick={() => setIsCreateOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Nuevo ticket
+        <Button className="gradient-primary shrink-0" size="sm" onClick={() => setIsCreateOpen(true)}>
+          <Plus className="w-4 h-4 mr-1" />
+          <span className="hidden sm:inline">Nuevo ticket</span>
+          <span className="sm:hidden">Nuevo</span>
         </Button>
       </div>
 
+      {/* Tabs: Todos / Mantenimiento / Soporte */}
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as any); setStatusFilter("all"); }}>
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="all" className="gap-1 text-xs sm:text-sm flex-1 sm:flex-none">
+            Todos
+            <Badge variant="outline" className="text-[10px] px-1 py-0">
+              {maintenanceCount + supportCount}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="maintenance" className="gap-1 text-xs sm:text-sm flex-1 sm:flex-none">
+            <Wrench className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            <span className="hidden sm:inline">Mantenimiento</span>
+            <span className="sm:hidden">Mant.</span>
+            <Badge variant="outline" className="text-[10px] px-1 py-0">
+              {maintenanceCount}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="support" className="gap-1 text-xs sm:text-sm flex-1 sm:flex-none">
+            <Headphones className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            Soporte
+            <Badge variant="outline" className="text-[10px] px-1 py-0">
+              {supportCount}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {/* Filtros */}
-      <Card className="p-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
+      <Card className="p-3 sm:p-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Buscar por título o estación..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
+            <Input placeholder="Buscar por título, estación o usuario..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-48"><SelectValue placeholder="Estado" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-52"><SelectValue placeholder="Estado" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="PENDING">Pendientes</SelectItem>
-              <SelectItem value="IN_PROGRESS">En progreso</SelectItem>
-              <SelectItem value="COMPLETED">Completados</SelectItem>
-              <SelectItem value="CANCELLED">Cancelados</SelectItem>
+              <SelectItem value="all">Todos los estados</SelectItem>
+              {getStatusOptions().map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
       </Card>
 
-      {/* Tabla */}
-      <Card>
-        <Table>
+      {/* Tabla unificada */}
+      <Card className="overflow-x-auto">
+        <Table className="min-w-0">
           <TableHeader>
             <TableRow>
-              <TableHead>ID</TableHead>
+              <TableHead className="w-14">Tipo</TableHead>
+              <TableHead className="hidden sm:table-cell">ID</TableHead>
               <TableHead>Título</TableHead>
-              <TableHead className="hidden md:table-cell">Estación</TableHead>
-              <TableHead>Prioridad</TableHead>
+              <TableHead className="hidden lg:table-cell">Estación / Usuario</TableHead>
+              <TableHead className="hidden sm:table-cell">Prioridad</TableHead>
               <TableHead>Estado</TableHead>
-              <TableHead className="hidden md:table-cell">Creado</TableHead>
-              <TableHead></TableHead>
+              <TableHead className="hidden lg:table-cell">Creado</TableHead>
+              <TableHead className="w-10"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8">
+                <TableCell colSpan={8} className="text-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
                   Cargando tickets...
                 </TableCell>
               </TableRow>
-            ) : filteredTickets.length === 0 ? (
+            ) : allTickets.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                   <Wrench className="w-8 h-8 mx-auto mb-2 opacity-50" />
                   No hay tickets {statusFilter !== "all" ? "con este filtro" : "asignados"}
                 </TableCell>
               </TableRow>
             ) : (
-              filteredTickets.map((ticket: any) => (
-                <TableRow key={ticket.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openDetail(ticket.id)}>
-                  <TableCell className="font-mono text-sm">#{ticket.id}</TableCell>
+              allTickets.map((ticket: any) => (
+                <TableRow key={`${ticket._type}-${ticket.id}`} className="cursor-pointer hover:bg-muted/50" onClick={() => openDetail(ticket.id, ticket._type)}>
                   <TableCell>
-                    <div className="font-medium">{ticket.title}</div>
-                    {ticket.category && <span className="text-xs text-muted-foreground">{getCategoryLabel(ticket.category)}</span>}
+                    {ticket._type === "maintenance" ? (
+                      <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30 text-[10px]">
+                        <Wrench className="w-3 h-3 mr-1" />
+                        Mant.
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/30 text-[10px]">
+                        <MessageCircle className="w-3 h-3 mr-1" />
+                        Soporte
+                      </Badge>
+                    )}
                   </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <span className="text-sm">{ticket.station?.name || `Est. #${ticket.stationId}`}</span>
-                  </TableCell>
-                  <TableCell>{getPriorityBadge(ticket.priority)}</TableCell>
-                  <TableCell>{getStatusBadge(ticket.status)}</TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                    {new Date(ticket.createdAt).toLocaleDateString("es-CO")}
-                  </TableCell>
+                  <TableCell className="hidden sm:table-cell font-mono text-xs sm:text-sm">#{ticket.id}</TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openDetail(ticket.id); }}>
-                      Ver detalles <ChevronRight className="w-4 h-4 ml-1" />
+                    <div className="font-medium text-xs sm:text-sm truncate max-w-[140px] sm:max-w-none">{ticket._title}</div>
+                    {ticket._category && <span className="text-[10px] sm:text-xs text-muted-foreground">{getCategoryLabel(ticket._category)}</span>}
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    {ticket._type === "maintenance" ? (
+                      <span className="text-sm flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-muted-foreground" />
+                        {ticket._station}
+                      </span>
+                    ) : (
+                      <span className="text-sm flex items-center gap-1">
+                        <User className="w-3 h-3 text-muted-foreground" />
+                        {ticket._userName}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">{getPriorityBadge(ticket._priority)}</TableCell>
+                  <TableCell>
+                    {ticket._type === "maintenance"
+                      ? getMaintenanceStatusBadge(ticket._status)
+                      : getSupportStatusBadge(ticket._status)
+                    }
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell text-xs sm:text-sm text-muted-foreground">
+                    {new Date(ticket._createdAt).toLocaleDateString("es-CO")}
+                  </TableCell>
+                  <TableCell className="p-1 sm:p-2">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openDetail(ticket.id, ticket._type); }}>
+                      <ChevronRight className="w-4 h-4" />
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -359,7 +547,7 @@ export default function TechnicianTickets() {
         </Table>
       </Card>
 
-      {/* Dialog: Crear Ticket */}
+      {/* Dialog: Crear Ticket de Mantenimiento */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Crear ticket de mantenimiento</DialogTitle></DialogHeader>
@@ -417,8 +605,8 @@ export default function TechnicianTickets() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Detalle del Ticket */}
-      <Dialog open={showDetailDialog} onOpenChange={(open) => { setShowDetailDialog(open); if (!open) setSelectedTicketId(null); }}>
+      {/* Dialog: Detalle del Ticket de Mantenimiento */}
+      <Dialog open={showDetailDialog} onOpenChange={(open) => { setShowDetailDialog(open); if (!open) { setSelectedTicketId(null); setSelectedTicketType(null); } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           {isLoadingDetail ? (
             <div className="flex flex-col items-center py-12">
@@ -430,13 +618,15 @@ export default function TechnicianTickets() {
               <DialogHeader>
                 <div className="flex items-center gap-3 flex-wrap">
                   <DialogTitle className="text-xl">Ticket #{ticketDetail.id}</DialogTitle>
-                  {getStatusBadge(ticketDetail.status)}
+                  <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30 text-xs">
+                    <Wrench className="w-3 h-3 mr-1" /> Mantenimiento
+                  </Badge>
+                  {getMaintenanceStatusBadge(ticketDetail.status)}
                   {getPriorityBadge(ticketDetail.priority || "MEDIUM")}
                 </div>
               </DialogHeader>
 
               <div className="space-y-6 mt-4">
-                {/* Título y descripción */}
                 <div>
                   <h3 className="text-lg font-semibold mb-1">{ticketDetail.title}</h3>
                   {ticketDetail.description && <p className="text-muted-foreground">{ticketDetail.description}</p>}
@@ -444,7 +634,6 @@ export default function TechnicianTickets() {
 
                 <Separator />
 
-                {/* Info del ticket */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex items-start gap-3">
                     <MapPin className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
@@ -678,7 +867,6 @@ export default function TechnicianTickets() {
                 <Input type="number" placeholder="0" value={laborCost} onChange={(e) => setLaborCost(e.target.value)} className="pl-10" />
               </div>
             </div>
-            {/* Quick photo upload in resolve dialog */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Agregar foto del resultado</label>
               <Button variant="outline" size="sm" className="w-full" onClick={() => handlePhotoUpload("after")} disabled={uploadingPhoto}>

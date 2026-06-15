@@ -13,9 +13,9 @@
 import { WebSocketServer, WebSocket } from "ws";
 import * as db from "../db";
 import { nanoid } from "nanoid";
-import { findPendingSessionByOcppIdentity, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
+import { findPendingSessionByOcppIdentity, findPendingSessionFromDb, removePendingSession, setActiveSession, getActiveSessionById, removeActiveSession } from "../charging/charging-router";
 import { sendChargingCompleteNotification } from "../firebase/fcm";
-import * as alertsService from "./alerts-service";
+// alertsService ya no se usa directamente aquí — las alertas se manejan en index.ts
 import mysql from "mysql2/promise";
 
 // BUILD VERSION para diagnóstico de deploys
@@ -232,6 +232,7 @@ interface OCPP201MeterValuesRequest {
 
 export class DualCSMS {
   private wss: WebSocketServer | null = null;
+  private mainWss: WebSocketServer | null = null; // Referencia al WSS del servidor principal (index.ts)
   private connections: Map<string, ChargingStationConnection> = new Map();
   private heartbeatInterval: number = 30; // segundos (reducido de 60 para mantener proxy activo)
   private isRunning: boolean = false;
@@ -244,6 +245,15 @@ export class DualCSMS {
 
   constructor() {
     // Initialize
+  }
+
+  /**
+   * Registra el WebSocketServer principal del servidor Express (index.ts)
+   * para permitir auto-recovery de conexiones perdidas por race conditions.
+   */
+  setMainWss(wss: WebSocketServer): void {
+    this.mainWss = wss;
+    console.log(`[CSMS-DUAL] Main WSS registered for auto-recovery`);
   }
 
   /**
@@ -936,7 +946,17 @@ export class DualCSMS {
     if (pendingSessionData && pendingSessionData.session) {
       userId = pendingSessionData.session.userId;
       userResolutionSource = "pending_session";
-      console.log(`[CSMS-DUAL] StartTransaction: [RESOLVE] User ${userId} from pending session (sessionId: ${pendingSessionData.sessionId})`);
+      console.log(`[CSMS-DUAL] StartTransaction: [RESOLVE] User ${userId} from pending session in memory (sessionId: ${pendingSessionData.sessionId})`);
+    }
+    
+    // 4a-bis. FALLBACK BD: Si no se encontró en memoria, buscar en BD (multi-instancia)
+    if (!pendingSessionData) {
+      pendingSessionData = await findPendingSessionFromDb(conn.ocppIdentity, req.connectorId);
+      if (pendingSessionData && pendingSessionData.session) {
+        userId = pendingSessionData.session.userId;
+        userResolutionSource = "pending_session_db";
+        console.log(`[CSMS-DUAL] StartTransaction: [RESOLVE] User ${userId} from pending session in DB (sessionId: ${pendingSessionData.sessionId})`);
+      }
     }
     
     // 4b. Si no hay sesión pendiente, buscar por idTag en tabla id_tags (soporta APP + RFID + NFC)
@@ -958,6 +978,10 @@ export class DualCSMS {
     // 4c. Si no hay sesión pendiente por connectorId, buscar cualquier sesión pendiente para esta estación
     if (!userId) {
       pendingSessionData = findPendingSessionByOcppIdentity(conn.ocppIdentity);
+      if (!pendingSessionData) {
+        // Fallback BD sin connectorId
+        pendingSessionData = await findPendingSessionFromDb(conn.ocppIdentity);
+      }
       if (pendingSessionData && pendingSessionData.session) {
         userId = pendingSessionData.session.userId;
         userResolutionSource = "pending_session_any_connector";
@@ -1632,8 +1656,11 @@ export class DualCSMS {
           // No hay transacción activa - crear una nueva (transacción huérfana)
           console.log(`[CSMS-DUAL] Orphan recovery: No active transaction for EVSE ${evse.id}. Creating orphan transaction...`);
           
-          // Buscar sesión pendiente
-          const pendingSession = findPendingSessionByOcppIdentity(conn.ocppIdentity, req.connectorId);
+          // Buscar sesión pendiente (memoria + BD fallback)
+          let pendingSession = findPendingSessionByOcppIdentity(conn.ocppIdentity, req.connectorId);
+          if (!pendingSession) {
+            pendingSession = await findPendingSessionFromDb(conn.ocppIdentity, req.connectorId);
+          }
           let userId = 1;
           if (pendingSession?.session) {
             userId = pendingSession.session.userId;
@@ -2306,6 +2333,16 @@ export class DualCSMS {
   // DISCONNECTION HANDLING
   // ============================================================================
 
+  /**
+   * Maneja desconexión de un cargador conectado directamente al WSS del dualCSMS.
+   * 
+   * NOTA: Este handler solo se ejecuta para conexiones directas al WSS del dualCSMS
+   * (cuando se llama dualCSMS.start()). Para conexiones externas (bridge desde index.ts),
+   * la desconexión se maneja en index.ts + connection-manager.
+   * 
+   * Las alertas y grace periods son responsabilidad EXCLUSIVA de index.ts + connection-manager.
+   * Este handler solo limpia el estado interno del dualCSMS (pendingCalls, conexión del mapa).
+   */
   private async handleDisconnection(ocppIdentity: string): Promise<void> {
     const conn = this.connections.get(ocppIdentity);
     
@@ -2327,55 +2364,20 @@ export class DualCSMS {
     // Eliminar la conexión del mapa inmediatamente
     this.connections.delete(ocppIdentity);
 
-    await db.createOcppLog({
-      ocppIdentity,
-      stationId: conn?.stationId,
-      direction: "IN",
-      messageType: "DISCONNECTION",
-      payload: {},
-    });
-
-    // En lugar de marcar offline inmediatamente, usar grace period
-    // Esto permite que el cargador se reconecte sin parpadeo de estado
-    if (conn?.stationId) {
-      console.log(`[CSMS-DUAL] Starting ${DualCSMS.GRACE_PERIOD_MS / 1000}s grace period for: ${ocppIdentity}`);
-      
-      const graceTimeout = setTimeout(async () => {
-        // Verificar si el cargador se reconectó durante el grace period
-        const currentConn = this.connections.get(ocppIdentity);
-        if (!currentConn) {
-          // No se reconectó, ahora sí marcar como offline
-          console.log(`[CSMS-DUAL] Grace period expired, marking offline: ${ocppIdentity}`);
-          await db.updateStationOnlineStatus(ocppIdentity, false);
-          
-          // Generar alerta de desconexión SOLO después del grace period (desconexión real confirmada)
-          alertsService.handleDisconnection(ocppIdentity, conn.stationId ?? undefined)
-            .catch(err => console.error("[CSMS-DUAL] Error sending disconnect alert:", err));
-          
-          // Actualizar estado de conectores a UNAVAILABLE (excepto los que tienen reserva activa)
-          try {
-            const evses = await db.getEvsesByStationId(conn.stationId!);
-            for (const evse of evses) {
-              const activeRes = await db.getActiveReservation(evse.id);
-              if (!activeRes) {
-                await db.updateEvseStatus(evse.id, "UNAVAILABLE");
-              } else {
-                // Mantener RESERVED para EVSEs con reservas activas
-                await db.updateEvseStatus(evse.id, "RESERVED");
-                console.log(`[CSMS-DUAL] Disconnect: Keeping EVSE ${evse.id} as RESERVED - has active reservation #${activeRes.id}`);
-              }
-            }
-          } catch (err) {
-            console.error(`[CSMS-DUAL] Error updating EVSE status on disconnect:`, err);
-          }
-        } else {
-          console.log(`[CSMS-DUAL] Charger reconnected during grace period: ${ocppIdentity}`);
-        }
-        this.reconnectionGrace.delete(ocppIdentity);
-      }, DualCSMS.GRACE_PERIOD_MS);
-      
-      this.reconnectionGrace.set(ocppIdentity, graceTimeout);
+    // Log de desconexión para auditoría (sin generar alertas — eso lo hace index.ts)
+    try {
+      await db.createOcppLog({
+        ocppIdentity,
+        stationId: conn?.stationId,
+        direction: "IN",
+        messageType: "DISCONNECTION",
+        payload: { source: "csms-dual-direct" },
+      });
+    } catch (err) {
+      console.error(`[CSMS-DUAL] Error logging disconnection:`, err);
     }
+
+    console.log(`[CSMS-DUAL] Connection cleaned up: ${ocppIdentity} (alerts/grace handled by index.ts)`);
   }
 
   // ============================================================================
@@ -2390,7 +2392,14 @@ export class DualCSMS {
     connectorId: number,
     idTag: string
   ): Promise<{ status: string }> {
-    const conn = this.connections.get(ocppIdentity);
+    let conn = this.connections.get(ocppIdentity);
+    
+    // AUTO-RECOVERY: Si no hay conexión en el mapa, buscar en los WebSocketServers
+    if (!conn) {
+      console.log(`[CSMS-DUAL] requestStartTransaction: No connection for ${ocppIdentity} in map. Attempting auto-recovery...`);
+      conn = await this.autoRecoverConnection(ocppIdentity);
+    }
+    
     if (!conn) {
       console.log(`[CSMS-DUAL] requestStartTransaction: No connection for ${ocppIdentity}. Active connections: [${Array.from(this.connections.keys()).join(', ')}]`);
       throw new Error(`Charging station ${ocppIdentity} not connected. Active: [${Array.from(this.connections.keys()).join(', ')}]`);
@@ -2428,13 +2437,60 @@ export class DualCSMS {
   }
 
   /**
+   * Auto-recovery: busca una conexión activa en los WebSocketServers y la re-registra.
+   * Cubre la race condition donde el close del WS viejo eliminó la conexión nueva del mapa.
+   */
+  private async autoRecoverConnection(ocppIdentity: string): Promise<ChargingStationConnection | undefined> {
+    // Buscar en el WSS propio de dualCSMS
+    if (this.wss) {
+      for (const client of Array.from(this.wss.clients)) {
+        if ((client as any)._ocppIdentity === ocppIdentity && client.readyState === WebSocket.OPEN) {
+          console.log(`[CSMS-DUAL] AUTO-RECOVERY: Found active WS for ${ocppIdentity} in wss.clients! Re-registering...`);
+          const protocol = (client as any).protocol || 'ocpp1.6';
+          const ocppVersion: OCPPVersion = protocol.includes('2.0') ? '2.0.1' : '1.6';
+          let stationId: number | null = null;
+          try {
+            const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+            if (station) stationId = station.id;
+          } catch (e) { /* ignore */ }
+          this.registerExternalConnection(ocppIdentity, client, ocppVersion, stationId);
+          return this.connections.get(ocppIdentity);
+        }
+      }
+    }
+    // Buscar en el WSS principal (index.ts)
+    if (this.mainWss) {
+      for (const client of Array.from(this.mainWss.clients)) {
+        if ((client as any)._ocppIdentity === ocppIdentity && client.readyState === WebSocket.OPEN) {
+          console.log(`[CSMS-DUAL] AUTO-RECOVERY: Found active WS for ${ocppIdentity} in mainWss.clients! Re-registering...`);
+          const protocol = (client as any).protocol || 'ocpp1.6';
+          const ocppVersion: OCPPVersion = protocol.includes('2.0') ? '2.0.1' : '1.6';
+          let stationId: number | null = null;
+          try {
+            const station = await db.getChargingStationByOcppIdentity(ocppIdentity);
+            if (station) stationId = station.id;
+          } catch (e) { /* ignore */ }
+          this.registerExternalConnection(ocppIdentity, client, ocppVersion, stationId);
+          return this.connections.get(ocppIdentity);
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Detiene una transacción remotamente
    */
   async requestStopTransaction(
     ocppIdentity: string,
     transactionId: string | number
   ): Promise<{ status: string }> {
-    const conn = this.connections.get(ocppIdentity);
+    let conn = this.connections.get(ocppIdentity);
+    
+    // AUTO-RECOVERY: misma lógica que requestStartTransaction
+    if (!conn) {
+      conn = await this.autoRecoverConnection(ocppIdentity);
+    }
     if (!conn) {
       throw new Error("Charging station not connected");
     }
@@ -2829,6 +2885,102 @@ export class DualCSMS {
   }
 
   // ============================================================================
+  // LOCAL AUTHORIZATION LIST - Envío de listas locales RFID al cargador
+  // ============================================================================
+
+  /**
+   * Envía la lista de autorización local al cargador (OCPP 1.6: SendLocalList)
+   * Permite que el cargador opere offline autorizando tarjetas RFID sin conexión al CSMS.
+   * 
+   * @param ocppIdentity - Identidad OCPP del cargador
+   * @param listVersion - Versión de la lista (debe ser mayor que la actual en el cargador)
+   * @param updateType - "Full" para reemplazar toda la lista, "Differential" para agregar/remover
+   * @param localAuthorizationList - Array de {idTag, idTagInfo: {status, expiryDate?}}
+   */
+  async sendLocalList(
+    ocppIdentity: string,
+    listVersion: number,
+    updateType: "Full" | "Differential",
+    localAuthorizationList: Array<{
+      idTag: string;
+      idTagInfo: { status: string; expiryDate?: string };
+    }>
+  ): Promise<{ status: string }> {
+    const conn = this.connections.get(ocppIdentity);
+    if (!conn) {
+      throw new Error(`Charger ${ocppIdentity} is not connected`);
+    }
+
+    let response: any;
+
+    if (conn.ocppVersion === "1.6") {
+      // OCPP 1.6: SendLocalList.req
+      response = await this.sendCall(conn, "SendLocalList", {
+        listVersion,
+        updateType,
+        localAuthorizationList: localAuthorizationList.map(entry => ({
+          idTag: entry.idTag,
+          idTagInfo: {
+            status: entry.idTagInfo.status,
+            ...(entry.idTagInfo.expiryDate ? { expiryDate: entry.idTagInfo.expiryDate } : {}),
+          },
+        })),
+      });
+    } else {
+      // OCPP 2.0.1: SendLocalList.req (formato ligeramente diferente)
+      response = await this.sendCall(conn, "SendLocalList", {
+        versionNumber: listVersion,
+        updateType,
+        localAuthorizationList: localAuthorizationList.map(entry => ({
+          idToken: { idToken: entry.idTag, type: "Central" },
+          idTokenInfo: {
+            status: entry.idTagInfo.status,
+            ...(entry.idTagInfo.expiryDate ? { cacheExpiryDateTime: entry.idTagInfo.expiryDate } : {}),
+          },
+        })),
+      });
+    }
+
+    await db.createOcppLog({
+      ocppIdentity,
+      stationId: conn.stationId || 0,
+      direction: "OUT",
+      messageType: "SendLocalList",
+      payload: { listVersion, updateType, entriesCount: localAuthorizationList.length, response },
+    });
+
+    return { status: response?.status || "Failed" };
+  }
+
+  /**
+   * Consulta la versión actual de la lista local en el cargador (OCPP 1.6: GetLocalListVersion)
+   */
+  async getLocalListVersion(ocppIdentity: string): Promise<{ listVersion: number }> {
+    const conn = this.connections.get(ocppIdentity);
+    if (!conn) {
+      throw new Error(`Charger ${ocppIdentity} is not connected`);
+    }
+
+    let response: any;
+
+    if (conn.ocppVersion === "1.6") {
+      response = await this.sendCall(conn, "GetLocalListVersion", {});
+    } else {
+      response = await this.sendCall(conn, "GetLocalListVersion", {});
+    }
+
+    await db.createOcppLog({
+      ocppIdentity,
+      stationId: conn.stationId || 0,
+      direction: "OUT",
+      messageType: "GetLocalListVersion",
+      payload: response,
+    });
+
+    return { listVersion: response?.listVersion ?? response?.versionNumber ?? -1 };
+  }
+
+  // ============================================================================
   // BRIDGE: Registrar conexiones externas (desde index.ts WebSocket handler)
   // ============================================================================
 
@@ -2928,9 +3080,18 @@ export class DualCSMS {
    * Elimina una conexión externa (cuando el WebSocket se cierra en index.ts).
    * Limpia pendingCalls pendientes.
    */
-  removeExternalConnection(ocppIdentity: string): void {
+  removeExternalConnection(ocppIdentity: string, closedWs?: WebSocket): void {
     const conn = this.connections.get(ocppIdentity);
     if (conn) {
+      // RACE CONDITION FIX: Si se proporciona el WebSocket que se cerró,
+      // solo eliminar si es el MISMO que está en el mapa.
+      // Cuando hay reconexión rápida, el close del WS viejo llega DESPUÉS
+      // de que el nuevo WS ya fue registrado. Sin esta verificación,
+      // el close del viejo elimina la conexión nueva.
+      if (closedWs && conn.ws !== closedWs) {
+        console.log(`[CSMS-DUAL] Skipping removeExternalConnection for ${ocppIdentity}: closed WS is stale (map has newer connection)`);
+        return;
+      }
       conn.pendingCalls.forEach((pending) => {
         clearTimeout(pending.timeout);
         pending.reject(new Error("External connection closed"));

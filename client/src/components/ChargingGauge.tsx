@@ -68,7 +68,8 @@ export function ChargingGauge({
   
   // Calcular offset para el arco de progreso (empezar desde arriba)
   const progressOffset = circumference - (animatedPercentage / 100) * circumference;
-  const targetOffset = circumference - (targetPercentage / 100) * circumference;
+  const roundedTarget = Math.round(targetPercentage);
+  const targetOffset = circumference - (roundedTarget / 100) * circumference;
   
   // Determinar color según el nivel de carga
   const getColor = (pct: number) => {
@@ -205,7 +206,7 @@ export function ChargingGauge({
         {/* Objetivo si es diferente de 100% */}
         {targetPercentage < 100 && (
           <div className="text-xs text-muted-foreground mt-1">
-            Objetivo: {targetPercentage}%
+            Objetivo: {Math.round(targetPercentage)}%
           </div>
         )}
       </div>

@@ -3,7 +3,7 @@
  * Gestión de proyectos de inversión colectiva y participaciones
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +61,13 @@ import {
   CreditCard,
   Phone,
   Mail,
-  Briefcase
+  Briefcase,
+  Search,
+  Link2,
+  X,
+  Send,
+  FileText,
+  ArrowRight
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -79,6 +85,8 @@ const PAYMENT_STATUSES = [
   { value: "PENDING", label: "Pendiente", color: "bg-yellow-500" },
   { value: "COMPLETED", label: "Completado", color: "bg-green-500" },
   { value: "CANCELLED", label: "Cancelado", color: "bg-red-500" },
+  { value: "FAILED", label: "Fallido", color: "bg-red-500" },
+  { value: "REFUNDED", label: "Reembolsado", color: "bg-purple-500" },
 ];
 
 interface Project {
@@ -102,6 +110,11 @@ interface Project {
   targetDate: Date | null;
   priority: number;
   stationId: number | null;
+  spaceSubmissionId: number | null;
+  linkedSpaceName: string | null;
+  linkedSpaceCity: string | null;
+  linkedSubmitterName: string | null;
+  linkedSpaceStatus: string | null;
   createdAt: Date;
 }
 
@@ -113,6 +126,7 @@ interface Participation {
   participationPercent: number;
   paymentStatus: string;
   paymentDate: Date | null;
+  paymentReference?: string;
   createdAt: Date;
   investor?: {
     id: number;
@@ -127,6 +141,21 @@ export default function AdminCrowdfunding() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showParticipationsDialog, setShowParticipationsDialog] = useState(false);
   const [showRegisterInvestorDialog, setShowRegisterInvestorDialog] = useState(false);
+  
+  // Edit participation state
+  const [editingParticipation, setEditingParticipation] = useState<Participation | null>(null);
+  const [showEditParticipationDialog, setShowEditParticipationDialog] = useState(false);
+  const [editPartData, setEditPartData] = useState({
+    amount: 0,
+    paymentStatus: "PENDING",
+    paymentReference: "",
+  });
+  
+  // User search for linking
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [selectedLinkedUser, setSelectedLinkedUser] = useState<any>(null);
+  const [showUserSearchInEdit, setShowUserSearchInEdit] = useState(false);
+
   const [investorFormData, setInvestorFormData] = useState({
     name: "",
     email: "",
@@ -139,6 +168,10 @@ export default function AdminCrowdfunding() {
     paymentReference: "",
     paymentConfirmed: false,
   });
+  
+  // User search for register form
+  const [registerUserSearch, setRegisterUserSearch] = useState("");
+  const [selectedRegisterUser, setSelectedRegisterUser] = useState<any>(null);
   
   const [formData, setFormData] = useState({
     name: "",
@@ -158,12 +191,31 @@ export default function AdminCrowdfunding() {
     status: "DRAFT",
     targetDate: "",
     priority: 1,
+    // Modelo financiero
+    evgreenSharePercent: "30.00",
+    investorSharePercent: "70.00",
+    hostSharePercent: "10.00",
+    energyPurchaseCostPerKwh: "800.00",
+    hostName: "",
+    latitude: "",
+    longitude: "",
   });
 
   const { data: projects, isLoading, refetch } = trpc.crowdfunding.getAllProjects.useQuery();
   const { data: participations, refetch: refetchParticipations } = trpc.crowdfunding.getParticipations.useQuery(
     { projectId: selectedProject?.id || 0 },
     { enabled: !!selectedProject }
+  );
+  
+  // User search query
+  const { data: searchedUsers } = trpc.crowdfunding.searchUsers.useQuery(
+    { query: userSearchQuery },
+    { enabled: userSearchQuery.length >= 2 }
+  );
+  
+  const { data: registerSearchedUsers } = trpc.crowdfunding.searchUsers.useQuery(
+    { query: registerUserSearch },
+    { enabled: registerUserSearch.length >= 2 }
   );
   
   const createMutation = trpc.crowdfunding.createProject.useMutation({
@@ -214,6 +266,53 @@ export default function AdminCrowdfunding() {
     },
   });
 
+  const editParticipationMutation = trpc.crowdfunding.editParticipation.useMutation({
+    onSuccess: () => {
+      toast.success("Participación actualizada");
+      setShowEditParticipationDialog(false);
+      setEditingParticipation(null);
+      setSelectedLinkedUser(null);
+      refetchParticipations();
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Error al actualizar participación");
+    },
+  });
+
+  const deleteParticipationMutation = trpc.crowdfunding.deleteParticipation.useMutation({
+    onSuccess: () => {
+      toast.success("Participación eliminada");
+      refetchParticipations();
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Error al eliminar participación");
+    },
+  });
+
+  const deleteProjectMutation = trpc.crowdfunding.deleteProject.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`Proyecto "${data.deletedProject}" eliminado correctamente`);
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Error al eliminar proyecto");
+    },
+  });
+
+  const handleDeleteProject = (project: any) => {
+    const investorCount = project.investorCount || 0;
+    const hasInvestors = investorCount > 0;
+    const msg = hasInvestors
+      ? `¿Eliminar el proyecto "${project.name}" en ${project.city} - ${project.zone}?\n\n⚠️ ADVERTENCIA: Este proyecto tiene ${investorCount} inversionista(s). Se eliminarán TODAS las participaciones asociadas.\n\nEsta acción es irreversible.`
+      : `¿Eliminar el proyecto "${project.name}" en ${project.city} - ${project.zone}?\n\nEsta acción es irreversible.`;
+    
+    if (window.confirm(msg)) {
+      deleteProjectMutation.mutate({ projectId: project.id });
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       name: "",
@@ -233,6 +332,13 @@ export default function AdminCrowdfunding() {
       status: "DRAFT",
       targetDate: "",
       priority: 1,
+      evgreenSharePercent: "30.00",
+      investorSharePercent: "70.00",
+      hostSharePercent: "10.00",
+      energyPurchaseCostPerKwh: "800.00",
+      hostName: "",
+      latitude: "",
+      longitude: "",
     });
   };
 
@@ -249,6 +355,8 @@ export default function AdminCrowdfunding() {
       paymentReference: "",
       paymentConfirmed: false,
     });
+    setRegisterUserSearch("");
+    setSelectedRegisterUser(null);
   };
 
   const handleEdit = (project: Project) => {
@@ -271,13 +379,36 @@ export default function AdminCrowdfunding() {
       status: project.status,
       targetDate: project.targetDate ? new Date(project.targetDate).toISOString().split('T')[0] : "",
       priority: project.priority,
+      evgreenSharePercent: (project as any).evgreenSharePercent || "30.00",
+      investorSharePercent: (project as any).investorSharePercent || "70.00",
+      hostSharePercent: (project as any).hostSharePercent || "10.00",
+      energyPurchaseCostPerKwh: (project as any).energyPurchaseCostPerKwh || "800.00",
+      hostName: (project as any).hostName || "",
+      latitude: (project as any).latitude || "",
+      longitude: (project as any).longitude || "",
     });
   };
 
   const handleSubmit = () => {
+    // Validar que EVGreen + Inversionista sumen 100% (el aliado es % separado sobre margen bruto)
+    const evInvSum = parseFloat(formData.evgreenSharePercent || '0') + parseFloat(formData.investorSharePercent || '0');
+    if (Math.abs(evInvSum - 100) > 0.1) {
+      toast.error(`EVGreen + Inversionista deben sumar 100%. Actual: ${evInvSum.toFixed(2)}%. El % Aliado Comercial se aplica por separado sobre el margen bruto.`);
+      return;
+    }
+    const hostPctVal = parseFloat(formData.hostSharePercent || '0');
+    if (hostPctVal < 0 || hostPctVal > 50) {
+      toast.error(`El % del Aliado Comercial debe estar entre 0% y 50%. Actual: ${hostPctVal.toFixed(2)}%`);
+      return;
+    }
+
+    const { raisedAmount, ...rest } = formData;
     const data = {
-      ...formData,
+      ...rest,
       targetDate: formData.targetDate ? new Date(formData.targetDate) : undefined,
+      hostName: formData.hostName || undefined,
+      latitude: formData.latitude || undefined,
+      longitude: formData.longitude || undefined,
     };
 
     if (editingProject) {
@@ -296,6 +427,81 @@ export default function AdminCrowdfunding() {
     if (confirm("¿Confirmar el pago de esta participación?")) {
       confirmPaymentMutation.mutate({ participationId });
     }
+  };
+
+  const handleEditParticipation = (participation: Participation) => {
+    setEditingParticipation(participation);
+    setEditPartData({
+      amount: Number(participation.amount),
+      paymentStatus: participation.paymentStatus,
+      paymentReference: participation.paymentReference || "",
+    });
+    setSelectedLinkedUser(participation.investor ? {
+      id: participation.investor.id,
+      name: participation.investor.name,
+      email: participation.investor.email,
+    } : null);
+    setShowUserSearchInEdit(false);
+    setUserSearchQuery("");
+    setShowEditParticipationDialog(true);
+  };
+
+  const handleDeleteParticipation = (participationId: number) => {
+    if (confirm("¿Estás seguro de eliminar esta participación? Esta acción no se puede deshacer.")) {
+      deleteParticipationMutation.mutate({ participationId });
+    }
+  };
+
+  // Reenviar email de bienvenida
+  const resendWelcomeEmailMutation = trpc.onboarding.resendWelcomeEmail.useMutation({
+    onSuccess: () => {
+      toast.success("Email de bienvenida reenviado exitosamente");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Error al reenviar el email");
+    },
+  });
+
+  const handleResendWelcomeEmail = (userId: number) => {
+    if (confirm("¿Reenviar el email de bienvenida a este inversionista?")) {
+      resendWelcomeEmailMutation.mutate({ userId });
+    }
+  };
+
+  const handleSaveEditParticipation = () => {
+    if (!editingParticipation) return;
+    const mutationData: any = {
+      participationId: editingParticipation.id,
+    };
+    if (editPartData.amount !== Number(editingParticipation.amount)) {
+      mutationData.amount = editPartData.amount;
+    }
+    if (editPartData.paymentStatus !== editingParticipation.paymentStatus) {
+      mutationData.paymentStatus = editPartData.paymentStatus;
+    }
+    if (editPartData.paymentReference !== (editingParticipation.paymentReference || "")) {
+      mutationData.paymentReference = editPartData.paymentReference;
+    }
+    if (selectedLinkedUser && selectedLinkedUser.id !== editingParticipation.investorId) {
+      mutationData.investorId = selectedLinkedUser.id;
+    }
+    editParticipationMutation.mutate(mutationData);
+  };
+
+  // When user selects a registered user in the register form, auto-fill fields
+  const handleSelectRegisterUser = (user: any) => {
+    setSelectedRegisterUser(user);
+    setInvestorFormData({
+      ...investorFormData,
+      name: user.name || "",
+      email: user.email || "",
+      phone: user.phone || "",
+      companyName: user.companyName || "",
+      taxId: user.taxId || "",
+      bankAccount: user.bankAccount || "",
+      bankName: user.bankName || "",
+    });
+    setRegisterUserSearch("");
   };
 
   const formatCOP = (valor: number) => {
@@ -339,308 +545,375 @@ export default function AdminCrowdfunding() {
   const stats = {
     totalProjects: projects?.length || 0,
     activeProjects: projects?.filter(p => p.status === 'OPEN' || p.status === 'IN_PROGRESS').length || 0,
+    draftProjects: projects?.filter(p => p.status === 'DRAFT').length || 0,
     totalRaised: projects?.reduce((sum, p) => sum + Number(p.raisedAmount), 0) || 0,
     totalInvestors: projects?.reduce((sum, p) => sum + (p.investorCount || 0), 0) || 0,
   };
 
+  // Separar proyectos por categoría
+  const draftProjects = projects?.filter(p => p.status === 'DRAFT') || [];
+  const activeProjects = projects?.filter(p => p.status !== 'DRAFT') || [];
+
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Building2 className="w-6 h-6" />
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+            <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
             Gestión de Crowdfunding
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground mt-1">
             Administra proyectos de inversión colectiva y participaciones
           </p>
         </div>
-        <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
+        <Button onClick={() => { resetForm(); setShowCreateDialog(true); }} className="gap-2 w-full sm:w-auto">
           <Plus className="w-4 h-4" />
           Nuevo Proyecto
         </Button>
       </div>
 
       {/* Estadísticas */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Total Proyectos</p>
-              <p className="text-2xl font-bold">{stats.totalProjects}</p>
-            </div>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Building2 className="w-4 h-4 text-blue-500" />
+            <p className="text-xs text-muted-foreground">Proyectos</p>
           </div>
+          <p className="text-lg sm:text-2xl font-bold">{stats.totalProjects}</p>
         </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Activos</p>
-              <p className="text-2xl font-bold">{stats.activeProjects}</p>
-            </div>
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <TrendingUp className="w-4 h-4 text-amber-500" />
+            <p className="text-xs text-muted-foreground">Activos</p>
           </div>
+          <p className="text-lg sm:text-2xl font-bold">{stats.activeProjects}</p>
         </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Total Recaudado</p>
-              <p className="text-2xl font-bold">{formatCOPShort(stats.totalRaised)}</p>
-            </div>
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <DollarSign className="w-4 h-4 text-green-500" />
+            <p className="text-xs text-muted-foreground">Recaudado</p>
           </div>
+          <p className="text-lg sm:text-2xl font-bold">{formatCOPShort(stats.totalRaised)}</p>
         </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-              <Users className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Inversionistas</p>
-              <p className="text-2xl font-bold">{stats.totalInvestors}</p>
-            </div>
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <FileText className="w-4 h-4 text-gray-500" />
+            <p className="text-xs text-muted-foreground">Pendientes</p>
           </div>
+          <p className="text-lg sm:text-2xl font-bold">{stats.draftProjects}</p>
+        </Card>
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Users className="w-4 h-4 text-purple-500" />
+            <p className="text-xs text-muted-foreground">Inversionistas</p>
+          </div>
+          <p className="text-lg sm:text-2xl font-bold">{stats.totalInvestors}</p>
         </Card>
       </div>
 
-      {/* Tabla de proyectos */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Proyectos de Inversión Colectiva</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="text-center py-8">Cargando proyectos...</div>
-          ) : projects?.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No hay proyectos creados
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ciudad / Zona</TableHead>
-                  <TableHead>Progreso</TableHead>
-                  <TableHead>Inversionistas</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Fecha Objetivo</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {projects?.map((project) => {
-                  const porcentaje = (Number(project.raisedAmount) / Number(project.targetAmount)) * 100;
-                  return (
-                    <TableRow key={project.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-muted-foreground" />
-                          <div>
-                            <p className="font-medium">{project.city}</p>
-                            <p className="text-sm text-muted-foreground">{project.zone}</p>
-                          </div>
-                          {project.hasSolarPanels && (
-                            <Sun className="w-4 h-4 text-amber-500" />
+      {/* Lista de proyectos con tabs */}
+      {isLoading ? (
+        <div className="text-center py-8 text-muted-foreground">Cargando proyectos...</div>
+      ) : !projects || projects.length === 0 ? (
+        <Card className="p-8 text-center text-muted-foreground">
+          <Building2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+          <p>No hay proyectos creados</p>
+          <Button onClick={() => { resetForm(); setShowCreateDialog(true); }} className="mt-4 gap-2">
+            <Plus className="w-4 h-4" />
+            Crear primer proyecto
+          </Button>
+        </Card>
+      ) : (
+        <Tabs defaultValue="active" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="active" className="gap-2">
+              <TrendingUp className="w-4 h-4" />
+              Proyectos Activos ({activeProjects.length})
+            </TabsTrigger>
+            <TabsTrigger value="draft" className="gap-2">
+              <FileText className="w-4 h-4" />
+              Espacios Aprobados ({draftProjects.length})
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Tab: Proyectos Activos */}
+          <TabsContent value="active" className="mt-4">
+            {activeProjects.length === 0 ? (
+              <Card className="p-6 text-center text-muted-foreground">
+                <p>No hay proyectos activos</p>
+              </Card>
+            ) : (
+              <>
+                {/* Vista m\u00f3vil - tarjetas */}
+                <div className="sm:hidden space-y-3">
+                  {activeProjects.map((project: any) => (
+                    <Card key={project.id} className="p-4">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-sm truncate">{project.name || project.city}</h3>
+                          <p className="text-xs text-muted-foreground">{project.zone}</p>
+                          {project.linkedSpaceName && (
+                            <p className="text-xs text-blue-400 flex items-center gap-1 mt-1">
+                              <Link2 className="w-3 h-3" /> {project.linkedSpaceName}
+                            </p>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1 min-w-[150px]">
-                          <div className="flex justify-between text-sm">
-                            <span>{formatCOPShort(Number(project.raisedAmount))}</span>
-                            <span className="text-muted-foreground">/ {formatCOPShort(Number(project.targetAmount))}</span>
-                          </div>
-                          <Progress value={Math.min(porcentaje, 100)} className="h-2" />
-                          <p className="text-xs text-muted-foreground">{porcentaje.toFixed(1)}%</p>
+                        {getStatusBadge(project.status)}
+                      </div>
+                      <div className="space-y-2 mb-3">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Recaudado</span>
+                          <span className="font-medium">{formatCOPShort(Number(project.raisedAmount))} / {formatCOPShort(Number(project.targetAmount))}</span>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Users className="w-4 h-4 text-muted-foreground" />
-                          <span>{project.investorCount || 0}</span>
+                        <Progress value={(Number(project.raisedAmount) / Number(project.targetAmount)) * 100} className="h-2" />
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground flex items-center gap-1">
+                            <Users className="w-3 h-3" /> {project.investorCount || 0}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {project.targetDate ? new Date(project.targetDate).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Sin fecha'}
+                          </span>
                         </div>
-                      </TableCell>
-                      <TableCell>{getStatusBadge(project.status)}</TableCell>
-                      <TableCell>
-                        {project.targetDate 
-                          ? new Date(project.targetDate).toLocaleDateString('es-CO')
-                          : '-'
-                        }
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleViewParticipations(project)}
-                            className="gap-1"
-                          >
-                            <Eye className="w-4 h-4" />
-                            Ver
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEdit(project)}
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="flex-1 text-xs h-8" onClick={() => handleViewParticipations(project)}>
+                          <Eye className="w-3 h-3 mr-1" /> Ver
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-xs h-8 text-red-500 hover:text-red-600 hover:border-red-300" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Vista desktop - tabla */}
+                <div className="hidden sm:block">
+                  <Card>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Proyecto</TableHead>
+                          <TableHead>Meta</TableHead>
+                          <TableHead>Recaudado</TableHead>
+                          <TableHead>Inversionistas</TableHead>
+                          <TableHead>Estado</TableHead>
+                          <TableHead>Fecha Objetivo</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {activeProjects.map((project: any) => (
+                          <TableRow key={project.id}>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{project.name || project.city}</p>
+                                <p className="text-sm text-muted-foreground">{project.zone}</p>
+                                {project.linkedSpaceName && (
+                                  <p className="text-xs text-blue-400 flex items-center gap-1 mt-0.5">
+                                    <Link2 className="w-3 h-3" /> Espacio: {project.linkedSpaceName}
+                                  </p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{formatCOPShort(Number(project.targetAmount))}</TableCell>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <p className="font-medium text-green-600">{formatCOPShort(Number(project.raisedAmount))}</p>
+                                <Progress value={(Number(project.raisedAmount) / Number(project.targetAmount)) * 100} className="h-1.5 w-20" />
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Users className="w-4 h-4 text-muted-foreground" />
+                                {project.investorCount || 0}
+                              </div>
+                            </TableCell>
+                            <TableCell>{getStatusBadge(project.status)}</TableCell>
+                            <TableCell>
+                              {project.targetDate 
+                                ? new Date(project.targetDate).toLocaleDateString('es-CO')
+                                : '-'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button size="sm" variant="outline" onClick={() => handleViewParticipations(project)}>
+                                  <Eye className="w-4 h-4 mr-1" /> Ver
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => { handleEdit(project); setShowCreateDialog(true); }}>
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending} className="text-red-500 hover:text-red-600 hover:border-red-300" title="Eliminar proyecto">
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Card>
+                </div>
+              </>
+            )}
+          </TabsContent>
+
+          {/* Tab: Espacios Aprobados (DRAFT) */}
+          <TabsContent value="draft" className="mt-4">
+            {draftProjects.length === 0 ? (
+              <Card className="p-6 text-center text-muted-foreground">
+                <FileText className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                <p className="font-medium">No hay espacios pendientes de publicar</p>
+                <p className="text-sm mt-1">Cuando se apruebe un espacio en el panel de Espacios, aparecer\u00e1 aqu\u00ed autom\u00e1ticamente.</p>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                  <p className="text-sm text-amber-400 font-medium">Espacios aprobados pendientes de publicar al crowdfunding</p>
+                  <p className="text-xs text-muted-foreground mt-1">Estos proyectos fueron creados autom\u00e1ticamente al aprobar un espacio. Edita los datos financieros y publica cuando est\u00e9 listo.</p>
+                </div>
+                {draftProjects.map((project: any) => (
+                  <Card key={project.id} className="p-4 border-amber-500/20">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-sm truncate">{project.name || 'Sin nombre'}</h3>
+                          {getStatusBadge(project.status)}
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" /> {project.city} - {project.zone}
+                          </span>
+                          {project.linkedSpaceName && (
+                            <span className="flex items-center gap-1 text-blue-400">
+                              <Link2 className="w-3 h-3" /> Espacio: {project.linkedSpaceName}
+                            </span>
+                          )}
+                          {project.linkedSubmitterName && (
+                            <span className="flex items-center gap-1">
+                              <Users className="w-3 h-3" /> Postulante: {project.linkedSubmitterName}
+                            </span>
+                          )}
+                          {project.linkedSpaceStatus && (
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> Estado espacio: {project.linkedSpaceStatus}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-1">
+                          <span>Meta: {formatCOPShort(Number(project.targetAmount))}</span>
+                          <span>Potencia: {project.totalPowerKw || '?'} kW</span>
+                          <span>Cargadores: {project.chargerCount || '?'}</span>
+                          <span>Creado: {new Date(project.createdAt).toLocaleDateString('es-CO')}</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <Button size="sm" variant="outline" onClick={() => { handleEdit(project); setShowCreateDialog(true); }} className="gap-1">
+                          <Pencil className="w-3 h-3" /> Editar
+                        </Button>
+                        <Button size="sm" className="gap-1 bg-green-600 hover:bg-green-700" onClick={() => {
+                          handleEdit(project);
+                          setFormData(prev => ({ ...prev, status: 'OPEN' }));
+                          setShowCreateDialog(true);
+                        }}>
+                          <ArrowRight className="w-3 h-3" /> Publicar
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => handleDeleteProject(project)} disabled={deleteProjectMutation.isPending} className="text-red-500 hover:text-red-600 hover:border-red-300">
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      )}
 
       {/* Dialog para crear/editar proyecto */}
-      <Dialog open={showCreateDialog || !!editingProject} onOpenChange={(open) => {
-        if (!open) {
-          setShowCreateDialog(false);
-          setEditingProject(null);
-          resetForm();
-        }
+      <Dialog open={showCreateDialog} onOpenChange={(open) => {
+        if (!open) { setShowCreateDialog(false); setEditingProject(null); resetForm(); }
       }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingProject ? "Editar Proyecto" : "Nuevo Proyecto de Crowdfunding"}
+              {editingProject ? "Editar Proyecto" : "Nuevo Proyecto de Inversión"}
             </DialogTitle>
           </DialogHeader>
-          
+
           <Tabs defaultValue="general" className="w-full">
-            <TabsList className="grid grid-cols-3 w-full">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="technical">Técnico</TabsTrigger>
-              <TabsTrigger value="financial">Financiero</TabsTrigger>
+              <TabsTrigger value="financial">Inversión</TabsTrigger>
+              <TabsTrigger value="model">Modelo</TabsTrigger>
             </TabsList>
 
             <TabsContent value="general" className="space-y-4 mt-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
                   <Label>Nombre del Proyecto</Label>
-                  <Input
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Estación Premium Bogotá Norte"
-                  />
-                </div>
-                <div>
-                  <Label>Ciudad</Label>
-                  <Input
-                    value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    placeholder="Bogotá"
-                  />
-                </div>
-                <div>
-                  <Label>Zona</Label>
-                  <Input
-                    value={formData.zone}
-                    onChange={(e) => setFormData({ ...formData, zone: e.target.value })}
-                    placeholder="Usaquén / Zona Norte"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Label>Dirección (opcional)</Label>
-                  <Input
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    placeholder="Cra 7 # 116-50"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Label>Descripción</Label>
-                  <Textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Descripción del proyecto..."
-                    rows={3}
-                  />
+                  <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Electrolinera Norte" />
                 </div>
                 <div>
                   <Label>Estado</Label>
-                  <Select
-                    value={formData.status}
-                    onValueChange={(value) => setFormData({ ...formData, status: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                  <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {PROJECT_STATUSES.map((status) => (
-                        <SelectItem key={status.value} value={status.value}>
-                          {status.label}
-                        </SelectItem>
+                      {PROJECT_STATUSES.map(s => (
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
+                  <Label>Ciudad</Label>
+                  <Input value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} placeholder="Bogotá" />
+                </div>
+                <div>
+                  <Label>Zona</Label>
+                  <Input value={formData.zone} onChange={(e) => setFormData({ ...formData, zone: e.target.value })} placeholder="Zona Norte" />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label>Dirección</Label>
+                  <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="Cra 7 #123-45" />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label>Descripción</Label>
+                  <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Descripción del proyecto..." rows={3} />
+                </div>
+                <div>
                   <Label>Fecha Objetivo</Label>
-                  <Input
-                    type="date"
-                    value={formData.targetDate}
-                    onChange={(e) => setFormData({ ...formData, targetDate: e.target.value })}
-                  />
+                  <Input type="date" value={formData.targetDate} onChange={(e) => setFormData({ ...formData, targetDate: e.target.value })} />
                 </div>
                 <div>
                   <Label>Prioridad</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={formData.priority}
-                    onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
-                  />
+                  <Input type="number" min={1} max={10} value={formData.priority} onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })} />
                 </div>
               </div>
             </TabsContent>
 
             <TabsContent value="technical" className="space-y-4 mt-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>Potencia Total (kW)</Label>
+                  <Input type="number" value={formData.totalPowerKw} onChange={(e) => setFormData({ ...formData, totalPowerKw: parseInt(e.target.value) || 0 })} />
+                </div>
                 <div>
                   <Label>Cantidad de Cargadores</Label>
-                  <Input
-                    type="number"
-                    value={formData.chargerCount}
-                    onChange={(e) => setFormData({ ...formData, chargerCount: parseInt(e.target.value) || 4 })}
-                  />
+                  <Input type="number" value={formData.chargerCount} onChange={(e) => setFormData({ ...formData, chargerCount: parseInt(e.target.value) || 0 })} />
                 </div>
                 <div>
                   <Label>Potencia por Cargador (kW)</Label>
-                  <Input
-                    type="number"
-                    value={formData.chargerPowerKw}
-                    onChange={(e) => setFormData({ ...formData, chargerPowerKw: parseInt(e.target.value) || 120 })}
-                  />
-                </div>
-                <div>
-                  <Label>Potencia Total (kW)</Label>
-                  <Input
-                    type="number"
-                    value={formData.totalPowerKw}
-                    onChange={(e) => setFormData({ ...formData, totalPowerKw: parseInt(e.target.value) || 480 })}
-                  />
+                  <Input type="number" value={formData.chargerPowerKw} onChange={(e) => setFormData({ ...formData, chargerPowerKw: parseInt(e.target.value) || 0 })} />
                 </div>
                 <div className="flex items-center gap-3 pt-6">
-                  <Switch
-                    checked={formData.hasSolarPanels}
-                    onCheckedChange={(checked) => setFormData({ ...formData, hasSolarPanels: checked })}
-                  />
-                  <Label className="flex items-center gap-2">
-                    <Sun className="w-4 h-4 text-amber-500" />
-                    Incluye Paneles Solares
-                  </Label>
+                  <Switch checked={formData.hasSolarPanels} onCheckedChange={(v) => setFormData({ ...formData, hasSolarPanels: v })} />
+                  <Label className="flex items-center gap-2"><Sun className="w-4 h-4 text-yellow-500" /> Paneles Solares</Label>
                 </div>
               </div>
             </TabsContent>
@@ -649,51 +922,154 @@ export default function AdminCrowdfunding() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>Meta de Inversión (COP)</Label>
-                  <Input
-                    type="number"
-                    value={formData.targetAmount}
-                    onChange={(e) => setFormData({ ...formData, targetAmount: parseInt(e.target.value) || 1000000000 })}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formatCOP(formData.targetAmount)}
-                  </p>
-                </div>
-                <div>
-                  <Label>Monto Recaudado (COP)</Label>
-                  <Input
-                    type="number"
-                    value={formData.raisedAmount}
-                    onChange={(e) => setFormData({ ...formData, raisedAmount: parseInt(e.target.value) || 0 })}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formatCOP(formData.raisedAmount)} ({((formData.raisedAmount / formData.targetAmount) * 100).toFixed(1)}%)
-                  </p>
+                  <Input type="number" value={formData.targetAmount} onChange={(e) => setFormData({ ...formData, targetAmount: parseInt(e.target.value) || 0 })} />
+                  <p className="text-xs text-muted-foreground mt-1">{formatCOP(formData.targetAmount)}</p>
                 </div>
                 <div>
                   <Label>Inversión Mínima (COP)</Label>
-                  <Input
-                    type="number"
-                    value={formData.minimumInvestment}
-                    onChange={(e) => setFormData({ ...formData, minimumInvestment: parseInt(e.target.value) || 50000000 })}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formatCOP(formData.minimumInvestment)}
-                  </p>
+                  <Input type="number" value={formData.minimumInvestment} onChange={(e) => setFormData({ ...formData, minimumInvestment: parseInt(e.target.value) || 0 })} />
+                  <p className="text-xs text-muted-foreground mt-1">{formatCOP(formData.minimumInvestment)}</p>
                 </div>
                 <div>
                   <Label>ROI Estimado (%)</Label>
-                  <Input
-                    type="number"
-                    value={formData.estimatedRoiPercent}
-                    onChange={(e) => setFormData({ ...formData, estimatedRoiPercent: parseInt(e.target.value) || 85 })}
-                  />
+                  <Input type="number" value={formData.estimatedRoiPercent} onChange={(e) => setFormData({ ...formData, estimatedRoiPercent: parseInt(e.target.value) || 0 })} />
                 </div>
                 <div>
                   <Label>Payback Estimado (meses)</Label>
+                  <Input type="number" value={formData.estimatedPaybackMonths} onChange={(e) => setFormData({ ...formData, estimatedPaybackMonths: parseInt(e.target.value) || 0 })} />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="model" className="space-y-4 mt-4">
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 mb-4">
+                <h4 className="text-sm font-semibold text-emerald-400 mb-1">Modelo Financiero de la Estación</h4>
+                <p className="text-xs text-muted-foreground">Modelo: Ingresos - Costo energía = Margen bruto → Aliado Comercial (% del margen) → Neto → EVGreen + Inversionista (suman 100% entre ellos).</p>
+              </div>
+
+              {/* EVGreen + Inversionista = 100% del neto */}
+              <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 mb-2">
+                <p className="text-xs font-semibold text-blue-400">Reparto del Neto (EVGreen + Inversionista = 100%)</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-emerald-400">% EVGreen</Label>
                   <Input
                     type="number"
-                    value={formData.estimatedPaybackMonths}
-                    onChange={(e) => setFormData({ ...formData, estimatedPaybackMonths: parseInt(e.target.value) || 14 })}
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={formData.evgreenSharePercent}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const remaining = 100 - parseFloat(val || '0');
+                      setFormData({
+                        ...formData,
+                        evgreenSharePercent: val,
+                        investorSharePercent: Math.max(0, remaining).toFixed(2),
+                      });
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Comisión plataforma (del neto después del aliado)</p>
+                </div>
+                <div>
+                  <Label className="text-blue-400">% Inversionistas</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={formData.investorSharePercent}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const remaining = 100 - parseFloat(val || '0');
+                      setFormData({
+                        ...formData,
+                        investorSharePercent: val,
+                        evgreenSharePercent: Math.max(0, remaining).toFixed(2),
+                      });
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Retorno a inversionistas (del neto después del aliado)</p>
+                </div>
+              </div>
+
+              {/* Aliado Comercial - % separado */}
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 mb-2 mt-4">
+                <p className="text-xs font-semibold text-amber-400">% Aliado Comercial (sobre Margen Bruto)</p>
+                <p className="text-[10px] text-muted-foreground">Se descuenta primero del margen bruto. El restante se reparte entre EVGreen e Inversionista.</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-amber-400">% Aliado Comercial</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="50"
+                    value={formData.hostSharePercent}
+                    onChange={(e) => setFormData({ ...formData, hostSharePercent: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Dueño del espacio (0-50%)</p>
+                </div>
+              </div>
+
+              {/* Validación */}
+              {(() => {
+                const evInvSum = parseFloat(formData.evgreenSharePercent || '0') + parseFloat(formData.investorSharePercent || '0');
+                const hostPct = parseFloat(formData.hostSharePercent || '0');
+                const isEvInvValid = Math.abs(evInvSum - 100) < 0.1;
+                const isHostValid = hostPct >= 0 && hostPct <= 50;
+                const isValid = isEvInvValid && isHostValid;
+                return (
+                  <div className={`space-y-1 text-sm px-3 py-2 rounded-md ${isValid ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                    <div className="flex items-center gap-2">
+                      {isEvInvValid ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                      EVGreen + Inversionista: {evInvSum.toFixed(2)}% {isEvInvValid ? '— Suma 100%' : '— Deben sumar 100%'}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isHostValid ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                      Aliado Comercial: {hostPct.toFixed(2)}% {isHostValid ? '— Válido (0-50%)' : '— Máximo 50%'}
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <Label>Costo Energía (COP/kWh)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.energyPurchaseCostPerKwh}
+                    onChange={(e) => setFormData({ ...formData, energyPurchaseCostPerKwh: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Costo de compra de energía al operador de red</p>
+                </div>
+                <div>
+                  <Label>Nombre Aliado Comercial</Label>
+                  <Input
+                    value={formData.hostName}
+                    onChange={(e) => setFormData({ ...formData, hostName: e.target.value })}
+                    placeholder="Nombre del dueño del espacio"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Opcional: dueño del sitio donde se instala</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>Latitud</Label>
+                  <Input
+                    value={formData.latitude}
+                    onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                    placeholder="4.6097"
+                  />
+                </div>
+                <div>
+                  <Label>Longitud</Label>
+                  <Input
+                    value={formData.longitude}
+                    onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                    placeholder="-74.0817"
                   />
                 </div>
               </div>
@@ -717,17 +1093,17 @@ export default function AdminCrowdfunding() {
 
       {/* Dialog para ver participaciones */}
       <Dialog open={showParticipationsDialog} onOpenChange={setShowParticipationsDialog}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:!max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
               <Users className="w-5 h-5" />
-              Participaciones - {selectedProject?.city} ({selectedProject?.zone})
+              <span className="truncate">Participaciones - {selectedProject?.city} ({selectedProject?.zone})</span>
             </DialogTitle>
           </DialogHeader>
 
           {selectedProject && (
             <div className="space-y-4">
-              {/* Botón de registro - visible en móvil arriba */}
+              {/* Botón de registro */}
               <div className="flex justify-end">
                 <Button
                   onClick={() => {
@@ -737,14 +1113,13 @@ export default function AdminCrowdfunding() {
                   className="gap-2 bg-green-600 hover:bg-green-700 w-full sm:w-auto"
                 >
                   <UserPlus className="w-4 h-4" />
-                  <span className="hidden sm:inline">Registrar Inversionista</span>
-                  <span className="sm:hidden">Nuevo Inversionista</span>
+                  Registrar Inversionista
                 </Button>
               </div>
 
-              {/* Resumen del proyecto - responsive */}
+              {/* Resumen del proyecto */}
               <Card className="p-3 sm:p-4 bg-muted/50">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
                   <div className="flex justify-between sm:block">
                     <p className="text-muted-foreground">Meta</p>
                     <p className="font-bold text-right sm:text-left">{formatCOP(Number(selectedProject.targetAmount))}</p>
@@ -774,13 +1149,13 @@ export default function AdminCrowdfunding() {
                     {participations.map((participation: any) => (
                       <Card key={participation.id} className="p-3">
                         <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <p className="font-medium text-sm">{participation.investor?.name || 'N/A'}</p>
-                            <p className="text-xs text-muted-foreground">{participation.investor?.email || ''}</p>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">{participation.investor?.name || 'Sin nombre'}</p>
+                            <p className="text-xs text-muted-foreground truncate">{participation.investor?.email || ''}</p>
                           </div>
                           {getPaymentStatusBadge(participation.paymentStatus)}
                         </div>
-                        <div className="grid grid-cols-2 gap-2 text-sm mb-2">
+                        <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                           <div>
                             <p className="text-muted-foreground text-xs">Monto</p>
                             <p className="font-bold">{formatCOP(Number(participation.amount))}</p>
@@ -790,27 +1165,57 @@ export default function AdminCrowdfunding() {
                             <Badge variant="outline">{Number(participation.participationPercent).toFixed(1)}%</Badge>
                           </div>
                         </div>
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center gap-2">
                           <p className="text-xs text-muted-foreground">
                             {new Date(participation.createdAt).toLocaleDateString('es-CO')}
                           </p>
-                          {participation.paymentStatus === 'PENDING' && (
+                          <div className="flex gap-1">
+                            {participation.paymentStatus === 'PENDING' && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleConfirmPayment(participation.id)}
+                                className="gap-1 text-xs h-7 px-2"
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                Confirmar
+                              </Button>
+                            )}
+                            {participation.paymentStatus === 'COMPLETED' && participation.investor?.id && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleResendWelcomeEmail(participation.investor.id)}
+                                className="h-7 px-2 gap-1 text-xs text-blue-500 hover:text-blue-600 hover:border-blue-300"
+                                title="Reenviar email de bienvenida"
+                              >
+                                <Send className="w-3 h-3" />
+                                Email
+                              </Button>
+                            )}
                             <Button
                               size="sm"
-                              onClick={() => handleConfirmPayment(participation.id)}
-                              className="gap-1 text-xs h-8"
+                              variant="outline"
+                              onClick={() => handleEditParticipation(participation)}
+                              className="h-7 w-7 p-0"
                             >
-                              <CheckCircle2 className="w-3 h-3" />
-                              Confirmar
+                              <Pencil className="w-3 h-3" />
                             </Button>
-                          )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDeleteParticipation(participation.id)}
+                              className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:border-red-300"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </div>
                       </Card>
                     ))}
                   </div>
 
                   {/* Vista desktop - tabla */}
-                  <div className="hidden sm:block">
+                  <div className="hidden sm:block overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -827,7 +1232,7 @@ export default function AdminCrowdfunding() {
                           <TableRow key={participation.id}>
                             <TableCell>
                               <div>
-                                <p className="font-medium">{participation.investor?.name || 'N/A'}</p>
+                                <p className="font-medium">{participation.investor?.name || 'Sin nombre'}</p>
                                 <p className="text-sm text-muted-foreground">{participation.investor?.email || ''}</p>
                               </div>
                             </TableCell>
@@ -846,16 +1251,47 @@ export default function AdminCrowdfunding() {
                               {new Date(participation.createdAt).toLocaleDateString('es-CO')}
                             </TableCell>
                             <TableCell className="text-right">
-                              {participation.paymentStatus === 'PENDING' && (
+                              <div className="flex gap-1 justify-end">
+                                {participation.paymentStatus === 'PENDING' && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleConfirmPayment(participation.id)}
+                                    className="gap-1"
+                                  >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    Confirmar
+                                  </Button>
+                                )}
+                                {participation.paymentStatus === 'COMPLETED' && participation.investor?.id && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleResendWelcomeEmail(participation.investor.id)}
+                                    className="gap-1 text-blue-500 hover:text-blue-600 hover:border-blue-300"
+                                    title="Reenviar email de bienvenida"
+                                  >
+                                    <Send className="w-4 h-4" />
+                                    Email
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
-                                  onClick={() => handleConfirmPayment(participation.id)}
-                                  className="gap-1"
+                                  variant="outline"
+                                  onClick={() => handleEditParticipation(participation)}
+                                  title="Editar participación"
                                 >
-                                  <CheckCircle2 className="w-4 h-4" />
-                                  Confirmar Pago
+                                  <Pencil className="w-4 h-4" />
                                 </Button>
-                              )}
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleDeleteParticipation(participation.id)}
+                                  className="text-red-500 hover:text-red-600 hover:border-red-300"
+                                  title="Eliminar participación"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -864,6 +1300,164 @@ export default function AdminCrowdfunding() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para editar participación */}
+      <Dialog open={showEditParticipationDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowEditParticipationDialog(false);
+          setEditingParticipation(null);
+          setSelectedLinkedUser(null);
+          setShowUserSearchInEdit(false);
+          setUserSearchQuery("");
+        }
+      }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="w-5 h-5" />
+              Editar Participación
+            </DialogTitle>
+          </DialogHeader>
+
+          {editingParticipation && (
+            <div className="space-y-4">
+              {/* Inversionista vinculado */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Inversionista Vinculado</Label>
+                {selectedLinkedUser && !showUserSearchInEdit ? (
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{selectedLinkedUser.name || 'Sin nombre'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{selectedLinkedUser.email}</p>
+                      {selectedLinkedUser.role && (
+                        <Badge variant="outline" className="mt-1 text-xs">{selectedLinkedUser.role}</Badge>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowUserSearchInEdit(true)}
+                      className="gap-1 ml-2 shrink-0"
+                    >
+                      <Link2 className="w-3 h-3" />
+                      Cambiar
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        className="pl-10"
+                        placeholder="Buscar por nombre o correo..."
+                        value={userSearchQuery}
+                        onChange={(e) => setUserSearchQuery(e.target.value)}
+                      />
+                      {showUserSearchInEdit && selectedLinkedUser && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                          onClick={() => { setShowUserSearchInEdit(false); setUserSearchQuery(""); }}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+                    {searchedUsers && searchedUsers.length > 0 && userSearchQuery.length >= 2 && (
+                      <div className="border rounded-lg max-h-40 overflow-y-auto">
+                        {searchedUsers.map((user: any) => (
+                          <button
+                            key={user.id}
+                            className="w-full text-left px-3 py-2 hover:bg-muted/50 border-b last:border-b-0 transition-colors"
+                            onClick={() => {
+                              setSelectedLinkedUser(user);
+                              setShowUserSearchInEdit(false);
+                              setUserSearchQuery("");
+                            }}
+                          >
+                            <p className="text-sm font-medium truncate">{user.name || 'Sin nombre'}</p>
+                            <p className="text-xs text-muted-foreground truncate">{user.email} - <Badge variant="outline" className="text-[10px] py-0">{user.role}</Badge></p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {userSearchQuery.length >= 2 && searchedUsers && searchedUsers.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-2">No se encontraron usuarios</p>
+                    )}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Al vincular un usuario registrado, se le asignará automáticamente el rol de inversionista.
+                </p>
+              </div>
+
+              {/* Monto */}
+              <div>
+                <Label className="text-sm">Monto de Inversión (COP)</Label>
+                <Input
+                  type="number"
+                  value={editPartData.amount}
+                  onChange={(e) => setEditPartData({ ...editPartData, amount: parseInt(e.target.value) || 0 })}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formatCOP(editPartData.amount)}
+                  {selectedProject && ` (${((editPartData.amount / Number(selectedProject.targetAmount)) * 100).toFixed(2)}%)`}
+                </p>
+              </div>
+
+              {/* Estado de pago */}
+              <div>
+                <Label className="text-sm">Estado de Pago</Label>
+                <Select value={editPartData.paymentStatus} onValueChange={(v) => setEditPartData({ ...editPartData, paymentStatus: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_STATUSES.map(s => (
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Referencia de pago */}
+              <div>
+                <Label className="text-sm">Referencia de Pago</Label>
+                <Input
+                  value={editPartData.paymentReference}
+                  onChange={(e) => setEditPartData({ ...editPartData, paymentReference: e.target.value })}
+                  placeholder="Ref. transferencia"
+                />
+              </div>
+
+              <DialogFooter className="flex-col sm:flex-row gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowEditParticipationDialog(false);
+                    setEditingParticipation(null);
+                    setSelectedLinkedUser(null);
+                  }}
+                  className="w-full sm:w-auto"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleSaveEditParticipation}
+                  disabled={editParticipationMutation.isPending}
+                  className="gap-2 w-full sm:w-auto"
+                >
+                  {editParticipationMutation.isPending ? (
+                    <Clock className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  Guardar Cambios
+                </Button>
+              </DialogFooter>
             </div>
           )}
         </DialogContent>
@@ -890,6 +1484,64 @@ export default function AdminCrowdfunding() {
             }}
             className="space-y-6"
           >
+            {/* Buscar usuario existente */}
+            <div className="space-y-3 p-3 sm:p-4 bg-muted/30 rounded-lg border border-dashed">
+              <h3 className="font-semibold flex items-center gap-2 text-sm">
+                <Search className="w-4 h-4" />
+                Vincular con usuario registrado (opcional)
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Busca un usuario ya registrado en la plataforma para vincular su cuenta. Se le asignará el rol de inversionista automáticamente.
+              </p>
+              {selectedRegisterUser ? (
+                <div className="flex items-center justify-between p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm text-green-700 dark:text-green-400 truncate">{selectedRegisterUser.name || 'Sin nombre'}</p>
+                    <p className="text-xs text-muted-foreground truncate">{selectedRegisterUser.email} - Rol: {selectedRegisterUser.role}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSelectedRegisterUser(null);
+                      setRegisterUserSearch("");
+                    }}
+                    className="shrink-0 ml-2"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      className="pl-10"
+                      placeholder="Buscar por nombre o correo..."
+                      value={registerUserSearch}
+                      onChange={(e) => setRegisterUserSearch(e.target.value)}
+                    />
+                  </div>
+                  {registerSearchedUsers && registerSearchedUsers.length > 0 && registerUserSearch.length >= 2 && (
+                    <div className="border rounded-lg max-h-32 overflow-y-auto">
+                      {registerSearchedUsers.map((user: any) => (
+                        <button
+                          type="button"
+                          key={user.id}
+                          className="w-full text-left px-3 py-2 hover:bg-muted/50 border-b last:border-b-0 transition-colors"
+                          onClick={() => handleSelectRegisterUser(user)}
+                        >
+                          <p className="text-sm font-medium truncate">{user.name || 'Sin nombre'}</p>
+                          <p className="text-xs text-muted-foreground truncate">{user.email} - {user.role}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Datos Personales */}
             <div className="space-y-4">
               <h3 className="font-semibold flex items-center gap-2 text-sm text-muted-foreground">
@@ -1064,8 +1716,7 @@ export default function AdminCrowdfunding() {
                 ) : (
                   <UserPlus className="w-4 h-4" />
                 )}
-                <span className="hidden sm:inline">Registrar Inversionista</span>
-                <span className="sm:hidden">Registrar</span>
+                Registrar Inversionista
               </Button>
             </DialogFooter>
           </form>

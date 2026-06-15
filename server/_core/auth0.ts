@@ -60,7 +60,11 @@ function getOrigin(req: Request): string {
   const proto = req.headers["x-forwarded-proto"]
     ? String(req.headers["x-forwarded-proto"]).split(",")[0].trim()
     : req.protocol;
-  const host = req.get("host") || "localhost";
+  // Cloud Run / reverse proxies set x-forwarded-host with the original domain
+  const forwardedHost = req.headers["x-forwarded-host"]
+    ? String(req.headers["x-forwarded-host"]).split(",")[0].trim()
+    : null;
+  const host = forwardedHost || req.get("host") || "localhost";
   return `${proto}://${host}`;
 }
 
