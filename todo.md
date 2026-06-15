@@ -3568,3 +3568,11 @@
 - [x] Crear panel de superadmin /admin/organizations para gestionar organizaciones y precios
 - [x] Agregar menú "Organizaciones SaaS" en sidebar admin
 - [x] Crear middleware de tenant context (tenant-middleware.ts: resolveTenantContext, getEffectiveFees, canAddCharger, getOrgBranding)
+
+## BUG FIX: Cargadores AC - Carga prematura y tarifa de ocupación indebida
+- [x] FIX: No tratar SuspendedEV como Finishing en StatusNotification (index.ts línea 997)
+- [x] FIX: overstay-monitor scanForUnmonitoredOverstay no debe incluir SUSPENDED_EV
+- [x] FIX: onChargingFinished debe verificar que la transacción esté COMPLETED antes de iniciar overstay
+- [x] FIX: Reducir LOW_POWER_THRESHOLD_KW de 0.5 a 0.15 kW (casi cero corriente, evitar falsos positivos en taper AC)
+- [x] FIX: Aumentar LOW_POWER_DURATION_MS de 5 min a 10 min (la fase taper AC puede durar más)
+- [x] FIX: Umbrales conservadores aplican a todos los cargadores (0.15 kW es seguro para AC y DC)

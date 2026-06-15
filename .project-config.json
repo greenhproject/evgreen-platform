@@ -12,15 +12,18 @@
   "experiments": null,
   "git_remote": {
     "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663169336317/UcUrociZeo4QVAHHN9vAuZ",
-    "access_key_id": "ASIAZV3A2ECZETVFARLA",
-    "secret_access_key": "PyFJkQXWFWIAi3CkD0JX5KOE8doyxvl0xaDTrIbs",
-    "session_token": "IQoJb3JpZ2luX2VjELD//////////wEaCXVzLWVhc3QtMSJGMEQCIEpS4x9dez4uAXF64KEPuOqstJ2P+7z6fT4teEwOVX9uAiB7qZP1xDPgGo7MwaodWd/5t09zckLirjsuMPsCOgawJyr1Awh4EAQaDDY2NTM4NjA5ODg2NiIMtw0YCTjXfKtNbmISKtIDUOzAuvNKOvTomaCFuEloQWET9cQr+P8jC0pO+Q3Diq7bRF14mtfN1c3ee0xrG0fpMuVem5tUA0+nbb7vgPie6PV8dT7NLTUr7KqScHLlk84L4Rgfd9vIdjeL4uUrLAEg+4BV5/VtyDmPtSmSBLlU8VmmVgMh90HJZF4HP/WeEaXD49VZ/XZnc3URjT4KPL58ZpsaccBehLCWiwaEU0k/L600TfbmbqezJ7nR0WhhjYjG0Zy4/uLMrO0r1DDxM5nT0j5+WXst8dX8voMqzuk27gaNexHVVBD9RtufkkxR9w3ms6dvB33Jkg2IU6xn0suFn8hEy5oneQT8UkQHzqh/r9zF6FdNtLwtaGE1TWIZilZws+42sXoevM0AoLvSK6t/OAlzPqfISkWxAI7eXImzmfFJgWoUOuwWuiRRBBys6L0ymcdO+VcmoMZmB545TKJ/eJcp7afJDrbpd1JQ9AdUVkdC3sfXJDK7tDcIqvUiG00RuOO7gHNCVGGi23CFuGZ2cz6RaBmWtiQv5yC6ZKQfZCtyv6GDjUqb73iU+m2n6l4LHMJ9nj2Da20ISZOgCqOZhvj11UwyQok3K0nGVpndr53CBREFpEsFZfr8xIEzoyvtujD8r43RBjqeAVFblErL8CAjxri8VsxZJQt08Rg7V6RvudTVdomko6EoqZTmKP8F4AvZY8F/5S6i0VS2IfBteypVnxt53Mtd4WyXuKV38TZVoLG/tZiBs91sLfC1dvphq7nkehQirJob2vc87GWLyb4kdu4NlbRjLNYOP1yEyGSfs+gDq/ztRSSBIEX8Z5jWgq+OOUIDs5e0M8DD9fEH+xIJDV2Daag8",
-    "expiration": "2026-06-06T11:13:00.000Z"
+    "access_key_id": "ASIAZV3A2ECZA3F226VM",
+    "secret_access_key": "v1BMeQ4GGaZsiiBZoCYY/kmk5KgR8H2T7lsZxJxp",
+    "session_token": "IQoJb3JpZ2luX2VjEJv//////////wEaCXVzLWVhc3QtMSJHMEUCIFWtLMVNZxGHxaGYwmxIqnVzQ28BHK1VsqNbF8NPKpUuAiEAygN2Ofknk2ud5PZdZSBhsyd9c6JRkAApizqvtshikqAq9QMIZBAEGgw2NjUzODYwOTg4NjYiDH6CLY0uyUrlPPpA7CrSA6eW84ycFc6LCOlpsimJCfGf6qQQN7hmKBc5aGUusljrzdrbnfLKwoKHHmpB1OI0w3WhdbzRZ4mnGpba7LaOWMIHZDedWZPXiGM3pVJg8vvDWsgIm+pSmgP9Yf/tc0YMe/VjEMty8msOCJblLcl9YS4SerdTCrSLapQ0JUczQ0V9tjdmw3RavNA3IrWrM9qxObjpdNs73o/SuQeZCCK/Dp0tey6pE9d7Gnto4OH/NrpD3/qtcE9F5izV+cqScMgafuBYQRqIhBFCUHCbmiGbYfckaq8hqgcjAMS+yHQdUyzKtkVYYKjcHBhH5yDr2fIkEcnrytrfgm0KqBJzcfPX34X3koe0fWTefKSFerHAt5IP1f+UIyu+1ZmeZokG5tPekFl7W+VeCorxvHuThSfkiE7kV/l6133jh1/6u9dMAQ5acTqrhE7VI+c3W0YOuWmwi/SptZFS6U/m1/D1KbJ54ZjuuRxnmNXNl5zwhOMiFuSGyetEcpY2XQI4DI36mkN9Pm+8R3coaaOnFwyqnCV5hIs4SrKot4J1lnyWNY3AsYnYlBnxa3q3poBhxAejjGkYjZ8QyzioQOtncjPPj7xP4Kdmd1SQfnbpA5PEKQIcwD4lFvkwpYnB0QY6nQFj1omPFSGfcstIjdFVXIEiNela3RVcSichd0Z6JBeqcklGIFB1P/8JSKm/nGozd5wxxykX3eTEWErZUjCEpLNO8hDW9Ao6pTD0AN43V5Ect0dmvUizTEhf20ALADVnn5MRG6Z/CE6aVX/5OMgIBey3DFGeM1GdpInwmAank7+Sdv9dwYWahonsQV5mVzn2NkuFNKDu4ujJeTGjk//5",
+    "expiration": "2026-06-16T06:29:57.000Z"
   },
   "name": "green-ev-platform",
   "path": "/home/ubuntu/green-ev-platform",
   "port": 3000,
   "secrets": {
+    "AUTH0_CLIENT_ID": "qpTiPH0I5vP0RS6GnVSd2v9gEY626Jwx",
+    "AUTH0_CLIENT_SECRET": "MnODAAuzftVTnhmuzbr72O3dwvXGVkuIHwqR27YW9j_FsolDnTyzsHXKNXKSirCG",
+    "AUTH0_DOMAIN": "dev-uraxrvro1df76ac3.us.auth0.com",
     "BUILT_IN_FORGE_API_KEY": "BWdLNt7KyvSoyZX4TKsGYH",
     "BUILT_IN_FORGE_API_URL": "https://forge.manus.ai",
     "FIREBASE_CLIENT_EMAIL": "firebase-adminsdk-fbsvc@evgreen-app.iam.gserviceaccount.com",

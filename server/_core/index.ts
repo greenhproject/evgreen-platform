@@ -994,8 +994,11 @@ async function handleOCPP16Message(
           }
           
           // OVERSTAY: Detectar transición a Finishing (carga completada, cable conectado)
-          if (payload.status === "Finishing" || payload.status === "SuspendedEV") {
-            console.log(`[OCPP] StatusNotification - EVSE ${evse.id} entered ${payload.status}, starting overstay tracking`);
+          // IMPORTANTE: Solo "Finishing" indica carga completada. "SuspendedEV" significa que el
+          // BMS del vehículo redujo/pausó la corriente temporalmente (fase taper en AC, ~80-90% SoC)
+          // y NO debe disparar overstay porque el carro puede seguir cargando.
+          if (payload.status === "Finishing") {
+            console.log(`[OCPP] StatusNotification - EVSE ${evse.id} entered Finishing, starting overstay tracking`);
             onChargingFinished(evse.id, resolvedStationId).catch(err => 
               console.error(`[OCPP] Error starting overstay tracking:`, err)
             );

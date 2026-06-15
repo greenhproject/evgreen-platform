@@ -1842,11 +1842,14 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   
   // ============================================================
   // DETECCIÓN DE BATERÍA LLENA POR CAÍDA DE POTENCIA
-  // Si la potencia cae a < 0.5 kW por más de 5 min en cargadores AC,
-  // la batería probablemente está llena (la curva CC-CV termina)
+  // En cargadores AC, la fase "taper" (CV) reduce la corriente gradualmente.
+  // Un carro puede estar a 0.3-0.5 kW durante 15-30 min entre 85-100% SoC.
+  // UMBRAL CONSERVADOR: Solo declarar batería llena si la potencia es casi cero
+  // (< 0.15 kW = ~0.6A en 220V) durante al menos 10 minutos.
+  // Esto evita falsos positivos durante la fase taper normal.
   // ============================================================
-  const LOW_POWER_THRESHOLD_KW = 0.5; // kW - umbral de potencia baja
-  const LOW_POWER_DURATION_MS = 5 * 60 * 1000; // 5 minutos
+  const LOW_POWER_THRESHOLD_KW = 0.15; // kW - umbral MUY bajo (casi cero corriente)
+  const LOW_POWER_DURATION_MS = 10 * 60 * 1000; // 10 minutos (antes era 5)
   const currentPowerVal = data.currentPower !== undefined ? data.currentPower : session.currentPower;
   
   if (currentPowerVal < LOW_POWER_THRESHOLD_KW && session.currentKwh > 0.5) {
