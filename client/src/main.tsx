@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { UNAUTHED_ERR_MSG } from '@shared/const';
+import { UNAUTHED_ERR_MSG, COOKIE_NAME, ONE_YEAR_MS } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -8,6 +8,44 @@ import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
+
+// ============================================
+// MANEJO DE TOKEN NATIVO (Capacitor Deep Linking)
+// ============================================
+import { App as CapacitorApp } from '@capacitor/app';
+
+const processToken = (urlStr: string) => {
+  try {
+    const url = new URL(urlStr);
+    const token = url.searchParams.get('token');
+    if (token) {
+      console.log("[Auth] Token recibido vía Deep Link:", token.substring(0, 10) + "...");
+      const expires = new Date(Date.now() + ONE_YEAR_MS).toUTCString();
+      document.cookie = `${COOKIE_NAME}=${token}; expires=${expires}; path=/; SameSite=Lax`;
+
+      // Forzar recarga o redirección interna para que el estado de auth se actualice
+      window.location.href = "/";
+    }
+  } catch (e) {
+    console.error("[Auth] Error procesando URL de Deep Link", e);
+  }
+};
+
+// 1. Manejar URL de inicio (si la app estaba cerrada)
+CapacitorApp.getLaunchUrl().then((launchUrl) => {
+  if (launchUrl?.url) processToken(launchUrl.url);
+});
+
+// 2. Escuchar nuevas URLs (si la app estaba abierta en segundo plano)
+CapacitorApp.addListener('appUrlOpen', (data) => {
+  console.log("[Auth] App abierta con URL:", data.url);
+  processToken(data.url);
+});
+
+// También mantener la comprobación clásica por si acaso
+if (typeof window !== 'undefined' && window.location.search.includes('token')) {
+  processToken(window.location.href);
+}
 
 // ============================================
 // QueryClient con defaults robustos
@@ -73,13 +111,26 @@ const trpcClient = trpc.createClient({
       url: getApiUrl("/api/trpc"),
       transformer: superjson,
       fetch(input, init) {
-        // Agregar AbortController con timeout de 15s para evitar peticiones colgadas
+        // Obtener el token de las cookies o localStorage
+        const cookies = document.cookie.split('; ').reduce((prev: any, current) => {
+          const [name, value] = current.split('=');
+          prev[name] = value;
+          return prev;
+        }, {});
+        const token = cookies[COOKIE_NAME];
+
+        // Agregar AbortController con timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
         
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
+          headers: {
+            ...(init?.headers ?? {}),
+            // Enviar token explícitamente en el header para evitar líos de cookies en móvil
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           signal: controller.signal,
         }).finally(() => {
           clearTimeout(timeoutId);

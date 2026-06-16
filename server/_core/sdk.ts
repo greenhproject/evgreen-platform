@@ -257,13 +257,22 @@ class SDKServer {
   }
 
   async authenticateRequest(req: Request): Promise<User> {
-    // Regular authentication flow
+    // Intentar obtener el token de: 1. Cookies, 2. Header Authorization, 3. Query params
     const cookies = this.parseCookies(req.headers.cookie);
-    const sessionCookie = cookies.get(COOKIE_NAME);
+    let sessionCookie = cookies.get(COOKIE_NAME);
+
+    if (!sessionCookie && req.headers.authorization?.startsWith("Bearer ")) {
+      sessionCookie = req.headers.authorization.substring(7);
+    }
+
+    if (!sessionCookie && req.query.token) {
+      sessionCookie = req.query.token as string;
+    }
+
     const session = await this.verifySession(sessionCookie);
 
     if (!session) {
-      throw ForbiddenError("Invalid session cookie");
+      throw ForbiddenError("Invalid session cookie or token");
     }
 
     const sessionUserId = session.openId;

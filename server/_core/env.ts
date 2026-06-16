@@ -10,8 +10,9 @@ export const ENV = {
   // Auth0 configuration
   auth0Domain: process.env.AUTH0_DOMAIN ?? "",
   auth0ClientId: process.env.AUTH0_CLIENT_ID ?? "",
-  auth0MobileClientId: process.env.AUTH0_MOBILE_CLIENT_ID ?? "kdW7jFTGBAOqNV36tIJn1naCFuqp6kJV",
+  auth0MobileClientId: process.env.AUTH0_MOBILE_CLIENT_ID ?? "", // Eliminado el ID hardcoded
   auth0ClientSecret: process.env.AUTH0_CLIENT_SECRET ?? "",
+  mobileAppScheme: process.env.MOBILE_APP_SCHEME ?? "com.greenhproject.evgreen",
 };
 
 // Alias para compatibilidad

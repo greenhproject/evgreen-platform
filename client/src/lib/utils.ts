@@ -11,11 +11,13 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function getBaseUrl() {
   const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl) return envUrl;
+  if (envUrl) return envUrl.replace(/\/$/, "");
 
+  // Si no hay envUrl, usamos el origen de la ventana (web)
+  // o lanzamos un error claro en lugar de usar una IP vieja
   if (Capacitor.isNativePlatform()) {
-    // Usar la URL de producción por defecto si no hay variable de entorno
-    return "https://app.evgreen.lat";
+    console.error("VITE_API_URL no está definida. La comunicación con el servidor fallará.");
+    return "";
   }
 
   return window.location.origin;
@@ -25,7 +27,7 @@ export function getBaseUrl() {
  * Construye una URL de API absoluta si es necesario (Capacitor)
  */
 export function getApiUrl(path: string) {
-  const base = getBaseUrl();
+  const base = getBaseUrl().replace(/\/$/, ""); // Asegurar que no hay barra al final
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
   return `${base}${cleanPath}`;
 }

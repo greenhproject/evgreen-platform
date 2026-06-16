@@ -11,7 +11,20 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        manifestPlaceholders = [auth0Domain: "dev-uraxrvro1df76ac3.us.auth0.com", auth0Scheme: "com.greenhproject.evgreen"]
+        
+        // Cargar valores desde local.properties para evitar hardcoding
+        def localProperties = new Properties()
+        def localPropertiesFile = project.rootProject.file('local.properties')
+        if (localPropertiesFile.exists()) {
+            localProperties.load(new FileInputStream(localPropertiesFile))
+        }
+
+        manifestPlaceholders = [
+            auth0Domain: localProperties.getProperty("AUTH0_DOMAIN") ?: "dev-uraxrvro1df76ac3.us.auth0.com", 
+            auth0Scheme: localProperties.getProperty("AUTH0_SCHEME") ?: "com.greenhproject.evgreen",
+            appHost: localProperties.getProperty("APP_HOST") ?: "app.evgreen.lat"
+        ]
+
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
