@@ -154,8 +154,8 @@ export default function UserMap() {
   // Obtener estaciones - sin filtro de ubicación para mostrar todas las estaciones públicas
   const { data: stations, isLoading, refetch } = trpc.stations.listPublic.useQuery({});
 
-  // Obtener billetera del usuario
-  const { data: wallet } = trpc.wallet.getMyWallet.useQuery();
+  // Obtener billetera del usuario (solo si está autenticado)
+  const { data: wallet } = trpc.wallet.getMyWallet.useQuery(undefined, { enabled: isAuthenticated });
 
   // Obtener estado de overstay (penalización por ocupación)
   const { data: overstayStatus } = trpc.overstay.getMyStatus.useQuery(
