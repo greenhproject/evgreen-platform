@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Zap, Mail, Lock, User, Phone, ArrowRight, Sparkles, ChevronLeft } from "lucide-react";
-import { getLoginUrl } from "@/lib/trpc";
+import { openLoginBrowser } from "@/const";
 
 // Partículas decorativas animadas
 const FloatingParticle = ({ delay, size, x, y }: { delay: number; size: number; x: number; y: number }) => (
@@ -123,7 +123,7 @@ const AnimatedLogo = () => (
 // Formulario de login
 const LoginForm = ({ onSwitchToRegister }: { onSwitchToRegister: () => void }) => {
   const handleOAuthLogin = () => {
-    window.location.href = getLoginUrl();
+    openLoginBrowser();
   };
 
   return (
@@ -217,7 +217,7 @@ const LoginForm = ({ onSwitchToRegister }: { onSwitchToRegister: () => void }) =
 // Formulario de registro
 const RegisterForm = ({ onSwitchToLogin }: { onSwitchToLogin: () => void }) => {
   const handleOAuthRegister = () => {
-    window.location.href = getLoginUrl();
+    openLoginBrowser();
   };
 
   return (

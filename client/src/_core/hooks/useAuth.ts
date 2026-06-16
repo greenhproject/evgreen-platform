@@ -1,5 +1,6 @@
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { NATIVE_TOKEN_KEY } from "@shared/const";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
 
@@ -38,6 +39,7 @@ export function useAuth(options?: UseAuthOptions) {
         console.error("[Auth] Logout error:", error);
       }
     } finally {
+      localStorage.removeItem(NATIVE_TOKEN_KEY);
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
       // Redirect to Auth0 logout to clear Auth0 session
@@ -79,6 +81,13 @@ export function useAuth(options?: UseAuthOptions) {
     meQuery.isLoading,
     state.user,
   ]);
+
+  // Refetchear auth.me cuando llega un deep link con la app ya abierta
+  useEffect(() => {
+    const handler = () => meQuery.refetch();
+    window.addEventListener('evgreen-auth-updated', handler);
+    return () => window.removeEventListener('evgreen-auth-updated', handler);
+  }, [meQuery]);
 
   return {
     ...state,

@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { UNAUTHED_ERR_MSG, COOKIE_NAME, ONE_YEAR_MS } from '@shared/const';
+import { UNAUTHED_ERR_MSG, COOKIE_NAME, ONE_YEAR_MS, NATIVE_TOKEN_KEY } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -14,38 +14,20 @@ import "./index.css";
 // ============================================
 import { App as CapacitorApp } from '@capacitor/app';
 
-const processToken = (urlStr: string) => {
-  try {
-    const url = new URL(urlStr);
-    const token = url.searchParams.get('token');
-    if (token) {
-      console.log("[Auth] Token recibido vía Deep Link:", token.substring(0, 10) + "...");
-      const expires = new Date(Date.now() + ONE_YEAR_MS).toUTCString();
-      document.cookie = `${COOKIE_NAME}=${token}; expires=${expires}; path=/; SameSite=Lax`;
-
-      // Forzar recarga o redirección interna para que el estado de auth se actualice
-      window.location.href = "/";
-    }
-  } catch (e) {
-    console.error("[Auth] Error procesando URL de Deep Link", e);
-  }
+const setAuthCookie = (token: string) => {
+  const expires = new Date(Date.now() + ONE_YEAR_MS).toUTCString();
+  document.cookie = `${COOKIE_NAME}=${token}; expires=${expires}; path=/; SameSite=Lax`;
+  // document.cookie no funciona en custom URL schemes (evgreen://) de WKWebView → localStorage como respaldo
+  localStorage.setItem(NATIVE_TOKEN_KEY, token);
 };
 
-// 1. Manejar URL de inicio (si la app estaba cerrada)
-CapacitorApp.getLaunchUrl().then((launchUrl) => {
-  if (launchUrl?.url) processToken(launchUrl.url);
-});
-
-// 2. Escuchar nuevas URLs (si la app estaba abierta en segundo plano)
-CapacitorApp.addListener('appUrlOpen', (data) => {
-  console.log("[Auth] App abierta con URL:", data.url);
-  processToken(data.url);
-});
-
-// También mantener la comprobación clásica por si acaso
-if (typeof window !== 'undefined' && window.location.search.includes('token')) {
-  processToken(window.location.href);
-}
+const extractToken = (urlStr: string): string | null => {
+  try {
+    return new URL(urlStr).searchParams.get('token');
+  } catch {
+    return null;
+  }
+};
 
 // ============================================
 // QueryClient con defaults robustos
@@ -53,11 +35,8 @@ if (typeof window !== 'undefined' && window.location.search.includes('token')) {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // No reintentar indefinidamente - máximo 2 reintentos
       retry: 2,
-      // Timeout de 15 segundos para queries
       staleTime: 30_000,
-      // No refetch agresivo que pueda causar loops
       refetchOnWindowFocus: false,
     },
   },
@@ -76,13 +55,9 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (typeof window === "undefined") return;
 
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
-
   if (!isUnauthorized) return;
-
-  // NO redirigir si estamos en una ruta pública o en la landing
   if (isNoRedirectPath()) return;
 
-  // NO redirigir si no hay evidencia de sesión previa (usuario nunca logueado)
   const hadSession = document.cookie.includes('session') || localStorage.getItem('manus-runtime-user-info') !== 'null';
   if (!hadSession) return;
 
@@ -111,24 +86,22 @@ const trpcClient = trpc.createClient({
       url: getApiUrl("/api/trpc"),
       transformer: superjson,
       fetch(input, init) {
-        // Obtener el token de las cookies o localStorage
         const cookies = document.cookie.split('; ').reduce((prev: any, current) => {
-          const [name, value] = current.split('=');
-          prev[name] = value;
+          const [name, ...rest] = current.split('=');
+          prev[name] = rest.join('=');
           return prev;
         }, {});
-        const token = cookies[COOKIE_NAME];
+        // localStorage como respaldo cuando document.cookie no funciona en custom URL schemes
+        const token = cookies[COOKIE_NAME] || localStorage.getItem(NATIVE_TOKEN_KEY) || '';
 
-        // Agregar AbortController con timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
-        
+
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
           headers: {
             ...(init?.headers ?? {}),
-            // Enviar token explícitamente en el header para evitar líos de cookies en móvil
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           signal: controller.signal,
@@ -140,16 +113,75 @@ const trpcClient = trpc.createClient({
   ],
 });
 
+function mountReact() {
+  createRoot(document.getElementById("root")!).render(
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
+}
+
+// ============================================
+// BOOTSTRAP ASYNC: getLaunchUrl ANTES de montar React
+// Garantiza que la cookie esté seteada cuando auth.me se ejecute
+// ============================================
+async function bootstrap() {
+  try {
+    const launchUrl = await CapacitorApp.getLaunchUrl();
+    if (launchUrl?.url) {
+      const token = extractToken(launchUrl.url);
+      if (token) {
+        setAuthCookie(token);
+        // getLaunchUrl() persiste entre recargas — sessionStorage evita el loop infinito
+        const sessionKey = 'dl_token_processed';
+        const tokenSuffix = token.slice(-12);
+        if (sessionStorage.getItem(sessionKey) !== tokenSuffix) {
+          console.log("[Auth] Token recibido vía Deep Link (launch):", token.substring(0, 10) + "...");
+          sessionStorage.setItem(sessionKey, tokenSuffix);
+          window.location.href = "/";
+          return; // Page reloads — on next load cookie is already set
+        }
+        // Segunda carga: cookie ya estaba seteada arriba, React puede montar
+      }
+    }
+  } catch (e) {
+    console.warn("[Auth] getLaunchUrl error:", e);
+  }
+
+  // Escuchar deep links mientras la app está abierta.
+  // Con @capacitor/browser el WKWebView nunca navega al servidor externo,
+  // así que este listener sigue activo durante todo el flujo OAuth.
+  CapacitorApp.addListener('appUrlOpen', async (data) => {
+    console.log("[Auth] appUrlOpen recibido:", data.url);
+    const token = extractToken(data.url);
+    if (!token) {
+      console.warn("[Auth] appUrlOpen sin token:", data.url);
+      return;
+    }
+    console.log("[Auth] Token recibido vía appUrlOpen:", token.substring(0, 10) + "...");
+    setAuthCookie(token);
+    console.log("[Auth] Token guardado — cookie:", document.cookie.includes(COOKIE_NAME) ? "OK" : "FALTA", "| localStorage:", localStorage.getItem(NATIVE_TOKEN_KEY) ? "OK" : "FALTA");
+    try {
+      const { Browser } = await import('@capacitor/browser');
+      await Browser.close();
+    } catch (e) {
+      console.warn("[Auth] Browser.close error:", e);
+    }
+    // Doble disparo: invalidar caché Y evento directo a useAuth
+    queryClient.invalidateQueries();
+    window.dispatchEvent(new Event('evgreen-auth-updated'));
+  });
+
+  mountReact();
+}
+
+bootstrap();
+
 // ============================================
 // MONTAR REACT
 // ============================================
-createRoot(document.getElementById("root")!).render(
-  <trpc.Provider client={trpcClient} queryClient={queryClient}>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </trpc.Provider>
-);
 
 // ============================================
 // POST-MOUNT: Limpiar splash screen
