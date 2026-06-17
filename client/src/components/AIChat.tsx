@@ -52,6 +52,7 @@ import {
   CheckCircle2,
   MapPinned,
   Battery,
+  ArrowLeft,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -1241,6 +1242,13 @@ export function AIChatPage() {
         {/* Header */}
         <div className="h-14 border-b flex items-center justify-between px-4 bg-background">
           <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => window.history.back()}
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"

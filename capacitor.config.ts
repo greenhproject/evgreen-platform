@@ -11,7 +11,14 @@ const config: CapacitorConfig = {
   plugins: {
     CapacitorHttp: {
       enabled: true
-    }
+    },
+    SplashScreen: {
+      launchShowDuration: 2000,
+      launchAutoHide: true,
+      backgroundColor: "#052E16",
+      androidSplashResourceName: "splash",
+      showSpinner: false,
+    },
   },
   ios: {
     path: 'ios',
