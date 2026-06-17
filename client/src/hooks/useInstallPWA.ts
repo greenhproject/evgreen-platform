@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { Capacitor } from "@capacitor/core";
 
 /**
  * Hook para manejar la instalación de la PWA en Android/Desktop.
@@ -27,21 +28,20 @@ interface UseInstallPWAReturn {
 
 export function useInstallPWA(): UseInstallPWAReturn {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
+  // Calcular sincrónicamente para que el banner nunca flashee en Capacitor
+  const [isInstalled, setIsInstalled] = useState(() => {
+    if (Capacitor.isNativePlatform()) return true;
+    if (typeof window === "undefined") return false;
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true
+    );
+  });
 
   // Detectar plataforma
   const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
   const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
   const isAndroid = /Android/.test(userAgent);
-
-  // Verificar si ya está instalada (modo standalone o Capacitor nativo)
-  useEffect(() => {
-    const isCapacitorNative = !!(window as any).Capacitor?.isNative;
-    const isStandalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (window.navigator as any).standalone === true;
-    setIsInstalled(isCapacitorNative || isStandalone);
-  }, []);
 
   // Capturar el evento beforeinstallprompt
   useEffect(() => {
