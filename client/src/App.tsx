@@ -36,6 +36,9 @@ function LazySpinner() {
 // ============================================
 
 // Páginas públicas secundarias
+const Terms = lazy(() => import("./pages/Terms"));
+const Privacy = lazy(() => import("./pages/Privacy"));
+const Contact = lazy(() => import("./pages/Contact"));
 const Investors = lazy(() => import("./pages/Investors"));
 const ThankYouInvestors = lazy(() => import("./pages/ThankYouInvestors"));
 const Partners = lazy(() => import("./pages/Partners"));
@@ -358,6 +361,15 @@ function Router() {
         <Route path="/partners" component={Partners} />
         <Route path="/saas" component={SaaSLanding} />
         <Route path="/gracias-inversionistas" component={ThankYouInvestors} />
+        <Route path="/terms">
+          <Suspense fallback={<LazySpinner />}><Terms /></Suspense>
+        </Route>
+        <Route path="/privacy">
+          <Suspense fallback={<LazySpinner />}><Privacy /></Suspense>
+        </Route>
+        <Route path="/contact">
+          <Suspense fallback={<LazySpinner />}><Contact /></Suspense>
+        </Route>
         
         {/* Ruta para códigos QR - Redirige a StartCharge */}
         <Route path="/c/:code" component={QRRedirect} />
