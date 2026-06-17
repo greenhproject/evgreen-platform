@@ -76,13 +76,15 @@
 
 /// <reference types="@types/google.maps" />
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePersistFn } from "@/hooks/usePersistFn";
 import { cn } from "@/lib/utils";
 
 declare global {
   interface Window {
     google?: typeof google;
+    __mapsAuthError?: boolean;
+    gm_authFailure?: () => void;
   }
 }
 
@@ -92,6 +94,16 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 let _mapScriptPromise: Promise<void> | null = null;
 
 function loadMapScript(): Promise<void> {
+  // Ensure gm_authFailure is set before the Maps script executes so Google
+  // calls our hook instead of rendering its own error overlay.
+  if (!window.gm_authFailure) {
+    window.__mapsAuthError = false;
+    window.gm_authFailure = function () {
+      window.__mapsAuthError = true;
+      window.dispatchEvent(new CustomEvent("mapsAuthFailure"));
+      console.warn("[EVGreen] Google Maps auth failed (referrer not allowed). Map will not render.");
+    };
+  }
   if (window.google?.maps) return Promise.resolve();
   if (_mapScriptPromise) return _mapScriptPromise;
   _mapScriptPromise = new Promise<void>((resolve) => {
@@ -166,6 +178,16 @@ export function MapView({
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<google.maps.Map | null>(null);
+  // When Maps auth fails, switch to an empty div so React unmounts the map
+  // container (which has the "Oops!" overlay injected inside it by Maps).
+  const [authFailed, setAuthFailed] = useState(() => !!window.__mapsAuthError);
+
+  useEffect(() => {
+    if (window.__mapsAuthError) { setAuthFailed(true); return; }
+    const handler = () => setAuthFailed(true);
+    window.addEventListener("mapsAuthFailure", handler);
+    return () => window.removeEventListener("mapsAuthFailure", handler);
+  }, []);
 
   const init = usePersistFn(async () => {
     await loadMapScript();
@@ -209,7 +231,18 @@ export function MapView({
     mediaQuery.addEventListener('change', handleThemeChange);
 
     if (onMapReady) {
-      onMapReady(map.current);
+      const readyCallback = onMapReady;
+      // Defer until after 'idle' + 300ms so gm_authFailure (which fires async
+      // after the Maps auth network request) has time to set __mapsAuthError
+      // before we trigger AdvancedMarkerElement creation.
+      const idleListener = map.current.addListener("idle", () => {
+        google.maps.event.removeListener(idleListener);
+        setTimeout(() => {
+          if (!window.__mapsAuthError) {
+            readyCallback(map.current!);
+          }
+        }, 300);
+      });
     }
   });
 
@@ -218,6 +251,10 @@ export function MapView({
   }, [init]);
 
   return (
-    <div ref={mapContainer} className={cn("w-full h-[500px]", className)} />
+    <div
+      key={authFailed ? "auth-failed" : "map"}
+      ref={authFailed ? undefined : mapContainer}
+      className={cn("w-full h-[500px]", className)}
+    />
   );
 }
