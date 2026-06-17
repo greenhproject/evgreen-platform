@@ -1163,7 +1163,7 @@ export function AIChatPage() {
   const lastAssistantMsgId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-background">
+    <div className="flex h-screen bg-background">
       {/* Sidebar de historial */}
       <div
         className={`${
@@ -1245,7 +1245,7 @@ export function AIChatPage() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => window.history.back()}
+              onClick={() => setLocation("/user/map")}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -1337,8 +1337,11 @@ export function AIChatPage() {
           </div>
         </div>
 
-        {/* Input */}
-        <div className="p-4 border-t bg-background">
+        {/* Input — safe area bottom para iPhone con home indicator */}
+        <div
+          className="border-t bg-background px-4 pt-4"
+          style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+        >
           <div className="max-w-3xl mx-auto">
             <div className="flex gap-3 items-end">
               <div className="flex-1 relative">

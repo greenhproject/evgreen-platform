@@ -13,6 +13,8 @@ import "./index.css";
 // MANEJO DE TOKEN NATIVO (Capacitor Deep Linking)
 // ============================================
 import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 
 const setAuthCookie = (token: string) => {
   const expires = new Date(Date.now() + ONE_YEAR_MS).toUTCString();
@@ -128,6 +130,17 @@ function mountReact() {
 // Garantiza que la cookie esté seteada cuando auth.me se ejecute
 // ============================================
 async function bootstrap() {
+  // iOS: evitar que el webview quede DEBAJO del status bar nativo
+  if (Capacitor.getPlatform() === 'ios') {
+    try {
+      await StatusBar.setOverlaysWebView({ overlay: false });
+      await StatusBar.setBackgroundColor({ color: '#052E16' });
+      await StatusBar.setStyle({ style: Style.Light });
+    } catch (e) {
+      console.warn('[StatusBar] setup error:', e);
+    }
+  }
+
   try {
     const launchUrl = await CapacitorApp.getLaunchUrl();
     if (launchUrl?.url) {
