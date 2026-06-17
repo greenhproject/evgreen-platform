@@ -266,17 +266,20 @@ export default function UserMap() {
       userMarkerRef.current = marker;
     } catch (err) {
       console.warn('[Map] AdvancedMarkerElement failed, using fallback:', err);
-      // Fallback: usar un Circle como indicador de ubicación
-      new google.maps.Circle({
-        map: mapInstance,
-        center: userLocation,
-        radius: 30,
-        fillColor: '#3b82f6',
-        fillOpacity: 0.4,
-        strokeColor: '#3b82f6',
-        strokeWeight: 2,
-        zIndex: 9999,
-      });
+      try {
+        new google.maps.Circle({
+          map: mapInstance,
+          center: userLocation,
+          radius: 30,
+          fillColor: '#3b82f6',
+          fillOpacity: 0.4,
+          strokeColor: '#3b82f6',
+          strokeWeight: 2,
+          zIndex: 9999,
+        });
+      } catch (fallbackErr) {
+        console.warn('[Map] Circle fallback also failed:', fallbackErr);
+      }
     }
 
     return () => {
@@ -480,18 +483,20 @@ export default function UserMap() {
         "></div>
       `;
 
-      const marker = new google.maps.marker.AdvancedMarkerElement({
-        map: mapInstance,
-        position: { lat, lng },
-        title: station.name,
-        content: markerContent,
-      });
-
-      marker.addListener('click', () => {
-        handleStationSelect(station);
-      });
-
-      markers.push(marker);
+      try {
+        const marker = new google.maps.marker.AdvancedMarkerElement({
+          map: mapInstance,
+          position: { lat, lng },
+          title: station.name,
+          content: markerContent,
+        });
+        marker.addListener('click', () => {
+          handleStationSelect(station);
+        });
+        markers.push(marker);
+      } catch (markerErr) {
+        console.warn('[Map] Station marker failed for', station.name, markerErr);
+      }
     });
 
     // Si hay estaciones y no hay ubicación del usuario, centrar en la primera
@@ -506,18 +511,20 @@ export default function UserMap() {
     }
 
     return () => {
-      // Animar salida antes de remover
-      markers.forEach((marker, i) => {
-        const el = marker.content as HTMLElement;
-        if (el && el.style) {
-          el.style.opacity = '0';
-          el.style.transform = 'scale(0.5)';
-        }
-      });
-      // Remover después de la animación
-      setTimeout(() => {
-        markers.forEach(marker => marker.map = null);
-      }, 300);
+      try {
+        markers.forEach((marker) => {
+          const el = marker.content as HTMLElement;
+          if (el && el.style) {
+            el.style.opacity = '0';
+            el.style.transform = 'scale(0.5)';
+          }
+        });
+        setTimeout(() => {
+          markers.forEach(marker => { marker.map = null; });
+        }, 300);
+      } catch (cleanupErr) {
+        console.warn('[Map] Marker cleanup failed:', cleanupErr);
+      }
     };
   }, [mapInstance, filteredStations, userLocation]);
 
