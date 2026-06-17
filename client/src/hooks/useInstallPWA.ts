@@ -34,12 +34,13 @@ export function useInstallPWA(): UseInstallPWAReturn {
   const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
   const isAndroid = /Android/.test(userAgent);
 
-  // Verificar si ya está instalada (modo standalone)
+  // Verificar si ya está instalada (modo standalone o Capacitor nativo)
   useEffect(() => {
+    const isCapacitorNative = !!(window as any).Capacitor?.isNative;
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as any).standalone === true;
-    setIsInstalled(isStandalone);
+    setIsInstalled(isCapacitorNative || isStandalone);
   }, []);
 
   // Capturar el evento beforeinstallprompt
