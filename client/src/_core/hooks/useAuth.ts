@@ -1,7 +1,8 @@
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
-import { NATIVE_TOKEN_KEY } from "@shared/const";
+import { COOKIE_NAME, NATIVE_TOKEN_KEY } from "@shared/const";
 import { TRPCClientError } from "@trpc/client";
+import { Capacitor } from '@capacitor/core';
 import { useCallback, useEffect, useMemo } from "react";
 
 type UseAuthOptions = {
@@ -40,10 +41,18 @@ export function useAuth(options?: UseAuthOptions) {
       }
     } finally {
       localStorage.removeItem(NATIVE_TOKEN_KEY);
+      // Clear local cookie (set on evgreen://localhost, not app.evgreen.lat)
+      document.cookie = `${COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
-      // Redirect to Auth0 logout to clear Auth0 session
-      window.location.href = `${window.location.origin}/api/auth/logout`;
+
+      if (Capacitor.isNativePlatform()) {
+        // On native: local data already cleared — reload shows the auth screen
+        window.location.reload();
+      } else {
+        // On web: go through Auth0 logout to clear the Auth0 session too
+        window.location.href = `${window.location.origin}/api/auth/logout`;
+      }
     }
   }, [logoutMutation, utils]);
 
