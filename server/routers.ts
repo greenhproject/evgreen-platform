@@ -437,13 +437,27 @@ const stationsRouter = router({
             }
           }
           
+          // Si la estación está offline, todos sus EVSEs deben mostrarse como UNAVAILABLE
+          // para que el usuario no intente cargar en una estación desconectada
+          const effectiveEvses = isDemo
+            ? evses.map((e: any) => ({
+                ...e,
+                status: e.status === 'RESERVED' ? 'RESERVED' : 'AVAILABLE',
+              }))
+            : realIsOnline
+              ? evses  // Online: mostrar estado real de BD
+              : evses.map((e: any) => ({
+                  ...e,
+                  // Offline: solo preservar CHARGING/RESERVED (sesiones activas), el resto UNAVAILABLE
+                  status: (e.status === 'CHARGING' || e.status === 'RESERVED')
+                    ? e.status
+                    : 'UNAVAILABLE',
+                }));
+
           return {
             ...station,
             isOnline: isDemo ? true : realIsOnline,
-            evses: isDemo ? evses.map((e: any) => ({ 
-              ...e, 
-              status: e.status === 'RESERVED' ? 'RESERVED' : 'AVAILABLE' 
-            })) : evses,
+            evses: effectiveEvses,
             pricePerKwh: tariff?.pricePerKwh || effectivePrice.pricePerKwh.toString(),
             reservationFee: tariff?.reservationFee || effectivePrice.reservationFee.toString(),
             overstayPenaltyPerMin: tariff?.overstayPenaltyPerMinute || effectivePrice.overstayPenaltyPerMin.toString(),
