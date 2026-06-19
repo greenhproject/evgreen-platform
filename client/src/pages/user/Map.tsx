@@ -928,14 +928,24 @@ export default function UserMap() {
                 <div>
                   <label className="text-sm font-medium mb-2 block">Tipo de conector</label>
                   <div className="flex gap-2 flex-wrap">
-                    {["all", "TYPE_2", "CCS_2", "CHADEMO"].map((type) => (
+                    {[
+                      { value: "all", label: "Todos" },
+                      { value: "TYPE_1", label: "Tipo 1" },
+                      { value: "TYPE_2", label: "Tipo 2" },
+                      { value: "CCS_1", label: "CCS 1" },
+                      { value: "CCS_2", label: "CCS 2" },
+                      { value: "CHADEMO", label: "CHAdeMO" },
+                      { value: "GBT_AC", label: "GB/T AC" },
+                      { value: "GBT_DC", label: "GB/T DC" },
+                      { value: "TESLA", label: "Tesla" },
+                    ].map(({ value, label }) => (
                       <Button
-                        key={type}
-                        variant={filters.connectorType === type ? "default" : "outline"}
+                        key={value}
+                        variant={filters.connectorType === value ? "default" : "outline"}
                         size="sm"
-                        onClick={() => setFilters({ ...filters, connectorType: type })}
+                        onClick={() => setFilters({ ...filters, connectorType: value })}
                       >
-                        {type === "all" ? "Todos" : type.replace("_", " ")}
+                        {label}
                       </Button>
                     ))}
                   </div>
