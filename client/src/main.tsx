@@ -143,7 +143,7 @@ async function bootstrap() {
         await StatusBar.setOverlaysWebView({ overlay: false });
       }
       await StatusBar.setBackgroundColor({ color: '#052E16' });
-      await StatusBar.setStyle({ style: Style.Light });
+      await StatusBar.setStyle({ style: platform === 'android' ? Style.Dark : Style.Light });
     } catch (e) {
       console.warn('[StatusBar] setup error:', e);
     }
