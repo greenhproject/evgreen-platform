@@ -3576,3 +3576,9 @@
 - [x] FIX: Reducir LOW_POWER_THRESHOLD_KW de 0.5 a 0.15 kW (casi cero corriente, evitar falsos positivos en taper AC)
 - [x] FIX: Aumentar LOW_POWER_DURATION_MS de 5 min a 10 min (la fase taper AC puede durar más)
 - [x] FIX: Umbrales conservadores aplican a todos los cargadores (0.15 kW es seguro para AC y DC)
+
+## BUG FIX CRÍTICO: Estaciones desconectadas aparecen como disponibles en el mapa
+
+- [x] FIX: Cuando realIsOnline=false, marcar todos los EVSEs como UNAVAILABLE en la respuesta al cliente (stations.list)
+- [x] FIX: También aplicar la misma lógica en la consulta por ubicación (getStationsNearLocation) — cubierto por el mismo mapeo en listPublic
+- [x] FIX: Actualizar isOnline en BD cuando la estación se desconecta — confirmado en index.ts línea 892 (updateStationOnlineStatus tras grace period)
