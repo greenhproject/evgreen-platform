@@ -343,6 +343,8 @@ function RoleBasedRedirect() {
           @keyframes evg-spark-3 { 0%{ transform:translate(0,0) scale(1); opacity:1; } 100%{ transform:translate(-8px,-75px) scale(0); opacity:0; } }
           @keyframes evg-spark-4 { 0%{ transform:translate(0,0) scale(1); opacity:1; } 100%{ transform:translate(14px,-85px) scale(0); opacity:0; } }
           @keyframes evg-bolt-flash { 0%,85%,100%{ opacity:0; } 88%,96%{ opacity:.9; } 92%{ opacity:.2; } }
+          @keyframes evg-bolt-fast { 0%,90%,100%{ opacity:0; } 92%,97%{ opacity:1; } 94%{ opacity:.15; } }
+          @keyframes evg-bolt-double { 0%,70%,100%{ opacity:0; } 72%,76%{ opacity:.9; } 74%{ opacity:.1; } 80%,86%{ opacity:.7; } 83%{ opacity:.1; } }
           @keyframes evg-hex-pulse { 0%,100%{ opacity:.12; } 50%{ opacity:.28; } }
           @keyframes evg-orb-breathe { 0%,100%{ transform:translate(-50%,-50%) scale(1); opacity:.18; } 50%{ transform:translate(-50%,-50%) scale(1.18); opacity:.32; } }
         `}</style>
@@ -358,17 +360,37 @@ function RoleBasedRedirect() {
           <rect width="100%" height="100%" fill="url(#hex)"/>
         </svg>
 
-        {/* ── ELECTRIC LIGHTNING BOLTS (flashing) ── */}
+        {/* ── ELECTRIC LIGHTNING BOLTS (6 positions, staggered) ── */}
         <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
           <defs>
             <filter id="bolt-glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           </defs>
-          {/* Top-left bolt */}
+          {/* ─ TOP-LEFT ─ */}
           <polyline points="8,0 28,90 14,90 38,210 22,210 48,350" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)"
             style={{ animation: 'evg-bolt-flash 3.5s ease-in-out infinite' }}/>
           <polyline points="18,20 34,100 22,100 44,200" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)"
             style={{ animation: 'evg-bolt-flash 3.5s ease-in-out infinite 0.15s' }}/>
-          {/* Bottom-right bolt */}
+          {/* ─ TOP-RIGHT ─ */}
+          <polyline points="382,0 362,90 376,90 352,210 366,210 345,340" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-fast 4.8s ease-in-out infinite 0.6s' }}/>
+          <polyline points="374,18 358,98 370,98 350,192" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-fast 4.8s ease-in-out infinite 0.75s' }}/>
+          {/* ─ MIDDLE-LEFT (short, double-flash) ─ */}
+          <polyline points="0,370 20,420 7,420 30,468" fill="none" stroke="#22c55e" strokeWidth="1.2" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-double 6.5s ease-in-out infinite 2.2s' }}/>
+          <polyline points="5,385 22,432 12,432 32,476" fill="none" stroke="#86efac" strokeWidth="0.6" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-double 6.5s ease-in-out infinite 2.35s' }}/>
+          {/* ─ MIDDLE-RIGHT (short) ─ */}
+          <polyline points="390,450 370,500 383,500 360,548" fill="none" stroke="#22c55e" strokeWidth="1.2" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-fast 5.2s ease-in-out infinite 1.3s' }}/>
+          <polyline points="386,466 368,512 380,512 358,558" fill="none" stroke="#86efac" strokeWidth="0.6" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-fast 5.2s ease-in-out infinite 1.45s' }}/>
+          {/* ─ BOTTOM-LEFT ─ */}
+          <polyline points="14,900 36,800 20,800 48,688 30,688 58,562" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 4.0s ease-in-out infinite 3.1s' }}/>
+          <polyline points="26,878 44,790 30,790 52,680" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 4.0s ease-in-out infinite 3.25s' }}/>
+          {/* ─ BOTTOM-RIGHT ─ */}
           <polyline points="96%,30% 88%,48% 93%,48% 84%,68% 90%,68% 80%,90%" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)"
             style={{ animation: 'evg-bolt-flash 4.2s ease-in-out infinite 1.8s' }}/>
           <polyline points="98%,35% 91%,50% 95%,50% 87%,65%" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)"

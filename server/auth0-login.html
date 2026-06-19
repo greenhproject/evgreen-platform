@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>EVGreen — Iniciar sesión</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      background: #0b1a0e;
+      color: #fff;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px 16px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Hex grid background */
+    .bg-hex {
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='60'%3E%3Cpolygon points='26,2 50,15 50,45 26,58 2,45 2,15' fill='none' stroke='rgba(34,197,94,0.07)' stroke-width='0.7'/%3E%3C/svg%3E");
+      background-size: 52px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Ambient top glow */
+    .bg-glow {
+      position: fixed;
+      top: -25%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 160vw;
+      height: 65vh;
+      background: radial-gradient(ellipse, rgba(16,185,129,0.1) 0%, transparent 65%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Main card */
+    .card {
+      width: 100%;
+      max-width: 400px;
+      background: rgba(11, 24, 14, 0.92);
+      border: 1px solid rgba(34,197,94,0.14);
+      border-radius: 22px;
+      padding: 34px 28px 38px;
+      position: relative;
+      z-index: 10;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+
+    /* Logo area */
+    .logo-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+
+    .logo-img {
+      width: 58px;
+      height: 58px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 14px rgba(16,185,129,0.55));
+    }
+
+    .brand-name {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: -0.6px;
+      line-height: 1;
+    }
+
+    .ev {
+      background: linear-gradient(135deg, #86efac, #22c55e, #16a34a);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .green { color: #ffffff; }
+
+    .brand-sub {
+      font-size: 10px;
+      color: rgba(74,222,128,0.38);
+      text-transform: uppercase;
+      letter-spacing: 0.24em;
+      font-weight: 600;
+    }
+
+    /* Divider */
+    .sep {
+      height: 1px;
+      background: linear-gradient(to right, transparent, rgba(34,197,94,0.14), transparent);
+      margin: 0 -4px 22px;
+    }
+
+    .title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #f0fdf4;
+      margin-bottom: 3px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: rgba(255,255,255,0.32);
+      line-height: 1.5;
+      margin-bottom: 20px;
+    }
+
+    /* Alert */
+    .alert {
+      border-radius: 9px;
+      padding: 10px 13px;
+      font-size: 13px;
+      line-height: 1.45;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .alert.show { display: block; }
+    .alert.err  { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.22); color: #fca5a5; }
+    .alert.ok   { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.22); color: #86efac; }
+
+    /* Fields */
+    .field { margin-bottom: 13px; }
+
+    .field-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    label {
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(74,222,128,0.52);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .forgot {
+      background: none;
+      border: none;
+      color: rgba(74,222,128,0.45);
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 0;
+      transition: color 0.2s;
+    }
+    .forgot:hover { color: #4ade80; }
+
+    input[type="email"],
+    input[type="password"],
+    input[type="text"] {
+      display: block;
+      width: 100%;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      color: #fff;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+      -webkit-appearance: none;
+      font-family: inherit;
+    }
+
+    input:focus {
+      border-color: rgba(34,197,94,0.4);
+      box-shadow: 0 0 0 3px rgba(34,197,94,0.07);
+      background: rgba(255,255,255,0.05);
+    }
+
+    input::placeholder { color: rgba(255,255,255,0.18); }
+    input:-webkit-autofill {
+      -webkit-box-shadow: 0 0 0 100px #0f2112 inset !important;
+      -webkit-text-fill-color: #fff !important;
+      border-color: rgba(34,197,94,0.3) !important;
+    }
+
+    /* Primary button */
+    .btn-main {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 50px;
+      padding: 14px;
+      background: linear-gradient(135deg, #22c55e, #15803d);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      margin-top: 18px;
+      box-shadow: 0 6px 20px rgba(34,197,94,0.32), 0 0 0 1px rgba(34,197,94,0.2);
+      letter-spacing: 0.02em;
+      transition: opacity 0.15s, transform 0.1s;
+      font-family: inherit;
+      -webkit-appearance: none;
+    }
+
+    .btn-main:active { opacity: 0.87; transform: scale(0.99); }
+    .btn-main:disabled { opacity: 0.4; cursor: default; transform: none; }
+
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2.5px solid rgba(255,255,255,0.25);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      display: none;
+    }
+    .btn-main.loading .spinner { display: block; }
+    .btn-main.loading .btn-label { display: none; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* OR row */
+    .or-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 16px 0;
+    }
+    .or-line { flex: 1; height: 1px; background: rgba(255,255,255,0.06); }
+    .or-text { font-size: 11px; color: rgba(255,255,255,0.16); font-weight: 700; letter-spacing: 0.08em; white-space: nowrap; }
+
+    /* Google button */
+    .btn-google {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 13px;
+      background: rgba(255,255,255,0.035);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 12px;
+      color: rgba(255,255,255,0.72);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      -webkit-appearance: none;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .btn-google:active {
+      background: rgba(255,255,255,0.07);
+      border-color: rgba(255,255,255,0.18);
+    }
+    .google-icon { width: 18px; height: 18px; flex-shrink: 0; }
+
+    /* Sign up row */
+    .signup-row {
+      text-align: center;
+      margin-top: 18px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.2);
+    }
+    .signup-link {
+      color: #4ade80;
+      font-weight: 600;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-hex"></div>
+  <div class="bg-glow"></div>
+
+  <div class="card">
+
+    <!-- Branding -->
+    <div class="logo-wrap">
+      <img class="logo-img"
+        src="https://files.manuscdn.com/user_upload_by_module/web_dev_logo/310519663169336317/ZbfgFdwHzJuHwUHe.png"
+        alt="EVGreen"
+        onerror="this.style.display='none'">
+      <div class="brand-name">
+        <span class="ev">EV</span><span class="green">Green</span>
+      </div>
+      <span class="brand-sub">By Green House Project</span>
+    </div>
+
+    <div class="sep"></div>
+
+    <p class="title">Bienvenido de vuelta</p>
+    <p class="subtitle">Ingresa a tu cuenta para continuar</p>
+
+    <!-- Alert -->
+    <div id="alert" class="alert"></div>
+
+    <!-- Login form -->
+    <form id="loginForm" novalidate>
+      <div class="field">
+        <label for="email">Correo electrónico</label>
+        <input type="email" id="email" name="email" placeholder="tu@correo.com" autocomplete="email" inputmode="email">
+      </div>
+
+      <div class="field">
+        <div class="field-header">
+          <label for="password">Contraseña</label>
+          <button type="button" class="forgot" id="forgotBtn">¿Olvidaste?</button>
+        </div>
+        <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+
+      <button type="submit" class="btn-main" id="loginBtn">
+        <span class="btn-label">Continuar</span>
+        <div class="spinner"></div>
+      </button>
+    </form>
+
+    <div class="or-row">
+      <div class="or-line"></div>
+      <span class="or-text">O CONTINÚA CON</span>
+      <div class="or-line"></div>
+    </div>
+
+    <button type="button" class="btn-google" id="googleBtn">
+      <svg class="google-icon" viewBox="0 0 24 24">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+      </svg>
+      Continuar con Google
+    </button>
+
+    <div class="signup-row">
+      ¿No tienes cuenta?
+      <button type="button" class="signup-link" id="signupBtn">Regístrate</button>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.auth0.com/js/auth0/9.27/auth0.min.js"></script>
+  <script>
+    // Auth0 Classic Universal Login — config injected by Auth0
+    var config = JSON.parse(decodeURIComponent(escape(window.atob('@@config@@'))));
+    config.extraParams = config.extraParams || {};
+
+    var webAuth = new auth0.WebAuth(Object.assign({
+      clientID:     config.clientID,
+      domain:       config.auth0Domain,
+      redirectUri:  config.callbackURL,
+      responseType: 'code',
+      overrides: {
+        __tenant:       config.auth0Tenant,
+        __token_issuer: config.authorizationServer && config.authorizationServer.issuer,
+      },
+    }, config.internalOptions));
+
+    var DEFAULT_CONNECTION = config.extraParams.connection || 'Username-Password-Authentication';
+
+    // ── helpers ──────────────────────────────────────────────────
+    function showAlert(msg, type) {
+      var el = document.getElementById('alert');
+      el.textContent = msg;
+      el.className = 'alert show ' + (type === 'ok' ? 'ok' : 'err');
+    }
+    function clearAlert() {
+      document.getElementById('alert').className = 'alert';
+    }
+    function errMsg(err) {
+      if (!err) return 'Error desconocido';
+      var c = err.code || err.error || '';
+      if (c === 'invalid_user_password' || c === 'access_denied') return 'Correo o contraseña incorrectos.';
+      if (c === 'blocked_user')     return 'Tu cuenta ha sido bloqueada. Contacta soporte.';
+      if (c === 'too_many_attempts') return 'Demasiados intentos fallidos. Intenta más tarde.';
+      if (c === 'user_exists')      return 'Ya existe una cuenta con ese correo.';
+      if (c === 'password_strength') return 'La contraseña es muy débil.';
+      if (c === 'request_error')    return 'Error de red. Verifica tu conexión.';
+      return err.description || err.message || 'Error al iniciar sesión. Intenta de nuevo.';
+    }
+    function setLoading(on) {
+      var btn = document.getElementById('loginBtn');
+      btn.disabled = on;
+      if (on) btn.classList.add('loading');
+      else btn.classList.remove('loading');
+    }
+
+    // ── email / password ─────────────────────────────────────────
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      clearAlert();
+      var email    = document.getElementById('email').value.trim();
+      var password = document.getElementById('password').value;
+      if (!email || !password) { showAlert('Completa todos los campos.'); return; }
+      setLoading(true);
+      webAuth.login({
+        realm:    DEFAULT_CONNECTION,
+        username: email,
+        password: password,
+      }, function(err) {
+        setLoading(false);
+        if (err) showAlert(errMsg(err));
+      });
+    });
+
+    // ── Google SSO ───────────────────────────────────────────────
+    document.getElementById('googleBtn').addEventListener('click', function() {
+      clearAlert();
+      webAuth.authorize({ connection: 'google-oauth2', prompt: 'select_account' });
+    });
+
+    // ── Forgot password ──────────────────────────────────────────
+    document.getElementById('forgotBtn').addEventListener('click', function() {
+      clearAlert();
+      var email = document.getElementById('email').value.trim();
+      if (!email) { showAlert('Ingresa tu correo primero.'); return; }
+      webAuth.changePassword({ connection: DEFAULT_CONNECTION, email: email }, function(err) {
+        if (err) showAlert(errMsg(err));
+        else showAlert('✓ Revisa tu correo para restablecer la contraseña.', 'ok');
+      });
+    });
+
+    // ── Sign up ──────────────────────────────────────────────────
+    document.getElementById('signupBtn').addEventListener('click', function() {
+      clearAlert();
+      webAuth.authorize({ screen_hint: 'signup' });
+    });
+
+    // ── Pre-fill from query params (invitation emails, etc.) ─────
+    if (config.extraParams.login_hint) {
+      document.getElementById('email').value = config.extraParams.login_hint;
+    }
+  </script>
+</body>
+</html>
