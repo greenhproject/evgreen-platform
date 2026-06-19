@@ -280,11 +280,34 @@ function RoleBasedRedirect() {
     );
   }
 
+  // On native: never show the Landing page — Auth0 browser opens on top
+  if (!isAuthenticated && Capacitor.isNativePlatform()) {
+    return (
+      <div className="min-h-screen bg-emerald-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shadow-2xl shadow-emerald-500/40">
+            <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M13 2L4.5 13H11L10 22L19.5 11H13L13 2Z" />
+            </svg>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-2xl font-bold tracking-tight">
+              <span className="text-emerald-400">EV</span>
+              <span className="text-white">Green</span>
+            </span>
+            <span className="text-emerald-400/60 text-sm">by Green House Project</span>
+          </div>
+          <div className="w-6 h-6 border-2 border-emerald-400/40 border-t-emerald-400 rounded-full animate-spin mt-2" />
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated && !isPWAInstalled()) {
     return <Landing />;
   }
 
-  // Fallback para cuando no está autenticado pero sí "instalado" (Capacitor)
+  // Fallback para cuando no está autenticado pero sí "instalado"
   if (!isAuthenticated) {
     return <Landing />;
   }
