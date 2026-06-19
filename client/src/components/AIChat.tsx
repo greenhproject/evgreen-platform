@@ -631,6 +631,19 @@ export function AIChatWidget() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { location: userGpsLocation } = useUserLocation();
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelLoading = useCallback(() => {
+    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+    setIsLoading(false);
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "user") {
+        return [...prev, { id: Date.now(), role: "assistant" as const, content: "Lo siento, la solicitud tardó demasiado. Por favor intenta de nuevo.", createdAt: new Date() }];
+      }
+      return prev;
+    });
+  }, []);
 
   // Mutations
   const createConversation = trpc.ai.createConversation.useMutation();
@@ -730,6 +743,8 @@ export function AIChatWidget() {
 
       setIsLoading(true);
       setMessage("");
+      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = setTimeout(cancelLoading, 30000);
 
       try {
         let currentConversationId = conversationId;
@@ -759,6 +774,7 @@ export function AIChatWidget() {
           },
         });
 
+        if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
         const assistantMsgId = Date.now() + 1;
         const assistantMessage: Message = {
           id: assistantMsgId,
@@ -770,12 +786,13 @@ export function AIChatWidget() {
         setMessages((prev) => [...prev, assistantMessage]);
         setStreamingMessageId(assistantMsgId);
       } catch (error: any) {
+        if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
         toast.error(error.message || "Error al enviar mensaje");
       } finally {
         setIsLoading(false);
       }
     },
-    [conversationId, isLoading, createConversation, sendMessage, userGpsLocation]
+    [conversationId, isLoading, createConversation, sendMessage, userGpsLocation, cancelLoading]
   );
 
   const handleStreamComplete = useCallback(() => {
@@ -926,11 +943,14 @@ export function AIChatWidget() {
                         <Bot className="h-4 w-4" />
                       </AvatarFallback>
                     </Avatar>
-                    <div className="bg-muted rounded-2xl px-4 py-3">
+                    <div className="bg-muted rounded-2xl px-4 py-3 flex items-center gap-3">
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         <span className="text-sm text-muted-foreground">Pensando...</span>
                       </div>
+                      <button onClick={cancelLoading} className="text-xs text-muted-foreground/60 hover:text-destructive underline underline-offset-2 transition-colors">
+                        Cancelar
+                      </button>
                     </div>
                   </div>
                 )}
@@ -985,6 +1005,19 @@ export function AIChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { location: userGpsLocation } = useUserLocation();
+  const loadingTimeoutRef2 = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelLoading2 = useCallback(() => {
+    if (loadingTimeoutRef2.current) clearTimeout(loadingTimeoutRef2.current);
+    setIsLoading(false);
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "user") {
+        return [...prev, { id: Date.now(), role: "assistant" as const, content: "Lo siento, la solicitud tardó demasiado. Por favor intenta de nuevo.", createdAt: new Date() }];
+      }
+      return prev;
+    });
+  }, []);
 
   // Queries
   const { data: conversations, refetch: refetchConversations } = trpc.ai.getConversations.useQuery();
@@ -1103,6 +1136,9 @@ export function AIChatPage() {
         };
         setMessages((prev) => [...prev, userMessage]);
 
+        if (loadingTimeoutRef2.current) clearTimeout(loadingTimeoutRef2.current);
+        loadingTimeoutRef2.current = setTimeout(cancelLoading2, 30000);
+
         const response = await sendMessageMutation.mutateAsync({
           conversationId: currentConversationId,
           message: text,
@@ -1115,6 +1151,7 @@ export function AIChatPage() {
           },
         });
 
+        if (loadingTimeoutRef2.current) clearTimeout(loadingTimeoutRef2.current);
         const assistantMsgId = Date.now() + 1;
         const assistantMessage: Message = {
           id: assistantMsgId,
@@ -1127,6 +1164,7 @@ export function AIChatPage() {
         setStreamingMessageId(assistantMsgId);
         refetchConversations();
       } catch (error: any) {
+        if (loadingTimeoutRef2.current) clearTimeout(loadingTimeoutRef2.current);
         toast.error(error.message || "Error al enviar mensaje");
       } finally {
         setIsLoading(false);
@@ -1324,11 +1362,14 @@ export function AIChatPage() {
                         <Bot className="h-4 w-4" />
                       </AvatarFallback>
                     </Avatar>
-                    <div className="bg-muted rounded-2xl px-4 py-3">
+                    <div className="bg-muted rounded-2xl px-4 py-3 flex items-center gap-3">
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         <span className="text-sm text-muted-foreground">Pensando...</span>
                       </div>
+                      <button onClick={cancelLoading2} className="text-xs text-muted-foreground/60 hover:text-destructive underline underline-offset-2 transition-colors">
+                        Cancelar
+                      </button>
                     </div>
                   </div>
                 )}

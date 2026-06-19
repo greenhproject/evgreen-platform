@@ -203,17 +203,53 @@ function RoleBasedRedirect() {
   const loginBrowserOpened = useRef(false);
   const isAuthenticatedRef = useRef(isAuthenticated);
   const [showRetryButton, setShowRetryButton] = useState(false);
+  const [logoError, setLogoError] = useState(false);
+  // True once deep-link token arrives but auth.me hasn't confirmed yet
+  const [tokenPending, setTokenPending] = useState(false);
 
   useEffect(() => {
     isAuthenticatedRef.current = isAuthenticated;
+    if (isAuthenticated) setTokenPending(false);
   }, [isAuthenticated]);
 
-  // Show manual retry button if stuck for more than 5 seconds
+  // Show manual retry button after 2 seconds if stuck (not during token pending)
   useEffect(() => {
-    if (loading || isAuthenticated || !Capacitor.isNativePlatform()) return;
-    const timer = setTimeout(() => setShowRetryButton(true), 5000);
+    if (loading || isAuthenticated || tokenPending || !Capacitor.isNativePlatform()) return;
+    const timer = setTimeout(() => setShowRetryButton(true), 2000);
     return () => clearTimeout(timer);
-  }, [loading, isAuthenticated]);
+  }, [loading, isAuthenticated, tokenPending]);
+
+  // Mark as authenticated immediately when deep-link token arrives (before auth.me completes)
+  useEffect(() => {
+    const handleAuthUpdated = () => {
+      isAuthenticatedRef.current = true;
+      setTokenPending(true);
+      setShowRetryButton(false);
+    };
+    window.addEventListener('evgreen-auth-updated', handleAuthUpdated);
+    return () => window.removeEventListener('evgreen-auth-updated', handleAuthUpdated);
+  }, []);
+
+  // Safety timeout: if tokenPending for too long and auth.me never confirmed, retry then give up
+  useEffect(() => {
+    if (!tokenPending) return;
+    // At 6s: retry auth.me in case the refetch silently failed
+    const retryTimer = setTimeout(() => {
+      if (!isAuthenticatedRef.current) refresh();
+    }, 6000);
+    // At 15s: give up and let the user tap "Iniciar sesión" again
+    const giveUpTimer = setTimeout(() => {
+      if (!isAuthenticatedRef.current) {
+        setTokenPending(false);
+        isAuthenticatedRef.current = false;
+        loginBrowserOpened.current = false;
+      }
+    }, 15000);
+    return () => {
+      clearTimeout(retryTimer);
+      clearTimeout(giveUpTimer);
+    };
+  }, [tokenPending, refresh]);
 
   const doOpenLogin = useCallback(async () => {
     loginBrowserOpened.current = true;
@@ -221,16 +257,21 @@ function RoleBasedRedirect() {
     try {
       await openLoginBrowser();
       const { Browser } = await import('@capacitor/browser');
+      // Remove previous listeners to avoid accumulation across retries
+      await Browser.removeAllListeners();
       await Browser.addListener('browserFinished', () => {
+        // 500ms to let appUrlOpen + evgreen-auth-updated process before checking
         setTimeout(() => {
           if (isAuthenticatedRef.current) return;
+          // Browser closed without auth — show button immediately, auto-retry in 2s
           loginBrowserOpened.current = false;
+          setShowRetryButton(true);
           setTimeout(() => {
             if (!loginBrowserOpened.current && !isAuthenticatedRef.current) {
               doOpenLogin();
             }
-          }, 300);
-        }, 800);
+          }, 2000);
+        }, 500);
       });
     } catch (e) {
       console.error("[Auth] openLoginBrowser failed:", e);
@@ -288,31 +329,160 @@ function RoleBasedRedirect() {
   }
 
   // On native: never show the Landing page — Auth0 browser opens on top
-  if (!isAuthenticated && Capacitor.isNativePlatform()) {
+  if ((!isAuthenticated || tokenPending) && Capacitor.isNativePlatform()) {
     return (
-      <div className="min-h-screen bg-emerald-950 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-6">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shadow-2xl shadow-emerald-500/40">
-            <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M13 2L4.5 13H11L10 22L19.5 11H13L13 2Z" />
+      <div style={{ minHeight: '100vh', background: '#0b1a0e', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+
+        {/* ── KEYFRAME ANIMATIONS ── */}
+        <style>{`
+          @keyframes evg-arc-cw { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -440; } }
+          @keyframes evg-arc-ccw { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 440; } }
+          @keyframes evg-glow-pulse { 0%,100%{ opacity:.35; transform:scale(1); } 50%{ opacity:.7; transform:scale(1.12); } }
+          @keyframes evg-spark-1 { 0%{ transform:translate(0,0) scale(1); opacity:1; } 100%{ transform:translate(-18px,-90px) scale(0); opacity:0; } }
+          @keyframes evg-spark-2 { 0%{ transform:translate(0,0) scale(1); opacity:1; } 100%{ transform:translate(22px,-100px) scale(0); opacity:0; } }
+          @keyframes evg-spark-3 { 0%{ transform:translate(0,0) scale(1); opacity:1; } 100%{ transform:translate(-8px,-75px) scale(0); opacity:0; } }
+          @keyframes evg-spark-4 { 0%{ transform:translate(0,0) scale(1); opacity:1; } 100%{ transform:translate(14px,-85px) scale(0); opacity:0; } }
+          @keyframes evg-bolt-flash { 0%,85%,100%{ opacity:0; } 88%,96%{ opacity:.9; } 92%{ opacity:.2; } }
+          @keyframes evg-hex-pulse { 0%,100%{ opacity:.12; } 50%{ opacity:.28; } }
+          @keyframes evg-orb-breathe { 0%,100%{ transform:translate(-50%,-50%) scale(1); opacity:.18; } 50%{ transform:translate(-50%,-50%) scale(1.18); opacity:.32; } }
+        `}</style>
+
+        {/* ── HEXAGONAL GRID BACKGROUND ── */}
+        <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+          <defs>
+            <pattern id="hex" x="0" y="0" width="52" height="60" patternUnits="userSpaceOnUse">
+              <polygon points="26,2 50,15 50,45 26,58 2,45 2,15" fill="none" stroke="rgba(16,185,129,0.12)" strokeWidth="0.6"
+                style={{ animation: 'evg-hex-pulse 4s ease-in-out infinite' }}/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#hex)"/>
+        </svg>
+
+        {/* ── ELECTRIC LIGHTNING BOLTS (flashing) ── */}
+        <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+          <defs>
+            <filter id="bolt-glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          {/* Top-left bolt */}
+          <polyline points="8,0 28,90 14,90 38,210 22,210 48,350" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 3.5s ease-in-out infinite' }}/>
+          <polyline points="18,20 34,100 22,100 44,200" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 3.5s ease-in-out infinite 0.15s' }}/>
+          {/* Bottom-right bolt */}
+          <polyline points="96%,30% 88%,48% 93%,48% 84%,68% 90%,68% 80%,90%" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 4.2s ease-in-out infinite 1.8s' }}/>
+          <polyline points="98%,35% 91%,50% 95%,50% 87%,65%" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 4.2s ease-in-out infinite 1.95s' }}/>
+        </svg>
+
+        {/* ── LARGE ORGANIC LEAF SHAPES ── */}
+        <svg style={{ position: 'absolute', right: '-15%', top: '8%', width: '75%', height: '55%', pointerEvents: 'none', opacity: 0.07 }}>
+          <path d="M200,0 C320,80 340,280 160,400 C40,340 20,120 200,0Z" fill="#22c55e"/>
+          <path d="M280,30 C380,120 360,320 180,420 C80,360 100,140 280,30Z" fill="#16a34a" opacity="0.6"/>
+        </svg>
+        <svg style={{ position: 'absolute', left: '-20%', bottom: '5%', width: '60%', height: '45%', pointerEvents: 'none', opacity: 0.05 }}>
+          <path d="M100,300 C20,200 60,60 200,10 C300,80 260,260 100,300Z" fill="#15803d"/>
+        </svg>
+
+        {/* ── TOP AMBIENT GLOW ── */}
+        <div style={{ position: 'absolute', top: '-20%', left: '50%', transform: 'translateX(-50%)', width: '120vw', height: '60vh', background: 'radial-gradient(ellipse, rgba(16,185,129,0.12) 0%, transparent 65%)', pointerEvents: 'none' }}/>
+
+        {/* ── CENTER: LOGO + BRAND ── */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28, zIndex: 10, padding: '12vh 32px 0' }}>
+
+          {/* Logo with electric arcs + sparks */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 220, height: 220 }}>
+
+            {/* Pulsating orb behind logo */}
+            <div style={{ position: 'absolute', top: '50%', left: '50%', width: 180, height: 180, borderRadius: '50%', background: 'radial-gradient(circle, rgba(16,185,129,0.22) 0%, transparent 70%)', filter: 'blur(18px)', animation: 'evg-orb-breathe 3s ease-in-out infinite' }}/>
+
+            {/* Rotating electric arcs */}
+            <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+              <defs>
+                <filter id="arc-glow"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              </defs>
+              {/* Outer arc — clockwise */}
+              <circle cx="110" cy="110" r="100" fill="none" stroke="rgba(74,222,128,0.35)" strokeWidth="1.2"
+                strokeDasharray="18 8" filter="url(#arc-glow)"
+                style={{ animation: 'evg-arc-cw 6s linear infinite', transformOrigin: '110px 110px' }}/>
+              {/* Inner arc — counter-clockwise */}
+              <circle cx="110" cy="110" r="82" fill="none" stroke="rgba(34,197,94,0.25)" strokeWidth="0.8"
+                strokeDasharray="8 14" filter="url(#arc-glow)"
+                style={{ animation: 'evg-arc-ccw 9s linear infinite', transformOrigin: '110px 110px' }}/>
+              {/* Energy dots on outer ring */}
+              <circle cx="110" cy="10" r="3" fill="#4ade80" opacity="0.7" filter="url(#arc-glow)"
+                style={{ animation: 'evg-arc-cw 6s linear infinite', transformOrigin: '110px 110px' }}/>
+              <circle cx="110" cy="210" r="2" fill="#22c55e" opacity="0.5" filter="url(#arc-glow)"
+                style={{ animation: 'evg-arc-ccw 9s linear infinite', transformOrigin: '110px 110px' }}/>
             </svg>
+
+            {/* Floating spark particles */}
+            {[
+              { x: 85, y: 120, size: 3, delay: '0s', dur: '2.2s', anim: 'evg-spark-1', color: '#4ade80' },
+              { x: 138, y: 130, size: 2, delay: '0.7s', dur: '2.6s', anim: 'evg-spark-2', color: '#86efac' },
+              { x: 100, y: 145, size: 2.5, delay: '1.3s', dur: '2s', anim: 'evg-spark-3', color: '#22c55e' },
+              { x: 125, y: 115, size: 2, delay: '1.9s', dur: '2.4s', anim: 'evg-spark-4', color: '#4ade80' },
+            ].map((s, i) => (
+              <div key={i} style={{ position: 'absolute', left: s.x, top: s.y, width: s.size * 2, height: s.size * 2, borderRadius: '50%', background: s.color, boxShadow: `0 0 6px ${s.color}`, animation: `${s.anim} ${s.dur} ease-out infinite ${s.delay}` }}/>
+            ))}
+
+            {/* Logo image */}
+            {!logoError ? (
+              <img
+                src="/icons/splash-logo.png"
+                alt="EVGreen"
+                style={{ width: 120, height: 120, objectFit: 'contain', position: 'relative', zIndex: 2, filter: 'drop-shadow(0 0 16px rgba(16,185,129,0.6)) drop-shadow(0 0 32px rgba(16,185,129,0.3))', animation: 'evg-glow-pulse 3s ease-in-out infinite' }}
+                onError={() => setLogoError(true)}
+              />
+            ) : (
+              <div style={{ width: 100, height: 100, borderRadius: 24, background: 'linear-gradient(135deg, #10b981, #059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 40px rgba(16,185,129,0.5)', position: 'relative', zIndex: 2, animation: 'evg-glow-pulse 3s ease-in-out infinite' }}>
+                <svg width="50" height="50" fill="white" viewBox="0 0 24 24"><path d="M13 2L4.5 13H11L10 22L19.5 11H13L13 2Z"/></svg>
+              </div>
+            )}
           </div>
-          <div className="flex flex-col items-center gap-2">
-            <span className="text-2xl font-bold tracking-tight">
-              <span className="text-emerald-400">EV</span>
-              <span className="text-white">Green</span>
-            </span>
-            <span className="text-emerald-400/60 text-sm">by Green House Project</span>
+
+          {/* Brand name — matches banner style */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <h1 style={{ fontSize: 62, fontWeight: 900, letterSpacing: '-2px', lineHeight: 1, margin: 0 }}>
+              <span style={{ background: 'linear-gradient(135deg, #86efac, #22c55e, #16a34a)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>EV</span>
+              <span style={{ color: '#ffffff' }}>Green</span>
+            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ height: 1, width: 40, background: 'linear-gradient(to right, transparent, rgba(74,222,128,0.4))' }}/>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(74,222,128,0.55)' }}>By Green House Project</span>
+              <div style={{ height: 1, width: 40, background: 'linear-gradient(to left, transparent, rgba(74,222,128,0.4))' }}/>
+            </div>
           </div>
-          {showRetryButton ? (
-            <button
-              onClick={doOpenLogin}
-              className="mt-2 px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold text-sm active:opacity-80 transition-opacity"
-            >
-              Iniciar sesión
-            </button>
+
+          {/* Tagline */}
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', textAlign: 'center', lineHeight: 1.6, maxWidth: 210, margin: 0 }}>
+            Carga inteligente para vehículos eléctricos en Colombia
+          </p>
+        </div>
+
+        {/* ── BOTTOM CTA ── */}
+        <div style={{ width: '100%', zIndex: 10, padding: '0 32px 52px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+          {tokenPending ? (
+            // Token received — auth.me in flight: show only spinner, no button
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid rgba(34,197,94,0.15)', borderTopColor: '#22c55e', animation: 'spin 0.9s linear infinite' }}/>
+              <p style={{ fontSize: 11, color: 'rgba(74,222,128,0.35)', margin: 0 }}>Iniciando sesión...</p>
+            </div>
+          ) : showRetryButton ? (
+            <>
+              <button
+                onClick={doOpenLogin}
+                style={{ width: '100%', padding: '18px 0', borderRadius: 18, border: 'none', background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: '#fff', fontSize: 16, fontWeight: 700, cursor: 'pointer', boxShadow: '0 8px 32px rgba(34,197,94,0.4), 0 0 0 1px rgba(34,197,94,0.25)', letterSpacing: '0.02em' }}
+              >
+                Iniciar sesión
+              </button>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', margin: 0 }}>Toca para continuar con tu cuenta</p>
+            </>
           ) : (
-            <div className="w-6 h-6 border-2 border-emerald-400/40 border-t-emerald-400 rounded-full animate-spin mt-2" />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid rgba(34,197,94,0.15)', borderTopColor: '#22c55e', animation: 'spin 0.9s linear infinite' }}/>
+              <p style={{ fontSize: 11, color: 'rgba(74,222,128,0.35)', margin: 0 }}>Preparando inicio de sesión...</p>
+            </div>
           )}
         </div>
       </div>

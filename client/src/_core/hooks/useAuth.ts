@@ -16,7 +16,10 @@ export function useAuth(options?: UseAuthOptions) {
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
-    retry: false,
+    // On native, allow 1 retry for transient network errors post-login.
+    // On web, retry:false prevents redirect loops when not authenticated.
+    retry: Capacitor.isNativePlatform() ? 1 : false,
+    retryDelay: 2000,
     refetchOnWindowFocus: false,
   });
 

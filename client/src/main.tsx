@@ -135,10 +135,13 @@ function mountReact() {
 // Garantiza que la cookie esté seteada cuando auth.me se ejecute
 // ============================================
 async function bootstrap() {
-  // iOS: evitar que el webview quede DEBAJO del status bar nativo
-  if (Capacitor.getPlatform() === 'ios') {
+  // Configurar StatusBar nativo (iOS y Android)
+  const platform = Capacitor.getPlatform();
+  if (platform === 'ios' || platform === 'android') {
     try {
-      await StatusBar.setOverlaysWebView({ overlay: false });
+      if (platform === 'ios') {
+        await StatusBar.setOverlaysWebView({ overlay: false });
+      }
       await StatusBar.setBackgroundColor({ color: '#052E16' });
       await StatusBar.setStyle({ style: Style.Light });
     } catch (e) {
