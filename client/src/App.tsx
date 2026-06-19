@@ -12,9 +12,11 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { Onboarding, useOnboarding } from "@/components/Onboarding";
 import { LoadingGuard } from "@/components/LoadingGuard";
+import { Capacitor } from "@capacitor/core";
+import { openLoginBrowser } from "@/const";
 
 // Páginas públicas (carga inmediata - landing)
 import Landing from "./pages/Landing";
@@ -198,7 +200,21 @@ function isPWAInstalled(): boolean {
 function RoleBasedRedirect() {
   const { user, isAuthenticated, loading, refresh } = useAuth();
   const [, setLocation] = useLocation();
-  
+  const loginBrowserOpened = useRef(false);
+
+  // On native: auto-open Auth0 login immediately when not authenticated
+  useEffect(() => {
+    if (loading) return;
+    if (isAuthenticated) {
+      loginBrowserOpened.current = false; // reset so next logout re-opens it
+      return;
+    }
+    if (!Capacitor.isNativePlatform()) return;
+    if (loginBrowserOpened.current) return;
+    loginBrowserOpened.current = true;
+    openLoginBrowser();
+  }, [isAuthenticated, loading]);
+
   // Verificar si el usuario tiene una sesión de carga activa
   const { data: activeSession, isLoading: sessionLoading } = trpc.charging.getActiveSession.useQuery(
     undefined,
