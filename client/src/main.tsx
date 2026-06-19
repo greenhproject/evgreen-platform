@@ -146,6 +146,29 @@ async function bootstrap() {
     }
   }
 
+  // Register appUrlOpen listener FIRST so it's always active regardless of early returns below.
+  // This handles the deep-link callback after OAuth login (SFSafariViewController → evgreen://).
+  CapacitorApp.addListener('appUrlOpen', async (data) => {
+    console.log("[Auth] appUrlOpen recibido:", data.url);
+    const token = extractToken(data.url);
+    if (!token) {
+      console.warn("[Auth] appUrlOpen sin token:", data.url);
+      return;
+    }
+    console.log("[Auth] Token recibido vía appUrlOpen:", token.substring(0, 10) + "...");
+    setAuthCookie(token);
+    console.log("[Auth] Token guardado — cookie:", document.cookie.includes(COOKIE_NAME) ? "OK" : "FALTA", "| localStorage:", localStorage.getItem(NATIVE_TOKEN_KEY) ? "OK" : "FALTA");
+    try {
+      const { Browser } = await import('@capacitor/browser');
+      await Browser.close();
+    } catch (e) {
+      console.warn("[Auth] Browser.close error:", e);
+    }
+    // Doble disparo: invalidar caché Y evento directo a useAuth
+    queryClient.invalidateQueries();
+    window.dispatchEvent(new Event('evgreen-auth-updated'));
+  });
+
   try {
     const launchUrl = await CapacitorApp.getLaunchUrl();
     if (launchUrl?.url) {
@@ -173,30 +196,6 @@ async function bootstrap() {
   } catch (e) {
     console.warn("[Auth] getLaunchUrl error:", e);
   }
-
-  // Escuchar deep links mientras la app está abierta.
-  // Con @capacitor/browser el WKWebView nunca navega al servidor externo,
-  // así que este listener sigue activo durante todo el flujo OAuth.
-  CapacitorApp.addListener('appUrlOpen', async (data) => {
-    console.log("[Auth] appUrlOpen recibido:", data.url);
-    const token = extractToken(data.url);
-    if (!token) {
-      console.warn("[Auth] appUrlOpen sin token:", data.url);
-      return;
-    }
-    console.log("[Auth] Token recibido vía appUrlOpen:", token.substring(0, 10) + "...");
-    setAuthCookie(token);
-    console.log("[Auth] Token guardado — cookie:", document.cookie.includes(COOKIE_NAME) ? "OK" : "FALTA", "| localStorage:", localStorage.getItem(NATIVE_TOKEN_KEY) ? "OK" : "FALTA");
-    try {
-      const { Browser } = await import('@capacitor/browser');
-      await Browser.close();
-    } catch (e) {
-      console.warn("[Auth] Browser.close error:", e);
-    }
-    // Doble disparo: invalidar caché Y evento directo a useAuth
-    queryClient.invalidateQueries();
-    window.dispatchEvent(new Event('evgreen-auth-updated'));
-  });
 
   mountReact();
 }
