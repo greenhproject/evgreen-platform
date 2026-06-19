@@ -526,7 +526,27 @@ export default function StationDetail() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
-            <h3 className="font-semibold mb-3">Conectores disponibles</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Conectores disponibles</h3>
+              {station.isOnline === false && (
+                <span className="text-xs text-orange-400 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  Sin conexión
+                </span>
+              )}
+            </div>
+            {/* Banner offline */}
+            {station.isOnline === false && (
+              <div className="mb-3 p-3 rounded-lg bg-orange-500/10 border border-orange-500/30 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-orange-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="text-sm font-semibold text-orange-400">Estación sin conexión</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    El cargador no está conectado al servidor en este momento. No es posible iniciar una carga. Inténtalo más tarde.
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="space-y-3">
               {evses?.map((evse: any, index: number) => {
                 const statusStyle = getConnectorStatus(evse.status);
@@ -628,14 +648,16 @@ export default function StationDetail() {
                           <Button
                             className="flex-1 gradient-primary text-white"
                             onClick={() => setLocation(`/start-charge?code=${station.ocppIdentity || station.id}`)}
+                            disabled={station.isOnline === false}
                           >
                             <Zap className="w-4 h-4 mr-2" />
-                            Iniciar carga
+                            {station.isOnline === false ? 'Sin conexión' : 'Iniciar carga'}
                           </Button>
                           <Button 
                             variant="outline"
                             onClick={() => handleReserve(evse)}
                             className="border-primary/50 hover:bg-primary/10"
+                            disabled={station.isOnline === false}
                           >
                             <Calendar className="w-4 h-4" />
                           </Button>

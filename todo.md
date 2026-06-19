@@ -3582,3 +3582,14 @@
 - [x] FIX: Cuando realIsOnline=false, marcar todos los EVSEs como UNAVAILABLE en la respuesta al cliente (stations.list)
 - [x] FIX: También aplicar la misma lógica en la consulta por ubicación (getStationsNearLocation) — cubierto por el mismo mapeo en listPublic
 - [x] FIX: Actualizar isOnline en BD cuando la estación se desconecta — confirmado en index.ts línea 892 (updateStationOnlineStatus tras grace period)
+
+## BUG FIX CRÍTICO: Pantalla de detalle muestra conectores AVAILABLE y botón "Iniciar carga" activo cuando la estación está offline
+
+- [x] FIX Backend: stations.getById — calcula realIsOnline con connection-manager (no BD fallback)
+- [x] FIX Backend: stations.getEvses — aplica offline→UNAVAILABLE mapping (excepto CHARGING/RESERVED)
+- [x] FIX Backend: charging.getStationByCode — eliminado fallback `station.isOnline || (isActive && hasAvailableConnector)`, ahora solo OCPP activo o grace period
+- [x] FIX Backend: charging.getAvailableConnectors — marca EVSEs como UNAVAILABLE cuando estación offline
+- [x] FIX Backend: charging.startCharge — eliminado fallback `stationOnlineInDb`, ahora solo OCPP activo o grace period
+- [x] FIX Frontend: StationDetail.tsx — banner naranja "Estación sin conexión" cuando isOnline=false
+- [x] FIX Frontend: StationDetail.tsx — botón "Iniciar carga" deshabilitado y muestra "Sin conexión" cuando offline
+- [x] FIX Frontend: StationDetail.tsx — botón reserva deshabilitado cuando offline
