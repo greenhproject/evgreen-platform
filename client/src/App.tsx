@@ -201,8 +201,14 @@ function RoleBasedRedirect() {
   const { user, isAuthenticated, loading, refresh } = useAuth();
   const [, setLocation] = useLocation();
   const loginBrowserOpened = useRef(false);
+  const isAuthenticatedRef = useRef(isAuthenticated);
 
-  // On native: auto-open Auth0 login immediately when not authenticated
+  useEffect(() => {
+    isAuthenticatedRef.current = isAuthenticated;
+  }, [isAuthenticated]);
+
+  // On native: auto-open Auth0 login immediately when not authenticated.
+  // Also re-open if the user closes the browser without logging in (X button).
   useEffect(() => {
     if (loading) return;
     if (isAuthenticated) {
@@ -212,7 +218,31 @@ function RoleBasedRedirect() {
     if (!Capacitor.isNativePlatform()) return;
     if (loginBrowserOpened.current) return;
     loginBrowserOpened.current = true;
-    openLoginBrowser();
+
+    let listenerHandle: { remove: () => void } | null = null;
+
+    (async () => {
+      await openLoginBrowser();
+      const { Browser } = await import('@capacitor/browser');
+      listenerHandle = await Browser.addListener('browserFinished', () => {
+        // Wait briefly for appUrlOpen to process a successful login token first
+        setTimeout(() => {
+          if (isAuthenticatedRef.current) return; // login succeeded, don't re-open
+          // User dismissed the browser without logging in — reopen it
+          loginBrowserOpened.current = false;
+          setTimeout(() => {
+            if (!loginBrowserOpened.current && !isAuthenticatedRef.current) {
+              loginBrowserOpened.current = true;
+              openLoginBrowser();
+            }
+          }, 300);
+        }, 800);
+      });
+    })();
+
+    return () => {
+      listenerHandle?.remove();
+    };
   }, [isAuthenticated, loading]);
 
   // Verificar si el usuario tiene una sesión de carga activa
