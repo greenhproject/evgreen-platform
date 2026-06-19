@@ -624,6 +624,8 @@ const stationsRouter = router({
       energyPurchaseCostPerKwh: z.string().optional(),
       hostName: z.string().optional(),
       hostUserId: z.number().optional(),
+      parkingRatePerMinute: z.number().int().min(0).optional(),
+      occupancyRatePerMinute: z.number().int().min(0).optional(),
     }))
     .mutation(async ({ input }) => {
       // Si se seleccionó un perfil de marca, autoconfigurar manufacturer y model
@@ -667,6 +669,8 @@ const stationsRouter = router({
         energyPurchaseCostPerKwh: z.string().optional(),
         hostName: z.string().optional(),
         hostUserId: z.number().optional(),
+        parkingRatePerMinute: z.number().int().min(0).optional(),
+        occupancyRatePerMinute: z.number().int().min(0).optional(),
       }),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -6539,6 +6543,48 @@ const adminRemoteStartRouter = router({
     }),
 });
 
+// ============================================================================
+// OCCUPANCY LIQUIDATIONS ROUTER
+// Liquidaciones de tarifa de ocupación para aliados (parqueaderos)
+// ============================================================================
+const occupancyLiquidationsRouter = router({
+  // Admin: resumen mensual de todas las estaciones
+  adminSummary: adminProcedure
+    .input(z.object({ year: z.number(), month: z.number() }))
+    .query(async ({ input }) => {
+      return db.getOccupancyLiquidationSummaryAdmin(input.year, input.month);
+    }),
+
+  // Admin: detalle por estación
+  adminByStation: adminProcedure
+    .input(z.object({ stationId: z.number(), year: z.number().optional(), month: z.number().optional() }))
+    .query(async ({ input }) => {
+      return db.getOccupancyLiquidationsByStation(input.stationId, input.year, input.month);
+    }),
+
+  // Admin: marcar liquidaciones como pagadas
+  markPaid: adminProcedure
+    .input(z.object({ hostUserId: z.number(), year: z.number(), month: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.markOccupancyLiquidationsPaid(input.hostUserId, input.year, input.month);
+      return { success: true };
+    }),
+
+  // Aliado: resumen mensual propio
+  mySummary: protectedProcedure
+    .input(z.object({ year: z.number(), month: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return db.getOccupancyLiquidationSummary(ctx.user.id, input.year, input.month);
+    }),
+
+  // Aliado: detalle de registros propios
+  myRecords: protectedProcedure
+    .input(z.object({ year: z.number().optional(), month: z.number().optional() }))
+    .query(async ({ ctx, input }) => {
+      return db.getOccupancyLiquidationsByHost(ctx.user.id, input.year, input.month);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -6590,6 +6636,7 @@ export const appRouter = router({
   profiles: profilesRouter,
   organizations: buildOrganizationsRouter(router, adminProcedure),
   contact: contactRouter,
+  occupancyLiquidations: occupancyLiquidationsRouter,
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

@@ -7814,3 +7814,154 @@ export async function updateOfflinePolicy(
     offlinePolicy: policy,
   }).where(eq(localAuthLists.id, list.id));
 }
+
+// ============================================================
+// OCCUPANCY LIQUIDATIONS - Liquidaciones de tarifa de ocupación para aliados
+// ============================================================
+import { occupancyLiquidations, InsertOccupancyLiquidation, OccupancyLiquidation } from "../drizzle/schema";
+
+/**
+ * Crear un registro de liquidación de ocupación.
+ * Se llama desde overstay-monitor cada vez que se cobra al usuario.
+ */
+export async function createOccupancyLiquidation(data: InsertOccupancyLiquidation): Promise<number | null> {
+  const database = await getDb();
+  if (!database) return null;
+  const now = new Date();
+  const result = await database.insert(occupancyLiquidations).values({
+    ...data,
+    periodYear: data.periodYear ?? now.getFullYear(),
+    periodMonth: data.periodMonth ?? (now.getMonth() + 1),
+  });
+  return (result[0] as any).insertId ?? null;
+}
+
+/**
+ * Obtener liquidaciones de ocupación por aliado (hostUserId) y período.
+ * Usado en el dashboard del aliado y en el admin.
+ */
+export async function getOccupancyLiquidationsByHost(
+  hostUserId: number,
+  year?: number,
+  month?: number
+): Promise<OccupancyLiquidation[]> {
+  const database = await getDb();
+  if (!database) return [];
+  const conditions = [eq(occupancyLiquidations.hostUserId, hostUserId)];
+  if (year) conditions.push(eq(occupancyLiquidations.periodYear, year));
+  if (month) conditions.push(eq(occupancyLiquidations.periodMonth, month));
+  return database.select().from(occupancyLiquidations)
+    .where(and(...conditions))
+    .orderBy(desc(occupancyLiquidations.createdAt));
+}
+
+/**
+ * Obtener liquidaciones de ocupación por estación y período.
+ * Usado en el admin para ver detalle por estación.
+ */
+export async function getOccupancyLiquidationsByStation(
+  stationId: number,
+  year?: number,
+  month?: number
+): Promise<OccupancyLiquidation[]> {
+  const database = await getDb();
+  if (!database) return [];
+  const conditions = [eq(occupancyLiquidations.stationId, stationId)];
+  if (year) conditions.push(eq(occupancyLiquidations.periodYear, year));
+  if (month) conditions.push(eq(occupancyLiquidations.periodMonth, month));
+  return database.select().from(occupancyLiquidations)
+    .where(and(...conditions))
+    .orderBy(desc(occupancyLiquidations.createdAt));
+}
+
+/**
+ * Resumen de liquidaciones de ocupación por aliado y período.
+ * Devuelve totales agregados: minutos, cobrado al usuario, transferido al aliado, margen EVGreen.
+ */
+export async function getOccupancyLiquidationSummary(
+  hostUserId: number,
+  year: number,
+  month: number
+): Promise<{
+  totalMinutes: number;
+  totalUserCharge: number;
+  totalAllyTransfer: number;
+  totalEvgreenMargin: number;
+  sessionCount: number;
+}> {
+  const database = await getDb();
+  if (!database) return { totalMinutes: 0, totalUserCharge: 0, totalAllyTransfer: 0, totalEvgreenMargin: 0, sessionCount: 0 };
+  const rows = await database.select({
+    totalMinutes: sql<number>`COALESCE(SUM(minutesCharged), 0)`,
+    totalUserCharge: sql<number>`COALESCE(SUM(userCharge), 0)`,
+    totalAllyTransfer: sql<number>`COALESCE(SUM(allyTransfer), 0)`,
+    totalEvgreenMargin: sql<number>`COALESCE(SUM(evgreenMargin), 0)`,
+    sessionCount: sql<number>`COUNT(*)`,
+  }).from(occupancyLiquidations)
+    .where(and(
+      eq(occupancyLiquidations.hostUserId, hostUserId),
+      eq(occupancyLiquidations.periodYear, year),
+      eq(occupancyLiquidations.periodMonth, month),
+    ));
+  const row = rows[0];
+  return {
+    totalMinutes: Number(row?.totalMinutes ?? 0),
+    totalUserCharge: Number(row?.totalUserCharge ?? 0),
+    totalAllyTransfer: Number(row?.totalAllyTransfer ?? 0),
+    totalEvgreenMargin: Number(row?.totalEvgreenMargin ?? 0),
+    sessionCount: Number(row?.sessionCount ?? 0),
+  };
+}
+
+/**
+ * Resumen de liquidaciones de ocupación por admin (todas las estaciones) y período.
+ */
+export async function getOccupancyLiquidationSummaryAdmin(
+  year: number,
+  month: number
+): Promise<Array<{
+  hostUserId: number | null;
+  stationId: number;
+  totalMinutes: number;
+  totalUserCharge: number;
+  totalAllyTransfer: number;
+  totalEvgreenMargin: number;
+  sessionCount: number;
+}>> {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select({
+    hostUserId: occupancyLiquidations.hostUserId,
+    stationId: occupancyLiquidations.stationId,
+    totalMinutes: sql<number>`COALESCE(SUM(minutesCharged), 0)`,
+    totalUserCharge: sql<number>`COALESCE(SUM(userCharge), 0)`,
+    totalAllyTransfer: sql<number>`COALESCE(SUM(allyTransfer), 0)`,
+    totalEvgreenMargin: sql<number>`COALESCE(SUM(evgreenMargin), 0)`,
+    sessionCount: sql<number>`COUNT(*)`,
+  }).from(occupancyLiquidations)
+    .where(and(
+      eq(occupancyLiquidations.periodYear, year),
+      eq(occupancyLiquidations.periodMonth, month),
+    ))
+    .groupBy(occupancyLiquidations.hostUserId, occupancyLiquidations.stationId);
+}
+
+/**
+ * Marcar liquidaciones de un aliado como pagadas.
+ */
+export async function markOccupancyLiquidationsPaid(
+  hostUserId: number,
+  year: number,
+  month: number
+): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  await database.update(occupancyLiquidations)
+    .set({ allyPaidAt: new Date() })
+    .where(and(
+      eq(occupancyLiquidations.hostUserId, hostUserId),
+      eq(occupancyLiquidations.periodYear, year),
+      eq(occupancyLiquidations.periodMonth, month),
+      isNull(occupancyLiquidations.allyPaidAt),
+    ));
+}

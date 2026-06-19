@@ -95,6 +95,8 @@ interface StationFormData {
   energyPurchaseCostPerKwh: string;
   hostName: string;
   hostUserId: string;
+  parkingRatePerMinute: string;
+  occupancyRatePerMinute: string;
 }
 
 const initialFormData: StationFormData = {
@@ -118,6 +120,8 @@ const initialFormData: StationFormData = {
   energyPurchaseCostPerKwh: "850",
   hostName: "",
   hostUserId: "",
+  parkingRatePerMinute: "0",
+  occupancyRatePerMinute: "0",
   operatingHours: {
     monday: { open: "06:00", close: "22:00" },
     tuesday: { open: "06:00", close: "22:00" },
@@ -326,6 +330,8 @@ export default function AdminStations() {
       energyPurchaseCostPerKwh: station.energyPurchaseCostPerKwh?.toString() || "850",
       hostName: station.hostName || "",
       hostUserId: station.hostUserId?.toString() || "",
+      parkingRatePerMinute: (station.parkingRatePerMinute ?? 0).toString(),
+      occupancyRatePerMinute: (station.occupancyRatePerMinute ?? 0).toString(),
       operatingHours: station.operatingHours && typeof station.operatingHours === 'object' 
         ? station.operatingHours as any 
         : initialFormData.operatingHours,
@@ -426,6 +432,8 @@ export default function AdminStations() {
         energyPurchaseCostPerKwh: formData.energyPurchaseCostPerKwh || "850",
         hostName: formData.hostName || undefined,
         hostUserId: formData.hostUserId ? parseInt(formData.hostUserId) : undefined,
+        parkingRatePerMinute: parseInt(formData.parkingRatePerMinute || "0"),
+        occupancyRatePerMinute: parseInt(formData.occupancyRatePerMinute || "0"),
       });
       
       // Si hay imagen seleccionada, subirla
@@ -502,6 +510,8 @@ export default function AdminStations() {
           energyPurchaseCostPerKwh: formData.energyPurchaseCostPerKwh || "850",
           hostName: formData.hostName || undefined,
           hostUserId: formData.hostUserId ? parseInt(formData.hostUserId) : undefined,
+          parkingRatePerMinute: parseInt(formData.parkingRatePerMinute || "0"),
+          occupancyRatePerMinute: parseInt(formData.occupancyRatePerMinute || "0"),
         },
       });
 
@@ -1191,6 +1201,42 @@ export default function AdminStations() {
                   onChange={(e) => setFormData({...formData, hostUserId: e.target.value})}
                 />
               </div>
+            </div>
+
+            {/* Tarifas de ocupación para parqueaderos */}
+            <div className="pt-2 border-t border-border/50">
+              <p className="text-xs text-muted-foreground mb-3">
+                <span className="font-medium text-foreground">Modelo de liquidación de ocupación</span> — Cuando el EV ocupa el slot post-carga, EVGreen cobra al usuario la tarifa app y transfiere al aliado la tarifa de parqueadero. El diferencial queda para EVGreen.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs">Tarifa parqueadero aliado (COP/min)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="Ej: 230"
+                    value={formData.parkingRatePerMinute}
+                    onChange={(e) => setFormData({...formData, parkingRatePerMinute: e.target.value})}
+                  />
+                  <p className="text-xs text-muted-foreground">Lo que el aliado cobra en su parqueadero</p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Tarifa ocupación app EVGreen (COP/min)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="Ej: 500"
+                    value={formData.occupancyRatePerMinute}
+                    onChange={(e) => setFormData({...formData, occupancyRatePerMinute: e.target.value})}
+                  />
+                  <p className="text-xs text-muted-foreground">Lo que EVGreen cobra al usuario (≥ tarifa aliado)</p>
+                </div>
+              </div>
+              {parseInt(formData.parkingRatePerMinute || "0") > 0 && parseInt(formData.occupancyRatePerMinute || "0") > 0 && (
+                <div className="mt-2 p-2 bg-green-500/10 rounded text-xs text-green-600 dark:text-green-400">
+                  Margen EVGreen por ocupación: <strong>${(parseInt(formData.occupancyRatePerMinute) - parseInt(formData.parkingRatePerMinute)).toLocaleString("es-CO")} COP/min</strong>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -36,6 +36,7 @@ import {
   Building2,
   Wallet,
   BarChart3,
+  ParkingSquare,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -48,6 +49,7 @@ const hostMenuItems = [
   { icon: Receipt, label: "Transacciones", path: "/host/transactions" },
   { icon: Wallet, label: "Liquidaciones", path: "/host/settlements" },
   { icon: BarChart3, label: "Reportes", path: "/host/reports" },
+  { icon: ParkingSquare, label: "Ocupación Parqueadero", path: "/host/occupancy" },
   { icon: Settings, label: "Configuración", path: "/host/settings" },
 ];
 

@@ -249,6 +249,13 @@ export const chargingStations = mysqlTable("charging_stations", {
   // Aliado Comercial (dueño del espacio donde se instala la estación)
   hostUserId: int("hostUserId"), // FK a users (rol: host). null = el inversionista es también dueño del espacio
   hostName: varchar("hostName", { length: 255 }), // Nombre del aliado comercial (para display)
+  // ============================================================================
+  // MODELO DE LIQUIDACIÓN DE OCUPACIÓN PARA ALIADOS (PARQUEADEROS)
+  // Cuando un EV ocupa el slot post-carga, EVGreen cobra al usuario occupancyRatePerMinute
+  // y transfiere al aliado parkingRatePerMinute. EVGreen retiene el diferencial.
+  // ============================================================================
+  parkingRatePerMinute: int("parkingRatePerMinute").default(0).notNull(), // COP/min que el aliado cobra en su parqueadero (lo que EVGreen le transfiere)
+  occupancyRatePerMinute: int("occupancyRatePerMinute").default(0).notNull(), // COP/min que EVGreen cobra al usuario en la app (debe ser >= parkingRatePerMinute)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -3741,5 +3748,52 @@ export const orgBillingRecordsRelations = relations(orgBillingRecords, ({ one })
   organization: one(organizations, {
     fields: [orgBillingRecords.organizationId],
     references: [organizations.id],
+  }),
+}));
+
+// ============================================================================
+// OCCUPANCY LIQUIDATIONS TABLE - Liquidaciones de tarifa de ocupación para aliados
+// Registra cada cobro de ocupación post-carga con el desglose:
+//   - userCharge: lo que pagó el usuario (occupancyRatePerMinute × minutos)
+//   - allyTransfer: lo que recibe el aliado (parkingRatePerMinute × minutos)
+//   - evgreenMargin: diferencial que retiene EVGreen
+// ============================================================================
+export const occupancyLiquidations = mysqlTable("occupancy_liquidations", {
+  id: int("id").autoincrement().primaryKey(),
+  transactionId: int("transactionId").notNull(), // FK a transactions
+  stationId: int("stationId").notNull(),         // FK a charging_stations
+  hostUserId: int("hostUserId"),                 // FK a users (aliado). null si no hay aliado
+  // Minutos cobrados
+  minutesCharged: decimal("minutesCharged", { precision: 8, scale: 2 }).notNull(),
+  // Tarifas aplicadas (snapshot al momento del cobro)
+  occupancyRatePerMinute: int("occupancyRatePerMinute").notNull(), // COP/min cobrado al usuario
+  parkingRatePerMinute: int("parkingRatePerMinute").notNull(),     // COP/min transferido al aliado
+  // Montos resultantes (COP)
+  userCharge: int("userCharge").notNull(),       // Total cobrado al usuario
+  allyTransfer: int("allyTransfer").notNull(),   // Total transferido al aliado
+  evgreenMargin: int("evgreenMargin").notNull(), // Diferencial para EVGreen
+  // Estado del pago al aliado
+  allyPaidAt: timestamp("allyPaidAt"),           // null = pendiente de pago al aliado
+  // Período de liquidación (para agrupar en reportes mensuales)
+  periodYear: int("periodYear").notNull(),       // Año (ej. 2026)
+  periodMonth: int("periodMonth").notNull(),     // Mes 1-12
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OccupancyLiquidation = typeof occupancyLiquidations.$inferSelect;
+export type InsertOccupancyLiquidation = typeof occupancyLiquidations.$inferInsert;
+
+export const occupancyLiquidationsRelations = relations(occupancyLiquidations, ({ one }) => ({
+  transaction: one(transactions, {
+    fields: [occupancyLiquidations.transactionId],
+    references: [transactions.id],
+  }),
+  station: one(chargingStations, {
+    fields: [occupancyLiquidations.stationId],
+    references: [chargingStations.id],
+  }),
+  hostUser: one(users, {
+    fields: [occupancyLiquidations.hostUserId],
+    references: [users.id],
   }),
 }));

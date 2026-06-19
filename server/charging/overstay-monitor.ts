@@ -61,6 +61,12 @@ interface OverstaySession {
   penaltyStartNotified: boolean;
   /** Number of penalty charges applied */
   chargeCount: number;
+  /** Tarifa que el aliado cobra en su parqueadero (COP/min) - para liquidación */
+  parkingRatePerMinute: number;
+  /** Tarifa que EVGreen cobra al usuario en la app (COP/min) - puede ser mayor */
+  occupancyRatePerMinute: number;
+  /** hostUserId del aliado para registrar la liquidación */
+  hostUserId: number | null;
 }
 
 // In-memory map of active overstay sessions: evseId → OverstaySession
@@ -302,6 +308,15 @@ export async function onChargingFinished(evseId: number, stationId: number) {
     const stationName = station?.name || `Estación #${stationId}`;
     const connectorId = evse?.connectorId || 1;
 
+    // Tarifas de parqueo del aliado (para liquidación)
+    const parkingRatePerMinute = station?.parkingRatePerMinute ?? 0;
+    // Si la estación tiene occupancyRatePerMinute configurado, usarlo en lugar del penaltyPerMinute global
+    const stationOccupancyRate = station?.occupancyRatePerMinute ?? 0;
+    if (stationOccupancyRate > 0) {
+      penaltyPerMinute = stationOccupancyRate;
+    }
+    const hostUserId = station?.hostUserId ?? null;
+
     const session: OverstaySession = {
       transactionId: transaction.id,
       evseId,
@@ -319,6 +334,9 @@ export async function onChargingFinished(evseId: number, stationId: number) {
       graceWarningNotified: false,
       penaltyStartNotified: false,
       chargeCount: 0,
+      parkingRatePerMinute,
+      occupancyRatePerMinute: penaltyPerMinute,
+      hostUserId,
     };
 
     // Try to acquire DB lock before starting
@@ -681,6 +699,32 @@ async function chargeOverstayForSession(session: OverstaySession, isFinal: boole
 
     // Update the DB lock with new accumulated cost (for recovery)
     await updateOverstayLock(session.evseId, session.accumulatedCost, now);
+
+    // ── LIQUIDACIÓN DE OCUPACIÓN PARA ALIADO ──────────────────────────────────
+    // Registrar el desglose: lo que pagó el usuario vs lo que recibe el aliado
+    if (session.parkingRatePerMinute > 0 || session.occupancyRatePerMinute > 0) {
+      try {
+        const chargeNow = new Date();
+        const allyTransfer = Math.round(minutesSinceLastCharge * session.parkingRatePerMinute);
+        const evgreenMargin = penaltyAmount - allyTransfer;
+        await db.createOccupancyLiquidation({
+          transactionId: session.transactionId,
+          stationId: session.stationId,
+          hostUserId: session.hostUserId,
+          minutesCharged: minutesSinceLastCharge.toFixed(2) as any,
+          occupancyRatePerMinute: session.occupancyRatePerMinute,
+          parkingRatePerMinute: session.parkingRatePerMinute,
+          userCharge: penaltyAmount,
+          allyTransfer,
+          evgreenMargin,
+          periodYear: chargeNow.getFullYear(),
+          periodMonth: chargeNow.getMonth() + 1,
+        });
+      } catch (liqErr) {
+        console.error(`[OverstayMonitor] Error creating occupancy liquidation:`, liqErr);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Update transaction overstayCost in DB
     await db.updateTransaction(session.transactionId, {

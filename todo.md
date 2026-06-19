@@ -3602,3 +3602,32 @@
 - [x] VERIFICADO: admin/Stations.tsx y technician/Stations.tsx ya tenían los 8 tipos en formularios
 - [x] VERIFICADO: investor/Stations.tsx, TripPlanner.tsx, Vehicles.tsx ya tenían los 8 tipos
 - [x] VERIFICADO: db.ts getAvailableEvses usa el tipo de Drizzle directamente (sin hardcoding)
+
+## FEATURE: Liquidación de Tarifa de Ocupación para Aliados (Parqueaderos)
+### Modelo: EVGreen cobra al usuario su tarifa app, transfiere al aliado su tarifa de parqueo, retiene el diferencial
+
+- [ ] SCHEMA: Agregar campo `parkingRatePerMinute` (INT, COP/min) en tabla `chargingStations` — tarifa que el aliado cobra en su parqueadero (configurable por estación)
+- [ ] SCHEMA: Agregar campo `occupancyRatePerMinute` (INT, COP/min) en tabla `chargingStations` — tarifa que EVGreen cobra al usuario en la app por ocupación post-carga (puede ser mayor que la del aliado)
+- [ ] SCHEMA: Crear tabla `occupancyLiquidations`: sessionId, minutesCharged, userCharge (COP total cobrado al usuario), allyTransfer (COP transferido al aliado = parkingRatePerMinute × minutos), evgreenMargin (diferencial), timestamp
+- [ ] BACKEND: Al calcular tarifa de ocupación post-gracia, usar `occupancyRatePerMinute` para cobrar al usuario y `parkingRatePerMinute` para calcular lo que se transfiere al aliado
+- [ ] BACKEND: Registrar cada liquidación en `occupancyLiquidations` al finalizar el cobro de ocupación
+- [ ] BACKEND: Procedimiento tRPC `billing.getOccupancyLiquidations` — admin ve detalle por aliado/estación/período
+- [ ] FRONTEND (Admin): En formulario de configuración de estación, mostrar dos campos: "Tarifa parqueo aliado (COP/min)" y "Tarifa ocupación app EVGreen (COP/min)"
+- [ ] FRONTEND (Admin): En dashboard de liquidaciones, mostrar por aliado: total cobrado al usuario, total transferido al aliado, margen EVGreen del período
+- [ ] FRONTEND (Aliado/Inversionista): En panel del aliado, mostrar detalle de liquidaciones — minutos cobrados, tarifa aplicada, monto recibido
+- [ ] LÓGICA: La tarifa app (`occupancyRatePerMinute`) DEBE ser >= tarifa aliado (`parkingRatePerMinute`) para garantizar margen positivo para EVGreen
+- [ ] LÓGICA: El campo `parkingRatePerMinute` es configurable por estación desde admin — cada aliado puede tener su propia tarifa de parqueo
+- [ ] MIGRACIÓN: pnpm db:push después de agregar los campos al schema
+
+## FEATURE: Módulo de Liquidación de Ocupación de Parqueaderos (Aliados) - Jun 2026
+- [x] Schema BD: campos parkingRatePerMinute y occupancyRatePerMinute en chargingStations
+- [x] Schema BD: tabla occupancy_liquidations con campos de liquidación, período y estado de pago
+- [x] Backend db.ts: helpers getOccupancyLiquidationsByHost, getOccupancyLiquidationsByStation, getOccupancyLiquidationSummary, getOccupancyLiquidationSummaryAdmin, markOccupancyLiquidationsPaid, createOccupancyLiquidation
+- [x] Backend overstay-monitor.ts: crear registro de liquidación al cobrar tarifa de ocupación con split tarifa aliado vs EVGreen
+- [x] Backend routers.ts: router occupancyLiquidations con procedimientos mySummary, myRecords, adminSummary, adminByStation, markPaid
+- [x] Frontend admin/Stations.tsx: campos parkingRatePerMinute y occupancyRatePerMinute en formulario de estación
+- [x] Frontend admin/OccupancyLiquidations.tsx: dashboard admin con resumen por estación, filtro mes/año, marcar como pagado
+- [x] Frontend host/OccupancyLiquidations.tsx: panel aliado con métricas del período, tabla de registros, estado de pago
+- [x] App.tsx: rutas /admin/occupancy-liquidations y /host/occupancy registradas
+- [x] AdminLayout.tsx: ítem "Ocupación Parqueadero" en menú lateral admin
+- [x] HostLayout.tsx: ítem "Ocupación Parqueadero" en menú lateral aliado

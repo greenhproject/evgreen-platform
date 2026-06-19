@@ -134,6 +134,7 @@ const SpaceSubmission = lazy(() => import("./pages/SpaceSubmission"));
 const SpaceLetterAccept = lazy(() => import("./pages/SpaceLetterAccept"));
 const Crowdfunding = lazy(() => import("./pages/Crowdfunding"));
 const AdminSpaces = lazy(() => import("./pages/admin/Spaces"));
+const AdminOccupancyLiquidations = lazy(() => import("./pages/admin/OccupancyLiquidations"));
 
 // Páginas de Aliado Comercial (Host)
 const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
@@ -142,6 +143,7 @@ const HostTransactions = lazy(() => import("./pages/host/Transactions"));
 const HostSettlements = lazy(() => import("./pages/host/Settlements"));
 const HostReports = lazy(() => import("./pages/host/Reports"));
 const HostSettings = lazy(() => import("./pages/host/Settings"));
+const HostOccupancyLiquidations = lazy(() => import("./pages/host/OccupancyLiquidations"));
 
 // Páginas de Staff (Evento)
 const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
@@ -867,6 +869,15 @@ function Router() {
           </ProtectedRoute>
         </Route>
 
+        {/* Liquidaciones de Ocupación de Parqueaderos */}
+        <Route path="/admin/occupancy-liquidations">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminOccupancyLiquidations />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
         {/* Administración de Organizaciones SaaS */}
         <Route path="/admin/organizations">
           <ProtectedRoute allowedRoles={["admin", "staff"]}>
@@ -918,6 +929,13 @@ function Router() {
           <ProtectedRoute allowedRoles={["host", "admin"]}>
             <HostLayout>
               <HostSettings />
+            </HostLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/host/occupancy">
+          <ProtectedRoute allowedRoles={["host", "admin"]}>
+            <HostLayout>
+              <HostOccupancyLiquidations />
             </HostLayout>
           </ProtectedRoute>
         </Route>

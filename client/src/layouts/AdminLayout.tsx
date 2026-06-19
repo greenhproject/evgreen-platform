@@ -51,7 +51,8 @@ import {
   RotateCcw,
   AlertCircle,
   FileText,
-  Building
+  Building,
+  ParkingSquare
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -72,6 +73,7 @@ const adminMenuItems: { icon: any; label: string; path: string; roles?: string[]
   { icon: Building2, label: "Crowdfunding", path: "/admin/crowdfunding" },
   { icon: Terminal, label: "Monitor OCPP", path: "/admin/ocpp-monitor" },
   { icon: Timer, label: "Penalizaciones", path: "/admin/overstay" },
+  { icon: ParkingSquare, label: "Ocupación Parqueadero", path: "/admin/occupancy-liquidations" },
   { icon: Banknote, label: "Deudas", path: "/admin/debts" },
   { icon: BarChart3, label: "Reportes", path: "/admin/reports" },
   { icon: Image, label: "Banners", path: "/admin/banners" },
