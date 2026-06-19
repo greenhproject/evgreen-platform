@@ -12,7 +12,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { Onboarding, useOnboarding } from "@/components/Onboarding";
 import { LoadingGuard } from "@/components/LoadingGuard";
 import { Capacitor } from "@capacitor/core";
@@ -202,48 +202,55 @@ function RoleBasedRedirect() {
   const [, setLocation] = useLocation();
   const loginBrowserOpened = useRef(false);
   const isAuthenticatedRef = useRef(isAuthenticated);
+  const [showRetryButton, setShowRetryButton] = useState(false);
 
   useEffect(() => {
     isAuthenticatedRef.current = isAuthenticated;
   }, [isAuthenticated]);
 
-  // On native: auto-open Auth0 login immediately when not authenticated.
-  // Also re-open if the user closes the browser without logging in (X button).
+  // Show manual retry button if stuck for more than 5 seconds
   useEffect(() => {
-    if (loading) return;
-    if (isAuthenticated) {
-      loginBrowserOpened.current = false; // reset so next logout re-opens it
-      return;
-    }
-    if (!Capacitor.isNativePlatform()) return;
-    if (loginBrowserOpened.current) return;
+    if (loading || isAuthenticated || !Capacitor.isNativePlatform()) return;
+    const timer = setTimeout(() => setShowRetryButton(true), 5000);
+    return () => clearTimeout(timer);
+  }, [loading, isAuthenticated]);
+
+  const doOpenLogin = useCallback(async () => {
     loginBrowserOpened.current = true;
-
-    let listenerHandle: { remove: () => void } | null = null;
-
-    (async () => {
+    setShowRetryButton(false);
+    try {
       await openLoginBrowser();
       const { Browser } = await import('@capacitor/browser');
-      listenerHandle = await Browser.addListener('browserFinished', () => {
-        // Wait briefly for appUrlOpen to process a successful login token first
+      await Browser.addListener('browserFinished', () => {
         setTimeout(() => {
-          if (isAuthenticatedRef.current) return; // login succeeded, don't re-open
-          // User dismissed the browser without logging in — reopen it
+          if (isAuthenticatedRef.current) return;
           loginBrowserOpened.current = false;
           setTimeout(() => {
             if (!loginBrowserOpened.current && !isAuthenticatedRef.current) {
-              loginBrowserOpened.current = true;
-              openLoginBrowser();
+              doOpenLogin();
             }
           }, 300);
         }, 800);
       });
-    })();
+    } catch (e) {
+      console.error("[Auth] openLoginBrowser failed:", e);
+      loginBrowserOpened.current = false;
+      setShowRetryButton(true);
+    }
+  }, []);
 
-    return () => {
-      listenerHandle?.remove();
-    };
-  }, [isAuthenticated, loading]);
+  // On native: auto-open Auth0 login immediately when not authenticated.
+  useEffect(() => {
+    if (loading) return;
+    if (isAuthenticated) {
+      loginBrowserOpened.current = false;
+      setShowRetryButton(false);
+      return;
+    }
+    if (!Capacitor.isNativePlatform()) return;
+    if (loginBrowserOpened.current) return;
+    doOpenLogin();
+  }, [isAuthenticated, loading, doOpenLogin]);
 
   // Verificar si el usuario tiene una sesión de carga activa
   const { data: activeSession, isLoading: sessionLoading } = trpc.charging.getActiveSession.useQuery(
@@ -297,7 +304,16 @@ function RoleBasedRedirect() {
             </span>
             <span className="text-emerald-400/60 text-sm">by Green House Project</span>
           </div>
-          <div className="w-6 h-6 border-2 border-emerald-400/40 border-t-emerald-400 rounded-full animate-spin mt-2" />
+          {showRetryButton ? (
+            <button
+              onClick={doOpenLogin}
+              className="mt-2 px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold text-sm active:opacity-80 transition-opacity"
+            >
+              Iniciar sesión
+            </button>
+          ) : (
+            <div className="w-6 h-6 border-2 border-emerald-400/40 border-t-emerald-400 rounded-full animate-spin mt-2" />
+          )}
         </div>
       </div>
     );
