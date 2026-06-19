@@ -243,17 +243,31 @@ export const chargingRouter = router({
       // La estación está online si:
       // 1. Es estación demo (siempre online), O
       // 2. Tiene conexión OCPP activa (WebSocket abierto), O
-      // 3. Está marcada como online en la BD, O
-      // 4. La estación está activa Y tiene al menos un conector disponible en la BD
-      const hasAvailableConnector = connectors.some(c => c.status === 'AVAILABLE');
-      const isOnline = isDemo || isOcppConnected || station.isOnline || (station.isActive && hasAvailableConnector);
+      // 3. Está en grace period (reconectando — mostrar como online para no confundir)
+      // NOTA: Ya NO se usa station.isOnline de BD como fallback porque puede estar
+      // desactualizado si el servidor se reinició sin actualizar la BD.
+      const inGracePeriod = getConnection(stationOcppId) === undefined && 
+        (await import('../ocpp/connection-manager')).isInGracePeriod(stationOcppId);
+      const isOnline = isDemo || isOcppConnected || inGracePeriod;
       
       // Para estaciones demo, forzar conectores como AVAILABLE PERO respetar RESERVED
-      const mappedConnectors = connectors.map(c => ({
-        ...c,
-        status: (isDemo && c.status !== 'RESERVED') ? 'AVAILABLE' as typeof c.status : c.status,
-        ocppStatus: (isDemo && c.status !== 'RESERVED') ? 'AVAILABLE' : c.status,
-      }));
+      // Para estaciones offline, marcar todos como UNAVAILABLE excepto CHARGING/RESERVED
+      const mappedConnectors = connectors.map(c => {
+        let effectiveStatus = c.status;
+        if (isDemo && c.status !== 'RESERVED') {
+          effectiveStatus = 'AVAILABLE' as typeof c.status;
+        } else if (!isDemo && !isOnline) {
+          // Offline: preservar solo sesiones activas
+          if (c.status !== 'CHARGING' && c.status !== 'RESERVED') {
+            effectiveStatus = 'UNAVAILABLE' as typeof c.status;
+          }
+        }
+        return {
+          ...c,
+          status: effectiveStatus,
+          ocppStatus: isDemo ? 'AVAILABLE' : effectiveStatus,
+        };
+      });
       
       // Verificar si el usuario tiene una reserva activa en esta estación
       let userActiveReservation = null;
@@ -292,6 +306,14 @@ export const chargingRouter = router({
       const station = await db.getChargingStationById(stationId);
       const isDemo = station?.ocppIdentity ? simulator.isDemoStation(station.ocppIdentity) : false;
       
+      // Determinar si la estación está online usando connection-manager
+      const stationOcppIdForAvail = station?.ocppIdentity || '';
+      const isOcppConnectedForAvail = !!ocppConnection && ocppConnection.ws.readyState === 1;
+      const { isInGracePeriod: checkGrace } = await import('../ocpp/connection-manager');
+      const inGracePeriodForAvail = !isOcppConnectedForAvail && stationOcppIdForAvail 
+        ? checkGrace(stationOcppIdForAvail) : false;
+      const stationIsOnline = isDemo || isOcppConnectedForAvail || inGracePeriodForAvail;
+
       // Combinar estado de BD con estado OCPP en tiempo real
       return connectors.map(c => {
         let realTimeStatus = c.status;
@@ -299,6 +321,11 @@ export const chargingRouter = router({
         // Para estaciones demo, forzar AVAILABLE PERO respetar RESERVED
         if (isDemo && realTimeStatus !== 'RESERVED') {
           realTimeStatus = 'AVAILABLE' as typeof c.status;
+        } else if (!isDemo && !stationIsOnline) {
+          // Estación offline: marcar como UNAVAILABLE excepto CHARGING/RESERVED
+          if (realTimeStatus !== 'CHARGING' && realTimeStatus !== 'RESERVED') {
+            realTimeStatus = 'UNAVAILABLE' as typeof c.status;
+          }
         } else if (!isDemo && ocppConnection && ocppConnection.connectorStatuses.size > 0) {
           const ocppStatus = ocppConnection.connectorStatuses.get(c.evseIdLocal);
           if (ocppStatus) {
@@ -617,20 +644,18 @@ export const chargingRouter = router({
           }
         }
         
-        // Verificar disponibilidad usando la MISMA lógica que getStationByCode:
-        // isAvailable = hasOcppConnection || isConnectedByIdentity || stationOnlineInDb || (stationIsActive && hasAvailableConnector)
-        // Esto asegura que si la estación aparece como disponible en la app,
-        // también permita iniciar la carga.
-        const stationOnlineInDb = !!stationData?.isOnline;
-        const stationIsActive = !!stationData?.isActive;
-        const hasAvailableConnector = connectors.some((c: any) => {
-          const s = (c.status || '').toUpperCase();
-          return s === 'AVAILABLE' || s === 'PREPARING';
-        });
+        // Verificar disponibilidad usando connection-manager (fuente de verdad):
+        // La estación está disponible SOLO si tiene conexión OCPP activa o está en grace period.
+        // Ya NO se usa isOnline de BD como fallback para evitar que estaciones offline
+        // aparezcan como disponibles cuando el servidor se reinicia.
+        const stationOcppIdForStart = ocppIdentityForCommand || stationData?.ocppIdentity || '';
+        const { isInGracePeriod: checkGraceForStart } = await import('../ocpp/connection-manager');
+        const inGracePeriodForStart = stationOcppIdForStart 
+          ? checkGraceForStart(stationOcppIdForStart) : false;
         
-        const isAvailable = hasOcppConnection || isConnectedByIdentity || stationOnlineInDb || (stationIsActive && hasAvailableConnector);
+        const isAvailable = hasOcppConnection || isConnectedByIdentity || inGracePeriodForStart;
         
-        console.log(`[startCharge] Station ${stationId} availability: hasOcppConnection=${hasOcppConnection}, isConnectedByIdentity=${isConnectedByIdentity}, stationOnlineInDb=${stationOnlineInDb}, stationIsActive=${stationIsActive}, hasAvailableConnector=${hasAvailableConnector}, isAvailable=${isAvailable}`);
+        console.log(`[startCharge] Station ${stationId} availability: hasOcppConnection=${hasOcppConnection}, isConnectedByIdentity=${isConnectedByIdentity}, inGracePeriod=${inGracePeriodForStart}, isAvailable=${isAvailable}`);
         
         if (!isAvailable) {
           throw new TRPCError({
@@ -798,12 +823,6 @@ export const chargingRouter = router({
             code: "BAD_REQUEST",
             message: "El cargador rechazó la solicitud de inicio. Verifica que el vehículo esté correctamente conectado e intenta de nuevo.",
           });
-        }
-        
-        // Auto-corregir isOnline en BD si la estación tiene conector disponible pero isOnline=0
-        if (!stationOnlineInDb && hasAvailableConnector && stationData) {
-          console.log(`[startCharge] Correcting isOnline for station ${stationId}: setting to true (has AVAILABLE connector)`);
-          await db.updateChargingStation(stationId, { isOnline: true });
         }
         
         // Crear notificación de inicio con precio dinámico formateado

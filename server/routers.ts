@@ -577,13 +577,29 @@ const stationsRouter = router({
     .query(async ({ input, ctx }) => {
       const station = await db.getChargingStationById(input.id);
       if (!station) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Estaci\u00f3n no encontrada" });
       }
       // Verificar acceso
       if (ctx.user.role === "investor" && station.ownerId !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "No tienes acceso a esta estación" });
+        throw new TRPCError({ code: "FORBIDDEN", message: "No tienes acceso a esta estaci\u00f3n" });
       }
-      return station;
+      // Calcular estado online REAL usando connection-manager (misma l\u00f3gica que listPublic)
+      const { isDemoStation } = await import("./charging/charging-simulator");
+      const ocppMgr = await import("./ocpp/connection-manager");
+      const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
+      let realIsOnline = station.isOnline;
+      if (!isDemo && station.ocppIdentity) {
+        const liveConn = ocppMgr.getConnection(station.ocppIdentity);
+        const inGracePeriod = ocppMgr.isInGracePeriod(station.ocppIdentity);
+        if (liveConn && liveConn.ws.readyState === 1) {
+          realIsOnline = true;
+        } else if (inGracePeriod) {
+          realIsOnline = true;
+        } else if (liveConn === undefined && !inGracePeriod) {
+          realIsOnline = false;
+        }
+      }
+      return { ...station, isOnline: isDemo ? true : realIsOnline };
     }),
   
   create: technicianProcedure
@@ -721,11 +737,36 @@ const stationsRouter = router({
       };
     }),
 
-  // Obtener EVSEs de una estación
+  // Obtener EVSEs de una estación (con estado offline aplicado)
   getEvses: protectedProcedure
     .input(z.object({ stationId: z.number() }))
     .query(async ({ input }) => {
-      return db.getEvsesByStationId(input.stationId);
+      const evses = await db.getEvsesByStationId(input.stationId);
+      // Verificar si la estación está offline para marcar EVSEs como UNAVAILABLE
+      const station = await db.getChargingStationById(input.stationId);
+      if (!station) return evses;
+      const { isDemoStation } = await import("./charging/charging-simulator");
+      const ocppMgr = await import("./ocpp/connection-manager");
+      const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
+      if (isDemo) return evses; // Demo: siempre estado real
+      let realIsOnline = station.isOnline;
+      if (station.ocppIdentity) {
+        const liveConn = ocppMgr.getConnection(station.ocppIdentity);
+        const inGracePeriod = ocppMgr.isInGracePeriod(station.ocppIdentity);
+        if (liveConn && liveConn.ws.readyState === 1) {
+          realIsOnline = true;
+        } else if (inGracePeriod) {
+          realIsOnline = true;
+        } else if (liveConn === undefined && !inGracePeriod) {
+          realIsOnline = false;
+        }
+      }
+      if (realIsOnline) return evses; // Online: estado real de BD
+      // Offline: marcar todos como UNAVAILABLE excepto CHARGING/RESERVED
+      return evses.map((e: any) => ({
+        ...e,
+        status: (e.status === 'CHARGING' || e.status === 'RESERVED') ? e.status : 'UNAVAILABLE',
+      }));
     }),
   
   // Eliminar estación (admin/técnico)
