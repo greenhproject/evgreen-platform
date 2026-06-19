@@ -41,13 +41,17 @@ export function useAuth(options?: UseAuthOptions) {
       }
     } finally {
       localStorage.removeItem(NATIVE_TOKEN_KEY);
+      localStorage.removeItem('manus-runtime-user-info'); // prevent hadSession check from triggering on reload
       // Clear local cookie (set on evgreen://localhost, not app.evgreen.lat)
       document.cookie = `${COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
 
       if (Capacitor.isNativePlatform()) {
-        // On native: local data already cleared — reload shows the auth screen
+        // Flag prevents bootstrap() from re-setting the deep-link token on reload.
+        // Navigate to root first so RoleBasedRedirect renders Landing on reload.
+        sessionStorage.setItem('evgreen_logout', '1');
+        history.replaceState(null, '', '/');
         window.location.reload();
       } else {
         // On web: go through Auth0 logout to clear the Auth0 session too

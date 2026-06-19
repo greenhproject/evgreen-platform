@@ -60,6 +60,11 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!isUnauthorized) return;
   if (isNoRedirectPath()) return;
 
+  // On native, navigating WKWebView to the Auth0 login URL causes a black screen
+  // because Auth0 eventually redirects to the custom URL scheme (evgreen://).
+  // RoleBasedRedirect already handles showing Landing when not authenticated.
+  if (Capacitor.isNativePlatform()) return;
+
   const hadSession = document.cookie.includes('session') || localStorage.getItem('manus-runtime-user-info') !== 'null';
   if (!hadSession) return;
 
@@ -146,6 +151,12 @@ async function bootstrap() {
     if (launchUrl?.url) {
       const token = extractToken(launchUrl.url);
       if (token) {
+        // If the user just logged out, skip deep-link re-auth and go straight to login screen
+        if (sessionStorage.getItem('evgreen_logout')) {
+          sessionStorage.removeItem('evgreen_logout');
+          mountReact();
+          return;
+        }
         setAuthCookie(token);
         // getLaunchUrl() persiste entre recargas — sessionStorage evita el loop infinito
         const sessionKey = 'dl_token_processed';
