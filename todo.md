@@ -3593,3 +3593,12 @@
 - [x] FIX Frontend: StationDetail.tsx — banner naranja "Estación sin conexión" cuando isOnline=false
 - [x] FIX Frontend: StationDetail.tsx — botón "Iniciar carga" deshabilitado y muestra "Sin conexión" cuando offline
 - [x] FIX Frontend: StationDetail.tsx — botón reserva deshabilitado cuando offline
+
+## MEJORA: Agregar TYPE_1, CCS_1 y GBT en filtros del mapa y backend
+
+- [x] FIX Backend: routers.ts getAvailable — enum incompleto solo tenía TYPE_2, CCS_2, CHADEMO, TYPE_1; ahora incluye los 8 tipos
+- [x] FIX Frontend: Map.tsx filtros — solo mostraba TYPE_2, CCS_2, CHADEMO; ahora muestra los 9 opciones (Todos + 8 tipos)
+- [x] VERIFICADO: drizzle/schema.ts ya tenía los 8 tipos en connectorTypeEnum
+- [x] VERIFICADO: admin/Stations.tsx y technician/Stations.tsx ya tenían los 8 tipos en formularios
+- [x] VERIFICADO: investor/Stations.tsx, TripPlanner.tsx, Vehicles.tsx ya tenían los 8 tipos
+- [x] VERIFICADO: db.ts getAvailableEvses usa el tipo de Drizzle directamente (sin hardcoding)

@@ -846,7 +846,7 @@ const evseRouter = router({
   
   getAvailable: publicProcedure
     .input(z.object({
-      connectorType: z.enum(["TYPE_2", "CCS_2", "CHADEMO", "TYPE_1"]).optional(),
+      connectorType: z.enum(["TYPE_1", "TYPE_2", "CCS_1", "CCS_2", "CHADEMO", "TESLA", "GBT_AC", "GBT_DC"]).optional(),
       chargeType: z.enum(["AC", "DC"]).optional(),
     }).optional())
     .query(async ({ input }) => {
