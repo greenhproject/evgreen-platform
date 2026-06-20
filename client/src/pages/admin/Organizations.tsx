@@ -85,24 +85,24 @@ export default function Organizations() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Building className="h-7 w-7 text-green-400" />
             Organizaciones SaaS
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-muted-foreground mt-1 text-sm">
             Gestiona los clientes licenciados de la plataforma EVGreen
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowPricingDialog(true)}>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => setShowPricingDialog(true)}>
             <Settings className="h-4 w-4 mr-2" />
             Pricing Global
           </Button>
-          <Button onClick={() => setShowCreateDialog(true)} className="bg-green-600 hover:bg-green-700">
+          <Button size="sm" onClick={() => setShowCreateDialog(true)} className="bg-green-600 hover:bg-green-700">
             <Plus className="h-4 w-4 mr-2" />
-            Nueva Organización
+            Nueva Org
           </Button>
         </div>
       </div>
@@ -164,18 +164,18 @@ export default function Organizations() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 items-center">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-[160px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nombre, slug o email..."
+            placeholder="Buscar..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
           />
         </div>
         <Select value={filterPlan} onValueChange={setFilterPlan}>
-          <SelectTrigger className="w-[150px]">
+          <SelectTrigger className="w-[130px]">
             <SelectValue placeholder="Plan" />
           </SelectTrigger>
           <SelectContent>
@@ -186,7 +186,7 @@ export default function Organizations() {
           </SelectContent>
         </Select>
         <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-[150px]">
+          <SelectTrigger className="w-[130px]">
             <SelectValue placeholder="Estado" />
           </SelectTrigger>
           <SelectContent>
