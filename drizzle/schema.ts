@@ -3817,3 +3817,36 @@ export const occupancyLiquidationsRelations = relations(occupancyLiquidations, (
     references: [users.id],
   }),
 }));
+
+// ─────────────────────────────────────────────────────────────────
+// SAAS LANDING — Solicitudes de demo y formularios de contacto
+// ─────────────────────────────────────────────────────────────────
+export const demoRequests = mysqlTable("demoRequests", {
+  id: int("id").primaryKey().autoincrement(),
+  name: varchar("name", { length: 120 }).notNull(),
+  company: varchar("company", { length: 120 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 30 }),
+  chargerCount: varchar("chargerCount", { length: 30 }),
+  plan: varchar("plan", { length: 30 }),
+  message: text("message"),
+  status: varchar("status", { length: 30 }).notNull().default("pending"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type DemoRequest = typeof demoRequests.$inferSelect;
+export type InsertDemoRequest = typeof demoRequests.$inferInsert;
+
+export const contactSubmissions = mysqlTable("contactSubmissions", {
+  id: int("id").primaryKey().autoincrement(),
+  name: varchar("name", { length: 120 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 30 }),
+  subject: varchar("subject", { length: 200 }).notNull(),
+  message: text("message").notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("unread"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ContactSubmission = typeof contactSubmissions.$inferSelect;
+export type InsertContactSubmission = typeof contactSubmissions.$inferInsert;

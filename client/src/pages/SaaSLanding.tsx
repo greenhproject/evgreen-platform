@@ -1,13 +1,20 @@
 /**
  * EVGreen SaaS - Landing Page Comercial
  * Página profesional para venta de licencias de la plataforma
- * Modelo: Setup + Renovación anual + Transaction Fee + Soporte opcional
+ * Todos los botones funcionales con formularios de demo y contacto
  * @author Green House Project
  */
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { motion, useInView } from "framer-motion";
 import { useRef, useState } from "react";
 import { Link } from "wouter";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import {
   Zap,
   Server,
@@ -33,9 +40,15 @@ import {
   Lock,
   Wrench,
   MessageSquare,
+  Phone,
+  Mail,
+  Send,
+  X,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 
-// Animated counter component
+// ─── Animated counter ────────────────────────────────────────────────────────
 function Counter({ value, suffix = "", prefix = "" }: { value: number; suffix?: string; prefix?: string }) {
   const [count, setCount] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
@@ -66,7 +79,7 @@ function Counter({ value, suffix = "", prefix = "" }: { value: number; suffix?: 
   );
 }
 
-// FAQ Accordion item
+// ─── FAQ Accordion ────────────────────────────────────────────────────────────
 function FAQItem({ question, answer }: { question: string; answer: string }) {
   const [open, setOpen] = useState(false);
   return (
@@ -87,8 +100,377 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
   );
 }
 
+// ─── Demo Request Modal ───────────────────────────────────────────────────────
+function DemoModal({
+  open,
+  onClose,
+  defaultPlan = "",
+}: {
+  open: boolean;
+  onClose: () => void;
+  defaultPlan?: string;
+}) {
+  const [form, setForm] = useState({
+    name: "",
+    company: "",
+    email: "",
+    phone: "",
+    chargerCount: "" as "" | "1-5" | "6-20" | "21-50" | "50+",
+    plan: defaultPlan as "" | "starter" | "professional" | "enterprise",
+    message: "",
+  });
+  const [submitted, setSubmitted] = useState(false);
+
+  const submitDemo = trpc.saas.submitDemoRequest.useMutation({
+    onSuccess: () => {
+      setSubmitted(true);
+    },
+    onError: (err) => {
+      toast.error("Error al enviar", {
+        description: err.message || "Por favor intenta de nuevo o escríbenos a evgreen@greenhproject.com",
+      });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitDemo.mutate(form);
+  };
+
+  const handleClose = () => {
+    setSubmitted(false);
+    setForm({ name: "", company: "", email: "", phone: "", chargerCount: "", plan: "", message: "" });
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        {submitted ? (
+          <div className="text-center py-8">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-8 h-8 text-primary" />
+            </div>
+            <DialogTitle className="text-xl font-bold mb-2">¡Solicitud recibida!</DialogTitle>
+            <p className="text-muted-foreground mb-6">
+              Nuestro equipo te contactará en las próximas <strong className="text-foreground">2-4 horas hábiles</strong>. 
+              También te enviamos una confirmación a tu correo.
+            </p>
+            <p className="text-sm text-muted-foreground mb-6">
+              ¿Tienes urgencia? Escríbenos directamente a{" "}
+              <a href="mailto:evgreen@greenhproject.com" className="text-primary hover:underline">
+                evgreen@greenhproject.com
+              </a>
+            </p>
+            <Button onClick={handleClose} className="gradient-primary text-white">
+              Cerrar
+            </Button>
+          </div>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold">Solicitar demo personalizada</DialogTitle>
+              <DialogDescription>
+                Te mostramos la plataforma funcionando con tus cargadores en menos de 30 minutos.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="demo-name">Nombre *</Label>
+                  <Input
+                    id="demo-name"
+                    placeholder="Tu nombre"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    required
+                    minLength={2}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="demo-company">Empresa *</Label>
+                  <Input
+                    id="demo-company"
+                    placeholder="Nombre de tu empresa"
+                    value={form.company}
+                    onChange={(e) => setForm({ ...form, company: e.target.value })}
+                    required
+                    minLength={2}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="demo-email">Correo electrónico *</Label>
+                <Input
+                  id="demo-email"
+                  type="email"
+                  placeholder="tu@empresa.com"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="demo-phone">Teléfono / WhatsApp</Label>
+                <Input
+                  id="demo-phone"
+                  type="tel"
+                  placeholder="+57 300 000 0000"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Plan de interés</Label>
+                  <Select
+                    value={form.plan}
+                    onValueChange={(v) => setForm({ ...form, plan: v as typeof form.plan })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar plan" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="starter">Starter</SelectItem>
+                      <SelectItem value="professional">Professional</SelectItem>
+                      <SelectItem value="enterprise">Enterprise</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Cantidad de cargadores</Label>
+                  <Select
+                    value={form.chargerCount}
+                    onValueChange={(v) => setForm({ ...form, chargerCount: v as typeof form.chargerCount })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="¿Cuántos?" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1-5">1 a 5</SelectItem>
+                      <SelectItem value="6-20">6 a 20</SelectItem>
+                      <SelectItem value="21-50">21 a 50</SelectItem>
+                      <SelectItem value="50+">Más de 50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="demo-message">Mensaje adicional (opcional)</Label>
+                <Textarea
+                  id="demo-message"
+                  placeholder="Cuéntanos sobre tu proyecto, preguntas específicas o lo que necesitas ver en la demo..."
+                  rows={3}
+                  value={form.message}
+                  onChange={(e) => setForm({ ...form, message: e.target.value })}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  type="submit"
+                  className="flex-1 gradient-primary text-white"
+                  disabled={submitDemo.isPending}
+                >
+                  {submitDemo.isPending ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                      Enviando...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      Solicitar demo
+                    </>
+                  )}
+                </Button>
+                <Button type="button" variant="outline" onClick={handleClose}>
+                  Cancelar
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground text-center">
+                Al enviar aceptas que te contactemos. Nunca compartimos tu información con terceros.
+              </p>
+            </form>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Contact Modal ────────────────────────────────────────────────────────────
+function ContactModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    subject: "",
+    message: "",
+  });
+  const [submitted, setSubmitted] = useState(false);
+
+  const submitContact = trpc.saas.submitContactForm.useMutation({
+    onSuccess: () => setSubmitted(true),
+    onError: (err) => {
+      toast.error("Error al enviar", {
+        description: err.message || "Por favor intenta de nuevo o escríbenos directamente.",
+      });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitContact.mutate(form);
+  };
+
+  const handleClose = () => {
+    setSubmitted(false);
+    setForm({ name: "", email: "", phone: "", subject: "", message: "" });
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        {submitted ? (
+          <div className="text-center py-8">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-8 h-8 text-primary" />
+            </div>
+            <DialogTitle className="text-xl font-bold mb-2">¡Mensaje enviado!</DialogTitle>
+            <p className="text-muted-foreground mb-6">
+              Te responderemos en un plazo máximo de <strong className="text-foreground">2 días hábiles</strong>.
+            </p>
+            <Button onClick={handleClose} className="gradient-primary text-white">
+              Cerrar
+            </Button>
+          </div>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold">Contáctanos</DialogTitle>
+              <DialogDescription>
+                Escríbenos sobre alianzas, soporte, facturación o cualquier consulta.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="contact-name">Nombre *</Label>
+                  <Input
+                    id="contact-name"
+                    placeholder="Tu nombre"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    required
+                    minLength={2}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="contact-phone">Teléfono</Label>
+                  <Input
+                    id="contact-phone"
+                    type="tel"
+                    placeholder="+57 300 000 0000"
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="contact-email">Correo electrónico *</Label>
+                <Input
+                  id="contact-email"
+                  type="email"
+                  placeholder="tu@empresa.com"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="contact-subject">Asunto *</Label>
+                <Input
+                  id="contact-subject"
+                  placeholder="¿En qué podemos ayudarte?"
+                  value={form.subject}
+                  onChange={(e) => setForm({ ...form, subject: e.target.value })}
+                  required
+                  minLength={3}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="contact-message">Mensaje *</Label>
+                <Textarea
+                  id="contact-message"
+                  placeholder="Cuéntanos con detalle tu consulta..."
+                  rows={4}
+                  value={form.message}
+                  onChange={(e) => setForm({ ...form, message: e.target.value })}
+                  required
+                  minLength={10}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  type="submit"
+                  className="flex-1 gradient-primary text-white"
+                  disabled={submitContact.isPending}
+                >
+                  {submitContact.isPending ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                      Enviando...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      Enviar mensaje
+                    </>
+                  )}
+                </Button>
+                <Button type="button" variant="outline" onClick={handleClose}>
+                  Cancelar
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center pt-1">
+                <Mail className="w-3 h-3" />
+                <span>O escríbenos directamente a </span>
+                <a href="mailto:evgreen@greenhproject.com" className="text-primary hover:underline">
+                  evgreen@greenhproject.com
+                </a>
+              </div>
+            </form>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SaaSLanding() {
-  const [billingPeriod] = useState<"monthly" | "annual">("annual");
+  const [demoOpen, setDemoOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [demoPlan, setDemoPlan] = useState("");
+
+  const openDemo = (plan = "") => {
+    setDemoPlan(plan);
+    setDemoOpen(true);
+  };
 
   const plans = [
     {
@@ -113,6 +495,7 @@ export default function SaaSLanding() {
       ],
       highlight: false,
       cta: "Comenzar",
+      planKey: "starter",
     },
     {
       name: "Professional",
@@ -138,6 +521,7 @@ export default function SaaSLanding() {
       ],
       highlight: true,
       cta: "Elegir Professional",
+      planKey: "professional",
     },
     {
       name: "Enterprise",
@@ -163,11 +547,16 @@ export default function SaaSLanding() {
       ],
       highlight: false,
       cta: "Contactar ventas",
+      planKey: "enterprise",
     },
   ];
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Modals */}
+      <DemoModal open={demoOpen} onClose={() => setDemoOpen(false)} defaultPlan={demoPlan} />
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
+
       {/* Navigation */}
       <nav className="fixed top-0 inset-x-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border/50">
         <div className="container flex items-center justify-between h-16 px-4">
@@ -185,7 +574,7 @@ export default function SaaSLanding() {
             <a href="#soporte" className="text-muted-foreground hover:text-foreground transition-colors">Soporte</a>
             <a href="#faq" className="text-muted-foreground hover:text-foreground transition-colors">FAQ</a>
           </div>
-          <Button size="sm" className="gradient-primary text-white">
+          <Button size="sm" className="gradient-primary text-white" onClick={() => openDemo()}>
             <MessageSquare className="w-4 h-4 mr-1" />
             Solicitar demo
           </Button>
@@ -194,7 +583,6 @@ export default function SaaSLanding() {
 
       {/* Hero Section */}
       <section className="pt-32 pb-20 px-4 relative overflow-hidden">
-        {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
         <div className="absolute top-20 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
         <div className="absolute top-40 right-1/4 w-72 h-72 bg-blue-500/5 rounded-full blur-3xl" />
@@ -239,12 +627,23 @@ export default function SaaSLanding() {
             transition={{ duration: 0.6, delay: 0.3 }}
             className="flex flex-col sm:flex-row gap-4 justify-center mb-16"
           >
-            <Button size="lg" className="gradient-primary text-white px-8 py-6 text-lg rounded-xl shadow-glow">
+            <Button
+              size="lg"
+              className="gradient-primary text-white px-8 py-6 text-lg rounded-xl shadow-glow"
+              onClick={() => openDemo()}
+            >
               <Building2 className="w-5 h-5 mr-2" />
               Solicitar demo
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
-            <Button size="lg" variant="outline" className="px-8 py-6 text-lg rounded-xl border-2">
+            <Button
+              size="lg"
+              variant="outline"
+              className="px-8 py-6 text-lg rounded-xl border-2"
+              onClick={() => {
+                document.getElementById("planes")?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
               Ver planes y precios
               <ChevronDown className="w-5 h-5 ml-2" />
             </Button>
@@ -389,6 +788,13 @@ export default function SaaSLanding() {
                     plan.highlight ? "gradient-primary text-white shadow-glow-sm" : ""
                   }`}
                   variant={plan.highlight ? "default" : "outline"}
+                  onClick={() => {
+                    if (plan.planKey === "enterprise") {
+                      setContactOpen(true);
+                    } else {
+                      openDemo(plan.planKey);
+                    }
+                  }}
                 >
                   {plan.cta}
                   <ArrowRight className="w-4 h-4 ml-2" />
@@ -435,7 +841,7 @@ export default function SaaSLanding() {
                 Además, obtienes un <strong className="text-foreground">descuento de 1%</strong> en el transaction fee.
               </p>
 
-              <div className="space-y-4">
+              <div className="space-y-4 mb-8">
                 {[
                   { icon: Users, text: "Acceso a base de usuarios existente desde el día 1" },
                   { icon: Globe, text: "Visibilidad en mapa público (app + web + Google Maps)" },
@@ -451,6 +857,14 @@ export default function SaaSLanding() {
                   </div>
                 ))}
               </div>
+
+              <Button
+                className="gradient-primary text-white"
+                onClick={() => openDemo()}
+              >
+                Unirme a la red
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             </div>
 
             {/* Network visualization */}
@@ -519,7 +933,7 @@ export default function SaaSLanding() {
               <div className="text-3xl font-bold mb-6">
                 5% <span className="text-lg text-muted-foreground font-normal">por transacción</span>
               </div>
-              <ul className="space-y-3">
+              <ul className="space-y-3 mb-8">
                 {[
                   "Plataforma de tickets incluida",
                   "Tú atiendes a tus clientes",
@@ -534,6 +948,10 @@ export default function SaaSLanding() {
                   </li>
                 ))}
               </ul>
+              <Button variant="outline" className="w-full" onClick={() => openDemo("starter")}>
+                Empezar con Autogestión
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             </div>
 
             {/* With support */}
@@ -554,7 +972,7 @@ export default function SaaSLanding() {
                 20% <span className="text-lg text-muted-foreground font-normal">por transacción</span>
               </div>
               <p className="text-xs text-muted-foreground mb-6">(ya incluye el fee de plataforma)</p>
-              <ul className="space-y-3">
+              <ul className="space-y-3 mb-8">
                 {[
                   "EVGreen atiende a tus usuarios (L1)",
                   "Técnicos en campo para preventivo y correctivo (L2)",
@@ -571,6 +989,10 @@ export default function SaaSLanding() {
                   </li>
                 ))}
               </ul>
+              <Button className="w-full gradient-primary text-white" onClick={() => openDemo("professional")}>
+                Contratar Soporte Integral
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             </div>
           </div>
         </div>
@@ -610,7 +1032,7 @@ export default function SaaSLanding() {
               >
                 <div>{row.item}</div>
                 <div className="text-center text-muted-foreground">{row.alone}</div>
-                <div className={`text-center ${i === 7 ? "text-primary" : "text-primary"}`}>{row.evgreen}</div>
+                <div className="text-center text-primary">{row.evgreen}</div>
               </div>
             ))}
           </div>
@@ -618,6 +1040,13 @@ export default function SaaSLanding() {
           <p className="text-center text-sm text-muted-foreground mt-6">
             * Basado en 5 cargadores con 10 cargas/día promedio a $25,000 COP. Fee de 5% = ~$360 USD/mes.
           </p>
+
+          <div className="text-center mt-8">
+            <Button size="lg" className="gradient-primary text-white px-8" onClick={() => openDemo()}>
+              Quiero empezar con EVGreen
+              <ArrowRight className="w-5 h-5 ml-2" />
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -662,6 +1091,14 @@ export default function SaaSLanding() {
               answer="Típicamente 1-2 semanas desde la firma del contrato hasta tener tu primer cargador operando en la plataforma. Incluye configuración, personalización de marca, capacitación y pruebas."
             />
           </div>
+
+          <div className="text-center mt-10">
+            <p className="text-muted-foreground mb-4">¿Tienes más preguntas?</p>
+            <Button variant="outline" onClick={() => setContactOpen(true)}>
+              <MessageSquare className="w-4 h-4 mr-2" />
+              Escríbenos
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -678,13 +1115,22 @@ export default function SaaSLanding() {
                 Agenda una demo personalizada. Te mostramos la plataforma funcionando con tus cargadores en menos de 30 minutos.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button size="lg" className="bg-white text-primary hover:bg-white/90 px-8 py-6 text-lg rounded-xl">
+                <Button
+                  size="lg"
+                  className="bg-white text-primary hover:bg-white/90 px-8 py-6 text-lg rounded-xl"
+                  onClick={() => openDemo()}
+                >
                   <MessageSquare className="w-5 h-5 mr-2" />
                   Agendar demo
                 </Button>
-                <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 px-8 py-6 text-lg rounded-xl">
-                  Descargar brochure
-                  <ArrowRight className="w-5 h-5 ml-2" />
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-white/30 text-white hover:bg-white/10 px-8 py-6 text-lg rounded-xl"
+                  onClick={() => setContactOpen(true)}
+                >
+                  <Mail className="w-5 h-5 mr-2" />
+                  Contactar ventas
                 </Button>
               </div>
             </div>
@@ -708,10 +1154,24 @@ export default function SaaSLanding() {
               <Link href="/landing" className="hover:text-foreground transition-colors">Usuarios</Link>
               <Link href="/investors" className="hover:text-foreground transition-colors">Inversionistas</Link>
               <a href="#planes" className="hover:text-foreground transition-colors">Planes</a>
-              <a href="#" className="hover:text-foreground transition-colors">Contacto</a>
+              <button
+                onClick={() => setContactOpen(true)}
+                className="hover:text-foreground transition-colors"
+              >
+                Contacto
+              </button>
             </div>
-            <div className="text-sm text-muted-foreground">
-              © 2026 Green House Project. Todos los derechos reservados.
+            <div className="flex flex-col items-end gap-1">
+              <div className="text-sm text-muted-foreground">
+                © 2026 Green House Project. Todos los derechos reservados.
+              </div>
+              <a
+                href="mailto:evgreen@greenhproject.com"
+                className="text-xs text-primary hover:underline flex items-center gap-1"
+              >
+                <Mail className="w-3 h-3" />
+                evgreen@greenhproject.com
+              </a>
             </div>
           </div>
         </div>

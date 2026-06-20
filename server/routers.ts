@@ -44,6 +44,7 @@ import { partnersRouter } from "./partners/partners-router";
 import { profilesRouter } from "./profiles/profiles-router";
 import { buildOrganizationsRouter } from "./organizations/organizations-router";
 import { contactRouter } from "./contact/contact-router";
+import { saasRouter } from "./saas/saas-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -6636,6 +6637,7 @@ export const appRouter = router({
   profiles: profilesRouter,
   organizations: buildOrganizationsRouter(router, adminProcedure),
   contact: contactRouter,
+  saas: saasRouter,
   occupancyLiquidations: occupancyLiquidationsRouter,
 });
 
