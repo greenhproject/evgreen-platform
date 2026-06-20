@@ -1037,21 +1037,29 @@ function SpaceDetailDialog({
       {/* Photo Lightbox */}
       {expandedPhoto && (
         <div
-          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4"
           onClick={() => setExpandedPhoto(null)}
         >
-          <button
-            onClick={() => setExpandedPhoto(null)}
-            className="absolute top-4 right-4 text-white/70 hover:text-white z-10"
-          >
-            <X className="w-8 h-8" />
-          </button>
-          <img
-            src={expandedPhoto}
-            alt="Foto ampliada"
-            className="max-w-full max-h-[85vh] object-contain rounded-lg"
+          {/* Inner wrapper stops propagation so clicks on image/button don't bubble to backdrop */}
+          <div
+            className="relative max-w-full max-h-[90vh] flex items-center justify-center"
             onClick={e => e.stopPropagation()}
-          />
+          >
+            {/* Close button — large tap target for mobile */}
+            <button
+              type="button"
+              onClick={() => setExpandedPhoto(null)}
+              className="absolute -top-10 right-0 sm:-top-3 sm:-right-10 w-10 h-10 flex items-center justify-center rounded-full bg-black/60 hover:bg-black/80 text-white z-10 transition-colors"
+              aria-label="Cerrar imagen"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img
+              src={expandedPhoto}
+              alt="Foto ampliada"
+              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+            />
+          </div>
         </div>
       )}
 
