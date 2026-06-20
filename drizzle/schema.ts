@@ -256,6 +256,11 @@ export const chargingStations = mysqlTable("charging_stations", {
   // ============================================================================
   parkingRatePerMinute: int("parkingRatePerMinute").default(0).notNull(), // COP/min que el aliado cobra en su parqueadero (lo que EVGreen le transfiere)
   occupancyRatePerMinute: int("occupancyRatePerMinute").default(0).notNull(), // COP/min que EVGreen cobra al usuario en la app (debe ser >= parkingRatePerMinute)
+  // ============================================================================
+  // ORGANIZACIÓN SaaS - Tenant al que pertenece esta estación
+  // null = estación propia de EVGreen (red principal)
+  // ============================================================================
+  organizationId: int("organization_id"), // FK a organizations (null = red EVGreen principal)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -702,6 +707,7 @@ export const supportTickets = mysqlTable("support_tickets", {
   stationId: int("stationId"), // FK a charging_stations (opcional)
   transactionId: int("transactionId"), // FK a transactions (opcional)
   // Detalles
+  organizationId: int("organization_id"), // FK a organizations (null = ticket de red principal EVGreen)
   subject: varchar("subject", { length: 255 }).notNull(),
   description: text("description").notNull(),
   category: varchar("category", { length: 50 }), // CHARGING_ISSUE, PAYMENT, APP_BUG, OTHER
@@ -3740,6 +3746,20 @@ export type OrgBillingRecord = typeof orgBillingRecords.$inferSelect;
 export type InsertOrgBillingRecord = typeof orgBillingRecords.$inferInsert;
 
 // Relations
+/**
+ * org_users - Usuarios administradores de cada organización SaaS
+ * Permite que un usuario sea admin de una org específica
+ */
+export const orgUsers = mysqlTable("org_users", {
+  id: int("id").primaryKey().autoincrement(),
+  organizationId: int("organization_id").notNull(), // FK a organizations
+  userId: int("user_id").notNull(), // FK a users
+  role: mysqlEnum("role", ["admin", "viewer"]).default("admin").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type OrgUser = typeof orgUsers.$inferSelect;
+export type InsertOrgUser = typeof orgUsers.$inferInsert;
+
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   billingRecords: many(orgBillingRecords),
 }));
