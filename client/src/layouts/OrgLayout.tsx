@@ -1,6 +1,6 @@
 /**
  * Layout para el Portal de Organización SaaS
- * Para clientes que tienen su propia red de cargadores bajo licencia EVGreen
+ * Aplica branding dinámico (logo, colores, nombre) de la organización.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -31,14 +31,13 @@ import {
   LogOut,
   Settings,
   Zap,
-  Building2,
   TicketCheck,
   MapPin,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "@/components/DashboardLayoutSkeleton";
-import { Button } from "@/components/ui/button";
+import { trpc } from "@/lib/trpc";
 
 const orgMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/org" },
@@ -58,6 +57,10 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
   const { loading, user, logout } = useAuth();
+  const { data: org } = (trpc.organizations as any).getMyOrg.useQuery(undefined, {
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+  });
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -70,6 +73,11 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
     return null;
   }
 
+  const primaryColor = org?.primaryColor || "#22c55e";
+  const secondaryColor = org?.secondaryColor || "#1e40af";
+  const logoUrl = org?.logoUrl || null;
+  const appName = org?.appName || org?.name || "EVGreen";
+
   return (
     <SidebarProvider>
       <OrgSidebar
@@ -77,16 +85,28 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
         setSidebarWidth={setSidebarWidth}
         user={user}
         logout={logout}
+        primaryColor={primaryColor}
+        secondaryColor={secondaryColor}
+        logoUrl={logoUrl}
+        appName={appName}
       />
       <SidebarInset className="bg-muted/30">
-        <OrgMobileHeader />
+        <OrgMobileHeader primaryColor={primaryColor} logoUrl={logoUrl} appName={appName} />
         <main className="flex-1 p-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );
 }
 
-function OrgMobileHeader() {
+function OrgMobileHeader({
+  primaryColor,
+  logoUrl,
+  appName,
+}: {
+  primaryColor: string;
+  logoUrl: string | null;
+  appName: string;
+}) {
   const isMobile = useIsMobile();
   const [location] = useLocation();
   const activeMenuItem = orgMenuItems.find((item) => item.path === location);
@@ -98,9 +118,13 @@ function OrgMobileHeader() {
       <div className="flex items-center gap-3">
         <SidebarTrigger className="h-10 w-10 rounded-xl bg-background" />
         <div className="flex items-center gap-2">
-          <Zap className="h-5 w-5 text-green-500" />
-          <span className="font-bold text-green-500">
-            {activeMenuItem?.label ?? "Portal Org"}
+          {logoUrl ? (
+            <img src={logoUrl} alt="" className="h-7 w-7 object-contain rounded" />
+          ) : (
+            <Zap className="h-5 w-5" style={{ color: primaryColor }} />
+          )}
+          <span className="font-bold text-sm" style={{ color: primaryColor }}>
+            {activeMenuItem?.label ?? appName}
           </span>
         </div>
       </div>
@@ -113,11 +137,19 @@ function OrgSidebar({
   setSidebarWidth,
   user,
   logout,
+  primaryColor,
+  secondaryColor,
+  logoUrl,
+  appName,
 }: {
   sidebarWidth: number;
   setSidebarWidth: (w: number) => void;
   user: any;
   logout: () => void;
+  primaryColor: string;
+  secondaryColor: string;
+  logoUrl: string | null;
+  appName: string;
 }) {
   const [location, setLocation] = useLocation();
   const { state } = useSidebar();
@@ -151,18 +183,28 @@ function OrgSidebar({
         }
         className="border-r border-border/50 bg-background"
       >
-        <SidebarHeader className="p-4 border-b border-border/50">
+        {/* Header con branding dinámico */}
+        <SidebarHeader
+          className="p-4 border-b border-border/50"
+          style={{ backgroundColor: secondaryColor + "22" }}
+        >
           <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
-            <div className="h-9 w-9 rounded-xl bg-green-500/10 flex items-center justify-center shrink-0">
-              <Zap className="h-5 w-5 text-green-500" />
+            <div
+              className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0 overflow-hidden"
+              style={{ backgroundColor: primaryColor + "20" }}
+            >
+              {logoUrl ? (
+                <img src={logoUrl} alt={appName} className="w-8 h-8 object-contain" />
+              ) : (
+                <Zap className="h-5 w-5" style={{ color: primaryColor }} />
+              )}
             </div>
             {!isCollapsed ? (
               <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-                <span className="font-bold text-sm leading-none">
-                  <span className="text-green-500">EV</span>
-                  <span className="text-foreground">Green</span>
+                <span className="font-bold text-sm leading-none" style={{ color: primaryColor }}>
+                  {appName}
                 </span>
-                <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">
+                <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase mt-0.5">
                   Portal Organización
                 </span>
               </div>
@@ -181,10 +223,9 @@ function OrgSidebar({
                     onClick={() => setLocation(item.path)}
                     tooltip={item.label}
                     className={`h-11 transition-all font-normal rounded-xl ${
-                      isActive
-                        ? "bg-green-500 text-white hover:bg-green-600"
-                        : "hover:bg-muted"
+                      isActive ? "text-white" : "hover:bg-muted"
                     }`}
+                    style={isActive ? { backgroundColor: primaryColor } : undefined}
                   >
                     <item.icon
                       className={`h-5 w-5 ${isActive ? "text-white" : "text-muted-foreground"}`}
@@ -201,8 +242,14 @@ function OrgSidebar({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-muted transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <Avatar className="h-10 w-10 border-2 border-green-500/20 shrink-0">
-                  <AvatarFallback className="text-sm font-bold bg-green-500/10 text-green-500">
+                <Avatar
+                  className="h-10 w-10 shrink-0"
+                  style={{ borderColor: primaryColor + "40", borderWidth: 2, borderStyle: "solid" }}
+                >
+                  <AvatarFallback
+                    className="text-sm font-bold"
+                    style={{ backgroundColor: primaryColor + "20", color: primaryColor }}
+                  >
                     {user?.name?.charAt(0).toUpperCase() || "O"}
                   </AvatarFallback>
                 </Avatar>
@@ -222,18 +269,12 @@ function OrgSidebar({
                 <p className="text-xs text-muted-foreground">{user?.email}</p>
               </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => setLocation("/org/settings")}
-                className="cursor-pointer"
-              >
+              <DropdownMenuItem onClick={() => setLocation("/org/settings")} className="cursor-pointer">
                 <Settings className="mr-2 h-4 w-4" />
                 <span>Configuración</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={logout}
-                className="cursor-pointer text-destructive focus:text-destructive"
-              >
+              <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive">
                 <LogOut className="mr-2 h-4 w-4" />
                 <span>Cerrar Sesión</span>
               </DropdownMenuItem>
@@ -243,12 +284,14 @@ function OrgSidebar({
       </Sidebar>
 
       <div
-        className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-green-500/30 transition-colors ${isCollapsed ? "hidden" : ""}`}
+        className={`absolute top-0 right-0 w-1 h-full cursor-col-resize transition-colors ${isCollapsed ? "hidden" : ""}`}
+        style={{ zIndex: 50 }}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = primaryColor + "50")}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
         onMouseDown={() => {
           if (isCollapsed) return;
           setIsResizing(true);
         }}
-        style={{ zIndex: 50 }}
       />
     </div>
   );

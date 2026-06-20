@@ -401,6 +401,51 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           .orderBy(desc(supportTickets.createdAt));
       }),
 
+    // El admin de la org actualiza el branding (logo, colores, nombre)
+    updateMyBranding: protectedProcedure
+      .input(
+        z.object({
+          logoUrl: z.string().url().nullable().optional(),
+          primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+          secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+          appName: z.string().max(60).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!
+          .select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
+          .from(orgUsers)
+          .where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "No perteneces a ninguna organización" });
+        if (membership.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Solo el admin puede modificar el branding" });
+        const update: Record<string, any> = {};
+        if (input.logoUrl !== undefined) update.logoUrl = input.logoUrl;
+        if (input.primaryColor) update.primaryColor = input.primaryColor;
+        if (input.secondaryColor) update.secondaryColor = input.secondaryColor;
+        if (input.appName !== undefined) update.appName = input.appName || null;
+        if (Object.keys(update).length === 0) return { success: true, message: "Sin cambios" };
+        await db!.update(organizations).set(update).where(eq(organizations.id, membership.organizationId));
+        return { success: true, message: "Branding actualizado correctamente" };
+      }),
+
+    // El admin de la org configura su dominio personalizado
+    updateMyDomain: protectedProcedure
+      .input(z.object({ customDomain: z.string().max(253).nullable() }))
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!
+          .select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
+          .from(orgUsers)
+          .where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "No perteneces a ninguna organización" });
+        if (membership.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Solo el admin puede configurar el dominio" });
+        await db!.update(organizations)
+          .set({ customDomain: input.customDomain })
+          .where(eq(organizations.id, membership.organizationId));
+        return { success: true, message: input.customDomain ? `Dominio guardado: ${input.customDomain}` : "Dominio personalizado eliminado" };
+      }),
+
     // ==========================================
     // PRICING DEFAULTS
     // ==========================================
