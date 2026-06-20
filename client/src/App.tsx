@@ -145,6 +145,12 @@ const HostReports = lazy(() => import("./pages/host/Reports"));
 const HostSettings = lazy(() => import("./pages/host/Settings"));
 const HostOccupancyLiquidations = lazy(() => import("./pages/host/OccupancyLiquidations"));
 
+// Páginas de Portal Organización SaaS
+const OrgDashboard = lazy(() => import("./pages/org/Dashboard"));
+const OrgStations = lazy(() => import("./pages/org/Stations"));
+const OrgSupport = lazy(() => import("./pages/org/Support"));
+const OrgSettings = lazy(() => import("./pages/org/Settings"));
+
 // Páginas de Staff (Evento)
 const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
 const StaffGuests = lazy(() => import("./pages/staff/Guests"));
@@ -159,6 +165,7 @@ import TechnicianLayout from "./layouts/TechnicianLayout";
 import EngineerLayout from "./layouts/EngineerLayout";
 import StaffLayout from "./layouts/StaffLayout";
 import HostLayout from "./layouts/HostLayout";
+import OrgLayout from "./layouts/OrgLayout";
 
 // Widgets (carga diferida)
 const AIChatWidget = lazy(() => import("./components/AIChat").then(m => ({ default: m.AIChatWidget })));
@@ -937,6 +944,38 @@ function Router() {
             <HostLayout>
               <HostOccupancyLiquidations />
             </HostLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* ============================================
+            RUTAS DE PORTAL ORGANIZACIÓN SaaS
+            ============================================ */}
+        <Route path="/org">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgDashboard />
+            </OrgLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org/stations">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgStations />
+            </OrgLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org/support">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgSupport />
+            </OrgLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org/settings">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgSettings />
+            </OrgLayout>
           </ProtectedRoute>
         </Route>
 

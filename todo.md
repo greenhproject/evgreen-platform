@@ -3631,3 +3631,19 @@
 - [x] App.tsx: rutas /admin/occupancy-liquidations y /host/occupancy registradas
 - [x] AdminLayout.tsx: ítem "Ocupación Parqueadero" en menú lateral admin
 - [x] HostLayout.tsx: ítem "Ocupación Parqueadero" en menú lateral aliado
+
+## FEATURE: Portal de Organización SaaS (Jun 2026)
+- [x] Backend: organizations-router.ts reescrito con procedimientos: listOrgUsers, addOrgUser, removeOrgUser, listOrgStations, listUnassignedStations, assignStation, listOrgTickets, updateTicketStatus
+- [x] Backend: Procedimientos para portal org cliente: getMyOrg, getMyStations, createMyTicket, getMyTickets
+- [x] Backend: protectedProcedure importado directamente en organizations-router.ts (fix crítico)
+- [x] Frontend Admin: admin/Organizations.tsx - botón "Gestionar" por org con dialog de detalle
+- [x] Frontend Admin: Tab "Estaciones" - listar estaciones asignadas + asignar/desasignar estaciones sin org
+- [x] Frontend Admin: Tab "Usuarios" - listar usuarios de la org + agregar/remover por userId
+- [x] Frontend Admin: Tab "Tickets" - listar tickets de la org + actualizar estado (En Progreso, Resolver, Cerrar)
+- [x] Frontend: OrgLayout.tsx - sidebar verde con menú: Dashboard, Mis Estaciones, Soporte/Tickets, Configuración
+- [x] Frontend: pages/org/Dashboard.tsx - resumen org, stats estaciones, tickets recientes
+- [x] Frontend: pages/org/Stations.tsx - vista de estaciones con estado online/offline en tiempo real
+- [x] Frontend: pages/org/Support.tsx - lista de tickets + formulario de creación de ticket
+- [x] Frontend: pages/org/Settings.tsx - información de la organización y detalles del plan
+- [x] App.tsx: rutas /org, /org/stations, /org/support, /org/settings registradas
+- [x] App.tsx: OrgLayout importado, páginas Org con lazy loading

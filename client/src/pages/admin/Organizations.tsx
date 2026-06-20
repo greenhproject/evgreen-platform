@@ -13,7 +13,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -25,6 +24,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Building,
   Plus,
@@ -34,6 +34,14 @@ import {
   Zap,
   Settings,
   TrendingUp,
+  MapPin,
+  Ticket,
+  UserPlus,
+  Trash2,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -43,6 +51,7 @@ export default function Organizations() {
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showPricingDialog, setShowPricingDialog] = useState(false);
+  const [selectedOrg, setSelectedOrg] = useState<any>(null);
 
   // Queries
   const { data: orgs, isLoading, refetch } = (trpc.organizations as any).list.useQuery({
@@ -213,18 +222,19 @@ export default function Organizations() {
                   <th className="p-4 text-sm font-medium text-muted-foreground">Soporte</th>
                   <th className="p-4 text-sm font-medium text-muted-foreground">Contacto</th>
                   <th className="p-4 text-sm font-medium text-muted-foreground">Creado</th>
+                  <th className="p-4 text-sm font-medium text-muted-foreground">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
                       Cargando organizaciones...
                     </td>
                   </tr>
                 ) : orgs?.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
                       <Building className="h-12 w-12 mx-auto mb-3 opacity-30" />
                       <p>No hay organizaciones registradas</p>
                       <p className="text-sm mt-1">Crea la primera organización para comenzar</p>
@@ -266,6 +276,17 @@ export default function Organizations() {
                       <td className="p-4 text-sm text-muted-foreground">
                         {org.createdAt ? new Date(org.createdAt).toLocaleDateString() : "-"}
                       </td>
+                      <td className="p-4">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSelectedOrg(org)}
+                          className="text-green-400 border-green-500/30 hover:bg-green-500/10"
+                        >
+                          <Settings className="h-3 w-3 mr-1" />
+                          Gestionar
+                        </Button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -290,7 +311,321 @@ export default function Organizations() {
         defaults={pricingDefaults || []}
         onUpdate={(plan, data) => updatePricing.mutate({ plan, ...data })}
       />
+
+      {/* Org Detail Management Dialog */}
+      {selectedOrg && (
+        <OrgDetailDialog
+          org={selectedOrg}
+          onClose={() => setSelectedOrg(null)}
+          onRefresh={refetch}
+        />
+      )}
     </div>
+  );
+}
+
+// ==========================================
+// Org Detail Dialog (Tabs: Estaciones, Usuarios, Tickets)
+// ==========================================
+function OrgDetailDialog({ org, onClose, onRefresh }: {
+  org: any;
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
+  const utils = trpc.useUtils();
+
+  // Queries
+  const { data: orgStations, refetch: refetchStations } = (trpc.organizations as any).listOrgStations.useQuery({ organizationId: org.id });
+  const { data: unassignedStations } = (trpc.organizations as any).listUnassignedStations.useQuery();
+  const { data: orgUsers, refetch: refetchUsers } = (trpc.organizations as any).listOrgUsers.useQuery({ organizationId: org.id });
+  const { data: orgTickets, refetch: refetchTickets } = (trpc.organizations as any).listOrgTickets.useQuery({ organizationId: org.id });
+
+  // Mutations
+  const assignStation = (trpc.organizations as any).assignStation.useMutation({
+    onSuccess: () => {
+      toast.success("Estación asignada");
+      refetchStations();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const unassignStation = (trpc.organizations as any).assignStation.useMutation({
+    onSuccess: () => {
+      toast.success("Estación desvinculada");
+      refetchStations();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const addOrgUser = (trpc.organizations as any).addOrgUser.useMutation({
+    onSuccess: () => {
+      toast.success("Usuario agregado");
+      refetchUsers();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const removeOrgUser = (trpc.organizations as any).removeOrgUser.useMutation({
+    onSuccess: () => {
+      toast.success("Usuario removido");
+      refetchUsers();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const updateTicketStatus = (trpc.organizations as any).updateTicketStatus.useMutation({
+    onSuccess: () => {
+      toast.success("Ticket actualizado");
+      refetchTickets();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const [addUserForm, setAddUserForm] = useState({ userId: "", role: "admin" as "admin" | "viewer" });
+  const [selectedStationId, setSelectedStationId] = useState<string>("");
+
+  const ticketStatusColors: Record<string, string> = {
+    OPEN: "bg-blue-500/20 text-blue-400",
+    IN_PROGRESS: "bg-yellow-500/20 text-yellow-400",
+    RESOLVED: "bg-green-500/20 text-green-400",
+    CLOSED: "bg-gray-500/20 text-gray-400",
+  };
+
+  const ticketPriorityColors: Record<string, string> = {
+    LOW: "text-gray-400",
+    MEDIUM: "text-blue-400",
+    HIGH: "text-orange-400",
+    CRITICAL: "text-red-400",
+  };
+
+  return (
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Building className="h-5 w-5 text-green-400" />
+            {org.name}
+            <Badge variant="outline" className="ml-2 text-xs">
+              {org.plan}
+            </Badge>
+          </DialogTitle>
+        </DialogHeader>
+
+        <Tabs defaultValue="stations">
+          <TabsList className="w-full">
+            <TabsTrigger value="stations" className="flex-1">
+              <MapPin className="h-4 w-4 mr-1" />
+              Estaciones
+            </TabsTrigger>
+            <TabsTrigger value="users" className="flex-1">
+              <Users className="h-4 w-4 mr-1" />
+              Usuarios
+            </TabsTrigger>
+            <TabsTrigger value="tickets" className="flex-1">
+              <Ticket className="h-4 w-4 mr-1" />
+              Tickets
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ---- TAB: ESTACIONES ---- */}
+          <TabsContent value="stations" className="space-y-4 mt-4">
+            <div className="flex gap-2">
+              <Select value={selectedStationId} onValueChange={setSelectedStationId}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Seleccionar estación sin asignar..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {unassignedStations?.map((s: any) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name} — {s.city || s.address || "Sin ubicación"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 shrink-0"
+                disabled={!selectedStationId || assignStation.isPending}
+                onClick={() => {
+                  if (!selectedStationId) return;
+                  assignStation.mutate({ stationId: parseInt(selectedStationId), organizationId: org.id });
+                  setSelectedStationId("");
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Asignar
+              </Button>
+            </div>
+
+            {orgStations?.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <MapPin className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No hay estaciones asignadas a esta organización</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {orgStations?.map((s: any) => (
+                  <div key={s.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div>
+                      <p className="font-medium text-sm">{s.name}</p>
+                      <p className="text-xs text-muted-foreground">{s.city || s.address || "Sin ubicación"}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      onClick={() => unassignStation.mutate({ stationId: s.id, organizationId: null })}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ---- TAB: USUARIOS ---- */}
+          <TabsContent value="users" className="space-y-4 mt-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="ID de usuario (número)"
+                value={addUserForm.userId}
+                onChange={(e) => setAddUserForm({ ...addUserForm, userId: e.target.value })}
+                className="flex-1"
+                type="number"
+              />
+              <Select value={addUserForm.role} onValueChange={(v: any) => setAddUserForm({ ...addUserForm, role: v })}>
+                <SelectTrigger className="w-[110px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 shrink-0"
+                disabled={!addUserForm.userId || addOrgUser.isPending}
+                onClick={() => {
+                  if (!addUserForm.userId) return;
+                  addOrgUser.mutate({
+                    organizationId: org.id,
+                    userId: parseInt(addUserForm.userId),
+                    role: addUserForm.role,
+                  });
+                  setAddUserForm({ userId: "", role: "admin" });
+                }}
+              >
+                <UserPlus className="h-4 w-4 mr-1" />
+                Agregar
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Ingresa el ID numérico del usuario. El usuario debe existir en la plataforma.
+            </p>
+
+            {orgUsers?.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No hay usuarios asignados a esta organización</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {orgUsers?.map((u: any) => (
+                  <div key={u.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div>
+                      <p className="font-medium text-sm">{u.userName || `Usuario #${u.userId}`}</p>
+                      <p className="text-xs text-muted-foreground">{u.userEmail || ""}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={u.role === "admin" ? "bg-green-500/10 text-green-400" : "bg-gray-500/10 text-gray-400"}>
+                        {u.role}
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                        onClick={() => removeOrgUser.mutate({ id: u.id })}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ---- TAB: TICKETS ---- */}
+          <TabsContent value="tickets" className="space-y-4 mt-4">
+            {orgTickets?.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Ticket className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No hay tickets de soporte para esta organización</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {orgTickets?.map((t: any) => (
+                  <div key={t.id} className="p-3 rounded-lg bg-muted/30 border border-border/30 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{t.subject}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{t.userName || "Usuario desconocido"} · {t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "-"}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="outline" className={ticketStatusColors[t.status] || ""}>
+                          {t.status}
+                        </Badge>
+                        <span className={`text-xs font-medium ${ticketPriorityColors[t.priority] || ""}`}>
+                          {t.priority}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{t.description}</p>
+                    <div className="flex gap-1 flex-wrap">
+                      {t.status !== "IN_PROGRESS" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-xs px-2 text-yellow-400 border-yellow-500/30"
+                          onClick={() => updateTicketStatus.mutate({ ticketId: t.id, status: "IN_PROGRESS" })}
+                        >
+                          <Clock className="h-3 w-3 mr-1" />
+                          En Progreso
+                        </Button>
+                      )}
+                      {t.status !== "RESOLVED" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-xs px-2 text-green-400 border-green-500/30"
+                          onClick={() => updateTicketStatus.mutate({ ticketId: t.id, status: "RESOLVED" })}
+                        >
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Resolver
+                        </Button>
+                      )}
+                      {t.status !== "CLOSED" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-xs px-2 text-gray-400 border-gray-500/30"
+                          onClick={() => updateTicketStatus.mutate({ ticketId: t.id, status: "CLOSED" })}
+                        >
+                          <X className="h-3 w-3 mr-1" />
+                          Cerrar
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
   );
 }
 
