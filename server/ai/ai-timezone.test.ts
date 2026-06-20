@@ -152,8 +152,10 @@ describe("Timezone Correction", () => {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       expect(tz).toBeTruthy();
       expect(typeof tz).toBe("string");
-      // IANA timezones contain a slash
-      expect(tz).toContain("/");
+      // IANA timezones suelen contener '/' (ej. America/Bogota)
+      // pero UTC y GMT son también válidos (el sandbox de CI corre en UTC)
+      const isValidTz = tz.includes("/") || ["UTC", "GMT"].includes(tz);
+      expect(isValidTz).toBe(true);
     });
   });
 });

@@ -14,7 +14,10 @@ describe("Service Worker v7 - 503 Recovery", () => {
   swCode = fs.readFileSync(swPath, "utf-8");
 
   it("should be version 7 or higher", () => {
-    expect(swCode).toContain("SW_VERSION = 'v7'");
+    // Acepta v7, v8, v9, etc. (versión actual: v8)
+    const versionMatch = swCode.match(/SW_VERSION = 'v(\d+)'/);
+    const version = parseInt(versionMatch?.[1] || '0');
+    expect(version).toBeGreaterThanOrEqual(7);
   });
 
   it("should detect 503 responses on navigation", () => {

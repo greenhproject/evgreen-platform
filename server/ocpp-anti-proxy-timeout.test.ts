@@ -25,8 +25,10 @@ describe("Anti-Proxy-Timeout Strategy", () => {
     });
     
     it("debe terminar conexiones que no responden al pong", () => {
-      expect(indexTs).toContain("isAlive === false");
+      // La implementación usa _missedPongs (contador robusto) en lugar de isAlive boolean
+      // para evitar terminaciones masivas por retrasos del event loop (GC, queries pesadas)
       expect(indexTs).toContain("ws.terminate()");
+      expect(indexTs).toContain("_missedPongs");
     });
   });
   

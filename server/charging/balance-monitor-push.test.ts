@@ -194,7 +194,12 @@ describe("Balance Monitor - Push Notifications", () => {
         path.join(__dirname, "balance-monitor.ts"),
         "utf-8"
       );
-      expect(content).toContain('import { sendPushNotification } from "../firebase/fcm"');
+      // El módulo usa unified-push (sendUserPush) que internamente usa firebase/fcm.
+      // Ambos patrones son válidos: importar directamente o a través del unificador.
+      const usesFCMDirectly = content.includes('import { sendPushNotification } from "../firebase/fcm"');
+      const usesUnifiedPush = content.includes('sendUserPush') && content.includes('unified-push');
+      expect(usesFCMDirectly || usesUnifiedPush).toBe(true);
+      // NotificationType siempre viene de firebase/fcm (es un tipo, no implementación)
       expect(content).toContain('import type { NotificationType } from "../firebase/fcm"');
     });
 
@@ -221,11 +226,18 @@ describe("Balance Monitor - Push Notifications", () => {
     it("should skip local tokens that start with 'local_'", async () => {
       const fs = await import("fs");
       const path = await import("path");
-      const content = fs.readFileSync(
+      // La lógica de filtrar tokens 'local_' está en unified-push.ts (capa de abstracción)
+      // balance-monitor.ts delega a sendUserPush() que aplica este filtro internamente
+      const monitorContent = fs.readFileSync(
         path.join(__dirname, "balance-monitor.ts"),
         "utf-8"
       );
-      expect(content).toContain('fcmToken.startsWith("local_")');
+      const unifiedPushPath = path.join(__dirname, "../push/unified-push.ts");
+      const unifiedContent = fs.readFileSync(unifiedPushPath, "utf-8");
+      // El filtro local_ puede estar en balance-monitor.ts directamente O en unified-push.ts
+      const filterInMonitor = monitorContent.includes('fcmToken.startsWith("local_")');
+      const filterInUnified = unifiedContent.includes('startsWith("local_")');
+      expect(filterInMonitor || filterInUnified).toBe(true);
     });
   });
 });

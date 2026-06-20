@@ -54,7 +54,7 @@ describe("auth.logout", () => {
     expect(clearedCookies[0]?.options).toMatchObject({
       maxAge: -1,
       secure: true,
-      sameSite: "none",
+      sameSite: "lax", // En HTTPS, sameSite=lax para protección CSRF (ver cookies.ts)
       httpOnly: true,
       path: "/",
     });

@@ -521,7 +521,10 @@ describe("Proactive notifications service", () => {
     const path = "/home/ubuntu/green-ev-platform/server/ai/proactive-notifications.ts";
     const content = fs.readFileSync(path, "utf-8");
     
-    expect(content).toContain("../firebase/fcm");
-    expect(content).toContain("sendPushNotification");
+    // El servicio puede usar firebase/fcm directamente O el módulo unificado unified-push
+    // (que internamente usa firebase/fcm). Ambos patrones son válidos.
+    const usesFCMDirectly = content.includes("../firebase/fcm") && content.includes("sendPushNotification");
+    const usesUnifiedPush = content.includes("unified-push") && content.includes("sendUserPush");
+    expect(usesFCMDirectly || usesUnifiedPush).toBe(true);
   });
 });

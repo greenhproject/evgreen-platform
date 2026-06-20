@@ -357,7 +357,7 @@ async function startServer() {
   // reseteaba a false cada 20s. Si el event loop se retrasaba (GC, query pesada),
   // TODOS los cargadores tenían isAlive=false simultáneamente y se terminaban al
   // mismo tiempo. Ahora usamos un contador de pongs perdidos con 3 reintentos.
-  const WS_PING_INTERVAL_MS = 25000; // 25 segundos (más tolerante)
+  const WS_PING_INTERVAL_MS = 20000; // 20 segundos - alineado con DualCSMS (PING_INTERVAL_MS=20000)
   const MAX_MISSED_PONGS = 3; // Permitir hasta 3 pings sin respuesta antes de terminar (75s total)
   let pingCount = 0;
   const pingInterval = setInterval(() => {

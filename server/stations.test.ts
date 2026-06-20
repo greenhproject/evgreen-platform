@@ -23,6 +23,17 @@ vi.mock("./db", async (importOriginal) => {
     getOcppLogs: vi.fn().mockResolvedValue([]),
     getMeterValues: vi.fn().mockResolvedValue([]),
     createWallet: vi.fn().mockResolvedValue({ id: 1 }),
+    // Mocks necesarios para stations.listOwned (inversionista)
+    getInvestorAllStations: vi.fn().mockResolvedValue([]),
+    getActiveTariffByStationId: vi.fn().mockResolvedValue(null),
+    getEvsesByStationId: vi.fn().mockResolvedValue([]),
+    getEffectiveStationPrice: vi.fn().mockResolvedValue({
+      pricePerKwh: 1200,
+      connectionFee: '2000',
+      overstayPenaltyPerMin: '500',
+    }),
+    getAllEvsesForStations: vi.fn().mockResolvedValue(new Map()),
+    getTransactionsByUserId: vi.fn().mockResolvedValue([]),
   };
 });
 
