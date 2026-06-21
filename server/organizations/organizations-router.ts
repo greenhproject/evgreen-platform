@@ -718,10 +718,162 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         return { success: true };
       }),
 
+        // ==========================================
+    // BILLING - ADMIN: cambiar plan + registrar pagos
+    // ==========================================
+    changePlanAdmin: adminProcedure
+      .input(z.object({
+        organizationId: z.number(),
+        plan: z.enum(["starter", "professional", "enterprise"]),
+        status: z.enum(["active", "suspended", "trial", "cancelled"]).optional(),
+        transactionFeePercent: z.string().optional(),
+        nextBillingDate: z.date().optional(),
+        trialEndsAt: z.date().optional(),
+        notes: z.string().optional(),
+        recordSetupPayment: z.boolean().optional(),
+        setupAmount: z.string().optional(),
+        setupCurrency: z.string().default("USD").optional(),
+        recordRenewalPayment: z.boolean().optional(),
+        renewalAmount: z.string().optional(),
+        renewalCurrency: z.string().default("USD").optional(),
+      }))
+      .mutation(async ({ input }: any) => {
+        const db = await getDb();
+        const { organizationId, recordSetupPayment, setupAmount, setupCurrency,
+          recordRenewalPayment, renewalAmount, renewalCurrency, ...orgUpdate } = input;
+        const updateFields: any = {};
+        if (orgUpdate.plan !== undefined) updateFields.plan = orgUpdate.plan;
+        if (orgUpdate.status !== undefined) updateFields.status = orgUpdate.status;
+        if (orgUpdate.transactionFeePercent !== undefined) updateFields.transactionFeePercent = orgUpdate.transactionFeePercent;
+        if (orgUpdate.nextBillingDate !== undefined) updateFields.nextBillingDate = orgUpdate.nextBillingDate;
+        if (orgUpdate.trialEndsAt !== undefined) updateFields.trialEndsAt = orgUpdate.trialEndsAt;
+        if (orgUpdate.notes !== undefined) updateFields.notes = orgUpdate.notes;
+        if (Object.keys(updateFields).length > 0) {
+          await db!.update(organizations).set(updateFields).where(eq(organizations.id, organizationId));
+        }
+        if (recordSetupPayment && setupAmount) {
+          await db!.insert(orgBillingRecords).values({
+            organizationId, type: "setup",
+            description: `Pago de setup - Plan ${orgUpdate.plan || "actualizado"}`,
+            amount: setupAmount, currency: setupCurrency || "USD", status: "pending",
+          });
+        }
+        if (recordRenewalPayment && renewalAmount) {
+          await db!.insert(orgBillingRecords).values({
+            organizationId, type: "annual_renewal",
+            description: `Renovación anual - Plan ${orgUpdate.plan || "actualizado"}`,
+            amount: renewalAmount, currency: renewalCurrency || "USD", status: "pending",
+          });
+        }
+        return { success: true, message: "Plan y facturación actualizados" };
+      }),
+
+    getTransactionFeeAccrued: adminProcedure
+      .input(z.object({ organizationId: z.number(), periodDays: z.number().default(30) }))
+      .query(async ({ input }: any) => {
+        const db = await getDb();
+        const since = new Date(Date.now() - input.periodDays * 24 * 60 * 60 * 1000);
+        const [org] = await db!.select({
+          transactionFeePercent: organizations.transactionFeePercent,
+          plan: organizations.plan,
+        }).from(organizations).where(eq(organizations.id, input.organizationId));
+        let feePercent = parseFloat(org?.transactionFeePercent || "0");
+        if (!feePercent && org?.plan) {
+          const [defaults] = await db!.select({ transactionFeePercent: platformPricingDefaults.transactionFeePercent })
+            .from(platformPricingDefaults).where(eq(platformPricingDefaults.plan, org.plan));
+          feePercent = parseFloat(defaults?.transactionFeePercent || "5");
+        }
+        const [result] = await db!.execute(sql`
+          SELECT COUNT(*) as session_count,
+            COALESCE(SUM(t.totalCost), 0) as total_volume,
+            COALESCE(SUM(t.totalCost * ${feePercent} / 100), 0) as fee_accrued
+          FROM transactions t
+          INNER JOIN charging_stations cs ON t.stationId = cs.id
+          WHERE cs.organization_id = ${input.organizationId}
+            AND t.status = 'COMPLETED' AND t.createdAt >= ${since}
+        `) as any;
+        const row = Array.isArray(result) ? result[0] : result;
+        return {
+          sessionCount: Number(row?.session_count || 0),
+          totalVolumeCOP: parseFloat(row?.total_volume || "0"),
+          feeAccruedCOP: parseFloat(row?.fee_accrued || "0"),
+          feePercent, periodDays: input.periodDays,
+        };
+      }),
+
+    // CLIENTE: ver billing y solicitar cambio de plan
+    getMyBilling: protectedProcedure.query(async ({ ctx }: any) => {
+      const db = await getDb();
+      const [membership] = await db!
+        .select({ organizationId: orgUsers.organizationId })
+        .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+      if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
+      const [org] = await db!.select({
+        id: organizations.id, plan: organizations.plan, status: organizations.status,
+        nextBillingDate: organizations.nextBillingDate, trialEndsAt: organizations.trialEndsAt,
+        transactionFeePercent: organizations.transactionFeePercent, maxChargers: organizations.maxChargers,
+      }).from(organizations).where(eq(organizations.id, membership.organizationId));
+      if (!org) throw new TRPCError({ code: "NOT_FOUND" });
+      const [planDefaults] = await db!.select().from(platformPricingDefaults)
+        .where(eq(platformPricingDefaults.plan, org.plan));
+      const billingHistory = await db!.select().from(orgBillingRecords)
+        .where(eq(orgBillingRecords.organizationId, membership.organizationId))
+        .orderBy(desc(orgBillingRecords.createdAt)).limit(20);
+      const feePercent = parseFloat(org.transactionFeePercent || planDefaults?.transactionFeePercent || "5");
+      const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const [feeResult] = await db!.execute(sql`
+        SELECT COUNT(*) as session_count,
+          COALESCE(SUM(t.totalCost), 0) as total_volume,
+          COALESCE(SUM(t.totalCost * ${feePercent} / 100), 0) as fee_accrued
+        FROM transactions t
+        INNER JOIN charging_stations cs ON t.stationId = cs.id
+        WHERE cs.organization_id = ${membership.organizationId}
+          AND t.status = 'COMPLETED' AND t.createdAt >= ${since30d}
+      `) as any;
+      const feeRow = Array.isArray(feeResult) ? feeResult[0] : feeResult;
+      return {
+        org, planDefaults: planDefaults || null, billingHistory,
+        currentPeriodFees: {
+          sessionCount: Number(feeRow?.session_count || 0),
+          totalVolumeCOP: parseFloat(feeRow?.total_volume || "0"),
+          feeAccruedCOP: parseFloat(feeRow?.fee_accrued || "0"),
+          feePercent,
+        },
+      };
+    }),
+
+    requestPlanChange: protectedProcedure
+      .input(z.object({
+        newPlan: z.enum(["starter", "professional", "enterprise"]),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!
+          .select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
+          .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
+        if (membership.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Solo el admin puede solicitar cambio de plan" });
+        const [org] = await db!.select({ plan: organizations.plan, name: organizations.name })
+          .from(organizations).where(eq(organizations.id, membership.organizationId));
+        await db!.insert(orgBillingRecords).values({
+          organizationId: membership.organizationId, type: "setup",
+          description: `SOLICITUD DE CAMBIO DE PLAN: ${org?.plan} → ${input.newPlan}${input.notes ? ` | Nota: ${input.notes}` : ""}`,
+          amount: "0", currency: "USD", status: "pending",
+        });
+        try {
+          const { notifyOwner } = await import("../_core/notification");
+          await notifyOwner({
+            title: `Solicitud de cambio de plan - ${org?.name}`,
+            content: `La organización "${org?.name}" solicita cambiar del plan ${org?.plan} al plan ${input.newPlan}.${input.notes ? `\n\nNota: ${input.notes}` : ""}`,
+          });
+        } catch (_) {}
+        return { success: true, message: "Solicitud enviada. El equipo de EVGreen la procesará en breve." };
+      }),
+
     // ==========================================
     // STATS
     // ==========================================
-
     getStats: adminProcedure.query(async () => {
       const db = await getDb();
 

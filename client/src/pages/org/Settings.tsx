@@ -1,6 +1,6 @@
 /**
  * Org Settings - Configuración del portal de organización SaaS
- * Tabs: Información, Branding (logo + colores), Dominio personalizado
+ * Tabs: Información, Mi Plan (Billing), Branding, Dominio
  */
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
@@ -10,17 +10,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   Building, Settings, Mail, Phone, Hash, Globe,
   Palette, Copy, CheckCircle2, AlertCircle, Info,
-  ExternalLink, Zap,
+  ExternalLink, Zap, CreditCard, Calendar, TrendingUp,
+  ArrowUpCircle, Clock,
 } from "lucide-react";
 
 export default function OrgSettings() {
   const utils = trpc.useUtils();
   const { data: org, isLoading } = (trpc.organizations as any).getMyOrg.useQuery();
+  const { data: billing } = (trpc.organizations as any).getMyBilling.useQuery();
 
+  const requestPlanChange = (trpc.organizations as any).requestPlanChange.useMutation({
+    onSuccess: (data: any) => toast.success(data.message),
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const [planChangeForm, setPlanChangeForm] = useState({ newPlan: "", notes: "" });
   const [logoUrl, setLogoUrl] = useState<string>("");
   const [primaryColor, setPrimaryColor] = useState<string>("#22c55e");
   const [secondaryColor, setSecondaryColor] = useState<string>("#1e40af");
@@ -108,10 +118,14 @@ export default function OrgSettings() {
       </div>
 
       <Tabs defaultValue="info" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 bg-muted/30">
+        <TabsList className="grid w-full grid-cols-4 bg-muted/30">
           <TabsTrigger value="info" className="flex items-center gap-2">
             <Building className="h-4 w-4" />
             <span className="hidden sm:inline">Información</span>
+          </TabsTrigger>
+          <TabsTrigger value="billing" className="flex items-center gap-2">
+            <CreditCard className="h-4 w-4" />
+            <span className="hidden sm:inline">Mi Plan</span>
           </TabsTrigger>
           <TabsTrigger value="branding" className="flex items-center gap-2">
             <Palette className="h-4 w-4" />
@@ -211,6 +225,174 @@ export default function OrgSettings() {
           </Card>
         </TabsContent>
 
+        {/* ─── TAB: MI PLAN / BILLING ─── */}
+        <TabsContent value="billing" className="mt-6 space-y-4">
+
+          {/* Plan actual + estado */}
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-green-400" />
+                Plan Actual
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-2xl font-bold capitalize">{billing?.org?.plan || org?.plan}</p>
+                  <p className="text-sm text-muted-foreground capitalize">{billing?.org?.status || org?.status}</p>
+                </div>
+                <div className="text-right space-y-1">
+                  {billing?.org?.nextBillingDate && (
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Calendar className="h-4 w-4" />
+                      <span>Próximo cobro: <strong className="text-foreground">{new Date(billing.org.nextBillingDate).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}</strong></span>
+                    </div>
+                  )}
+                  {billing?.org?.trialEndsAt && billing?.org?.status === "trial" && (
+                    <div className="flex items-center gap-1 text-sm text-blue-400">
+                      <Clock className="h-4 w-4" />
+                      <span>Trial hasta: <strong>{new Date(billing.org.trialEndsAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}</strong></span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Comisión por transacción */}
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border/30">
+                <div className="bg-muted/30 rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">% Comisión EVGreen</p>
+                  <p className="text-xl font-bold text-green-400">{billing?.currentPeriodFees?.feePercent || billing?.planDefaults?.transactionFeePercent || "5"}%</p>
+                  <p className="text-xs text-muted-foreground mt-1">por transacción</p>
+                </div>
+                <div className="bg-muted/30 rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">Cargadores máx.</p>
+                  <p className="text-xl font-bold">{billing?.org?.maxChargers || org?.maxChargers}</p>
+                  <p className="text-xs text-muted-foreground mt-1">incluidos en el plan</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Acumulado período actual */}
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-green-400" />
+                Acumulado Período Actual (últimos 30 días)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-muted/30 rounded-lg p-3 text-center">
+                  <p className="text-xl font-bold">{billing?.currentPeriodFees?.sessionCount || 0}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Sesiones</p>
+                </div>
+                <div className="bg-muted/30 rounded-lg p-3 text-center">
+                  <p className="text-xl font-bold">${(billing?.currentPeriodFees?.totalVolumeCOP || 0).toLocaleString("es-CO", { maximumFractionDigits: 0 })}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Volumen COP</p>
+                </div>
+                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 text-center">
+                  <p className="text-xl font-bold text-green-400">${(billing?.currentPeriodFees?.feeAccruedCOP || 0).toLocaleString("es-CO", { maximumFractionDigits: 0 })}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Comisión EVGreen COP</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Historial de facturación */}
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-green-400" />
+                Historial de Facturación
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!billing?.billingHistory || billing.billingHistory.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">No hay registros de facturación aún.</p>
+              ) : (
+                <div className="space-y-2">
+                  {billing.billingHistory.map((r: any) => (
+                    <div key={r.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/30">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{r.description || r.type}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(r.createdAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-bold">{r.amount} {r.currency}</span>
+                        <Badge
+                          variant="outline"
+                          className={
+                            r.status === "paid" ? "bg-green-500/10 text-green-400 border-green-500/30" :
+                            r.status === "overdue" ? "bg-red-500/10 text-red-400 border-red-500/30" :
+                            "bg-yellow-500/10 text-yellow-400 border-yellow-500/30"
+                          }
+                        >
+                          {r.status === "paid" ? "Pagado" : r.status === "overdue" ? "Vencido" : "Pendiente"}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Solicitar cambio de plan */}
+          {isAdmin && (
+            <Card className="border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <ArrowUpCircle className="h-4 w-4 text-green-400" />
+                  Solicitar Cambio de Plan
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Selecciona el plan al que deseas migrar. El equipo de EVGreen procesará tu solicitud y te contactará para coordinar el cambio.
+                </p>
+                <div className="space-y-2">
+                  <Label className="text-xs">Plan deseado</Label>
+                  <Select value={planChangeForm.newPlan} onValueChange={(v) => setPlanChangeForm({ ...planChangeForm, newPlan: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona un plan..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="starter">Starter — Setup $500 USD · Renovación $125 USD/año</SelectItem>
+                      <SelectItem value="professional">Professional — Setup $1,200 USD · Renovación $300 USD/año</SelectItem>
+                      <SelectItem value="enterprise">Enterprise — Cotización personalizada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Nota adicional (opcional)</Label>
+                  <Textarea
+                    placeholder="Cuéntanos tus necesidades o preguntas..."
+                    value={planChangeForm.notes}
+                    onChange={(e) => setPlanChangeForm({ ...planChangeForm, notes: e.target.value })}
+                    rows={2}
+                    className="text-sm"
+                  />
+                </div>
+                <Button
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  disabled={!planChangeForm.newPlan || requestPlanChange.isPending}
+                  onClick={() => {
+                    if (!planChangeForm.newPlan) return;
+                    requestPlanChange.mutate({ newPlan: planChangeForm.newPlan as any, notes: planChangeForm.notes || undefined });
+                    setPlanChangeForm({ newPlan: "", notes: "" });
+                  }}
+                >
+                  {requestPlanChange.isPending ? "Enviando..." : "Enviar solicitud de cambio"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
         {/* ─── TAB: BRANDING ─── */}
         <TabsContent value="branding" className="mt-6 space-y-4">
           {!isAdmin && (
@@ -227,143 +409,76 @@ export default function OrgSettings() {
                 Identidad Visual
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Logo */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">Logo de la organización</Label>
-                <div className="flex items-start gap-4">
-                  <div className="w-20 h-20 rounded-xl border border-border/50 bg-muted/30 flex items-center justify-center shrink-0 overflow-hidden">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-2" />
-                    ) : (
-                      <Zap className="w-8 h-8 text-muted-foreground opacity-30" />
-                    )}
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs">URL del Logo</Label>
+                <Input
+                  placeholder="https://tu-empresa.com/logo.png"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  disabled={!isAdmin}
+                />
+                {logoUrl && (
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+                    <img src={logoUrl} alt="Logo preview" className="h-10 w-auto object-contain" onError={(e) => (e.currentTarget.style.display = "none")} />
+                    <span className="text-xs text-muted-foreground">Vista previa del logo</span>
                   </div>
-                  <div className="flex-1 space-y-2">
-                    <Input
-                      placeholder="https://tu-empresa.com/logo.png"
-                      value={logoUrl}
-                      onChange={(e) => setLogoUrl(e.target.value)}
-                      disabled={!isAdmin}
-                      className="bg-muted/30 border-border/50"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      URL pública de tu logo (PNG, SVG o WebP). Tamaño mínimo recomendado: 200×200px.
-                    </p>
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* Nombre de la app */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Nombre de la aplicación</Label>
+                <Label className="text-xs">Nombre de la App (en la plataforma)</Label>
                 <Input
                   placeholder={org.name}
                   value={appName}
                   onChange={(e) => setAppName(e.target.value)}
                   disabled={!isAdmin}
-                  className="bg-muted/30 border-border/50"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Nombre que aparece en el encabezado del portal. Vacío = nombre de la organización.
-                </p>
               </div>
 
-              {/* Colores */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Color primario</Label>
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 rounded-lg border border-border/50 shrink-0 cursor-pointer"
-                      style={{ backgroundColor: primaryColor }}
-                      onClick={() => isAdmin && document.getElementById("primaryPicker")?.click()}
-                    />
-                    <input
-                      id="primaryPicker"
-                      type="color"
-                      value={primaryColor}
-                      onChange={(e) => setPrimaryColor(e.target.value)}
-                      disabled={!isAdmin}
-                      className="sr-only"
-                    />
-                    <Input
-                      value={primaryColor}
-                      onChange={(e) => setPrimaryColor(e.target.value)}
-                      disabled={!isAdmin}
-                      placeholder="#22c55e"
-                      className="bg-muted/30 border-border/50 font-mono text-sm"
-                    />
+                  <Label className="text-xs">Color Primario</Label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)}
+                      disabled={!isAdmin} className="h-9 w-12 rounded border border-border/50 bg-transparent cursor-pointer" />
+                    <Input value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)}
+                      disabled={!isAdmin} className="font-mono text-sm" />
                   </div>
-                  <p className="text-xs text-muted-foreground">Botones, íconos activos y acentos.</p>
                 </div>
-
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Color secundario</Label>
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 rounded-lg border border-border/50 shrink-0 cursor-pointer"
-                      style={{ backgroundColor: secondaryColor }}
-                      onClick={() => isAdmin && document.getElementById("secondaryPicker")?.click()}
-                    />
-                    <input
-                      id="secondaryPicker"
-                      type="color"
-                      value={secondaryColor}
-                      onChange={(e) => setSecondaryColor(e.target.value)}
-                      disabled={!isAdmin}
-                      className="sr-only"
-                    />
-                    <Input
-                      value={secondaryColor}
-                      onChange={(e) => setSecondaryColor(e.target.value)}
-                      disabled={!isAdmin}
-                      placeholder="#1e40af"
-                      className="bg-muted/30 border-border/50 font-mono text-sm"
-                    />
+                  <Label className="text-xs">Color Secundario</Label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)}
+                      disabled={!isAdmin} className="h-9 w-12 rounded border border-border/50 bg-transparent cursor-pointer" />
+                    <Input value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)}
+                      disabled={!isAdmin} className="font-mono text-sm" />
                   </div>
-                  <p className="text-xs text-muted-foreground">Fondo del sidebar y encabezado.</p>
                 </div>
               </div>
 
               {/* Vista previa */}
-              <div className="rounded-xl border border-border/50 overflow-hidden">
-                <div className="p-3 flex items-center gap-3" style={{ backgroundColor: secondaryColor }}>
-                  <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center overflow-hidden">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt="" className="w-6 h-6 object-contain" />
-                    ) : (
-                      <Zap className="w-4 h-4 text-white" />
-                    )}
+              <div className="p-4 rounded-lg border border-border/50 space-y-2">
+                <p className="text-xs text-muted-foreground">Vista previa</p>
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: primaryColor }}>
+                    <Zap className="h-5 w-5 text-white" />
                   </div>
-                  <span className="text-white font-bold text-sm">{appName || org.name}</span>
+                  <span className="font-bold" style={{ color: primaryColor }}>{appName || org.name}</span>
                 </div>
-                <div className="p-4 bg-muted/20 flex items-center gap-3">
-                  <div
-                    className="px-4 py-2 rounded-lg text-white text-sm font-medium"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    Botón de ejemplo
-                  </div>
-                  <span className="text-xs text-muted-foreground">← Vista previa del branding</span>
+                <div className="flex gap-2">
+                  <div className="h-6 w-16 rounded" style={{ backgroundColor: primaryColor }} />
+                  <div className="h-6 w-16 rounded" style={{ backgroundColor: secondaryColor }} />
                 </div>
               </div>
 
               {isAdmin && (
                 <Button
-                  className="w-full text-white"
-                  style={{ backgroundColor: primaryColor }}
-                  onClick={() =>
-                    updateBranding.mutate({
-                      logoUrl: logoUrl || null,
-                      primaryColor,
-                      secondaryColor,
-                      appName: appName || undefined,
-                    })
-                  }
+                  className="w-full bg-green-600 hover:bg-green-700"
                   disabled={updateBranding.isPending}
+                  onClick={() => updateBranding.mutate({ logoUrl: logoUrl || undefined, primaryColor, secondaryColor, appName: appName || undefined })}
                 >
-                  {updateBranding.isPending ? "Guardando..." : "Guardar cambios de branding"}
+                  {updateBranding.isPending ? "Guardando..." : "Guardar Branding"}
                 </Button>
               )}
             </CardContent>
@@ -372,191 +487,90 @@ export default function OrgSettings() {
 
         {/* ─── TAB: DOMINIO ─── */}
         <TabsContent value="domain" className="mt-6 space-y-4">
-          {!isAdmin && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-300">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              Solo el administrador puede configurar el dominio.
-            </div>
-          )}
-
-          {/* Subdominio gratuito */}
-          <Card className="border-green-500/20 bg-green-500/5">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-green-400" />
-                Subdominio incluido (gratis)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50">
-                <div>
-                  <p className="font-mono font-bold text-green-400">{subdomainHost}</p>
-                  <p className="text-xs text-muted-foreground mt-1">URL de tu portal</p>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => copy(`https://${subdomainHost}`, "URL")}>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Para activar <span className="font-mono text-green-400">{subdomainHost}</span>, agrega este registro DNS:
-                </p>
-                <div className="rounded-lg border border-border/50 overflow-hidden text-xs">
-                  <div className="grid grid-cols-4 font-medium text-muted-foreground bg-muted/50 px-3 py-2">
-                    <span>Tipo</span><span>Nombre</span><span>Valor</span><span>TTL</span>
-                  </div>
-                  <div className="grid grid-cols-4 px-3 py-3 items-center border-t border-border/30">
-                    <span className="font-mono bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded w-fit">CNAME</span>
-                    <span className="font-mono text-amber-400">{org.slug}</span>
-                    <span className="font-mono text-green-400">evgreen.lat</span>
-                    <div className="flex items-center gap-1">
-                      <span className="font-mono">3600</span>
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0"
-                        onClick={() => copy(`CNAME  ${org.slug}  evgreen.lat  3600`, "Registro DNS")}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Los cambios DNS pueden tardar 24–48 horas en propagarse.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Dominio personalizado */}
           <Card className="border-border/50">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Globe className="h-4 w-4 text-green-400" />
-                Dominio personalizado
-                <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30 text-xs">Pro / Enterprise</Badge>
+                Subdominio Gratuito
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">Tu plataforma está disponible en:</p>
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50">
+                <Globe className="h-4 w-4 text-green-400 shrink-0" />
+                <span className="font-mono text-sm font-medium">{subdomainHost}</span>
+                <div className="flex gap-1 ml-auto">
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => copy(subdomainHost, "Subdominio")}>
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" asChild>
+                    <a href={`https://${subdomainHost}`} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Globe className="h-4 w-4 text-green-400" />
+                Dominio Personalizado
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Usa tu propio dominio (ej: <span className="font-mono text-green-400">portal.tuempresa.com</span>) para que tus usuarios accedan con tu marca.
-              </p>
+              {!isAdmin && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-300">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  Solo el administrador puede configurar el dominio.
+                </div>
+              )}
 
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Tu dominio personalizado</Label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="portal.tuempresa.com"
-                    value={customDomain}
-                    onChange={(e) => setCustomDomain(e.target.value.toLowerCase().trim())}
-                    disabled={!isAdmin}
-                    className="bg-muted/30 border-border/50 font-mono"
-                  />
-                  {isAdmin && (
-                    <Button
-                      onClick={() => updateDomain.mutate({ customDomain: customDomain || null })}
-                      disabled={updateDomain.isPending}
-                      className="shrink-0"
-                    >
-                      {updateDomain.isPending ? "Guardando..." : "Guardar"}
-                    </Button>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Sin <code>https://</code>. Ejemplo: <code>portal.miempresa.com</code>
-                </p>
+                <Label className="text-xs">Tu dominio personalizado</Label>
+                <Input
+                  placeholder="app.tuempresa.com"
+                  value={customDomain}
+                  onChange={(e) => setCustomDomain(e.target.value)}
+                  disabled={!isAdmin}
+                />
               </div>
 
               {customDomain && (
-                <div className="space-y-4 pt-2 border-t border-border/30">
-                  <p className="text-sm font-medium flex items-center gap-2">
-                    <Info className="h-4 w-4 text-blue-400" />
-                    Pasos para activar <span className="font-mono text-green-400">{customDomain}</span>
-                  </p>
-
-                  {/* Paso 1 */}
+                <div className="space-y-3 p-3 rounded-lg bg-muted/20 border border-border/30">
+                  <p className="text-xs font-medium text-muted-foreground">Configura este registro DNS en tu proveedor:</p>
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <div className="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs font-bold shrink-0">1</div>
-                      Agrega este registro en tu proveedor DNS
+                    <div className="grid grid-cols-3 gap-2 text-xs font-medium text-muted-foreground px-2">
+                      <span>Tipo</span><span>Host</span><span>Valor</span>
                     </div>
-                    <div className="rounded-lg border border-border/50 overflow-hidden text-xs ml-8">
-                      <div className="grid grid-cols-4 font-medium text-muted-foreground bg-muted/50 px-3 py-2">
-                        <span>Tipo</span><span>Nombre (Host)</span><span>Valor (Points to)</span><span>TTL</span>
-                      </div>
-                      <div className="grid grid-cols-4 px-3 py-3 items-center border-t border-border/30">
-                        <span className="font-mono bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded w-fit">CNAME</span>
-                        <span className="font-mono text-amber-400">{customDomainHost}</span>
-                        <span className="font-mono text-green-400">evgreen.lat</span>
-                        <div className="flex items-center gap-1">
-                          <span className="font-mono">3600</span>
-                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0"
-                            onClick={() => copy(`CNAME  ${customDomainHost}  evgreen.lat  3600`, "Registro DNS")}>
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
+                    <div className="grid grid-cols-3 gap-2 p-2 rounded bg-muted/30 font-mono text-xs">
+                      <span className="text-green-400">CNAME</span>
+                      <span className="truncate">{customDomainHost}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="truncate">{subdomainHost}</span>
+                        <Button size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={() => copy(subdomainHost, "Valor CNAME")}>
+                          <Copy className="h-3 w-3" />
+                        </Button>
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground ml-8">
-                      Si tu proveedor no acepta CNAME en el dominio raíz (@), usa un registro A apuntando a <code className="text-green-400">104.18.26.246</code>.
-                    </p>
-                  </div>
-
-                  {/* Paso 2 */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <div className="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs font-bold shrink-0">2</div>
-                      Notifica a EVGreen para activar el SSL
-                    </div>
-                    <div className="ml-8 p-3 rounded-lg bg-muted/30 border border-border/50 text-sm space-y-2">
-                      <p className="text-muted-foreground text-xs">
-                        Envía un correo a <a href="mailto:soporte@evgreen.lat" className="text-green-400 underline">soporte@evgreen.lat</a> con:
-                      </p>
-                      <ul className="list-disc list-inside text-muted-foreground space-y-1 text-xs">
-                        <li>Dominio: <span className="font-mono text-green-400">{customDomain}</span></li>
-                        <li>Organización: <span className="font-mono text-amber-400">{org.name}</span></li>
-                        <li>Slug: <span className="font-mono text-amber-400">{org.slug}</span></li>
-                      </ul>
-                      <Button variant="outline" size="sm" className="mt-2"
-                        onClick={() =>
-                          copy(
-                            `Hola EVGreen,\n\nSolicito activar el dominio personalizado:\n- Dominio: ${customDomain}\n- Organización: ${org.name}\n- Slug: ${org.slug}\n\nGracias.`,
-                            "Mensaje de solicitud"
-                          )
-                        }>
-                        <Copy className="h-3 w-3 mr-2" />
-                        Copiar mensaje de solicitud
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Paso 3 */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <div className="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs font-bold shrink-0">3</div>
-                      Espera la confirmación (24–48h)
-                    </div>
-                    <p className="text-xs text-muted-foreground ml-8">
-                      Una vez activado, tu portal estará en <span className="font-mono text-green-400">https://{customDomain}</span> con SSL incluido.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 mt-2">
-                    <Button variant="outline" size="sm"
-                      onClick={() => window.open(`https://dnschecker.org/#CNAME/${customDomain}`, "_blank")}>
-                      <ExternalLink className="h-3 w-3 mr-2" />
-                      Verificar propagación DNS
-                    </Button>
-                    <Button variant="outline" size="sm"
-                      onClick={() => window.open(`https://www.whatsmydns.net/#CNAME/${customDomain}`, "_blank")}>
-                      <ExternalLink className="h-3 w-3 mr-2" />
-                      Ver estado global
-                    </Button>
                   </div>
                 </div>
               )}
 
-              {/* Proveedores comunes */}
+              {isAdmin && (
+                <Button
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  disabled={updateDomain.isPending || !customDomain}
+                  onClick={() => updateDomain.mutate({ customDomain })}
+                >
+                  {updateDomain.isPending ? "Guardando..." : "Guardar Dominio"}
+                </Button>
+              )}
+
               <div className="pt-2 border-t border-border/30">
-                <p className="text-xs font-medium text-muted-foreground mb-2">Guías rápidas por proveedor DNS:</p>
+                <p className="text-xs text-muted-foreground mb-2">Guías de configuración DNS:</p>
                 <div className="flex flex-wrap gap-2">
                   {[
                     { name: "Cloudflare", url: "https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/" },

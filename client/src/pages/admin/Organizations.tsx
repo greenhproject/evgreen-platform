@@ -42,6 +42,8 @@ import {
   Clock,
   AlertCircle,
   X,
+  CreditCard,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -384,6 +386,35 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
   const [addUserForm, setAddUserForm] = useState({ userId: "", role: "admin" as "admin" | "viewer" });
   const [selectedStationId, setSelectedStationId] = useState<string>("");
 
+  // Billing
+  const { data: billingHistory, refetch: refetchBilling } = (trpc.organizations as any).getBillingHistory.useQuery({ organizationId: org.id });
+  const { data: feeAccrued } = (trpc.organizations as any).getTransactionFeeAccrued.useQuery({ organizationId: org.id, periodDays: 30 });
+  const changePlanAdmin = (trpc.organizations as any).changePlanAdmin.useMutation({
+    onSuccess: () => { toast.success("Plan actualizado"); refetchBilling(); onRefresh(); },
+    onError: (err: any) => toast.error(err.message),
+  });
+  const markBillingPaid = (trpc.organizations as any).markBillingPaid.useMutation({
+    onSuccess: () => { toast.success("Pago registrado"); refetchBilling(); },
+    onError: (err: any) => toast.error(err.message),
+  });
+  const createBillingRecord = (trpc.organizations as any).createBillingRecord.useMutation({
+    onSuccess: () => { toast.success("Registro creado"); refetchBilling(); },
+    onError: (err: any) => toast.error(err.message),
+  });
+  const [planForm, setPlanForm] = useState({
+    plan: org.plan || "starter",
+    status: org.status || "trial",
+    transactionFeePercent: org.transactionFeePercent || "",
+    nextBillingDate: org.nextBillingDate ? new Date(org.nextBillingDate).toISOString().split("T")[0] : "",
+    trialEndsAt: org.trialEndsAt ? new Date(org.trialEndsAt).toISOString().split("T")[0] : "",
+    recordSetupPayment: false, setupAmount: "",
+    recordRenewalPayment: false, renewalAmount: "",
+  });
+  const [newBillingForm, setNewBillingForm] = useState({
+    type: "setup" as "setup" | "annual_renewal" | "transaction_fee" | "support_fee" | "minimum_fee",
+    description: "", amount: "", currency: "USD",
+  });
+
   const ticketStatusColors: Record<string, string> = {
     OPEN: "bg-blue-500/20 text-blue-400",
     IN_PROGRESS: "bg-yellow-500/20 text-yellow-400",
@@ -411,8 +442,12 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="stations">
+        <Tabs defaultValue="billing">
           <TabsList className="w-full">
+            <TabsTrigger value="billing" className="flex-1">
+              <CreditCard className="h-4 w-4 mr-1" />
+              Billing
+            </TabsTrigger>
             <TabsTrigger value="stations" className="flex-1">
               <MapPin className="h-4 w-4 mr-1" />
               Estaciones
@@ -426,6 +461,164 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
               Tickets
             </TabsTrigger>
           </TabsList>
+
+          {/* ---- TAB: BILLING ---- */}
+          <TabsContent value="billing" className="space-y-4 mt-4">
+            {/* Acumulado comisiones */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-3 rounded-lg bg-muted/30 border border-border/30 text-center">
+                <p className="text-xs text-muted-foreground">Sesiones (30d)</p>
+                <p className="text-xl font-bold text-green-400">{feeAccrued?.sessionCount || 0}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/30 border border-border/30 text-center">
+                <p className="text-xs text-muted-foreground">Volumen COP (30d)</p>
+                <p className="text-lg font-bold">${(feeAccrued?.totalVolumeCOP || 0).toLocaleString("es-CO", { maximumFractionDigits: 0 })}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-center">
+                <p className="text-xs text-muted-foreground">Comisión EVGreen ({feeAccrued?.feePercent || 5}%)</p>
+                <p className="text-lg font-bold text-green-400">${(feeAccrued?.feeAccruedCOP || 0).toLocaleString("es-CO", { maximumFractionDigits: 0 })}</p>
+              </div>
+            </div>
+
+            {/* Cambiar plan */}
+            <div className="space-y-3 p-4 rounded-lg border border-border/50 bg-muted/10">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 text-green-400" /> Cambiar Plan y Estado
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Plan</label>
+                  <Select value={planForm.plan} onValueChange={(v) => setPlanForm({ ...planForm, plan: v })}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="starter">Starter</SelectItem>
+                      <SelectItem value="professional">Professional</SelectItem>
+                      <SelectItem value="enterprise">Enterprise</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Estado</label>
+                  <Select value={planForm.status} onValueChange={(v) => setPlanForm({ ...planForm, status: v })}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="trial">Trial</SelectItem>
+                      <SelectItem value="active">Activo</SelectItem>
+                      <SelectItem value="suspended">Suspendido</SelectItem>
+                      <SelectItem value="cancelled">Cancelado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">% Comisión (override org)</label>
+                  <Input className="h-8 text-sm" placeholder="Ej: 4.5" value={planForm.transactionFeePercent}
+                    onChange={(e) => setPlanForm({ ...planForm, transactionFeePercent: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Próximo cobro</label>
+                  <Input type="date" className="h-8 text-sm" value={planForm.nextBillingDate}
+                    onChange={(e) => setPlanForm({ ...planForm, nextBillingDate: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Trial termina el</label>
+                  <Input type="date" className="h-8 text-sm" value={planForm.trialEndsAt}
+                    onChange={(e) => setPlanForm({ ...planForm, trialEndsAt: e.target.value })} />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch checked={planForm.recordSetupPayment}
+                  onCheckedChange={(v) => setPlanForm({ ...planForm, recordSetupPayment: v })} />
+                <span className="text-xs">Registrar pago Setup</span>
+                {planForm.recordSetupPayment && (
+                  <Input className="h-7 text-xs w-28" placeholder="Monto USD" value={planForm.setupAmount}
+                    onChange={(e) => setPlanForm({ ...planForm, setupAmount: e.target.value })} />
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch checked={planForm.recordRenewalPayment}
+                  onCheckedChange={(v) => setPlanForm({ ...planForm, recordRenewalPayment: v })} />
+                <span className="text-xs">Registrar Renovación Anual</span>
+                {planForm.recordRenewalPayment && (
+                  <Input className="h-7 text-xs w-28" placeholder="Monto USD" value={planForm.renewalAmount}
+                    onChange={(e) => setPlanForm({ ...planForm, renewalAmount: e.target.value })} />
+                )}
+              </div>
+              <Button size="sm" className="bg-green-600 hover:bg-green-700 w-full" disabled={changePlanAdmin.isPending}
+                onClick={() => {
+                  const payload: any = { organizationId: org.id, plan: planForm.plan as any, status: planForm.status as any };
+                  if (planForm.transactionFeePercent) payload.transactionFeePercent = planForm.transactionFeePercent;
+                  if (planForm.nextBillingDate) payload.nextBillingDate = new Date(planForm.nextBillingDate);
+                  if (planForm.trialEndsAt) payload.trialEndsAt = new Date(planForm.trialEndsAt);
+                  if (planForm.recordSetupPayment && planForm.setupAmount) { payload.recordSetupPayment = true; payload.setupAmount = planForm.setupAmount; }
+                  if (planForm.recordRenewalPayment && planForm.renewalAmount) { payload.recordRenewalPayment = true; payload.renewalAmount = planForm.renewalAmount; }
+                  changePlanAdmin.mutate(payload);
+                }}>
+                {changePlanAdmin.isPending ? "Guardando..." : "Guardar cambios de plan"}
+              </Button>
+            </div>
+
+            {/* Historial de billing */}
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-green-400" /> Historial de Facturación
+              </h3>
+              {!billingHistory || billingHistory.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">Sin registros</p>
+              ) : (
+                <div className="space-y-2">
+                  {billingHistory.map((r: any) => (
+                    <div key={r.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/30">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{r.description || r.type}</p>
+                        <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString("es-CO")}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-bold">{r.amount} {r.currency}</span>
+                        <Badge variant="outline" className={r.status === "paid" ? "bg-green-500/10 text-green-400" : r.status === "overdue" ? "bg-red-500/10 text-red-400" : "bg-yellow-500/10 text-yellow-400"}>
+                          {r.status === "paid" ? "Pagado" : r.status === "overdue" ? "Vencido" : "Pendiente"}
+                        </Badge>
+                        {r.status !== "paid" && (
+                          <Button size="sm" variant="ghost" className="h-6 text-xs text-green-400"
+                            onClick={() => markBillingPaid.mutate({ id: r.id })}>
+                            <CheckCircle className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Agregar registro manual */}
+              <div className="pt-2 border-t border-border/30 space-y-2">
+                <p className="text-xs text-muted-foreground font-medium">Agregar registro manual</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Select value={newBillingForm.type} onValueChange={(v: any) => setNewBillingForm({ ...newBillingForm, type: v })}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="setup">Setup</SelectItem>
+                      <SelectItem value="annual_renewal">Renovación Anual</SelectItem>
+                      <SelectItem value="transaction_fee">Comisión Transacciones</SelectItem>
+                      <SelectItem value="support_fee">Soporte</SelectItem>
+                      <SelectItem value="minimum_fee">Mínimo Mensual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input className="h-7 text-xs" placeholder="Monto (USD)" value={newBillingForm.amount}
+                    onChange={(e) => setNewBillingForm({ ...newBillingForm, amount: e.target.value })} />
+                </div>
+                <Input className="h-7 text-xs" placeholder="Descripción (opcional)" value={newBillingForm.description}
+                  onChange={(e) => setNewBillingForm({ ...newBillingForm, description: e.target.value })} />
+                <Button size="sm" variant="outline" className="w-full h-7 text-xs"
+                  disabled={!newBillingForm.amount || createBillingRecord.isPending}
+                  onClick={() => {
+                    createBillingRecord.mutate({ organizationId: org.id, type: newBillingForm.type,
+                      description: newBillingForm.description || undefined, amount: newBillingForm.amount, currency: newBillingForm.currency });
+                    setNewBillingForm({ type: "setup", description: "", amount: "", currency: "USD" });
+                  }}>
+                  <Plus className="h-3 w-3 mr-1" /> Agregar registro
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
 
           {/* ---- TAB: ESTACIONES ---- */}
           <TabsContent value="stations" className="space-y-4 mt-4">
