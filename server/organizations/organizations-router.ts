@@ -15,6 +15,7 @@ import {
   supportTickets,
   users,
   transactions,
+  tariffs,
 } from "../../drizzle/schema";
 import { eq, desc, sql, and, like, or, isNull } from "drizzle-orm";
 import { protectedProcedure } from "../_core/trpc";
@@ -347,6 +348,127 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         .from(chargingStations)
         .where(eq(chargingStations.organizationId, membership.organizationId));
     }),
+
+    // El admin de la org actualiza la configuración de una estación (precio, nombre, estado)
+    updateMyStation: protectedProcedure
+      .input(z.object({
+        stationId: z.number(),
+        name: z.string().min(3).max(255).optional(),
+        description: z.string().max(1000).optional().nullable(),
+        isActive: z.boolean().optional(),
+        isPublic: z.boolean().optional(),
+        contactPhone: z.string().max(20).optional().nullable(),
+        // Tarifa activa de la estación
+        pricePerKwh: z.number().min(0).optional(),
+        pricePerMinute: z.number().min(0).optional(),
+        pricePerSession: z.number().min(0).optional(),
+        overstayPenaltyPerMinute: z.number().min(0).optional(),
+        overstayGracePeriodMinutes: z.number().min(0).max(120).optional(),
+      }))
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        // Verificar que el usuario es admin de la org y que la estación pertenece a su org
+        const [membership] = await db!
+          .select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
+          .from(orgUsers)
+          .where(eq(orgUsers.userId, ctx.user.id));
+
+        if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "No perteneces a ninguna organización" });
+        if (membership.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Solo el admin puede configurar estaciones" });
+
+        const [station] = await db!
+          .select({ id: chargingStations.id })
+          .from(chargingStations)
+          .where(and(
+            eq(chargingStations.id, input.stationId),
+            eq(chargingStations.organizationId, membership.organizationId)
+          ));
+
+        if (!station) throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada en tu organización" });
+
+        // Actualizar campos de la estación
+        const stationUpdate: Record<string, any> = {};
+        if (input.name !== undefined) stationUpdate.name = input.name;
+        if (input.description !== undefined) stationUpdate.description = input.description;
+        if (input.isActive !== undefined) stationUpdate.isActive = input.isActive;
+        if (input.isPublic !== undefined) stationUpdate.isPublic = input.isPublic;
+        if (input.contactPhone !== undefined) stationUpdate.contactPhone = input.contactPhone;
+
+        if (Object.keys(stationUpdate).length > 0) {
+          await db!.update(chargingStations).set(stationUpdate).where(eq(chargingStations.id, input.stationId));
+        }
+
+        // Actualizar tarifa activa si se proporcionaron precios
+        const hasTariffUpdate = input.pricePerKwh !== undefined || input.pricePerMinute !== undefined ||
+          input.pricePerSession !== undefined || input.overstayPenaltyPerMinute !== undefined ||
+          input.overstayGracePeriodMinutes !== undefined;
+
+        if (hasTariffUpdate) {
+          const [activeTariff] = await db!
+            .select({ id: tariffs.id })
+            .from(tariffs)
+            .where(and(eq(tariffs.stationId, input.stationId), eq(tariffs.isActive, true)))
+            .orderBy(desc(tariffs.createdAt))
+            .limit(1);
+
+          const tariffUpdate: Record<string, any> = {};
+          if (input.pricePerKwh !== undefined) tariffUpdate.pricePerKwh = input.pricePerKwh.toString();
+          if (input.pricePerMinute !== undefined) tariffUpdate.pricePerMinute = input.pricePerMinute.toString();
+          if (input.pricePerSession !== undefined) tariffUpdate.pricePerSession = input.pricePerSession.toString();
+          if (input.overstayPenaltyPerMinute !== undefined) tariffUpdate.overstayPenaltyPerMinute = input.overstayPenaltyPerMinute.toString();
+          if (input.overstayGracePeriodMinutes !== undefined) tariffUpdate.overstayGracePeriodMinutes = input.overstayGracePeriodMinutes;
+
+          if (activeTariff) {
+            await db!.update(tariffs).set(tariffUpdate).where(eq(tariffs.id, activeTariff.id));
+          } else {
+            // Crear tarifa si no existe
+            await db!.insert(tariffs).values({
+              stationId: input.stationId,
+              name: "Tarifa Principal",
+              pricePerKwh: (input.pricePerKwh || 1800).toString(),
+              pricePerMinute: (input.pricePerMinute || 0).toString(),
+              pricePerSession: (input.pricePerSession || 0).toString(),
+              overstayPenaltyPerMinute: (input.overstayPenaltyPerMinute || 0).toString(),
+              overstayGracePeriodMinutes: input.overstayGracePeriodMinutes || 10,
+              isActive: true,
+            });
+          }
+        }
+
+        return { success: true, message: "Estación actualizada correctamente" };
+      }),
+
+    // Obtener tarifa activa de una estación de la org
+    getMyStationTariff: protectedProcedure
+      .input(z.object({ stationId: z.number() }))
+      .query(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!
+          .select({ organizationId: orgUsers.organizationId })
+          .from(orgUsers)
+          .where(eq(orgUsers.userId, ctx.user.id));
+
+        if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
+
+        const [station] = await db!
+          .select({ id: chargingStations.id })
+          .from(chargingStations)
+          .where(and(
+            eq(chargingStations.id, input.stationId),
+            eq(chargingStations.organizationId, membership.organizationId)
+          ));
+
+        if (!station) throw new TRPCError({ code: "NOT_FOUND" });
+
+        const [tariff] = await db!
+          .select()
+          .from(tariffs)
+          .where(and(eq(tariffs.stationId, input.stationId), eq(tariffs.isActive, true)))
+          .orderBy(desc(tariffs.createdAt))
+          .limit(1);
+
+        return tariff || null;
+      }),
 
     // El cliente crea un ticket de soporte
     createMyTicket: protectedProcedure
