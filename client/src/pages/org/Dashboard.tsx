@@ -1,6 +1,6 @@
 /**
  * Org Dashboard - Panel principal del portal de organización SaaS
- * Muestra resumen de la organización, estaciones y tickets activos
+ * Muestra resumen de la organización, métricas avanzadas (kWh, sesiones, ingresos), estaciones y tickets activos
  */
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,17 +13,28 @@ import {
   Zap,
   CheckCircle,
   AlertCircle,
-  Clock,
   ArrowRight,
+  TrendingUp,
+  Users,
+  DollarSign,
+  Activity,
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { useState } from "react";
+
+type Period = "7d" | "30d" | "90d" | "all";
 
 export default function OrgDashboard() {
   const [, setLocation] = useLocation();
+  const [period, setPeriod] = useState<Period>("30d");
 
   const { data: org, isLoading: orgLoading } = (trpc.organizations as any).getMyOrg.useQuery();
-  const { data: stations, isLoading: stationsLoading } = (trpc.organizations as any).getMyStations.useQuery();
+  const { data: stations } = (trpc.organizations as any).getMyStations.useQuery();
   const { data: tickets } = (trpc.organizations as any).getMyTickets.useQuery();
+  const { data: stats } = (trpc.organizations as any).getMyOrgStats.useQuery(
+    { period },
+    { keepPreviousData: true }
+  );
 
   const onlineStations = stations?.filter((s: any) => s.isOnline) || [];
   const offlineStations = stations?.filter((s: any) => !s.isOnline) || [];
@@ -64,33 +75,61 @@ export default function OrgDashboard() {
     cancelled: "bg-red-500/20 text-red-400 border-red-500/30",
   };
 
+  const periodLabels: Record<Period, string> = {
+    "7d": "7 días",
+    "30d": "30 días",
+    "90d": "90 días",
+    "all": "Todo",
+  };
+
+  const formatCOP = (value: number) =>
+    new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Building className="h-7 w-7 text-green-400" />
-          {org.name}
-        </h1>
-        <div className="flex items-center gap-2 mt-2">
-          <Badge variant="outline" className={planColors[org.plan] || ""}>
-            Plan {org.plan}
-          </Badge>
-          <Badge variant="outline" className={statusColors[org.status] || ""}>
-            {org.status === "active" ? "Activo" :
-             org.status === "trial" ? "Trial" :
-             org.status === "suspended" ? "Suspendido" : "Cancelado"}
-          </Badge>
-          {org.myRole && (
-            <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30">
-              {org.myRole === "admin" ? "Administrador" : "Visualizador"}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Building className="h-7 w-7 text-green-400" />
+            {org.name}
+          </h1>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <Badge variant="outline" className={planColors[org.plan] || ""}>
+              Plan {org.plan}
             </Badge>
-          )}
+            <Badge variant="outline" className={statusColors[org.status] || ""}>
+              {org.status === "active" ? "Activo" :
+               org.status === "trial" ? "Trial" :
+               org.status === "suspended" ? "Suspendido" : "Cancelado"}
+            </Badge>
+            {org.myRole && (
+              <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30">
+                {org.myRole === "admin" ? "Administrador" : "Visualizador"}
+              </Badge>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">{org.slug}.evgreen.lat</p>
         </div>
-        <p className="text-sm text-muted-foreground mt-1">{org.slug}.evgreen.lat</p>
+        {/* Period Selector */}
+        <div className="flex gap-1 bg-muted rounded-lg p-1 self-start">
+          {(["7d", "30d", "90d", "all"] as Period[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                period === p
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {periodLabels[p]}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Infrastructure Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-4 pb-3">
@@ -108,11 +147,11 @@ export default function OrgDashboard() {
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-500/10">
-                <Zap className="h-5 w-5 text-blue-400" />
+              <div className="p-2 rounded-lg bg-emerald-500/10">
+                <CheckCircle className="h-5 w-5 text-emerald-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{onlineStations.length}</p>
+                <p className="text-2xl font-bold text-emerald-400">{onlineStations.length}</p>
                 <p className="text-xs text-muted-foreground">En Línea</p>
               </div>
             </div>
@@ -125,8 +164,8 @@ export default function OrgDashboard() {
                 <AlertCircle className="h-5 w-5 text-red-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{offlineStations.length}</p>
-                <p className="text-xs text-muted-foreground">Fuera de Línea</p>
+                <p className="text-2xl font-bold text-red-400">{offlineStations.length}</p>
+                <p className="text-xs text-muted-foreground">Offline</p>
               </div>
             </div>
           </CardContent>
@@ -138,7 +177,7 @@ export default function OrgDashboard() {
                 <Ticket className="h-5 w-5 text-orange-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{openTickets.length}</p>
+                <p className="text-2xl font-bold text-orange-400">{openTickets.length}</p>
                 <p className="text-xs text-muted-foreground">Tickets Abiertos</p>
               </div>
             </div>
@@ -146,8 +185,100 @@ export default function OrgDashboard() {
         </Card>
       </div>
 
-      {/* Stations Summary */}
+      {/* Performance Metrics */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+          Métricas de Rendimiento — {periodLabels[period]}
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card className="border-border/50">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">Sesiones</p>
+                  <p className="text-2xl font-bold mt-1">{stats?.totalSessions ?? "—"}</p>
+                </div>
+                <div className="p-2 rounded-lg bg-blue-500/10">
+                  <Activity className="h-4 w-4 text-blue-400" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-border/50">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">kWh Entregados</p>
+                  <p className="text-2xl font-bold mt-1">
+                    {stats ? stats.totalKwh.toFixed(1) : "—"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">kWh</p>
+                </div>
+                <div className="p-2 rounded-lg bg-yellow-500/10">
+                  <Zap className="h-4 w-4 text-yellow-400" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-border/50">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">Ingresos</p>
+                  <p className="text-xl font-bold mt-1">
+                    {stats ? formatCOP(stats.totalRevenue) : "—"}
+                  </p>
+                </div>
+                <div className="p-2 rounded-lg bg-green-500/10">
+                  <DollarSign className="h-4 w-4 text-green-400" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-border/50">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">Usuarios Únicos</p>
+                  <p className="text-2xl font-bold mt-1">{stats?.uniqueUsers ?? "—"}</p>
+                </div>
+                <div className="p-2 rounded-lg bg-purple-500/10">
+                  <Users className="h-4 w-4 text-purple-400" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Avg kWh per session */}
+      {stats && stats.totalSessions > 0 && (
+        <Card className="border-border/50 bg-gradient-to-r from-green-500/5 to-transparent">
+          <CardContent className="py-3 px-4">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="h-5 w-5 text-green-400 shrink-0" />
+              <div className="flex gap-6 flex-wrap">
+                <div>
+                  <span className="text-xs text-muted-foreground">Promedio por sesión: </span>
+                  <span className="text-sm font-semibold text-green-400">
+                    {stats.avgKwhPerSession.toFixed(2)} kWh
+                  </span>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground">Ingreso por sesión: </span>
+                  <span className="text-sm font-semibold text-green-400">
+                    {formatCOP(stats.totalSessions > 0 ? stats.totalRevenue / stats.totalSessions : 0)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stations & Tickets */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Stations List */}
         <Card className="border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center justify-between">
@@ -167,9 +298,7 @@ export default function OrgDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {stationsLoading ? (
-              <p className="text-sm text-muted-foreground">Cargando...</p>
-            ) : stations?.length === 0 ? (
+            {!stations || stations.length === 0 ? (
               <div className="text-center py-4 text-muted-foreground">
                 <MapPin className="h-8 w-8 mx-auto mb-2 opacity-30" />
                 <p className="text-sm">No hay estaciones asignadas</p>
@@ -177,20 +306,20 @@ export default function OrgDashboard() {
             ) : (
               <div className="space-y-2">
                 {stations?.slice(0, 5).map((s: any) => (
-                  <div key={s.id} className="flex items-center justify-between py-1.5">
-                    <div>
-                      <p className="text-sm font-medium">{s.name}</p>
-                      <p className="text-xs text-muted-foreground">{s.city || s.address || "Sin ubicación"}</p>
+                  <div key={s.id} className="flex items-center justify-between py-1.5 gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{s.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {s.city || s.address || "Sin ubicación"}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {s.isOnline ? (
-                        <CheckCircle className="h-4 w-4 text-green-400" />
-                      ) : (
-                        <AlertCircle className="h-4 w-4 text-red-400" />
-                      )}
-                      <span className={`text-xs ${s.isOnline ? "text-green-400" : "text-red-400"}`}>
-                        {s.isOnline ? "Online" : "Offline"}
-                      </span>
+                    <div className={`flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${
+                      s.isOnline
+                        ? "bg-green-500/10 text-green-400"
+                        : "bg-red-500/10 text-red-400"
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${s.isOnline ? "bg-green-400" : "bg-red-400"}`} />
+                      {s.isOnline ? "Online" : "Offline"}
                     </div>
                   </div>
                 ))}
@@ -243,7 +372,7 @@ export default function OrgDashboard() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{t.subject}</p>
                       <p className="text-xs text-muted-foreground">
-                        {t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "-"}
+                        {t.createdAt ? new Date(t.createdAt).toLocaleDateString("es-CO") : "-"}
                       </p>
                     </div>
                     <Badge

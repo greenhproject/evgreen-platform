@@ -14,6 +14,7 @@ import {
   chargingStations,
   supportTickets,
   users,
+  transactions,
 } from "../../drizzle/schema";
 import { eq, desc, sql, and, like, or, isNull } from "drizzle-orm";
 import { protectedProcedure } from "../_core/trpc";
@@ -444,6 +445,69 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           .set({ customDomain: input.customDomain })
           .where(eq(organizations.id, membership.organizationId));
         return { success: true, message: input.customDomain ? `Dominio guardado: ${input.customDomain}` : "Dominio personalizado eliminado" };
+      }),
+
+    // Estadísticas de la organización: sesiones, kWh, ingresos
+    getMyOrgStats: protectedProcedure
+      .input(z.object({ period: z.enum(["7d", "30d", "90d", "all"]).default("30d") }).optional())
+      .query(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!
+          .select({ organizationId: orgUsers.organizationId })
+          .from(orgUsers)
+          .where(eq(orgUsers.userId, ctx.user.id));
+
+        if (!membership) return null;
+
+        const period = input?.period || "30d";
+        let dateFilter = "";
+        if (period === "7d") dateFilter = "AND t.startTime >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+        else if (period === "30d") dateFilter = "AND t.startTime >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+        else if (period === "90d") dateFilter = "AND t.startTime >= DATE_SUB(NOW(), INTERVAL 90 DAY)";
+
+        // Sesiones y kWh totales de las estaciones de la org
+        const [stats] = await db!.execute(sql.raw(`
+          SELECT
+            COUNT(t.id) AS totalSessions,
+            COALESCE(SUM(CAST(t.kwhConsumed AS DECIMAL(10,4))), 0) AS totalKwh,
+            COALESCE(SUM(CAST(t.totalCost AS DECIMAL(12,2))), 0) AS totalRevenue,
+            COALESCE(AVG(CAST(t.kwhConsumed AS DECIMAL(10,4))), 0) AS avgKwhPerSession,
+            COUNT(DISTINCT t.userId) AS uniqueUsers
+          FROM transactions t
+          INNER JOIN charging_stations cs ON t.stationId = cs.id
+          WHERE cs.organization_id = ${membership.organizationId}
+            AND t.status = 'COMPLETED'
+            ${dateFilter}
+        `)) as any;
+
+        const statsRow = Array.isArray(stats) ? stats[0] : stats;
+
+        // Sesiones por día (últimos 7 días)
+        const dailyRows = await db!.execute(sql.raw(`
+          SELECT
+            DATE(t.startTime) AS day,
+            COUNT(*) AS sessions,
+            COALESCE(SUM(CAST(t.kwhConsumed AS DECIMAL(10,4))), 0) AS kwh
+          FROM transactions t
+          INNER JOIN charging_stations cs ON t.stationId = cs.id
+          WHERE cs.organization_id = ${membership.organizationId}
+            AND t.status = 'COMPLETED'
+            AND t.startTime >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+          GROUP BY DATE(t.startTime)
+          ORDER BY day ASC
+        `)) as any;
+
+        const daily = Array.isArray(dailyRows) ? dailyRows[0] : dailyRows;
+
+        return {
+          totalSessions: Number(statsRow?.totalSessions || 0),
+          totalKwh: parseFloat(statsRow?.totalKwh || "0"),
+          totalRevenue: parseFloat(statsRow?.totalRevenue || "0"),
+          avgKwhPerSession: parseFloat(statsRow?.avgKwhPerSession || "0"),
+          uniqueUsers: Number(statsRow?.uniqueUsers || 0),
+          daily: Array.isArray(daily) ? daily : [],
+          period,
+        };
       }),
 
     // ==========================================

@@ -260,22 +260,38 @@ function RoleBasedRedirect() {
     }
   );
 
-  const isStillLoading = loading || (isAuthenticated && user?.role === "user" && sessionLoading);
+  // Verificar si el usuario pertenece a una organización SaaS
+  const { data: orgData, isLoading: orgLoading } = (trpc.organizations as any).getMyOrg.useQuery(
+    undefined,
+    {
+      enabled: !!isAuthenticated && !!user && user.role === "user",
+      retry: 1,
+      staleTime: 5 * 60 * 1000,
+    }
+  );
+
+  const isStillLoading = loading || (isAuthenticated && user?.role === "user" && (sessionLoading || orgLoading));
 
   useEffect(() => {
     if (loading) return;
-    if (isAuthenticated && user && user.role === "user" && sessionLoading) return;
+    if (isAuthenticated && user && user.role === "user" && (sessionLoading || orgLoading)) return;
     
     if (isAuthenticated && user) {
+      // Prioridad 1: sesión de carga activa
       if (user.role === "user" && activeSession && activeSession.transactionId > 0 && activeSession.status !== "COMPLETED") {
         setLocation("/charging-monitor");
+        return;
+      }
+      // Prioridad 2: usuario pertenece a organización SaaS → ir a /org
+      if (user.role === "user" && orgData) {
+        setLocation("/org");
         return;
       }
       const targetRoute = getHomeRouteByRole(user.role);
       setLocation(targetRoute);
     }
     // Si no está autenticado: no redirigir - PWALoginScreen o Landing se encargan
-  }, [isAuthenticated, user, loading, setLocation, activeSession, sessionLoading]);
+  }, [isAuthenticated, user, loading, setLocation, activeSession, sessionLoading, orgData, orgLoading]);
 
   if (isStillLoading) {
     return (
