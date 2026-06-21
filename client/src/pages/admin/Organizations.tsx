@@ -443,21 +443,21 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
         </DialogHeader>
 
         <Tabs defaultValue="billing">
-          <TabsList className="w-full">
-            <TabsTrigger value="billing" className="flex-1">
-              <CreditCard className="h-4 w-4 mr-1" />
+          <TabsList className="w-full grid grid-cols-2 h-auto gap-1 p-1">
+            <TabsTrigger value="billing" className="flex items-center justify-center gap-1.5 py-2 text-xs">
+              <CreditCard className="h-3.5 w-3.5 shrink-0" />
               Billing
             </TabsTrigger>
-            <TabsTrigger value="stations" className="flex-1">
-              <MapPin className="h-4 w-4 mr-1" />
+            <TabsTrigger value="stations" className="flex items-center justify-center gap-1.5 py-2 text-xs">
+              <MapPin className="h-3.5 w-3.5 shrink-0" />
               Estaciones
             </TabsTrigger>
-            <TabsTrigger value="users" className="flex-1">
-              <Users className="h-4 w-4 mr-1" />
+            <TabsTrigger value="users" className="flex items-center justify-center gap-1.5 py-2 text-xs">
+              <Users className="h-3.5 w-3.5 shrink-0" />
               Usuarios
             </TabsTrigger>
-            <TabsTrigger value="tickets" className="flex-1">
-              <Ticket className="h-4 w-4 mr-1" />
+            <TabsTrigger value="tickets" className="flex items-center justify-center gap-1.5 py-2 text-xs">
+              <Ticket className="h-3.5 w-3.5 shrink-0" />
               Tickets
             </TabsTrigger>
           </TabsList>
