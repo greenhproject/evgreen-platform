@@ -1,6 +1,6 @@
 /**
  * Layout para el Portal de Organización SaaS
- * Aplica branding dinámico (logo, colores, nombre) de la organización.
+ * Sidebar dinámico basado en módulos activados por superadmin.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -33,18 +33,35 @@ import {
   Zap,
   TicketCheck,
   MapPin,
+  CreditCard,
+  BarChart2,
+  BrainCircuit,
+  Users,
+  FileText,
+  DollarSign,
+  Webhook,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "@/components/DashboardLayoutSkeleton";
 import { trpc } from "@/lib/trpc";
 
-const orgMenuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/org" },
-  { icon: MapPin, label: "Mis Estaciones", path: "/org/stations" },
-  { icon: TicketCheck, label: "Soporte / Tickets", path: "/org/support" },
-  { icon: Settings, label: "Configuración", path: "/org/settings" },
+// Definición completa de todos los módulos disponibles
+const ALL_ORG_MENU_ITEMS = [
+  { key: 'dashboard',       icon: LayoutDashboard, label: "Dashboard",              path: "/org" },
+  { key: 'stations',        icon: MapPin,           label: "Mis Estaciones",         path: "/org/stations" },
+  { key: 'transactions',    icon: CreditCard,       label: "Transacciones",          path: "/org/transactions" },
+  { key: 'analytics',       icon: BarChart2,        label: "Analítica",              path: "/org/analytics" },
+  { key: 'dynamic_pricing', icon: BrainCircuit,     label: "Precios Dinámicos IA",   path: "/org/dynamic-pricing" },
+  { key: 'reports',         icon: FileText,         label: "Reportes",               path: "/org/reports" },
+  { key: 'users',           icon: Users,            label: "Usuarios",               path: "/org/users" },
+  { key: 'billing',         icon: DollarSign,       label: "Facturación",            path: "/org/billing" },
+  { key: 'api_webhooks',    icon: Webhook,          label: "API & Webhooks",         path: "/org/api" },
+  { key: 'tickets',         icon: TicketCheck,      label: "Soporte / Tickets",      path: "/org/support" },
+  { key: 'settings',        icon: Settings,         label: "Configuración",          path: "/org/settings" },
 ];
+
+const DEFAULT_MODULES = ['dashboard', 'stations', 'tickets', 'settings'];
 
 const SIDEBAR_WIDTH_KEY = "org-sidebar-width";
 const DEFAULT_WIDTH = 260;
@@ -58,6 +75,10 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   });
   const { loading, user, logout } = useAuth();
   const { data: org } = (trpc.organizations as any).getMyOrg.useQuery(undefined, {
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: modulesData } = (trpc.organizations as any).getMyModules.useQuery(undefined, {
     enabled: !!user,
     staleTime: 5 * 60 * 1000,
   });
@@ -77,6 +98,10 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const secondaryColor = org?.secondaryColor || "#1e40af";
   const logoUrl = org?.logoUrl || null;
   const appName = org?.appName || org?.name || "EVGreen";
+  const activeModules: string[] = modulesData?.modules || DEFAULT_MODULES;
+
+  // Filter menu items based on active modules
+  const menuItems = ALL_ORG_MENU_ITEMS.filter(item => activeModules.includes(item.key));
 
   return (
     <SidebarProvider>
@@ -89,9 +114,10 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
         secondaryColor={secondaryColor}
         logoUrl={logoUrl}
         appName={appName}
+        menuItems={menuItems}
       />
       <SidebarInset className="bg-muted/30">
-        <OrgMobileHeader primaryColor={primaryColor} logoUrl={logoUrl} appName={appName} />
+        <OrgMobileHeader primaryColor={primaryColor} logoUrl={logoUrl} appName={appName} menuItems={menuItems} />
         <main className="flex-1 p-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>
@@ -102,14 +128,16 @@ function OrgMobileHeader({
   primaryColor,
   logoUrl,
   appName,
+  menuItems,
 }: {
   primaryColor: string;
   logoUrl: string | null;
   appName: string;
+  menuItems: typeof ALL_ORG_MENU_ITEMS;
 }) {
   const isMobile = useIsMobile();
   const [location] = useLocation();
-  const activeMenuItem = orgMenuItems.find((item) => item.path === location);
+  const activeMenuItem = menuItems.find((item) => item.path === location);
 
   if (!isMobile) return null;
 
@@ -141,6 +169,7 @@ function OrgSidebar({
   secondaryColor,
   logoUrl,
   appName,
+  menuItems,
 }: {
   sidebarWidth: number;
   setSidebarWidth: (w: number) => void;
@@ -150,6 +179,7 @@ function OrgSidebar({
   secondaryColor: string;
   logoUrl: string | null;
   appName: string;
+  menuItems: typeof ALL_ORG_MENU_ITEMS;
 }) {
   const [location, setLocation] = useLocation();
   const { state } = useSidebar();
@@ -214,8 +244,8 @@ function OrgSidebar({
 
         <SidebarContent className="gap-0 py-4">
           <SidebarMenu className="px-2 space-y-1">
-            {orgMenuItems.map((item) => {
-              const isActive = location === item.path;
+            {menuItems.map((item) => {
+              const isActive = location === item.path || (item.path !== "/org" && location.startsWith(item.path));
               return (
                 <SidebarMenuItem key={item.path}>
                   <SidebarMenuButton

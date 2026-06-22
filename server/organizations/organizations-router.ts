@@ -18,7 +18,17 @@ import {
   tariffs,
 } from "../../drizzle/schema";
 import { eq, desc, sql, and, like, or, isNull } from "drizzle-orm";
-import { protectedProcedure } from "../_core/trpc";
+import { protectedProcedure, publicProcedure } from "../_core/trpc";
+
+// Helper: default modules per plan
+function getDefaultModules(plan: string): string[] {
+  const base = ['dashboard', 'stations', 'transactions', 'tickets', 'settings'];
+  const professional = [...base, 'analytics', 'dynamic_pricing', 'users', 'reports'];
+  const enterprise = [...professional, 'billing', 'api_webhooks'];
+  if (plan === 'enterprise') return enterprise;
+  if (plan === 'professional') return professional;
+  return base;
+}
 
 export function buildOrganizationsRouter(router: any, adminProcedure: any) {
   return router({
@@ -905,6 +915,177 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           });
         } catch (_) {}
         return { success: true, message: "Solicitud enviada. El equipo de EVGreen la procesará en breve." };
+      }),
+
+    // ==========================================
+    // MÓDULOS ACTIVABLES
+    // ==========================================
+    updateModules: adminProcedure
+      .input(z.object({
+        orgId: z.number(),
+        modules: z.array(z.string()),
+      }))
+      .mutation(async ({ input }: any) => {
+        const db = await getDb();
+        await db!.execute(
+          sql`UPDATE organizations SET enabled_modules = ${JSON.stringify(input.modules)} WHERE id = ${input.orgId}`
+        );
+        return { success: true };
+      }),
+
+    getMyModules: protectedProcedure.query(async ({ ctx }: any) => {
+      const db = await getDb();
+      const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
+        .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+      if (!membership) return { modules: getDefaultModules('starter') };
+      const [org] = await db!.select({ plan: organizations.plan, enabledModules: sql<string>`enabled_modules` })
+        .from(organizations).where(eq(organizations.id, membership.organizationId));
+      if (!org) return { modules: getDefaultModules('starter') };
+      const saved = org.enabledModules ? JSON.parse(org.enabledModules as string) : null;
+      return { modules: saved || getDefaultModules(org.plan) };
+    }),
+
+    // ==========================================
+    // CONFIG DE SOPORTE
+    // ==========================================
+    updateSupportConfig: protectedProcedure
+      .input(z.object({
+        supportPhone: z.string().max(50).optional(),
+        supportEmail: z.string().email().max(200).optional(),
+        supportWhatsapp: z.string().max(50).optional(),
+        supportMode: z.enum(['org_only', 'evgreen_included']).optional(),
+        supportChatEmbed: z.string().max(5000).optional(),
+      }))
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!.select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
+          .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership || membership.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN' });
+        const update: any = {};
+        if (input.supportPhone !== undefined) update.supportPhone = input.supportPhone;
+        if (input.supportEmail !== undefined) update.supportEmail = input.supportEmail;
+        if (input.supportMode !== undefined) update.supportMode = input.supportMode;
+        // supportWhatsapp and chatEmbed via raw SQL since not in drizzle schema yet
+        await db!.execute(
+          sql`UPDATE organizations SET 
+            support_phone = COALESCE(${input.supportPhone ?? null}, support_phone),
+            support_email = COALESCE(${input.supportEmail ?? null}, support_email),
+            support_whatsapp = COALESCE(${input.supportWhatsapp ?? null}, support_whatsapp),
+            support_mode = COALESCE(${input.supportMode ?? null}, support_mode),
+            support_chat_embed = COALESCE(${input.supportChatEmbed ?? null}, support_chat_embed)
+          WHERE id = ${membership.organizationId}`
+        );
+        return { success: true, message: 'Configuración de soporte actualizada' };
+      }),
+
+    getMySupportConfig: protectedProcedure.query(async ({ ctx }: any) => {
+      const db = await getDb();
+      const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
+        .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+      if (!membership) throw new TRPCError({ code: 'NOT_FOUND' });
+      const [row] = await db!.execute(
+        sql`SELECT support_phone, support_email, support_whatsapp, support_mode, support_chat_embed FROM organizations WHERE id = ${membership.organizationId}`
+      ) as any;
+      const r = Array.isArray(row) ? row[0] : row;
+      return {
+        supportPhone: r?.support_phone || '',
+        supportEmail: r?.support_email || '',
+        supportWhatsapp: r?.support_whatsapp || '',
+        supportMode: r?.support_mode || 'org_only',
+        supportChatEmbed: r?.support_chat_embed || '',
+      };
+    }),
+
+    // ==========================================
+    // USUARIOS DE LA ORG
+    // ==========================================
+    getOrgUsers: protectedProcedure.query(async ({ ctx }: any) => {
+      const db = await getDb();
+      const [membership] = await db!.select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
+        .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+      if (!membership || membership.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN' });
+      const members = await db!.select({
+        userId: orgUsers.userId,
+        role: orgUsers.role,
+        joinedAt: orgUsers.createdAt,
+        name: users.name,
+        email: users.email,
+        avatarUrl: users.avatarUrl,
+        isActive: users.isActive,
+      }).from(orgUsers)
+        .leftJoin(users, eq(orgUsers.userId, users.id))
+        .where(eq(orgUsers.organizationId, membership.organizationId));
+      return members;
+    }),
+
+    // ==========================================
+    // TRANSACCIONES DE LA ORG
+    // ==========================================
+    getOrgTransactions: protectedProcedure
+      .input(z.object({
+        page: z.number().default(1),
+        limit: z.number().default(20),
+        period: z.enum(['7d','30d','90d','all']).default('30d'),
+        stationId: z.number().optional(),
+      }))
+      .query(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
+          .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership) throw new TRPCError({ code: 'FORBIDDEN' });
+        const cutoff = input.period === 'all' ? null :
+          new Date(Date.now() - parseInt(input.period) * 24 * 60 * 60 * 1000);
+        const stationIds = await db!.select({ id: chargingStations.id })
+          .from(chargingStations)
+          .where(eq(chargingStations.organizationId, membership.organizationId));
+        if (!stationIds.length) return { transactions: [], total: 0, page: input.page };
+        const ids = stationIds.map((s: any) => s.id);
+        let whereClause = sql`cs.station_id IN (${sql.join(ids.map((id: number) => sql`${id}`), sql`, `)})`;
+        if (cutoff) whereClause = sql`${whereClause} AND cs.start_time >= ${cutoff}`;
+        if (input.stationId) whereClause = sql`${whereClause} AND cs.station_id = ${input.stationId}`;
+        const offset = (input.page - 1) * input.limit;
+        const [rows, countRow] = await Promise.all([
+          db!.execute(sql`
+            SELECT cs.id, cs.station_id, cs.start_time, cs.end_time, cs.energy_kwh,
+              cs.total_cost, cs.status, cs.connector_id,
+              st.name as station_name, u.name as user_name, u.email as user_email
+            FROM charging_sessions cs
+            LEFT JOIN charging_stations st ON cs.station_id = st.id
+            LEFT JOIN users u ON cs.user_id = u.id
+            WHERE ${whereClause}
+            ORDER BY cs.start_time DESC
+            LIMIT ${input.limit} OFFSET ${offset}
+          `),
+          db!.execute(sql`SELECT COUNT(*) as total FROM charging_sessions cs WHERE ${whereClause}`),
+        ]);
+        const txs = Array.isArray(rows) && Array.isArray(rows[0]) ? rows[0] : rows;
+        const cnt = Array.isArray(countRow) && Array.isArray(countRow[0]) ? countRow[0] : countRow;
+        return {
+          transactions: txs,
+          total: (cnt as any)[0]?.total || 0,
+          page: input.page,
+        };
+      }),
+
+    // ==========================================
+    // BRANDING POR SLUG (público, para login personalizado)
+    // ==========================================
+    getOrgBySlug: publicProcedure
+      .input(z.object({ slug: z.string() }))
+      .query(async ({ input }: any) => {
+        const db = await getDb();
+        const [org] = await db!.select({
+          id: organizations.id,
+          name: organizations.name,
+          slug: organizations.slug,
+          logoUrl: organizations.logoUrl,
+          primaryColor: organizations.primaryColor,
+          secondaryColor: organizations.secondaryColor,
+          appName: organizations.appName,
+          status: organizations.status,
+        }).from(organizations).where(eq(organizations.slug, input.slug));
+        if (!org) return null;
+        return org;
       }),
 
     // ==========================================

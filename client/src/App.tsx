@@ -150,6 +150,11 @@ const OrgDashboard = lazy(() => import("./pages/org/Dashboard"));
 const OrgStations = lazy(() => import("./pages/org/Stations"));
 const OrgSupport = lazy(() => import("./pages/org/Support"));
 const OrgSettings = lazy(() => import("./pages/org/Settings"));
+const OrgTransactions = lazy(() => import("./pages/org/Transactions"));
+const OrgAnalytics = lazy(() => import("./pages/org/Analytics"));
+const OrgDynamicPricing = lazy(() => import("./pages/org/DynamicPricing"));
+const OrgReports = lazy(() => import("./pages/org/Reports"));
+const OrgUsers = lazy(() => import("./pages/org/OrgUsers"));
 
 // Páginas de Staff (Evento)
 const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
@@ -988,6 +993,55 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/org/settings">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgSettings />
+            </OrgLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org/transactions">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgTransactions />
+            </OrgLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org/analytics">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgAnalytics />
+            </OrgLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org/dynamic-pricing">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgDynamicPricing />
+            </OrgLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org/reports">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgReports />
+            </OrgLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org/users">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgUsers />
+            </OrgLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org/billing">
+          <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
+            <OrgLayout>
+              <OrgSettings />
+            </OrgLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org/api">
           <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
             <OrgLayout>
               <OrgSettings />

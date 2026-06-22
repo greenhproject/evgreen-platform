@@ -44,6 +44,11 @@ import {
   X,
   CreditCard,
   RefreshCw,
+  Layers,
+  BarChart2,
+  BrainCircuit,
+  Webhook,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -443,7 +448,7 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
         </DialogHeader>
 
         <Tabs defaultValue="billing">
-          <TabsList className="w-full grid grid-cols-2 h-auto gap-1 p-1">
+          <TabsList className="w-full grid grid-cols-3 h-auto gap-1 p-1">
             <TabsTrigger value="billing" className="flex items-center justify-center gap-1.5 py-2 text-xs">
               <CreditCard className="h-3.5 w-3.5 shrink-0" />
               Billing
@@ -451,6 +456,10 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
             <TabsTrigger value="stations" className="flex items-center justify-center gap-1.5 py-2 text-xs">
               <MapPin className="h-3.5 w-3.5 shrink-0" />
               Estaciones
+            </TabsTrigger>
+            <TabsTrigger value="modules" className="flex items-center justify-center gap-1.5 py-2 text-xs">
+              <Layers className="h-3.5 w-3.5 shrink-0" />
+              Módulos
             </TabsTrigger>
             <TabsTrigger value="users" className="flex items-center justify-center gap-1.5 py-2 text-xs">
               <Users className="h-3.5 w-3.5 shrink-0" />
@@ -461,6 +470,11 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
               Tickets
             </TabsTrigger>
           </TabsList>
+
+          {/* ---- TAB: MÓDULOS ---- */}
+          <TabsContent value="modules" className="space-y-4 mt-4">
+            <ModulesTab org={org} />
+          </TabsContent>
 
           {/* ---- TAB: BILLING ---- */}
           <TabsContent value="billing" className="space-y-4 mt-4">
@@ -819,6 +833,116 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ==========================================
+// Modules Tab Component
+// ==========================================
+const ALL_MODULES = [
+  { key: 'dashboard', label: 'Dashboard', icon: '📊', desc: 'Métricas y resumen general', plans: ['starter','professional','enterprise'] },
+  { key: 'stations', label: 'Mis Estaciones', icon: '⚡', desc: 'Gestión y mapa de estaciones', plans: ['starter','professional','enterprise'] },
+  { key: 'transactions', label: 'Transacciones', icon: '💳', desc: 'Historial de sesiones de carga', plans: ['starter','professional','enterprise'] },
+  { key: 'tickets', label: 'Soporte / Tickets', icon: '🎫', desc: 'Sistema de tickets de soporte', plans: ['starter','professional','enterprise'] },
+  { key: 'settings', label: 'Configuración', icon: '⚙️', desc: 'Branding, dominio, plan', plans: ['starter','professional','enterprise'] },
+  { key: 'analytics', label: 'Analítica Avanzada', icon: '📈', desc: 'Reportes y tendencias detalladas', plans: ['professional','enterprise'] },
+  { key: 'dynamic_pricing', label: 'Precios Dinámicos IA', icon: '🤖', desc: 'Optimización automática de tarifas', plans: ['professional','enterprise'] },
+  { key: 'users', label: 'Gestión de Usuarios', icon: '👥', desc: 'Múltiples admins y roles', plans: ['professional','enterprise'] },
+  { key: 'reports', label: 'Reportes PDF/Excel', icon: '📄', desc: 'Exportación de informes', plans: ['professional','enterprise'] },
+  { key: 'billing', label: 'Facturación', icon: '💰', desc: 'Liquidaciones y facturación', plans: ['enterprise'] },
+  { key: 'api_webhooks', label: 'API & Webhooks', icon: '🔗', desc: 'Integración con sistemas externos', plans: ['enterprise'] },
+];
+
+function ModulesTab({ org }: { org: any }) {
+  const utils = trpc.useUtils();
+  const [activeModules, setActiveModules] = useState<string[]>([]);
+  const [initialized, setInitialized] = useState(false);
+
+  const { data: modulesData } = (trpc.organizations as any).getMyModules.useQuery(undefined, { enabled: false });
+
+  // Load org's current modules from org data or defaults
+  if (!initialized && org) {
+    const defaultByPlan = {
+      starter: ['dashboard','stations','transactions','tickets','settings'],
+      professional: ['dashboard','stations','transactions','tickets','settings','analytics','dynamic_pricing','users','reports'],
+      enterprise: ['dashboard','stations','transactions','tickets','settings','analytics','dynamic_pricing','users','reports','billing','api_webhooks'],
+    };
+    const saved = org.enabledModules ? (typeof org.enabledModules === 'string' ? JSON.parse(org.enabledModules) : org.enabledModules) : null;
+    setActiveModules(saved || defaultByPlan[org.plan as keyof typeof defaultByPlan] || defaultByPlan.starter);
+    setInitialized(true);
+  }
+
+  const updateModules = (trpc.organizations as any).updateModules.useMutation({
+    onSuccess: () => { toast.success('Módulos actualizados'); (utils.organizations as any).list.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const toggle = (key: string) => {
+    setActiveModules(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  };
+
+  const planModules = {
+    starter: ['dashboard','stations','transactions','tickets','settings'],
+    professional: ['dashboard','stations','transactions','tickets','settings','analytics','dynamic_pricing','users','reports'],
+    enterprise: ['dashboard','stations','transactions','tickets','settings','analytics','dynamic_pricing','users','reports','billing','api_webhooks'],
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2"><Layers className="h-4 w-4 text-green-400" /> Módulos Activos</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Activa o desactiva módulos para esta organización. Los módulos grises requieren un plan superior.</p>
+        </div>
+        <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700"
+          disabled={updateModules.isPending}
+          onClick={() => updateModules.mutate({ orgId: org.id, modules: activeModules })}>
+          {updateModules.isPending ? 'Guardando...' : 'Guardar'}
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        {ALL_MODULES.map(mod => {
+          const isAvailableForPlan = mod.plans.includes(org?.plan || 'starter');
+          const isActive = activeModules.includes(mod.key);
+          return (
+            <div key={mod.key} className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+              isActive ? 'bg-green-500/10 border-green-500/30' : 'bg-muted/20 border-border/30'
+            } ${!isAvailableForPlan ? 'opacity-50' : ''}`}>
+              <div className="flex items-center gap-3">
+                <span className="text-lg">{mod.icon}</span>
+                <div>
+                  <p className="text-sm font-medium">{mod.label}</p>
+                  <p className="text-xs text-muted-foreground">{mod.desc}</p>
+                  {!isAvailableForPlan && (
+                    <Badge variant="outline" className="text-[10px] mt-0.5 border-amber-500/50 text-amber-400">
+                      Requiere {mod.plans[0]}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <Switch
+                checked={isActive}
+                onCheckedChange={() => toggle(mod.key)}
+                disabled={!isAvailableForPlan}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="pt-2 border-t border-border/30">
+        <p className="text-xs text-muted-foreground">Presets rápidos:</p>
+        <div className="flex gap-2 mt-2">
+          {(['starter','professional','enterprise'] as const).map(plan => (
+            <Button key={plan} size="sm" variant="outline" className="h-7 text-xs capitalize"
+              onClick={() => setActiveModules(planModules[plan])}>
+              {plan}
+            </Button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

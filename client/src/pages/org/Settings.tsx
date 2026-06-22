@@ -19,7 +19,9 @@ import {
   Palette, Copy, CheckCircle2, AlertCircle, Info,
   ExternalLink, Zap, CreditCard, Calendar, TrendingUp,
   ArrowUpCircle, Clock, Upload, ImageIcon, X as XIcon,
+  Headphones, MessageCircle, ToggleLeft, Code,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 export default function OrgSettings() {
   const utils = trpc.useUtils();
@@ -161,7 +163,7 @@ export default function OrgSettings() {
       </div>
 
       <Tabs defaultValue="info" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 bg-muted/30">
+        <TabsList className="grid w-full grid-cols-5 bg-muted/30">
           <TabsTrigger value="info" className="flex items-center gap-2">
             <Building className="h-4 w-4" />
             <span className="hidden sm:inline">Información</span>
@@ -177,6 +179,10 @@ export default function OrgSettings() {
           <TabsTrigger value="domain" className="flex items-center gap-2">
             <Globe className="h-4 w-4" />
             <span className="hidden sm:inline">Dominio</span>
+          </TabsTrigger>
+          <TabsTrigger value="support" className="flex items-center gap-2">
+            <Headphones className="h-4 w-4" />
+            <span className="hidden sm:inline">Soporte</span>
           </TabsTrigger>
         </TabsList>
 
@@ -694,7 +700,175 @@ export default function OrgSettings() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* ─── TAB: SOPORTE ─── */}
+        <SupportTab org={org} />
       </Tabs>
     </div>
+  );
+}
+
+function SupportTab({ org }: { org: any }) {
+  const utils = trpc.useUtils();
+  const [supportPhone, setSupportPhone] = useState(org?.supportPhone || "");
+  const [supportEmail, setSupportEmail] = useState(org?.supportEmail || "evgreen@greenhproject.com");
+  const [chatEmbedCode, setChatEmbedCode] = useState(org?.chatEmbedCode || "");
+  const [supportMode, setSupportMode] = useState<"org_only" | "evgreen_included">(org?.supportMode || "org_only");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const updateSupport = (trpc.organizations as any).updateSupportConfig.useMutation({
+    onSuccess: () => {
+      toast.success("Configuración de soporte guardada");
+      utils.organizations.getMyOrg.invalidate();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleSave = () => {
+    updateSupport.mutate({ supportPhone, supportEmail, chatEmbedCode, supportMode });
+  };
+
+  const evgreenIncluded = org?.supportIncluded === true;
+
+  return (
+    <TabsContent value="support" className="mt-6 space-y-4">
+      {/* Mode selector */}
+      <Card className="border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Headphones className="h-4 w-4 text-green-400" />
+            Modo de Soporte
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid md:grid-cols-2 gap-3">
+            <button
+              onClick={() => setSupportMode("org_only")}
+              className={`p-4 rounded-xl border text-left transition-colors ${
+                supportMode === "org_only"
+                  ? "bg-green-500/10 border-green-500/40"
+                  : "bg-muted/20 border-border/30 hover:bg-muted/40"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <ToggleLeft className="h-5 w-5 text-blue-400" />
+                <span className="font-semibold text-sm">Solo Organización</span>
+                {supportMode === "org_only" && (
+                  <Badge className="ml-auto bg-green-600 text-white text-[10px]">Activo</Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Tú atiendes a tus usuarios directamente. Los tickets y mensajes solo llegan a tu equipo.
+                Ideal si tienes contratado el plan con solo comisión por transacción.
+              </p>
+            </button>
+            <button
+              onClick={() => setSupportMode("evgreen_included")}
+              className={`p-4 rounded-xl border text-left transition-colors ${
+                supportMode === "evgreen_included"
+                  ? "bg-green-500/10 border-green-500/40"
+                  : evgreenIncluded ? "bg-muted/20 border-border/30 hover:bg-muted/40" : "opacity-50 cursor-not-allowed bg-muted/10 border-border/20"
+              }`}
+              disabled={!evgreenIncluded}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Headphones className="h-5 w-5 text-green-400" />
+                <span className="font-semibold text-sm">EVGreen Incluido</span>
+                {!evgreenIncluded && (
+                  <Badge variant="outline" className="ml-auto text-[10px] border-amber-500/50 text-amber-400">Requiere plan con soporte</Badge>
+                )}
+                {supportMode === "evgreen_included" && evgreenIncluded && (
+                  <Badge className="ml-auto bg-green-600 text-white text-[10px]">Activo</Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Los tickets llegan a tu equipo Y al equipo de EVGreen. Soporte compartido con SLA garantizado.
+                Disponible con plan Professional o Enterprise con soporte incluido.
+              </p>
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Contact info */}
+      <Card className="border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <MessageCircle className="h-4 w-4 text-green-400" />
+            Datos de Contacto para tus Usuarios
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Esta información aparecerá en el portal de soporte que ven tus usuarios finales.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                <Phone className="h-3 w-3" /> Teléfono / WhatsApp de soporte
+              </Label>
+              <Input
+                className="mt-1 h-9"
+                placeholder="+57 300 000 0000"
+                value={supportPhone}
+                onChange={e => setSupportPhone(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                <Mail className="h-3 w-3" /> Email de soporte
+              </Label>
+              <Input
+                className="mt-1 h-9"
+                type="email"
+                placeholder="soporte@tuempresa.com"
+                value={supportEmail}
+                onChange={e => setSupportEmail(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Chat embed */}
+          <div>
+            <Label className="text-xs text-muted-foreground flex items-center gap-1">
+              <Code className="h-3 w-3" /> Código de chat en vivo (opcional)
+            </Label>
+            <p className="text-xs text-muted-foreground mt-0.5 mb-1">
+              Pega el código de embed de Tawk.to, Intercom, Crisp u otro servicio de chat.
+            </p>
+            <textarea
+              className="w-full h-24 rounded-lg border border-border/50 bg-muted/20 p-3 text-xs font-mono resize-none focus:outline-none focus:ring-1 focus:ring-green-500"
+              placeholder={`<!-- Ejemplo Tawk.to -->\n<script type="text/javascript">\nvar Tawk_API=Tawk_API||{};\n...</script>`}
+              value={chatEmbedCode}
+              onChange={e => setChatEmbedCode(e.target.value)}
+            />
+          </div>
+
+          <Button
+            className="w-full bg-green-600 hover:bg-green-700 h-9"
+            onClick={handleSave}
+            disabled={updateSupport.isPending}
+          >
+            {updateSupport.isPending ? "Guardando..." : "Guardar configuración de soporte"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Info */}
+      <Card className="bg-muted/20 border-border/30">
+        <CardContent className="p-4 flex items-start gap-3">
+          <Info className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-medium">¿Cómo funciona el soporte para tus usuarios?</p>
+            <ul className="text-xs text-muted-foreground mt-1 space-y-1">
+              <li>• Tus usuarios ven el teléfono y email configurados en la pantalla de soporte</li>
+              <li>• Si tienes chat embed, aparece el widget flotante en todo el portal</li>
+              <li>• Los tickets creados en el portal llegan a tu equipo (y a EVGreen si está activado)</li>
+              <li>• Con modo EVGreen incluido, nuestro equipo responde con SLA de 4h hábiles</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+    </TabsContent>
   );
 }

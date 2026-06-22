@@ -1,6 +1,6 @@
 /**
  * AuthScreen - Pantalla de Login/Registro con animaciones premium
- * Diseño consistente con el onboarding de EVGreen
+ * Soporta branding personalizado por subdominio de organización SaaS
  */
 
 import { useState, useEffect } from "react";
@@ -9,53 +9,61 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Zap, Mail, Lock, User, Phone, ArrowRight, Sparkles, ChevronLeft } from "lucide-react";
-import { getLoginUrl } from "@/lib/trpc";
+import { getLoginUrl, trpc } from "@/lib/trpc";
 
-// Partículas decorativas animadas
-const FloatingParticle = ({ delay, size, x, y }: { delay: number; size: number; x: number; y: number }) => (
+// ─── Detección de subdominio de org ───────────────────────────────────────────
+function getOrgSlug(): string | null {
+  const hostname = window.location.hostname;
+  // Detectar subdominios como "empresa.evgreen.lat" o "empresa.app.evgreen.lat"
+  const parts = hostname.split(".");
+  if (parts.length >= 3) {
+    const slug = parts[0];
+    // Excluir subdominios del sistema
+    const systemSubdomains = ["app", "www", "api", "admin", "staging", "dev", "localhost"];
+    if (!systemSubdomains.includes(slug)) {
+      return slug;
+    }
+  }
+  return null;
+}
+
+// ─── Hook para cargar branding de org ─────────────────────────────────────────
+function useOrgBranding() {
+  const slug = getOrgSlug();
+  const { data: orgData } = (trpc.organizations as any).getOrgBySlug.useQuery(
+    { slug: slug! },
+    { enabled: !!slug }
+  );
+  return { slug, org: orgData };
+}
+
+// ─── Partículas decorativas ────────────────────────────────────────────────────
+const FloatingParticle = ({ delay, size, x, y, color }: { delay: number; size: number; x: number; y: number; color: string }) => (
   <motion.div
-    className="absolute rounded-full bg-emerald-400/20"
-    style={{ width: size, height: size, left: `${x}%`, top: `${y}%` }}
+    className="absolute rounded-full"
+    style={{ width: size, height: size, left: `${x}%`, top: `${y}%`, background: color, opacity: 0.2 }}
     initial={{ opacity: 0, scale: 0 }}
-    animate={{
-      opacity: [0, 0.6, 0],
-      scale: [0, 1, 0.5],
-      y: [0, -30, -60],
-    }}
-    transition={{
-      duration: 4,
-      delay,
-      repeat: Infinity,
-      ease: "easeInOut",
-    }}
+    animate={{ opacity: [0, 0.4, 0], scale: [0, 1, 0.5], y: [0, -30, -60] }}
+    transition={{ duration: 4, delay, repeat: Infinity, ease: "easeInOut" }}
   />
 );
 
-// Componente de fondo animado con gradiente
-const AnimatedBackground = () => (
+// ─── Fondo animado ─────────────────────────────────────────────────────────────
+const AnimatedBackground = ({ primaryColor = "#10b981" }: { primaryColor?: string }) => (
   <div className="absolute inset-0 overflow-hidden">
-    {/* Gradiente base */}
-    <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-emerald-950/50 to-slate-950" />
-    
-    {/* Círculos de luz animados */}
+    <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-emerald-950/30 to-slate-950" />
     <motion.div
-      className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-emerald-500/10 blur-3xl"
-      animate={{
-        scale: [1, 1.2, 1],
-        opacity: [0.3, 0.5, 0.3],
-      }}
+      className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl"
+      style={{ background: `${primaryColor}20` }}
+      animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
       transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
     />
     <motion.div
-      className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-green-500/10 blur-3xl"
-      animate={{
-        scale: [1.2, 1, 1.2],
-        opacity: [0.2, 0.4, 0.2],
-      }}
+      className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl"
+      style={{ background: `${primaryColor}15` }}
+      animate={{ scale: [1.2, 1, 1.2], opacity: [0.2, 0.4, 0.2] }}
       transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
     />
-    
-    {/* Partículas flotantes */}
     {[...Array(12)].map((_, i) => (
       <FloatingParticle
         key={i}
@@ -63,33 +71,14 @@ const AnimatedBackground = () => (
         size={Math.random() * 8 + 4}
         x={Math.random() * 100}
         y={Math.random() * 100}
+        color={primaryColor}
       />
     ))}
-    
-    {/* Líneas de energía */}
-    <svg className="absolute inset-0 w-full h-full opacity-10">
-      <motion.path
-        d="M0,100 Q250,50 500,100 T1000,100"
-        stroke="url(#gradient1)"
-        strokeWidth="2"
-        fill="none"
-        initial={{ pathLength: 0 }}
-        animate={{ pathLength: 1 }}
-        transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-      />
-      <defs>
-        <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#10b981" stopOpacity="0" />
-          <stop offset="50%" stopColor="#10b981" stopOpacity="1" />
-          <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-    </svg>
   </div>
 );
 
-// Logo animado de EVGreen
-const AnimatedLogo = () => (
+// ─── Logo EVGreen (default) ────────────────────────────────────────────────────
+const EVGreenLogo = () => (
   <motion.div
     className="flex items-center justify-center gap-3 mb-8"
     initial={{ opacity: 0, y: -20 }}
@@ -120,8 +109,51 @@ const AnimatedLogo = () => (
   </motion.div>
 );
 
-// Formulario de login
-const LoginForm = ({ onSwitchToRegister }: { onSwitchToRegister: () => void }) => {
+// ─── Logo de Organización (branding personalizado) ─────────────────────────────
+const OrgLogo = ({ org, primaryColor }: { org: any; primaryColor: string }) => (
+  <motion.div
+    className="flex flex-col items-center gap-3 mb-8"
+    initial={{ opacity: 0, y: -20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.6 }}
+  >
+    {org.logoUrl ? (
+      <img
+        src={org.logoUrl}
+        alt={org.name}
+        className="h-16 w-auto object-contain rounded-xl"
+      />
+    ) : (
+      <div
+        className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg text-white font-bold text-2xl"
+        style={{ background: `linear-gradient(135deg, ${primaryColor}, ${primaryColor}99)` }}
+      >
+        {org.name?.charAt(0)?.toUpperCase() || "O"}
+      </div>
+    )}
+    <div className="text-center">
+      <h1 className="text-2xl font-bold text-white">{org.name}</h1>
+      <p className="text-sm mt-0.5" style={{ color: `${primaryColor}99` }}>
+        Portal de carga eléctrica
+      </p>
+    </div>
+    <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-1">
+      <span>Powered by</span>
+      <span className="text-emerald-400 font-semibold">EVGreen</span>
+    </div>
+  </motion.div>
+);
+
+// ─── Formulario de login ───────────────────────────────────────────────────────
+const LoginForm = ({
+  onSwitchToRegister,
+  primaryColor,
+  orgName,
+}: {
+  onSwitchToRegister: () => void;
+  primaryColor: string;
+  orgName?: string;
+}) => {
   const handleOAuthLogin = () => {
     window.location.href = getLoginUrl();
   };
@@ -136,17 +168,19 @@ const LoginForm = ({ onSwitchToRegister }: { onSwitchToRegister: () => void }) =
     >
       <div className="text-center mb-8">
         <h2 className="text-2xl font-bold text-white mb-2">¡Bienvenido de vuelta!</h2>
-        <p className="text-gray-400">Inicia sesión para continuar cargando</p>
+        <p className="text-gray-400">
+          {orgName ? `Inicia sesión en ${orgName}` : "Inicia sesión para continuar cargando"}
+        </p>
       </div>
 
-      {/* Botón de OAuth principal */}
-      <motion.div
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-      >
+      <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
         <Button
           onClick={handleOAuthLogin}
-          className="w-full h-14 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-semibold text-lg rounded-xl shadow-lg shadow-emerald-500/30 transition-all duration-300"
+          className="w-full h-14 text-white font-semibold text-lg rounded-xl shadow-lg transition-all duration-300"
+          style={{
+            background: `linear-gradient(135deg, ${primaryColor}, ${primaryColor}cc)`,
+            boxShadow: `0 8px 32px ${primaryColor}40`,
+          }}
         >
           <Sparkles className="w-5 h-5 mr-2" />
           Continuar con Manus
@@ -163,7 +197,6 @@ const LoginForm = ({ onSwitchToRegister }: { onSwitchToRegister: () => void }) =
         </div>
       </div>
 
-      {/* Formulario de email (deshabilitado por ahora - solo OAuth) */}
       <div className="space-y-4 opacity-50 pointer-events-none">
         <div className="space-y-2">
           <Label htmlFor="email" className="text-gray-300">Correo electrónico</Label>
@@ -173,12 +206,11 @@ const LoginForm = ({ onSwitchToRegister }: { onSwitchToRegister: () => void }) =
               id="email"
               type="email"
               placeholder="tu@email.com"
-              className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl focus:border-emerald-500 focus:ring-emerald-500/20"
+              className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl"
               disabled
             />
           </div>
         </div>
-
         <div className="space-y-2">
           <Label htmlFor="password" className="text-gray-300">Contraseña</Label>
           <div className="relative">
@@ -187,16 +219,12 @@ const LoginForm = ({ onSwitchToRegister }: { onSwitchToRegister: () => void }) =
               id="password"
               type="password"
               placeholder="••••••••"
-              className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl focus:border-emerald-500 focus:ring-emerald-500/20"
+              className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl"
               disabled
             />
           </div>
         </div>
-
-        <Button
-          className="w-full h-12 bg-slate-800 hover:bg-slate-700 text-white rounded-xl"
-          disabled
-        >
+        <Button className="w-full h-12 bg-slate-800 hover:bg-slate-700 text-white rounded-xl" disabled>
           Iniciar sesión
         </Button>
       </div>
@@ -205,7 +233,8 @@ const LoginForm = ({ onSwitchToRegister }: { onSwitchToRegister: () => void }) =
         ¿No tienes cuenta?{" "}
         <button
           onClick={onSwitchToRegister}
-          className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors"
+          className="font-medium transition-colors hover:opacity-80"
+          style={{ color: primaryColor }}
         >
           Regístrate gratis
         </button>
@@ -214,11 +243,33 @@ const LoginForm = ({ onSwitchToRegister }: { onSwitchToRegister: () => void }) =
   );
 };
 
-// Formulario de registro
-const RegisterForm = ({ onSwitchToLogin }: { onSwitchToLogin: () => void }) => {
+// ─── Formulario de registro ────────────────────────────────────────────────────
+const RegisterForm = ({
+  onSwitchToLogin,
+  primaryColor,
+  orgName,
+}: {
+  onSwitchToLogin: () => void;
+  primaryColor: string;
+  orgName?: string;
+}) => {
   const handleOAuthRegister = () => {
     window.location.href = getLoginUrl();
   };
+
+  const benefits = orgName
+    ? [
+        { icon: "⚡", text: "Carga en red" },
+        { icon: "💳", text: "Pagos fáciles" },
+        { icon: "📍", text: "Estaciones cercanas" },
+        { icon: "📊", text: "Historial completo" },
+      ]
+    : [
+        { icon: "⚡", text: "Carga rápida" },
+        { icon: "💰", text: "Mejores precios" },
+        { icon: "📍", text: "Encuentra estaciones" },
+        { icon: "📊", text: "Historial completo" },
+      ];
 
   return (
     <motion.div
@@ -229,18 +280,14 @@ const RegisterForm = ({ onSwitchToLogin }: { onSwitchToLogin: () => void }) => {
       className="space-y-6"
     >
       <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-white mb-2">Únete a EVGreen</h2>
+        <h2 className="text-2xl font-bold text-white mb-2">
+          {orgName ? `Únete a ${orgName}` : "Únete a EVGreen"}
+        </h2>
         <p className="text-gray-400">Crea tu cuenta y empieza a cargar</p>
       </div>
 
-      {/* Beneficios de registro */}
       <div className="grid grid-cols-2 gap-3 mb-6">
-        {[
-          { icon: "⚡", text: "Carga rápida" },
-          { icon: "💰", text: "Mejores precios" },
-          { icon: "📍", text: "Encuentra estaciones" },
-          { icon: "📊", text: "Historial completo" },
-        ].map((benefit, i) => (
+        {benefits.map((benefit, i) => (
           <motion.div
             key={i}
             initial={{ opacity: 0, y: 10 }}
@@ -254,14 +301,14 @@ const RegisterForm = ({ onSwitchToLogin }: { onSwitchToLogin: () => void }) => {
         ))}
       </div>
 
-      {/* Botón de OAuth principal */}
-      <motion.div
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-      >
+      <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
         <Button
           onClick={handleOAuthRegister}
-          className="w-full h-14 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-semibold text-lg rounded-xl shadow-lg shadow-emerald-500/30 transition-all duration-300"
+          className="w-full h-14 text-white font-semibold text-lg rounded-xl shadow-lg transition-all duration-300"
+          style={{
+            background: `linear-gradient(135deg, ${primaryColor}, ${primaryColor}cc)`,
+            boxShadow: `0 8px 32px ${primaryColor}40`,
+          }}
         >
           <Sparkles className="w-5 h-5 mr-2" />
           Registrarse con Manus
@@ -278,55 +325,31 @@ const RegisterForm = ({ onSwitchToLogin }: { onSwitchToLogin: () => void }) => {
         </div>
       </div>
 
-      {/* Formulario de email (deshabilitado por ahora - solo OAuth) */}
       <div className="space-y-4 opacity-50 pointer-events-none">
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label htmlFor="name" className="text-gray-300">Nombre</Label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <Input
-                id="name"
-                type="text"
-                placeholder="Tu nombre"
-                className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl"
-                disabled
-              />
+              <Input id="name" type="text" placeholder="Tu nombre" className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl" disabled />
             </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="phone" className="text-gray-300">Teléfono</Label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <Input
-                id="phone"
-                type="tel"
-                placeholder="+57..."
-                className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl"
-                disabled
-              />
+              <Input id="phone" type="tel" placeholder="+57..." className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl" disabled />
             </div>
           </div>
         </div>
-
         <div className="space-y-2">
           <Label htmlFor="reg-email" className="text-gray-300">Correo electrónico</Label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-            <Input
-              id="reg-email"
-              type="email"
-              placeholder="tu@email.com"
-              className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl"
-              disabled
-            />
+            <Input id="reg-email" type="email" placeholder="tu@email.com" className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl" disabled />
           </div>
         </div>
-
-        <Button
-          className="w-full h-12 bg-slate-800 hover:bg-slate-700 text-white rounded-xl"
-          disabled
-        >
+        <Button className="w-full h-12 bg-slate-800 hover:bg-slate-700 text-white rounded-xl" disabled>
           Crear cuenta
         </Button>
       </div>
@@ -335,7 +358,8 @@ const RegisterForm = ({ onSwitchToLogin }: { onSwitchToLogin: () => void }) => {
         ¿Ya tienes cuenta?{" "}
         <button
           onClick={onSwitchToLogin}
-          className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors"
+          className="font-medium transition-colors hover:opacity-80"
+          style={{ color: primaryColor }}
         >
           Inicia sesión
         </button>
@@ -343,30 +367,33 @@ const RegisterForm = ({ onSwitchToLogin }: { onSwitchToLogin: () => void }) => {
 
       <p className="text-center text-gray-500 text-xs">
         Al registrarte, aceptas nuestros{" "}
-        <a href="/terms" className="text-emerald-400 hover:underline">Términos de servicio</a>
+        <a href="/terms" className="hover:underline" style={{ color: primaryColor }}>Términos de servicio</a>
         {" "}y{" "}
-        <a href="/privacy" className="text-emerald-400 hover:underline">Política de privacidad</a>
+        <a href="/privacy" className="hover:underline" style={{ color: primaryColor }}>Política de privacidad</a>
       </p>
     </motion.div>
   );
 };
 
-// Componente principal AuthScreen
+// ─── Componente principal AuthScreen ──────────────────────────────────────────
 export function AuthScreen({ onClose }: { onClose?: () => void }) {
   const [mode, setMode] = useState<"login" | "register">("login");
+  const { slug, org } = useOrgBranding();
+
+  // Colores del branding: usar los de la org si existe, sino EVGreen por defecto
+  const primaryColor = org?.primaryColor || "#10b981";
+  const orgName = org?.name;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <AnimatedBackground />
-      
-      {/* Contenedor principal */}
+      <AnimatedBackground primaryColor={primaryColor} />
+
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
         className="relative z-10 w-full max-w-md mx-4"
       >
-        {/* Botón de cerrar/volver */}
         {onClose && (
           <motion.button
             onClick={onClose}
@@ -378,27 +405,44 @@ export function AuthScreen({ onClose }: { onClose?: () => void }) {
           </motion.button>
         )}
 
-        {/* Card de autenticación */}
         <div className="bg-slate-900/80 backdrop-blur-xl rounded-3xl p-8 border border-slate-800 shadow-2xl">
-          <AnimatedLogo />
-          
+          {/* Logo: org branding o EVGreen default */}
+          {slug && org ? (
+            <OrgLogo org={org} primaryColor={primaryColor} />
+          ) : (
+            <EVGreenLogo />
+          )}
+
           <AnimatePresence mode="wait">
             {mode === "login" ? (
-              <LoginForm key="login" onSwitchToRegister={() => setMode("register")} />
+              <LoginForm
+                key="login"
+                onSwitchToRegister={() => setMode("register")}
+                primaryColor={primaryColor}
+                orgName={orgName}
+              />
             ) : (
-              <RegisterForm key="register" onSwitchToLogin={() => setMode("login")} />
+              <RegisterForm
+                key="register"
+                onSwitchToLogin={() => setMode("login")}
+                primaryColor={primaryColor}
+                orgName={orgName}
+              />
             )}
           </AnimatePresence>
         </div>
 
-        {/* Footer */}
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
           className="text-center text-gray-500 text-xs mt-6"
         >
-          © 2026 EVGreen. Todos los derechos reservados.
+          {org ? (
+            <>© 2026 {org.name} · <span className="text-emerald-400">Powered by EVGreen</span></>
+          ) : (
+            "© 2026 EVGreen. Todos los derechos reservados."
+          )}
         </motion.p>
       </motion.div>
     </div>
