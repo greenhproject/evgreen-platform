@@ -937,12 +937,32 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       const db = await getDb();
       const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
         .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
-      if (!membership) return { modules: getDefaultModules('starter') };
-      const [org] = await db!.select({ plan: organizations.plan, enabledModules: sql<string>`enabled_modules` })
-        .from(organizations).where(eq(organizations.id, membership.organizationId));
-      if (!org) return { modules: getDefaultModules('starter') };
-      const saved = org.enabledModules ? JSON.parse(org.enabledModules as string) : null;
-      return { modules: saved || getDefaultModules(org.plan) };
+      if (!membership) return { modules: getDefaultModules('professional') };
+      // Fetch org with enabled_modules - handle missing column gracefully
+      let orgPlan = 'starter';
+      let saved: string[] | null = null;
+      try {
+        const [org] = await db!.select({ plan: organizations.plan, enabledModules: sql<string>`enabled_modules` })
+          .from(organizations).where(eq(organizations.id, membership.organizationId));
+        if (!org) return { modules: getDefaultModules('professional') };
+        orgPlan = org.plan || 'starter';
+        if (org.enabledModules) {
+          // MySQL JSON column may return already-parsed array or a string
+          const raw = org.enabledModules as any;
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          if (Array.isArray(parsed) && parsed.length > 0) saved = parsed;
+        }
+      } catch {
+        // Column may not exist in production yet - use plan-based defaults
+        try {
+          const [orgBasic] = await db!.select({ plan: organizations.plan })
+            .from(organizations).where(eq(organizations.id, membership.organizationId));
+          if (orgBasic) orgPlan = orgBasic.plan || 'starter';
+        } catch {}
+      }
+      // If no explicit modules saved, use plan defaults (professional minimum)
+      const planForDefault = orgPlan === 'enterprise' ? 'enterprise' : 'professional';
+      return { modules: saved || getDefaultModules(planForDefault) };
     }),
 
     // ==========================================

@@ -3678,6 +3678,16 @@ export const organizations = mysqlTable("organizations", {
   nextBillingDate: timestamp("next_billing_date"),
   trialEndsAt: timestamp("trial_ends_at"),
   
+  // Módulos activados (JSON array de keys)
+  enabledModules: text("enabled_modules"),
+  
+  // Soporte configurable
+  supportPhone: varchar("support_phone", { length: 50 }),
+  supportEmail: varchar("support_email", { length: 200 }),
+  supportWhatsapp: varchar("support_whatsapp", { length: 50 }),
+  supportMode: varchar("support_mode", { length: 30 }).default("org_only"),
+  supportChatEmbed: text("support_chat_embed"),
+  
   // Metadata
   notes: text("notes"),
   ownerId: varchar("owner_id", { length: 255 }),

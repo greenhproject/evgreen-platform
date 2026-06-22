@@ -22,6 +22,13 @@
       "when": 1781846426474,
       "tag": "0002_milky_clea",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1782100501079,
+      "tag": "0003_sloppy_strong_guy",
+      "breakpoints": true
     }
   ]
 }
