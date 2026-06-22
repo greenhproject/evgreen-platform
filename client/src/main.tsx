@@ -160,16 +160,16 @@ async function bootstrap() {
     }
     console.log("[Auth] Token recibido vía appUrlOpen:", token.substring(0, 10) + "...");
     setAuthCookie(token);
-    console.log("[Auth] Token guardado — cookie:", document.cookie.includes(COOKIE_NAME) ? "OK" : "FALTA", "| localStorage:", localStorage.getItem(NATIVE_TOKEN_KEY) ? "OK" : "FALTA");
+    // Disparar ANTES de cerrar el browser para que isAuthenticatedRef.current = true
+    // antes de que browserFinished dispare su timer de 500ms
+    queryClient.invalidateQueries();
+    window.dispatchEvent(new Event('evgreen-auth-updated'));
     try {
       const { Browser } = await import('@capacitor/browser');
       await Browser.close();
     } catch (e) {
       console.warn("[Auth] Browser.close error:", e);
     }
-    // Doble disparo: invalidar caché Y evento directo a useAuth
-    queryClient.invalidateQueries();
-    window.dispatchEvent(new Event('evgreen-auth-updated'));
   });
 
   try {

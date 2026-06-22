@@ -17,6 +17,7 @@ import { Onboarding, useOnboarding } from "@/components/Onboarding";
 import { LoadingGuard } from "@/components/LoadingGuard";
 import { Capacitor } from "@capacitor/core";
 import { openLoginBrowser } from "@/const";
+import { loadMapScript } from "@/components/Map";
 
 // Páginas públicas (carga inmediata - landing)
 import Landing from "./pages/Landing";
@@ -203,13 +204,20 @@ function RoleBasedRedirect() {
   const loginBrowserOpened = useRef(false);
   const isAuthenticatedRef = useRef(isAuthenticated);
   const [showRetryButton, setShowRetryButton] = useState(false);
-  const [logoError, setLogoError] = useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
+  const [logoRetries, setLogoRetries] = useState(0);
   // True once deep-link token arrives but auth.me hasn't confirmed yet
   const [tokenPending, setTokenPending] = useState(false);
 
   useEffect(() => {
     isAuthenticatedRef.current = isAuthenticated;
-    if (isAuthenticated) setTokenPending(false);
+    if (isAuthenticated) {
+      setTokenPending(false);
+      // Trigger a repaint of the Google Maps canvas (and any WebGL surface) after
+      // returning from the Auth0 browser. The WKWebView GPU context may need a
+      // nudge to restore textures after the SFSafariViewController dismisses.
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
+    }
   }, [isAuthenticated]);
 
   // Show manual retry button after 2 seconds if stuck (not during token pending)
@@ -275,7 +283,10 @@ function RoleBasedRedirect() {
       });
     } catch (e) {
       console.error("[Auth] openLoginBrowser failed:", e);
-      loginBrowserOpened.current = false;
+      // Do NOT reset loginBrowserOpened here — a VC may still be visible despite
+      // the error (Capacitor returns errors for close/open when a VC is mid-animation).
+      // Resetting the flag triggers another doOpenLogin() → cascade of open() calls.
+      // The user can tap the retry button if Auth0 truly didn't appear.
       setShowRetryButton(true);
     }
   }, []);
@@ -289,7 +300,14 @@ function RoleBasedRedirect() {
       return;
     }
     if (!Capacitor.isNativePlatform()) return;
+    // Guard: deep-link token arrived but auth.me hasn't confirmed yet (tokenPending).
+    // isAuthenticatedRef is set synchronously on evgreen-auth-updated, before React
+    // processes the re-render, so this check is safe even during the transition.
+    if (isAuthenticatedRef.current) return;
     if (loginBrowserOpened.current) return;
+    // Kick off Maps script download in background while user is in Auth0,
+    // so the map is ready to initialize immediately after login completes.
+    loadMapScript().catch(() => {});
     doOpenLogin();
   }, [isAuthenticated, loading, doOpenLogin]);
 
@@ -448,19 +466,28 @@ function RoleBasedRedirect() {
               <div key={i} style={{ position: 'absolute', left: s.x, top: s.y, width: s.size * 2, height: s.size * 2, borderRadius: '50%', background: s.color, boxShadow: `0 0 6px ${s.color}`, animation: `${s.anim} ${s.dur} ease-out infinite ${s.delay}` }}/>
             ))}
 
-            {/* Logo image */}
-            {!logoError ? (
-              <img
-                src="/icons/splash-logo.png"
-                alt="EVGreen"
-                style={{ width: 120, height: 120, objectFit: 'contain', position: 'relative', zIndex: 2, filter: 'drop-shadow(0 0 16px rgba(16,185,129,0.6)) drop-shadow(0 0 32px rgba(16,185,129,0.3))', animation: 'evg-glow-pulse 3s ease-in-out infinite' }}
-                onError={() => setLogoError(true)}
-              />
-            ) : (
-              <div style={{ width: 100, height: 100, borderRadius: 24, background: 'linear-gradient(135deg, #10b981, #059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 40px rgba(16,185,129,0.5)', position: 'relative', zIndex: 2, animation: 'evg-glow-pulse 3s ease-in-out infinite' }}>
-                <svg width="50" height="50" fill="white" viewBox="0 0 24 24"><path d="M13 2L4.5 13H11L10 22L19.5 11H13L13 2Z"/></svg>
-              </div>
-            )}
+            {/* Logo: imagen PNG con fondo transparente; SVG como fallback si carga falla */}
+            <div style={{ width: 120, height: 120, position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'evg-glow-pulse 3s ease-in-out infinite' }}>
+              {logoFailed ? (
+                <svg width="90" height="90" fill="none" viewBox="0 0 24 24" style={{ filter: 'drop-shadow(0 0 14px rgba(34,197,94,1)) drop-shadow(0 0 28px rgba(34,197,94,0.6))' }}>
+                  <path d="M13 2L4.5 13H11L10 22L19.5 11H13L13 2Z" fill="#22c55e"/>
+                </svg>
+              ) : (
+                <img
+                  key={`evg-splash-logo-${logoRetries}`}
+                  src="/icons/splash-logo.png"
+                  alt="EVGreen"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'drop-shadow(0 0 16px rgba(16,185,129,0.7)) drop-shadow(0 0 32px rgba(16,185,129,0.4))' }}
+                  onError={() => {
+                    if (logoRetries < 2) {
+                      setTimeout(() => setLogoRetries(r => r + 1), 600);
+                    } else {
+                      setLogoFailed(true);
+                    }
+                  }}
+                />
+              )}
+            </div>
           </div>
 
           {/* Brand name — matches banner style */}

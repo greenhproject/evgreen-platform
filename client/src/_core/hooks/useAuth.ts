@@ -23,11 +23,7 @@ export function useAuth(options?: UseAuthOptions) {
     refetchOnWindowFocus: false,
   });
 
-  const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => {
-      utils.auth.me.setData(undefined, null);
-    },
-  });
+  const logoutMutation = trpc.auth.logout.useMutation();
 
   const logout = useCallback(async () => {
     try {
@@ -51,13 +47,16 @@ export function useAuth(options?: UseAuthOptions) {
       await utils.auth.me.invalidate();
 
       if (Capacitor.isNativePlatform()) {
-        // Flag prevents bootstrap() from re-setting the deep-link token on reload.
-        // Navigate to root first so RoleBasedRedirect renders Landing on reload.
+        // On native, reload resets all JS state — no need to setData/invalidate first.
+        // Doing so triggers isAuthenticated=false→doOpenLogin() BEFORE the reload,
+        // which opens a zombie SFSafariViewController that corrupts the next login flow.
         sessionStorage.setItem('evgreen_logout', '1');
         history.replaceState(null, '', '/');
         window.location.reload();
       } else {
-        // On web: go through Auth0 logout to clear the Auth0 session too
+        // On web: clear cache then go through Auth0 logout to clear the Auth0 session.
+        utils.auth.me.setData(undefined, null);
+        await utils.auth.me.invalidate();
         window.location.href = `${window.location.origin}/api/auth/logout`;
       }
     }

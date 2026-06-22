@@ -671,6 +671,12 @@ export function AIChatWidget() {
   useEffect(() => {
     if (isOpen && inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 100);
+    } else if (!isOpen) {
+      // When the full-screen Sheet closes, the Google Maps canvas (underneath)
+      // loses its GPU texture on iOS WKWebView. Dispatching a resize event
+      // lets MapView trigger google.maps.event.trigger(map, 'resize') to repaint.
+      const timer = setTimeout(() => window.dispatchEvent(new Event('resize')), 350);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 

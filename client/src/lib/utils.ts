@@ -13,8 +13,6 @@ export function getBaseUrl() {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl.replace(/\/$/, "");
 
-  // Si no hay envUrl, usamos el origen de la ventana (web)
-  // o lanzamos un error claro en lugar de usar una IP vieja
   if (Capacitor.isNativePlatform()) {
     console.error("VITE_API_URL no está definida. La comunicación con el servidor fallará.");
     return "";
