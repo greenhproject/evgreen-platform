@@ -49,6 +49,8 @@ export default defineConfig(({ command }) => {
       outDir: path.resolve(import.meta.dirname, "dist/public"),
       emptyOutDir: true,
       sourcemap: false,
+      // Target Safari 14+ para compatibilidad con iOS (evita "invalid group specifier name" en named capture groups)
+      target: ['es2020', 'safari14', 'chrome87', 'firefox78'],
       // Reducir consumo de memoria durante el build
       minify: 'esbuild',
       chunkSizeWarningLimit: 1000,
