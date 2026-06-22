@@ -3637,8 +3637,8 @@ export const organizations = mysqlTable("organizations", {
   id: int("id").primaryKey().autoincrement(),
   name: varchar("name", { length: 200 }).notNull(),
   slug: varchar("slug", { length: 100 }).notNull(), // subdominio: slug.evgreen.lat
-  plan: orgPlanEnum.notNull().default("starter"),
-  status: orgStatusEnum.notNull().default("trial"),
+  plan: mysqlEnum("org_plan", ["starter", "professional", "enterprise"]).notNull().default("starter"),
+  status: mysqlEnum("org_status", ["active", "suspended", "trial", "cancelled"]).notNull().default("trial"),
   
   // Contacto
   contactName: varchar("contact_name", { length: 200 }),
@@ -3704,7 +3704,7 @@ export type InsertOrganization = typeof organizations.$inferInsert;
  */
 export const platformPricingDefaults = mysqlTable("platform_pricing_defaults", {
   id: int("id").primaryKey().autoincrement(),
-  plan: orgPlanEnum.notNull(),
+  plan: mysqlEnum("org_plan", ["starter", "professional", "enterprise"]).notNull(),
   
   setupFeePerCharger: decimal("setup_fee_per_charger", { precision: 10, scale: 2 }).notNull(),
   annualFeePerCharger: decimal("annual_fee_per_charger", { precision: 10, scale: 2 }).notNull(),
