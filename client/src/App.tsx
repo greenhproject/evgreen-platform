@@ -134,6 +134,7 @@ const SpaceSubmission = lazy(() => import("./pages/SpaceSubmission"));
 const SpaceLetterAccept = lazy(() => import("./pages/SpaceLetterAccept"));
 const Crowdfunding = lazy(() => import("./pages/Crowdfunding"));
 const AdminSpaces = lazy(() => import("./pages/admin/Spaces"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 
 // Páginas de Aliado Comercial (Host)
 const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
@@ -197,6 +198,16 @@ function isPWAInstalled(): boolean {
   return false;
 }
 
+// Detecta si corre dentro de Capacitor nativo, incluso cuando el bridge tarda en
+// inicializarse en Android 10 y Capacitor.isNativePlatform() aún retorna false.
+// - Android nativo: Capacitor sirve desde https://localhost (androidScheme: 'https')
+// - iOS nativo: Capacitor sirve desde evgreen://localhost (custom scheme)
+function isRunningNatively(): boolean {
+  if (Capacitor.isNativePlatform()) return true;
+  const origin = window.location.origin;
+  return origin === 'https://localhost' || (origin.endsWith('://localhost') && !origin.startsWith('http://'));
+}
+
 // Componente para redirigir según el rol
 function RoleBasedRedirect() {
   const { user, isAuthenticated, loading, refresh } = useAuth();
@@ -222,7 +233,7 @@ function RoleBasedRedirect() {
 
   // Show manual retry button after 2 seconds if stuck (not during token pending)
   useEffect(() => {
-    if (loading || isAuthenticated || tokenPending || !Capacitor.isNativePlatform()) return;
+    if (loading || isAuthenticated || tokenPending || !isRunningNatively()) return;
     const timer = setTimeout(() => setShowRetryButton(true), 2000);
     return () => clearTimeout(timer);
   }, [loading, isAuthenticated, tokenPending]);
@@ -299,7 +310,7 @@ function RoleBasedRedirect() {
       setShowRetryButton(false);
       return;
     }
-    if (!Capacitor.isNativePlatform()) return;
+    if (!isRunningNatively()) return;
     // Guard: deep-link token arrived but auth.me hasn't confirmed yet (tokenPending).
     // isAuthenticatedRef is set synchronously on evgreen-auth-updated, before React
     // processes the re-render, so this check is safe even during the transition.
@@ -347,7 +358,7 @@ function RoleBasedRedirect() {
   }
 
   // On native: never show the Landing page — Auth0 browser opens on top
-  if ((!isAuthenticated || tokenPending) && Capacitor.isNativePlatform()) {
+  if ((!isAuthenticated || tokenPending) && isRunningNatively()) {
     return (
       <div style={{ minHeight: '100vh', background: '#0b1a0e', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
 
@@ -620,6 +631,7 @@ function Router() {
         <Route path="/partners" component={Partners} />
         <Route path="/saas" component={SaaSLanding} />
         <Route path="/gracias-inversionistas" component={ThankYouInvestors} />
+        <Route path="/privacidad" component={PrivacyPolicy} />
         
         {/* Ruta para códigos QR - Redirige a StartCharge */}
         <Route path="/c/:code" component={QRRedirect} />

@@ -2589,14 +2589,13 @@ const walletRouter = router({
       return db.getWalletTransactionsByUserId(ctx.user.id, input?.limit || 50);
     }),
   
-  // Recargar billetera (placeholder para integración con Stripe)
+  // Recargar billetera (integrar con Wompi cuando se implemente recarga manual)
   recharge: protectedProcedure
     .input(z.object({
       amount: z.number().min(10000), // Mínimo 10,000 COP
     }))
     .mutation(async ({ ctx, input }) => {
-      // TODO: Integrar con Stripe para procesar el pago
-      // Por ahora, simular la recarga
+      // Pendiente: integrar con Wompi para flujo de recarga manual
       const wallet = await db.getWalletByUserId(ctx.user.id);
       if (!wallet) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Billetera no encontrada" });

@@ -45,7 +45,7 @@ const queryClient = new QueryClient({
 });
 
 // Rutas donde NUNCA se debe redirigir automáticamente a login
-const NO_REDIRECT_PATHS = ["/", "/landing", "/partners", "/investors", "/saas", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding", "/c/"];
+const NO_REDIRECT_PATHS = ["/", "/landing", "/partners", "/investors", "/saas", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding", "/c/", "/privacidad"];
 
 function isNoRedirectPath(): boolean {
   const path = window.location.pathname;
@@ -139,11 +139,16 @@ async function bootstrap() {
   const platform = Capacitor.getPlatform();
   if (platform === 'ios' || platform === 'android') {
     try {
+      // iOS: disable overlay so WebView starts below the status bar (not under it).
+      // Android: leave overlay at its default (edge-to-edge) — calling setOverlaysWebView
+      // on Android 10 with targetSdk 36 breaks the WebView layout (shrinks to a corner).
+      // Safe area insets via CSS env() handle the top/bottom padding on Android.
       if (platform === 'ios') {
         await StatusBar.setOverlaysWebView({ overlay: false });
       }
       await StatusBar.setBackgroundColor({ color: '#052E16' });
-      await StatusBar.setStyle({ style: platform === 'android' ? Style.Dark : Style.Light });
+      // Style.Light = white icons, correct for our dark green (#052E16) background on both platforms.
+      await StatusBar.setStyle({ style: Style.Light });
     } catch (e) {
       console.warn('[StatusBar] setup error:', e);
     }
