@@ -382,12 +382,19 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         isActive: z.boolean().optional(),
         isPublic: z.boolean().optional(),
         contactPhone: z.string().max(20).optional().nullable(),
+        operatingHours: z.any().optional(), // JSON: { monday: { open: '06:00', close: '22:00', enabled: true }, ... }
         // Tarifa activa de la estación
         pricePerKwh: z.number().min(0).optional(),
         pricePerMinute: z.number().min(0).optional(),
         pricePerSession: z.number().min(0).optional(),
         overstayPenaltyPerMinute: z.number().min(0).optional(),
         overstayGracePeriodMinutes: z.number().min(0).max(120).optional(),
+        reservationFee: z.number().min(0).optional(),
+        connectionFee: z.number().min(0).optional(),
+        // Precios dinámicos IA
+        autoPricing: z.boolean().optional(),
+        priceMinKwh: z.number().min(0).optional(),
+        priceMaxKwh: z.number().min(0).optional(),
       }))
       .mutation(async ({ ctx, input }: any) => {
         const db = await getDb();
@@ -417,6 +424,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         if (input.isActive !== undefined) stationUpdate.isActive = input.isActive;
         if (input.isPublic !== undefined) stationUpdate.isPublic = input.isPublic;
         if (input.contactPhone !== undefined) stationUpdate.contactPhone = input.contactPhone;
+        if (input.operatingHours !== undefined) stationUpdate.operatingHours = input.operatingHours;
 
         if (Object.keys(stationUpdate).length > 0) {
           await db!.update(chargingStations).set(stationUpdate).where(eq(chargingStations.id, input.stationId));
@@ -425,7 +433,9 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         // Actualizar tarifa activa si se proporcionaron precios
         const hasTariffUpdate = input.pricePerKwh !== undefined || input.pricePerMinute !== undefined ||
           input.pricePerSession !== undefined || input.overstayPenaltyPerMinute !== undefined ||
-          input.overstayGracePeriodMinutes !== undefined;
+          input.overstayGracePeriodMinutes !== undefined || input.reservationFee !== undefined ||
+          input.connectionFee !== undefined || input.autoPricing !== undefined ||
+          input.priceMinKwh !== undefined || input.priceMaxKwh !== undefined;
 
         if (hasTariffUpdate) {
           const [activeTariff] = await db!
@@ -441,6 +451,11 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           if (input.pricePerSession !== undefined) tariffUpdate.pricePerSession = input.pricePerSession.toString();
           if (input.overstayPenaltyPerMinute !== undefined) tariffUpdate.overstayPenaltyPerMinute = input.overstayPenaltyPerMinute.toString();
           if (input.overstayGracePeriodMinutes !== undefined) tariffUpdate.overstayGracePeriodMinutes = input.overstayGracePeriodMinutes;
+          if (input.reservationFee !== undefined) tariffUpdate.reservationFee = input.reservationFee.toString();
+          if (input.connectionFee !== undefined) tariffUpdate.connectionFee = input.connectionFee.toString();
+          if (input.autoPricing !== undefined) tariffUpdate.autoPricing = input.autoPricing;
+          if (input.priceMinKwh !== undefined) tariffUpdate.priceMinKwh = input.priceMinKwh.toString();
+          if (input.priceMaxKwh !== undefined) tariffUpdate.priceMaxKwh = input.priceMaxKwh.toString();
 
           if (activeTariff) {
             await db!.update(tariffs).set(tariffUpdate).where(eq(tariffs.id, activeTariff.id));

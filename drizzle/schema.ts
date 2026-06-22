@@ -322,6 +322,9 @@ export const tariffs = mysqlTable("tariffs", {
   timeBasedPricing: json("timeBasedPricing"), // { "peak": { hours: [18,19,20], multiplier: 1.5 } }
   // Precio automático por IA
   autoPricing: boolean("autoPricing").default(false).notNull(), // Si true, usa algoritmo dinámico de IA
+  priceMinKwh: decimal("priceMinKwh", { precision: 10, scale: 2 }).default("1000"), // Precio mínimo por kWh cuando IA está activa
+  priceMaxKwh: decimal("priceMaxKwh", { precision: 10, scale: 2 }).default("3000"), // Precio máximo por kWh cuando IA está activa
+  connectionFee: decimal("connectionFee", { precision: 10, scale: 2 }).default("0"), // Cargo fijo por conectar el vehículo
   // Validez
   isActive: boolean("isActive").default(true).notNull(),
   validFrom: timestamp("validFrom"),
