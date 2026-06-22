@@ -719,7 +719,7 @@ function SupportTab({ org }: { org: any }) {
   const updateSupport = (trpc.organizations as any).updateSupportConfig.useMutation({
     onSuccess: () => {
       toast.success("Configuración de soporte guardada");
-      utils.organizations.getMyOrg.invalidate();
+      (utils.organizations as any).getMyOrg.invalidate();
     },
     onError: (e: any) => toast.error(e.message),
   });
