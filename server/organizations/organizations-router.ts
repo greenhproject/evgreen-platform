@@ -552,6 +552,42 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         return { success: true, message: "Branding actualizado correctamente" };
       }),
 
+    // El admin sube el logo directamente (base64 → S3)
+    uploadOrgLogo: protectedProcedure
+      .input(z.object({
+        fileBase64: z.string(),
+        mimeType: z.enum(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"]),
+        fileName: z.string().max(200).optional(),
+      }))
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!
+          .select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
+          .from(orgUsers)
+          .where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "No perteneces a ninguna organización" });
+        if (membership.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Solo el admin puede subir el logo" });
+
+        // Validar tamaño (max 2MB en base64 ≈ 2.7MB string)
+        if (input.fileBase64.length > 3_600_000) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "El archivo es demasiado grande. Máximo 2MB." });
+        }
+
+        const { storagePut } = await import("../storage");
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const extMap: Record<string, string> = {
+          "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
+          "image/webp": "webp", "image/svg+xml": "svg",
+        };
+        const ext = extMap[input.mimeType] || "png";
+        const randomSuffix = Math.random().toString(36).substring(2, 10);
+        const fileKey = `org-logos/${membership.organizationId}-logo-${randomSuffix}.${ext}`;
+        const { url } = await storagePut(fileKey, buffer, input.mimeType);
+
+        await db!.update(organizations).set({ logoUrl: url }).where(eq(organizations.id, membership.organizationId));
+        return { success: true, logoUrl: url };
+      }),
+
     // El admin de la org configura su dominio personalizado
     updateMyDomain: protectedProcedure
       .input(z.object({ customDomain: z.string().max(253).nullable() }))

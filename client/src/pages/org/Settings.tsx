@@ -13,11 +13,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { useRef } from "react";
 import {
   Building, Settings, Mail, Phone, Hash, Globe,
   Palette, Copy, CheckCircle2, AlertCircle, Info,
   ExternalLink, Zap, CreditCard, Calendar, TrendingUp,
-  ArrowUpCircle, Clock,
+  ArrowUpCircle, Clock, Upload, ImageIcon, X as XIcon,
 } from "lucide-react";
 
 export default function OrgSettings() {
@@ -32,6 +33,10 @@ export default function OrgSettings() {
 
   const [planChangeForm, setPlanChangeForm] = useState({ newPlan: "", notes: "" });
   const [logoUrl, setLogoUrl] = useState<string>("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>("");
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [primaryColor, setPrimaryColor] = useState<string>("#22c55e");
   const [secondaryColor, setSecondaryColor] = useState<string>("#1e40af");
   const [appName, setAppName] = useState<string>("");
@@ -40,12 +45,50 @@ export default function OrgSettings() {
 
   if (org && !initialized) {
     setLogoUrl(org.logoUrl || "");
+    setLogoPreview(org.logoUrl || "");
     setPrimaryColor(org.primaryColor || "#22c55e");
     setSecondaryColor(org.secondaryColor || "#1e40af");
     setAppName(org.appName || "");
     setCustomDomain(org.customDomain || "");
     setInitialized(true);
   }
+
+  const uploadOrgLogo = (trpc.organizations as any).uploadOrgLogo.useMutation({
+    onSuccess: (data: any) => {
+      setLogoUrl(data.logoUrl);
+      setLogoPreview(data.logoUrl);
+      setLogoFile(null);
+      toast.success("Logo subido correctamente");
+      (utils.organizations as any).getMyOrg.invalidate();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const handleFileSelect = (file: File) => {
+    const allowed = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"];
+    if (!allowed.includes(file.type)) {
+      toast.error("Formato no válido. Usa PNG, JPG, WEBP o SVG.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("El archivo es demasiado grande. Máximo 2MB.");
+      return;
+    }
+    setLogoFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => setLogoPreview(e.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleUploadLogo = () => {
+    if (!logoFile) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = (e.target?.result as string).split(",")[1];
+      uploadOrgLogo.mutate({ fileBase64: base64, mimeType: logoFile.type as any, fileName: logoFile.name });
+    };
+    reader.readAsDataURL(logoFile);
+  };
 
   const updateBranding = (trpc.organizations as any).updateMyBranding.useMutation({
     onSuccess: (data: any) => {
@@ -410,20 +453,82 @@ export default function OrgSettings() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Logo upload */}
               <div className="space-y-2">
-                <Label className="text-xs">URL del Logo</Label>
-                <Input
-                  placeholder="https://tu-empresa.com/logo.png"
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  disabled={!isAdmin}
-                />
-                {logoUrl && (
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
-                    <img src={logoUrl} alt="Logo preview" className="h-10 w-auto object-contain" onError={(e) => (e.currentTarget.style.display = "none")} />
-                    <span className="text-xs text-muted-foreground">Vista previa del logo</span>
+                <Label className="text-xs">Logo de la Organización</Label>
+                <p className="text-xs text-muted-foreground">
+                  Recomendado: <strong>PNG o SVG</strong> con fondo transparente · <strong>400×400px</strong> mínimo · Máx. <strong>2MB</strong>
+                </p>
+
+                {/* Drag & drop zone */}
+                {isAdmin && (
+                  <div
+                    className={`relative border-2 border-dashed rounded-xl p-5 text-center transition-colors cursor-pointer ${
+                      isDragging ? "border-green-400 bg-green-500/10" : "border-border/50 hover:border-green-500/50 hover:bg-muted/20"
+                    }`}
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDragging(false);
+                      const file = e.dataTransfer.files[0];
+                      if (file) handleFileSelect(file);
+                    }}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
+                    />
+                    {logoPreview ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <img src={logoPreview} alt="Logo preview" className="h-20 w-auto max-w-[180px] object-contain rounded-lg" />
+                        <p className="text-xs text-muted-foreground">{logoFile ? logoFile.name : "Logo actual"}</p>
+                        {logoFile && (
+                          <div className="flex gap-2">
+                            <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                              disabled={uploadOrgLogo.isPending}
+                              onClick={(e) => { e.stopPropagation(); handleUploadLogo(); }}>
+                              {uploadOrgLogo.isPending ? "Subiendo..." : "Subir logo"}
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs"
+                              onClick={(e) => { e.stopPropagation(); setLogoFile(null); setLogoPreview(logoUrl); }}>
+                              <XIcon className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2 py-2">
+                        <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center">
+                          <Upload className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <p className="text-sm font-medium">Arrastra tu logo aquí</p>
+                        <p className="text-xs text-muted-foreground">o haz clic para seleccionar</p>
+                        <p className="text-xs text-muted-foreground/70">PNG · JPG · WEBP · SVG · Máx. 2MB</p>
+                      </div>
+                    )}
                   </div>
                 )}
+
+                {/* Fallback: URL manual */}
+                <details className="group">
+                  <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none">
+                    O ingresa una URL de imagen directamente
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    <Input
+                      placeholder="https://tu-empresa.com/logo.png"
+                      value={logoUrl}
+                      onChange={(e) => { setLogoUrl(e.target.value); setLogoPreview(e.target.value); }}
+                      disabled={!isAdmin}
+                      className="text-sm"
+                    />
+                  </div>
+                </details>
               </div>
 
               <div className="space-y-2">
