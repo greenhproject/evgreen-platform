@@ -13,6 +13,7 @@ import {
   orgUsers,
   chargingStations,
   supportTickets,
+  supportMessages,
   users,
   transactions,
   tariffs,
@@ -561,6 +562,127 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           .from(supportTickets)
           .where(and(...conditions))
           .orderBy(desc(supportTickets.createdAt));
+      }),
+
+    // Obtener detalle de un ticket con mensajes
+    getMyTicketDetail: protectedProcedure
+      .input(z.object({ ticketId: z.number() }))
+      .query(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!
+          .select({ organizationId: orgUsers.organizationId })
+          .from(orgUsers)
+          .where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
+
+        const [ticket] = await db!
+          .select()
+          .from(supportTickets)
+          .where(and(
+            eq(supportTickets.id, input.ticketId),
+            eq(supportTickets.organizationId, membership.organizationId)
+          ));
+        if (!ticket) throw new TRPCError({ code: "NOT_FOUND", message: "Ticket no encontrado" });
+
+        // Obtener mensajes del ticket
+        const messages = await db!
+          .select({
+            id: supportMessages.id,
+            ticketId: supportMessages.ticketId,
+            senderId: supportMessages.senderId,
+            senderRole: supportMessages.senderRole,
+            message: supportMessages.message,
+            attachmentUrl: supportMessages.attachmentUrl,
+            readAt: supportMessages.readAt,
+            createdAt: supportMessages.createdAt,
+            senderName: users.name,
+          })
+          .from(supportMessages)
+          .leftJoin(users, eq(supportMessages.senderId, users.id))
+          .where(eq(supportMessages.ticketId, input.ticketId))
+          .orderBy(supportMessages.createdAt);
+
+        // Marcar mensajes del agente como leídos
+        await db!
+          .update(supportMessages)
+          .set({ readAt: new Date() })
+          .where(and(
+            eq(supportMessages.ticketId, input.ticketId),
+            eq(supportMessages.senderRole, "agent"),
+            isNull(supportMessages.readAt)
+          ));
+
+        return { ...ticket, messages };
+      }),
+
+    // Agregar mensaje a un ticket
+    addTicketMessage: protectedProcedure
+      .input(z.object({
+        ticketId: z.number(),
+        message: z.string().min(1).max(2000),
+        attachmentUrl: z.string().url().optional(),
+      }))
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!
+          .select({ organizationId: orgUsers.organizationId })
+          .from(orgUsers)
+          .where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
+
+        const [ticket] = await db!
+          .select({ id: supportTickets.id, status: supportTickets.status })
+          .from(supportTickets)
+          .where(and(
+            eq(supportTickets.id, input.ticketId),
+            eq(supportTickets.organizationId, membership.organizationId)
+          ));
+        if (!ticket) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ticket.status === "CLOSED") throw new TRPCError({ code: "BAD_REQUEST", message: "El ticket está cerrado" });
+
+        await db!.insert(supportMessages).values({
+          ticketId: input.ticketId,
+          senderId: ctx.user.id,
+          senderRole: "user",
+          message: input.message,
+          attachmentUrl: input.attachmentUrl,
+        });
+
+        // Si el ticket estaba resuelto, reabrirlo
+        if (ticket.status === "RESOLVED") {
+          await db!.update(supportTickets)
+            .set({ status: "OPEN", resolvedAt: null })
+            .where(eq(supportTickets.id, input.ticketId));
+        }
+
+        return { success: true };
+      }),
+
+    // Cerrar un ticket
+    closeMyTicket: protectedProcedure
+      .input(z.object({ ticketId: z.number() }))
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!
+          .select({ organizationId: orgUsers.organizationId })
+          .from(orgUsers)
+          .where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
+
+        const [ticket] = await db!
+          .select({ id: supportTickets.id })
+          .from(supportTickets)
+          .where(and(
+            eq(supportTickets.id, input.ticketId),
+            eq(supportTickets.organizationId, membership.organizationId)
+          ));
+        if (!ticket) throw new TRPCError({ code: "NOT_FOUND" });
+
+        await db!.update(supportTickets)
+          .set({ status: "CLOSED", resolvedAt: new Date() })
+          .where(eq(supportTickets.id, input.ticketId));
+
+        return { success: true };
       }),
 
     // El admin de la org actualiza el branding (logo, colores, nombre)
