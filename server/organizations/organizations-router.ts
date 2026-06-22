@@ -328,19 +328,33 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     // El cliente obtiene su propia organización
     getMyOrg: protectedProcedure.query(async ({ ctx }: any) => {
       const db = await getDb();
-      const [membership] = await db!
-        .select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
-        .from(orgUsers)
-        .where(eq(orgUsers.userId, ctx.user.id));
-
-      if (!membership) return null;
-
-      const [org] = await db!
-        .select()
-        .from(organizations)
-        .where(eq(organizations.id, membership.organizationId));
-
-      return org ? { ...org, myRole: membership.role } : null;
+      // Usar SQL directo para evitar problemas de mismatch de schema en producción
+      const [rows] = await db!.execute(sql`
+        SELECT o.id, o.name, o.slug,
+               o.org_plan as plan, o.org_status as status,
+               o.logo_url as logoUrl, o.primary_color as primaryColor,
+               o.secondary_color as secondaryColor, o.app_name as appName,
+               o.custom_domain as customDomain, o.contact_name as contactName,
+               o.contact_email as contactEmail, o.contact_phone as contactPhone,
+               o.transaction_fee_percent as transactionFeePercent,
+               o.next_billing_date as nextBillingDate,
+               o.enabled_modules as enabledModules,
+               o.support_mode as supportMode,
+               o.support_chat_embed as supportChatEmbed,
+               o.support_whatsapp as supportWhatsapp,
+               ou.role as myRole
+        FROM organizations o
+        JOIN org_users ou ON ou.organization_id = o.id
+        WHERE ou.user_id = ${ctx.user.id}
+        LIMIT 1
+      `) as any;
+      const org = Array.isArray(rows) ? rows[0] : null;
+      if (!org) return null;
+      // Parse enabledModules si viene como string JSON
+      if (org.enabledModules && typeof org.enabledModules === 'string') {
+        try { org.enabledModules = JSON.parse(org.enabledModules); } catch {}
+      }
+      return org;
     }),
 
     // El cliente ve sus estaciones
