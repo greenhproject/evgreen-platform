@@ -86,7 +86,7 @@ export default function UserProfile() {
       title: "Soporte",
       items: [
         { icon: HelpCircle, label: "Centro de ayuda", path: "/support" },
-        { icon: FileText, label: "Términos y condiciones", path: "/support" },
+        { icon: FileText, label: "Términos y condiciones", path: "/terms" },
       ],
     },
   ];

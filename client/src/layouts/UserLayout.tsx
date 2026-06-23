@@ -124,16 +124,15 @@ export default function UserLayout({
                           key={item.path}
                           href={item.path}
                           onClick={() => setDrawerOpen(false)}
-                        >
-                          <a className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-colors ${
+                          className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-colors ${
                             location === item.path
                               ? "bg-emerald-500/20 text-emerald-400"
                               : "hover:bg-sidebar-accent/50"
-                          }`}>
-                            <item.icon className={`w-5 h-5 ${location === item.path ? "text-emerald-400" : "text-sidebar-primary"}`} />
-                            <span>{item.label}</span>
-                            <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
-                          </a>
+                          }`}
+                        >
+                          <item.icon className={`w-5 h-5 ${location === item.path ? "text-emerald-400" : "text-sidebar-primary"}`} />
+                          <span>{item.label}</span>
+                          <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
                         </Link>
                       ))}
                     </nav>
@@ -210,35 +209,35 @@ export default function UserLayout({
               
               if (item.isCenter) {
                 return (
-                  <Link key={item.path} href={item.path}>
-                    <a className="relative -mt-6 group">
-                      {/* Anillo de pulso exterior */}
-                      <div className="absolute inset-0 w-14 h-14 rounded-full bg-emerald-400/30 animate-ping" style={{ animationDuration: '2.5s' }} />
-                      {/* Glow estático */}
-                      <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-emerald-400/40 to-green-500/40 blur-md" />
-                      {/* Botón principal */}
-                      <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shadow-xl shadow-emerald-500/50 ring-2 ring-emerald-400/30 group-hover:scale-110 transition-transform duration-200">
-                        <item.icon className="w-7 h-7 text-white drop-shadow-sm" />
-                      </div>
-                    </a>
+                  <Link key={item.path} href={item.path} className="relative -mt-6 group">
+                    {/* Anillo de pulso exterior */}
+                    <div className="absolute inset-0 w-14 h-14 rounded-full bg-emerald-400/30 animate-ping" style={{ animationDuration: '2.5s' }} />
+                    {/* Glow estático */}
+                    <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-emerald-400/40 to-green-500/40 blur-md" />
+                    {/* Botón principal */}
+                    <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shadow-xl shadow-emerald-500/50 ring-2 ring-emerald-400/30 group-hover:scale-110 transition-transform duration-200">
+                      <item.icon className="w-7 h-7 text-white drop-shadow-sm" />
+                    </div>
                   </Link>
                 );
               }
 
               return (
-                <Link key={item.path} href={item.path}>
-                  <a className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-colors ${
+                <Link
+                  key={item.path}
+                  href={item.path}
+                  className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-colors ${
                     isActive ? "text-emerald-400" : "text-muted-foreground"
-                  }`}>
-                    <item.icon className={`w-5 h-5 ${isActive ? "text-emerald-400" : ""}`} />
-                    <span className="text-xs font-medium">{item.label}</span>
-                    {isActive && (
-                      <motion.div
-                        layoutId="activeTab"
-                        className="absolute bottom-1 w-1 h-1 bg-emerald-400 rounded-full"
-                      />
-                    )}
-                  </a>
+                  }`}
+                >
+                  <item.icon className={`w-5 h-5 ${isActive ? "text-emerald-400" : ""}`} />
+                  <span className="text-xs font-medium">{item.label}</span>
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeTab"
+                      className="absolute bottom-1 w-1 h-1 bg-emerald-400 rounded-full"
+                    />
+                  )}
                 </Link>
               );
             })}

@@ -5,7 +5,7 @@
  * @author Green House Project
  */
 import { Button } from "@/components/ui/button";
-import { getLoginUrl } from "@/const";
+import { openLoginBrowser } from "@/const";
 import { Link } from "wouter";
 import { motion, useScroll, useTransform, useInView } from "framer-motion";
 import { useRef, useState, useEffect, useCallback } from "react";
@@ -195,7 +195,7 @@ export default function Landing() {
               <Button
                 size="lg"
                 className="gradient-primary text-white px-8 py-6 text-lg rounded-xl shadow-glow hover:shadow-glow-sm transition-all"
-                onClick={() => window.location.href = getLoginUrl()}
+                onClick={() => openLoginBrowser()}
               >
                 <Brain className="w-5 h-5 mr-2" />
                 Probar IA gratis
@@ -484,7 +484,7 @@ export default function Landing() {
             <Button
               size="lg"
               className="gradient-primary text-white px-10 py-6 text-lg rounded-xl shadow-glow hover:shadow-glow-sm transition-all"
-              onClick={() => window.location.href = getLoginUrl()}
+              onClick={() => openLoginBrowser()}
             >
               <Sparkles className="w-5 h-5 mr-2" />
               Probar el Asistente IA
@@ -997,7 +997,7 @@ export default function Landing() {
               <Button
                 size="lg"
                 className="bg-white text-primary hover:bg-white/90 px-8 py-6 text-lg rounded-xl"
-                onClick={() => window.location.href = getLoginUrl()}
+                onClick={() => openLoginBrowser()}
               >
                 <Sparkles className="w-5 h-5 mr-2" />
                 Crear cuenta gratis

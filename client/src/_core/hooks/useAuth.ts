@@ -1,6 +1,8 @@
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { COOKIE_NAME, NATIVE_TOKEN_KEY } from "@shared/const";
 import { TRPCClientError } from "@trpc/client";
+import { Capacitor } from '@capacitor/core';
 import { useCallback, useEffect, useMemo } from "react";
 
 type UseAuthOptions = {
@@ -14,15 +16,14 @@ export function useAuth(options?: UseAuthOptions) {
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
-    retry: false,
+    // On native, allow 1 retry for transient network errors post-login.
+    // On web, retry:false prevents redirect loops when not authenticated.
+    retry: Capacitor.isNativePlatform() ? 1 : false,
+    retryDelay: 2000,
     refetchOnWindowFocus: false,
   });
 
-  const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => {
-      utils.auth.me.setData(undefined, null);
-    },
-  });
+  const logoutMutation = trpc.auth.logout.useMutation();
 
   const logout = useCallback(async () => {
     try {
@@ -38,10 +39,26 @@ export function useAuth(options?: UseAuthOptions) {
         console.error("[Auth] Logout error:", error);
       }
     } finally {
+      localStorage.removeItem(NATIVE_TOKEN_KEY);
+      localStorage.removeItem('manus-runtime-user-info'); // prevent hadSession check from triggering on reload
+      // Clear local cookie (set on evgreen://localhost, not app.evgreen.lat)
+      document.cookie = `${COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
-      // Redirect to Auth0 logout to clear Auth0 session
-      window.location.href = `${window.location.origin}/api/auth/logout`;
+
+      if (Capacitor.isNativePlatform()) {
+        // On native, reload resets all JS state — no need to setData/invalidate first.
+        // Doing so triggers isAuthenticated=false→doOpenLogin() BEFORE the reload,
+        // which opens a zombie SFSafariViewController that corrupts the next login flow.
+        sessionStorage.setItem('evgreen_logout', '1');
+        history.replaceState(null, '', '/');
+        window.location.reload();
+      } else {
+        // On web: clear cache then go through Auth0 logout to clear the Auth0 session.
+        utils.auth.me.setData(undefined, null);
+        await utils.auth.me.invalidate();
+        window.location.href = `${window.location.origin}/api/auth/logout`;
+      }
     }
   }, [logoutMutation, utils]);
 
@@ -79,6 +96,13 @@ export function useAuth(options?: UseAuthOptions) {
     meQuery.isLoading,
     state.user,
   ]);
+
+  // Refetchear auth.me cuando llega un deep link con la app ya abierta
+  useEffect(() => {
+    const handler = () => meQuery.refetch();
+    window.addEventListener('evgreen-auth-updated', handler);
+    return () => window.removeEventListener('evgreen-auth-updated', handler);
+  }, [meQuery]);
 
   return {
     ...state,
