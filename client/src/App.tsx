@@ -134,7 +134,6 @@ const SpaceSubmission = lazy(() => import("./pages/SpaceSubmission"));
 const SpaceLetterAccept = lazy(() => import("./pages/SpaceLetterAccept"));
 const Crowdfunding = lazy(() => import("./pages/Crowdfunding"));
 const AdminSpaces = lazy(() => import("./pages/admin/Spaces"));
-const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 
 // Páginas de Aliado Comercial (Host)
 const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
@@ -631,8 +630,6 @@ function Router() {
         <Route path="/partners" component={Partners} />
         <Route path="/saas" component={SaaSLanding} />
         <Route path="/gracias-inversionistas" component={ThankYouInvestors} />
-        <Route path="/privacidad" component={PrivacyPolicy} />
-        
         {/* Ruta para códigos QR - Redirige a StartCharge */}
         <Route path="/c/:code" component={QRRedirect} />
 
