@@ -531,15 +531,37 @@ export default function QuotePublic() {
                     </div>
                   </div>
                   {/* Features */}
-                  <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-[#1f2937]">
-                    {item.includesTransformer && (
+                  {/* Description from catalog */}
+                  {(item as any).productDescription && (
+                    <p className="mt-3 text-sm text-gray-400 leading-relaxed">{(item as any).productDescription}</p>
+                  )}
+                  <div className="mt-4 pt-4 border-t border-[#1f2937]">
+                    <div className="flex flex-wrap gap-3">
+                      {item.includesTransformer && (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Incluye transformador
+                        </span>
+                      )}
                       <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Incluye transformador
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Hasta {item.cableMetersIncluded}m de cableado
                       </span>
+                      {((item as any).warrantyYears ?? 2) > 0 && (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Garantía {(item as any).warrantyYears ?? 2} año{((item as any).warrantyYears ?? 2) !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    {/* Catalog features list */}
+                    {(item as any).productFeatures && Array.isArray((item as any).productFeatures) && (item as any).productFeatures.length > 0 && (
+                      <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {((item as any).productFeatures as string[]).map((feat: string, fi: number) => (
+                          <li key={fi} className="inline-flex items-start gap-1.5 text-xs text-gray-300">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                            <span>{feat}</span>
+                          </li>
+                        ))}
+                      </ul>
                     )}
-                    <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Hasta {item.cableMetersIncluded}m de cableado
-                    </span>
                   </div>
                 </div>
               ))}

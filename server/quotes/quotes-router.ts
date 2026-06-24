@@ -536,8 +536,32 @@ export const quotesRouter = router({
         }).where(eq(quotes.id, quote.id));
       }
 
-      const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, quote.id));
+      const rawItems = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, quote.id));
       const [settings] = await db.select().from(quoteSettings).limit(1);
+
+      // Enriquecer items con description y features del catálogo
+      const catalogIds = Array.from(new Set(rawItems.map(i => i.catalogItemId)));
+      const catalogMap: Record<number, { description: string | null; features: string[] | null; warrantyYears: number | null }> = {};
+      if (catalogIds.length > 0) {
+        const catalogRows = await db.select({
+          id: chargersCatalog.id,
+          description: chargersCatalog.description,
+          features: chargersCatalog.features,
+          warrantyYears: chargersCatalog.warrantyYears,
+        }).from(chargersCatalog).where(
+          sql`${chargersCatalog.id} IN (${sql.join(catalogIds.map(id => sql`${id}`), sql`, `)})`
+        );
+        for (const row of catalogRows) {
+          catalogMap[row.id] = { description: row.description, features: row.features as string[] | null, warrantyYears: row.warrantyYears };
+        }
+      }
+
+      const items = rawItems.map(item => ({
+        ...item,
+        productDescription: catalogMap[item.catalogItemId]?.description ?? null,
+        productFeatures: catalogMap[item.catalogItemId]?.features ?? null,
+        warrantyYears: catalogMap[item.catalogItemId]?.warrantyYears ?? 2,
+      }));
 
       return { quote, items, settings };
     }),
