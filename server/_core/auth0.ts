@@ -13,40 +13,34 @@ import { ENV } from "./env";
 // Auth0 configuration from environment variables
 const AUTH0_DOMAIN = ENV.auth0Domain;
 const AUTH0_CLIENT_ID = ENV.auth0ClientId;
-const AUTH0_MOBILE_CLIENT_ID = (ENV as any).auth0MobileClientId;
 const AUTH0_CLIENT_SECRET = ENV.auth0ClientSecret;
 
 let webClient: any = null;
-let mobileClient: any = null;
 
-async function getAuth0Client(isMobile = false) {
-  if (isMobile && mobileClient) return mobileClient;
-  if (!isMobile && webClient) return webClient;
+async function getAuth0Client(_isMobile = false) {
+  // The server always does the OAuth code exchange with client_secret (server-side flow).
+  // The isMobile flag only affects the post-auth redirect target (deep link vs web URL).
+  if (webClient) return webClient;
 
-  const clientId = isMobile ? AUTH0_MOBILE_CLIENT_ID : AUTH0_CLIENT_ID;
-
-  if (!AUTH0_DOMAIN || !clientId) {
-    console.error(`[Auth0] Missing configuration for ${isMobile ? "mobile" : "web"}.`);
+  if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
+    console.error("[Auth0] Missing configuration.");
     return null;
   }
 
   try {
     const issuer = await Issuer.discover(`https://${AUTH0_DOMAIN}`);
-    const client = new issuer.Client({
-      client_id: clientId,
-      client_secret: isMobile ? undefined : AUTH0_CLIENT_SECRET,
-      token_endpoint_auth_method: isMobile ? "none" : "client_secret_basic",
+    webClient = new issuer.Client({
+      client_id: AUTH0_CLIENT_ID,
+      client_secret: AUTH0_CLIENT_SECRET,
+      token_endpoint_auth_method: "client_secret_basic",
       redirect_uris: [],
       response_types: ["code"],
     });
 
-    if (isMobile) mobileClient = client;
-    else webClient = client;
-
-    console.log(`[Auth0] ${isMobile ? "Mobile" : "Web"} client initialized for domain:`, AUTH0_DOMAIN);
-    return client;
+    console.log("[Auth0] Client initialized for domain:", AUTH0_DOMAIN);
+    return webClient;
   } catch (error) {
-    console.error(`[Auth0] Failed to initialize ${isMobile ? "mobile" : "web"} client:`, error);
+    console.error("[Auth0] Failed to initialize client:", error);
     return null;
   }
 }
@@ -88,7 +82,6 @@ export function registerAuth0Routes(app: Express) {
 
       console.log(`[Auth0 DEBUG] Intentando login. isMobile: ${isMobile}`);
       console.log(`[Auth0 DEBUG] Redirect URI generada: ${redirectUri}`);
-      console.log(`[Auth0 DEBUG] Client ID usado: ${isMobile ? AUTH0_MOBILE_CLIENT_ID : AUTH0_CLIENT_ID}`);
 
       // Generate state for CSRF protection
       const state = generators.state();
