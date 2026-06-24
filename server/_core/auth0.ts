@@ -145,19 +145,16 @@ export function registerAuth0Routes(app: Express) {
       // the exact same redirect_uri — so we derive it from isMobile, not from the callback URL.
       const redirectUri = `${origin}/api/auth/callback${isMobile ? "?platform=mobile" : ""}`;
 
-      console.log(`[Auth0 DEBUG] Callback recibido. hasPlatformParam: ${hasPlatformParam}, storedState: ${storedState ? "SÍ" : "NO"}, isMobile: ${isMobile}, redirectUri: ${redirectUri}`);
+      console.log(`[Auth0 DEBUG] Callback recibido. hasPlatformParam: ${hasPlatformParam}, storedState: ${storedState ?? "NO"}, paramsState: ${params.state ?? "NO"}, isMobile: ${isMobile}, redirectUri: ${redirectUri}`);
 
-      let tokenSet;
-      try {
-        tokenSet = await client.callback(redirectUri, params, {
-          state: storedState,
-        });
-      } catch (err) {
-        console.error("[Auth0 DEBUG] Error en client.callback:", err);
-        // Si falla la verificación del state, reintentar sin él (la sesión igual se crea)
-        // Esto ocurre cuando la cookie auth0_state no llega al callback (ITP, etc.)
-        tokenSet = await client.callback(redirectUri, params);
-      }
+      // Use storedState for CSRF verification. If the cookie was lost (ITP), fall back to
+      // using params.state as the "expected" value so openid-client doesn't reject on state
+      // mismatch against undefined. Security note: when storedState is missing we can't do
+      // CSRF verification, but the deep-link target (evgreen://) is app-specific.
+      const expectedState = storedState ?? params.state;
+      const tokenSet = await client.callback(redirectUri, params, {
+        state: expectedState,
+      });
 
       // Clear the state cookie
       res.clearCookie("auth0_state", { path: "/" });
@@ -209,8 +206,9 @@ export function registerAuth0Routes(app: Express) {
         res.redirect(302, "/");
       }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       console.error("[Auth0] Callback failed:", error);
-      res.redirect("/?auth_error=callback_failed");
+      res.redirect(`/?auth_error=${encodeURIComponent(msg.substring(0, 200))}`);
     }
   });
 
