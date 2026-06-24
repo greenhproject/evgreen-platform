@@ -499,7 +499,7 @@ export default function QuotePublic() {
               <div className="w-8 h-8 bg-emerald-500/10 rounded-lg flex items-center justify-center">
                 <Zap className="h-5 w-5 text-emerald-400" />
               </div>
-              Equipos Cotizados
+              Equipos Cotizados {/* v2 */}
             </h2>
             <div className="space-y-3">
               {items.map((item: any, idx: number) => (
