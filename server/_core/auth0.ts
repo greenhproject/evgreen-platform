@@ -78,9 +78,12 @@ export function registerAuth0Routes(app: Express) {
       }
 
       const origin = getOrigin(req);
-      // Keep ?platform=mobile in redirect_uri (Auth0 has this URL registered).
-      // Also encode platform in state as a fallback (handles ITP cookie loss).
-      const redirectUri = `${origin}/api/auth/callback${isMobile ? "?platform=mobile" : ""}`;
+      // Always use the base callback URL — no query params.
+      // Platform is encoded in the state parameter ("|mobile" suffix) so we
+      // never need ?platform=mobile in the redirect_uri. This avoids Auth0
+      // stripping unknown query params from the registered callback URL and
+      // causing a redirect_uri mismatch on token exchange.
+      const redirectUri = `${origin}/api/auth/callback`;
 
       const csrfState = generators.state();
       const state = isMobile ? `${csrfState}|mobile` : csrfState;
@@ -125,27 +128,21 @@ export function registerAuth0Routes(app: Express) {
       const origin = getOrigin(req);
       const params = client.callbackParams(req);
 
+      // The redirect_uri for token exchange must be IDENTICAL to what the login sent.
+      // Login now always uses the base URL (no query params), so we do the same here.
+      const redirectUri = `${origin}/api/auth/callback`;
+
       // Get the state from cookie — it encodes the platform as a suffix: "csrfState|mobile"
       const storedState = req.cookies?.auth0_state;
 
-      // Detect isMobile from state first (most reliable), then fall back to query param.
-      // The login handler always encodes "|mobile" in state when isMobile=true, so the
-      // state tells us exactly what redirect_uri the login sent — even if Auth0 strips
-      // the ?platform=mobile query param from the callback URL.
-      const hasPlatformParam = req.query.platform === "mobile";
-      let isMobile = hasPlatformParam;
-      if (storedState) {
-        isMobile = storedState.endsWith("|mobile");
-      } else if (params.state?.endsWith("|mobile")) {
-        isMobile = true;
-      }
+      // Detect isMobile solely from the state parameter.
+      // The login handler always encodes "|mobile" in state for mobile flows.
+      // Auth0 MUST return the state verbatim, so this is the most reliable signal.
+      const isMobile = storedState
+        ? storedState.endsWith("|mobile")
+        : Boolean(params.state?.endsWith("|mobile"));
 
-      // Reconstruct redirect_uri using isMobile (from state), NOT just hasPlatformParam.
-      // The login sent ?platform=mobile when isMobile=true; the token exchange requires
-      // the exact same redirect_uri — so we derive it from isMobile, not from the callback URL.
-      const redirectUri = `${origin}/api/auth/callback${isMobile ? "?platform=mobile" : ""}`;
-
-      console.log(`[Auth0 DEBUG] Callback recibido. hasPlatformParam: ${hasPlatformParam}, storedState: ${storedState ?? "NO"}, paramsState: ${params.state ?? "NO"}, isMobile: ${isMobile}, redirectUri: ${redirectUri}`);
+      console.log(`[Auth0 DEBUG] Callback recibido. storedState: ${storedState ?? "NO"}, paramsState: ${params.state ?? "NO"}, isMobile: ${isMobile}, redirectUri: ${redirectUri}`);
 
       // Use storedState for CSRF verification. If the cookie was lost (ITP), fall back to
       // using params.state as the "expected" value so openid-client doesn't reject on state
