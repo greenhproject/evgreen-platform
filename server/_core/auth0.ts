@@ -193,32 +193,12 @@ export function registerAuth0Routes(app: Express) {
 
       if (isMobile) {
         const finalUrl = `${ENV.mobileAppScheme}://home?token=${sessionToken}`;
-        console.log(`[Auth0 DEBUG] Deep link: ${finalUrl.substring(0, 60)}...`);
-        // Show a page with an explicit link + JS auto-redirect.
-        // iOS may block automatic navigation to custom URL schemes from JavaScript
-        // (requires user gesture in some iOS versions). The <a> button ensures the
-        // user can always tap to complete the deep link if auto-redirect doesn't fire.
-        const safeUrl = finalUrl.replace(/"/g, '&quot;');
-        res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.send(`<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,sans-serif;background:#052E16;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center}
-h2{font-size:22px;margin-bottom:8px}
-p{color:rgba(255,255,255,.7);font-size:15px;margin-bottom:32px}
-a.btn{display:inline-block;background:#22c55e;color:#fff;text-decoration:none;border-radius:12px;padding:16px 40px;font-size:17px;font-weight:600}
-</style>
-</head><body>
-<h2>&#10003; Autenticación exitosa</h2>
-<p>Si la app no abre automáticamente, toca el botón:</p>
-<a href="${safeUrl}" class="btn">Abrir EVGreen</a>
-<script>
-try{window.location.replace(${JSON.stringify(finalUrl)});}catch(e){}
-</script>
-</body></html>`);
+        console.log(`[Auth0 DEBUG] Deep link (302): ${finalUrl.substring(0, 60)}...`);
+        // HTTP 302 redirect to the custom URL scheme is intercepted by iOS at the
+        // network layer — SFSafariViewController never renders a page for it.
+        // This is more reliable than JS window.location, which iOS 14+ may block
+        // inside SFSafariViewController when there is no user gesture.
+        res.redirect(302, finalUrl);
       } else {
         const st = (storedState ?? 'null').slice(-8);
         const ps = (paramsState ?? 'null').slice(-8);
