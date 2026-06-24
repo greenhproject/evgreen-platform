@@ -40,21 +40,21 @@ export function useAuth(options?: UseAuthOptions) {
       }
     } finally {
       localStorage.removeItem(NATIVE_TOKEN_KEY);
-      localStorage.removeItem('manus-runtime-user-info'); // prevent hadSession check from triggering on reload
+      localStorage.removeItem('manus-runtime-user-info');
       // Clear local cookie (set on evgreen://localhost, not app.evgreen.lat)
       document.cookie = `${COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
-      utils.auth.me.setData(undefined, null);
-      await utils.auth.me.invalidate();
 
       if (Capacitor.isNativePlatform()) {
-        // On native, reload resets all JS state — no need to setData/invalidate first.
-        // Doing so triggers isAuthenticated=false→doOpenLogin() BEFORE the reload,
-        // which opens a zombie SFSafariViewController that corrupts the next login flow.
+        // Do NOT call setData(null) or invalidate() before reloading on native.
+        // setData(null) makes isAuthenticated=false → React re-renders → RoleBasedRedirect's
+        // effect fires doOpenLogin() BEFORE window.location.reload() runs, opening a zombie
+        // SFSafariViewController that cascades into multiple browser opens after the reload.
+        // The page reload resets all JS state, so setData/invalidate are redundant here.
         sessionStorage.setItem('evgreen_logout', '1');
         history.replaceState(null, '', '/');
         window.location.reload();
       } else {
-        // On web: clear cache then go through Auth0 logout to clear the Auth0 session.
+        // On web: clear cache then redirect through Auth0 logout to clear the Auth0 session.
         utils.auth.me.setData(undefined, null);
         await utils.auth.me.invalidate();
         window.location.href = `${window.location.origin}/api/auth/logout`;
@@ -69,21 +69,24 @@ export function useAuth(options?: UseAuthOptions) {
     );
     return {
       user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
+      // isPending stays true across retries; isLoading drops to false between retries,
+      // causing Router to remount RoleBasedRedirect on each retry and triggering
+      // duplicate doOpenLogin() calls (zombie browser issue).
+      loading: meQuery.isPending || logoutMutation.isPending,
       error: meQuery.error ?? logoutMutation.error ?? null,
       isAuthenticated: Boolean(meQuery.data),
     };
   }, [
     meQuery.data,
     meQuery.error,
-    meQuery.isLoading,
+    meQuery.isPending,
     logoutMutation.error,
     logoutMutation.isPending,
   ]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;
-    if (meQuery.isLoading || logoutMutation.isPending) return;
+    if (meQuery.isPending || logoutMutation.isPending) return;
     if (state.user) return;
     if (typeof window === "undefined") return;
     if (window.location.pathname === redirectPath) return;

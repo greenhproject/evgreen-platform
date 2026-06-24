@@ -213,6 +213,8 @@ function RoleBasedRedirect() {
   const [, setLocation] = useLocation();
   const loginBrowserOpened = useRef(false);
   const isAuthenticatedRef = useRef(isAuthenticated);
+  const pendingBrowserCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingAutoRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showRetryButton, setShowRetryButton] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoRetries, setLogoRetries] = useState(0);
@@ -237,9 +239,18 @@ function RoleBasedRedirect() {
     return () => clearTimeout(timer);
   }, [loading, isAuthenticated, tokenPending]);
 
-  // Mark as authenticated immediately when deep-link token arrives (before auth.me completes)
+  // Mark as authenticated immediately when deep-link token arrives (before auth.me completes).
+  // Also cancel any pending browserFinished retry timers — the deep link arrived, no need to retry.
   useEffect(() => {
     const handleAuthUpdated = () => {
+      if (pendingBrowserCheckRef.current) {
+        clearTimeout(pendingBrowserCheckRef.current);
+        pendingBrowserCheckRef.current = null;
+      }
+      if (pendingAutoRetryRef.current) {
+        clearTimeout(pendingAutoRetryRef.current);
+        pendingAutoRetryRef.current = null;
+      }
       isAuthenticatedRef.current = true;
       setTokenPending(true);
       setShowRetryButton(false);
@@ -278,13 +289,16 @@ function RoleBasedRedirect() {
       // Remove previous listeners to avoid accumulation across retries
       await Browser.removeAllListeners();
       await Browser.addListener('browserFinished', () => {
-        // 500ms to let appUrlOpen + evgreen-auth-updated process before checking
-        setTimeout(() => {
+        // 500ms to let appUrlOpen + evgreen-auth-updated arrive before checking.
+        // Both timers are stored in refs so handleAuthUpdated can cancel them
+        // if the deep link arrives after browserFinished but before the timers fire.
+        pendingBrowserCheckRef.current = setTimeout(() => {
+          pendingBrowserCheckRef.current = null;
           if (isAuthenticatedRef.current) return;
-          // Browser closed without auth — show button immediately, auto-retry in 2s
           loginBrowserOpened.current = false;
           setShowRetryButton(true);
-          setTimeout(() => {
+          pendingAutoRetryRef.current = setTimeout(() => {
+            pendingAutoRetryRef.current = null;
             if (!loginBrowserOpened.current && !isAuthenticatedRef.current) {
               doOpenLogin();
             }
