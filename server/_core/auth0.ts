@@ -123,20 +123,23 @@ export function registerAuth0Routes(app: Express) {
       }
 
       const origin = getOrigin(req);
-      // Mirror the redirect_uri from the login handler exactly
       const params = client.callbackParams(req);
-      const redirectUri = `${origin}/api/auth/callback${req.query.platform === "mobile" || params.state?.endsWith("|mobile") ? "?platform=mobile" : ""}`;
+
+      // Reconstruct redirect_uri exactly as the login handler sent it — based solely on whether
+      // ?platform=mobile appears in the callback URL (Auth0 echoes the registered URL exactly).
+      // Do NOT use params.state here: that would mismatch if login and callback run different code versions.
+      const hasPlatformParam = req.query.platform === "mobile";
+      const redirectUri = `${origin}/api/auth/callback${hasPlatformParam ? "?platform=mobile" : ""}`;
 
       // Get the state from cookie — it encodes the platform as a suffix: "csrfState|mobile"
       const storedState = req.cookies?.auth0_state;
 
-      // Determine isMobile from state suffix — encoded by the login handler as "csrfState|mobile".
-      // Priority: cookie state (verified) > URL state (unverified fallback when cookie is missing) > query param.
-      let isMobile = req.query.platform === "mobile";
+      // Determine isMobile from multiple sources (cookie state > URL state > query param).
+      // State suffix is more reliable than query param alone (survives ITP cookie loss).
+      let isMobile = hasPlatformParam;
       if (storedState) {
         isMobile = storedState.endsWith("|mobile");
       } else if (params.state?.endsWith("|mobile")) {
-        // Cookie wasn't sent (ITP or browser config) — use the state from the URL as fallback
         isMobile = true;
       }
 
