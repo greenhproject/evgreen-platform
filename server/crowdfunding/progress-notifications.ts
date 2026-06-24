@@ -10,9 +10,7 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { sendPushNotificationToMultiple, NotificationType } from "../firebase/fcm";
 import { buildEmailParams } from "../utils/email-helper";
 
-// Inicializar Resend
-const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
-const resend = new Resend(resendApiKey);
+const resend = new Resend(process.env.Resend ?? "");
 
 // Hitos de progreso que disparan notificaciones
 export const PROGRESS_MILESTONES = [50, 75, 100] as const;

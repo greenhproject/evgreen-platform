@@ -8,8 +8,7 @@ import { generateQuoteHTML } from "./quote-pdf";
 import { generateQuoteEmailHTML, generateQuoteEmailSubject } from "./quote-email";
 import { storagePut } from "../storage";
 
-const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-const resend = new Resend(resendApiKey);
+const resend = new Resend(process.env.Resend ?? "");
 
 const FROM_EMAIL = "EVGreen <admin@evgreen.lat>";
 const CC_EMAIL = "gerencia@greenhproject.com";
