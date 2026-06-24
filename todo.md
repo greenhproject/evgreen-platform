@@ -3576,3 +3576,29 @@
 - [x] FIX: Reducir LOW_POWER_THRESHOLD_KW de 0.5 a 0.15 kW (casi cero corriente, evitar falsos positivos en taper AC)
 - [x] FIX: Aumentar LOW_POWER_DURATION_MS de 5 min a 10 min (la fase taper AC puede durar más)
 - [x] FIX: Umbrales conservadores aplican a todos los cargadores (0.15 kW es seguro para AC y DC)
+
+## BUG FIX CRÍTICO: Estaciones desconectadas aparecen como disponibles en el mapa
+
+- [x] FIX: Cuando realIsOnline=false, marcar todos los EVSEs como UNAVAILABLE en la respuesta al cliente (stations.list)
+- [x] FIX: También aplicar la misma lógica en la consulta por ubicación (getStationsNearLocation) — cubierto por el mismo mapeo en listPublic
+- [x] FIX: Actualizar isOnline en BD cuando la estación se desconecta — confirmado en index.ts línea 892 (updateStationOnlineStatus tras grace period)
+
+## BUG FIX CRÍTICO: Pantalla de detalle muestra conectores AVAILABLE y botón "Iniciar carga" activo cuando la estación está offline
+
+- [x] FIX Backend: stations.getById — calcula realIsOnline con connection-manager (no BD fallback)
+- [x] FIX Backend: stations.getEvses — aplica offline→UNAVAILABLE mapping (excepto CHARGING/RESERVED)
+- [x] FIX Backend: charging.getStationByCode — eliminado fallback `station.isOnline || (isActive && hasAvailableConnector)`, ahora solo OCPP activo o grace period
+- [x] FIX Backend: charging.getAvailableConnectors — marca EVSEs como UNAVAILABLE cuando estación offline
+- [x] FIX Backend: charging.startCharge — eliminado fallback `stationOnlineInDb`, ahora solo OCPP activo o grace period
+- [x] FIX Frontend: StationDetail.tsx — banner naranja "Estación sin conexión" cuando isOnline=false
+- [x] FIX Frontend: StationDetail.tsx — botón "Iniciar carga" deshabilitado y muestra "Sin conexión" cuando offline
+- [x] FIX Frontend: StationDetail.tsx — botón reserva deshabilitado cuando offline
+
+## MEJORA: Agregar TYPE_1, CCS_1 y GBT en filtros del mapa y backend
+
+- [x] FIX Backend: routers.ts getAvailable — enum incompleto solo tenía TYPE_2, CCS_2, CHADEMO, TYPE_1; ahora incluye los 8 tipos
+- [x] FIX Frontend: Map.tsx filtros — solo mostraba TYPE_2, CCS_2, CHADEMO; ahora muestra los 9 opciones (Todos + 8 tipos)
+- [x] VERIFICADO: drizzle/schema.ts ya tenía los 8 tipos en connectorTypeEnum
+- [x] VERIFICADO: admin/Stations.tsx y technician/Stations.tsx ya tenían los 8 tipos en formularios
+- [x] VERIFICADO: investor/Stations.tsx, TripPlanner.tsx, Vehicles.tsx ya tenían los 8 tipos
+- [x] VERIFICADO: db.ts getAvailableEvses usa el tipo de Drizzle directamente (sin hardcoding)

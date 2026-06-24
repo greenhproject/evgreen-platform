@@ -45,7 +45,7 @@ const queryClient = new QueryClient({
 });
 
 // Rutas donde NUNCA se debe redirigir automáticamente a login
-const NO_REDIRECT_PATHS = ["/", "/landing", "/partners", "/investors", "/saas", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding", "/c/"];
+const NO_REDIRECT_PATHS = ["/", "/landing", "/partners", "/investors", "/saas", "/gracias-inversionistas", "/postula-tu-espacio", "/cotizacion", "/carta-intencion", "/crowdfunding", "/c/", "/terms", "/privacy", "/contact"];
 
 function isNoRedirectPath(): boolean {
   const path = window.location.pathname;

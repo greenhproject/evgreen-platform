@@ -39,6 +39,9 @@ function LazySpinner() {
 // ============================================
 
 // Páginas públicas secundarias
+const Terms = lazy(() => import("./pages/Terms"));
+const Privacy = lazy(() => import("./pages/Privacy"));
+const Contact = lazy(() => import("./pages/Contact"));
 const Investors = lazy(() => import("./pages/Investors"));
 const ThankYouInvestors = lazy(() => import("./pages/ThankYouInvestors"));
 const Partners = lazy(() => import("./pages/Partners"));
@@ -207,6 +210,46 @@ function isRunningNatively(): boolean {
   return origin === 'https://localhost' || (origin.endsWith('://localhost') && !origin.startsWith('http://'));
 }
 
+// Pantalla de login para la PWA cuando el usuario no está autenticado
+function PWALoginScreen() {
+  const loginUrl = `${window.location.origin}/api/auth/login`;
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
+      <div className="mb-8 flex flex-col items-center gap-3">
+        <div className="w-20 h-20 rounded-2xl bg-primary flex items-center justify-center shadow-lg">
+          <svg viewBox="0 0 40 40" fill="none" className="w-12 h-12">
+            <path d="M20 4L8 14v14l12 8 12-8V14L20 4z" fill="white" fillOpacity="0.15" stroke="white" strokeWidth="1.5"/>
+            <path d="M22 10l-8 12h7l-2 8 8-12h-7l2-8z" fill="white"/>
+          </svg>
+        </div>
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-foreground">EVGreen</h1>
+          <p className="text-sm text-muted-foreground mt-1">Red de carga inteligente para VE</p>
+        </div>
+      </div>
+      <div className="w-full max-w-sm bg-card rounded-2xl p-6 shadow-xl border border-border">
+        <h2 className="text-xl font-semibold text-card-foreground text-center mb-2">Bienvenido</h2>
+        <p className="text-muted-foreground text-center text-sm mb-6">
+          Inicia sesión para acceder a la red de carga, gestionar tu billetera y cargar tu vehículo.
+        </p>
+        <a
+          href={loginUrl}
+          className="flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground font-semibold py-3 px-6 rounded-xl text-base shadow-md active:scale-95 transition-transform"
+        >
+          <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" stroke="currentColor" strokeWidth="2">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Iniciar sesión
+        </a>
+      </div>
+      <p className="mt-8 text-xs text-muted-foreground text-center">
+        Al iniciar sesión aceptas nuestros{" "}
+        <a href="/landing" className="underline">Términos y Condiciones</a>
+      </p>
+    </div>
+  );
+}
+
 // Componente para redirigir según el rol
 function RoleBasedRedirect() {
   const { user, isAuthenticated, loading, refresh } = useAuth();
@@ -343,9 +386,8 @@ function RoleBasedRedirect() {
       }
       const targetRoute = getHomeRouteByRole(user.role);
       setLocation(targetRoute);
-    } else if (isPWAInstalled()) {
-      setLocation('/map');
     }
+    // Si no está autenticado: no redirigir - PWALoginScreen o Landing se encargan
   }, [isAuthenticated, user, loading, setLocation, activeSession, sessionLoading]);
 
   if (isStillLoading) {
@@ -548,11 +590,12 @@ function RoleBasedRedirect() {
     );
   }
 
-  if (!isAuthenticated && !isPWAInstalled()) {
-    return <Landing />;
+  // Usuario no autenticado en PWA instalada: mostrar pantalla de login nativa
+  if (!isAuthenticated && isPWAInstalled()) {
+    return <PWALoginScreen />;
   }
 
-  // Fallback para cuando no está autenticado pero sí "instalado"
+  // Usuario no autenticado en web: mostrar landing
   if (!isAuthenticated) {
     return <Landing />;
   }
@@ -584,6 +627,8 @@ function ProtectedRoute({
   }
 
   if (!isAuthenticated) {
+    // En PWA instalada, mostrar pantalla de login nativa
+    if (isPWAInstalled()) return <PWALoginScreen />;
     return <Landing />;
   }
 
@@ -630,6 +675,15 @@ function Router() {
         <Route path="/partners" component={Partners} />
         <Route path="/saas" component={SaaSLanding} />
         <Route path="/gracias-inversionistas" component={ThankYouInvestors} />
+        <Route path="/terms">
+          <Suspense fallback={<LazySpinner />}><Terms /></Suspense>
+        </Route>
+        <Route path="/privacy">
+          <Suspense fallback={<LazySpinner />}><Privacy /></Suspense>
+        </Route>
+        <Route path="/contact">
+          <Suspense fallback={<LazySpinner />}><Contact /></Suspense>
+        </Route>
         {/* Ruta para códigos QR - Redirige a StartCharge */}
         <Route path="/c/:code" component={QRRedirect} />
 
