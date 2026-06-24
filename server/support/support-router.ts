@@ -35,7 +35,7 @@ const techProcedure = protectedProcedure.use(({ ctx, next }) => {
 });
 
 // Resend for email notifications
-const resendApiKey = process.env.Resend || process.env.RESEND_API_KEY || "";
+const resendApiKey = process.env.Resend ?? "";
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
 // In-memory typing state (simple approach, works for single-server)
