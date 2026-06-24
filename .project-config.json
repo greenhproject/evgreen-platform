@@ -7,15 +7,16 @@
   ],
   "dev_command": "pnpm run dev",
   "env_vars": {
-    "DATABASE_URL": "mysql://3kTaiYRMPpnS3sR.17f9e41a6e58:804AB9cRWIAjX4WgRqI7@gateway02.us-east-1.prod.aws.tidbcloud.com:4000/UcUrociZeo4QVAHHN9vAuZ?ssl={\"rejectUnauthorized\":true}"
+    "DATABASE_URL": "mysql://3kTaiYRMPpnS3sR.17f9e41a6e58:804AB9cRWIAjX4WgRqI7@gateway02.us-east-1.prod.aws.tidbcloud.com:4000/UcUrociZeo4QVAHHN9vAuZ?ssl={\"rejectUnauthorized\":true}",
+    "DRIZZLE_DATABASE_URL": "mysql://3kTaiYRMPpnS3sR.17f9e41a6e58:804AB9cRWIAjX4WgRqI7@gateway02.us-east-1.prod.aws.tidbcloud.com:4000/UcUrociZeo4QVAHHN9vAuZ?ssl={\"rejectUnauthorized\":true}"
   },
   "experiments": null,
   "git_remote": {
     "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663169336317/UcUrociZeo4QVAHHN9vAuZ",
-    "access_key_id": "ASIAZV3A2ECZJ7WSCT6Y",
-    "secret_access_key": "gvJiUMtjKoat6ctDfXCF+49I4Pbw+uf8kkHTnjAZ",
-    "session_token": "IQoJb3JpZ2luX2VjEBoaCXVzLWVhc3QtMSJGMEQCIC0IDLZTIwZaPZdjS+HsJNRVG6Kncf5RA7Vk1Q1QQD63AiADFPdvpgm2v2eOc/eg0jac+Iil5tA0BeggYbFyG6UPZir+Awjj//////////8BEAQaDDY2NTM4NjA5ODg2NiIM0ZSQxVG6jhSNFPR0KtIDTsZ1m/dgxmQUED9GNwGt04mbHOtuYnn9Y3fB3BvebpQgiTYcS0PPZSFIddlSbmTuYWZohg4wtamkLLWohbwytZm92uB/YsLjtGvNuWLs6vZi44kdOboprl+ExAVSi3FNjQ4Z3RbpgC4YsfRZs3u5XexY3Uw7CTXst4J8CbaKCIwinHLGiKswOp2B+Ptn1g2h95wBc65oPvLyKjqpUmBsPIRO5DgiYMJ8WUUn9FvYWPatzRA1Y4F5lHRiqdmZ46BT6OF4pdz40W8nfPzHLfls5ZLcl2OR6ICI9Ol2Awtnrct9Jpad7kUdKLln7RkhrnACxJ4BujatHTYxgrXij2xVd0gopJH9aMmi+ekmjtmUVxxruJBCQzK0pLHA9Z43rEf8VEY8HZvhs3+TC5F7QsowfBIQnvobymhgK29pbAlaKo6fORUhfA3/Pukq422VIKwgfyw1Nt6q4WcESF9jQd5uHggMcNoTl2KpofTPm5AGsuQTR7bXoymoEXLIkHAhSPwXaC5r7gIa/sCtLhhROSi4Y1zKCH0YUrIfJJN84raBxNL2FkTDrKnCARi2g+WAV+xpJKBg0Rog2dE9LLUlL8ROHSuBsXwqQKuDkNWSjT4dFTDHljCngN3RBjqeAZ9KcVLC2xmGpM0nNrvLEO9+MEbx7yyNBc+k5q6NN9ZvTPO3sRdgKLebNZqgvDAwUnN37CztXnCqgGx6aVxihF8McnxizApfXTAAz7jYuWPouSssJzkWnBHuX3cA8uyapmdunuwHz25R9WbqLrjZbssQWIAyXPTGozt2RgQDXImz2uKkcQ3UbI3N9kBVR9AWJ+bf0SxDGb41Ror1CtsJ",
-    "expiration": "2026-06-21T13:36:39.000Z",
+    "access_key_id": "ASIAZV3A2ECZOBNO3NWE",
+    "secret_access_key": "hzwJ7rogLivvRidT0mJqW3NDLx66KT3MjCnexjyF",
+    "session_token": "IQoJb3JpZ2luX2VjEHgaCXVzLWVhc3QtMSJHMEUCIQC0FfsbRaz4JqaZXc78zAMFqex3ME3t0ihl5u3hGEk7EAIgeySzb/QtCShnQDfzDVn5AX3oMovvqT1QmA5ujpWlAFAq9QMIQBAEGgw2NjUzODYwOTg4NjYiDAqEOayzRLFugqnpdSrSA92dA0fA90kKn+xG941bV/VK0eu8bZyUVeSuQCddiGBg3CtBfrG7/2VYCjpyja8ljuOBfqagFkIMzeZnlM6TwMwwNSN/I80XcZ7p7+Mdn3uvGaeURXK+Oab0tk/CBdteGwjnH/y7pnjDn6ipcIbT+3aQXSy5BSgEYfzOviOR0DZa4gz5qYxfwd4/MK7SVFQ34yjPH+4smYiysiSoX0huOcNKiFQ20m0UE0d6brgAUW00R2TjNnV+fqubBfndFFuQDsm18O1CmIAqTCIgGgzvJET6IuK6oVyRNAvnQH1kjGB9E028wMZnMSGvkXv3vja1VH6ismkhfax6qb4FEU6b2VGlnU+lrGJqImNFXm5mB9mDFZ6VrULn2/d5NJ4Ckzci1/uDXtvqGrAuuR+pQqe9jBFggLqubnXA/6ArqLgC78tdt91iYOV2qtRU0sXXOSs72eR1rdAz7T3UKTxXG3ez2DcYNSY+etYZRezH4heV+tdz2bqNADdA6x/P/qwYTupkXXm1ElaoQk0wDhohBbGbXBzMpttAlZcgJlDy5P6zjd1Asv4WYFOnLBTMocGUEYYfpVnzxDiliWnxtXe63JtV6bE3ANelxuipHIVvu0BIxW/ncqYw68bx0QY6nQE7JX/CHAG47QA78rztTKKKnydbKtXQNcqT96AB3BDtzcWgGbMJ1/4Rp+xwTweqfJeNBxLiv6AEh7ChyHqIzjbu9/+a/wRgIX4Jf4tnxHCWKk9sFridDdSfHsD+1Zqd1G7dxCxfycAefN/OpG5O51ark4FWR9zyxPtAeJQf6sTt4WzchUk74A/UFotw7NZ+yqcKqC8XXNun/FTsC/9x",
+    "expiration": "2026-06-25T11:08:27.000Z",
     "backend": "GIT_BACKEND_S3"
   },
   "name": "green-ev-platform",
@@ -47,7 +48,7 @@
     "VITE_GOOGLE_MAPS_API_KEY": "AIzaSyDi5cTYMqP037-J6iud_K-WLwAgNTRilBg",
     "VITE_OAUTH_PORTAL_URL": "https://manus.im",
     "VITE_VAPID_PUBLIC_KEY": "BNdeUbRCy_Ecyn6JZJ22nv9Ktk6DkjYA1-pP-e-YZxPkl4EvuK4mxFFbILasnquQHJMRheFPd3J3uG8MPa-HrO4",
-    "token_github": "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"
+    "token_github": "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"
   },
   "template_id": "web-db-user",
   "test_command": "pnpm test"
