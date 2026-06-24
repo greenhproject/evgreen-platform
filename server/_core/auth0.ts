@@ -118,6 +118,11 @@ export function registerAuth0Routes(app: Express) {
 
   // Callback route - handles Auth0 response
   app.get("/api/auth/callback", async (req: Request, res: Response) => {
+    // Declared outside try so catch can include them in debug output.
+    let storedState: string | undefined;
+    let paramsState: string | undefined;
+    let isMobile = false;
+
     try {
       const client = await getAuth0Client();
       if (!client) {
@@ -129,43 +134,36 @@ export function registerAuth0Routes(app: Express) {
       const params = client.callbackParams(req);
 
       // The redirect_uri for token exchange must be IDENTICAL to what the login sent.
-      // Login now always uses the base URL (no query params), so we do the same here.
+      // Login always uses the base URL (no query params), so we do the same here.
       const redirectUri = `${origin}/api/auth/callback`;
 
-      // Get the state from cookie — it encodes the platform as a suffix: "csrfState|mobile"
-      const storedState = req.cookies?.auth0_state;
+      storedState = req.cookies?.auth0_state;
+      paramsState = params.state;
 
       // Detect isMobile solely from the state parameter.
       // The login handler always encodes "|mobile" in state for mobile flows.
       // Auth0 MUST return the state verbatim, so this is the most reliable signal.
-      const isMobile = storedState
+      isMobile = storedState
         ? storedState.endsWith("|mobile")
-        : Boolean(params.state?.endsWith("|mobile"));
+        : Boolean(paramsState?.endsWith("|mobile"));
 
-      console.log(`[Auth0 DEBUG] Callback recibido. storedState: ${storedState ?? "NO"}, paramsState: ${params.state ?? "NO"}, isMobile: ${isMobile}, redirectUri: ${redirectUri}`);
+      console.log(`[Auth0 DEBUG] Callback. storedState: ${storedState ?? "NO"}, paramsState: ${paramsState ?? "NO"}, isMobile: ${isMobile}, redirectUri: ${redirectUri}`);
 
-      // Use storedState for CSRF verification. If the cookie was lost (ITP), fall back to
-      // using params.state as the "expected" value so openid-client doesn't reject on state
-      // mismatch against undefined. Security note: when storedState is missing we can't do
-      // CSRF verification, but the deep-link target (evgreen://) is app-specific.
-      const expectedState = storedState ?? params.state;
+      const expectedState = storedState ?? paramsState;
       const tokenSet = await client.callback(redirectUri, params, {
         state: expectedState,
       });
 
-      // Clear the state cookie
       res.clearCookie("auth0_state", { path: "/" });
 
-      // Get user info from Auth0
       const userInfo = await client.userinfo(tokenSet.access_token!);
-      console.log(`[Auth0 DEBUG] UserInfo obtenido para: ${userInfo.email}`);
+      console.log(`[Auth0 DEBUG] UserInfo: ${userInfo.email}`);
 
       if (!userInfo.sub) {
         res.status(400).json({ error: "No user identifier from Auth0" });
         return;
       }
 
-      // ... (código intermedio de loginMethod y db)
       const openId = userInfo.sub;
       const email = userInfo.email || null;
       const name = userInfo.name || userInfo.nickname || null;
@@ -173,7 +171,6 @@ export function registerAuth0Routes(app: Express) {
 
       let loginMethod = "auth0";
       if (openId.startsWith("google-oauth2|")) loginMethod = "google";
-      // ... rest of logic ...
 
       await db.upsertUser({
         openId,
@@ -184,42 +181,55 @@ export function registerAuth0Routes(app: Express) {
         lastSignedIn: new Date(),
       });
 
-      // Create session token
       const sessionToken = await sdk.createSessionToken(openId, {
         name: name || "",
         expiresInMs: ONE_YEAR_MS,
       });
 
-      console.log(`[Auth0 DEBUG] Sesión creada. Redirigiendo a móvil: ${isMobile}`);
+      console.log(`[Auth0 DEBUG] Sesión creada. isMobile: ${isMobile}`);
 
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
       if (isMobile) {
         const finalUrl = `${ENV.mobileAppScheme}://home?token=${sessionToken}`;
-        console.log(`[Auth0 DEBUG] URL final de redirección: ${finalUrl}`);
-        // Serve HTML page with JS redirect instead of HTTP 302.
-        // SFSafariViewController does NOT fire application:openURL:options: for HTTP
-        // 302 redirects to custom URL schemes — only for JS-initiated navigations.
+        console.log(`[Auth0 DEBUG] Deep link: ${finalUrl.substring(0, 60)}...`);
+        // Show a page with an explicit link + JS auto-redirect.
+        // iOS may block automatic navigation to custom URL schemes from JavaScript
+        // (requires user gesture in some iOS versions). The <a> button ensures the
+        // user can always tap to complete the deep link if auto-redirect doesn't fire.
+        const safeUrl = finalUrl.replace(/"/g, '&quot;');
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.send(
-          `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
-          `<body><script>window.location.replace(${JSON.stringify(finalUrl)});</script>` +
-          `<p style="font-family:sans-serif;padding:20px">Abriendo EVGreen...</p></body></html>`
-        );
+        res.send(`<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,sans-serif;background:#052E16;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center}
+h2{font-size:22px;margin-bottom:8px}
+p{color:rgba(255,255,255,.7);font-size:15px;margin-bottom:32px}
+a.btn{display:inline-block;background:#22c55e;color:#fff;text-decoration:none;border-radius:12px;padding:16px 40px;font-size:17px;font-weight:600}
+</style>
+</head><body>
+<h2>&#10003; Autenticación exitosa</h2>
+<p>Si la app no abre automáticamente, toca el botón:</p>
+<a href="${safeUrl}" class="btn">Abrir EVGreen</a>
+<script>
+try{window.location.replace(${JSON.stringify(finalUrl)});}catch(e){}
+</script>
+</body></html>`);
       } else {
-        // Encode state info so we can see it in the URL bar if this branch fires
-        // unexpectedly for a mobile session (temporary debug aid).
         const st = (storedState ?? 'null').slice(-8);
-        const ps = (params.state ?? 'null').slice(-8);
+        const ps = (paramsState ?? 'null').slice(-8);
         res.redirect(302, `/?_m=0&_st=${encodeURIComponent(st)}&_ps=${encodeURIComponent(ps)}`);
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error("[Auth0] Callback failed:", error);
       const st = (storedState ?? 'null').slice(-8);
-      const ps = String((params as any)?.state ?? 'null').slice(-8);
-      res.redirect(`/?auth_error=${encodeURIComponent(msg.substring(0, 150))}&_st=${encodeURIComponent(st)}&_ps=${encodeURIComponent(ps)}`);
+      const ps = (paramsState ?? 'null').slice(-8);
+      res.redirect(`/?auth_error=${encodeURIComponent(msg.substring(0, 150))}&_m=${isMobile ? 1 : 0}&_st=${encodeURIComponent(st)}&_ps=${encodeURIComponent(ps)}`);
     }
   });
 
