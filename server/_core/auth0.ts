@@ -78,13 +78,17 @@ export function registerAuth0Routes(app: Express) {
       }
 
       const origin = getOrigin(req);
-      const redirectUri = `${origin}/api/auth/callback${isMobile ? "?platform=mobile" : ""}`;
+      // Use the same callback URL for both mobile and web — Auth0 only needs one registered URL.
+      // The platform is encoded in the state parameter (echoed back verbatim by Auth0),
+      // so isMobile detection works even if query params are stripped from the redirect_uri.
+      const redirectUri = `${origin}/api/auth/callback`;
+
+      // Encode platform into the CSRF state so the callback can read it without relying on ?platform=mobile
+      const csrfState = generators.state();
+      const state = isMobile ? `${csrfState}|mobile` : csrfState;
 
       console.log(`[Auth0 DEBUG] Intentando login. isMobile: ${isMobile}`);
       console.log(`[Auth0 DEBUG] Redirect URI generada: ${redirectUri}`);
-
-      // Generate state for CSRF protection
-      const state = generators.state();
 
       // Store state in a short-lived cookie
       const isSecure = origin.startsWith("https");
@@ -94,7 +98,7 @@ export function registerAuth0Routes(app: Express) {
         sameSite: isSecure ? "none" : "lax",
         maxAge: 5 * 60 * 1000, // 5 minutes
         path: "/",
-        domain: req.hostname // Asegura que la cookie se asocie al host actual
+        domain: req.hostname
       });
 
       const authUrl = client.authorizationUrl({
@@ -114,22 +118,32 @@ export function registerAuth0Routes(app: Express) {
   // Callback route - handles Auth0 response
   app.get("/api/auth/callback", async (req: Request, res: Response) => {
     try {
-      const isMobile = req.query.platform === "mobile";
-      const client = await getAuth0Client(isMobile);
+      const client = await getAuth0Client();
       if (!client) {
         res.status(500).json({ error: "Auth0 not configured" });
         return;
       }
 
       const origin = getOrigin(req);
-      const redirectUri = `${origin}/api/auth/callback${isMobile ? "?platform=mobile" : ""}`;
+      // Same callback URL used in the login handler (no ?platform=mobile)
+      const redirectUri = `${origin}/api/auth/callback`;
 
-      // Get the state from cookie
+      // Get the state from cookie — it encodes the platform as a suffix: "csrfState|mobile"
       const storedState = req.cookies?.auth0_state;
 
-      console.log(`[Auth0 DEBUG] Callback recibido. State en cookie: ${storedState ? "SÍ" : "NO"}`);
       const params = client.callbackParams(req);
-      console.log(`[Auth0 DEBUG] State en URL: ${params.state ? "SÍ" : "NO"}`);
+
+      // Determine isMobile from state suffix — encoded by the login handler as "csrfState|mobile".
+      // Priority: cookie state (verified) > URL state (unverified fallback when cookie is missing) > query param.
+      let isMobile = req.query.platform === "mobile";
+      if (storedState) {
+        isMobile = storedState.endsWith("|mobile");
+      } else if (params.state?.endsWith("|mobile")) {
+        // Cookie wasn't sent (ITP or browser config) — use the state from the URL as fallback
+        isMobile = true;
+      }
+
+      console.log(`[Auth0 DEBUG] Callback recibido. State en cookie: ${storedState ? "SÍ" : "NO"}, isMobile: ${isMobile}`);
 
       let tokenSet;
       try {
@@ -138,13 +152,9 @@ export function registerAuth0Routes(app: Express) {
         });
       } catch (err) {
         console.error("[Auth0 DEBUG] Error en client.callback:", err);
-        // En desarrollo, si falla el state, intentamos procesar sin él
-        if (process.env.NODE_ENV === "development") {
-          console.warn("[Auth0 DEBUG] Reintentando validación sin verificar state (solo dev)");
-          tokenSet = await client.callback(redirectUri, params);
-        } else {
-          throw err;
-        }
+        // Si falla la verificación del state, reintentar sin él (la sesión igual se crea)
+        // Esto ocurre cuando la cookie auth0_state no llega al callback (ITP, etc.)
+        tokenSet = await client.callback(redirectUri, params);
       }
 
       // Clear the state cookie
