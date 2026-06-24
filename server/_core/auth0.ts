@@ -198,14 +198,28 @@ export function registerAuth0Routes(app: Express) {
       if (isMobile) {
         const finalUrl = `${ENV.mobileAppScheme}://home?token=${sessionToken}`;
         console.log(`[Auth0 DEBUG] URL final de redirección: ${finalUrl}`);
-        res.redirect(302, finalUrl);
+        // Serve HTML page with JS redirect instead of HTTP 302.
+        // SFSafariViewController does NOT fire application:openURL:options: for HTTP
+        // 302 redirects to custom URL schemes — only for JS-initiated navigations.
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(
+          `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
+          `<body><script>window.location.replace(${JSON.stringify(finalUrl)});</script>` +
+          `<p style="font-family:sans-serif;padding:20px">Abriendo EVGreen...</p></body></html>`
+        );
       } else {
-        res.redirect(302, "/");
+        // Encode state info so we can see it in the URL bar if this branch fires
+        // unexpectedly for a mobile session (temporary debug aid).
+        const st = (storedState ?? 'null').slice(-8);
+        const ps = (params.state ?? 'null').slice(-8);
+        res.redirect(302, `/?_m=0&_st=${encodeURIComponent(st)}&_ps=${encodeURIComponent(ps)}`);
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error("[Auth0] Callback failed:", error);
-      res.redirect(`/?auth_error=${encodeURIComponent(msg.substring(0, 200))}`);
+      const st = (storedState ?? 'null').slice(-8);
+      const ps = String((params as any)?.state ?? 'null').slice(-8);
+      res.redirect(`/?auth_error=${encodeURIComponent(msg.substring(0, 150))}&_st=${encodeURIComponent(st)}&_ps=${encodeURIComponent(ps)}`);
     }
   });
 
