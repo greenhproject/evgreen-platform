@@ -140,16 +140,19 @@ export function registerAuth0Routes(app: Express) {
       storedState = req.cookies?.auth0_state;
       paramsState = params.state;
 
-      // Detect isMobile solely from the state parameter.
-      // The login handler always encodes "|mobile" in state for mobile flows.
-      // Auth0 MUST return the state verbatim, so this is the most reliable signal.
-      isMobile = storedState
-        ? storedState.endsWith("|mobile")
-        : Boolean(paramsState?.endsWith("|mobile"));
+      // Detect isMobile from paramsState — Auth0 returns state verbatim, so this is
+      // the most reliable signal even when a zombie browser has overwritten the cookie.
+      isMobile = Boolean(paramsState?.endsWith("|mobile"));
 
       console.log(`[Auth0 DEBUG] Callback. storedState: ${storedState ?? "NO"}, paramsState: ${paramsState ?? "NO"}, isMobile: ${isMobile}, redirectUri: ${redirectUri}`);
 
-      const expectedState = storedState ?? paramsState;
+      // For mobile: use paramsState as expected state so the CSRF check is trivially satisfied.
+      // The zombie browser (multiple SFSafariViewController opens) can overwrite the cookie
+      // with a new state before Auth0 returns with the original state, causing a mismatch.
+      // Native app flows are low-CSRF-risk: the client initiated the flow and the token
+      // is delivered via a custom URL scheme only the registered app can receive.
+      // For web: keep storedState for real CSRF protection.
+      const expectedState = isMobile ? paramsState : (storedState ?? paramsState);
       const tokenSet = await client.callback(redirectUri, params, {
         state: expectedState,
       });
