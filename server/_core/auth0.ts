@@ -125,17 +125,14 @@ export function registerAuth0Routes(app: Express) {
       const origin = getOrigin(req);
       const params = client.callbackParams(req);
 
-      // Reconstruct redirect_uri exactly as the login handler sent it — based solely on whether
-      // ?platform=mobile appears in the callback URL (Auth0 echoes the registered URL exactly).
-      // Do NOT use params.state here: that would mismatch if login and callback run different code versions.
-      const hasPlatformParam = req.query.platform === "mobile";
-      const redirectUri = `${origin}/api/auth/callback${hasPlatformParam ? "?platform=mobile" : ""}`;
-
       // Get the state from cookie — it encodes the platform as a suffix: "csrfState|mobile"
       const storedState = req.cookies?.auth0_state;
 
-      // Determine isMobile from multiple sources (cookie state > URL state > query param).
-      // State suffix is more reliable than query param alone (survives ITP cookie loss).
+      // Detect isMobile from state first (most reliable), then fall back to query param.
+      // The login handler always encodes "|mobile" in state when isMobile=true, so the
+      // state tells us exactly what redirect_uri the login sent — even if Auth0 strips
+      // the ?platform=mobile query param from the callback URL.
+      const hasPlatformParam = req.query.platform === "mobile";
       let isMobile = hasPlatformParam;
       if (storedState) {
         isMobile = storedState.endsWith("|mobile");
@@ -143,7 +140,12 @@ export function registerAuth0Routes(app: Express) {
         isMobile = true;
       }
 
-      console.log(`[Auth0 DEBUG] Callback recibido. State en cookie: ${storedState ? "SÍ" : "NO"}, isMobile: ${isMobile}`);
+      // Reconstruct redirect_uri using isMobile (from state), NOT just hasPlatformParam.
+      // The login sent ?platform=mobile when isMobile=true; the token exchange requires
+      // the exact same redirect_uri — so we derive it from isMobile, not from the callback URL.
+      const redirectUri = `${origin}/api/auth/callback${isMobile ? "?platform=mobile" : ""}`;
+
+      console.log(`[Auth0 DEBUG] Callback recibido. hasPlatformParam: ${hasPlatformParam}, storedState: ${storedState ? "SÍ" : "NO"}, isMobile: ${isMobile}, redirectUri: ${redirectUri}`);
 
       let tokenSet;
       try {
