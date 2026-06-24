@@ -27,7 +27,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Info,
-  Building2,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -46,11 +45,6 @@ export default function UserProfile() {
   });
 
   const isSubscribed = subscription?.isActive && subscription?.tier !== "FREE";
-
-  // Verificar si el usuario pertenece a una organización SaaS
-  const { data: myOrg } = (trpc.organizations as any).getMyOrg.useQuery(undefined, {
-    staleTime: 60 * 1000,
-  });
   const planName = subscription?.tier === "PREMIUM" ? "Plan Premium" : subscription?.tier === "BASIC" ? "Plan Básico" : "Plan Gratuito";
   const planColor = subscription?.tier === "PREMIUM" ? "bg-yellow-500/10 text-yellow-500" : subscription?.tier === "BASIC" ? "bg-blue-500/10 text-blue-500" : "bg-primary/10 text-primary";
 
@@ -92,7 +86,7 @@ export default function UserProfile() {
       title: "Soporte",
       items: [
         { icon: HelpCircle, label: "Centro de ayuda", path: "/support" },
-        { icon: FileText, label: "Términos y condiciones", path: "/support" },
+        { icon: FileText, label: "Términos y condiciones", path: "/terms" },
       ],
     },
   ];
@@ -122,19 +116,6 @@ export default function UserProfile() {
                 </Badge>
               </div>
             </div>
-            {/* Botón Portal Org SaaS (solo si el usuario pertenece a una org) */}
-            {myOrg && (
-              <Button
-                className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white"
-                onClick={() => setLocation("/org")}
-              >
-                <Building2 className="w-4 h-4 mr-2" />
-                Portal de {myOrg.name}
-                {myOrg.myRole === "admin" && (
-                  <Badge className="ml-2 bg-white/20 text-white text-xs border-0">Admin</Badge>
-                )}
-              </Button>
-            )}
             {isSubscribed ? (
               <Button
                 variant="outline"

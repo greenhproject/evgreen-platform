@@ -3,20 +3,24 @@
 .pnpm-store/
 
 # Build outputs
-dist/
-build/
+**/dist/
+**/build/
+**/bin/
+**/obj/
 *.dist
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Android specific
+android/.gradle/
+android/local.properties
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+*.keystore
+!debug.keystore
 
 # IDE and editor files
 .vscode/
 .idea/
+*.iml
 *.swp
 *.swo
 *~
@@ -115,6 +119,11 @@ run-*.mjs
 .manus/
 .manus/
 .manus/
+
+# Environment variables
+.env
+.env.*
+!.env.example
 .manus/
 .manus/
 .manus/

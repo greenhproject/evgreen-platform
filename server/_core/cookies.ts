@@ -26,12 +26,10 @@ export function getSessionCookieOptions(
 ): Pick<CookieOptions, "domain" | "httpOnly" | "path" | "sameSite" | "secure"> {
   const isSecure = isSecureRequest(req);
 
-  // SEGURIDAD: En producción (HTTPS), usar sameSite: "lax" para mejor protección CSRF
-  // Solo usar "none" en desarrollo local (HTTP) donde es necesario para cross-origin
   return {
     httpOnly: true,
     path: "/",
-    sameSite: isSecure ? "lax" : "none" as const,
+    sameSite: "lax" as const,
     secure: isSecure,
   };
 }
