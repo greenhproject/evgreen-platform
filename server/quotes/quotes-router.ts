@@ -566,6 +566,99 @@ export const quotesRouter = router({
       return { quote, items, settings };
     }),
 
+  /** Generar HTML de cotización para descarga como PDF (acceso público por token) */
+  getPublicPdf: publicProcedure
+    .input(z.object({ token: z.string().min(10) }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDatabase();
+      const [quote] = await db.select().from(quotes).where(eq(quotes.publicToken, input.token));
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Cotización no encontrada" });
+
+      const rawItems = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, quote.id));
+      const [settings] = await db.select().from(quoteSettings).limit(1);
+      if (!settings) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Configuración no disponible" });
+
+      // Enriquecer items con description y features del catálogo
+      const catalogIds = Array.from(new Set(rawItems.map(i => i.catalogItemId)));
+      const catalogMap: Record<number, { description: string | null; features: string[] | null; warrantyYears: number | null }> = {};
+      if (catalogIds.length > 0) {
+        const catalogRows = await db.select({
+          id: chargersCatalog.id,
+          description: chargersCatalog.description,
+          features: chargersCatalog.features,
+          warrantyYears: chargersCatalog.warrantyYears,
+        }).from(chargersCatalog).where(
+          sql`${chargersCatalog.id} IN (${sql.join(catalogIds.map(id => sql`${id}`), sql`, `)})`
+        );
+        for (const row of catalogRows) {
+          catalogMap[row.id] = { description: row.description, features: row.features as string[] | null, warrantyYears: row.warrantyYears };
+        }
+      }
+
+      const { generateQuoteHTML } = await import("./quote-pdf");
+      const baseUrl = ctx.req?.headers?.origin || "https://evgreen.lat";
+      const htmlContent = await generateQuoteHTML({
+        quoteNumber: quote.quoteNumber,
+        createdAt: quote.createdAt,
+        expiresAt: quote.expiresAt,
+        publicUrl: `${baseUrl}/cotizacion/${quote.publicToken}`,
+        clientName: quote.clientName,
+        clientEmail: quote.clientEmail,
+        clientPhone: quote.clientPhone,
+        clientCompany: quote.clientCompany,
+        clientCity: quote.clientCity,
+        clientNotes: quote.clientNotes,
+        advisorName: quote.advisorName,
+        subtotal: quote.subtotal,
+        discount: quote.discount || 0,
+        total: quote.total,
+        items: rawItems.map((item: any) => ({
+          productName: item.productName,
+          productPowerKw: item.productPowerKw,
+          productChargeType: item.productChargeType,
+          productConnector: item.productConnector,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          lineTotal: item.lineTotal,
+          includesTransformer: item.includesTransformer || false,
+          cableMetersIncluded: item.cableMetersIncluded || 10,
+          productImageUrl: item.productImageUrl || null,
+          productDescription: catalogMap[item.catalogItemId]?.description ?? null,
+          productFeatures: catalogMap[item.catalogItemId]?.features ?? null,
+          warrantyYears: catalogMap[item.catalogItemId]?.warrantyYears ?? 2,
+        })),
+        settings: {
+          companyName: settings.companyName || "EVGreen",
+          companyNit: settings.companyNit || "",
+          companyPhone: settings.companyPhone || "",
+          companyEmail: settings.companyEmail || "",
+          companyWebsite: settings.companyWebsite || "",
+          evgreenFeePercent: settings.evgreenFeePercent,
+          ownerSharePercent: settings.ownerSharePercent,
+          headerMessage: settings.headerMessage || "",
+          footerMessage: settings.footerMessage || "",
+          termsAndConditions: settings.termsAndConditions || "",
+          exclusions: settings.exclusions || "",
+          benefitsDescription: settings.benefitsDescription || "",
+        },
+        financialModel: {
+          evgreenSharePercent: parseFloat(quote.evgreenSharePercent || "0") || settings.evgreenFeePercent,
+          investorSharePercent: parseFloat(quote.investorSharePercent || "0") || settings.ownerSharePercent,
+          hostSharePercent: parseFloat(quote.hostSharePercent || "0") || 0,
+        },
+        projection: {
+          show: quote.showProjection ?? true,
+          energyCostPerKwh: quote.projectionEnergyCostPerKwh || 700,
+          salePricePerKwh: quote.projectionSalePricePerKwh || 1800,
+          dailyHours: parseFloat(quote.projectionDailyHours || "4.0"),
+          scenario: quote.projectionScenario || "realistic",
+          totalKw: rawItems.reduce((acc: number, item: any) => acc + (parseFloat(item.productPowerKw) || 0) * item.quantity, 0),
+        },
+      });
+
+      return { htmlContent, filename: `Cotizacion-${quote.quoteNumber}.html` };
+    }),
+
   /** Marcar cotización como enviada */
   markSent: advisorProcedure
     .input(z.object({ id: z.number() }))

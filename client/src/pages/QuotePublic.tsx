@@ -400,15 +400,32 @@ export default function QuotePublic() {
     benefits = settings?.benefitsDescription ? JSON.parse(settings.benefitsDescription) : [];
   } catch { benefits = []; }
 
+  const downloadPdf = trpc.quotes.getPublicPdf.useQuery(
+    { token },
+    { enabled: false }
+  );
+
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      // Disparar impresión del navegador (Guardar como PDF)
-      window.print();
+      const result = await downloadPdf.refetch();
+      if (result.data?.htmlContent) {
+        const blob = new Blob([result.data.htmlContent], { type: 'text/html; charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const win = window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        if (!win) {
+          // Fallback si el popup fue bloqueado: descarga directa
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = result.data.filename || `Cotizacion-${quote.quoteNumber}.html`;
+          a.click();
+        }
+      }
     } catch (e) {
-      console.error('Error al imprimir:', e);
+      console.error('Error al generar PDF:', e);
     } finally {
-      setTimeout(() => setDownloading(false), 1000);
+      setTimeout(() => setDownloading(false), 2000);
     }
   };
 

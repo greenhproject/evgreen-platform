@@ -29,6 +29,9 @@ interface QuotePDFData {
     includesTransformer: boolean;
     cableMetersIncluded: number;
     productImageUrl?: string | null;
+    productDescription?: string | null;
+    productFeatures?: string[] | null;
+    warrantyYears?: number | null;
   }>;
   settings: {
     companyName: string;
@@ -136,6 +139,7 @@ export async function generateQuoteHTML(data: QuotePDFData): Promise<string> {
           <div class="features">
             ${item.includesTransformer ? `<span class="feature">✓ Incluye transformador</span>` : ''}
             <span class="feature">✓ Hasta ${item.cableMetersIncluded}m de cableado</span>
+            ${(item.warrantyYears ?? 2) > 0 ? `<span class="feature">✓ Garantía ${item.warrantyYears ?? 2} año${(item.warrantyYears ?? 2) !== 1 ? 's' : ''}</span>` : ''}
           </div>
         </div>
         <div class="product-pricing">
@@ -143,6 +147,11 @@ export async function generateQuoteHTML(data: QuotePDFData): Promise<string> {
           <span class="price">${formatCOP(item.lineTotal)}</span>
         </div>
       </div>
+      ${item.productDescription ? `<p class="product-description">${item.productDescription}</p>` : ''}
+      ${item.productFeatures && item.productFeatures.length > 0 ? `
+      <div class="product-features-grid">
+        ${(item.productFeatures as string[]).map((f: string) => `<div class="product-feature-item"><span class="feature-check">✓</span><span>${f}</span></div>`).join('')}
+      </div>` : ''}
     </div>
   `).join("");
 
@@ -418,6 +427,38 @@ export async function generateQuoteHTML(data: QuotePDFData): Promise<string> {
       font-size: 18px;
       font-weight: 800;
       color: #059669;
+    }
+
+    .product-description {
+      font-size: 12px;
+      color: #475569;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #e2e8f0;
+      line-height: 1.5;
+    }
+
+    .product-features-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 16px;
+      margin-top: 8px;
+    }
+
+    .product-feature-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 5px;
+      font-size: 11px;
+      color: #334155;
+      line-height: 1.4;
+    }
+
+    .product-feature-item .feature-check {
+      color: #059669;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
     }
 
     /* === TOTALS === */
