@@ -971,11 +971,27 @@ export const quotesRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
-      const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, input.id));
+            const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, input.id));
       const [settings] = await db.select().from(quoteSettings).limit(1);
-
       if (!settings) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Configure primero los ajustes de cotización." });
+      }
+
+      // Enriquecer items con description, features y warrantyYears del catálogo
+      const catalogIds = Array.from(new Set(items.map((i: any) => i.catalogItemId)));
+      const catalogMap: Record<number, { description: string | null; features: string[] | null; warrantyYears: number | null }> = {};
+      if (catalogIds.length > 0) {
+        const catalogRows = await db.select({
+          id: chargersCatalog.id,
+          description: chargersCatalog.description,
+          features: chargersCatalog.features,
+          warrantyYears: chargersCatalog.warrantyYears,
+        }).from(chargersCatalog).where(
+          sql`${chargersCatalog.id} IN (${sql.join(catalogIds.map((id: any) => sql`${id}`), sql`, `)})`
+        );
+        for (const row of catalogRows) {
+          catalogMap[row.id] = { description: row.description, features: row.features as string[] | null, warrantyYears: row.warrantyYears };
+        }
       }
 
       // Generar HTML de la cotización
@@ -1007,6 +1023,9 @@ export const quotesRouter = router({
           includesTransformer: item.includesTransformer || false,
           cableMetersIncluded: item.cableMetersIncluded || 10,
           productImageUrl: item.productImageUrl || null,
+          productDescription: catalogMap[item.catalogItemId]?.description ?? null,
+          productFeatures: catalogMap[item.catalogItemId]?.features ?? null,
+          warrantyYears: catalogMap[item.catalogItemId]?.warrantyYears ?? 2,
         })),
         settings: {
           companyName: settings.companyName || "EVGreen",
