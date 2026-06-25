@@ -364,6 +364,12 @@ export default function QuotePublic() {
     { enabled: !!token }
   );
 
+  // MUST be called before any conditional returns (Rules of Hooks)
+  const downloadPdf = trpc.quotes.getPublicPdf.useQuery(
+    { token },
+    { enabled: false }
+  );
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0a0f1a]">
@@ -399,11 +405,6 @@ export default function QuotePublic() {
   try {
     benefits = settings?.benefitsDescription ? JSON.parse(settings.benefitsDescription) : [];
   } catch { benefits = []; }
-
-  const downloadPdf = trpc.quotes.getPublicPdf.useQuery(
-    { token },
-    { enabled: false }
-  );
 
   const handleDownload = async () => {
     setDownloading(true);
