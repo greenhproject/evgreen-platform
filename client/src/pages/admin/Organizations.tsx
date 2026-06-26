@@ -63,8 +63,8 @@ export default function Organizations() {
   // Queries
   const { data: orgs, isLoading, refetch } = (trpc.organizations as any).list.useQuery({
     search: search || undefined,
-    plan: (filterPlan as any) || undefined,
-    status: (filterStatus as any) || undefined,
+    plan: (filterPlan && filterPlan !== 'all') ? (filterPlan as any) : undefined,
+    status: (filterStatus && filterStatus !== 'all') ? (filterStatus as any) : undefined,
   });
   const { data: stats } = (trpc.organizations as any).getStats.useQuery();
   const { data: pricingDefaults } = (trpc.organizations as any).getPricingDefaults.useQuery();
