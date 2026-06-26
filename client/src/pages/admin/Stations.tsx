@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useCallback } from "react";
+import { useState, useEffect, memo, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
@@ -42,7 +42,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign, Clock, Cpu, ImagePlus, Loader2 } from "lucide-react";
+import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign, Clock, Cpu, ImagePlus, Loader2, Map, List } from "lucide-react";
+import { MapView } from "@/components/Map";
 import { toast } from "sonner";
 import { StationQRCode } from "@/components/StationQRCode";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -136,6 +137,7 @@ const initialFormData: StationFormData = {
 export default function AdminStations() {
   const [, navigate] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "map">("list");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingStation, setEditingStation] = useState<any>(null);
@@ -1542,8 +1544,28 @@ export default function AdminStations() {
             Gestiona todas las estaciones de la red Green EV
           </p>
         </div>
-        
-        {/* Diálogo de Crear */}
+        <div className="flex items-center gap-3">
+          {/* Toggle Lista / Mapa */}
+          <div className="flex gap-1 bg-muted rounded-lg p-1">
+            <button
+              onClick={() => setViewMode("list")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                viewMode === "list" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <List className="h-3.5 w-3.5" /> Lista
+            </button>
+            <button
+              onClick={() => setViewMode("map")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                viewMode === "map" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Map className="h-3.5 w-3.5" /> Mapa
+            </button>
+          </div>
+
+          {/* Diálogo de Crear */}
         <Dialog open={showCreateDialog} onOpenChange={(open) => {
           setShowCreateDialog(open);
           if (!open) resetForm();
@@ -1610,6 +1632,7 @@ export default function AdminStations() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Estadísticas - Usando estado real de conexión OCPP */}
@@ -1666,22 +1689,48 @@ export default function AdminStations() {
         </Card>
       </div>
 
-      {/* Filtros */}
-      <Card className="p-4">
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por nombre, dirección o ciudad..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+      {/* Filtros - solo en vista lista */}
+      {viewMode === "list" && (
+        <Card className="p-4">
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nombre, dirección o ciudad..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      )}
 
-      {/* Tabla de estaciones */}
+      {/* Vista de Mapa */}
+      {viewMode === "map" && (
+        <Card className="border-border/50 overflow-hidden">
+          <div className="h-[560px] relative">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full text-muted-foreground">Cargando mapa...</div>
+            ) : !stations || stations.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
+                <MapPin className="h-12 w-12 opacity-30" />
+                <p>No hay estaciones para mostrar en el mapa</p>
+              </div>
+            ) : (
+              <AdminStationsMap
+                stations={stations}
+                ocppConnections={ocppConnections || []}
+                onEdit={loadStationForEdit}
+                onView={(station: any) => { setViewingStation(station); setShowDetailsDialog(true); }}
+              />
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Tabla de estaciones - solo en vista lista */}
+      {viewMode === "list" && (
       <Card>
         <Table>
           <TableHeader>
@@ -1791,6 +1840,7 @@ export default function AdminStations() {
           </TableBody>
         </Table>
       </Card>
+      )}
 
       {/* Diálogo de confirmación de eliminación */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
@@ -2137,5 +2187,127 @@ export default function AdminStations() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ─── Admin Stations Map Component ─────────────────────────────────────────────
+function AdminStationsMap({ stations, ocppConnections, onEdit, onView }: {
+  stations: any[];
+  ocppConnections: any[];
+  onEdit: (station: any) => void;
+  onView: (station: any) => void;
+}) {
+  const markersRef = useRef<any[]>([]);
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+
+  const getOCPPInfo = (station: any) => {
+    const ocppId = station.ocppIdentity || station.id?.toString();
+    return ocppConnections.find(
+      (conn: any) => conn.ocppIdentity === ocppId || conn.stationId === station.id
+    );
+  };
+
+  const handleMapReady = (map: google.maps.Map) => {
+    const bounds = new google.maps.LatLngBounds();
+    let hasValidCoords = false;
+
+    // Limpiar marcadores anteriores
+    markersRef.current.forEach(m => m.setMap(null));
+    markersRef.current = [];
+    if (infoWindowRef.current) infoWindowRef.current.close();
+    infoWindowRef.current = new google.maps.InfoWindow();
+
+    stations.forEach((station: any) => {
+      const lat = parseFloat(station.latitude);
+      const lng = parseFloat(station.longitude);
+      if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
+
+      hasValidCoords = true;
+      const position = { lat, lng };
+      bounds.extend(position);
+
+      const connInfo = getOCPPInfo(station);
+      const isOnline = !!connInfo || station.isOnline;
+      const isActive = station.isActive;
+      const statusColor = !isActive ? "#6b7280" : isOnline ? "#22c55e" : "#ef4444";
+
+      const svgMarker = {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
+            <path d="M18 0C8.06 0 0 8.06 0 18c0 13.5 18 26 18 26S36 31.5 36 18C36 8.06 27.94 0 18 0z" fill="${statusColor}"/>
+            <circle cx="18" cy="18" r="11" fill="white" fill-opacity="0.2"/>
+            <path d="M20 8l-7 11h6l-3 9 8-13h-6l2-7z" fill="white"/>
+          </svg>`
+        )}`,
+        scaledSize: new google.maps.Size(36, 44),
+        anchor: new google.maps.Point(18, 44),
+      };
+
+      const marker = new google.maps.Marker({
+        position,
+        map,
+        title: station.name,
+        icon: svgMarker,
+      });
+
+      marker.addListener("click", () => {
+        map.panTo(position);
+
+        const statusLabel = !isActive ? "Inactiva" : isOnline ? "Conectada" : "Desconectada";
+        const statusDot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusColor};margin-right:6px;"></span>`;
+        const connectorCount = station.evses?.length || 0;
+
+        const content = `
+          <div style="font-family:system-ui;min-width:240px;padding:4px 2px;">
+            <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${station.name}</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:4px;">📍 ${station.address || ""}, ${station.city || ""}</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:4px;">⚡ ${connectorCount} conector${connectorCount !== 1 ? "es" : ""}</div>
+            <div style="font-size:12px;margin-bottom:10px;">${statusDot}${statusLabel}</div>
+            <div style="display:flex;gap:8px;">
+              <button id="admin-view-btn-${station.id}" style="flex:1;background:#1e293b;color:white;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;">
+                👁 Ver detalles
+              </button>
+              <button id="admin-edit-btn-${station.id}" style="flex:1;background:#16a34a;color:white;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;">
+                ✏️ Editar
+              </button>
+            </div>
+          </div>`;
+
+        infoWindowRef.current!.setContent(content);
+        infoWindowRef.current!.open(map, marker);
+
+        setTimeout(() => {
+          const viewBtn = document.getElementById(`admin-view-btn-${station.id}`);
+          const editBtn = document.getElementById(`admin-edit-btn-${station.id}`);
+          if (viewBtn) viewBtn.addEventListener("click", () => {
+            infoWindowRef.current!.close();
+            onView(station);
+          });
+          if (editBtn) editBtn.addEventListener("click", () => {
+            infoWindowRef.current!.close();
+            onEdit(station);
+          });
+        }, 100);
+      });
+
+      markersRef.current.push(marker);
+    });
+
+    if (hasValidCoords) {
+      map.fitBounds(bounds);
+      if (stations.length === 1) map.setZoom(15);
+    } else {
+      map.setCenter({ lat: 4.711, lng: -74.0721 });
+      map.setZoom(6);
+    }
+  };
+
+  return (
+    <MapView
+      onMapReady={handleMapReady}
+      className="w-full h-full"
+      initialCenter={{ lat: 4.711, lng: -74.0721 }}
+      initialZoom={6}
+    />
   );
 }
