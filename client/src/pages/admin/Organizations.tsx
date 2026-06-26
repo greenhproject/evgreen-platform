@@ -472,8 +472,8 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
   };
 
   return (
-    <Sheet open={true} onOpenChange={onClose}>
-      <SheetContent side="right" className="w-full sm:w-full lg:w-[90vw] xl:w-[1100px] p-0 flex flex-col border-l border-border/50 bg-background">
+      <Sheet open={true} onOpenChange={onClose}>
+      <SheetContent side="right" className="!max-w-none w-full sm:w-[95vw] lg:w-[88vw] xl:w-[1100px] p-0 flex flex-col border-l border-border/50 bg-background">
         {/* ── HEADER ── */}
         <SheetHeader className="px-6 py-4 border-b border-border/40 shrink-0">
           <div className="flex items-start justify-between gap-4">
