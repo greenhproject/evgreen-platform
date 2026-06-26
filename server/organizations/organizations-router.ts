@@ -795,7 +795,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           FROM transactions t
           INNER JOIN charging_stations cs ON t.stationId = cs.id
           WHERE cs.organization_id = ${membership.organizationId}
-            AND t.status = 'COMPLETED'
+            AND t.transaction_status = 'COMPLETED'
             ${dateFilter}
         `)) as any;
 
@@ -810,7 +810,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           FROM transactions t
           INNER JOIN charging_stations cs ON t.stationId = cs.id
           WHERE cs.organization_id = ${membership.organizationId}
-            AND t.status = 'COMPLETED'
+            AND t.transaction_status = 'COMPLETED'
             AND t.startTime >= DATE_SUB(NOW(), INTERVAL 7 DAY)
           GROUP BY DATE(t.startTime)
           ORDER BY day ASC
@@ -987,7 +987,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           FROM transactions t
           INNER JOIN charging_stations cs ON t.stationId = cs.id
           WHERE cs.organization_id = ${input.organizationId}
-            AND t.status = 'COMPLETED' AND t.createdAt >= ${since}
+            AND t.transaction_status = 'COMPLETED' AND t.createdAt >= ${since}
         `) as any;
         const row = Array.isArray(result) ? result[0] : result;
         return {
@@ -1025,7 +1025,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         FROM transactions t
         INNER JOIN charging_stations cs ON t.stationId = cs.id
         WHERE cs.organization_id = ${membership.organizationId}
-          AND t.status = 'COMPLETED' AND t.createdAt >= ${since30d}
+          AND t.transaction_status = 'COMPLETED' AND t.createdAt >= ${since30d}
       `) as any;
       const feeRow = Array.isArray(feeResult) ? feeResult[0] : feeResult;
       return {
@@ -1211,23 +1211,24 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           .where(eq(chargingStations.organizationId, membership.organizationId));
         if (!stationIds.length) return { transactions: [], total: 0, page: input.page };
         const ids = stationIds.map((s: any) => s.id);
-        let whereClause = sql`cs.station_id IN (${sql.join(ids.map((id: number) => sql`${id}`), sql`, `)})`;
-        if (cutoff) whereClause = sql`${whereClause} AND cs.start_time >= ${cutoff}`;
-        if (input.stationId) whereClause = sql`${whereClause} AND cs.station_id = ${input.stationId}`;
+        let whereClause = sql`t.stationId IN (${sql.join(ids.map((id: number) => sql`${id}`), sql`, `)})`;
+        if (cutoff) whereClause = sql`${whereClause} AND t.startTime >= ${cutoff}`;
+        if (input.stationId) whereClause = sql`${whereClause} AND t.stationId = ${input.stationId}`;
         const offset = (input.page - 1) * input.limit;
         const [rows, countRow] = await Promise.all([
           db!.execute(sql`
-            SELECT cs.id, cs.station_id, cs.start_time, cs.end_time, cs.energy_kwh,
-              cs.total_cost, cs.status, cs.connector_id,
+            SELECT t.id, t.stationId as station_id, t.startTime as start_time, t.endTime as end_time,
+              t.kwhConsumed as energy_kwh, t.totalCost as total_cost,
+              t.transaction_status as status, t.evseId as connector_id,
               st.name as station_name, u.name as user_name, u.email as user_email
-            FROM charging_sessions cs
-            LEFT JOIN charging_stations st ON cs.station_id = st.id
-            LEFT JOIN users u ON cs.user_id = u.id
+            FROM transactions t
+            LEFT JOIN charging_stations st ON t.stationId = st.id
+            LEFT JOIN users u ON t.userId = u.id
             WHERE ${whereClause}
-            ORDER BY cs.start_time DESC
+            ORDER BY t.startTime DESC
             LIMIT ${input.limit} OFFSET ${offset}
           `),
-          db!.execute(sql`SELECT COUNT(*) as total FROM charging_sessions cs WHERE ${whereClause}`),
+          db!.execute(sql`SELECT COUNT(*) as total FROM transactions t WHERE ${whereClause}`),
         ]);
         const txs = Array.isArray(rows) && Array.isArray(rows[0]) ? rows[0] : rows;
         const cnt = Array.isArray(countRow) && Array.isArray(countRow[0]) ? countRow[0] : countRow;
