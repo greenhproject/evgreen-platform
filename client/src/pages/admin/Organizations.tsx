@@ -25,6 +25,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Building,
   Plus,
@@ -49,6 +52,15 @@ import {
   BrainCircuit,
   Webhook,
   FileText,
+  Mail,
+  Phone,
+  Globe,
+  Calendar,
+  Activity,
+  ChevronRight,
+  ExternalLink,
+  Copy,
+  Edit3,
 } from "lucide-react";
 import { toast } from "sonner";
 import QuickActivateWizard from "@/components/QuickActivateWizard";
@@ -447,50 +459,246 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
     CRITICAL: "text-red-400",
   };
 
-  return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Building className="h-5 w-5 text-green-400" />
-            {org.name}
-            <Badge variant="outline" className="ml-2 text-xs">
-              {org.plan}
-            </Badge>
-          </DialogTitle>
-        </DialogHeader>
+  const planColors: Record<string, string> = {
+    starter: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    professional: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    enterprise: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  };
+  const statusColors2: Record<string, string> = {
+    active: "bg-green-500/20 text-green-400 border-green-500/30",
+    trial: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    suspended: "bg-red-500/20 text-red-400 border-red-500/30",
+    cancelled: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+  };
 
-        <Tabs defaultValue="billing">
-          <TabsList className="w-full grid grid-cols-3 h-auto gap-1 p-1">
-            <TabsTrigger value="billing" className="flex items-center justify-center gap-1.5 py-2 text-xs">
-              <CreditCard className="h-3.5 w-3.5 shrink-0" />
-              Billing
-            </TabsTrigger>
-            <TabsTrigger value="stations" className="flex items-center justify-center gap-1.5 py-2 text-xs">
-              <MapPin className="h-3.5 w-3.5 shrink-0" />
-              Estaciones
-            </TabsTrigger>
-            <TabsTrigger value="modules" className="flex items-center justify-center gap-1.5 py-2 text-xs">
-              <Layers className="h-3.5 w-3.5 shrink-0" />
-              Módulos
-            </TabsTrigger>
-            <TabsTrigger value="users" className="flex items-center justify-center gap-1.5 py-2 text-xs">
-              <Users className="h-3.5 w-3.5 shrink-0" />
-              Usuarios
-            </TabsTrigger>
-            <TabsTrigger value="tickets" className="flex items-center justify-center gap-1.5 py-2 text-xs">
-              <Ticket className="h-3.5 w-3.5 shrink-0" />
-              Tickets
-            </TabsTrigger>
-          </TabsList>
+  return (
+    <Sheet open={true} onOpenChange={onClose}>
+      <SheetContent side="right" className="w-full sm:w-full lg:w-[90vw] xl:w-[1100px] p-0 flex flex-col border-l border-border/50 bg-background">
+        {/* ── HEADER ── */}
+        <SheetHeader className="px-6 py-4 border-b border-border/40 shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center shrink-0">
+                {org.logoUrl ? (
+                  <img src={org.logoUrl} alt={org.name} className="w-8 h-8 rounded-lg object-contain" />
+                ) : (
+                  <Building className="h-5 w-5 text-green-400" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <SheetTitle className="text-lg font-bold truncate">{org.name}</SheetTitle>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="text-xs text-muted-foreground">{org.slug}.evgreen.lat</span>
+                  <Badge variant="outline" className={`text-xs ${planColors[org.plan] || ""}`}>{org.plan}</Badge>
+                  <Badge variant="outline" className={`text-xs ${statusColors2[org.status] || ""}`}>{org.status}</Badge>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" asChild>
+                <a href={`https://${org.slug}.evgreen.lat`} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5" /> Portal
+                </a>
+              </Button>
+            </div>
+          </div>
+        </SheetHeader>
+
+        {/* ── BODY: two-column on desktop ── */}
+        <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+
+          {/* LEFT SIDEBAR — org info + KPIs */}
+          <div className="lg:w-72 xl:w-80 shrink-0 border-b lg:border-b-0 lg:border-r border-border/40 flex flex-col">
+            <ScrollArea className="flex-1">
+              <div className="p-5 space-y-5">
+
+                {/* KPIs 30d */}
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Actividad (30 días)</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2.5 rounded-lg bg-muted/30 border border-border/30 text-center">
+                      <p className="text-[10px] text-muted-foreground">Sesiones</p>
+                      <p className="text-lg font-bold text-green-400">{feeAccrued?.sessionCount || 0}</p>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-muted/30 border border-border/30 text-center">
+                      <p className="text-[10px] text-muted-foreground">Volumen</p>
+                      <p className="text-sm font-bold">${((feeAccrued?.totalVolumeCOP || 0) / 1000).toFixed(0)}k</p>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-green-500/10 border border-green-500/20 text-center">
+                      <p className="text-[10px] text-muted-foreground">Fee EVG</p>
+                      <p className="text-sm font-bold text-green-400">${((feeAccrued?.feeAccruedCOP || 0) / 1000).toFixed(0)}k</p>
+                    </div>
+                  </div>
+                  <div className="mt-2 p-2.5 rounded-lg bg-muted/20 border border-border/30 flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Comisión aplicada</span>
+                    <span className="text-sm font-bold text-green-400">{feeAccrued?.feePercent || 5}%</span>
+                  </div>
+                </div>
+
+                <Separator className="bg-border/30" />
+
+                {/* Contacto */}
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Contacto</p>
+                  <div className="space-y-2">
+                    {org.contactName && (
+                      <div className="flex items-center gap-2">
+                        <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-sm">{org.contactName}</span>
+                      </div>
+                    )}
+                    {org.contactEmail && (
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <a href={`mailto:${org.contactEmail}`} className="text-sm text-green-400 hover:underline truncate">{org.contactEmail}</a>
+                      </div>
+                    )}
+                    {org.contactPhone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-sm">{org.contactPhone}</span>
+                      </div>
+                    )}
+                    {org.nit && (
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-sm">NIT: {org.nit}</span>
+                      </div>
+                    )}
+                    {!org.contactName && !org.contactEmail && !org.contactPhone && (
+                      <p className="text-xs text-muted-foreground italic">Sin datos de contacto</p>
+                    )}
+                  </div>
+                </div>
+
+                <Separator className="bg-border/30" />
+
+                {/* Fechas */}
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Fechas clave</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground flex items-center gap-1.5"><Calendar className="h-3 w-3" /> Creado</span>
+                      <span className="text-xs">{org.createdAt ? new Date(org.createdAt).toLocaleDateString("es-CO") : "-"}</span>
+                    </div>
+                    {org.trialEndsAt && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1.5"><Clock className="h-3 w-3" /> Trial hasta</span>
+                        <span className="text-xs text-amber-400">{new Date(org.trialEndsAt).toLocaleDateString("es-CO")}</span>
+                      </div>
+                    )}
+                    {org.nextBillingDate && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1.5"><DollarSign className="h-3 w-3" /> Próximo cobro</span>
+                        <span className="text-xs text-green-400">{new Date(org.nextBillingDate).toLocaleDateString("es-CO")}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Separator className="bg-border/30" />
+
+                {/* Red y branding */}
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Red y Branding</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Red</span>
+                      <Badge variant="outline" className={org.networkMember ? "bg-green-500/10 text-green-400 border-green-500/30 text-xs" : "bg-gray-500/10 text-gray-400 text-xs"}>
+                        {org.networkMember ? "EVGreen Network" : "Red Propia"}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Soporte</span>
+                      <span className={`text-xs ${org.supportIncluded ? "text-green-400" : "text-gray-400"}`}>
+                        {org.supportIncluded ? "✓ Incluido" : "Autogestión"}
+                      </span>
+                    </div>
+                    {org.customDomain && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Globe className="h-3 w-3" /> Dominio</span>
+                        <span className="text-xs text-blue-400">{org.customDomain}</span>
+                      </div>
+                    )}
+                    {org.primaryColor && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">Color primario</span>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-4 h-4 rounded-full border border-border/50" style={{ backgroundColor: org.primaryColor }} />
+                          <span className="text-xs font-mono">{org.primaryColor}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Estaciones count */}
+                <Separator className="bg-border/30" />
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/30">
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-green-400" />
+                    <span className="text-sm font-medium">Estaciones asignadas</span>
+                  </div>
+                  <span className="text-lg font-bold text-green-400">{orgStations?.length || 0}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/30">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-blue-400" />
+                    <span className="text-sm font-medium">Usuarios</span>
+                  </div>
+                  <span className="text-lg font-bold text-blue-400">{orgUsers?.length || 0}</span>
+                </div>
+
+                {org.notes && (
+                  <>
+                    <Separator className="bg-border/30" />
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Notas internas</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{org.notes}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+
+          {/* RIGHT PANEL — tabs */}
+          <div className="flex-1 flex flex-col min-h-0 min-w-0">
+            <Tabs defaultValue="billing" className="flex flex-col flex-1 min-h-0">
+              <div className="px-4 pt-3 pb-0 border-b border-border/40 shrink-0">
+                <TabsList className="h-auto gap-0 p-0 bg-transparent border-0 w-full justify-start">
+                  {[
+                    { value: "billing", icon: CreditCard, label: "Billing" },
+                    { value: "stations", icon: MapPin, label: "Estaciones" },
+                    { value: "modules", icon: Layers, label: "Módulos" },
+                    { value: "users", icon: Users, label: "Usuarios" },
+                    { value: "tickets", icon: Ticket, label: "Tickets" },
+                  ].map(({ value, icon: Icon, label }) => (
+                    <TabsTrigger
+                      key={value}
+                      value={value}
+                      className="flex items-center gap-1.5 px-4 py-2.5 text-sm rounded-none border-b-2 border-transparent data-[state=active]:border-green-500 data-[state=active]:text-green-400 data-[state=active]:bg-transparent bg-transparent hover:text-foreground transition-colors"
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
 
           {/* ---- TAB: MÓDULOS ---- */}
-          <TabsContent value="modules" className="space-y-4 mt-4">
-            <ModulesTab org={org} />
+          <TabsContent value="modules" className="flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col">
+            <ScrollArea className="flex-1">
+              <div className="p-4 space-y-4">
+                <ModulesTab org={org} />
+              </div>
+            </ScrollArea>
           </TabsContent>
 
           {/* ---- TAB: BILLING ---- */}
-          <TabsContent value="billing" className="space-y-4 mt-4">
+          <TabsContent value="billing" className="flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col">
+            <ScrollArea className="flex-1">
+              <div className="p-4 space-y-4">
             {/* Acumulado comisiones */}
             <div className="grid grid-cols-3 gap-3">
               <div className="p-3 rounded-lg bg-muted/30 border border-border/30 text-center">
@@ -645,10 +853,14 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
                 </Button>
               </div>
             </div>
+              </div>
+            </ScrollArea>
           </TabsContent>
 
           {/* ---- TAB: ESTACIONES ---- */}
-          <TabsContent value="stations" className="space-y-4 mt-4">
+          <TabsContent value="stations" className="flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col">
+            <ScrollArea className="flex-1">
+              <div className="p-4 space-y-4">
             <div className="flex gap-2">
               <Select value={selectedStationId} onValueChange={setSelectedStationId}>
                 <SelectTrigger className="flex-1">
@@ -702,10 +914,14 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
                 ))}
               </div>
             )}
+              </div>
+            </ScrollArea>
           </TabsContent>
 
           {/* ---- TAB: USUARIOS ---- */}
-          <TabsContent value="users" className="space-y-4 mt-4">
+          <TabsContent value="users" className="flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col">
+            <ScrollArea className="flex-1">
+              <div className="p-4 space-y-4">
             <div className="flex gap-2">
               <Input
                 placeholder="ID de usuario (número)"
@@ -775,10 +991,14 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
                 ))}
               </div>
             )}
+              </div>
+            </ScrollArea>
           </TabsContent>
 
           {/* ---- TAB: TICKETS ---- */}
-          <TabsContent value="tickets" className="space-y-4 mt-4">
+          <TabsContent value="tickets" className="flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col">
+            <ScrollArea className="flex-1">
+              <div className="p-4 space-y-4">
             {orgTickets?.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Ticket className="h-10 w-10 mx-auto mb-2 opacity-30" />
@@ -842,10 +1062,14 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
                 ))}
               </div>
             )}
+              </div>
+            </ScrollArea>
           </TabsContent>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
+            </Tabs>
+          </div>{/* end right panel */}
+        </div>{/* end body */}
+      </SheetContent>
+    </Sheet>
   );
 }
 
