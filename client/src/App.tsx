@@ -155,6 +155,8 @@ const OrgAnalytics = lazy(() => import("./pages/org/Analytics"));
 const OrgDynamicPricing = lazy(() => import("./pages/org/DynamicPricing"));
 const OrgReports = lazy(() => import("./pages/org/Reports"));
 const OrgUsers = lazy(() => import("./pages/org/OrgUsers"));
+const OrgBilling = lazy(() => import("./pages/org/Billing"));
+const OrgApiWebhooks = lazy(() => import("./pages/org/ApiWebhooks"));
 
 // Páginas de Staff (Evento)
 const EventCheckIn = lazy(() => import("./pages/staff/EventCheckIn"));
@@ -1037,14 +1039,14 @@ function Router() {
         <Route path="/org/billing">
           <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
             <OrgLayout>
-              <OrgSettings />
+              <OrgBilling />
             </OrgLayout>
           </ProtectedRoute>
         </Route>
         <Route path="/org/api">
           <ProtectedRoute allowedRoles={["user", "host", "investor", "admin", "staff", "technician", "engineer", "comercial"]}>
             <OrgLayout>
-              <OrgSettings />
+              <OrgApiWebhooks />
             </OrgLayout>
           </ProtectedRoute>
         </Route>

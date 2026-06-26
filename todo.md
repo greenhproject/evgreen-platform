@@ -3657,3 +3657,12 @@
 - [x] Corrección de 5 tests fallidos (OCPP ping/pong, timezone UTC, FCM unified-push, balance-monitor)
 - [x] 24 nuevos tests para módulo SaaS Organizations (RBAC + validación de entradas)
 - [x] 1900/1900 tests pasando (0 fallos)
+
+## SaaS Oferta de Valor - Completar plataforma (2026-06-26)
+
+- [ ] Mostrar credenciales OCPP completas en tab conexión del portal org (URL wss + ID + contraseña copiable)
+- [ ] Wizard de activación rápida en admin: formulario único para crear org + usuario + estaciones + módulos + activar
+- [ ] Email de bienvenida automático al activar org (HTML profesional con credenciales, URL portal, pasos)
+- [ ] Checklist de primer día en dashboard org (completa perfil, conecta cargador, configura tarifa, ¡listo!)
+- [ ] Página real de Facturación org (/org/billing) con liquidaciones del período e historial de pagos
+- [ ] Página real de API & Webhooks org (/org/api) con gestión de API keys propias de la org

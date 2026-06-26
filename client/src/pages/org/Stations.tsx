@@ -20,6 +20,7 @@ import {
   MapPin, Search, CheckCircle, AlertCircle, Zap, WifiOff, Map, List,
   Settings, DollarSign, Power, Eye, EyeOff, QrCode, Activity, Wifi,
   Sparkles, TrendingUp, Clock, Calendar, Info, ChevronDown, ChevronUp,
+  Copy, Check, ExternalLink,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { MapView } from "@/components/Map";
@@ -536,42 +537,7 @@ function StationConfigModal({ station, open, ocppInfo, onClose, onSaved }: any) 
 
           {/* ── Tab OCPP ── */}
           <TabsContent value="ocpp" className="space-y-4 pt-3">
-            {isOCPPConnected ? (
-              <div className="rounded-xl bg-green-500/10 border border-green-500/30 p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Wifi className="h-5 w-5 text-green-400" />
-                  <span className="font-semibold text-green-400">Cargador Conectado</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><p className="text-xs text-muted-foreground">Versión OCPP</p><p className="font-medium">{ocppInfo.ocppVersion || "1.6"}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Conectado desde</p><p className="font-medium text-xs">{ocppInfo.connectedAt ? new Date(ocppInfo.connectedAt).toLocaleString("es-CO") : "N/A"}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Último heartbeat</p><p className="font-medium text-xs">{ocppInfo.lastHeartbeat ? new Date(ocppInfo.lastHeartbeat).toLocaleString("es-CO") : "N/A"}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Identidad OCPP</p><p className="font-medium font-mono text-xs">{ocppInfo.ocppIdentity}</p></div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4 flex items-center gap-3">
-                <WifiOff className="h-5 w-5 text-red-400 shrink-0" />
-                <div>
-                  <p className="font-semibold text-red-400">Cargador Desconectado</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">El cargador no está conectado al servidor OCPP en este momento.</p>
-                </div>
-              </div>
-            )}
-
-            {isOCPPConnected && ocppInfo.connectorStatuses && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Estado de conectores</p>
-                {Object.entries(ocppInfo.connectorStatuses).map(([connId, status]: [string, any]) => (
-                  <div key={connId} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30 border border-border/30">
-                    <span className="text-sm">Conector #{connId}</span>
-                    <Badge className={status === "Available" ? "bg-green-500/20 text-green-400 border-green-500/30" : status === "Charging" ? "bg-blue-500/20 text-blue-400 border-blue-500/30" : "bg-red-500/20 text-red-400 border-red-500/30"}>{status}</Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <p className="text-xs text-muted-foreground text-center">Para logs completos de OCPP, accede al Monitor OCPP en el panel de administración.</p>
+            <OcppConnectionTab station={station} ocppInfo={ocppInfo} isOCPPConnected={isOCPPConnected} />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -649,5 +615,125 @@ function StationCard({ station, isAdmin, ocppInfo, onConfigure }: any) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ─── OCPP Connection Tab ──────────────────────────────────────────────────────
+function OcppConnectionTab({ station, ocppInfo, isOCPPConnected }: any) {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const host = window.location.host;
+  const ocppId = station.ocppIdentity || `GEV-${station.id}`;
+  const wssPrimary = `wss://${host}/ocpp/${ocppId}`;
+  const wssAlt = `wss://${host}/api/ocpp/ws/${ocppId}`;
+  const ocppPassword = station.ocppPassword || "(sin contraseña)";
+
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key);
+      toast.success("Copiado al portapapeles");
+      setTimeout(() => setCopiedKey(null), 2000);
+    });
+  };
+
+  const CopyField = ({ label, value, fieldKey, mono = true }: { label: string; value: string; fieldKey: string; mono?: boolean }) => (
+    <div className="space-y-1">
+      <p className="text-xs text-muted-foreground font-medium">{label}</p>
+      <div className="flex items-center gap-2 bg-muted/40 border border-border/40 rounded-lg px-3 py-2">
+        <span className={`flex-1 text-sm break-all ${mono ? "font-mono" : ""}`}>{value}</span>
+        <button
+          onClick={() => copyToClipboard(value, fieldKey)}
+          className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {copiedKey === fieldKey ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Estado de conexión */}
+      {isOCPPConnected ? (
+        <div className="rounded-xl bg-green-500/10 border border-green-500/30 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Wifi className="h-5 w-5 text-green-400" />
+            <span className="font-semibold text-green-400">Cargador Conectado</span>
+            <Badge className="ml-auto bg-green-500/20 text-green-400 border-green-500/30 text-xs">
+              OCPP {ocppInfo.ocppVersion || "1.6"}
+            </Badge>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Conectado desde</p>
+              <p className="font-medium text-xs">{ocppInfo.connectedAt ? new Date(ocppInfo.connectedAt).toLocaleString("es-CO") : "N/A"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Último heartbeat</p>
+              <p className="font-medium text-xs">{ocppInfo.lastHeartbeat ? new Date(ocppInfo.lastHeartbeat).toLocaleString("es-CO") : "N/A"}</p>
+            </div>
+          </div>
+          {ocppInfo.connectorStatuses && (
+            <div className="space-y-1.5 pt-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Conectores</p>
+              {Object.entries(ocppInfo.connectorStatuses).map(([connId, status]: [string, any]) => (
+                <div key={connId} className="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border/30">
+                  <span className="text-xs">Conector #{connId}</span>
+                  <Badge className={status === "Available" ? "bg-green-500/20 text-green-400 border-green-500/30 text-xs" : status === "Charging" ? "bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs" : "bg-red-500/20 text-red-400 border-red-500/30 text-xs"}>{status}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 flex items-center gap-3">
+          <WifiOff className="h-5 w-5 text-amber-400 shrink-0" />
+          <div>
+            <p className="font-semibold text-amber-400">Cargador no conectado</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Usa las credenciales de abajo para configurar el cargador físico.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Credenciales de conexión */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="h-px flex-1 bg-border/40" />
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2">Credenciales OCPP</p>
+          <div className="h-px flex-1 bg-border/40" />
+        </div>
+
+        <div className="rounded-xl bg-blue-500/5 border border-blue-500/20 p-3 text-xs text-blue-300 flex items-start gap-2">
+          <Info className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>Configura estas credenciales en el cargador físico para conectarlo a la plataforma EVGreen. El técnico instalador las necesita.</span>
+        </div>
+
+        <CopyField label="URL WebSocket OCPP (principal)" value={wssPrimary} fieldKey="wss1" />
+        <CopyField label="URL WebSocket OCPP (alternativa)" value={wssAlt} fieldKey="wss2" />
+        <CopyField label="Charge Point ID (identidad OCPP)" value={ocppId} fieldKey="ocppid" />
+        <CopyField label="Contraseña OCPP" value={ocppPassword} fieldKey="ocpppwd" />
+
+        <div className="rounded-xl bg-muted/30 border border-border/30 p-3 space-y-1.5 text-xs text-muted-foreground">
+          <p className="font-semibold text-foreground text-xs">Protocolos soportados</p>
+          <p>• OCPP 1.6J (recomendado)</p>
+          <p>• OCPP 2.0.1</p>
+          <p className="pt-1 text-[11px]">En la configuración del cargador, selecciona "OCPP 1.6J" o "OCPP 2.0.1" como protocolo y pega la URL principal.</p>
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-8 text-xs gap-2 border-green-500/30 text-green-400 hover:bg-green-500/10"
+          onClick={() => {
+            const text = `=== Credenciales OCPP - ${station.name} ===\nURL Principal: ${wssPrimary}\nURL Alternativa: ${wssAlt}\nCharge Point ID: ${ocppId}\nContraseña: ${ocppPassword}\nProtocolo: OCPP 1.6J`;
+            navigator.clipboard.writeText(text);
+            toast.success("Todas las credenciales copiadas");
+          }}
+        >
+          <Copy className="h-3.5 w-3.5" />
+          Copiar todas las credenciales
+        </Button>
+      </div>
+    </div>
   );
 }

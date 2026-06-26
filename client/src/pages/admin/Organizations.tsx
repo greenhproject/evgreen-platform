@@ -51,6 +51,7 @@ import {
   FileText,
 } from "lucide-react";
 import { toast } from "sonner";
+import QuickActivateWizard from "@/components/QuickActivateWizard";
 
 export default function Organizations() {
   const [search, setSearch] = useState("");
@@ -58,6 +59,7 @@ export default function Organizations() {
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showPricingDialog, setShowPricingDialog] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<any>(null);
 
   // Queries
@@ -116,7 +118,11 @@ export default function Organizations() {
             <Settings className="h-4 w-4 mr-2" />
             Pricing Global
           </Button>
-          <Button size="sm" onClick={() => setShowCreateDialog(true)} className="bg-green-600 hover:bg-green-700">
+          <Button size="sm" onClick={() => setShowWizard(true)} className="bg-green-600 hover:bg-green-700 gap-2">
+            <Zap className="h-4 w-4" />
+            Activación Rápida
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowCreateDialog(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Nueva Org
           </Button>
@@ -317,6 +323,13 @@ export default function Organizations() {
         onClose={() => setShowPricingDialog(false)}
         defaults={pricingDefaults || []}
         onUpdate={(plan, data) => updatePricing.mutate({ plan, ...data })}
+      />
+
+      {/* Quick Activate Wizard */}
+      <QuickActivateWizard
+        open={showWizard}
+        onClose={() => setShowWizard(false)}
+        onSuccess={() => { setShowWizard(false); refetch(); }}
       />
 
       {/* Org Detail Management Dialog */}
@@ -839,19 +852,20 @@ function OrgDetailDialog({ org, onClose, onRefresh }: {
 // ==========================================
 // Modules Tab Component
 // ==========================================
-const ALL_MODULES = [
-  { key: 'dashboard', label: 'Dashboard', icon: '📊', desc: 'Métricas y resumen general', plans: ['starter','professional','enterprise'] },
-  { key: 'stations', label: 'Mis Estaciones', icon: '⚡', desc: 'Gestión y mapa de estaciones', plans: ['starter','professional','enterprise'] },
-  { key: 'transactions', label: 'Transacciones', icon: '💳', desc: 'Historial de sesiones de carga', plans: ['starter','professional','enterprise'] },
-  { key: 'tickets', label: 'Soporte / Tickets', icon: '🎫', desc: 'Sistema de tickets de soporte', plans: ['starter','professional','enterprise'] },
-  { key: 'settings', label: 'Configuración', icon: '⚙️', desc: 'Branding, dominio, plan', plans: ['starter','professional','enterprise'] },
-  { key: 'analytics', label: 'Analítica Avanzada', icon: '📈', desc: 'Reportes y tendencias detalladas', plans: ['professional','enterprise'] },
-  { key: 'dynamic_pricing', label: 'Precios Dinámicos IA', icon: '🤖', desc: 'Optimización automática de tarifas', plans: ['professional','enterprise'] },
-  { key: 'users', label: 'Gestión de Usuarios', icon: '👥', desc: 'Múltiples admins y roles', plans: ['professional','enterprise'] },
-  { key: 'reports', label: 'Reportes PDF/Excel', icon: '📄', desc: 'Exportación de informes', plans: ['professional','enterprise'] },
-  { key: 'billing', label: 'Facturación', icon: '💰', desc: 'Liquidaciones y facturación', plans: ['enterprise'] },
-  { key: 'api_webhooks', label: 'API & Webhooks', icon: '🔗', desc: 'Integración con sistemas externos', plans: ['enterprise'] },
-];
+// Module catalog is now in shared/modules-catalog.ts
+import {
+  MODULE_CATALOG as CATALOG,
+  getDefaultModulesByPlan as getDefaults,
+  canPlanAccessModule,
+  CATEGORY_LABELS,
+  PLAN_LABELS as PLAN_LBL,
+} from "@shared/modules-catalog";
+
+const ICON_MAP_ADMIN: Record<string, any> = {
+  LayoutDashboard: Layers, BarChart2, BrainCircuit, FileText, Users, TrendingUp,
+  Webhook, CreditCard, Zap, Layers, Settings,
+  Receipt: CreditCard, HeadphonesIcon: Ticket, ParkingCircle: MapPin, Palette: Settings,
+};
 
 function ModulesTab({ org }: { org: any }) {
   const utils = trpc.useUtils();
@@ -862,13 +876,8 @@ function ModulesTab({ org }: { org: any }) {
 
   // Load org's current modules from org data or defaults
   if (!initialized && org) {
-    const defaultByPlan = {
-      starter: ['dashboard','stations','transactions','tickets','settings'],
-      professional: ['dashboard','stations','transactions','tickets','settings','analytics','dynamic_pricing','users','reports'],
-      enterprise: ['dashboard','stations','transactions','tickets','settings','analytics','dynamic_pricing','users','reports','billing','api_webhooks'],
-    };
     const saved = org.enabledModules ? (typeof org.enabledModules === 'string' ? JSON.parse(org.enabledModules) : org.enabledModules) : null;
-    setActiveModules(saved || defaultByPlan[org.plan as keyof typeof defaultByPlan] || defaultByPlan.starter);
+    setActiveModules(saved || getDefaults(org.plan || 'starter'));
     setInitialized(true);
   }
 
@@ -881,62 +890,76 @@ function ModulesTab({ org }: { org: any }) {
     setActiveModules(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
   };
 
-  const planModules = {
-    starter: ['dashboard','stations','transactions','tickets','settings'],
-    professional: ['dashboard','stations','transactions','tickets','settings','analytics','dynamic_pricing','users','reports'],
-    enterprise: ['dashboard','stations','transactions','tickets','settings','analytics','dynamic_pricing','users','reports','billing','api_webhooks'],
-  };
+  const groupedCatalog = CATALOG.reduce((acc: Record<string, typeof CATALOG>, mod) => {
+    if (!acc[mod.category]) acc[mod.category] = [];
+    acc[mod.category].push(mod);
+    return acc;
+  }, {});
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold flex items-center gap-2"><Layers className="h-4 w-4 text-green-400" /> Módulos Activos</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Activa o desactiva módulos para esta organización. Los módulos grises requieren un plan superior.</p>
+          <h3 className="text-sm font-semibold flex items-center gap-2"><Layers className="h-4 w-4 text-green-400" /> Catálogo de Módulos</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {activeModules.length} módulos activos · Plan <span className="text-foreground font-medium capitalize">{org?.plan}</span>
+          </p>
         </div>
         <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700"
           disabled={updateModules.isPending}
           onClick={() => updateModules.mutate({ orgId: org.id, modules: activeModules })}>
-          {updateModules.isPending ? 'Guardando...' : 'Guardar'}
+          {updateModules.isPending ? 'Guardando...' : 'Guardar cambios'}
         </Button>
       </div>
 
-      <div className="space-y-2">
-        {ALL_MODULES.map(mod => {
-          const isAvailableForPlan = mod.plans.includes(org?.plan || 'starter');
-          const isActive = activeModules.includes(mod.key);
-          return (
-            <div key={mod.key} className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-              isActive ? 'bg-green-500/10 border-green-500/30' : 'bg-muted/20 border-border/30'
-            } ${!isAvailableForPlan ? 'opacity-50' : ''}`}>
-              <div className="flex items-center gap-3">
-                <span className="text-lg">{mod.icon}</span>
-                <div>
-                  <p className="text-sm font-medium">{mod.label}</p>
-                  <p className="text-xs text-muted-foreground">{mod.desc}</p>
-                  {!isAvailableForPlan && (
-                    <Badge variant="outline" className="text-[10px] mt-0.5 border-amber-500/50 text-amber-400">
-                      Requiere {mod.plans[0]}
-                    </Badge>
-                  )}
+      {(['core','analytics','advanced','enterprise'] as const).map(cat => {
+        const mods = groupedCatalog[cat];
+        if (!mods) return null;
+        return (
+          <div key={cat} className="space-y-1.5">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{CATEGORY_LABELS[cat]}</p>
+            {mods.map(mod => {
+              const canAccess = canPlanAccessModule(org?.plan || 'starter', mod.key);
+              const isActive = activeModules.includes(mod.key);
+              const IconComp = ICON_MAP_ADMIN[mod.icon] || Layers;
+              return (
+                <div key={mod.key} className={`flex items-center gap-3 p-2.5 rounded-lg border transition-all ${
+                  !canAccess ? 'opacity-40 border-border/20 bg-muted/10' :
+                  isActive ? 'border-green-500/30 bg-green-500/5' :
+                  'border-border/30 bg-muted/20'
+                }`}>
+                  <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
+                    isActive && canAccess ? 'bg-green-500/20 text-green-400' : 'bg-muted/40 text-muted-foreground'
+                  }`}>
+                    <IconComp className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-medium">{mod.label}</p>
+                      {mod.required && <Badge className="text-[9px] px-1 py-0 bg-blue-500/20 text-blue-400 border-blue-500/30">base</Badge>}
+                      {!canAccess && <Badge className="text-[9px] px-1 py-0 bg-amber-500/20 text-amber-400 border-amber-500/30">{PLAN_LBL[mod.plan]}+</Badge>}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">{mod.description}</p>
+                  </div>
+                  <Switch
+                    checked={isActive && canAccess}
+                    onCheckedChange={() => canAccess && !mod.required && toggle(mod.key)}
+                    disabled={!canAccess || mod.required}
+                    className="scale-90"
+                  />
                 </div>
-              </div>
-              <Switch
-                checked={isActive}
-                onCheckedChange={() => toggle(mod.key)}
-                disabled={!isAvailableForPlan}
-              />
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        );
+      })}
 
       <div className="pt-2 border-t border-border/30">
-        <p className="text-xs text-muted-foreground">Presets rápidos:</p>
-        <div className="flex gap-2 mt-2">
+        <p className="text-xs text-muted-foreground mb-2">Presets rápidos por plan:</p>
+        <div className="flex gap-2">
           {(['starter','professional','enterprise'] as const).map(plan => (
             <Button key={plan} size="sm" variant="outline" className="h-7 text-xs capitalize"
-              onClick={() => setActiveModules(planModules[plan])}>
+              onClick={() => setActiveModules(getDefaults(plan))}>
               {plan}
             </Button>
           ))}

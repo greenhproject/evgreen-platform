@@ -17,6 +17,7 @@ import {
   users,
   transactions,
   tariffs,
+  apiKeys,
 } from "../../drizzle/schema";
 import { eq, desc, sql, and, like, or, isNull } from "drizzle-orm";
 import { protectedProcedure, publicProcedure } from "../_core/trpc";
@@ -1341,6 +1342,161 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         }
 
         return { format: 'html', content: generateOrgReportHtml(reportData), filename: `reporte-evgreen-${period}-${new Date().toISOString().slice(0,10)}.html` };
+      }),
+
+    // ==========================================
+    // QUICK ACTIVATE WIZARD
+    // ==========================================
+    quickActivate: adminProcedure
+      .input(z.object({
+        // Org data
+        orgName: z.string().min(2),
+        orgSlug: z.string().min(2).regex(/^[a-z0-9-]+$/),
+        plan: z.enum(["starter", "professional", "enterprise"]),
+        contactName: z.string().min(1),
+        contactEmail: z.string().email(),
+        contactPhone: z.string().optional(),
+        nit: z.string().optional(),
+        // User to assign (by userId)
+        userId: z.number().optional(),
+        // Stations to assign (array of stationIds)
+        stationIds: z.array(z.number()).optional(),
+        // Modules to enable
+        modules: z.array(z.string()).optional(),
+        // Send welcome email
+        sendWelcomeEmail: z.boolean().default(true),
+      }))
+      .mutation(async ({ input }: any) => {
+        const db = await getDb();
+        // 1. Check slug uniqueness
+        const [existing] = await db!.select().from(organizations).where(eq(organizations.slug, input.orgSlug));
+        if (existing) throw new TRPCError({ code: "CONFLICT", message: "El slug ya está en uso" });
+        // 2. Create org with status active
+        const defaultModules = getDefaultModules(input.plan);
+        const modules = input.modules || defaultModules;
+        const [result] = await db!.insert(organizations).values({
+          name: input.orgName,
+          slug: input.orgSlug,
+          plan: input.plan,
+          status: "active",
+          contactName: input.contactName,
+          contactEmail: input.contactEmail,
+          contactPhone: input.contactPhone,
+          nit: input.nit,
+          networkMember: true,
+          maxChargers: input.plan === "starter" ? 10 : input.plan === "professional" ? 50 : 9999,
+        });
+        const orgId = result.insertId;
+        // 3. Set modules
+        await db!.execute(sql`UPDATE organizations SET enabled_modules = ${JSON.stringify(modules)} WHERE id = ${orgId}`);
+        // 4. Assign user if provided
+        if (input.userId) {
+          await db!.insert(orgUsers).values({ organizationId: orgId, userId: input.userId, role: "admin" });
+        }
+        // 5. Assign stations if provided
+        if (input.stationIds && input.stationIds.length > 0) {
+          for (const stationId of input.stationIds) {
+            await db!.update(chargingStations).set({ organizationId: orgId }).where(eq(chargingStations.id, stationId));
+          }
+        }
+        // 6. Send welcome email if requested
+        let emailSent = false;
+        if (input.sendWelcomeEmail && input.contactEmail) {
+          try {
+            const { sendOrgWelcomeEmail } = await import("../email/org-welcome-email");
+            const host = process.env.VITE_APP_ID ? "app.evgreen.lat" : "evgreen.lat";
+            emailSent = await sendOrgWelcomeEmail({
+              orgName: input.orgName,
+              orgSlug: input.orgSlug,
+              plan: input.plan,
+              contactName: input.contactName,
+              contactEmail: input.contactEmail,
+              portalUrl: `https://${host}/org`,
+              stationCount: input.stationIds?.length || 0,
+              ocppUrl: `wss://${host}/ocpp/{CHARGE_POINT_ID}`,
+            });
+          } catch (e) {
+            console.error("[quickActivate] Email error:", e);
+          }
+        }
+        return {
+          success: true,
+          orgId,
+          message: `Organización "${input.orgName}" activada exitosamente`,
+          emailSent,
+        };
+      }),
+
+    // Search users by email or name (for wizard)
+    searchUsers: adminProcedure
+      .input(z.object({ query: z.string().min(1) }))
+      .query(async ({ input }: any) => {
+        const db = await getDb();
+        const q = `%${input.query}%`;
+        return await db!.select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        }).from(users)
+          .where(or(like(users.email, q), like(users.name, q)))
+          .limit(10);
+      }),
+
+    // ==========================================
+    // ORG API KEYS (cliente)
+    // ==========================================
+    getMyApiKeys: protectedProcedure.query(async ({ ctx }: any) => {
+      const db = await getDb();
+      const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
+        .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+      if (!membership) return [];
+      return db!.select().from(apiKeys)
+        .where(eq(apiKeys.userId, ctx.user.id))
+        .orderBy(desc(apiKeys.createdAt));
+    }),
+
+    createMyApiKey: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1).max(100),
+        permissions: z.array(z.string()).optional(),
+        expiresInDays: z.number().min(1).max(365).optional(),
+      }))
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [membership] = await db!.select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
+          .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership) throw new TRPCError({ code: 'FORBIDDEN', message: 'No perteneces a ninguna organización' });
+        if (membership.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo el admin puede crear API Keys' });
+        const rawKey = 'evg_' + Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b => b.toString(16).padStart(2,'0')).join('');
+        const keyPrefix = rawKey.substring(0, 12);
+        const encoder = new TextEncoder();
+        const data = encoder.encode(rawKey);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const keyHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2,'0')).join('');
+        const expiresAt = input.expiresInDays
+          ? new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000)
+          : null;
+        await db!.insert(apiKeys).values({
+          userId: ctx.user.id,
+          name: input.name,
+          keyHash,
+          keyPrefix,
+          permissions: input.permissions || ['stations:read', 'transactions:read'],
+          isActive: true,
+          expiresAt: expiresAt || undefined,
+        });
+        return { apiKey: rawKey, prefix: keyPrefix, name: input.name };
+      }),
+
+    revokeMyApiKey: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+        const [key] = await db!.select().from(apiKeys)
+          .where(and(eq(apiKeys.id, input.id), eq(apiKeys.userId, ctx.user.id)));
+        if (!key) throw new TRPCError({ code: 'NOT_FOUND' });
+        await db!.update(apiKeys).set({ isActive: false }).where(eq(apiKeys.id, input.id));
+        return { success: true };
       }),
 
     // ==========================================

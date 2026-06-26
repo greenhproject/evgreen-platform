@@ -18,9 +18,15 @@ import {
   Users,
   DollarSign,
   Activity,
+  Rocket,
+  X,
+  Circle,
+  Settings,
+  CreditCard,
+  ChevronRight,
 } from "lucide-react";
 import { useLocation } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type Period = "7d" | "30d" | "90d" | "all";
 
@@ -128,6 +134,13 @@ export default function OrgDashboard() {
           ))}
         </div>
       </div>
+
+      {/* First Day Checklist */}
+      <FirstDayChecklist
+        stations={stations || []}
+        org={org}
+        onNavigate={setLocation}
+      />
 
       {/* Infrastructure Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -445,5 +458,168 @@ export default function OrgDashboard() {
         </Card>
       )}
     </div>
+  );
+}
+
+// ==========================================
+// First Day Checklist Component
+// ==========================================
+const CHECKLIST_DISMISSED_KEY = "evgreen_checklist_dismissed";
+
+interface ChecklistProps {
+  stations: any[];
+  org: any;
+  onNavigate: (path: string) => void;
+}
+
+function FirstDayChecklist({ stations, org, onNavigate }: ChecklistProps) {
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    const val = localStorage.getItem(`${CHECKLIST_DISMISSED_KEY}_${org?.id}`);
+    if (val === "true") setDismissed(true);
+  }, [org?.id]);
+
+  const handleDismiss = () => {
+    localStorage.setItem(`${CHECKLIST_DISMISSED_KEY}_${org?.id}`, "true");
+    setDismissed(true);
+  };
+
+  // Determine checklist items dynamically
+  const hasStations = stations.length > 0;
+  const hasOnlineStation = stations.some((s: any) => s.isOnline);
+  const hasTariff = stations.some((s: any) => s.tariffId || s.pricePerKwh);
+  const profileComplete = !!(org?.contactName && org?.contactEmail);
+
+  const items = [
+    {
+      id: "profile",
+      label: "Completa el perfil de tu organización",
+      description: "Agrega logo, colores y datos de contacto",
+      done: profileComplete,
+      action: () => onNavigate("/org/settings"),
+      icon: Settings,
+      actionLabel: "Ir a Configuración",
+    },
+    {
+      id: "stations",
+      label: "Verifica tus estaciones asignadas",
+      description: `${hasStations ? `${stations.length} estación${stations.length !== 1 ? "es" : ""} asignada${stations.length !== 1 ? "s" : ""}` : "Aún no tienes estaciones — contacta a soporte"}`,
+      done: hasStations,
+      action: () => onNavigate("/org/stations"),
+      icon: MapPin,
+      actionLabel: "Ver Estaciones",
+    },
+    {
+      id: "ocpp",
+      label: "Conecta tu primer cargador vía OCPP",
+      description: "Obtén la URL y credenciales en Estaciones → Configurar → Tab OCPP",
+      done: hasOnlineStation,
+      action: () => onNavigate("/org/stations"),
+      icon: Zap,
+      actionLabel: "Ver credenciales OCPP",
+    },
+    {
+      id: "tariff",
+      label: "Configura la tarifa de carga",
+      description: "Define el precio por kWh para que los conductores puedan pagar",
+      done: hasTariff,
+      action: () => onNavigate("/org/stations"),
+      icon: CreditCard,
+      actionLabel: "Configurar tarifa",
+    },
+  ];
+
+  const completedCount = items.filter(i => i.done).length;
+  const allDone = completedCount === items.length;
+
+  // Don't show if dismissed or all done for more than 1 station connected
+  if (dismissed || (allDone && hasOnlineStation)) return null;
+
+  const progress = Math.round((completedCount / items.length) * 100);
+
+  return (
+    <Card className="border-green-500/30 bg-gradient-to-br from-green-500/5 to-transparent">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-green-500/20">
+              <Rocket className="h-4 w-4 text-green-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Primeros pasos para operar</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">{completedCount} de {items.length} completados</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Progress bar */}
+            <div className="hidden sm:flex items-center gap-2">
+              <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 rounded-full transition-all duration-500"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground">{progress}%</span>
+            </div>
+            <button
+              onClick={handleDismiss}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Ocultar checklist"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div
+                key={item.id}
+                className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${
+                  item.done
+                    ? "border-green-500/20 bg-green-500/5 opacity-70"
+                    : "border-border/40 bg-muted/20 hover:bg-muted/30"
+                }`}
+              >
+                <div className={`mt-0.5 shrink-0 ${item.done ? "text-green-500" : "text-muted-foreground"}`}>
+                  {item.done ? (
+                    <CheckCircle className="h-4 w-4" />
+                  ) : (
+                    <Circle className="h-4 w-4" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium ${item.done ? "line-through text-muted-foreground" : ""}`}>
+                    {item.label}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{item.description}</p>
+                </div>
+                {!item.done && (
+                  <button
+                    onClick={item.action}
+                    className="shrink-0 text-green-400 hover:text-green-300 transition-colors mt-0.5"
+                    title={item.actionLabel}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {allDone && (
+          <div className="mt-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-center">
+            <p className="text-sm font-semibold text-green-400">🎉 ¡Todo listo! Tu red de carga está operativa.</p>
+            <button onClick={handleDismiss} className="text-xs text-muted-foreground mt-1 hover:text-foreground">
+              Ocultar este panel
+            </button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
