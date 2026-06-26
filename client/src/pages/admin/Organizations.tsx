@@ -2,7 +2,7 @@
  * Admin Organizations Page - Gestión de tenants SaaS
  * Panel para crear, editar y administrar organizaciones licenciadas
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -869,17 +869,19 @@ const ICON_MAP_ADMIN: Record<string, any> = {
 
 function ModulesTab({ org }: { org: any }) {
   const utils = trpc.useUtils();
-  const [activeModules, setActiveModules] = useState<string[]>([]);
-  const [initialized, setInitialized] = useState(false);
 
-  const { data: modulesData } = (trpc.organizations as any).getMyModules.useQuery(undefined, { enabled: false });
-
-  // Load org's current modules from org data or defaults
-  if (!initialized && org) {
+  const getInitialModules = () => {
+    if (!org) return [];
     const saved = org.enabledModules ? (typeof org.enabledModules === 'string' ? JSON.parse(org.enabledModules) : org.enabledModules) : null;
-    setActiveModules(saved || getDefaults(org.plan || 'starter'));
-    setInitialized(true);
-  }
+    return saved || getDefaults(org.plan || 'starter');
+  };
+
+  const [activeModules, setActiveModules] = useState<string[]>(getInitialModules);
+
+  // Reset when org changes
+  useEffect(() => {
+    setActiveModules(getInitialModules());
+  }, [org?.id, org?.plan, org?.enabledModules]);
 
   const updateModules = (trpc.organizations as any).updateModules.useMutation({
     onSuccess: () => { toast.success('Módulos actualizados'); (utils.organizations as any).list.invalidate(); },
