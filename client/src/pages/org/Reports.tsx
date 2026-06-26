@@ -34,6 +34,8 @@ export default function OrgReports() {
   const [isExporting, setIsExporting] = useState(false);
   const [activeReport, setActiveReport] = useState<ReportType>(null);
 
+  const generateFullReportMutation = (trpc.organizations as any).generateFullReport.useMutation();
+
   const { data: stats, isLoading: statsLoading } = (trpc.organizations as any).getMyOrgStats.useQuery(
     { period },
     { staleTime: 2 * 60 * 1000 }
@@ -98,95 +100,46 @@ export default function OrgReports() {
     return Object.entries(map).map(([name, value]) => ({ name, value }));
   }, [txs]);
 
-  // ── Exportar reporte ─────────────────────────────────────────────────────
+  // ── Exportar reporte completo (servidor) ────────────────────────────────
   const exportReport = async () => {
     setIsExporting(true);
     try {
-      const periodLabel = { "7d": "7 días", "30d": "30 días", "90d": "90 días", "all": "Todo el tiempo" }[period];
+      const result = await generateFullReportMutation.mutateAsync({
+        period,
+        format: format === "csv" ? "csv" : "html",
+      });
 
-      if (format === "csv") {
-        const headers = ["ID", "Estación", "Usuario", "Email", "Inicio", "Fin", "kWh", "Total COP", "Estado"];
-        const rows = txs.map((t: any) => [
-          t.id,
-          t.station_name || `#${t.station_id}`,
-          t.user_name || "Anónimo",
-          t.user_email || "",
-          t.start_time ? new Date(t.start_time).toLocaleString("es-CO") : "",
-          t.end_time ? new Date(t.end_time).toLocaleString("es-CO") : "",
-          parseFloat(t.energy_kwh || 0).toFixed(2),
-          parseFloat(t.total_cost || 0).toFixed(0),
-          t.status,
-        ]);
-        const csv = [headers, ...rows].map(r => r.map((v: any) => `"${v}"`).join(",")).join("\n");
-        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      if (result.format === "csv") {
+        const blob = new Blob([result.content], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `reporte-evgreen-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = result.filename;
         a.click();
         URL.revokeObjectURL(url);
-        toast.success("Reporte CSV descargado");
+        toast.success("Reporte CSV completo descargado");
       } else {
-        // PDF via print
-        const stationRows = stationData.map(s =>
-          `<tr><td>${s.name}</td><td>${s.sessions}</td><td>${s.kwh.toFixed(1)}</td><td>${formatCOP(s.revenue)}</td></tr>`
-        ).join("");
-        const txRows = txs.slice(0, 200).map((t: any) =>
-          `<tr>
-            <td>${t.id}</td>
-            <td>${t.station_name || `#${t.station_id}`}</td>
-            <td>${t.user_name || "Anónimo"}</td>
-            <td>${t.start_time ? new Date(t.start_time).toLocaleString("es-CO") : "—"}</td>
-            <td>${parseFloat(t.energy_kwh || 0).toFixed(2)}</td>
-            <td>${formatCOP(parseFloat(t.total_cost || 0))}</td>
-            <td>${t.status}</td>
-          </tr>`
-        ).join("");
-
-        const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-<title>Reporte EVGreen</title>
-<style>
-  body{font-family:Arial,sans-serif;padding:32px;color:#111;font-size:13px}
-  h1{color:#16a34a;font-size:22px;margin-bottom:2px}
-  h2{color:#16a34a;font-size:15px;margin:20px 0 8px}
-  .subtitle{color:#666;font-size:12px;margin-bottom:20px}
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
-  .kpi{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px}
-  .kpi-label{font-size:10px;color:#666}
-  .kpi-value{font-size:18px;font-weight:bold;color:#16a34a;margin-top:2px}
-  table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:20px}
-  th{background:#f0fdf4;padding:7px;text-align:left;border-bottom:2px solid #bbf7d0}
-  td{padding:6px 7px;border-bottom:1px solid #e5e7eb}
-  tr:nth-child(even){background:#f9fafb}
-  .footer{margin-top:20px;font-size:10px;color:#999;text-align:center;border-top:1px solid #e5e7eb;padding-top:10px}
-  @media print{body{padding:16px}}
-</style></head><body>
-<h1>⚡ Reporte EVGreen</h1>
-<p class="subtitle">Período: ${periodLabel} · Generado: ${new Date().toLocaleString("es-CO")}</p>
-<div class="kpis">
-  <div class="kpi"><div class="kpi-label">Sesiones</div><div class="kpi-value">${stats?.totalSessions ?? 0}</div></div>
-  <div class="kpi"><div class="kpi-label">kWh entregados</div><div class="kpi-value">${(stats?.totalKwh ?? 0).toFixed(1)}</div></div>
-  <div class="kpi"><div class="kpi-label">Ingresos totales</div><div class="kpi-value">${formatCOP(stats?.totalRevenue ?? 0)}</div></div>
-  <div class="kpi"><div class="kpi-label">Usuarios únicos</div><div class="kpi-value">${stats?.uniqueUsers ?? 0}</div></div>
-</div>
-<h2>Resumen por Estación</h2>
-<table><thead><tr><th>Estación</th><th>Sesiones</th><th>kWh</th><th>Ingresos</th></tr></thead>
-<tbody>${stationRows || '<tr><td colspan="4" style="text-align:center;color:#999">Sin datos</td></tr>'}</tbody></table>
-<h2>Detalle de Transacciones (últimas 200)</h2>
-<table><thead><tr><th>#</th><th>Estación</th><th>Usuario</th><th>Inicio</th><th>kWh</th><th>Total</th><th>Estado</th></tr></thead>
-<tbody>${txRows || '<tr><td colspan="7" style="text-align:center;color:#999">Sin transacciones</td></tr>'}</tbody></table>
-<div class="footer">EVGreen Platform · evgreen.lat · evgreen@greenhproject.com</div>
-</body></html>`;
+        // Abrir HTML en nueva ventana y disparar impresión
         const win = window.open("", "_blank");
         if (win) {
-          win.document.write(html);
+          win.document.write(result.content);
           win.document.close();
-          setTimeout(() => win.print(), 500);
+          setTimeout(() => win.print(), 600);
+          toast.success("Reporte ejecutivo listo — usa Ctrl+P / Guardar como PDF");
+        } else {
+          // Fallback: descargar como HTML
+          const blob = new Blob([result.content], { type: "text/html;charset=utf-8;" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = result.filename;
+          a.click();
+          URL.revokeObjectURL(url);
+          toast.success("Reporte descargado como HTML");
         }
-        toast.success("Reporte PDF listo — usa Ctrl+P para guardar como PDF");
       }
-    } catch {
-      toast.error("Error al generar el reporte");
+    } catch (err: any) {
+      toast.error(err?.message || "Error al generar el reporte");
     } finally {
       setIsExporting(false);
     }
@@ -240,33 +193,19 @@ export default function OrgReports() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label className="text-xs text-muted-foreground">Período</Label>
-              <Select value={period} onValueChange={(v: any) => setPeriod(v)}>
-                <SelectTrigger className="mt-1 h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="7d">Últimos 7 días</SelectItem>
-                  <SelectItem value="30d">Últimos 30 días</SelectItem>
-                  <SelectItem value="90d">Últimos 90 días</SelectItem>
-                  <SelectItem value="all">Todo el tiempo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Formato</Label>
-              <Select value={format} onValueChange={(v: any) => setFormat(v)}>
-                <SelectTrigger className="mt-1 h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pdf">PDF (imprimir)</SelectItem>
-                  <SelectItem value="csv">CSV (Excel)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Período</Label>
+            <Select value={period} onValueChange={(v: any) => setPeriod(v)}>
+              <SelectTrigger className="mt-1 h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7d">Últimos 7 días</SelectItem>
+                <SelectItem value="30d">Últimos 30 días</SelectItem>
+                <SelectItem value="90d">Últimos 90 días</SelectItem>
+                <SelectItem value="all">Todo el tiempo</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* KPIs resumen */}
@@ -293,23 +232,46 @@ export default function OrgReports() {
             )}
           </div>
 
-          <Button
-            className="w-full bg-green-600 hover:bg-green-700 h-10"
-            onClick={exportReport}
-            disabled={isExporting}
-          >
-            {isExporting ? (
-              <span className="flex items-center gap-2">
-                <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Generando...
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <Download className="h-4 w-4" />
-                Descargar reporte {format.toUpperCase()}
-              </span>
-            )}
-          </Button>
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              className="bg-green-600 hover:bg-green-700 h-10"
+              onClick={() => { setFormat("pdf"); setTimeout(exportReport, 0); }}
+              disabled={isExporting}
+            >
+              {isExporting && format === "pdf" ? (
+                <span className="flex items-center gap-2">
+                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Generando...
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Reporte PDF Completo
+                </span>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-10 border-green-500/40 text-green-400 hover:bg-green-500/10"
+              onClick={() => { setFormat("csv"); setTimeout(exportReport, 0); }}
+              disabled={isExporting}
+            >
+              {isExporting && format === "csv" ? (
+                <span className="flex items-center gap-2">
+                  <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Generando...
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Download className="h-4 w-4" />
+                  Exportar Excel / CSV
+                </span>
+              )}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground text-center">
+            El PDF incluye todas las secciones: resumen ejecutivo, financiero, analítica, estaciones y transacciones detalladas
+          </p>
         </CardContent>
       </Card>
 

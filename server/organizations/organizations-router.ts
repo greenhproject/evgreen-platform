@@ -20,6 +20,7 @@ import {
 } from "../../drizzle/schema";
 import { eq, desc, sql, and, like, or, isNull } from "drizzle-orm";
 import { protectedProcedure, publicProcedure } from "../_core/trpc";
+import { generateOrgReportHtml, generateOrgReportCsv } from "../reports/org-report-pdf";
 
 // Helper: default modules per plan
 function getDefaultModules(plan: string): string[] {
@@ -1258,6 +1259,88 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         }).from(organizations).where(eq(organizations.slug, input.slug));
         if (!org) return null;
         return org;
+      }),
+
+    // ==========================================
+    // REPORTE EJECUTIVO COMPLETO (ORG PORTAL)
+    // ==========================================
+
+    generateFullReport: protectedProcedure
+      .input(z.object({
+        period: z.enum(["7d", "30d", "90d", "all"]).default("30d"),
+        format: z.enum(["html", "csv"]).default("html"),
+      }))
+      .mutation(async ({ ctx, input }: any) => {
+        const db = await getDb();
+
+        // Obtener membresía
+        const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
+          .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+        if (!membership) throw new TRPCError({ code: 'FORBIDDEN', message: 'No perteneces a ninguna organización' });
+
+        // Obtener datos de la organización
+        const [org] = await db!.select().from(organizations)
+          .where(eq(organizations.id, membership.organizationId));
+        if (!org) throw new TRPCError({ code: 'NOT_FOUND' });
+
+        // Calcular rango de fechas
+        const period = input.period;
+        let cutoff: Date | null = null;
+        if (period === '7d') cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        else if (period === '30d') cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        else if (period === '90d') cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+        // Obtener estaciones de la org
+        const stationRows = await db!.select().from(chargingStations)
+          .where(eq(chargingStations.organizationId, membership.organizationId));
+
+        // Obtener transacciones
+        const stationIds = stationRows.map((s: any) => s.id);
+        let txRows: any[] = [];
+        if (stationIds.length > 0) {
+          let whereClause = sql`t.stationId IN (${sql.join(stationIds.map((id: number) => sql`${id}`), sql`, `)})`;
+          if (cutoff) whereClause = sql`${whereClause} AND t.startTime >= ${cutoff}`;
+          const [rows] = await db!.execute(sql`
+            SELECT t.id, t.stationId as station_id, t.startTime as start_time, t.endTime as end_time,
+              t.kwhConsumed as energy_kwh, t.totalCost as total_cost,
+              t.transaction_status as status, t.evseId as connector_id,
+              st.name as station_name, u.name as user_name, u.email as user_email
+            FROM transactions t
+            LEFT JOIN charging_stations st ON t.stationId = st.id
+            LEFT JOIN users u ON t.userId = u.id
+            WHERE ${whereClause}
+            ORDER BY t.startTime DESC
+            LIMIT 2000
+          `) as any;
+          txRows = Array.isArray(rows) ? rows : [];
+        }
+
+        // Calcular stats
+        const completedTxs = txRows.filter((t: any) => t.status === 'COMPLETED');
+        const totalRevenue = completedTxs.reduce((s: number, t: any) => s + parseFloat(t.total_cost || 0), 0);
+        const totalKwh = completedTxs.reduce((s: number, t: any) => s + parseFloat(t.energy_kwh || 0), 0);
+        const uniqueUsers = new Set(txRows.map((t: any) => t.user_email).filter(Boolean)).size;
+        const avgKwh = completedTxs.length > 0 ? totalKwh / completedTxs.length : 0;
+
+        const reportData = {
+          org: { name: org.name, plan: org.plan || 'starter', status: org.status || 'active', slug: org.slug },
+          period,
+          stats: {
+            totalSessions: txRows.length,
+            totalKwh,
+            totalRevenue,
+            avgKwhPerSession: avgKwh,
+            uniqueUsers,
+          },
+          transactions: txRows,
+          stations: stationRows,
+        };
+
+        if (input.format === 'csv') {
+          return { format: 'csv', content: generateOrgReportCsv(reportData), filename: `reporte-evgreen-${period}-${new Date().toISOString().slice(0,10)}.csv` };
+        }
+
+        return { format: 'html', content: generateOrgReportHtml(reportData), filename: `reporte-evgreen-${period}-${new Date().toISOString().slice(0,10)}.html` };
       }),
 
     // ==========================================
