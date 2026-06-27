@@ -6844,8 +6844,7 @@ const nocRouter = router({
       .limit(5);
     const topStations = topStationsRaw.map(r => ({ stationId: r.stationId, name: r.stationName, sessions: Number(r.sessions), revenue: String(r.revenue ?? '0'), kwh: String(r.kwh ?? '0') }));
 
-    // Ingresos por hora (últimas 24h) para el gráfico (usando Drizzle ORM)
-    const { hour } = await import("drizzle-orm/mysql-core").then(m => ({ hour: m.hour })).catch(() => ({ hour: null as any }));
+    // Ingresos por hora (últimas 24h) para el gráfico (usando raw SQL)
     let hourlyData: Array<{ hour: number; sessions: number; revenue: string; kwh: string }> = [];
     try {
       const hourlyRaw = await dbInst.execute(sql`
