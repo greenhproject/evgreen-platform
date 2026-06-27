@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -104,17 +104,17 @@ export default function WhatsAppConfig() {
   const [testPhone, setTestPhone] = useState("");
   const [activeTab, setActiveTab] = useState<"config" | "notifications" | "logs">("config");
 
-  // Sync form with loaded config
-  const [synced, setSynced] = useState(false);
-  if (config && !synced) {
-    setForm({
-      phoneNumberId: config.phoneNumberId ?? "",
-      accessToken: config.accessToken ?? "",
-      wabaId: config.wabaId ?? "",
-      fromPhone: config.displayPhone ?? "",
-    });
-    setSynced(true);
-  }
+  // Sync form with loaded config using useEffect to avoid setState-in-render
+  useEffect(() => {
+    if (config) {
+      setForm({
+        phoneNumberId: config.phoneNumberId ?? "",
+        accessToken: config.accessToken ?? "",
+        wabaId: config.wabaId ?? "",
+        fromPhone: config.displayPhone ?? "",
+      });
+    }
+  }, [config?.phoneNumberId, config?.accessToken, config?.wabaId, config?.displayPhone]);
 
   const handleSaveCredentials = () => {
     saveMutation.mutate({

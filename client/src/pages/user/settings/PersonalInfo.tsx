@@ -396,6 +396,9 @@ export default function PersonalInfo() {
                     className="pl-10"
                   />
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  📱 Usado para notificaciones por WhatsApp (reservas, inicio/fin de carga, etc.). Ingresa en formato internacional sin + ni espacios: ej. 573001234567
+                </p>
               </div>
             </CardContent>
           </Card>

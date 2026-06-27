@@ -26,6 +26,7 @@ export interface SendWhatsAppOptions {
   userId?: number;
   referenceId?: number;
   referenceType?: string;
+  skipConfigCheck?: boolean; // Para mensajes de prueba: omite el check de notifKey habilitado
 }
 
 // ─── Obtener configuración activa ─────────────────────────────────────────────
@@ -47,11 +48,13 @@ export async function sendWhatsAppMessage(opts: SendWhatsAppOptions): Promise<bo
     return false;
   }
 
-  // Verificar que el tipo de notificación esté habilitado
-  const notifKey = eventTypeToConfigKey(opts.eventType);
-  if (notifKey && !(cfg as Record<string, unknown>)[notifKey]) {
-    console.log(`[WhatsApp] Notificación tipo '${opts.eventType}' deshabilitada — omitiendo`);
-    return false;
+  // Verificar que el tipo de notificación esté habilitado (se puede omitir para mensajes de prueba)
+  if (!opts.skipConfigCheck) {
+    const notifKey = eventTypeToConfigKey(opts.eventType);
+    if (notifKey && !(cfg as Record<string, unknown>)[notifKey]) {
+      console.log(`[WhatsApp] Notificación tipo '${opts.eventType}' deshabilitada — omitiendo`);
+      return false;
+    }
   }
 
   // Normalizar número (quitar +, espacios, guiones)

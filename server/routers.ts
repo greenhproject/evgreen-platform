@@ -2566,8 +2566,37 @@ const reservationsRouter = router({
       if (minutesUntilStart <= 15 && evse.status === "AVAILABLE") {
         await db.updateEvseStatus(input.evseId, "RESERVED");
       }
-      // Para reservas futuras (>15 min), un job periódico se encargará de marcar RESERVED cuando se acerque la hora
-      
+            // Para reservas futuras (>15 min), un job periódico se encargará de marcar RESERVED cuando se acerque la hora
+
+      // WhatsApp: notificar reserva confirmada
+      try {
+        const userForWa = await db.getUserById(ctx.user.id);
+        if (userForWa?.phone) {
+          const station = await db.getChargingStationById(input.stationId);
+          const { sendWhatsAppMessage, WaTemplates } = await import("./whatsapp/whatsapp-service");
+          const startDate = new Date(input.startTime);
+          const endDate = new Date(input.endTime);
+          const dateStr = startDate.toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" });
+          const timeStr = `${startDate.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })} - ${endDate.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}`;
+          sendWhatsAppMessage({
+            toPhone: userForWa.phone,
+            message: WaTemplates.reservationConfirmed({
+              stationName: station?.name ?? `Estación #${input.stationId}`,
+              date: dateStr,
+              time: timeStr,
+              connectorId: input.evseId,
+              userName: userForWa.name?.split(" ")[0],
+            }),
+            eventType: "reservation_confirmed",
+            userId: ctx.user.id,
+            referenceId: id,
+            referenceType: "reservation",
+          }).catch((e: Error) => console.error("[WhatsApp] reservation_confirmed error:", e.message));
+        }
+      } catch (waErr) {
+        console.error("[WhatsApp] reservation_confirmed trigger error:", waErr);
+      }
+
       return { 
         id,
         reservationFee: dynamicPrice.reservationFee,
@@ -2575,7 +2604,6 @@ const reservationsRouter = router({
         demandLevel: dynamicPrice.factors.demandLevel,
       };
     }),
-  
   // Cancelar reserva con reembolso dinámico
   cancel: protectedProcedure
     .input(z.object({ id: z.number() }))
@@ -6689,7 +6717,8 @@ const whatsappRouter = router({
       const ok = await sendWhatsAppMessage({
         toPhone: input.toPhone,
         message: input.message ?? `✅ *EVGreen — Mensaje de prueba*\n\nHola! Este es un mensaje de prueba del sistema de notificaciones WhatsApp de EVGreen.\n\n_Enviado por: ${ctx.user.name || ctx.user.email}_`,
-        eventType: "charge_start", // Use any event type; config check is bypassed for test
+        eventType: "charge_start",
+        skipConfigCheck: true, // Los mensajes de prueba siempre se envían sin importar los toggles
       });
       return { success: ok };
     }),
