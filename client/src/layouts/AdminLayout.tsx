@@ -53,7 +53,8 @@ import {
   FileText,
   Building,
   ParkingSquare,
-  MessageCircle
+  MessageCircle,
+  MonitorPlay
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -90,6 +91,7 @@ const adminMenuItems: { icon: any; label: string; path: string; roles?: string[]
   { icon: Bot, label: "Asistente IA", path: "/admin/ai-settings" },
   { icon: Building, label: "Organizaciones SaaS", path: "/admin/organizations" },
   { icon: MessageCircle, label: "WhatsApp", path: "/admin/whatsapp" },
+  { icon: MonitorPlay, label: "Ver en TV / NOC", path: "/admin/tv" },
   { icon: Settings, label: "Configuración", path: "/admin/settings" },
 ];
 

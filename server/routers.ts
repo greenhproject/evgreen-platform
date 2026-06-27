@@ -6743,6 +6743,252 @@ const whatsappRouter = router({
     }),
 });
 
+// ============================================================================
+// NOC ROUTER - Network Operations Center Dashboard
+// ============================================================================
+const nocRouter = router({
+  // Obtener todos los datos del NOC en una sola query optimizada
+  getNetworkSnapshot: adminProcedure.query(async () => {
+    const { getAllConnections } = await import("./ocpp/connection-manager");
+    const { dualCSMS } = await import("./ocpp/csms-dual");
+    const dbInst = await getDb();
+    if (!dbInst) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+    const { chargingStations, evses, transactions, users: usersTable } = await import("../drizzle/schema");
+    const { desc, gte, count, sum, eq: eqOp, and: andOp, inArray } = await import("drizzle-orm");
+
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // Todas las estaciones
+    const allStations = await dbInst.select().from(chargingStations).orderBy(chargingStations.name);
+    // Todos los EVSEs
+    const allEvses = await dbInst.select().from(evses);
+    // Conexiones OCPP activas
+    const liveConnections = getAllConnections();
+    const csmsConns = dualCSMS.getConnectionsStatus();
+    const connectedIds = new Set<string>();
+    for (const c of csmsConns) connectedIds.add(c.ocppIdentity);
+    for (const c of liveConnections) if (c.isConnected) connectedIds.add(c.ocppIdentity);
+
+    // Transacciones activas (IN_PROGRESS)
+    const activeTxs = await dbInst.select().from(transactions)
+      .where(eqOp(transactions.status, "IN_PROGRESS"));
+
+    // KPIs del día
+    const todayStats = await dbInst.select({
+      count: count(),
+      totalKwh: sum(transactions.kwhConsumed),
+      totalRevenue: sum(transactions.totalCost),
+      platformFee: sum(transactions.platformFee),
+    }).from(transactions)
+      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfDay)));
+
+    // KPIs del mes
+    const monthStats = await dbInst.select({
+      count: count(),
+      totalKwh: sum(transactions.kwhConsumed),
+      totalRevenue: sum(transactions.totalCost),
+    }).from(transactions)
+      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfMonth)));
+
+    // KPIs de la semana
+    const weekStats = await dbInst.select({
+      count: count(),
+      totalKwh: sum(transactions.kwhConsumed),
+      totalRevenue: sum(transactions.totalCost),
+    }).from(transactions)
+      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfWeek)));
+
+    // Últimas 20 transacciones completadas (para el ticker)
+    const recentTxs = await dbInst.select({
+      id: transactions.id,
+      stationId: transactions.stationId,
+      userId: transactions.userId,
+      kwhConsumed: transactions.kwhConsumed,
+      totalCost: transactions.totalCost,
+      startTime: transactions.startTime,
+      endTime: transactions.endTime,
+      status: transactions.status,
+    }).from(transactions)
+      .orderBy(desc(transactions.updatedAt))
+      .limit(20);
+
+    // Enriquecer con nombres de usuario y estación
+    const userIds = Array.from(new Set(recentTxs.map(t => t.userId)));
+    const stationIds = Array.from(new Set(recentTxs.map(t => t.stationId)));
+    const txUsers = userIds.length > 0 ? await dbInst.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, userIds)) : [];
+    const txStations = stationIds.length > 0 ? await dbInst.select({ id: chargingStations.id, name: chargingStations.name }).from(chargingStations).where(inArray(chargingStations.id, stationIds)) : [];
+    const userMap = new Map(txUsers.map(u => [u.id, u.name]));
+    const stationMap = new Map(txStations.map(s => [s.id, s.name]));
+
+    // Top 5 estaciones por ingresos del mes
+    const topStationsRaw = await dbInst.execute(sql`
+      SELECT t.stationId, cs.name, COUNT(*) as sessions, SUM(t.totalCost) as revenue, SUM(t.kwhConsumed) as kwh
+      FROM transactions t
+      JOIN charging_stations cs ON cs.id = t.stationId
+      WHERE t.status = 'COMPLETED' AND t.startTime >= ${startOfMonth}
+      GROUP BY t.stationId, cs.name
+      ORDER BY revenue DESC
+      LIMIT 5
+    `);
+    const topStations = ((topStationsRaw as any)[0] || []) as Array<{ stationId: number; name: string; sessions: number; revenue: string; kwh: string }>;
+
+    // Ingresos por hora (últimas 24h) para el gráfico
+    const hourlyRaw = await dbInst.execute(sql`
+      SELECT HOUR(startTime) as hour, COUNT(*) as sessions, SUM(totalCost) as revenue, SUM(kwhConsumed) as kwh
+      FROM transactions
+      WHERE status = 'COMPLETED' AND startTime >= ${startOfDay}
+      GROUP BY HOUR(startTime)
+      ORDER BY hour
+    `);
+    const hourlyData = ((hourlyRaw as any)[0] || []) as Array<{ hour: number; sessions: number; revenue: string; kwh: string }>;
+
+    // Construir mapa de EVSEs por estación
+    const evsesByStation = new Map<number, typeof allEvses>();
+    for (const e of allEvses) {
+      const arr = evsesByStation.get(e.stationId) || [];
+      arr.push(e);
+      evsesByStation.set(e.stationId, arr);
+    }
+
+    // Construir mapa de conexiones OCPP por stationId
+    const connByStation = new Map<number, any>();
+    for (const c of liveConnections) {
+      if (c.stationId) connByStation.set(c.stationId, c);
+    }
+
+    // Construir mapa de transacciones activas por evseId
+    const activeTxByEvse = new Map<number, any>();
+    for (const tx of activeTxs) activeTxByEvse.set(tx.evseId, tx);
+
+    // Enriquecer estaciones con datos en vivo
+    const enrichedStations = allStations.map(station => {
+      const stationEvses = evsesByStation.get(station.id) || [];
+      const ocppConn = connByStation.get(station.id);
+      const isLiveOnline = station.ocppIdentity ? connectedIds.has(station.ocppIdentity) : false;
+      const chargingEvses = stationEvses.filter(e => activeTxByEvse.has(e.id));
+      const availableEvses = stationEvses.filter(e => e.status === "AVAILABLE" && !activeTxByEvse.has(e.id));
+      const faultedEvses = stationEvses.filter(e => e.status === "FAULTED");
+      const totalPowerKw = chargingEvses.reduce((sum, e) => sum + parseFloat(e.powerKw?.toString() || "0"), 0);
+
+      // Determinar estado general de la estación
+      let overallStatus: "charging" | "available" | "offline" | "faulted" | "inactive" = "inactive";
+      if (!station.isActive) overallStatus = "inactive";
+      else if (faultedEvses.length > 0 && chargingEvses.length === 0) overallStatus = "faulted";
+      else if (!isLiveOnline && station.ocppIdentity) overallStatus = "offline";
+      else if (chargingEvses.length > 0) overallStatus = "charging";
+      else if (availableEvses.length > 0) overallStatus = "available";
+      else if (isLiveOnline) overallStatus = "available";
+
+      return {
+        id: station.id,
+        name: station.name,
+        city: station.city,
+        department: station.department,
+        address: station.address,
+        latitude: station.latitude,
+        longitude: station.longitude,
+        ocppIdentity: station.ocppIdentity,
+        isOnline: isLiveOnline,
+        isActive: station.isActive,
+        overallStatus,
+        totalEvses: stationEvses.length,
+        chargingCount: chargingEvses.length,
+        availableCount: availableEvses.length,
+        faultedCount: faultedEvses.length,
+        totalPowerKw: Math.round(totalPowerKw * 10) / 10,
+        lastHeartbeat: ocppConn?.lastHeartbeat || null,
+        connectorStatuses: ocppConn?.connectorStatuses || {},
+        evses: stationEvses.map(e => ({
+          id: e.id,
+          evseIdLocal: e.evseIdLocal,
+          connectorType: e.connectorType,
+          chargeType: e.chargeType,
+          powerKw: e.powerKw,
+          status: e.status,
+          isCharging: activeTxByEvse.has(e.id),
+          currentTx: activeTxByEvse.get(e.id) ? {
+            id: activeTxByEvse.get(e.id)!.id,
+            kwhConsumed: activeTxByEvse.get(e.id)!.kwhConsumed,
+            totalCost: activeTxByEvse.get(e.id)!.totalCost,
+            startTime: activeTxByEvse.get(e.id)!.startTime,
+          } : null,
+        })),
+      };
+    });
+
+    // Contadores globales
+    const totalStations = allStations.length;
+    const onlineStations = enrichedStations.filter(s => s.isOnline).length;
+    const chargingStationsCount = enrichedStations.filter(s => s.overallStatus === "charging").length;
+    const offlineStations = enrichedStations.filter(s => s.overallStatus === "offline").length;
+    const faultedStations = enrichedStations.filter(s => s.overallStatus === "faulted").length;
+    const activeSessionsCount = activeTxs.length;
+    const totalPowerDelivering = enrichedStations.reduce((sum, s) => sum + s.totalPowerKw, 0);
+
+    return {
+      timestamp: now.toISOString(),
+      // KPIs globales
+      kpis: {
+        totalStations,
+        onlineStations,
+        offlineStations,
+        faultedStations,
+        chargingStations: chargingStationsCount,
+        activeSessionsCount,
+        totalPowerDelivering: Math.round(totalPowerDelivering * 10) / 10,
+        today: {
+          sessions: Number(todayStats[0]?.count || 0),
+          kwh: parseFloat(todayStats[0]?.totalKwh?.toString() || "0"),
+          revenue: parseFloat(todayStats[0]?.totalRevenue?.toString() || "0"),
+          platformFee: parseFloat(todayStats[0]?.platformFee?.toString() || "0"),
+        },
+        week: {
+          sessions: Number(weekStats[0]?.count || 0),
+          kwh: parseFloat(weekStats[0]?.totalKwh?.toString() || "0"),
+          revenue: parseFloat(weekStats[0]?.totalRevenue?.toString() || "0"),
+        },
+        month: {
+          sessions: Number(monthStats[0]?.count || 0),
+          kwh: parseFloat(monthStats[0]?.totalKwh?.toString() || "0"),
+          revenue: parseFloat(monthStats[0]?.totalRevenue?.toString() || "0"),
+        },
+      },
+      // Estaciones enriquecidas
+      stations: enrichedStations,
+      // Ticker de actividad reciente
+      recentActivity: recentTxs.map(tx => ({
+        id: tx.id,
+        stationName: stationMap.get(tx.stationId) || `Estación #${tx.stationId}`,
+        userName: userMap.get(tx.userId) || `Usuario #${tx.userId}`,
+        kwhConsumed: parseFloat(tx.kwhConsumed?.toString() || "0"),
+        totalCost: parseFloat(tx.totalCost?.toString() || "0"),
+        startTime: tx.startTime,
+        endTime: tx.endTime,
+        status: tx.status,
+      })),
+      // Top estaciones
+      topStations: topStations.map(s => ({
+        stationId: s.stationId,
+        name: s.name,
+        sessions: Number(s.sessions),
+        revenue: parseFloat(s.revenue || "0"),
+        kwh: parseFloat(s.kwh || "0"),
+      })),
+      // Datos por hora para gráfico
+      hourlyData: hourlyData.map(h => ({
+        hour: h.hour,
+        sessions: Number(h.sessions),
+        revenue: parseFloat(h.revenue || "0"),
+        kwh: parseFloat(h.kwh || "0"),
+      })),
+    };
+  }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -6797,6 +7043,7 @@ export const appRouter = router({
   saas: saasRouter,
   occupancyLiquidations: occupancyLiquidationsRouter,
   whatsapp: whatsappRouter,
+  noc: nocRouter,
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

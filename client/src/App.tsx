@@ -110,6 +110,7 @@ const AdminTariffs = lazy(() => import("./pages/admin/Tariffs"));
 const AdminReports = lazy(() => import("./pages/admin/Reports"));
 const AdminSettings = lazy(() => import("./pages/admin/Settings"));
 const AdminWhatsAppConfig = lazy(() => import("./pages/admin/WhatsAppConfig"));
+const TVDashboard = lazy(() => import("./pages/admin/TVDashboard"));
 const AdminBanners = lazy(() => import("./pages/admin/Banners"));
 const AdminNotifications = lazy(() => import("./pages/admin/Notifications"));
 const AdminAISettings = lazy(() => import("./pages/admin/AISettings"));
@@ -748,6 +749,11 @@ function Router() {
             <AdminLayout>
               <AdminWhatsAppConfig />
             </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/tv">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <TVDashboard />
           </ProtectedRoute>
         </Route>
         <Route path="/admin/ai-settings">
