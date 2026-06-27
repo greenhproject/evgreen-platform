@@ -855,6 +855,29 @@ async function sendOverstayNotification(
       data: { overstayType: type },
     });
 
+    // WhatsApp: notificar penalización (solo en penalty_started)
+    if (type === "penalty_started" && data.stationName) {
+      try {
+        const userForWa = await db.getUserById(userId);
+        if (userForWa?.phone) {
+          const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
+          sendWhatsAppMessage({
+            toPhone: userForWa.phone,
+            message: WaTemplates.penalty({
+              stationName: data.stationName,
+              amount: `$${data.penaltyPerMinute.toLocaleString("es-CO")}/min`,
+              reason: "Ocupaci\u00f3n del conector despu\u00e9s del per\u00edodo de gracia",
+              userName: userForWa.name?.split(" ")[0],
+            }),
+            eventType: "penalty",
+            userId,
+          }).catch((e: Error) => console.error("[WhatsApp] penalty error:", e.message));
+        }
+      } catch (waErr) {
+        console.error("[OverstayMonitor] WhatsApp penalty error:", waErr);
+      }
+    }
+
     console.log(`[OverstayMonitor] Notification sent: type=${type}, userId=${userId}, title="${title}"`);
   } catch (error) {
     console.error(`[OverstayMonitor] Error sending notification to user ${userId}:`, error);

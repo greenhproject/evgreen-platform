@@ -2677,6 +2677,26 @@ const walletRouter = router({
         description: `Recarga de billetera por $${input.amount.toLocaleString()} COP`,
       });
       
+      // WhatsApp: notificar recarga de billetera
+      try {
+        const userForWa = await db.getUserById(ctx.user.id);
+        if (userForWa?.phone) {
+          const { sendWhatsAppMessage, WaTemplates } = await import("./whatsapp/whatsapp-service");
+          sendWhatsAppMessage({
+            toPhone: userForWa.phone,
+            message: WaTemplates.walletRecharge({
+              amount: `$${input.amount.toLocaleString("es-CO")} COP`,
+              newBalance: `$${Math.round(newBalance).toLocaleString("es-CO")} COP`,
+              userName: userForWa.name?.split(" ")[0],
+            }),
+            eventType: "wallet_recharge",
+            userId: ctx.user.id,
+          }).catch((e: Error) => console.error("[WhatsApp] wallet_recharge error:", e.message));
+        }
+      } catch (waErr) {
+        console.error("[WhatsApp] wallet_recharge trigger error:", waErr);
+      }
+
       return { success: true, newBalance };
     }),
 
@@ -6586,6 +6606,107 @@ const occupancyLiquidationsRouter = router({
     }),
 });
 
+// ============================================================================
+// WHATSAPP ROUTER
+// ============================================================================
+const whatsappRouter = router({
+  getConfig: adminProcedure.query(async () => {
+    const { getWhatsAppConfig } = await import("./whatsapp/whatsapp-service");
+    const cfg = await getWhatsAppConfig();
+    // Mask the access token for security
+    if (cfg?.accessToken) {
+      return { ...cfg, accessToken: cfg.accessToken.slice(0, 8) + "*".repeat(20) + cfg.accessToken.slice(-4) };
+    }
+    return cfg;
+  }),
+
+  saveConfig: adminProcedure
+    .input(z.object({
+      enabled: z.boolean().optional(),
+      phoneNumberId: z.string().optional(),
+      accessToken: z.string().optional(),
+      wabaId: z.string().optional(),
+      fromPhone: z.string().optional(),
+      notifyChargeStart: z.boolean().optional(),
+      notifyChargeEnd: z.boolean().optional(),
+      notifyChargeProgress: z.boolean().optional(),
+      notifyPenalty: z.boolean().optional(),
+      notifyWalletRecharge: z.boolean().optional(),
+      notifyChargerOffline: z.boolean().optional(),
+      notifyReservation: z.boolean().optional(),
+      notifyMonthlySummary: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const dbInst = await getDb();
+      if (!dbInst) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+      const { whatsappConfig } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const existing = await dbInst.select().from(whatsappConfig).where(eq(whatsappConfig.id, 1)).limit(1);
+      // Don't overwrite token if masked value is sent
+      const tokenToSave = input.accessToken && !input.accessToken.includes("*") ? input.accessToken : undefined;
+      if (existing.length > 0) {
+        await dbInst.update(whatsappConfig).set({
+          ...(input.enabled !== undefined && { enabled: input.enabled }),
+          ...(input.phoneNumberId && { phoneNumberId: input.phoneNumberId }),
+          ...(tokenToSave && { accessToken: tokenToSave }),
+          ...(input.wabaId && { wabaId: input.wabaId }),
+          ...(input.fromPhone && { displayPhone: input.fromPhone }),
+          ...(input.notifyChargeStart !== undefined && { notifyChargeStart: input.notifyChargeStart }),
+          ...(input.notifyChargeEnd !== undefined && { notifyChargeEnd: input.notifyChargeEnd }),
+          ...(input.notifyChargeProgress !== undefined && { notifyChargeProgress: input.notifyChargeProgress }),
+          ...(input.notifyPenalty !== undefined && { notifyPenalty: input.notifyPenalty }),
+          ...(input.notifyWalletRecharge !== undefined && { notifyWalletRecharge: input.notifyWalletRecharge }),
+          ...(input.notifyChargerOffline !== undefined && { notifyChargerOffline: input.notifyChargerOffline }),
+          ...(input.notifyReservation !== undefined && { notifyReservation: input.notifyReservation }),
+          ...(input.notifyMonthlySummary !== undefined && { notifyMonthlySummary: input.notifyMonthlySummary }),
+          updatedAt: new Date(),
+        }).where(eq(whatsappConfig.id, 1));
+      } else {
+        await dbInst.insert(whatsappConfig).values({
+          id: 1,
+          enabled: input.enabled ?? false,
+          phoneNumberId: input.phoneNumberId ?? "",
+          accessToken: tokenToSave ?? "",
+          wabaId: input.wabaId ?? "",
+          displayPhone: input.fromPhone ?? "",
+          notifyChargeStart: input.notifyChargeStart ?? true,
+          notifyChargeEnd: input.notifyChargeEnd ?? true,
+          notifyChargeProgress: input.notifyChargeProgress ?? false,
+          notifyPenalty: input.notifyPenalty ?? true,
+          notifyWalletRecharge: input.notifyWalletRecharge ?? true,
+          notifyChargerOffline: input.notifyChargerOffline ?? false,
+          notifyReservation: input.notifyReservation ?? true,
+          notifyMonthlySummary: input.notifyMonthlySummary ?? false,
+        });
+      }
+      return { success: true };
+    }),
+
+  sendTest: adminProcedure
+    .input(z.object({ toPhone: z.string(), message: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const { sendWhatsAppMessage } = await import("./whatsapp/whatsapp-service");
+      const ok = await sendWhatsAppMessage({
+        toPhone: input.toPhone,
+        message: input.message ?? `✅ *EVGreen — Mensaje de prueba*\n\nHola! Este es un mensaje de prueba del sistema de notificaciones WhatsApp de EVGreen.\n\n_Enviado por: ${ctx.user.name || ctx.user.email}_`,
+        eventType: "charge_start", // Use any event type; config check is bypassed for test
+      });
+      return { success: ok };
+    }),
+
+  getLogs: adminProcedure
+    .input(z.object({ limit: z.number().optional(), eventType: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      const dbInst = await getDb();
+      if (!dbInst) return [];
+      const { whatsappNotificationLog } = await import("../drizzle/schema");
+      const { desc } = await import("drizzle-orm");
+      return dbInst.select().from(whatsappNotificationLog)
+        .orderBy(desc(whatsappNotificationLog.createdAt))
+        .limit(input?.limit ?? 100);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -6639,6 +6760,7 @@ export const appRouter = router({
   contact: contactRouter,
   saas: saasRouter,
   occupancyLiquidations: occupancyLiquidationsRouter,
+  whatsapp: whatsappRouter,
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

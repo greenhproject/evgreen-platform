@@ -1122,6 +1122,26 @@ export class DualCSMS {
         referenceType: "transaction",
       });
       console.log(`[CSMS-DUAL] StartTransaction: Notification sent to user ${userId} for charging started at $${formattedPrice}/kWh`);
+      // WhatsApp: notificar inicio de carga
+      if (userId) {
+        const userForWa = await db.getUserById(userId);
+        if (userForWa?.phone) {
+          const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
+          sendWhatsAppMessage({
+            toPhone: userForWa.phone,
+            message: WaTemplates.chargeStart({
+              stationName,
+              connectorId: req.connectorId,
+              time: new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }),
+              userName: userForWa.name?.split(" ")[0],
+            }),
+            eventType: "charge_start",
+            userId,
+            referenceId: transactionId,
+            referenceType: "transaction",
+          }).catch((e: Error) => console.error("[WhatsApp] charge_start error:", e.message));
+        }
+      }
     } catch (notifError: any) {
       console.error(`[CSMS-DUAL] StartTransaction: Failed to send notification to user ${userId}:`, notifError.message);
     }
@@ -1361,6 +1381,29 @@ export class DualCSMS {
       }
     } catch (pushError) {
       console.error(`[CSMS-DUAL] Error sending push notification:`, pushError);
+    }
+
+    // WhatsApp: notificar fin de carga
+    try {
+      if (userForEmail?.phone) {
+        const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
+        sendWhatsAppMessage({
+          toPhone: userForEmail.phone,
+          message: WaTemplates.chargeEnd({
+            stationName: stationForEmail?.name || "Estaci\u00f3n EVGreen",
+            kwhConsumed: energyDelivered.toFixed(2),
+            durationMin: Math.round(duration),
+            totalCost: `$${Math.round(totalCost).toLocaleString("es-CO")} COP`,
+            userName: userForEmail.name?.split(" ")[0],
+          }),
+          eventType: "charge_end",
+          userId: transaction.userId,
+          referenceId: transaction.id,
+          referenceType: "transaction",
+        }).catch((e: Error) => console.error("[WhatsApp] charge_end error:", e.message));
+      }
+    } catch (waError) {
+      console.error("[CSMS-DUAL] Error sending WhatsApp charge_end:", waError);
     }
 
     // Enviar recibo por email

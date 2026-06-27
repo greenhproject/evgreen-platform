@@ -3863,3 +3863,51 @@ export const contactSubmissions = mysqlTable("contactSubmissions", {
 });
 export type ContactSubmission = typeof contactSubmissions.$inferSelect;
 export type InsertContactSubmission = typeof contactSubmissions.$inferInsert;
+
+// ============================================================================
+// WHATSAPP CONFIGURATION & NOTIFICATION LOG
+// ============================================================================
+export const whatsappConfig = mysqlTable("whatsapp_config", {
+  id: int("id").autoincrement().primaryKey(),
+  // Credenciales Meta / WhatsApp Business Cloud API
+  phoneNumberId: varchar("phoneNumberId", { length: 100 }),
+  wabaId: varchar("wabaId", { length: 100 }),
+  accessToken: text("accessToken"),
+  appSecret: text("appSecret"),
+  verifyToken: varchar("verifyToken", { length: 255 }),
+  // Número visible para el usuario (ej: +57 322 9587443)
+  displayPhone: varchar("displayPhone", { length: 30 }),
+  // Estado general
+  enabled: boolean("enabled").default(false).notNull(),
+  // Tipos de notificación habilitados
+  notifyChargeStart: boolean("notifyChargeStart").default(true).notNull(),
+  notifyChargeEnd: boolean("notifyChargeEnd").default(true).notNull(),
+  notifyChargeProgress: boolean("notifyChargeProgress").default(false).notNull(),
+  notifyPenalty: boolean("notifyPenalty").default(true).notNull(),
+  notifyWalletRecharge: boolean("notifyWalletRecharge").default(true).notNull(),
+  notifyChargerOffline: boolean("notifyChargerOffline").default(false).notNull(),
+  notifyReservation: boolean("notifyReservation").default(true).notNull(),
+  notifyMonthlySummary: boolean("notifyMonthlySummary").default(false).notNull(),
+  // Metadata
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type WhatsappConfig = typeof whatsappConfig.$inferSelect;
+export type InsertWhatsappConfig = typeof whatsappConfig.$inferInsert;
+
+export const whatsappNotificationLog = mysqlTable("whatsapp_notification_log", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"),
+  toPhone: varchar("toPhone", { length: 30 }).notNull(),
+  eventType: varchar("eventType", { length: 50 }).notNull(),
+  messageBody: text("messageBody").notNull(),
+  status: mysqlEnum("wa_notif_status", ["sent", "delivered", "read", "failed"]).default("sent").notNull(),
+  wamid: varchar("wamid", { length: 128 }),
+  errorMessage: text("errorMessage"),
+  referenceId: int("referenceId"),
+  referenceType: varchar("referenceType", { length: 50 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type WhatsappNotificationLog = typeof whatsappNotificationLog.$inferSelect;
+export type InsertWhatsappNotificationLog = typeof whatsappNotificationLog.$inferInsert;
