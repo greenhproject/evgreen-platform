@@ -1,258 +1,133 @@
-import { useState, useEffect, useRef } from "react";
+/**
+ * EVGreen NOC - Network Operations Center Dashboard
+ * Panel de control de red para TV/pantalla grande y móvil.
+ * Ruta: /admin/tv (sin AdminLayout - fullscreen)
+ */
+import { useState, useEffect, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { MapView } from "@/components/Map";
 
-// ============================================================================
-// EVGreen NOC - Network Operations Center Dashboard
-// Diseñado para pantallas grandes / TV. Ruta: /admin/tv
-// ============================================================================
-
+// ─── tipos ────────────────────────────────────────────────────────────────────
 type StationStatus = "charging" | "available" | "offline" | "faulted" | "inactive";
 
-const STATUS_COLORS: Record<StationStatus, string> = {
+const STATUS_COLOR: Record<StationStatus, string> = {
   charging: "#22c55e",
   available: "#3b82f6",
-  offline: "#ef4444",
-  faulted: "#f97316",
-  inactive: "#6b7280",
+  offline:   "#ef4444",
+  faulted:   "#f97316",
+  inactive:  "#6b7280",
 };
-
-const STATUS_LABELS: Record<StationStatus, string> = {
+const STATUS_LABEL: Record<StationStatus, string> = {
   charging: "Cargando",
   available: "Disponible",
-  offline: "Sin conexión",
-  faulted: "Falla",
-  inactive: "Inactiva",
+  offline:   "Sin conexión",
+  faulted:   "Falla",
+  inactive:  "Inactiva",
 };
 
-const STATUS_BG: Record<StationStatus, string> = {
-  charging: "bg-green-500/20 border-green-500/40",
-  available: "bg-blue-500/20 border-blue-500/40",
-  offline: "bg-red-500/20 border-red-500/40",
-  faulted: "bg-orange-500/20 border-orange-500/40",
-  inactive: "bg-gray-500/20 border-gray-500/40",
-};
-
-function formatCOP(value: number) {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
+// ─── helpers ──────────────────────────────────────────────────────────────────
+function fmtCOP(v: number) {
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000)     return `$${(v / 1_000).toFixed(0)}K`;
+  return `$${v.toFixed(0)}`;
+}
+function fmtKwh(v: number) {
+  return v >= 1000 ? `${(v / 1000).toFixed(1)} MWh` : `${v.toFixed(1)} kWh`;
+}
+function fmtElapsed(start: Date | string) {
+  const ms = Date.now() - new Date(start).getTime();
+  const m  = Math.floor(ms / 60000);
+  const h  = Math.floor(m / 60);
+  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
 }
 
-function formatKwh(value: number) {
-  if (value >= 1000) return `${(value / 1000).toFixed(1)} MWh`;
-  return `${value.toFixed(1)} kWh`;
-}
-
-function formatElapsed(startTime: Date | string) {
-  const start = new Date(startTime);
-  const diffMs = Date.now() - start.getTime();
-  const mins = Math.floor(diffMs / 60000);
-  const hours = Math.floor(mins / 60);
-  if (hours > 0) return `${hours}h ${mins % 60}m`;
-  return `${mins}m`;
-}
-
+// ─── sub-components ───────────────────────────────────────────────────────────
 function LiveClock() {
-  const [time, setTime] = useState(new Date());
-  useEffect(() => {
-    const t = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
+  const [t, setT] = useState(new Date());
+  useEffect(() => { const id = setInterval(() => setT(new Date()), 1000); return () => clearInterval(id); }, []);
   return (
-    <div className="text-right">
-      <div className="text-2xl font-mono font-bold text-white tabular-nums">
-        {time.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+    <div className="text-right leading-tight">
+      <div className="text-xl font-mono font-bold text-white tabular-nums">
+        {t.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
       </div>
-      <div className="text-xs text-gray-400">
-        {time.toLocaleDateString("es-CO", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+      <div className="text-[10px] text-gray-400 capitalize">
+        {t.toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" })}
       </div>
     </div>
   );
 }
 
-function PulsingDot({ color }: { color: string }) {
+function Dot({ color, pulse = false }: { color: string; pulse?: boolean }) {
   return (
-    <span className="relative flex h-3 w-3">
-      <span
-        className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-        style={{ backgroundColor: color }}
-      />
-      <span className="relative inline-flex rounded-full h-3 w-3" style={{ backgroundColor: color }} />
+    <span className="relative flex h-2.5 w-2.5 shrink-0">
+      {pulse && <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />}
+      <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ backgroundColor: color }} />
     </span>
   );
 }
 
-function KpiCard({
-  label,
-  value,
-  sub,
-  color,
-  icon,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  color: string;
-  icon: string;
-}) {
+function KpiCard({ label, value, sub, color, icon }: { label: string; value: string; sub?: string; color: string; icon: string }) {
   return (
-    <div
-      className="flex flex-col gap-1 px-5 py-3 rounded-xl border"
-      style={{ borderColor: `${color}40`, backgroundColor: `${color}12` }}
-    >
-      <div className="flex items-center gap-2">
-        <span className="text-lg">{icon}</span>
-        <span className="text-xs text-gray-400 uppercase tracking-wider font-medium">{label}</span>
+    <div className="flex flex-col gap-0.5 px-3 py-2 rounded-lg border" style={{ borderColor: `${color}35`, backgroundColor: `${color}10` }}>
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm">{icon}</span>
+        <span className="text-[10px] text-gray-400 uppercase tracking-wide font-medium truncate">{label}</span>
       </div>
-      <div className="text-2xl font-bold font-mono tabular-nums" style={{ color }}>
-        {value}
-      </div>
-      {sub && <div className="text-xs text-gray-500">{sub}</div>}
+      <div className="text-lg font-bold font-mono tabular-nums leading-tight" style={{ color }}>{value}</div>
+      {sub && <div className="text-[10px] text-gray-500 truncate">{sub}</div>}
     </div>
   );
 }
 
-function StationCard({ station }: { station: any }) {
-  const status = station.overallStatus as StationStatus;
-  const color = STATUS_COLORS[status];
-
+function StationCard({ s }: { s: any }) {
+  const status = s.overallStatus as StationStatus;
+  const color  = STATUS_COLOR[status];
   return (
-    <div
-      className={`rounded-xl border p-3 flex flex-col gap-2 ${STATUS_BG[status]}`}
-      style={{ minWidth: 0 }}
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold text-white text-sm truncate">{station.name}</div>
-          <div className="text-xs text-gray-400 truncate">{station.city}{station.department ? `, ${station.department}` : ""}</div>
+    <div className="rounded-lg border p-2.5 flex flex-col gap-1.5" style={{ borderColor: `${color}35`, backgroundColor: `${color}0d` }}>
+      {/* header */}
+      <div className="flex items-start justify-between gap-1">
+        <div className="min-w-0">
+          <div className="font-semibold text-white text-xs truncate">{s.name}</div>
+          <div className="text-[10px] text-gray-500 truncate">{s.city}{s.department ? `, ${s.department}` : ""}</div>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {status === "charging" && <PulsingDot color={color} />}
-          <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: `${color}25`, color }}>
-            {STATUS_LABELS[status]}
+        <div className="flex items-center gap-1 shrink-0">
+          {status === "charging" && <Dot color={color} pulse />}
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${color}20`, color }}>
+            {STATUS_LABEL[status]}
           </span>
         </div>
       </div>
-
-      {/* Connectors row */}
+      {/* connectors */}
       <div className="flex gap-1 flex-wrap">
-        {station.evses.map((evse: any) => {
-          const evseColor = evse.isCharging ? "#22c55e" : evse.status === "AVAILABLE" ? "#3b82f6" : evse.status === "FAULTED" ? "#f97316" : "#6b7280";
+        {s.evses.map((e: any) => {
+          const ec = e.isCharging ? "#22c55e" : e.status === "AVAILABLE" ? "#3b82f6" : e.status === "FAULTED" ? "#f97316" : "#6b7280";
           return (
-            <div
-              key={evse.id}
-              className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border"
-              style={{ borderColor: `${evseColor}50`, backgroundColor: `${evseColor}15`, color: evseColor }}
-            >
-              <span>⚡</span>
-              <span>{evse.connectorType}</span>
-              {evse.isCharging && evse.currentTx && (
-                <span className="font-mono">{parseFloat(evse.currentTx.kwhConsumed || "0").toFixed(1)} kWh</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Stats row */}
-      <div className="flex items-center justify-between text-xs text-gray-400">
-        <span>{station.chargingCount}/{station.totalEvses} activos</span>
-        {station.totalPowerKw > 0 && (
-          <span className="text-green-400 font-mono font-medium">{station.totalPowerKw} kW</span>
-        )}
-        {station.lastHeartbeat && (
-          <span className="text-gray-500">♥ {formatElapsed(station.lastHeartbeat)}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ActivityTicker({ items }: { items: any[] }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [offset, setOffset] = useState(0);
-
-  useEffect(() => {
-    if (!ref.current) return;
-    const width = ref.current.scrollWidth / 2;
-    let frame: number;
-    let pos = 0;
-    const animate = () => {
-      pos += 0.4;
-      if (pos >= width) pos = 0;
-      setOffset(pos);
-      frame = requestAnimationFrame(animate);
-    };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [items.length]);
-
-  const tickerItems = [...items, ...items]; // duplicate for seamless loop
-
-  return (
-    <div className="overflow-hidden whitespace-nowrap">
-      <div
-        ref={ref}
-        className="inline-flex gap-8"
-        style={{ transform: `translateX(-${offset}px)` }}
-      >
-        {tickerItems.map((item, i) => {
-          const isActive = item.status === "IN_PROGRESS";
-          const isCompleted = item.status === "COMPLETED";
-          return (
-            <span key={i} className="inline-flex items-center gap-2 text-sm">
-              <span className={isActive ? "text-green-400" : isCompleted ? "text-blue-400" : "text-gray-400"}>
-                {isActive ? "⚡" : isCompleted ? "✓" : "·"}
-              </span>
-              <span className="text-white font-medium">{item.userName}</span>
-              <span className="text-gray-400">en</span>
-              <span className="text-green-300">{item.stationName}</span>
-              {isCompleted && (
-                <>
-                  <span className="text-gray-500">·</span>
-                  <span className="text-yellow-400 font-mono">{formatCOP(item.totalCost)}</span>
-                  <span className="text-gray-500">·</span>
-                  <span className="text-blue-300 font-mono">{item.kwhConsumed.toFixed(1)} kWh</span>
-                </>
-              )}
-              {isActive && (
-                <span className="text-green-400 font-mono animate-pulse">
-                  {formatElapsed(item.startTime)} activo
-                </span>
-              )}
-              <span className="text-gray-700 mx-2">|</span>
+            <span key={e.id} className="text-[10px] px-1.5 py-0.5 rounded-full border" style={{ borderColor: `${ec}40`, backgroundColor: `${ec}15`, color: ec }}>
+              ⚡ {e.connectorType}{e.isCharging && e.currentTx ? ` · ${parseFloat(e.currentTx.kwhConsumed || "0").toFixed(1)} kWh` : ""}
             </span>
           );
         })}
       </div>
+      {/* stats */}
+      <div className="flex items-center justify-between text-[10px] text-gray-500">
+        <span>{s.chargingCount}/{s.totalEvses} activos</span>
+        {s.totalPowerKw > 0 && <span className="text-green-400 font-mono">{s.totalPowerKw} kW</span>}
+        {s.lastHeartbeat && <span>♥ {fmtElapsed(s.lastHeartbeat)}</span>}
+      </div>
     </div>
   );
 }
 
-function HourlyChart({ data }: { data: Array<{ hour: number; revenue: number; kwh: number; sessions: number }> }) {
-  if (!data.length) return <div className="text-gray-600 text-xs text-center py-4">Sin datos hoy</div>;
-
-  const maxRevenue = Math.max(...data.map(d => d.revenue), 1);
-  const hours = Array.from({ length: 24 }, (_, i) => i);
-
+function HourlyBars({ data }: { data: Array<{ hour: number; revenue: number }> }) {
+  const max = Math.max(...data.map(d => d.revenue), 1);
   return (
-    <div className="flex items-end gap-0.5 h-16">
-      {hours.map(h => {
+    <div className="flex items-end gap-px h-10">
+      {Array.from({ length: 24 }, (_, h) => {
         const d = data.find(x => x.hour === h);
-        const height = d ? Math.max(4, (d.revenue / maxRevenue) * 100) : 0;
+        const pct = d ? Math.max(6, (d.revenue / max) * 100) : 0;
         return (
-          <div key={h} className="flex-1 flex flex-col items-center gap-0.5" title={d ? `${h}:00 - $${d.revenue.toLocaleString()} COP` : ""}>
-            <div
-              className="w-full rounded-sm transition-all"
-              style={{
-                height: `${height}%`,
-                minHeight: d ? "4px" : "0",
-                backgroundColor: d ? "#22c55e" : "transparent",
-                opacity: d ? 0.8 : 0,
-              }}
-            />
+          <div key={h} className="flex-1 flex flex-col justify-end" title={d ? `${h}:00 · ${fmtCOP(d.revenue)}` : `${h}:00`}>
+            <div className="w-full rounded-sm" style={{ height: `${pct}%`, backgroundColor: d ? "#22c55e" : "transparent", opacity: 0.75 }} />
           </div>
         );
       })}
@@ -260,328 +135,275 @@ function HourlyChart({ data }: { data: Array<{ hour: number; revenue: number; kw
   );
 }
 
+function Ticker({ items }: { items: any[] }) {
+  const ref  = useRef<HTMLDivElement>(null);
+  const pos  = useRef(0);
+  const raf  = useRef<number>(0);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || items.length === 0) return;
+    const animate = () => {
+      pos.current += 0.5;
+      const half = el.scrollWidth / 2;
+      if (pos.current >= half) pos.current = 0;
+      el.style.transform = `translateX(-${pos.current}px)`;
+      raf.current = requestAnimationFrame(animate);
+    };
+    raf.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(raf.current);
+  }, [items.length]);
+
+  const all = [...items, ...items];
+  return (
+    <div className="overflow-hidden whitespace-nowrap">
+      <div ref={ref} className="inline-flex gap-6">
+        {all.map((item, i) => (
+          <span key={i} className="inline-flex items-center gap-1.5 text-xs">
+            <span className={item.status === "IN_PROGRESS" ? "text-green-400" : item.status === "COMPLETED" ? "text-blue-400" : "text-gray-500"}>
+              {item.status === "IN_PROGRESS" ? "⚡" : item.status === "COMPLETED" ? "✓" : "·"}
+            </span>
+            <span className="text-white font-medium">{item.userName}</span>
+            <span className="text-gray-500">en</span>
+            <span className="text-green-300">{item.stationName}</span>
+            {item.status === "COMPLETED" && (
+              <>
+                <span className="text-gray-600">·</span>
+                <span className="text-yellow-400 font-mono">{fmtCOP(item.totalCost)}</span>
+                <span className="text-gray-600">·</span>
+                <span className="text-blue-300 font-mono">{item.kwhConsumed.toFixed(1)} kWh</span>
+              </>
+            )}
+            {item.status === "IN_PROGRESS" && (
+              <span className="text-green-400 font-mono">{fmtElapsed(item.startTime)}</span>
+            )}
+            <span className="text-gray-700 mx-3">|</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── main component ───────────────────────────────────────────────────────────
 export default function TVDashboard() {
-  const [mapReady, setMapReady] = useState(false);
-  const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [countdown, setCountdown] = useState(15);
+  const [isFS, setIsFS] = useState(false);
 
   const { data, isLoading, refetch } = trpc.noc.getNetworkSnapshot.useQuery(undefined, {
-    refetchInterval: 15_000, // auto-refresh cada 15s
+    refetchInterval: 15_000,
     staleTime: 10_000,
   });
 
-  // Auto-refresh counter
-  const [nextRefresh, setNextRefresh] = useState(15);
+  // countdown timer
   useEffect(() => {
-    const t = setInterval(() => {
-      setNextRefresh(prev => {
+    const id = setInterval(() => {
+      setCountdown(prev => {
         if (prev <= 1) { refetch(); return 15; }
         return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(t);
+    return () => clearInterval(id);
   }, [refetch]);
 
-  // Fullscreen toggle
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
-    }
-  };
-
-  // Update map markers when data changes
+  // map markers
   useEffect(() => {
-    if (!mapInstance || !data) return;
-
-    // Clear existing markers
+    if (!mapRef.current || !data?.stations) return;
     markersRef.current.forEach(m => m.setMap(null));
     markersRef.current = [];
-
     data.stations.forEach(station => {
       if (!station.latitude || !station.longitude) return;
-      const lat = parseFloat(station.latitude as string);
-      const lng = parseFloat(station.longitude as string);
+      const lat = parseFloat(String(station.latitude));
+      const lng = parseFloat(String(station.longitude));
       if (isNaN(lat) || isNaN(lng)) return;
-
-      const status = station.overallStatus as StationStatus;
-      const color = STATUS_COLORS[status];
-
+      const color = STATUS_COLOR[station.overallStatus as StationStatus];
       const marker = new google.maps.Marker({
         position: { lat, lng },
-        map: mapInstance,
+        map: mapRef.current!,
         title: station.name,
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
-          scale: station.overallStatus === "charging" ? 12 : 9,
+          scale: station.overallStatus === "charging" ? 11 : 8,
           fillColor: color,
           fillOpacity: 0.9,
           strokeColor: "#ffffff",
           strokeWeight: 2,
         },
       });
-
-      const infoWindow = new google.maps.InfoWindow({
-        content: `
-          <div style="background:#1a1a2e;color:#fff;padding:10px;border-radius:8px;min-width:180px;font-family:sans-serif;">
-            <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${station.name}</div>
-            <div style="font-size:12px;color:#9ca3af;margin-bottom:6px;">${station.city}${station.department ? `, ${station.department}` : ""}</div>
-            <div style="display:flex;gap:8px;font-size:12px;">
-              <span style="color:${color};font-weight:600;">${STATUS_LABELS[status]}</span>
-              <span style="color:#6b7280;">·</span>
-              <span>${station.chargingCount}/${station.totalEvses} activos</span>
-            </div>
-            ${station.totalPowerKw > 0 ? `<div style="font-size:12px;color:#22c55e;margin-top:4px;">⚡ ${station.totalPowerKw} kW entregando</div>` : ""}
-          </div>
-        `,
+      const iw = new google.maps.InfoWindow({
+        content: `<div style="background:#111827;color:#fff;padding:8px 10px;border-radius:8px;font-family:sans-serif;min-width:160px;">
+          <div style="font-weight:700;font-size:13px;">${station.name}</div>
+          <div style="font-size:11px;color:#9ca3af;margin-top:2px;">${station.city || ""}${station.department ? `, ${station.department}` : ""}</div>
+          <div style="margin-top:6px;font-size:12px;color:${color};font-weight:600;">${STATUS_LABEL[station.overallStatus as StationStatus]}</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px;">${station.chargingCount}/${station.totalEvses} conectores activos</div>
+          ${station.totalPowerKw > 0 ? `<div style="font-size:11px;color:#22c55e;margin-top:2px;">⚡ ${station.totalPowerKw} kW</div>` : ""}
+        </div>`,
       });
-
-      marker.addListener("click", () => {
-        infoWindow.open(mapInstance, marker);
-      });
-
+      marker.addListener("click", () => iw.open(mapRef.current!, marker));
       markersRef.current.push(marker);
     });
-  }, [mapInstance, data]);
+  }, [data?.stations]);
+
+  const handleMapReady = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+    map.setCenter({ lat: 4.5709, lng: -74.2973 });
+    map.setZoom(6);
+    map.setOptions({
+      disableDefaultUI: true,
+      zoomControl: true,
+      styles: [
+        { elementType: "geometry", stylers: [{ color: "#0d1b2a" }] },
+        { elementType: "labels.text.fill", stylers: [{ color: "#8ec3b9" }] },
+        { elementType: "labels.text.stroke", stylers: [{ color: "#1a3646" }] },
+        { featureType: "administrative.country", elementType: "geometry.stroke", stylers: [{ color: "#4b6878" }] },
+        { featureType: "administrative.province", elementType: "geometry.stroke", stylers: [{ color: "#4b6878" }] },
+        { featureType: "road", elementType: "geometry", stylers: [{ color: "#304a57" }] },
+        { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#2c6675" }] },
+        { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1626" }] },
+        { featureType: "poi", stylers: [{ visibility: "off" }] },
+      ],
+    });
+  }, []);
+
+  const toggleFS = () => {
+    if (!document.fullscreenElement) { document.documentElement.requestFullscreen(); setIsFS(true); }
+    else { document.exitFullscreen(); setIsFS(false); }
+  };
 
   const kpis = data?.kpis;
   const stations = data?.stations || [];
-
-  // Group stations by status for summary
   const byStatus = {
-    charging: stations.filter(s => s.overallStatus === "charging"),
+    charging:  stations.filter(s => s.overallStatus === "charging"),
     available: stations.filter(s => s.overallStatus === "available"),
-    offline: stations.filter(s => s.overallStatus === "offline"),
-    faulted: stations.filter(s => s.overallStatus === "faulted"),
-    inactive: stations.filter(s => s.overallStatus === "inactive"),
+    faulted:   stations.filter(s => s.overallStatus === "faulted"),
+    offline:   stations.filter(s => s.overallStatus === "offline"),
+    inactive:  stations.filter(s => s.overallStatus === "inactive"),
   };
+  const sorted = [...byStatus.charging, ...byStatus.available, ...byStatus.faulted, ...byStatus.offline, ...byStatus.inactive];
 
   return (
-    <div
-      className="flex flex-col bg-[#050d1a] text-white"
-      style={{ minHeight: "100vh", fontFamily: "'Inter', sans-serif" }}
-    >
+    <div className="flex flex-col bg-[#050d1a] text-white" style={{ minHeight: "100dvh" }}>
+
       {/* ── HEADER ── */}
-      <header className="flex items-center justify-between px-6 py-3 border-b border-white/10 bg-[#080f1f]">
-        {/* Logo + Title */}
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
-            <span className="text-green-400 text-lg">⚡</span>
-          </div>
-          <div>
-            <div className="font-bold text-white text-lg leading-tight">EVGreen NOC</div>
-            <div className="text-xs text-gray-500">Network Operations Center</div>
-          </div>
-        </div>
-
-        {/* Status bar */}
+      <header className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-[#080f1f] gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <PulsingDot color="#22c55e" />
-          <span className="text-xs text-green-400 font-medium">SISTEMA EN VIVO</span>
-          <span className="text-gray-600 mx-2">|</span>
-          <span className="text-xs text-gray-500">Actualiza en {nextRefresh}s</span>
+          <div className="w-7 h-7 rounded-md bg-green-500/20 flex items-center justify-center text-green-400 text-base">⚡</div>
+          <div>
+            <div className="font-bold text-white text-sm leading-tight">EVGreen NOC</div>
+            <div className="text-[10px] text-gray-500">Network Operations Center</div>
+          </div>
         </div>
-
-        {/* Clock + fullscreen */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Dot color="#22c55e" pulse />
+          <span className="text-[11px] text-green-400 font-medium">EN VIVO</span>
+          <span className="text-gray-600 text-xs">|</span>
+          <span className="text-[11px] text-gray-500">↻ {countdown}s</span>
+        </div>
+        <div className="flex items-center gap-3">
           <LiveClock />
-          <button
-            onClick={toggleFullscreen}
-            className="text-gray-400 hover:text-white transition-colors text-lg"
-            title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
-          >
-            {isFullscreen ? "⊡" : "⛶"}
+          <button onClick={toggleFS} className="text-gray-400 hover:text-white text-base" title="Pantalla completa">
+            {isFS ? "⊡" : "⛶"}
           </button>
         </div>
       </header>
 
       {/* ── KPI BAR ── */}
-      <div className="grid grid-cols-4 gap-3 px-6 py-3 border-b border-white/10 bg-[#06101e]">
-        {/* Network status */}
-        <div className="flex gap-2">
-          <KpiCard
-            label="En línea"
-            value={String(kpis?.onlineStations ?? "—")}
-            sub={`de ${kpis?.totalStations ?? "—"} estaciones`}
-            color="#22c55e"
-            icon="🟢"
-          />
-          <KpiCard
-            label="Cargando"
-            value={String(kpis?.chargingStations ?? "—")}
-            sub={`${kpis?.activeSessionsCount ?? 0} sesiones activas`}
-            color="#3b82f6"
-            icon="⚡"
-          />
-        </div>
-        {/* Power */}
-        <div className="flex gap-2">
-          <KpiCard
-            label="Potencia total"
-            value={`${kpis?.totalPowerDelivering ?? 0} kW`}
-            sub="entregando ahora"
-            color="#a78bfa"
-            icon="🔋"
-          />
-          <KpiCard
-            label="Alertas"
-            value={String((kpis?.offlineStations ?? 0) + (kpis?.faultedStations ?? 0))}
-            sub={`${kpis?.offlineStations ?? 0} offline · ${kpis?.faultedStations ?? 0} fallas`}
-            color={((kpis?.offlineStations ?? 0) + (kpis?.faultedStations ?? 0)) > 0 ? "#ef4444" : "#6b7280"}
-            icon="⚠️"
-          />
-        </div>
-        {/* Today */}
-        <div className="flex gap-2">
-          <KpiCard
-            label="Facturado hoy"
-            value={formatCOP(kpis?.today.revenue ?? 0)}
-            sub={`${kpis?.today.sessions ?? 0} sesiones`}
-            color="#f59e0b"
-            icon="💰"
-          />
-          <KpiCard
-            label="kWh hoy"
-            value={formatKwh(kpis?.today.kwh ?? 0)}
-            sub="energía entregada"
-            color="#06b6d4"
-            icon="⚡"
-          />
-        </div>
-        {/* Month */}
-        <div className="flex gap-2">
-          <KpiCard
-            label="Mes actual"
-            value={formatCOP(kpis?.month.revenue ?? 0)}
-            sub={`${kpis?.month.sessions ?? 0} sesiones`}
-            color="#10b981"
-            icon="📅"
-          />
-          <KpiCard
-            label="kWh del mes"
-            value={formatKwh(kpis?.month.kwh ?? 0)}
-            sub={`${kpis?.week.sessions ?? 0} sesiones esta semana`}
-            color="#8b5cf6"
-            icon="📊"
-          />
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 px-3 py-2 border-b border-white/10 bg-[#06101e]">
+        <KpiCard label="En línea"      value={String(kpis?.onlineStations ?? "—")}        sub={`de ${kpis?.totalStations ?? "—"}`}            color="#22c55e" icon="🟢" />
+        <KpiCard label="Cargando"      value={String(kpis?.chargingStations ?? "—")}       sub={`${kpis?.activeSessionsCount ?? 0} sesiones`}  color="#3b82f6" icon="⚡" />
+        <KpiCard label="Potencia"      value={`${kpis?.totalPowerDelivering ?? 0} kW`}     sub="ahora mismo"                                   color="#a78bfa" icon="🔋" />
+        <KpiCard label="Alertas"       value={String((kpis?.offlineStations ?? 0) + (kpis?.faultedStations ?? 0))} sub={`${kpis?.offlineStations ?? 0} off · ${kpis?.faultedStations ?? 0} falla`} color={((kpis?.offlineStations ?? 0) + (kpis?.faultedStations ?? 0)) > 0 ? "#ef4444" : "#6b7280"} icon="⚠️" />
+        <KpiCard label="Hoy $"         value={fmtCOP(kpis?.today.revenue ?? 0)}            sub={`${kpis?.today.sessions ?? 0} sesiones`}       color="#f59e0b" icon="💰" />
+        <KpiCard label="Hoy kWh"       value={fmtKwh(kpis?.today.kwh ?? 0)}                sub="energía entregada"                             color="#06b6d4" icon="⚡" />
+        <KpiCard label="Mes $"         value={fmtCOP(kpis?.month.revenue ?? 0)}            sub={`${kpis?.month.sessions ?? 0} sesiones`}       color="#10b981" icon="📅" />
+        <KpiCard label="Mes kWh"       value={fmtKwh(kpis?.month.kwh ?? 0)}               sub={`${kpis?.week.sessions ?? 0} esta semana`}     color="#8b5cf6" icon="📊" />
       </div>
 
-      {/* ── MAIN CONTENT ── */}
-      <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
-        {/* LEFT: Map */}
-        <div className="flex-1 relative" style={{ minWidth: 0 }}>
-          <MapView
-            onMapReady={(map) => {
-              setMapInstance(map);
-              setMapReady(true);
-              map.setCenter({ lat: 4.5709, lng: -74.2973 });
-              map.setZoom(6);
-              map.setOptions({
-                styles: [
-                  { elementType: "geometry", stylers: [{ color: "#0d1b2a" }] },
-                  { elementType: "labels.text.fill", stylers: [{ color: "#8ec3b9" }] },
-                  { elementType: "labels.text.stroke", stylers: [{ color: "#1a3646" }] },
-                  { featureType: "administrative.country", elementType: "geometry.stroke", stylers: [{ color: "#4b6878" }] },
-                  { featureType: "administrative.province", elementType: "geometry.stroke", stylers: [{ color: "#4b6878" }] },
-                  { featureType: "road", elementType: "geometry", stylers: [{ color: "#304a57" }] },
-                  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#2c6675" }] },
-                  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1626" }] },
-                  { featureType: "poi", stylers: [{ visibility: "off" }] },
-                ],
-                disableDefaultUI: true,
-                zoomControl: true,
-              });
-            }}
-          />
-          {/* Map legend */}
-          <div className="absolute bottom-4 left-4 bg-black/70 backdrop-blur-sm rounded-xl p-3 border border-white/10">
-            <div className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wider">Estado de red</div>
-            {(Object.entries(STATUS_LABELS) as [StationStatus, string][]).map(([key, label]) => (
-              <div key={key} className="flex items-center gap-2 text-xs mb-1">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS[key] }} />
-                <span className="text-gray-300">{label}</span>
-                <span className="text-gray-500 ml-auto font-mono">{byStatus[key].length}</span>
-              </div>
-            ))}
-          </div>
-          {/* Top stations overlay */}
-          {data?.topStations && data.topStations.length > 0 && (
-            <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm rounded-xl p-3 border border-white/10 min-w-48">
-              <div className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wider">🏆 Top estaciones (mes)</div>
-              {data.topStations.map((s, i) => (
-                <div key={s.stationId} className="flex items-center gap-2 text-xs mb-1.5">
-                  <span className="text-gray-500 font-mono w-4">{i + 1}.</span>
-                  <span className="text-white truncate flex-1">{s.name}</span>
-                  <span className="text-yellow-400 font-mono">{formatCOP(s.revenue)}</span>
+      {/* ── MAIN: mapa + panel ── */}
+      {/* Mobile: stacked. Desktop: side-by-side */}
+      <div className="flex flex-col lg:flex-row flex-1" style={{ minHeight: 0 }}>
+
+        {/* MAP */}
+        <div className="relative" style={{ height: "340px", flexShrink: 0 }} /* mobile fixed height */>
+          {/* On desktop, fill remaining space */}
+          <style>{`@media (min-width: 1024px) { #noc-map-wrap { height: auto !important; flex: 1 1 0; } }`}</style>
+          <div id="noc-map-wrap" className="w-full h-full relative" style={{ height: "340px" }}>
+            <MapView
+              className="w-full h-full"
+              onMapReady={handleMapReady}
+            />
+            {/* Legend */}
+            <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur-sm rounded-lg p-2 border border-white/10 text-xs">
+              <div className="text-gray-400 mb-1.5 text-[10px] uppercase tracking-wide font-medium">Estado</div>
+              {(Object.entries(STATUS_LABEL) as [StationStatus, string][]).map(([k, l]) => (
+                <div key={k} className="flex items-center gap-1.5 mb-1">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STATUS_COLOR[k] }} />
+                  <span className="text-gray-300">{l}</span>
+                  <span className="text-gray-500 ml-auto pl-2 font-mono">{byStatus[k]?.length ?? 0}</span>
                 </div>
               ))}
             </div>
-          )}
+            {/* Top stations */}
+            {data?.topStations && data.topStations.length > 0 && (
+              <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-sm rounded-lg p-2 border border-white/10 text-xs min-w-[160px]">
+                <div className="text-gray-400 mb-1.5 text-[10px] uppercase tracking-wide font-medium">🏆 Top mes</div>
+                {data.topStations.map((s, i) => (
+                  <div key={s.stationId} className="flex items-center gap-1.5 mb-1">
+                    <span className="text-gray-500 font-mono w-3">{i + 1}.</span>
+                    <span className="text-white truncate flex-1 max-w-[100px]">{s.name}</span>
+                    <span className="text-yellow-400 font-mono">{fmtCOP(s.revenue)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* RIGHT: Station cards */}
-        <div
-          className="border-l border-white/10 bg-[#06101e] overflow-y-auto"
-          style={{ width: "380px", minWidth: "380px" }}
-        >
-          {/* Section header */}
-          <div className="sticky top-0 bg-[#06101e] border-b border-white/10 px-4 py-2 z-10">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                Estaciones ({stations.length})
-              </span>
-              <div className="flex gap-2 text-xs">
-                <span className="text-green-400">{byStatus.charging.length} ⚡</span>
-                <span className="text-blue-400">{byStatus.available.length} ✓</span>
-                <span className="text-red-400">{byStatus.offline.length} ✗</span>
-              </div>
+        {/* STATION PANEL */}
+        <div className="border-t lg:border-t-0 lg:border-l border-white/10 bg-[#06101e] overflow-y-auto lg:w-[360px] lg:shrink-0">
+          {/* sticky header */}
+          <div className="sticky top-0 z-10 bg-[#06101e] border-b border-white/10 px-3 py-2 flex items-center justify-between">
+            <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Estaciones ({stations.length})</span>
+            <div className="flex gap-2 text-[10px]">
+              <span className="text-green-400">{byStatus.charging.length} ⚡</span>
+              <span className="text-blue-400">{byStatus.available.length} ✓</span>
+              <span className="text-red-400">{byStatus.offline.length} ✗</span>
+              {byStatus.faulted.length > 0 && <span className="text-orange-400">{byStatus.faulted.length} !</span>}
             </div>
           </div>
 
-          {/* Hourly chart */}
-          {data?.hourlyData && (
-            <div className="px-4 py-3 border-b border-white/10">
-              <div className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Ingresos por hora (hoy)</div>
-              <HourlyChart data={data.hourlyData} />
+          {/* hourly chart */}
+          {data?.hourlyData && data.hourlyData.length > 0 && (
+            <div className="px-3 py-2 border-b border-white/10">
+              <div className="text-[10px] text-gray-500 mb-1 uppercase tracking-wide">Ingresos por hora (hoy)</div>
+              <HourlyBars data={data.hourlyData} />
             </div>
           )}
 
-          {/* Station cards */}
-          <div className="p-3 flex flex-col gap-2">
-            {isLoading && (
-              <div className="text-center text-gray-500 py-8 text-sm">Cargando red...</div>
+          {/* cards */}
+          <div className="p-2 flex flex-col gap-1.5">
+            {isLoading && <div className="text-center text-gray-500 py-8 text-xs">Cargando red...</div>}
+            {!isLoading && sorted.length === 0 && (
+              <div className="text-center text-gray-600 py-8 text-xs">Sin estaciones registradas</div>
             )}
-            {/* Charging first */}
-            {byStatus.charging.map(s => <StationCard key={s.id} station={s} />)}
-            {/* Available */}
-            {byStatus.available.map(s => <StationCard key={s.id} station={s} />)}
-            {/* Faulted */}
-            {byStatus.faulted.map(s => <StationCard key={s.id} station={s} />)}
-            {/* Offline */}
-            {byStatus.offline.map(s => <StationCard key={s.id} station={s} />)}
-            {/* Inactive */}
-            {byStatus.inactive.map(s => <StationCard key={s.id} station={s} />)}
+            {sorted.map(s => <StationCard key={s.id} s={s} />)}
           </div>
         </div>
       </div>
 
       {/* ── TICKER ── */}
-      <div className="border-t border-white/10 bg-[#080f1f] px-4 py-2 flex items-center gap-4">
-        <div className="shrink-0 flex items-center gap-2">
-          <PulsingDot color="#22c55e" />
-          <span className="text-xs text-green-400 font-medium uppercase tracking-wider">Actividad</span>
+      <div className="border-t border-white/10 bg-[#080f1f] px-3 py-1.5 flex items-center gap-3">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Dot color="#22c55e" pulse />
+          <span className="text-[10px] text-green-400 font-medium uppercase tracking-wide">Actividad</span>
         </div>
         <div className="flex-1 overflow-hidden">
-          {data?.recentActivity && data.recentActivity.length > 0 ? (
-            <ActivityTicker items={data.recentActivity} />
-          ) : (
-            <span className="text-xs text-gray-600">Sin actividad reciente</span>
-          )}
+          {data?.recentActivity && data.recentActivity.length > 0
+            ? <Ticker items={data.recentActivity} />
+            : <span className="text-[11px] text-gray-600">Sin actividad reciente</span>
+          }
         </div>
       </div>
     </div>
