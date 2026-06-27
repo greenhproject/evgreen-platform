@@ -16,6 +16,10 @@ export default function PersonalInfo() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
 
+  // Separar código de país y número local para mejor UX
+  const [countryCode, setCountryCode] = useState("+57");
+  const [localPhone, setLocalPhone] = useState("");
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -43,6 +47,7 @@ export default function PersonalInfo() {
         name: user.name || "",
         email: user.email || "",
         phone: (user as any).phone || "",
+        // Inicializar código de país y número local a partir del teléfono guardado
         address: (user as any).address || "",
         city: (user as any).city || "",
         birthDate: (user as any).birthDate || "",
@@ -54,6 +59,36 @@ export default function PersonalInfo() {
         kindOfPerson: (user as any).kindOfPerson || "",
         regime: (user as any).regime || "",
       });
+      // Parsear teléfono guardado: si empieza con código de país conocido, separarlo
+      const savedPhone: string = (user as any).phone || "";
+      if (savedPhone) {
+        // Quitar + si existe
+        const clean = savedPhone.replace(/^\+/, "");
+        // Detectar códigos comunes de 2-3 dígitos
+        const knownCodes = ["57", "1", "34", "52", "54", "55", "56", "58", "51", "593", "595", "598", "591"];
+        let matched = false;
+        for (const code of knownCodes) {
+          if (clean.startsWith(code) && clean.length > code.length + 6) {
+            setCountryCode("+" + code);
+            setLocalPhone(clean.slice(code.length));
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          // Si son 10 dígitos colombianos, asumir +57
+          if (clean.length === 10 && (clean.startsWith("3") || clean.startsWith("6"))) {
+            setCountryCode("+57");
+            setLocalPhone(clean);
+          } else {
+            setCountryCode("+57");
+            setLocalPhone(clean);
+          }
+        }
+      } else {
+        setCountryCode("+57");
+        setLocalPhone("");
+      }
       if ((user as any).avatarUrl) {
         setAvatarPreview((user as any).avatarUrl);
       }
@@ -91,6 +126,18 @@ export default function PersonalInfo() {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     setHasChanges(true);
   }, []);
+
+  // Cuando cambia código de país o número local, actualizar formData.phone
+  useEffect(() => {
+    const digits = localPhone.replace(/[\s\-\(\)]/g, "");
+    if (digits) {
+      const code = countryCode.replace("+", "");
+      setFormData(prev => ({ ...prev, phone: code + digits }));
+      setHasChanges(true);
+    } else {
+      setFormData(prev => ({ ...prev, phone: "" }));
+    }
+  }, [countryCode, localPhone]);
 
   const handleSelectChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -383,21 +430,43 @@ export default function PersonalInfo() {
                 </p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="phone">Teléfono</Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="phone"
-                    name="phone"
-                    type="tel"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    placeholder="+57 300 123 4567"
-                    className="pl-10"
-                  />
+                <Label htmlFor="phone">Teléfono (WhatsApp)</Label>
+                <div className="flex gap-2">
+                  {/* Selector de código de país */}
+                  <select
+                    value={countryCode}
+                    onChange={e => setCountryCode(e.target.value)}
+                    className="flex h-10 rounded-md border border-input bg-background px-2 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 w-24 shrink-0"
+                  >
+                    <option value="+57">🇨🇴 +57</option>
+                    <option value="+1">🇺🇸 +1</option>
+                    <option value="+52">🇲🇽 +52</option>
+                    <option value="+54">🇦🇷 +54</option>
+                    <option value="+55">🇧🇷 +55</option>
+                    <option value="+56">🇨🇱 +56</option>
+                    <option value="+51">🇵🇪 +51</option>
+                    <option value="+58">🇻🇪 +58</option>
+                    <option value="+593">🇪🇨 +593</option>
+                    <option value="+595">🇵🇾 +595</option>
+                    <option value="+598">🇺🇾 +598</option>
+                    <option value="+591">🇧🇴 +591</option>
+                    <option value="+34">🇪🇸 +34</option>
+                  </select>
+                  {/* Número local */}
+                  <div className="relative flex-1">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="phone"
+                      type="tel"
+                      value={localPhone}
+                      onChange={e => setLocalPhone(e.target.value)}
+                      placeholder="300 123 4567"
+                      className="pl-10"
+                    />
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  📱 Usado para notificaciones por WhatsApp (reservas, inicio/fin de carga, etc.). Ingresa en formato internacional sin + ni espacios: ej. 573001234567
+                  📱 Se usará para notificaciones por WhatsApp (reservas, inicio/fin de carga, etc.)
                 </p>
               </div>
             </CardContent>
