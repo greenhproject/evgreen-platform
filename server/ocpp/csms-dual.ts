@@ -1127,12 +1127,14 @@ export class DualCSMS {
         const userForWa = await db.getUserById(userId);
         if (userForWa?.phone) {
           const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
+          const { getStationTimezone, formatTimeInTz } = await import("../utils/timezone");
+          const stationTz = getStationTimezone(station ?? {});
           sendWhatsAppMessage({
             toPhone: userForWa.phone,
             message: WaTemplates.chargeStart({
               stationName,
               connectorId: req.connectorId,
-              time: new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }),
+              time: formatTimeInTz(new Date(), stationTz),
               userName: userForWa.name?.split(" ")[0],
             }),
             eventType: "charge_start",
@@ -1387,6 +1389,8 @@ export class DualCSMS {
     try {
       if (userForEmail?.phone) {
         const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
+        const { getStationTimezone } = await import("../utils/timezone");
+        const _stationTzEnd = getStationTimezone(stationForEmail ?? {});
         sendWhatsAppMessage({
           toPhone: userForEmail.phone,
           message: WaTemplates.chargeEnd({

@@ -1,0 +1,1 @@
+ALTER TABLE `charging_stations` ADD `timezone` varchar(100) DEFAULT 'America/Bogota' NOT NULL;

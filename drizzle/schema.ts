@@ -202,6 +202,7 @@ export const chargingStations = mysqlTable("charging_stations", {
   city: varchar("city", { length: 100 }).notNull(),
   department: varchar("department", { length: 100 }), // Departamento en Colombia
   country: varchar("country", { length: 100 }).default("Colombia").notNull(),
+  timezone: varchar("timezone", { length: 100 }).default("America/Bogota").notNull(), // IANA tz: America/Bogota, America/Mexico_City, etc.
   postalCode: varchar("postalCode", { length: 20 }),
   latitude: decimal("latitude", { precision: 10, scale: 8 }).notNull(),
   longitude: decimal("longitude", { precision: 11, scale: 8 }).notNull(),

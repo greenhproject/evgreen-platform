@@ -98,6 +98,8 @@ interface StationFormData {
   hostUserId: string;
   parkingRatePerMinute: string;
   occupancyRatePerMinute: string;
+  timezone: string;
+  country: string;
 }
 
 const initialFormData: StationFormData = {
@@ -123,6 +125,8 @@ const initialFormData: StationFormData = {
   hostUserId: "",
   parkingRatePerMinute: "0",
   occupancyRatePerMinute: "0",
+  timezone: "America/Bogota",
+  country: "Colombia",
   operatingHours: {
     monday: { open: "06:00", close: "22:00" },
     tuesday: { open: "06:00", close: "22:00" },
@@ -334,6 +338,8 @@ export default function AdminStations() {
       hostUserId: station.hostUserId?.toString() || "",
       parkingRatePerMinute: (station.parkingRatePerMinute ?? 0).toString(),
       occupancyRatePerMinute: (station.occupancyRatePerMinute ?? 0).toString(),
+      timezone: station.timezone || "America/Bogota",
+      country: station.country || "Colombia",
       operatingHours: station.operatingHours && typeof station.operatingHours === 'object' 
         ? station.operatingHours as any 
         : initialFormData.operatingHours,
@@ -436,6 +442,8 @@ export default function AdminStations() {
         hostUserId: formData.hostUserId ? parseInt(formData.hostUserId) : undefined,
         parkingRatePerMinute: parseInt(formData.parkingRatePerMinute || "0"),
         occupancyRatePerMinute: parseInt(formData.occupancyRatePerMinute || "0"),
+        timezone: formData.timezone || "America/Bogota",
+        country: formData.country || "Colombia",
       });
       
       // Si hay imagen seleccionada, subirla
@@ -514,6 +522,8 @@ export default function AdminStations() {
           hostUserId: formData.hostUserId ? parseInt(formData.hostUserId) : undefined,
           parkingRatePerMinute: parseInt(formData.parkingRatePerMinute || "0"),
           occupancyRatePerMinute: parseInt(formData.occupancyRatePerMinute || "0"),
+          timezone: formData.timezone || "America/Bogota",
+          country: formData.country || "Colombia",
         },
       });
 
@@ -767,6 +777,38 @@ export default function AdminStations() {
               value={formData.department}
               onChange={(e) => setFormData({...formData, department: e.target.value})}
             />
+          </div>
+          <div className="space-y-2">
+            <Label>País</Label>
+            <Input 
+              placeholder="Colombia" 
+              value={formData.country}
+              onChange={(e) => setFormData({...formData, country: e.target.value})}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1">
+              🌐 Zona Horaria
+            </Label>
+            <select
+              className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+              value={formData.timezone}
+              onChange={(e) => setFormData({...formData, timezone: e.target.value})}
+            >
+              <option value="America/Bogota">🇨🇴 Colombia (UTC-5)</option>
+              <option value="America/New_York">🇺🇸 USA Este (UTC-5/-4)</option>
+              <option value="America/Chicago">🇺🇸 USA Central (UTC-6/-5)</option>
+              <option value="America/Los_Angeles">🇺🇸 USA Pacífico (UTC-8/-7)</option>
+              <option value="America/Mexico_City">🇲🇽 México (UTC-6)</option>
+              <option value="America/Argentina/Buenos_Aires">🇦🇷 Argentina (UTC-3)</option>
+              <option value="America/Santiago">🇨🇱 Chile (UTC-4/-3)</option>
+              <option value="America/Lima">🇵🇪 Perú (UTC-5)</option>
+              <option value="America/Caracas">🇻🇪 Venezuela (UTC-4)</option>
+              <option value="America/Guayaquil">🇪🇨 Ecuador (UTC-5)</option>
+              <option value="America/Sao_Paulo">🇧🇷 Brasil (UTC-3)</option>
+              <option value="Europe/Madrid">🇪🇸 España (UTC+1/+2)</option>
+              <option value="UTC">🌍 UTC</option>
+            </select>
           </div>
           
           {/* Selector de Zona Premium */}

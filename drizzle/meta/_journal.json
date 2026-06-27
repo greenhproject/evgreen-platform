@@ -43,6 +43,13 @@
       "when": 1782562910123,
       "tag": "0005_typical_phalanx",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1782569156518,
+      "tag": "0006_glossy_wolverine",
+      "breakpoints": true
     }
   ]
 }

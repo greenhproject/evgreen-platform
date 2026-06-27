@@ -627,12 +627,15 @@ const stationsRouter = router({
       hostUserId: z.number().optional(),
       parkingRatePerMinute: z.number().int().min(0).optional(),
       occupancyRatePerMinute: z.number().int().min(0).optional(),
+      timezone: z.string().optional(),
+      country: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       // Si se seleccionó un perfil de marca, autoconfigurar manufacturer y model
       let stationData: any = {
         ...input,
-        country: "Colombia",
+        country: input.country || "Colombia",
+        timezone: input.timezone || "America/Bogota",
       };
       
       if (input.chargerBrandId) {
@@ -672,6 +675,8 @@ const stationsRouter = router({
         hostUserId: z.number().optional(),
         parkingRatePerMinute: z.number().int().min(0).optional(),
         occupancyRatePerMinute: z.number().int().min(0).optional(),
+        timezone: z.string().optional(),
+        country: z.string().optional(),
       }),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -2576,8 +2581,10 @@ const reservationsRouter = router({
           const { sendWhatsAppMessage, WaTemplates } = await import("./whatsapp/whatsapp-service");
           const startDate = new Date(input.startTime);
           const endDate = new Date(input.endTime);
-          const dateStr = startDate.toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" });
-          const timeStr = `${startDate.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })} - ${endDate.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}`;
+          const { getStationTimezone, formatDateInTz, formatTimeRangeInTz } = await import("./utils/timezone");
+          const stationTz = getStationTimezone(station ?? {});
+          const dateStr = formatDateInTz(startDate, stationTz);
+          const timeStr = formatTimeRangeInTz(startDate, endDate, stationTz);
           sendWhatsAppMessage({
             toPhone: userForWa.phone,
             message: WaTemplates.reservationConfirmed({
