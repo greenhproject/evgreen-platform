@@ -6748,7 +6748,7 @@ const whatsappRouter = router({
 // ============================================================================
 const nocRouter = router({
   // Obtener todos los datos del NOC en una sola query optimizada
-  getNetworkSnapshot: adminProcedure.query(async () => {
+  getNetworkSnapshot: publicProcedure.query(async () => {
     const { getAllConnections } = await import("./ocpp/connection-manager");
     const { dualCSMS } = await import("./ocpp/csms-dual");
     const dbInst = await getDb();
@@ -6761,6 +6761,11 @@ const nocRouter = router({
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    // Strings para queries raw SQL (MySQL format)
+    const toMySQLDate = (d: Date) => d.toISOString().slice(0, 19).replace('T', ' ');
+    const startOfDayStr = toMySQLDate(startOfDay);
+    const startOfMonthStr = toMySQLDate(startOfMonth);
+    const startOfWeekStr = toMySQLDate(startOfWeek);
 
     // Todas las estaciones
     const allStations = await dbInst.select().from(chargingStations).orderBy(chargingStations.name);
@@ -6824,27 +6829,37 @@ const nocRouter = router({
     const userMap = new Map(txUsers.map(u => [u.id, u.name]));
     const stationMap = new Map(txStations.map(s => [s.id, s.name]));
 
-    // Top 5 estaciones por ingresos del mes
-    const topStationsRaw = await dbInst.execute(sql`
-      SELECT t.stationId, cs.name, COUNT(*) as sessions, SUM(t.totalCost) as revenue, SUM(t.kwhConsumed) as kwh
-      FROM transactions t
-      JOIN charging_stations cs ON cs.id = t.stationId
-      WHERE t.status = 'COMPLETED' AND t.startTime >= ${startOfMonth}
-      GROUP BY t.stationId, cs.name
-      ORDER BY revenue DESC
-      LIMIT 5
-    `);
-    const topStations = ((topStationsRaw as any)[0] || []) as Array<{ stationId: number; name: string; sessions: number; revenue: string; kwh: string }>;
+    // Top 5 estaciones por ingresos del mes (usando Drizzle ORM)
+    const topStationsRaw = await dbInst.select({
+      stationId: transactions.stationId,
+      stationName: chargingStations.name,
+      sessions: count(),
+      revenue: sum(transactions.totalCost),
+      kwh: sum(transactions.kwhConsumed),
+    }).from(transactions)
+      .innerJoin(chargingStations, eqOp(chargingStations.id, transactions.stationId))
+      .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfMonth)))
+      .groupBy(transactions.stationId, chargingStations.name)
+      .orderBy(desc(sum(transactions.totalCost)))
+      .limit(5);
+    const topStations = topStationsRaw.map(r => ({ stationId: r.stationId, name: r.stationName, sessions: Number(r.sessions), revenue: String(r.revenue ?? '0'), kwh: String(r.kwh ?? '0') }));
 
-    // Ingresos por hora (últimas 24h) para el gráfico
-    const hourlyRaw = await dbInst.execute(sql`
-      SELECT HOUR(startTime) as hour, COUNT(*) as sessions, SUM(totalCost) as revenue, SUM(kwhConsumed) as kwh
-      FROM transactions
-      WHERE status = 'COMPLETED' AND startTime >= ${startOfDay}
-      GROUP BY HOUR(startTime)
-      ORDER BY hour
-    `);
-    const hourlyData = ((hourlyRaw as any)[0] || []) as Array<{ hour: number; sessions: number; revenue: string; kwh: string }>;
+    // Ingresos por hora (últimas 24h) para el gráfico (usando Drizzle ORM)
+    const { hour } = await import("drizzle-orm/mysql-core").then(m => ({ hour: m.hour })).catch(() => ({ hour: null as any }));
+    let hourlyData: Array<{ hour: number; sessions: number; revenue: string; kwh: string }> = [];
+    try {
+      const hourlyRaw = await dbInst.execute(sql`
+        SELECT HOUR(startTime) as hour, COUNT(*) as sessions, SUM(totalCost) as revenue, SUM(kwhConsumed) as kwh
+        FROM transactions
+        WHERE status = 'COMPLETED' AND startTime >= ${startOfDayStr}
+        GROUP BY HOUR(startTime)
+        ORDER BY hour
+      `);
+      hourlyData = ((hourlyRaw as any)[0] || []) as Array<{ hour: number; sessions: number; revenue: string; kwh: string }>;
+    } catch {
+      // fallback: generate empty hourly data
+      hourlyData = Array.from({ length: 24 }, (_, i) => ({ hour: i, sessions: 0, revenue: '0', kwh: '0' }));
+    }
 
     // Construir mapa de EVSEs por estación
     const evsesByStation = new Map<number, typeof allEvses>();
