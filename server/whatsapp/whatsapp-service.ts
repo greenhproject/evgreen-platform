@@ -58,7 +58,13 @@ export async function sendWhatsAppMessage(opts: SendWhatsAppOptions): Promise<bo
   }
 
   // Normalizar número (quitar +, espacios, guiones)
-  const toPhone = opts.toPhone.replace(/[\s\-\+]/g, "");
+  let toPhone = opts.toPhone.replace(/[\s\-\+]/g, "");
+  // Si el número no empieza con código de país (10 dígitos = Colombia sin código), agregar 57
+  // Números colombianos: 10 dígitos empezando por 3 (móvil) o 6 (fijo)
+  if (toPhone.length === 10 && (toPhone.startsWith("3") || toPhone.startsWith("6"))) {
+    toPhone = "57" + toPhone;
+    console.log(`[WhatsApp] Número normalizado con código de país: ${toPhone}`);
+  }
 
   let wamid: string | undefined;
   let status: "sent" | "failed" = "sent";
