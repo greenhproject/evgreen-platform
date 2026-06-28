@@ -55,6 +55,8 @@ export default defineConfig(({ command }) => {
       minify: 'esbuild',
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
+        // Capacitor packages are provided by the native runtime — not bundled
+        external: ['@capacitor/app', '@capacitor/browser'],
         output: {
           // Let Rollup handle chunk splitting automatically to avoid circular dependency issues
           // Only split React core which is safe and reduces initial load

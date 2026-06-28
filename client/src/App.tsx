@@ -1125,7 +1125,7 @@ function App() {
     if (!isCapacitorNative()) return;
     let listenerHandle: { remove: () => void } | null = null;
     (async () => {
-      const { App: CapApp } = await import(/* @vite-ignore */ '@capacitor/app');
+      const { App: CapApp } = await import('@capacitor/app');
       const handle = await CapApp.addListener('appUrlOpen', async (data: { url: string }) => {
         const url = new URL(data.url);
         const token = url.searchParams.get('token');
