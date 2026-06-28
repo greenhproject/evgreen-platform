@@ -113,13 +113,14 @@ run-*.mjs
 *.sqlite3
 .manus/db/
 .manus/
-.manus/
-.manus/
-.manus/
-.manus/
-.manus/
-.manus/
-.manus/
-.manus/
-.manus/
 .project-config.json
+
+# Capacitor native projects (built locally, not CI/CD)
+ios/
+android/
+
+# Certificates and production secrets
+upload_cert.pem
+*.pem
+*.keystore
+.env.production
