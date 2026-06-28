@@ -88,6 +88,17 @@ export function registerAuth0Routes(app: Express) {
         path: "/",
       });
 
+      // Track mobile logins so callback can redirect to the native app
+      if (req.query.platform === "mobile") {
+        res.cookie("auth0_mobile", "1", {
+          httpOnly: true,
+          secure: isSecure,
+          sameSite: isSecure ? "none" : "lax",
+          maxAge: 5 * 60 * 1000,
+          path: "/",
+        });
+      }
+
       const authUrl = client.authorizationUrl({
         scope: "openid profile email",
         redirect_uri: redirectUri,
@@ -179,11 +190,32 @@ export function registerAuth0Routes(app: Express) {
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      res.redirect(302, "/");
+      const isMobile = req.cookies?.auth0_mobile === "1";
+      res.clearCookie("auth0_mobile", { path: "/" });
+
+      if (isMobile) {
+        console.log(`[Auth0] Mobile callback success → redirecting to native app`);
+        res.redirect(302, `com.greenhproject.evgreen://home?token=${sessionToken}`);
+      } else {
+        res.redirect(302, "/");
+      }
     } catch (error) {
       console.error("[Auth0] Callback failed:", error);
       res.redirect("/?auth_error=callback_failed");
     }
+  });
+
+  // Mobile token exchange: WKWebView calls this after receiving the deep-link token
+  // to set the session cookie in the WKWebView cookie store
+  app.post("/api/auth/mobile-token", (req: Request, res: Response) => {
+    const token = req.body?.token;
+    if (!token || typeof token !== "string") {
+      res.status(400).json({ error: "Missing token" });
+      return;
+    }
+    const cookieOptions = getSessionCookieOptions(req);
+    res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+    res.json({ ok: true });
   });
 
   // Logout route
