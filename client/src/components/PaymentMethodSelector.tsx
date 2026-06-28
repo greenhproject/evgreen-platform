@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { isCapacitorNative } from "@/const";
 
 interface PaymentMethodSelectorProps {
   open: boolean;

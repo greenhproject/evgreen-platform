@@ -1,9 +1,9 @@
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
-/**
- * Generate login URL - now points to the server-side Auth0 login route
- * The server handles the full OAuth2/OIDC flow with Auth0
- */
+export const isCapacitorNative = (): boolean =>
+  typeof window !== "undefined" && !!(window as any).Capacitor?.isNativePlatform?.();
+
 export const getLoginUrl = () => {
-  return `${window.location.origin}/api/auth/login`;
+  const platformParam = isCapacitorNative() ? "?platform=mobile" : "";
+  return `${window.location.origin}/api/auth/login${platformParam}`;
 };
