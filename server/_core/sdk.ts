@@ -257,9 +257,18 @@ class SDKServer {
   }
 
   async authenticateRequest(req: Request): Promise<User> {
-    // Regular authentication flow
     const cookies = this.parseCookies(req.headers.cookie);
-    const sessionCookie = cookies.get(COOKIE_NAME);
+    let sessionCookie = cookies.get(COOKIE_NAME);
+
+    // Capacitor native apps send the token via Authorization: Bearer when
+    // document.cookie is unavailable (custom URL scheme / WKWebView isolation)
+    if (!sessionCookie) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        sessionCookie = authHeader.slice(7);
+      }
+    }
+
     const session = await this.verifySession(sessionCookie);
 
     if (!session) {

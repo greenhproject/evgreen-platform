@@ -12,13 +12,12 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Onboarding, useOnboarding } from "@/components/Onboarding";
 import { LoadingGuard } from "@/components/LoadingGuard";
 
 // Páginas públicas (carga inmediata - landing)
 import Landing from "./pages/Landing";
-import { isCapacitorNative } from "@/const";
 
 // Lazy loading spinner
 function LazySpinner() {
@@ -1119,34 +1118,6 @@ function App() {
   const { showOnboarding, isLoading: onboardingLoading, completeOnboarding } = useOnboarding();
   const { isAuthenticated, loading: authLoading, refresh } = useAuth();
   const [location] = useLocation();
-
-  // Handle deep-link token from Auth0 mobile callback (iOS/Android native)
-  useEffect(() => {
-    if (!isCapacitorNative()) return;
-    let listenerHandle: { remove: () => void } | null = null;
-    (async () => {
-      const { App: CapApp } = await import('@capacitor/app');
-      const handle = await CapApp.addListener('appUrlOpen', async (data: { url: string }) => {
-        const url = new URL(data.url);
-        const token = url.searchParams.get('token');
-        if (!token) return;
-        try {
-          const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || window.location.origin;
-          const resp = await fetch(`${apiBase}/api/auth/mobile-token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ token }),
-          });
-          if (resp.ok) window.location.reload();
-        } catch (e) {
-          console.error('[Auth] mobile token exchange failed:', e);
-        }
-      });
-      listenerHandle = handle;
-    })();
-    return () => { listenerHandle?.remove(); };
-  }, []);
 
   // Las rutas públicas se renderizan inmediatamente sin esperar auth
   const isPublic = isPublicPath(location);

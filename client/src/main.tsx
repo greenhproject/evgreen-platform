@@ -1,24 +1,42 @@
 import { trpc } from "@/lib/trpc";
-import { UNAUTHED_ERR_MSG } from '@shared/const';
+import { UNAUTHED_ERR_MSG, COOKIE_NAME, ONE_YEAR_MS, NATIVE_TOKEN_KEY } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
+import { getApiUrl } from "@/lib/utils";
 import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
 // ============================================
-// QueryClient con defaults robustos
+// MANEJO DE TOKEN NATIVO (Capacitor Deep Linking)
+// ============================================
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
+
+const setAuthCookie = (token: string) => {
+  const expires = new Date(Date.now() + ONE_YEAR_MS).toUTCString();
+  document.cookie = `${COOKIE_NAME}=${token}; expires=${expires}; path=/; SameSite=Lax`;
+  // document.cookie no funciona en custom URL schemes (evgreen://) de WKWebView → localStorage como respaldo
+  localStorage.setItem(NATIVE_TOKEN_KEY, token);
+};
+
+const extractToken = (urlStr: string): string | null => {
+  try {
+    return new URL(urlStr).searchParams.get('token');
+  } catch {
+    return null;
+  }
+};
+
 // ============================================
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // No reintentar indefinidamente - máximo 2 reintentos
       retry: 2,
-      // Timeout de 15 segundos para queries
       staleTime: 30_000,
-      // No refetch agresivo que pueda causar loops
       refetchOnWindowFocus: false,
     },
   },
@@ -37,13 +55,14 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (typeof window === "undefined") return;
 
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
-
   if (!isUnauthorized) return;
-
-  // NO redirigir si estamos en una ruta pública o en la landing
   if (isNoRedirectPath()) return;
 
-  // NO redirigir si no hay evidencia de sesión previa (usuario nunca logueado)
+  // On native, navigating WKWebView to the Auth0 login URL causes a black screen
+  // because Auth0 eventually redirects to the custom URL scheme (evgreen://).
+  // RoleBasedRedirect already handles showing Landing when not authenticated.
+  if (Capacitor.isNativePlatform()) return;
+
   const hadSession = document.cookie.includes('session') || localStorage.getItem('manus-runtime-user-info') !== 'null';
   if (!hadSession) return;
 
@@ -69,16 +88,27 @@ queryClient.getMutationCache().subscribe(event => {
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: "/api/trpc",
+      url: getApiUrl("/api/trpc"),
       transformer: superjson,
       fetch(input, init) {
-        // Agregar AbortController con timeout de 15s para evitar peticiones colgadas
+        const cookies = document.cookie.split('; ').reduce((prev: any, current) => {
+          const [name, ...rest] = current.split('=');
+          prev[name] = rest.join('=');
+          return prev;
+        }, {});
+        // localStorage como respaldo cuando document.cookie no funciona en custom URL schemes
+        const token = cookies[COOKIE_NAME] || localStorage.getItem(NATIVE_TOKEN_KEY) || '';
+
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
-        
+
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
+          headers: {
+            ...(init?.headers ?? {}),
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           signal: controller.signal,
         }).finally(() => {
           clearTimeout(timeoutId);
@@ -88,28 +118,123 @@ const trpcClient = trpc.createClient({
   ],
 });
 
+function mountReact() {
+  createRoot(document.getElementById("root")!).render(
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
+}
+
 // ============================================
-// MONTAR REACT
+// BOOTSTRAP ASYNC: getLaunchUrl ANTES de montar React
+// Garantiza que la cookie esté seteada cuando auth.me se ejecute
 // ============================================
-createRoot(document.getElementById("root")!).render(
-  <trpc.Provider client={trpcClient} queryClient={queryClient}>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </trpc.Provider>
-);
+async function bootstrap() {
+  // Configurar StatusBar nativo (iOS y Android)
+  const platform = Capacitor.getPlatform();
+  if (platform === 'ios' || platform === 'android') {
+    try {
+      if (platform === 'ios') {
+        await StatusBar.setOverlaysWebView({ overlay: false });
+      }
+      await StatusBar.setBackgroundColor({ color: '#052E16' });
+      await StatusBar.setStyle({ style: Style.Light });
+    } catch (e) {
+      console.warn('[StatusBar] setup error:', e);
+    }
+  }
+
+  // Register appUrlOpen listener FIRST so it's always active regardless of early returns below.
+  // This handles the deep-link callback after OAuth login (SFSafariViewController → evgreen://).
+  CapacitorApp.addListener('appUrlOpen', async (data) => {
+    console.log("[Auth] appUrlOpen recibido:", data.url);
+    const token = extractToken(data.url);
+    if (!token) {
+      console.warn("[Auth] appUrlOpen sin token:", data.url);
+      return;
+    }
+    console.log("[Auth] Token recibido vía appUrlOpen:", token.substring(0, 10) + "...");
+
+    // Signal auth change immediately so browserFinished retry timer is cancelled
+    window.dispatchEvent(new Event('evgreen-auth-updated'));
+
+    // Close SFSafariViewController
+    try {
+      const { Browser } = await import('@capacitor/browser');
+      await Browser.close();
+    } catch (e) {
+      console.warn("[Auth] Browser.close error:", e);
+    }
+
+    // Exchange token for session cookie via server (sets cookie in WKWebView store)
+    let exchangeOk = false;
+    try {
+      const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
+      const resp = await fetch(`${apiBase}/api/auth/mobile-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ token }),
+      });
+      exchangeOk = resp.ok;
+      console.log("[Auth] mobile-token exchange:", exchangeOk ? "ok" : "failed");
+    } catch (e) {
+      console.warn("[Auth] mobile-token POST failed:", e);
+    }
+
+    // Fallback: store in localStorage so Authorization: Bearer header works
+    if (!exchangeOk) {
+      setAuthCookie(token);
+    }
+
+    queryClient.invalidateQueries();
+  });
+
+  try {
+    const launchUrl = await CapacitorApp.getLaunchUrl();
+    if (launchUrl?.url) {
+      const token = extractToken(launchUrl.url);
+      if (token) {
+        // If the user just logged out, skip deep-link re-auth and go straight to login screen
+        if (sessionStorage.getItem('evgreen_logout')) {
+          sessionStorage.removeItem('evgreen_logout');
+          mountReact();
+          return;
+        }
+        setAuthCookie(token);
+        // getLaunchUrl() persiste entre recargas — sessionStorage evita el loop infinito
+        const sessionKey = 'dl_token_processed';
+        const tokenSuffix = token.slice(-12);
+        if (sessionStorage.getItem(sessionKey) !== tokenSuffix) {
+          console.log("[Auth] Token recibido vía Deep Link (launch):", token.substring(0, 10) + "...");
+          sessionStorage.setItem(sessionKey, tokenSuffix);
+          window.location.href = "/";
+          return; // Page reloads — on next load cookie is already set
+        }
+        // Segunda carga: cookie ya estaba seteada arriba, React puede montar
+      }
+    }
+  } catch (e) {
+    console.warn("[Auth] getLaunchUrl error:", e);
+  }
+
+  mountReact();
+}
+
+bootstrap();
 
 // ============================================
 // POST-MOUNT: Limpiar splash screen
 // ============================================
-// Cancelar el timeout de auto-recuperación del splash
 if ((window as any).__evgreenSplashTimeout) {
   clearTimeout((window as any).__evgreenSplashTimeout);
   delete (window as any).__evgreenSplashTimeout;
 }
 sessionStorage.removeItem('evgreen_recovery');
 
-// Eliminar splash screen con transición suave
 const splashMinTime = 1500;
 const splashStart = performance.now();
 
@@ -118,7 +243,7 @@ requestAnimationFrame(() => {
   if (splash) {
     const elapsed = performance.now() - splashStart;
     const remaining = Math.max(0, splashMinTime - elapsed);
-    
+
     setTimeout(() => {
       splash.style.transition = "opacity 0.6s ease-out";
       splash.style.opacity = "0";
@@ -138,7 +263,6 @@ window.addEventListener('unhandledrejection', (event) => {
     msg.includes('Importing a module script failed')
   ) {
     console.warn('[App] Dynamic import failed, reloading page...');
-    // Solo recargar si no lo hicimos recientemente (evitar loop)
     const lastReload = sessionStorage.getItem('evgreen_last_reload');
     const now = Date.now();
     if (lastReload && (now - parseInt(lastReload)) < 15000) return;
@@ -152,17 +276,13 @@ window.addEventListener('unhandledrejection', (event) => {
 // SERVICE WORKER: Registro simple, sin reload agresivo
 // ============================================
 if ('serviceWorker' in navigator) {
-  // Registrar SW solo después de que la página cargue completamente
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then((registration) => {
         console.log('[SW] Registrado:', registration.scope);
-        
-        // Verificar actualizaciones periódicamente (cada 10 minutos)
+
         setInterval(() => registration.update(), 10 * 60 * 1000);
-        
-        // Cuando hay una actualización, NO recargar automáticamente
-        // Solo notificar al usuario la próxima vez que abra la app
+
         registration.addEventListener('updatefound', () => {
           const newWorker = registration.installing;
           if (newWorker) {
