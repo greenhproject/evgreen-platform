@@ -9,7 +9,7 @@
  */
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Wifi, WifiOff, RotateCcw, LogIn, ServerCrash, RefreshCw } from "lucide-react";
-import { getLoginUrl } from "@/const";
+import { isCapacitorNative } from "@/const";
 import { checkServerHealth } from "@/lib/app-health-check";
 
 interface LoadingGuardProps {
@@ -317,13 +317,15 @@ export function LoadingGuard({
             Recargar página completa
           </button>
 
-          <a
-            href={getLoginUrl()}
-            className="flex items-center justify-center gap-2 w-full px-5 py-3 rounded-xl text-muted-foreground text-sm hover:text-foreground transition-colors"
-          >
-            <LogIn className="w-4 h-4" />
-            Ir a inicio de sesión
-          </a>
+          {!isCapacitorNative() && (
+            <a
+              href={window.location.origin + "/api/auth/login"}
+              className="flex items-center justify-center gap-2 w-full px-5 py-3 rounded-xl text-muted-foreground text-sm hover:text-foreground transition-colors"
+            >
+              <LogIn className="w-4 h-4" />
+              Ir a inicio de sesión
+            </a>
+          )}
         </div>
 
         {retryCountRef.current > 0 && (

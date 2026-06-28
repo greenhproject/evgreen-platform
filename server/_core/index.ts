@@ -165,6 +165,12 @@ async function startServer() {
     res.sendFile("api-docs.html", { root: path.join(currentDir, "../../client/public") });
   });
   
+  // Diagnóstico: log inmediato de TODAS las peticiones a /api/auth/* para confirmar si llegan al servidor
+  app.use('/api/auth', (req, _res, next) => {
+    console.log(`[Auth RECV] ${req.method} /api/auth${req.path} | platform=${req.query.platform ?? 'none'} | UA=${req.headers['user-agent']?.slice(0, 60) ?? 'unknown'}`);
+    next();
+  });
+
   // Auth0 authentication routes
   registerAuth0Routes(app);
   // tRPC API

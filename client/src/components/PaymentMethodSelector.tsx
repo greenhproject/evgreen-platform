@@ -113,7 +113,15 @@ export function PaymentMethodSelector({
 
       if (result.checkoutUrl) {
         toast.info("Redirigiendo a Wompi...");
-        window.open(result.checkoutUrl, "_blank");
+        if (isCapacitorNative()) {
+          const { Browser } = await import("@capacitor/browser");
+          // Remove any lingering auth browserFinished listeners before opening Wompi
+          // so they don't misfire when the payment browser closes.
+          await Browser.removeAllListeners();
+          await Browser.open({ url: result.checkoutUrl, presentationStyle: "fullscreen" });
+        } else {
+          window.open(result.checkoutUrl, "_blank");
+        }
         onOpenChange(false);
         onSuccess?.();
       }
