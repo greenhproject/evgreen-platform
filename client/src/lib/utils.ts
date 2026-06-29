@@ -1,9 +1,17 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { Capacitor } from '@capacitor/core';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+/**
+ * Detecta si se está ejecutando en una plataforma nativa Capacitor (iOS/Android).
+ * Usa window.Capacitor en lugar de importar el módulo para evitar romper el bundle web.
+ */
+function isCapacitorNative(): boolean {
+  return typeof (window as any).Capacitor !== 'undefined' &&
+    (window as any).Capacitor?.isNativePlatform?.() === true;
 }
 
 /**
@@ -13,7 +21,7 @@ export function getBaseUrl() {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl.replace(/\/$/, "");
 
-  if (Capacitor.isNativePlatform()) {
+  if (isCapacitorNative()) {
     console.error("VITE_API_URL no está definida. La comunicación con el servidor fallará.");
     return "";
   }

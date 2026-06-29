@@ -10,11 +10,20 @@ import { getLoginUrl } from "./const";
 import "./index.css";
 
 // ============================================
-// MANEJO DE TOKEN NATIVO (Capacitor Deep Linking)
+// DETECCIÓN DE PLATAFORMA NATIVA
+// Capacitor se detecta por la presencia de window.Capacitor
+// NO se importa estáticamente para no romper el bundle web
 // ============================================
-import { App as CapacitorApp } from '@capacitor/app';
-import { Capacitor } from '@capacitor/core';
-import { StatusBar, Style } from '@capacitor/status-bar';
+
+function isNativePlatform(): boolean {
+  return typeof (window as any).Capacitor !== 'undefined' &&
+    (window as any).Capacitor?.isNativePlatform?.() === true;
+}
+
+function getNativePlatform(): string {
+  if (typeof (window as any).Capacitor === 'undefined') return 'web';
+  return (window as any).Capacitor?.getPlatform?.() || 'web';
+}
 
 const setAuthCookie = (token: string) => {
   const expires = new Date(Date.now() + ONE_YEAR_MS).toUTCString();
@@ -61,7 +70,7 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   // On native, navigating WKWebView to the Auth0 login URL causes a black screen
   // because Auth0 eventually redirects to the custom URL scheme (evgreen://).
   // RoleBasedRedirect already handles showing Landing when not authenticated.
-  if (Capacitor.isNativePlatform()) return;
+  if (isNativePlatform()) return;
 
   const hadSession = document.cookie.includes('session') || localStorage.getItem('manus-runtime-user-info') !== 'null';
   if (!hadSession) return;
@@ -129,96 +138,112 @@ function mountReact() {
 }
 
 // ============================================
-// BOOTSTRAP ASYNC: getLaunchUrl ANTES de montar React
-// Garantiza que la cookie esté seteada cuando auth.me se ejecute
+// BOOTSTRAP ASYNC: Capacitor setup ANTES de montar React (solo en nativo)
+// En web, monta React directamente sin imports de Capacitor
 // ============================================
 async function bootstrap() {
-  // Configurar StatusBar nativo (iOS y Android)
-  const platform = Capacitor.getPlatform();
-  if (platform === 'ios' || platform === 'android') {
-    try {
-      if (platform === 'ios') {
-        await StatusBar.setOverlaysWebView({ overlay: false });
-      }
-      await StatusBar.setBackgroundColor({ color: '#052E16' });
-      await StatusBar.setStyle({ style: Style.Light });
-    } catch (e) {
-      console.warn('[StatusBar] setup error:', e);
-    }
+  const platform = getNativePlatform();
+  const isNative = isNativePlatform();
+
+  if (!isNative) {
+    // WEB: montar React directamente, sin ningún import de Capacitor
+    mountReact();
+    return;
   }
 
-  // Register appUrlOpen listener FIRST so it's always active regardless of early returns below.
-  // This handles the deep-link callback after OAuth login (SFSafariViewController → evgreen://).
-  CapacitorApp.addListener('appUrlOpen', async (data) => {
-    console.log("[Auth] appUrlOpen recibido:", data.url);
-    const token = extractToken(data.url);
-    if (!token) {
-      console.warn("[Auth] appUrlOpen sin token:", data.url);
-      return;
-    }
-    console.log("[Auth] Token recibido vía appUrlOpen:", token.substring(0, 10) + "...");
-
-    // Signal auth change immediately so browserFinished retry timer is cancelled
-    window.dispatchEvent(new Event('evgreen-auth-updated'));
-
-    // Close SFSafariViewController
-    try {
-      const { Browser } = await import('@capacitor/browser');
-      await Browser.close();
-    } catch (e) {
-      console.warn("[Auth] Browser.close error:", e);
-    }
-
-    // Exchange token for session cookie via server (sets cookie in WKWebView store)
-    let exchangeOk = false;
-    try {
-      const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
-      const resp = await fetch(`${apiBase}/api/auth/mobile-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ token }),
-      });
-      exchangeOk = resp.ok;
-      console.log("[Auth] mobile-token exchange:", exchangeOk ? "ok" : "failed");
-    } catch (e) {
-      console.warn("[Auth] mobile-token POST failed:", e);
-    }
-
-    // Fallback: store in localStorage so Authorization: Bearer header works
-    if (!exchangeOk) {
-      setAuthCookie(token);
-    }
-
-    queryClient.invalidateQueries();
-  });
-
+  // NATIVO (iOS/Android): cargar Capacitor dinámicamente
   try {
-    const launchUrl = await CapacitorApp.getLaunchUrl();
-    if (launchUrl?.url) {
-      const token = extractToken(launchUrl.url);
-      if (token) {
-        // If the user just logged out, skip deep-link re-auth and go straight to login screen
-        if (sessionStorage.getItem('evgreen_logout')) {
-          sessionStorage.removeItem('evgreen_logout');
-          mountReact();
-          return;
+    // Configurar StatusBar
+    if (platform === 'ios' || platform === 'android') {
+      try {
+        const { StatusBar, Style } = await import('@capacitor/status-bar');
+        if (platform === 'ios') {
+          await StatusBar.setOverlaysWebView({ overlay: false });
         }
-        setAuthCookie(token);
-        // getLaunchUrl() persiste entre recargas — sessionStorage evita el loop infinito
-        const sessionKey = 'dl_token_processed';
-        const tokenSuffix = token.slice(-12);
-        if (sessionStorage.getItem(sessionKey) !== tokenSuffix) {
-          console.log("[Auth] Token recibido vía Deep Link (launch):", token.substring(0, 10) + "...");
-          sessionStorage.setItem(sessionKey, tokenSuffix);
-          window.location.href = "/";
-          return; // Page reloads — on next load cookie is already set
-        }
-        // Segunda carga: cookie ya estaba seteada arriba, React puede montar
+        await StatusBar.setBackgroundColor({ color: '#052E16' });
+        await StatusBar.setStyle({ style: Style.Light });
+      } catch (e) {
+        console.warn('[StatusBar] setup error:', e);
       }
     }
+
+    // Registrar listener de deep links (appUrlOpen)
+    const { App: CapacitorApp } = await import('@capacitor/app');
+
+    CapacitorApp.addListener('appUrlOpen', async (data: { url: string }) => {
+      console.log("[Auth] appUrlOpen recibido:", data.url);
+      const token = extractToken(data.url);
+      if (!token) {
+        console.warn("[Auth] appUrlOpen sin token:", data.url);
+        return;
+      }
+      console.log("[Auth] Token recibido vía appUrlOpen:", token.substring(0, 10) + "...");
+
+      // Signal auth change immediately so browserFinished retry timer is cancelled
+      window.dispatchEvent(new Event('evgreen-auth-updated'));
+
+      // Close SFSafariViewController
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.close();
+      } catch (e) {
+        console.warn("[Auth] Browser.close error:", e);
+      }
+
+      // Exchange token for session cookie via server (sets cookie in WKWebView store)
+      let exchangeOk = false;
+      try {
+        const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
+        const resp = await fetch(`${apiBase}/api/auth/mobile-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ token }),
+        });
+        exchangeOk = resp.ok;
+        console.log("[Auth] mobile-token exchange:", exchangeOk ? "ok" : "failed");
+      } catch (e) {
+        console.warn("[Auth] mobile-token POST failed:", e);
+      }
+
+      // Fallback: store in localStorage so Authorization: Bearer header works
+      if (!exchangeOk) {
+        setAuthCookie(token);
+      }
+
+      queryClient.invalidateQueries();
+    });
+
+    // Verificar deep link de lanzamiento
+    try {
+      const launchUrl = await CapacitorApp.getLaunchUrl();
+      if (launchUrl?.url) {
+        const token = extractToken(launchUrl.url);
+        if (token) {
+          // If the user just logged out, skip deep-link re-auth and go straight to login screen
+          if (sessionStorage.getItem('evgreen_logout')) {
+            sessionStorage.removeItem('evgreen_logout');
+            mountReact();
+            return;
+          }
+          setAuthCookie(token);
+          // getLaunchUrl() persiste entre recargas — sessionStorage evita el loop infinito
+          const sessionKey = 'dl_token_processed';
+          const tokenSuffix = token.slice(-12);
+          if (sessionStorage.getItem(sessionKey) !== tokenSuffix) {
+            console.log("[Auth] Token recibido vía Deep Link (launch):", token.substring(0, 10) + "...");
+            sessionStorage.setItem(sessionKey, tokenSuffix);
+            window.location.href = "/";
+            return; // Page reloads — on next load cookie is already set
+          }
+          // Segunda carga: cookie ya estaba seteada arriba, React puede montar
+        }
+      }
+    } catch (e) {
+      console.warn("[Auth] getLaunchUrl error:", e);
+    }
   } catch (e) {
-    console.warn("[Auth] getLaunchUrl error:", e);
+    console.warn("[Capacitor] Error al cargar módulos nativos:", e);
   }
 
   mountReact();
