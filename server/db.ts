@@ -509,9 +509,10 @@ export async function updateUser(userId: number, data: Partial<InsertUser>) {
 export async function deleteUser(userId: number) {
   const db = await getDb();
   if (!db) return;
-  // Primero eliminar datos relacionados (billetera, notificaciones, etc.)
+  // Primero eliminar datos relacionados (billetera, notificaciones, id tags, etc.)
   await db.delete(wallets).where(eq(wallets.userId, userId));
   await db.delete(notifications).where(eq(notifications.userId, userId));
+  await db.delete(idTags).where(eq(idTags.userId, userId));
   // Finalmente eliminar el usuario
   await db.delete(users).where(eq(users.id, userId));
 }
