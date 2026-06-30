@@ -5,8 +5,11 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+      content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     
+    <!-- Preload logo PNG so it's cached before React renders the login screen -->
+    <link rel="preload" as="image" href="/icons/splash-logo.png" />
+
     <!-- SEO Meta Tags -->
     <title>EVGreen - Carga tu Vehículo Eléctrico en Colombia</title>
     <meta name="description" content="Red de carga para vehículos eléctricos en Colombia. Estaciones con carga rápida DC y AC, pagos seguros, mapa en tiempo real y asistente IA." />
@@ -403,6 +406,16 @@
         <div class="splash-powered">Powered by Green House Project</div>
       </div>
     </div>
+    <!-- Must run before the Maps script. gm_authFailure suppresses the default
+         "Oops!" overlay; dispatchEvent lets React unmount the map container. -->
+    <script>
+      window.__mapsAuthError = false;
+      window.gm_authFailure = function () {
+        window.__mapsAuthError = true;
+        window.dispatchEvent(new CustomEvent("mapsAuthFailure"));
+        console.warn("[EVGreen] Google Maps auth failed (referrer not allowed). Map will not render.");
+      };
+    </script>
     <script type="module" src="/src/main.tsx"></script>
     <script
       defer

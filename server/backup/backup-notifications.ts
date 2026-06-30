@@ -10,11 +10,10 @@
 import { Resend } from "resend";
 import { buildEmailParams } from "../utils/email-helper";
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
 const FROM_EMAIL = "EVGreen Backup <backup@evgreen.lat>";
 const ADMIN_EMAIL = "gerencia@greenhproject.com";
 
-const resend = new Resend(RESEND_API_KEY);
+const resend = new Resend(process.env.Resend ?? "");
 
 interface BackupResult {
   backupId: number;

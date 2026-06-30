@@ -6,9 +6,7 @@ import { Resend } from "resend";
 import { buildEmailParams } from "../utils/email-helper";
 import * as db from "../db";
 
-// Resend API key - same pattern as ticket-email-service
-const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-const resend = new Resend(resendApiKey);
+const resend = new Resend(process.env.Resend ?? "");
 
 const FROM_EMAIL = "EVGreen <admin@evgreen.lat>";
 const CC_EMAIL = "gerencia@greenhproject.com"; // Copia para trazabilidad

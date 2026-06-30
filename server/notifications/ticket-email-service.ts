@@ -12,8 +12,7 @@ import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
 import { eq, or } from "drizzle-orm";
 
-const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-const resend = new Resend(resendApiKey);
+const resend = new Resend(process.env.Resend ?? "");
 
 const FROM_EMAIL = "EVGreen <admin@evgreen.lat>";
 const ADMIN_CC = "gerencia@greenhproject.com";

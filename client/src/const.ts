@@ -16,6 +16,8 @@ export async function openLoginBrowser(): Promise<void> {
   console.log("[Auth] openLoginBrowser →", url, "| nativo:", isCapacitorNative());
   if (isCapacitorNative()) {
     const { Browser } = await import('@capacitor/browser');
+    // Cierra cualquier SFSafariViewController huérfano de una sesión previa
+    // (p. ej. si la página se recargó durante logout con el browser de Auth0 aún abierto).
     try { await Browser.close(); } catch (_) { /* already closed */ }
     await Browser.open({ url, presentationStyle: 'popover' });
   } else {

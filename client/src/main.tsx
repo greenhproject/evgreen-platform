@@ -41,6 +41,8 @@ const extractToken = (urlStr: string): string | null => {
 };
 
 // ============================================
+// QueryClient con defaults robustos
+// ============================================
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -157,10 +159,15 @@ async function bootstrap() {
     if (platform === 'ios' || platform === 'android') {
       try {
         const { StatusBar, Style } = await import('@capacitor/status-bar');
+        // iOS: disable overlay so WebView starts below the status bar (not under it).
+        // Android: leave overlay at its default (edge-to-edge) — calling setOverlaysWebView
+        // on Android 10 with targetSdk 36 breaks the WebView layout (shrinks to a corner).
+        // Safe area insets via CSS env() handle the top/bottom padding on Android.
         if (platform === 'ios') {
           await StatusBar.setOverlaysWebView({ overlay: false });
         }
         await StatusBar.setBackgroundColor({ color: '#052E16' });
+        // Style.Light = white icons, correct for our dark green (#052E16) background on both platforms.
         await StatusBar.setStyle({ style: Style.Light });
       } catch (e) {
         console.warn('[StatusBar] setup error:', e);

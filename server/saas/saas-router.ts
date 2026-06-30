@@ -14,7 +14,7 @@ const SAAS_EMAIL = "evgreen@greenhproject.com";
 const FROM_EMAIL = "EVGreen for Business <noreply@evgreen.lat>";
 
 function getResend() {
-  const key = process.env.RESEND_API_KEY ?? process.env.Resend;
+  const key = process.env.Resend;
   if (!key) return null;
   return new Resend(key);
 }

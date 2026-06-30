@@ -44,7 +44,7 @@ export const contactRouter = router({
       const topicLabel = TOPIC_LABELS[topic] ?? topic;
       const isUrgent = message.toLowerCase().includes("urgente");
 
-      const resendKey = process.env.RESEND_API_KEY ?? process.env.Resend;
+      const resendKey = process.env.Resend;
       if (!resendKey) {
         console.warn("[Contact] Resend API key not configured. Message from:", email);
         console.info("[Contact] Message:", { name, email, topic, message });

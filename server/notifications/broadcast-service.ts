@@ -12,9 +12,7 @@ import { sendUserPush } from "../push/unified-push";
 import { sendWebPush, isWebPushAvailable, type PushSubscriptionData } from "../push/web-push-service";
 import { buildEmailParams } from "../utils/email-helper";
 
-// Inicializar Resend con la API key
-const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-const resend = new Resend(resendApiKey);
+const resend = new Resend(process.env.Resend ?? "");
 
 // Tipos de notificación del admin
 export type AdminNotificationType = "INFO" | "SUCCESS" | "WARNING" | "ALERT" | "PROMOTION";

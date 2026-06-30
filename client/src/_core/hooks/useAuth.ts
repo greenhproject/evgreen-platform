@@ -1,7 +1,8 @@
-import { getLoginUrl, isCapacitorNative } from "@/const";
-import { NATIVE_TOKEN_KEY } from "@shared/const";
+import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { COOKIE_NAME, NATIVE_TOKEN_KEY } from "@shared/const";
 import { TRPCClientError } from "@trpc/client";
+import { Capacitor } from '@capacitor/core';
 import { useCallback, useEffect, useMemo } from "react";
 
 type UseAuthOptions = {
@@ -15,15 +16,14 @@ export function useAuth(options?: UseAuthOptions) {
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
-    retry: false,
+    // On native, allow 1 retry for transient network errors post-login.
+    // On web, retry:false prevents redirect loops when not authenticated.
+    retry: Capacitor.isNativePlatform() ? 1 : false,
+    retryDelay: 2000,
     refetchOnWindowFocus: false,
   });
 
-  const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => {
-      utils.auth.me.setData(undefined, null);
-    },
-  });
+  const logoutMutation = trpc.auth.logout.useMutation();
 
   const logout = useCallback(async () => {
     try {
@@ -39,16 +39,24 @@ export function useAuth(options?: UseAuthOptions) {
         console.error("[Auth] Logout error:", error);
       }
     } finally {
-      utils.auth.me.setData(undefined, null);
-      await utils.auth.me.invalidate();
-      if (isCapacitorNative()) {
-        // Limpiar token nativo del localStorage para que el Bearer header no re-autentique
-        localStorage.removeItem(NATIVE_TOKEN_KEY);
-        // Marcar logout para que bootstrap() no re-aplique el deep-link token de getLaunchUrl()
+      localStorage.removeItem(NATIVE_TOKEN_KEY);
+      localStorage.removeItem('manus-runtime-user-info');
+      // Clear local cookie (set on evgreen://localhost, not app.evgreen.lat)
+      document.cookie = `${COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
+
+      if (Capacitor.isNativePlatform()) {
+        // Do NOT call setData(null) or invalidate() before reloading on native.
+        // setData(null) makes isAuthenticated=false → React re-renders → RoleBasedRedirect's
+        // effect fires doOpenLogin() BEFORE window.location.reload() runs, opening a zombie
+        // SFSafariViewController that cascades into multiple browser opens after the reload.
+        // The page reload resets all JS state, so setData/invalidate are redundant here.
         sessionStorage.setItem('evgreen_logout', '1');
-        window.location.href = "/";
+        history.replaceState(null, '', '/');
+        window.location.reload();
       } else {
-        // En web, redirigir a Auth0 logout para limpiar la sesión de Auth0
+        // On web: clear cache then redirect through Auth0 logout to clear the Auth0 session.
+        utils.auth.me.setData(undefined, null);
+        await utils.auth.me.invalidate();
         window.location.href = `${window.location.origin}/api/auth/logout`;
       }
     }
@@ -61,21 +69,24 @@ export function useAuth(options?: UseAuthOptions) {
     );
     return {
       user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
+      // isPending stays true across retries; isLoading drops to false between retries,
+      // causing Router to remount RoleBasedRedirect on each retry and triggering
+      // duplicate doOpenLogin() calls (zombie browser issue).
+      loading: meQuery.isPending || logoutMutation.isPending,
       error: meQuery.error ?? logoutMutation.error ?? null,
       isAuthenticated: Boolean(meQuery.data),
     };
   }, [
     meQuery.data,
     meQuery.error,
-    meQuery.isLoading,
+    meQuery.isPending,
     logoutMutation.error,
     logoutMutation.isPending,
   ]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;
-    if (meQuery.isLoading || logoutMutation.isPending) return;
+    if (meQuery.isPending || logoutMutation.isPending) return;
     if (state.user) return;
     if (typeof window === "undefined") return;
     if (window.location.pathname === redirectPath) return;
@@ -88,6 +99,13 @@ export function useAuth(options?: UseAuthOptions) {
     meQuery.isLoading,
     state.user,
   ]);
+
+  // Refetchear auth.me cuando llega un deep link con la app ya abierta
+  useEffect(() => {
+    const handler = () => meQuery.refetch();
+    window.addEventListener('evgreen-auth-updated', handler);
+    return () => window.removeEventListener('evgreen-auth-updated', handler);
+  }, [meQuery]);
 
   return {
     ...state,

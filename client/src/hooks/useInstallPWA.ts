@@ -28,20 +28,20 @@ interface UseInstallPWAReturn {
 
 export function useInstallPWA(): UseInstallPWAReturn {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
+  // Calcular sincrónicamente para que el banner nunca flashee en Capacitor
+  const [isInstalled, setIsInstalled] = useState(() => {
+    if (isCapacitorNative()) return true;
+    if (typeof window === "undefined") return false;
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true
+    );
+  });
 
   // Detectar plataforma
   const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
   const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
   const isAndroid = /Android/.test(userAgent);
-
-  // Verificar si ya está instalada (modo standalone)
-  useEffect(() => {
-    const isStandalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (window.navigator as any).standalone === true;
-    setIsInstalled(isStandalone);
-  }, []);
 
   // Capturar el evento beforeinstallprompt
   useEffect(() => {

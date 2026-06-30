@@ -33,7 +33,7 @@ export function getBaseUrl() {
  * Construye una URL de API absoluta si es necesario (Capacitor)
  */
 export function getApiUrl(path: string) {
-  const base = getBaseUrl().replace(/\/$/, "");
+  const base = getBaseUrl().replace(/\/$/, ""); // Asegurar que no hay barra al final
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
   return `${base}${cleanPath}`;
 }

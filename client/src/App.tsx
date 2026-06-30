@@ -17,6 +17,7 @@ import { trpc } from "@/lib/trpc";
 import { lazy, Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { Onboarding, useOnboarding } from "@/components/Onboarding";
 import { LoadingGuard } from "@/components/LoadingGuard";
+import { Capacitor } from "@capacitor/core";
 
 // Páginas públicas (carga inmediata - landing)
 import Landing from "./pages/Landing";
@@ -217,7 +218,7 @@ function isPWAInstalled(): boolean {
   return false;
 }
 
-// Pantalla de login para la PWA cuando el usuario no está autenticado
+// Pantalla de login para la PWA cuando el usuario no está autenticado (web instalada)
 function PWALoginScreen() {
   const webLoginUrl = `${window.location.origin}/api/auth/login`;
 
@@ -269,8 +270,10 @@ function PWALoginScreen() {
   );
 }
 
+// Detecta si corre dentro de Capacitor nativo, incluso cuando el bridge tarda en
+// inicializarse en Android 10 y Capacitor.isNativePlatform() aún retorna false.
 function isRunningNatively(): boolean {
-  if (isCapacitorNative()) return true;
+  if (Capacitor.isNativePlatform()) return true;
   const origin = window.location.origin;
   return origin === 'https://localhost' || (origin.endsWith('://localhost') && !origin.startsWith('http://'));
 }
@@ -281,27 +284,44 @@ function RoleBasedRedirect() {
   const [, setLocation] = useLocation();
   const loginBrowserOpened = useRef(false);
   const isAuthenticatedRef = useRef(isAuthenticated);
+  const pendingBrowserCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingAutoRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showRetryButton, setShowRetryButton] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoRetries, setLogoRetries] = useState(0);
+  // True once deep-link token arrives but auth.me hasn't confirmed yet
   const [tokenPending, setTokenPending] = useState(false);
 
   useEffect(() => {
     isAuthenticatedRef.current = isAuthenticated;
     if (isAuthenticated) {
       setTokenPending(false);
+      // Trigger a repaint of the Google Maps canvas (and any WebGL surface) after
+      // returning from the Auth0 browser. The WKWebView GPU context may need a
+      // nudge to restore textures after the SFSafariViewController dismisses.
       setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
     }
   }, [isAuthenticated]);
 
+  // Show manual retry button after 2 seconds if stuck (not during token pending)
   useEffect(() => {
     if (loading || isAuthenticated || tokenPending || !isRunningNatively()) return;
     const timer = setTimeout(() => setShowRetryButton(true), 2000);
     return () => clearTimeout(timer);
   }, [loading, isAuthenticated, tokenPending]);
 
+  // Mark as authenticated immediately when deep-link token arrives (before auth.me completes).
+  // Also cancel any pending browserFinished retry timers — the deep link arrived, no need to retry.
   useEffect(() => {
     const handleAuthUpdated = () => {
+      if (pendingBrowserCheckRef.current) {
+        clearTimeout(pendingBrowserCheckRef.current);
+        pendingBrowserCheckRef.current = null;
+      }
+      if (pendingAutoRetryRef.current) {
+        clearTimeout(pendingAutoRetryRef.current);
+        pendingAutoRetryRef.current = null;
+      }
       isAuthenticatedRef.current = true;
       setTokenPending(true);
       setShowRetryButton(false);
@@ -310,11 +330,14 @@ function RoleBasedRedirect() {
     return () => window.removeEventListener('evgreen-auth-updated', handleAuthUpdated);
   }, []);
 
+  // Safety timeout: if tokenPending for too long and auth.me never confirmed, retry then give up
   useEffect(() => {
     if (!tokenPending) return;
+    // At 6s: retry auth.me in case the refetch silently failed
     const retryTimer = setTimeout(() => {
       if (!isAuthenticatedRef.current) refresh();
     }, 6000);
+    // At 15s: give up and let the user tap "Iniciar sesión" again
     const giveUpTimer = setTimeout(() => {
       if (!isAuthenticatedRef.current) {
         setTokenPending(false);
@@ -334,13 +357,19 @@ function RoleBasedRedirect() {
     try {
       await openLoginBrowser();
       const { Browser } = await import('@capacitor/browser');
+      // Remove previous listeners to avoid accumulation across retries
       await Browser.removeAllListeners();
       await Browser.addListener('browserFinished', () => {
-        setTimeout(() => {
+        // 500ms to let appUrlOpen + evgreen-auth-updated arrive before checking.
+        // Both timers are stored in refs so handleAuthUpdated can cancel them
+        // if the deep link arrives after browserFinished but before the timers fire.
+        pendingBrowserCheckRef.current = setTimeout(() => {
+          pendingBrowserCheckRef.current = null;
           if (isAuthenticatedRef.current) return;
           loginBrowserOpened.current = false;
           setShowRetryButton(true);
-          setTimeout(() => {
+          pendingAutoRetryRef.current = setTimeout(() => {
+            pendingAutoRetryRef.current = null;
             if (!loginBrowserOpened.current && !isAuthenticatedRef.current) {
               doOpenLogin();
             }
@@ -349,10 +378,15 @@ function RoleBasedRedirect() {
       });
     } catch (e) {
       console.error("[Auth] openLoginBrowser failed:", e);
+      // Do NOT reset loginBrowserOpened here — a VC may still be visible despite
+      // the error (Capacitor returns errors for close/open when a VC is mid-animation).
+      // Resetting the flag triggers another doOpenLogin() → cascade of open() calls.
+      // The user can tap the retry button if Auth0 truly didn't appear.
       setShowRetryButton(true);
     }
   }, []);
 
+  // On native: auto-open Auth0 login immediately when not authenticated.
   useEffect(() => {
     if (loading) return;
     if (isAuthenticated) {
@@ -361,8 +395,13 @@ function RoleBasedRedirect() {
       return;
     }
     if (!isRunningNatively()) return;
+    // Guard: deep-link token arrived but auth.me hasn't confirmed yet (tokenPending).
+    // isAuthenticatedRef is set synchronously on evgreen-auth-updated, before React
+    // processes the re-render, so this check is safe even during the transition.
     if (isAuthenticatedRef.current) return;
     if (loginBrowserOpened.current) return;
+    // Kick off Maps script download in background while user is in Auth0,
+    // so the map is ready to initialize immediately after login completes.
     loadMapScript().catch(() => {});
     doOpenLogin();
   }, [isAuthenticated, loading, doOpenLogin]);
@@ -414,10 +453,12 @@ function RoleBasedRedirect() {
     );
   }
 
-  // Pantalla nativa animada (iOS/Android)
+  // On native: never show the Landing page — Auth0 browser opens on top
   if ((!isAuthenticated || tokenPending) && isRunningNatively()) {
     return (
       <div style={{ minHeight: '100vh', background: '#0b1a0e', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+
+        {/* ── KEYFRAME ANIMATIONS ── */}
         <style>{`
           @keyframes evg-arc-cw { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -440; } }
           @keyframes evg-arc-ccw { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 440; } }
@@ -434,7 +475,7 @@ function RoleBasedRedirect() {
           @keyframes spin { to { transform: rotate(360deg); } }
         `}</style>
 
-        {/* Hexagonal grid background */}
+        {/* ── HEXAGONAL GRID BACKGROUND ── */}
         <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
           <defs>
             <pattern id="hex" x="0" y="0" width="52" height="60" patternUnits="userSpaceOnUse">
@@ -445,22 +486,44 @@ function RoleBasedRedirect() {
           <rect width="100%" height="100%" fill="url(#hex)"/>
         </svg>
 
-        {/* Electric lightning bolts */}
+        {/* ── ELECTRIC LIGHTNING BOLTS (6 positions, staggered) ── */}
         <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
           <defs>
             <filter id="bolt-glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           </defs>
-          <polyline points="8,0 28,90 14,90 38,210 22,210 48,350" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)" style={{ animation: 'evg-bolt-flash 3.5s ease-in-out infinite' }}/>
-          <polyline points="18,20 34,100 22,100 44,200" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)" style={{ animation: 'evg-bolt-flash 3.5s ease-in-out infinite 0.15s' }}/>
-          <polyline points="382,0 362,90 376,90 352,210 366,210 345,340" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)" style={{ animation: 'evg-bolt-fast 4.8s ease-in-out infinite 0.6s' }}/>
-          <polyline points="374,18 358,98 370,98 350,192" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)" style={{ animation: 'evg-bolt-fast 4.8s ease-in-out infinite 0.75s' }}/>
-          <polyline points="0,370 20,420 7,420 30,468" fill="none" stroke="#22c55e" strokeWidth="1.2" filter="url(#bolt-glow)" style={{ animation: 'evg-bolt-double 6.5s ease-in-out infinite 2.2s' }}/>
-          <polyline points="390,450 370,500 383,500 360,548" fill="none" stroke="#22c55e" strokeWidth="1.2" filter="url(#bolt-glow)" style={{ animation: 'evg-bolt-fast 5.2s ease-in-out infinite 1.3s' }}/>
-          <polyline points="14,900 36,800 20,800 48,688 30,688 58,562" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)" style={{ animation: 'evg-bolt-flash 4.0s ease-in-out infinite 3.1s' }}/>
-          <polyline points="96%,30% 88%,48% 93%,48% 84%,68% 90%,68% 80%,90%" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)" style={{ animation: 'evg-bolt-flash 4.2s ease-in-out infinite 1.8s' }}/>
+          {/* ─ TOP-LEFT ─ */}
+          <polyline points="8,0 28,90 14,90 38,210 22,210 48,350" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 3.5s ease-in-out infinite' }}/>
+          <polyline points="18,20 34,100 22,100 44,200" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 3.5s ease-in-out infinite 0.15s' }}/>
+          {/* ─ TOP-RIGHT ─ */}
+          <polyline points="382,0 362,90 376,90 352,210 366,210 345,340" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-fast 4.8s ease-in-out infinite 0.6s' }}/>
+          <polyline points="374,18 358,98 370,98 350,192" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-fast 4.8s ease-in-out infinite 0.75s' }}/>
+          {/* ─ MIDDLE-LEFT (short, double-flash) ─ */}
+          <polyline points="0,370 20,420 7,420 30,468" fill="none" stroke="#22c55e" strokeWidth="1.2" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-double 6.5s ease-in-out infinite 2.2s' }}/>
+          <polyline points="5,385 22,432 12,432 32,476" fill="none" stroke="#86efac" strokeWidth="0.6" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-double 6.5s ease-in-out infinite 2.35s' }}/>
+          {/* ─ MIDDLE-RIGHT (short) ─ */}
+          <polyline points="390,450 370,500 383,500 360,548" fill="none" stroke="#22c55e" strokeWidth="1.2" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-fast 5.2s ease-in-out infinite 1.3s' }}/>
+          <polyline points="386,466 368,512 380,512 358,558" fill="none" stroke="#86efac" strokeWidth="0.6" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-fast 5.2s ease-in-out infinite 1.45s' }}/>
+          {/* ─ BOTTOM-LEFT ─ */}
+          <polyline points="14,900 36,800 20,800 48,688 30,688 58,562" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 4.0s ease-in-out infinite 3.1s' }}/>
+          <polyline points="26,878 44,790 30,790 52,680" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 4.0s ease-in-out infinite 3.25s' }}/>
+          {/* ─ BOTTOM-RIGHT ─ */}
+          <polyline points="96%,30% 88%,48% 93%,48% 84%,68% 90%,68% 80%,90%" fill="none" stroke="#4ade80" strokeWidth="1.5" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 4.2s ease-in-out infinite 1.8s' }}/>
+          <polyline points="98%,35% 91%,50% 95%,50% 87%,65%" fill="none" stroke="#86efac" strokeWidth="0.8" filter="url(#bolt-glow)"
+            style={{ animation: 'evg-bolt-flash 4.2s ease-in-out infinite 1.95s' }}/>
         </svg>
 
-        {/* Organic leaf shapes */}
+        {/* ── LARGE ORGANIC LEAF SHAPES ── */}
         <svg style={{ position: 'absolute', right: '-15%', top: '8%', width: '75%', height: '55%', pointerEvents: 'none', opacity: 0.07 }}>
           <path d="M200,0 C320,80 340,280 160,400 C40,340 20,120 200,0Z" fill="#22c55e"/>
           <path d="M280,30 C380,120 360,320 180,420 C80,360 100,140 280,30Z" fill="#16a34a" opacity="0.6"/>
@@ -469,22 +532,39 @@ function RoleBasedRedirect() {
           <path d="M100,300 C20,200 60,60 200,10 C300,80 260,260 100,300Z" fill="#15803d"/>
         </svg>
 
-        {/* Top ambient glow */}
+        {/* ── TOP AMBIENT GLOW ── */}
         <div style={{ position: 'absolute', top: '-20%', left: '50%', transform: 'translateX(-50%)', width: '120vw', height: '60vh', background: 'radial-gradient(ellipse, rgba(16,185,129,0.12) 0%, transparent 65%)', pointerEvents: 'none' }}/>
 
-        {/* Center: Logo + Brand */}
+        {/* ── CENTER: LOGO + BRAND ── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28, zIndex: 10, padding: '12vh 32px 0' }}>
+
+          {/* Logo with electric arcs + sparks */}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 220, height: 220 }}>
+
+            {/* Pulsating orb behind logo */}
             <div style={{ position: 'absolute', top: '50%', left: '50%', width: 180, height: 180, borderRadius: '50%', background: 'radial-gradient(circle, rgba(16,185,129,0.22) 0%, transparent 70%)', filter: 'blur(18px)', animation: 'evg-orb-breathe 3s ease-in-out infinite' }}/>
+
+            {/* Rotating electric arcs */}
             <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               <defs>
                 <filter id="arc-glow"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
               </defs>
-              <circle cx="110" cy="110" r="100" fill="none" stroke="rgba(74,222,128,0.35)" strokeWidth="1.2" strokeDasharray="18 8" filter="url(#arc-glow)" style={{ animation: 'evg-arc-cw 6s linear infinite', transformOrigin: '110px 110px' }}/>
-              <circle cx="110" cy="110" r="82" fill="none" stroke="rgba(34,197,94,0.25)" strokeWidth="0.8" strokeDasharray="8 14" filter="url(#arc-glow)" style={{ animation: 'evg-arc-ccw 9s linear infinite', transformOrigin: '110px 110px' }}/>
-              <circle cx="110" cy="10" r="3" fill="#4ade80" opacity="0.7" filter="url(#arc-glow)" style={{ animation: 'evg-arc-cw 6s linear infinite', transformOrigin: '110px 110px' }}/>
-              <circle cx="110" cy="210" r="2" fill="#22c55e" opacity="0.5" filter="url(#arc-glow)" style={{ animation: 'evg-arc-ccw 9s linear infinite', transformOrigin: '110px 110px' }}/>
+              {/* Outer arc — clockwise */}
+              <circle cx="110" cy="110" r="100" fill="none" stroke="rgba(74,222,128,0.35)" strokeWidth="1.2"
+                strokeDasharray="18 8" filter="url(#arc-glow)"
+                style={{ animation: 'evg-arc-cw 6s linear infinite', transformOrigin: '110px 110px' }}/>
+              {/* Inner arc — counter-clockwise */}
+              <circle cx="110" cy="110" r="82" fill="none" stroke="rgba(34,197,94,0.25)" strokeWidth="0.8"
+                strokeDasharray="8 14" filter="url(#arc-glow)"
+                style={{ animation: 'evg-arc-ccw 9s linear infinite', transformOrigin: '110px 110px' }}/>
+              {/* Energy dots on outer ring */}
+              <circle cx="110" cy="10" r="3" fill="#4ade80" opacity="0.7" filter="url(#arc-glow)"
+                style={{ animation: 'evg-arc-cw 6s linear infinite', transformOrigin: '110px 110px' }}/>
+              <circle cx="110" cy="210" r="2" fill="#22c55e" opacity="0.5" filter="url(#arc-glow)"
+                style={{ animation: 'evg-arc-ccw 9s linear infinite', transformOrigin: '110px 110px' }}/>
             </svg>
+
+            {/* Floating spark particles */}
             {[
               { x: 85, y: 120, size: 3, delay: '0s', dur: '2.2s', anim: 'evg-spark-1', color: '#4ade80' },
               { x: 138, y: 130, size: 2, delay: '0.7s', dur: '2.6s', anim: 'evg-spark-2', color: '#86efac' },
@@ -493,6 +573,8 @@ function RoleBasedRedirect() {
             ].map((s, i) => (
               <div key={i} style={{ position: 'absolute', left: s.x, top: s.y, width: s.size * 2, height: s.size * 2, borderRadius: '50%', background: s.color, boxShadow: `0 0 6px ${s.color}`, animation: `${s.anim} ${s.dur} ease-out infinite ${s.delay}` }}/>
             ))}
+
+            {/* Logo: imagen PNG con fondo transparente; SVG como fallback si carga falla */}
             <div style={{ width: 120, height: 120, position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'evg-glow-pulse 3s ease-in-out infinite' }}>
               {logoFailed ? (
                 <svg width="90" height="90" fill="none" viewBox="0 0 24 24" style={{ filter: 'drop-shadow(0 0 14px rgba(34,197,94,1)) drop-shadow(0 0 28px rgba(34,197,94,0.6))' }}>
@@ -516,6 +598,7 @@ function RoleBasedRedirect() {
             </div>
           </div>
 
+          {/* Brand name — matches banner style */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
             <h1 style={{ fontSize: 62, fontWeight: 900, letterSpacing: '-2px', lineHeight: 1, margin: 0 }}>
               <span style={{ background: 'linear-gradient(135deg, #86efac, #22c55e, #16a34a)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>EV</span>
@@ -528,14 +611,16 @@ function RoleBasedRedirect() {
             </div>
           </div>
 
+          {/* Tagline */}
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', textAlign: 'center', lineHeight: 1.6, maxWidth: 210, margin: 0 }}>
             Carga inteligente para vehículos eléctricos en Colombia
           </p>
         </div>
 
-        {/* Bottom CTA */}
+        {/* ── BOTTOM CTA ── */}
         <div style={{ width: '100%', zIndex: 10, padding: '0 32px 52px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
           {tokenPending ? (
+            // Token received — auth.me in flight: show only spinner, no button
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid rgba(34,197,94,0.15)', borderTopColor: '#22c55e', animation: 'spin 0.9s linear infinite' }}/>
               <p style={{ fontSize: 11, color: 'rgba(74,222,128,0.35)', margin: 0 }}>Iniciando sesión...</p>
@@ -561,12 +646,11 @@ function RoleBasedRedirect() {
     );
   }
 
-  // Usuario no autenticado en PWA instalada: mostrar pantalla de login nativa
+  // Web PWA installed: show native-style login screen
   if (!isAuthenticated && isPWAInstalled()) {
     return <PWALoginScreen />;
   }
 
-  // Usuario no autenticado en web: mostrar landing
   if (!isAuthenticated) {
     return <Landing />;
   }
@@ -654,7 +738,7 @@ function Router() {
         <Route path="/contact">
           <Suspense fallback={<LazySpinner />}><Contact /></Suspense>
         </Route>
-        
+
         {/* Ruta para códigos QR - Redirige a StartCharge */}
         <Route path="/c/:code" component={QRRedirect} />
 
@@ -1171,6 +1255,7 @@ function Router() {
             </AdminLayout>
           </ProtectedRoute>
         </Route>
+
 
         {/* Administración de Organizaciones SaaS */}
         <Route path="/admin/organizations">

@@ -2,7 +2,7 @@ import { Resend } from 'resend';
 import { buildEmailParams } from '../utils/email-helper';
 
 // Inicializar Resend con la API key
-const resend = new Resend(process.env.RESEND_API_KEY || 're_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b');
+const resend = new Resend(process.env.Resend ?? "");
 
 const FROM_EMAIL = 'EVGreen <notificaciones@evgreen.lat>';
 const SUPPORT_EMAIL = 'soporte@evgreen.lat';
