@@ -185,6 +185,7 @@ export function registerAuth0Routes(app: Express) {
 
       let loginMethod = "auth0";
       if (openId.startsWith("google-oauth2|")) loginMethod = "google";
+      else if (openId.startsWith("apple|")) loginMethod = "apple";
       // ... rest of logic ...
 
       await db.upsertUser({

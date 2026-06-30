@@ -339,14 +339,34 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     // Generar idTag único para nuevos usuarios (formato: EV-XXXXXX)
     // Solo se genera si no existe, no se actualiza en upsert
     const existingUser = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1);
-    if (existingUser.length === 0) {
+    const isNewUser = existingUser.length === 0;
+    if (isNewUser) {
       // Nuevo usuario - generar idTag
       values.idTag = await generateUniqueIdTag();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
+    // `email` has a UNIQUE constraint. If we let MySQL's ON DUPLICATE KEY UPDATE
+    // run here, it matches on ANY unique key collision (not just openId) — so a new
+    // login (e.g. Apple) sharing an email with a different existing account (e.g. Google)
+    // would silently redirect this write onto that other account's row instead of
+    // failing or creating a separate one. Guard against that explicitly, then always
+    // target the write by openId.
+    if (values.email) {
+      const emailOwner = await db.select().from(users).where(eq(users.email, values.email)).limit(1);
+      if (emailOwner.length > 0 && emailOwner[0].openId !== user.openId) {
+        console.warn(
+          `[Database] Skipping email for openId=${user.openId}: email already belongs to a different account (openId=${emailOwner[0].openId})`
+        );
+        delete values.email;
+        delete updateSet.email;
+      }
+    }
+
+    if (isNewUser) {
+      await db.insert(users).values(values);
+    } else {
+      await db.update(users).set(updateSet).where(eq(users.openId, user.openId));
+    }
 
     // Sincronizar idTag con tabla id_tags
     if (values.idTag) {
