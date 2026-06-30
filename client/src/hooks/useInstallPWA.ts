@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { isCapacitorNative } from "@/const";
 
 /**
  * Hook para manejar la instalación de la PWA en Android/Desktop.
@@ -80,11 +81,14 @@ export function useInstallPWA(): UseInstallPWAReturn {
     }
   }, [deferredPrompt]);
 
+  // En Capacitor native ya es una app instalada — nunca mostrar el banner PWA
+  const inNative = isCapacitorNative();
+
   return {
-    canInstall: !!deferredPrompt && !isInstalled,
-    isInstalled,
-    isIOS,
-    isAndroid,
+    canInstall: !!deferredPrompt && !isInstalled && !inNative,
+    isInstalled: isInstalled || inNative,
+    isIOS: isIOS && !inNative,
+    isAndroid: isAndroid && !inNative,
     installApp,
   };
 }

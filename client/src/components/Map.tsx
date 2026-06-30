@@ -91,7 +91,7 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
 let _mapScriptPromise: Promise<void> | null = null;
 
-function loadMapScript(): Promise<void> {
+export function loadMapScript(): Promise<void> {
   if (window.google?.maps) return Promise.resolve();
   if (_mapScriptPromise) return _mapScriptPromise;
   _mapScriptPromise = new Promise<void>((resolve) => {

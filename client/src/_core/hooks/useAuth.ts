@@ -1,4 +1,5 @@
-import { getLoginUrl } from "@/const";
+import { getLoginUrl, isCapacitorNative } from "@/const";
+import { NATIVE_TOKEN_KEY } from "@shared/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
@@ -40,8 +41,16 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
-      // Redirect to Auth0 logout to clear Auth0 session
-      window.location.href = `${window.location.origin}/api/auth/logout`;
+      if (isCapacitorNative()) {
+        // Limpiar token nativo del localStorage para que el Bearer header no re-autentique
+        localStorage.removeItem(NATIVE_TOKEN_KEY);
+        // Marcar logout para que bootstrap() no re-aplique el deep-link token de getLaunchUrl()
+        sessionStorage.setItem('evgreen_logout', '1');
+        window.location.href = "/";
+      } else {
+        // En web, redirigir a Auth0 logout para limpiar la sesión de Auth0
+        window.location.href = `${window.location.origin}/api/auth/logout`;
+      }
     }
   }, [logoutMutation, utils]);
 

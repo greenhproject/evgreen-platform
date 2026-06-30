@@ -28,13 +28,36 @@ import {
   CheckCircle2,
   Info,
   Building2,
+  Trash2,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function UserProfile() {
   const { user, logout, refresh } = useAuth();
   const [, setLocation] = useLocation();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const deleteAccountMutation = trpc.auth.deleteMyAccount.useMutation({
+    onSuccess: async () => {
+      toast.success("Tu cuenta ha sido eliminada");
+      await logout();
+    },
+    onError: () => {
+      toast.error("No se pudo eliminar la cuenta. Intenta de nuevo.");
+    },
+  });
 
   const { data: socSuggestion } = trpc.charging.getSocAccuracySuggestion.useQuery(undefined, {
     staleTime: 5 * 60 * 1000,
@@ -342,11 +365,47 @@ export default function UserProfile() {
           </Button>
         </motion.div>
 
+        {/* Eliminar cuenta */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.55 }}
+        >
+          <button
+            onClick={() => setShowDeleteDialog(true)}
+            className="w-full text-xs text-muted-foreground hover:text-destructive transition-colors py-2 flex items-center justify-center gap-1"
+          >
+            <Trash2 className="w-3 h-3" />
+            Eliminar mi cuenta
+          </button>
+        </motion.div>
+
         {/* Versión de la app */}
         <div className="text-center text-xs text-muted-foreground">
           EVGreen v1.0.0
         </div>
       </div>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar tu cuenta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción es permanente e irreversible. Se eliminarán todos tus datos: historial de cargas, billetera, vehículos y preferencias. No podrás recuperar tu cuenta.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteAccountMutation.mutate()}
+              disabled={deleteAccountMutation.isPending}
+            >
+              {deleteAccountMutation.isPending ? "Eliminando..." : "Sí, eliminar mi cuenta"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </UserLayout>
   );
 }

@@ -4612,7 +4612,7 @@ export async function getInvestorParticipations(investorId: number): Promise<any
               COALESCE(SUM(kwhConsumed), 0) as totalKwh
             FROM transactions
             WHERE stationId = ${row.projectStationId}
-              AND status = 'COMPLETED'
+              AND transaction_status = 'COMPLETED'
           `);
           const er = (earningsResult as any)[0]?.[0] || {};
           realEarnings.totalGross = Number(er.totalGross || 0);

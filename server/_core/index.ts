@@ -440,64 +440,51 @@ async function startServer() {
   // Soportar tanto /ocpp/ como /api/ocpp/ para compatibilidad con diferentes proxies
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url || "", `http://${request.headers.host}`);
-    
-    console.log(`[OCPP] Upgrade request received:`, {
-      path: url.pathname,
-      headers: {
-        upgrade: request.headers.upgrade,
-        connection: request.headers.connection,
-        secWebSocketProtocol: request.headers["sec-websocket-protocol"],
-        secWebSocketVersion: request.headers["sec-websocket-version"],
-        origin: request.headers.origin,
-        host: request.headers.host,
-      }
-    });
-    
+
     // Soportar tanto /ocpp/ como /api/ocpp/ para compatibilidad
     const isOcppRoute = url.pathname.startsWith("/ocpp/") || url.pathname.startsWith("/api/ocpp/ws/");
-    
-    if (isOcppRoute) {
-      console.log(`[OCPP] Handling upgrade for: ${url.pathname}`);
-      
-      // Manejar errores de socket
-      socket.on("error", (err) => {
-        console.error(`[OCPP] Socket error during upgrade:`, err);
-      });
-      
-      // CRÍTICO: Configurar TCP keep-alive en el socket subyacente
-      // Esto envía paquetes TCP keep-alive para evitar que proxies intermedios
-      // cierren la conexión por inactividad a nivel de transporte
-      const tcpSocket = socket as unknown as import('net').Socket;
-      if (typeof tcpSocket.setKeepAlive === 'function') {
-        tcpSocket.setKeepAlive(true, 15000); // TCP keep-alive cada 15 segundos
-      }
-      if (typeof tcpSocket.setTimeout === 'function') {
-        tcpSocket.setTimeout(0); // Sin timeout en el socket TCP
-      }
-      if (typeof tcpSocket.setNoDelay === 'function') {
-        tcpSocket.setNoDelay(true); // Desactivar Nagle para respuestas inmediatas
-      }
-      
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        console.log(`[OCPP] Upgrade successful, emitting connection`);
-        
-        // También configurar el socket interno del WebSocket
-        const rawSocket = (ws as any)._socket;
-        if (rawSocket) {
-          rawSocket.setKeepAlive(true, 15000);
-          rawSocket.setTimeout(0);
-          if (typeof rawSocket.setNoDelay === 'function') {
-            rawSocket.setNoDelay(true);
-          }
-        }
-        
-        wss.emit("connection", ws, request);
-      });
-    } else {
-      // No es una ruta OCPP, cerrar la conexión
-      console.log(`[OCPP] Ignoring non-OCPP upgrade request: ${url.pathname}`);
-      socket.destroy();
+
+    if (!isOcppRoute) {
+      // No es OCPP (Vite HMR u otro WebSocket) — no interferir, dejar que Vite lo maneje
+      return;
     }
+
+    console.log(`[OCPP] Handling upgrade for: ${url.pathname}`);
+
+    // Manejar errores de socket
+    socket.on("error", (err) => {
+      console.error(`[OCPP] Socket error during upgrade:`, err);
+    });
+
+    // CRÍTICO: Configurar TCP keep-alive en el socket subyacente
+    // Esto envía paquetes TCP keep-alive para evitar que proxies intermedios
+    // cierren la conexión por inactividad a nivel de transporte
+    const tcpSocket = socket as unknown as import('net').Socket;
+    if (typeof tcpSocket.setKeepAlive === 'function') {
+      tcpSocket.setKeepAlive(true, 15000); // TCP keep-alive cada 15 segundos
+    }
+    if (typeof tcpSocket.setTimeout === 'function') {
+      tcpSocket.setTimeout(0); // Sin timeout en el socket TCP
+    }
+    if (typeof tcpSocket.setNoDelay === 'function') {
+      tcpSocket.setNoDelay(true); // Desactivar Nagle para respuestas inmediatas
+    }
+
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      console.log(`[OCPP] Upgrade successful, emitting connection`);
+
+      // También configurar el socket interno del WebSocket
+      const rawSocket = (ws as any)._socket;
+      if (rawSocket) {
+        rawSocket.setKeepAlive(true, 15000);
+        rawSocket.setTimeout(0);
+        if (typeof rawSocket.setNoDelay === 'function') {
+          rawSocket.setNoDelay(true);
+        }
+      }
+
+      wss.emit("connection", ws, request);
+    });
   });
 
   // Manejar conexiones OCPP WebSocket

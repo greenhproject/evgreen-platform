@@ -11,6 +11,7 @@ import { COOKIE_NAME } from "@shared/const";
  * ============================================================================
  */
 import { getSessionCookieOptions } from "./_core/cookies";
+import { deleteAuth0User } from "./_core/auth0";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
@@ -165,6 +166,19 @@ const authRouter = router({
         compressedSize: compressedBuffer.length,
       };
     }),
+
+  deleteMyAccount: protectedProcedure.mutation(async ({ ctx }) => {
+    const cookieOptions = getSessionCookieOptions(ctx.req);
+    const { id: userId, openId } = ctx.user;
+    await db.deleteUser(userId);
+    ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    console.log(`[Auth] Account deleted: userId=${userId}`);
+    // Delete from Auth0 after removing local data (non-blocking)
+    deleteAuth0User(openId).catch((e) =>
+      console.error("[Auth0] Background delete failed:", e)
+    );
+    return { success: true } as const;
+  }),
 });
 
 // ============================================================================

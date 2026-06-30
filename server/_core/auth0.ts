@@ -239,3 +239,51 @@ export function registerAuth0Routes(app: Express) {
     res.redirect("/api/auth/login");
   });
 }
+
+/**
+ * Delete a user from Auth0 using the Management API.
+ * Called after deleting the user from our own database.
+ * Errors are logged but do not block the local deletion.
+ */
+export async function deleteAuth0User(openId: string): Promise<void> {
+  if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID || !AUTH0_CLIENT_SECRET) {
+    console.warn("[Auth0] Cannot delete user from Auth0: missing config");
+    return;
+  }
+
+  try {
+    const tokenRes = await fetch(`https://${AUTH0_DOMAIN}/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: AUTH0_CLIENT_ID,
+        client_secret: AUTH0_CLIENT_SECRET,
+        audience: `https://${AUTH0_DOMAIN}/api/v2/`,
+        grant_type: "client_credentials",
+      }),
+    });
+
+    if (!tokenRes.ok) {
+      console.error("[Auth0] Management API token failed:", await tokenRes.text());
+      return;
+    }
+
+    const { access_token } = await tokenRes.json() as { access_token: string };
+
+    const deleteRes = await fetch(
+      `https://${AUTH0_DOMAIN}/api/v2/users/${encodeURIComponent(openId)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${access_token}` },
+      }
+    );
+
+    if (!deleteRes.ok && deleteRes.status !== 404) {
+      console.error("[Auth0] Delete user failed:", deleteRes.status, await deleteRes.text());
+    } else {
+      console.log(`[Auth0] User deleted from Auth0: ${openId}`);
+    }
+  } catch (e) {
+    console.error("[Auth0] deleteAuth0User error:", e);
+  }
+}
