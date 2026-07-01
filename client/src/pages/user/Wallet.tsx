@@ -710,8 +710,18 @@ export default function UserWallet() {
   // Botón principal: recarga rápida si tiene tarjeta, sino checkout
   const handleRecharge = () => {
     if (hasSavedCard && hasPaymentSource) {
+      // Tarjeta inscrita con payment source → cobro directo sin salir de la app
       handleQuickRecharge();
+    } else if (hasSavedCard && !hasPaymentSource) {
+      // Tarjeta guardada pero sin payment source (pagó antes por checkout de Wompi).
+      // Necesita inscribir la tarjeta una vez más para habilitar cobros directos.
+      toast.info(
+        `Inscribe tu ${subscription?.cardBrand} ····${subscription?.cardLastFour} para recargar con un clic sin salir de la app.`,
+        { duration: 5000 }
+      );
+      setShowAddCard(true);
     } else {
+      // Sin tarjeta → abrir checkout de Wompi
       handleCheckoutRecharge();
     }
   };

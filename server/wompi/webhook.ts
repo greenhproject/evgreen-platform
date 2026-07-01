@@ -169,11 +169,14 @@ async function processWalletRecharge(
         }
 
         if (cardBrand && cardLastFour) {
+          // Si la transacción incluye payment_source_id, guardarlo para cobros directos futuros
+          const txPaymentSourceId = transaction?.payment_source_id?.toString();
           await db.updateUserSubscription(localTx.userId, {
             cardBrand,
             cardLastFour,
+            ...(txPaymentSourceId ? { wompiPaymentSourceId: txPaymentSourceId } : {}),
           });
-          console.log(`[Wompi] Datos de tarjeta guardados: ${cardBrand} ****${cardLastFour}`);
+          console.log(`[Wompi] Datos de tarjeta guardados: ${cardBrand} ****${cardLastFour}${txPaymentSourceId ? ` (PS: ${txPaymentSourceId})` : " (sin payment source)"}`);
         } else {
           console.warn(`[Wompi] No se pudieron obtener datos de tarjeta para tx ${wompiTxId}`);
         }

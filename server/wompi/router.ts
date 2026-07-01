@@ -363,11 +363,14 @@ export const wompiRouter = router({
             const cardLastFour = tx.payment_method?.last_four || tx.payment_method?.extra?.last_four;
             if (cardBrand && cardLastFour) {
               try {
+                // Si la transacción incluye payment_source_id, guardarlo para cobros directos futuros
+                const txPaymentSourceId = tx.payment_source_id?.toString();
                 await db.updateUserSubscription(ctx.user.id, {
                   cardBrand,
                   cardLastFour,
+                  ...(txPaymentSourceId ? { wompiPaymentSourceId: txPaymentSourceId } : {}),
                 });
-                console.log(`[Wompi] Tarjeta guardada desde verify: ${cardBrand} ****${cardLastFour}`);
+                console.log(`[Wompi] Tarjeta guardada desde verify: ${cardBrand} ****${cardLastFour}${txPaymentSourceId ? ` (PS: ${txPaymentSourceId})` : " (sin payment source)"}`);
               } catch (cardErr) {
                 console.warn("[Wompi] Error guardando tarjeta desde verify:", cardErr);
               }
