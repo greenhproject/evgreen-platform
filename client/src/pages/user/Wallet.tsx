@@ -48,11 +48,55 @@ const PRESET_AMOUNTS = [20000, 50000, 100000];
 
 // Mapeo de marcas de tarjeta a colores
 const CARD_BRAND_COLORS: Record<string, { bg: string; accent: string }> = {
-  VISA: { bg: "from-blue-600 to-blue-800", accent: "text-blue-200" },
-  MASTERCARD: { bg: "from-red-600 to-orange-700", accent: "text-orange-200" },
-  AMEX: { bg: "from-slate-600 to-slate-800", accent: "text-slate-200" },
-  DEFAULT: { bg: "from-emerald-600 to-emerald-800", accent: "text-emerald-200" },
+  VISA: { bg: "from-blue-700 to-blue-900", accent: "text-blue-200" },
+  MASTERCARD: { bg: "from-gray-900 to-gray-800", accent: "text-orange-300" },
+  AMEX: { bg: "from-slate-700 to-slate-900", accent: "text-slate-200" },
+  DEFAULT: { bg: "from-emerald-700 to-emerald-900", accent: "text-emerald-200" },
 };
+
+// SVG logos de marcas de tarjeta — inline para no depender de CDNs externos
+function VisaLogo({ className = "h-7" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 780 500" className={className} xmlns="http://www.w3.org/2000/svg">
+      <rect width="780" height="500" rx="40" fill="#1a1f71" />
+      <path d="M293.2 348.73l33.36-195.76h53.36l-33.36 195.76h-53.36zm246.4-191.26c-10.56-3.96-27.12-8.2-47.76-8.2-52.68 0-89.76 26.52-90.12 64.56-.36 28.08 26.52 43.8 46.8 53.16 20.76 9.6 27.72 15.72 27.72 24.24-.12 13.08-16.68 19.08-32.04 19.08-21.36 0-32.76-2.96-50.28-10.32l-6.96-3.12-7.44 43.68c12.36 5.4 35.28 10.2 59.04 10.44 55.68 0 91.8-26.16 92.28-66.72.24-22.2-13.92-39.12-44.4-53.04-18.48-9-29.88-15-29.76-24.12 0-8.04 9.6-16.68 30.36-16.68 17.28-.24 29.88 3.48 39.6 7.44l4.8 2.28 7.2-42.68zm136.68-4.5h-41.16c-12.72 0-22.32 3.48-27.96 16.2l-79.2 179.56h55.68s9.12-24 11.16-29.28c6.12 0 60.48.12 68.28.12 1.56 6.84 6.48 29.16 6.48 29.16h49.2l-42.48-195.76zm-65.4 126.96c4.44-11.28 21.24-54.6 21.24-54.6-.36.6 4.44-11.4 7.08-18.72l3.6 16.92s10.2 46.68 12.36 56.4h-44.28zm-367.56-126.96l-52.2 133.56-5.52-27.12c-9.72-31.2-39.96-65.04-73.8-81.96l47.76 171.16 56.4-.12 83.88-195.52h-56.52z" fill="white" />
+      <path d="M146.92 152.97h-85.44l-.72 4.08c66.48 16.08 110.52 54.96 128.76 101.64l-18.6-89.4c-3.24-12.48-12.6-15.96-24-16.32z" fill="#f9a533" />
+    </svg>
+  );
+}
+
+function MastercardLogo({ className = "h-7" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 152 108" className={className} xmlns="http://www.w3.org/2000/svg">
+      <rect width="152" height="108" rx="10" fill="#252525" />
+      <circle cx="58" cy="54" r="30" fill="#EB001B" />
+      <circle cx="94" cy="54" r="30" fill="#F79E1B" />
+      <path d="M76 30.4a30 30 0 0 1 0 47.2A30 30 0 0 1 76 30.4z" fill="#FF5F00" />
+    </svg>
+  );
+}
+
+function AmexLogo({ className = "h-7" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 152 108" className={className} xmlns="http://www.w3.org/2000/svg">
+      <rect width="152" height="108" rx="10" fill="#2E77BC" />
+      <text x="76" y="62" textAnchor="middle" fill="white" fontSize="28" fontWeight="bold" fontFamily="Arial, sans-serif">AMEX</text>
+    </svg>
+  );
+}
+
+function CardBrandLogo({ brand, className = "h-7" }: { brand: string; className?: string }) {
+  const b = (brand || "").toUpperCase();
+  if (b === "VISA") return <VisaLogo className={className} />;
+  if (b === "MASTERCARD") return <MastercardLogo className={className} />;
+  if (b === "AMEX") return <AmexLogo className={className} />;
+  // Fallback genérico
+  return (
+    <div className="h-7 px-2 rounded bg-white/20 flex items-center justify-center">
+      <span className="text-white text-[10px] font-bold tracking-wider">{b || "CARD"}</span>
+    </div>
+  );
+}
 
 // ============================================================================
 // COMPONENTE: Auto-Recarga durante carga activa
@@ -925,14 +969,21 @@ export default function UserWallet() {
                 <div className="absolute bottom-0 left-0 w-32 h-32 rounded-full bg-white/5 translate-y-8 -translate-x-8" />
 
                 <div className="relative z-10">
-                  {/* Header: chip + marca */}
+                  {/* Header: chip + logo de marca */}
                   <div className="flex items-center justify-between mb-8">
-                    <div className="w-10 h-7 rounded bg-yellow-400/80 flex items-center justify-center">
-                      <div className="w-6 h-4 rounded-sm border border-yellow-600/40" />
+                    {/* Chip EMV */}
+                    <div className="w-10 h-7 rounded-md bg-gradient-to-br from-yellow-300 to-yellow-500 flex items-center justify-center shadow-sm">
+                      <div className="w-6 h-4 rounded-sm border border-yellow-700/40 grid grid-cols-3 gap-px p-0.5">
+                        <div className="bg-yellow-600/40 rounded-sm" />
+                        <div className="bg-yellow-600/40 rounded-sm" />
+                        <div className="bg-yellow-600/40 rounded-sm" />
+                        <div className="bg-yellow-600/40 rounded-sm" />
+                        <div className="bg-yellow-600/40 rounded-sm" />
+                        <div className="bg-yellow-600/40 rounded-sm" />
+                      </div>
                     </div>
-                    <span className={`text-sm font-bold tracking-wider ${cardColors.accent}`}>
-                      {subscription.cardBrand || "CARD"}
-                    </span>
+                    {/* Logo de marca SVG */}
+                    <CardBrandLogo brand={subscription.cardBrand || ""} className="h-8" />
                   </div>
 
                   {/* Número de tarjeta */}
@@ -994,9 +1045,10 @@ export default function UserWallet() {
                     Agrega una tarjeta de crédito o débito para recargar tu billetera con un solo clic
                   </p>
                 </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <img src="https://cdn.worldvectorlogo.com/logos/visa-2.svg" alt="Visa" className="h-5 object-contain opacity-50" />
-                  <img src="https://cdn.worldvectorlogo.com/logos/mastercard-2.svg" alt="Mastercard" className="h-5 object-contain opacity-50" />
+                <div className="flex items-center gap-2 mt-1 opacity-60">
+                  <VisaLogo className="h-5" />
+                  <MastercardLogo className="h-5" />
+                  <AmexLogo className="h-5" />
                   <span className="text-[10px] text-muted-foreground">y más</span>
                 </div>
               </button>
@@ -1469,18 +1521,10 @@ export default function UserWallet() {
               </Button>
 
               {/* Marcas aceptadas */}
-              <div className="flex items-center justify-center gap-4 pt-2 border-t border-border/50">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-8 h-5 rounded bg-blue-600 flex items-center justify-center">
-                    <span className="text-[8px] text-white font-bold">VISA</span>
-                  </div>
-                  <div className="w-8 h-5 rounded bg-red-600 flex items-center justify-center">
-                    <span className="text-[8px] text-white font-bold">MC</span>
-                  </div>
-                  <div className="w-8 h-5 rounded bg-slate-600 flex items-center justify-center">
-                    <span className="text-[8px] text-white font-bold">AMEX</span>
-                  </div>
-                </div>
+              <div className="flex items-center justify-center gap-3 pt-2 border-t border-border/50">
+                <VisaLogo className="h-6" />
+                <MastercardLogo className="h-6" />
+                <AmexLogo className="h-6" />
                 <span className="text-[10px] text-muted-foreground">Tarjetas internacionales aceptadas</span>
               </div>
             </div>
