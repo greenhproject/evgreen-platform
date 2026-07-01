@@ -46,13 +46,182 @@ import { useLocation } from "wouter";
 
 const PRESET_AMOUNTS = [20000, 50000, 100000];
 
-// Mapeo de marcas de tarjeta a colores
+// Mapeo de marcas de tarjeta a colores (fallback para tarjetas sin diseño específico)
 const CARD_BRAND_COLORS: Record<string, { bg: string; accent: string }> = {
   VISA: { bg: "from-blue-700 to-blue-900", accent: "text-blue-200" },
   MASTERCARD: { bg: "from-gray-900 to-gray-800", accent: "text-orange-300" },
   AMEX: { bg: "from-slate-700 to-slate-900", accent: "text-slate-200" },
   DEFAULT: { bg: "from-emerald-700 to-emerald-900", accent: "text-emerald-200" },
 };
+
+// Componente de tarjeta premium con diseño específico por marca
+function PremiumCardArt({
+  brand,
+  cardLastFour,
+  cardHolderName,
+}: {
+  brand: string;
+  cardLastFour: string;
+  cardHolderName?: string | null;
+}) {
+  const b = (brand || "").toUpperCase();
+
+  if (b === "MASTERCARD") {
+    return (
+      <div className="relative overflow-hidden rounded-2xl shadow-2xl" style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", minHeight: 200 }}>
+        {/* Círculos Mastercard decorativos de fondo */}
+        <div className="absolute" style={{ right: -30, top: "50%", transform: "translateY(-50%)" }}>
+          <div className="relative">
+            <div className="w-36 h-36 rounded-full opacity-20" style={{ background: "#EB001B" }} />
+            <div className="w-36 h-36 rounded-full opacity-20 absolute top-0" style={{ background: "#F79E1B", left: 40 }} />
+          </div>
+        </div>
+        {/* Patrón de líneas sutiles */}
+        <div className="absolute inset-0 opacity-5" style={{ backgroundImage: "repeating-linear-gradient(45deg, white 0, white 1px, transparent 0, transparent 50%)", backgroundSize: "20px 20px" }} />
+        <div className="relative z-10 p-5">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div className="w-10 h-7 rounded-md shadow-sm" style={{ background: "linear-gradient(135deg, #f0c040, #d4a017)" }}>
+              <div className="w-full h-full rounded-md grid grid-cols-3 gap-px p-1 opacity-60">
+                {[...Array(6)].map((_, i) => <div key={i} className="bg-yellow-900/50 rounded-sm" />)}
+              </div>
+            </div>
+            <MastercardLogo className="h-10" />
+          </div>
+          {/* Número */}
+          <div className="flex items-center gap-3 mb-6">
+            {["\u2022\u2022\u2022\u2022", "\u2022\u2022\u2022\u2022", "\u2022\u2022\u2022\u2022"].map((dots, i) => (
+              <span key={i} className="text-white/30 text-xl tracking-widest">{dots}</span>
+            ))}
+            <span className="text-white text-xl font-bold tracking-widest">{cardLastFour}</span>
+          </div>
+          {/* Footer */}
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-white/40 text-[9px] uppercase tracking-widest mb-0.5">Titular</p>
+              <p className="text-white text-sm font-semibold tracking-wide">{cardHolderName || "Tarjeta registrada"}</p>
+            </div>
+            <div className="flex items-center gap-1.5 rounded-full px-3 py-1" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+              <span className="text-green-300 text-xs font-medium">Activa</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (b === "VISA") {
+    return (
+      <div className="relative overflow-hidden rounded-2xl shadow-2xl" style={{ background: "linear-gradient(135deg, #1a1f71 0%, #0d47a1 60%, #1565c0 100%)", minHeight: 200 }}>
+        {/* Ondas Visa */}
+        <svg className="absolute bottom-0 left-0 w-full opacity-10" viewBox="0 0 400 120" preserveAspectRatio="none">
+          <path d="M0,60 C100,20 200,100 300,40 C350,10 380,50 400,60 L400,120 L0,120 Z" fill="white" />
+          <path d="M0,80 C80,50 180,110 280,60 C340,30 380,70 400,80 L400,120 L0,120 Z" fill="white" opacity="0.5" />
+        </svg>
+        {/* Brillo superior derecho */}
+        <div className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-10" style={{ background: "radial-gradient(circle, white, transparent)", transform: "translate(30%, -30%)" }} />
+        <div className="relative z-10 p-5">
+          <div className="flex items-center justify-between mb-8">
+            <div className="w-10 h-7 rounded-md shadow-sm" style={{ background: "linear-gradient(135deg, #f0c040, #d4a017)" }}>
+              <div className="w-full h-full rounded-md grid grid-cols-3 gap-px p-1 opacity-60">
+                {[...Array(6)].map((_, i) => <div key={i} className="bg-yellow-900/50 rounded-sm" />)}
+              </div>
+            </div>
+            <VisaLogo className="h-9" />
+          </div>
+          <div className="flex items-center gap-3 mb-6">
+            {["\u2022\u2022\u2022\u2022", "\u2022\u2022\u2022\u2022", "\u2022\u2022\u2022\u2022"].map((dots, i) => (
+              <span key={i} className="text-white/30 text-xl tracking-widest">{dots}</span>
+            ))}
+            <span className="text-white text-xl font-bold tracking-widest">{cardLastFour}</span>
+          </div>
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-white/40 text-[9px] uppercase tracking-widest mb-0.5">Titular</p>
+              <p className="text-white text-sm font-semibold tracking-wide">{cardHolderName || "Tarjeta registrada"}</p>
+            </div>
+            <div className="flex items-center gap-1.5 rounded-full px-3 py-1" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+              <span className="text-green-300 text-xs font-medium">Activa</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (b === "AMEX") {
+    return (
+      <div className="relative overflow-hidden rounded-2xl shadow-2xl" style={{ background: "linear-gradient(135deg, #1565c0 0%, #0288d1 60%, #0097a7 100%)", minHeight: 200 }}>
+        {/* Patrón diagonal Amex */}
+        <div className="absolute inset-0 opacity-5" style={{ backgroundImage: "repeating-linear-gradient(-45deg, white 0, white 1px, transparent 0, transparent 12px)" }} />
+        <div className="absolute top-0 right-0 w-32 h-32 rounded-full opacity-10" style={{ background: "white", transform: "translate(20%, -20%)" }} />
+        <div className="relative z-10 p-5">
+          <div className="flex items-center justify-between mb-8">
+            <div className="w-10 h-7 rounded-md shadow-sm" style={{ background: "linear-gradient(135deg, #f0c040, #d4a017)" }}>
+              <div className="w-full h-full rounded-md grid grid-cols-3 gap-px p-1 opacity-60">
+                {[...Array(6)].map((_, i) => <div key={i} className="bg-yellow-900/50 rounded-sm" />)}
+              </div>
+            </div>
+            <AmexLogo className="h-9" />
+          </div>
+          <div className="flex items-center gap-3 mb-6">
+            {["\u2022\u2022\u2022\u2022", "\u2022\u2022\u2022\u2022", "\u2022\u2022\u2022\u2022"].map((dots, i) => (
+              <span key={i} className="text-white/30 text-xl tracking-widest">{dots}</span>
+            ))}
+            <span className="text-white text-xl font-bold tracking-widest">{cardLastFour}</span>
+          </div>
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-white/40 text-[9px] uppercase tracking-widest mb-0.5">Titular</p>
+              <p className="text-white text-sm font-semibold tracking-wide">{cardHolderName || "Tarjeta registrada"}</p>
+            </div>
+            <div className="flex items-center gap-1.5 rounded-full px-3 py-1" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+              <span className="text-green-300 text-xs font-medium">Activa</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback genérico (EVGreen verde)
+  const colors = CARD_BRAND_COLORS[b] || CARD_BRAND_COLORS.DEFAULT;
+  return (
+    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${colors.bg} shadow-2xl`} style={{ minHeight: 200 }}>
+      <div className="absolute top-0 right-0 w-40 h-40 rounded-full bg-white/5 -translate-y-10 translate-x-10" />
+      <div className="absolute bottom-0 left-0 w-32 h-32 rounded-full bg-white/5 translate-y-8 -translate-x-8" />
+      <div className="relative z-10 p-5">
+        <div className="flex items-center justify-between mb-8">
+          <div className="w-10 h-7 rounded-md shadow-sm" style={{ background: "linear-gradient(135deg, #f0c040, #d4a017)" }}>
+            <div className="w-full h-full rounded-md grid grid-cols-3 gap-px p-1 opacity-60">
+              {[...Array(6)].map((_, i) => <div key={i} className="bg-yellow-900/50 rounded-sm" />)}
+            </div>
+          </div>
+          <CardBrandLogo brand={b} className="h-8" />
+        </div>
+        <div className="flex items-center gap-3 mb-6">
+          {["\u2022\u2022\u2022\u2022", "\u2022\u2022\u2022\u2022", "\u2022\u2022\u2022\u2022"].map((dots, i) => (
+            <span key={i} className="text-white/30 text-xl tracking-widest">{dots}</span>
+          ))}
+          <span className="text-white text-xl font-bold tracking-widest">{cardLastFour}</span>
+        </div>
+        <div className="flex items-end justify-between">
+          <div>
+            <p className="text-white/40 text-[9px] uppercase tracking-widest mb-0.5">Titular</p>
+            <p className="text-white text-sm font-semibold tracking-wide">{cardHolderName || "Tarjeta registrada"}</p>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full px-3 py-1" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+            <span className="text-green-300 text-xs font-medium">Activa</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // SVG logos de marcas de tarjeta — inline para no depender de CDNs externos
 function VisaLogo({ className = "h-7" }: { className?: string }) {
@@ -962,55 +1131,12 @@ export default function UserWallet() {
               animate={{ opacity: 1, scale: 1 }}
               className="relative"
             >
-              {/* Tarjeta visual estilo billetera */}
-              <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${cardColors.bg} p-5 shadow-lg`}>
-                {/* Patrón decorativo */}
-                <div className="absolute top-0 right-0 w-40 h-40 rounded-full bg-white/5 -translate-y-10 translate-x-10" />
-                <div className="absolute bottom-0 left-0 w-32 h-32 rounded-full bg-white/5 translate-y-8 -translate-x-8" />
-
-                <div className="relative z-10">
-                  {/* Header: chip + logo de marca */}
-                  <div className="flex items-center justify-between mb-8">
-                    {/* Chip EMV */}
-                    <div className="w-10 h-7 rounded-md bg-gradient-to-br from-yellow-300 to-yellow-500 flex items-center justify-center shadow-sm">
-                      <div className="w-6 h-4 rounded-sm border border-yellow-700/40 grid grid-cols-3 gap-px p-0.5">
-                        <div className="bg-yellow-600/40 rounded-sm" />
-                        <div className="bg-yellow-600/40 rounded-sm" />
-                        <div className="bg-yellow-600/40 rounded-sm" />
-                        <div className="bg-yellow-600/40 rounded-sm" />
-                        <div className="bg-yellow-600/40 rounded-sm" />
-                        <div className="bg-yellow-600/40 rounded-sm" />
-                      </div>
-                    </div>
-                    {/* Logo de marca SVG */}
-                    <CardBrandLogo brand={subscription.cardBrand || ""} className="h-8" />
-                  </div>
-
-                  {/* Número de tarjeta */}
-                  <div className="flex items-center gap-3 mb-6">
-                    <span className="text-white/40 text-lg tracking-widest">••••</span>
-                    <span className="text-white/40 text-lg tracking-widest">••••</span>
-                    <span className="text-white/40 text-lg tracking-widest">••••</span>
-                    <span className="text-white text-lg font-semibold tracking-widest">
-                      {subscription.cardLastFour}
-                    </span>
-                  </div>
-
-                  {/* Footer: titular + estado */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-white/40 text-[10px] uppercase tracking-wider">Titular</p>
-                      <p className="text-white text-sm font-medium">
-                        {subscription.cardHolderName || "Tarjeta registrada"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1">
-                      <CheckCircle className="w-3.5 h-3.5 text-green-400" />
-                      <span className="text-green-300 text-xs font-medium">Activa</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {/* Tarjeta visual premium por marca */}
+              <PremiumCardArt
+                brand={subscription.cardBrand || ""}
+                cardLastFour={subscription.cardLastFour || ""}
+                cardHolderName={subscription.cardHolderName}
+              />
 
               {/* Indicador de seguridad */}
               <div className="flex items-center gap-1.5 mt-2 px-1">
