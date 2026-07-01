@@ -1,7 +1,6 @@
 /**
  * Página de Escaneo QR para iniciar carga
- * - Capacitor nativo: @capacitor/camera + jsQR (no requiere getUserMedia/HTTPS)
- * - Web fallback: html5-qrcode con cámara del navegador
+ * Usa html5-qrcode para escaneo real con cámara
  */
 
 import { useState, useEffect, useRef } from "react";
@@ -12,7 +11,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { Capacitor } from "@capacitor/core";
 import {
   QrCode,
   Camera,
@@ -24,10 +22,7 @@ import {
   X,
   Loader2,
   CheckCircle,
-  RefreshCw,
 } from "lucide-react";
-
-const isNative = Capacitor.isNativePlatform();
 
 export default function ScanPage() {
   const [, setLocation] = useLocation();
@@ -37,219 +32,209 @@ export default function ScanPage() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [scannedCode, setScannedCode] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [nativeScanStatus, setNativeScanStatus] = useState<"idle" | "scanning" | "done">("idle");
   const scannerRef = useRef<any>(null);
   const scannerContainerId = "qr-reader";
 
+  // Buscar estación por código
   const searchStation = trpc.stations.listPublic.useQuery(undefined, {
     enabled: false,
   });
 
+  // Limpiar el escáner al desmontar
   useEffect(() => {
     return () => {
-      stopWebScanner();
+      stopScanner();
     };
   }, []);
 
-  // ─── ESCANEO NATIVO (Capacitor iOS/Android) ───────────────────────────────
-
-  const startNativeScan = async () => {
-    setCameraError(null);
-    setIsScanning(true);
-    setNativeScanStatus("scanning");
-
-    try {
-      const { Camera: CapCamera, CameraResultType, CameraSource } = await import("@capacitor/camera");
-
-      const photo = await CapCamera.getPhoto({
-        quality: 90,
-        allowEditing: false,
-        resultType: CameraResultType.DataUrl,
-        source: CameraSource.Camera,
-        correctOrientation: true,
-      });
-
-      if (!photo.dataUrl) throw new Error("NO_IMAGE");
-
-      // Decodificar QR desde la imagen
-      const code = await decodeQRFromDataUrl(photo.dataUrl);
-
-      if (!code) {
-        setNativeScanStatus("idle");
-        setIsScanning(false);
-        setCameraError("No se encontró ningún código QR en la imagen. Intenta de nuevo enfocando directamente el código.");
-        return;
-      }
-
-      setNativeScanStatus("done");
-      setIsScanning(false);
-      onScanSuccess(code);
-    } catch (err: any) {
-      setNativeScanStatus("idle");
-      setIsScanning(false);
-
-      if (err?.message === "User cancelled photos app" || err?.message?.includes("cancelled")) {
-        // Usuario canceló — no mostrar error
-        return;
-      }
-      if (err?.message === "NO_IMAGE") {
-        setCameraError("No se pudo obtener la imagen. Intenta de nuevo.");
-        return;
-      }
-      console.error("[QR] Error cámara nativa:", err);
-      setCameraError(`Error al acceder a la cámara: ${err?.message || "Error desconocido"}`);
-    }
-  };
-
-  const decodeQRFromDataUrl = (dataUrl: string): Promise<string | null> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return resolve(null);
-        ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-        import("jsqr").then(({ default: jsQR }) => {
-          const result = jsQR(imageData.data, imageData.width, imageData.height);
-          resolve(result?.data ?? null);
-        }).catch(() => resolve(null));
-      };
-      img.onerror = () => resolve(null);
-      img.src = dataUrl;
-    });
-  };
-
-  // ─── ESCANEO WEB (html5-qrcode) ───────────────────────────────────────────
-
-  const startWebScanner = async () => {
+  const startScanner = async () => {
     setCameraError(null);
     setIsScanning(true);
 
     try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error("UNSUPPORTED");
+      // Primero verificar si el navegador soporta getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("UNSUPPORTED");
+      }
 
+      // Solicitar permiso de cámara explícitamente antes de iniciar html5-qrcode
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        stream.getTracks().forEach(t => t.stop());
+        // Detener el stream inmediatamente - solo queríamos el permiso
+        stream.getTracks().forEach(track => track.stop());
       } catch (permErr: any) {
-        if (permErr.name === "NotAllowedError") throw new Error("PERMISSION_DENIED");
-        if (permErr.name === "NotFoundError") throw new Error("NOT_FOUND");
-        throw permErr;
+        console.error("Error de permisos de cámara:", permErr.name, permErr.message);
+        if (permErr.name === "NotAllowedError" || permErr.name === "PermissionDeniedError") {
+          throw new Error("PERMISSION_DENIED");
+        } else if (permErr.name === "NotFoundError" || permErr.name === "DevicesNotFoundError") {
+          throw new Error("NOT_FOUND");
+        } else if (permErr.name === "NotReadableError" || permErr.name === "TrackStartError") {
+          throw new Error("IN_USE");
+        } else if (permErr.name === "OverconstrainedError") {
+          // Intentar sin facingMode constraint
+          try {
+            const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            fallbackStream.getTracks().forEach(track => track.stop());
+          } catch {
+            throw new Error("NOT_FOUND");
+          }
+        } else {
+          throw permErr;
+        }
       }
 
+      // Importar dinámicamente html5-qrcode
       const { Html5Qrcode } = await import("html5-qrcode");
+      
+      // Crear instancia del escáner
       scannerRef.current = new Html5Qrcode(scannerContainerId);
+
+      // Configuración del escáner
+      const config = {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1,
+      };
+
+      // Iniciar escaneo con cámara trasera
       await scannerRef.current.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1 },
+        config,
         onScanSuccess,
-        () => {}
+        onScanFailure
       );
     } catch (err: any) {
+      console.error("Error al iniciar escáner:", err?.name, err?.message);
       setIsScanning(false);
+      
       const msg = err?.message || "";
-      if (msg === "PERMISSION_DENIED") setCameraError("Permiso de cámara denegado. Permite el acceso en la configuración del navegador.");
-      else if (msg === "NOT_FOUND") setCameraError("No se encontró ninguna cámara en tu dispositivo.");
-      else if (msg === "UNSUPPORTED") setCameraError("Tu navegador no soporta acceso a la cámara. Usa HTTPS y un navegador actualizado.");
-      else setCameraError(`No se pudo acceder a la cámara (${err?.name || "Error"}). Usa el código manual.`);
+      if (msg === "PERMISSION_DENIED" || msg.includes("Permission denied") || err?.name === "NotAllowedError") {
+        setCameraError("Permiso de cámara denegado. Ve a la configuración de tu navegador y permite el acceso a la cámara para este sitio.");
+      } else if (msg === "NOT_FOUND" || msg.includes("NotFoundError") || err?.name === "NotFoundError") {
+        setCameraError("No se encontró ninguna cámara en tu dispositivo.");
+      } else if (msg === "IN_USE") {
+        setCameraError("La cámara está siendo usada por otra aplicación. Cierra otras apps que usen la cámara e intenta de nuevo.");
+      } else if (msg === "UNSUPPORTED") {
+        setCameraError("Tu navegador no soporta acceso a la cámara. Asegúrate de usar HTTPS y un navegador actualizado (Chrome, Safari, Firefox).");
+      } else {
+        setCameraError(`No se pudo acceder a la cámara (${err?.name || 'Error desconocido'}). Intenta con el código manual.`);
+      }
     }
   };
 
-  const stopWebScanner = async () => {
+  const stopScanner = async () => {
     if (scannerRef.current) {
       try {
         await scannerRef.current.stop();
         scannerRef.current.clear();
-      } catch { /* ya detenido */ }
+      } catch (err) {
+        console.log("Escáner ya detenido");
+      }
       scannerRef.current = null;
     }
     setIsScanning(false);
   };
 
-  const startScanner = () => {
-    if (isNative) startNativeScan();
-    else startWebScanner();
-  };
-
-  const stopScanner = () => {
-    if (!isNative) stopWebScanner();
-    else setIsScanning(false);
-  };
-
-  // ─── LÓGICA COMÚN ─────────────────────────────────────────────────────────
-
   const onScanSuccess = (decodedText: string) => {
-    stopWebScanner();
+    // Detener el escáner al encontrar un código
+    stopScanner();
     setScannedCode(decodedText);
     handleCodeFound(decodedText);
   };
 
+  const onScanFailure = (error: string) => {
+    // Ignorar errores de escaneo (son normales cuando no hay QR visible)
+  };
+
   const handleCodeFound = async (rawCode: string) => {
     setIsSearching(true);
-
+    
+    // Extraer código de estación si es una URL
     let code = rawCode.trim();
     let isNumericId = false;
-
-    if (code.startsWith("http://") || code.startsWith("https://")) {
+    
+    // Si es una URL, extraer el código del path
+    if (code.startsWith('http://') || code.startsWith('https://')) {
       try {
         const url = new URL(code);
-        const pathParts = url.pathname.split("/").filter(Boolean);
+        const pathParts = url.pathname.split('/').filter(Boolean);
+        // Buscar el código en el path (puede ser /scan/CP001, /station/CP001 o /charging/60001)
         if (pathParts.length > 0) {
           const lastPart = pathParts[pathParts.length - 1];
-          if (pathParts[0] === "charging" && /^\d+$/.test(lastPart)) {
+          // Si es /charging/:id, el ID es numérico y corresponde a un evseId
+          if (pathParts[0] === 'charging' && /^\d+$/.test(lastPart)) {
             isNumericId = true;
             code = lastPart;
           } else {
             code = lastPart;
           }
         }
-      } catch { /* usar rawCode */ }
+      } catch (e) {
+        // Si no es una URL válida, usar el código tal cual
+      }
     }
+    
+    toast.info("Código detectado", {
+      description: code,
+    });
 
-    toast.info("Código detectado", { description: code });
-
+    // Buscar la estación por el código OCPP, nombre, ID de estación o evseId
     try {
       const stations = await searchStation.refetch();
       let result: any = null;
       let matchedEvseId: number | null = null;
-
+      
+      // Si es un ID numérico de URL /charging/:id, buscar por evseId
       if (isNumericId) {
         const evseId = parseInt(code);
         for (const s of stations.data || []) {
-          const evses = (s as any).evses || (s as any).station?.evses || [];
-          if (evses.find((e: any) => e.id === evseId)) {
+          const st = (s as any).station || s;
+          const evses = (s as any).evses || st.evses || [];
+          const matchedEvse = evses.find((e: any) => e.id === evseId);
+          if (matchedEvse) {
             result = s;
             matchedEvseId = evseId;
             break;
           }
         }
       }
-
+      
+      // Si no se encontró por evseId, buscar por código OCPP, nombre o ID de estación
       if (!result) {
-        result = stations.data?.find((s: any) => {
-          const st = s.station || s;
-          const sc = code.toUpperCase();
-          return st.ocppIdentity?.toUpperCase() === sc || st.id.toString() === code || st.name?.toUpperCase().includes(sc);
-        });
+        result = stations.data?.find(
+          (s: any) => {
+            const st = s.station || s;
+            const searchCode = code.toUpperCase();
+            return (
+              st.ocppIdentity?.toUpperCase() === searchCode || 
+              st.id.toString() === code ||
+              st.name?.toUpperCase().includes(searchCode)
+            );
+          }
+        );
       }
 
       if (result) {
         const station = (result as any).station || result;
-        toast.success("Estación encontrada", { description: station.name });
-        const redirectUrl = matchedEvseId
+        toast.success("Estación encontrada", {
+          description: station.name,
+        });
+        // Redirigir a StartCharge con el código de la estación para iniciar el flujo de carga
+        // Si tenemos evseId, pasarlo también para pre-seleccionar el conector
+        const redirectUrl = matchedEvseId 
           ? `/start-charge?code=${station.ocppIdentity || station.id}&evseId=${matchedEvseId}`
           : `/start-charge?code=${station.ocppIdentity || station.id}`;
-        setTimeout(() => setLocation(redirectUrl), 1000);
+        setTimeout(() => {
+          setLocation(redirectUrl);
+        }, 1000);
       } else {
-        toast.error("Estación no encontrada", { description: "El código escaneado no corresponde a ninguna estación registrada." });
+        toast.error("Estación no encontrada", {
+          description: "El código escaneado no corresponde a ninguna estación registrada.",
+        });
         setScannedCode(null);
         setIsSearching(false);
       }
-    } catch {
+    } catch (error) {
       toast.error("Error al buscar estación");
       setScannedCode(null);
       setIsSearching(false);
@@ -257,55 +242,99 @@ export default function ScanPage() {
   };
 
   const handleManualSubmit = () => {
-    if (!manualCode.trim()) { toast.error("Ingresa un código de estación"); return; }
+    if (!manualCode.trim()) {
+      toast.error("Ingresa un código de estación");
+      return;
+    }
     handleCodeFound(manualCode.trim());
   };
 
-  // ─── UI ───────────────────────────────────────────────────────────────────
+  const handleOpenCamera = () => {
+    setShowManualInput(false);
+    setCameraError(null);
+    startScanner();
+  };
 
   return (
     <UserLayout showHeader={false} showBottomNav={false}>
       <div className="min-h-screen bg-gradient-to-b from-primary/10 to-background flex flex-col">
         {/* Header */}
         <div className="p-4 flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => { stopScanner(); setLocation("/map"); }}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              stopScanner();
+              setLocation("/map");
+            }}
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-lg font-semibold">Iniciar Carga</h1>
         </div>
 
+        {/* Contenido principal */}
         <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-6">
-          {/* Buscando estación */}
+          {/* Estado de búsqueda con animación elaborada */}
           {isSearching && scannedCode && (
             <div className="flex flex-col items-center gap-6">
+              {/* Spinner con anillos concéntricos */}
               <div className="relative w-28 h-28 flex items-center justify-center">
-                <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-emerald-400 border-r-emerald-400/30 animate-spin" style={{ animationDuration: "2s" }} />
-                <div className="absolute inset-2 rounded-full border-4 border-transparent border-b-emerald-500 border-l-emerald-500/30 animate-spin" style={{ animationDuration: "1.5s", animationDirection: "reverse" }} />
+                {/* Anillo exterior girando lento */}
+                <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-emerald-400 border-r-emerald-400/30 animate-spin" style={{ animationDuration: '2s' }} />
+                {/* Anillo medio girando en dirección opuesta */}
+                <div className="absolute inset-2 rounded-full border-4 border-transparent border-b-emerald-500 border-l-emerald-500/30 animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }} />
+                {/* Anillo interior con pulso */}
                 <div className="absolute inset-4 rounded-full bg-emerald-500/10 animate-pulse" />
+                {/* Ícono central */}
                 <Zap className="h-10 w-10 text-emerald-400 drop-shadow-lg relative z-10" />
               </div>
+
               <div className="text-center space-y-2">
-                <h2 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-green-500 bg-clip-text text-transparent">Buscando estación...</h2>
-                <p className="text-muted-foreground text-sm">Código: <span className="font-mono text-emerald-400">{scannedCode}</span></p>
+                <h2 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-green-500 bg-clip-text text-transparent">
+                  Buscando estación...
+                </h2>
+                <p className="text-muted-foreground text-sm">
+                  Código: <span className="font-mono text-emerald-400">{scannedCode}</span>
+                </p>
               </div>
+
+              {/* Pasos de progreso */}
               <div className="w-full max-w-xs space-y-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center"><CheckCircle className="w-4 h-4 text-white" /></div>
+                  <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+                    <CheckCircle className="w-4 h-4 text-white" />
+                  </div>
                   <span className="text-sm text-emerald-400">Código QR detectado</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center"><Loader2 className="w-4 h-4 text-emerald-400 animate-spin" /></div>
+                  <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                    <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                  </div>
                   <span className="text-sm text-muted-foreground">Verificando estación en la red...</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center">
+                    <Zap className="w-3 h-3 text-muted-foreground" />
+                  </div>
+                  <span className="text-sm text-muted-foreground/50">Preparando sesión de carga</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Escáner web activo (solo en browser) */}
-          {!isNative && isScanning && !scannedCode && (
+          {/* Escáner QR activo */}
+          {isScanning && !scannedCode && (
             <>
               <div className="relative w-full max-w-xs">
-                <div id={scannerContainerId} className="w-full rounded-2xl overflow-hidden" style={{ minHeight: "300px" }} />
+                {/* Contenedor del escáner */}
+                <div 
+                  id={scannerContainerId} 
+                  className="w-full rounded-2xl overflow-hidden"
+                  style={{ minHeight: "300px" }}
+                />
+                
+                {/* Overlay con esquinas */}
                 <div className="absolute inset-0 pointer-events-none">
                   <div className="absolute top-2 left-2 w-10 h-10 border-t-4 border-l-4 border-primary rounded-tl-xl" />
                   <div className="absolute top-2 right-2 w-10 h-10 border-t-4 border-r-4 border-primary rounded-tr-xl" />
@@ -313,23 +342,50 @@ export default function ScanPage() {
                   <div className="absolute bottom-2 right-2 w-10 h-10 border-b-4 border-r-4 border-primary rounded-br-xl" />
                 </div>
               </div>
+
+              <div className="text-center space-y-2">
+                <h2 className="text-xl font-semibold">Escanea el código QR</h2>
+                <p className="text-muted-foreground text-sm max-w-xs">
+                  Apunta la cámara al código QR de la estación de carga
+                </p>
+              </div>
+
               <div className="flex flex-col gap-3 w-full max-w-xs">
-                <Button variant="outline" size="lg" className="w-full gap-2" onClick={() => { stopWebScanner(); setShowManualInput(true); }}>
-                  <Keyboard className="h-5 w-5" />Ingresar código manual
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="w-full gap-2"
+                  onClick={() => {
+                    stopScanner();
+                    setShowManualInput(true);
+                  }}
+                >
+                  <Keyboard className="h-5 w-5" />
+                  Ingresar código manual
                 </Button>
-                <Button variant="ghost" size="lg" className="w-full gap-2 text-red-500" onClick={stopWebScanner}>
-                  <X className="h-5 w-5" />Cancelar escaneo
+                
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  className="w-full gap-2 text-red-500"
+                  onClick={stopScanner}
+                >
+                  <X className="h-5 w-5" />
+                  Cancelar escaneo
                 </Button>
               </div>
             </>
           )}
 
-          {/* Vista inicial / error */}
+          {/* Vista inicial o error de cámara */}
           {!isScanning && !showManualInput && !scannedCode && (
             <>
+              {/* Área de escaneo (placeholder) */}
               <div className="relative w-64 h-64 rounded-3xl border-4 border-primary/50 flex items-center justify-center bg-card/50 backdrop-blur-sm">
                 <div className="absolute inset-4 border-2 border-dashed border-primary/30 rounded-2xl" />
                 <QrCode className="h-24 w-24 text-primary/50" />
+                
+                {/* Esquinas decorativas */}
                 <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl" />
                 <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl" />
                 <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl" />
@@ -339,26 +395,38 @@ export default function ScanPage() {
               {cameraError ? (
                 <div className="text-center space-y-2 max-w-xs">
                   <h2 className="text-xl font-semibold text-red-500">Error de cámara</h2>
-                  <p className="text-muted-foreground text-sm">{cameraError}</p>
+                  <p className="text-muted-foreground text-sm">
+                    {cameraError}
+                  </p>
                 </div>
               ) : (
                 <div className="text-center space-y-2">
                   <h2 className="text-xl font-semibold">Escanea el código QR</h2>
                   <p className="text-muted-foreground text-sm max-w-xs">
-                    {isNative
-                      ? "Toca 'Abrir cámara', apunta al código QR de la estación y toma la foto"
-                      : "Apunta la cámara al código QR de la estación de carga para iniciar"}
+                    Apunta la cámara al código QR de la estación de carga para iniciar
                   </p>
                 </div>
               )}
 
+              {/* Botones de acción */}
               <div className="flex flex-col gap-3 w-full max-w-xs">
-                <Button size="lg" className="w-full gap-2" onClick={startScanner}>
-                  {cameraError ? <RefreshCw className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
-                  {cameraError ? "Intentar de nuevo" : "Abrir cámara"}
+                <Button
+                  size="lg"
+                  className="w-full gap-2"
+                  onClick={handleOpenCamera}
+                >
+                  <Camera className="h-5 w-5" />
+                  Abrir cámara
                 </Button>
-                <Button variant="outline" size="lg" className="w-full gap-2" onClick={() => setShowManualInput(true)}>
-                  <Keyboard className="h-5 w-5" />Ingresar código manual
+                
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="w-full gap-2"
+                  onClick={() => setShowManualInput(true)}
+                >
+                  <Keyboard className="h-5 w-5" />
+                  Ingresar código manual
                 </Button>
               </div>
             </>
@@ -370,10 +438,14 @@ export default function ScanPage() {
               <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center">
                 <Zap className="h-10 w-10 text-primary" />
               </div>
+
               <div className="text-center space-y-2">
                 <h2 className="text-xl font-semibold">Código de estación</h2>
-                <p className="text-muted-foreground text-sm max-w-xs">Ingresa el código que aparece en la estación de carga</p>
+                <p className="text-muted-foreground text-sm max-w-xs">
+                  Ingresa el código que aparece en la estación de carga
+                </p>
               </div>
+
               <div className="w-full max-w-xs space-y-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
@@ -383,14 +455,28 @@ export default function ScanPage() {
                     onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                     className="pl-10 h-12 text-center font-mono text-lg"
                     onKeyDown={(e) => e.key === "Enter" && handleManualSubmit()}
-                    autoFocus
                   />
                 </div>
-                <Button size="lg" className="w-full gap-2" onClick={handleManualSubmit} disabled={isSearching}>
-                  {isSearching ? <Loader2 className="h-5 w-5 animate-spin" /> : <Zap className="h-5 w-5" />}
+
+                <Button
+                  size="lg"
+                  className="w-full gap-2"
+                  onClick={handleManualSubmit}
+                  disabled={isSearching}
+                >
+                  {isSearching ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Zap className="h-5 w-5" />
+                  )}
                   Buscar estación
                 </Button>
-                <Button variant="ghost" className="w-full" onClick={() => { setShowManualInput(false); setCameraError(null); }}>
+
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  onClick={handleOpenCamera}
+                >
                   Volver a escanear QR
                 </Button>
               </div>
@@ -403,13 +489,21 @@ export default function ScanPage() {
           <div className="p-6">
             <Card className="bg-card/80 backdrop-blur-sm">
               <CardContent className="p-4">
-                <button onClick={() => { stopScanner(); setLocation("/map"); }} className="flex items-center gap-4 w-full text-left">
+                <button
+                  onClick={() => {
+                    stopScanner();
+                    setLocation("/map");
+                  }}
+                  className="flex items-center gap-4 w-full text-left"
+                >
                   <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
                     <MapPin className="h-6 w-6 text-primary" />
                   </div>
                   <div className="flex-1">
                     <p className="font-medium">¿No tienes el código?</p>
-                    <p className="text-sm text-muted-foreground">Busca estaciones cercanas en el mapa</p>
+                    <p className="text-sm text-muted-foreground">
+                      Busca estaciones cercanas en el mapa
+                    </p>
                   </div>
                 </button>
               </CardContent>

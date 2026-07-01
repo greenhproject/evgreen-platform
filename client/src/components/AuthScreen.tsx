@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Zap, Mail, Lock, User, Phone, ArrowRight, Sparkles, ChevronLeft } from "lucide-react";
-import { trpc } from "@/lib/trpc";
-import { openLoginBrowser } from "@/const";
+import { getLoginUrl, trpc } from "@/lib/trpc";
 
 // ─── Detección de subdominio de org ───────────────────────────────────────────
 function getOrgSlug(): string | null {
@@ -156,7 +155,7 @@ const LoginForm = ({
   orgName?: string;
 }) => {
   const handleOAuthLogin = () => {
-    openLoginBrowser();
+    window.location.href = getLoginUrl();
   };
 
   return (
@@ -255,7 +254,7 @@ const RegisterForm = ({
   orgName?: string;
 }) => {
   const handleOAuthRegister = () => {
-    openLoginBrowser();
+    window.location.href = getLoginUrl();
   };
 
   const benefits = orgName

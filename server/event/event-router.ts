@@ -33,7 +33,9 @@ import {
   exportPaymentsToPDF,
 } from "./event-export";
 
-const resend = new Resend(process.env.Resend ?? "");
+// Resend para envío de emails
+const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
+const resend = new Resend(resendApiKey);
 
 // URL de la imagen de fondo del evento (S3/CloudFront - hospedada en nuestro propio storage)
 const EVENT_BG_IMAGE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663169336317/UcUrociZeo4QVAHHN9vAuZ/evgreen/email-assets/event-bg-a8147fd468f251ce.png";
@@ -590,7 +592,7 @@ export const eventRouter = router({
       const eventName = eventConfig?.eventName || "Gran Lanzamiento Red de Carga EVGreen";
 
       try {
-        console.log(`[Event] Enviando invitación a ${guest.email} con API Key: ${(process.env.Resend ?? "").substring(0, 10)}...`);
+        console.log(`[Event] Enviando invitación a ${guest.email} con API Key: ${resendApiKey.substring(0, 10)}...`);
         
         const result = await resend.emails.send({
           ...buildEmailParams({

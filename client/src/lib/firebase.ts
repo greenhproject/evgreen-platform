@@ -1,5 +1,3 @@
-import { getApiUrl } from "./utils";
-
 /**
  * Push Notifications Client - Web Push nativo con VAPID
  * 
@@ -428,7 +426,7 @@ export async function initializeFirebase(): Promise<boolean> {
     // Si no tenemos VAPID key del env, intentar obtenerla del servidor
     if (!VAPID_PUBLIC_KEY) {
       try {
-        const response = await fetch(getApiUrl("/api/trpc/push.getVapidKey"));
+        const response = await fetch("/api/trpc/push.getVapidKey");
         if (response.ok) {
           const data = await response.json();
           const vapidKey = data?.result?.data?.vapidPublicKey;

@@ -1,13 +1,21 @@
 [
   {
-    "relation": [
-      "delegate_permission/common.handle_all_urls"
-    ],
+    "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
       "package_name": "com.greenhproject.evgreen",
       "sha256_cert_fingerprints": [
-        "50:C8:D0:8A:7D:8A:AE:1D:06:82:A3:CC:6A:D2:02:21:AB:A1:25:30:E7:50:BC:CB:51:2C:79:75:1A:77:C0:9D"
+        "BE:19:A0:71:C7:89:93:7B:0F:B7:90:C1:FD:CF:BC:AF:A2:3E:4F:28:72:EA:01:52:1C:5A:A1:FE:91:A9:0C:E8"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "lat.evgreen.twa",
+      "sha256_cert_fingerprints": [
+        "19:E7:4D:01:B2:BC:7D:E0:EA:AA:ED:FD:8C:5A:AC:76:BC:35:A0:80:4A:CC:C3:D5:11:C8:E7:EB:37:3D:53:8D"
       ]
     }
   }

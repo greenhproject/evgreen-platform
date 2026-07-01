@@ -24,7 +24,9 @@ import { sendPushNotification, sendPushNotificationToMultiple } from "../firebas
 import { buildEmailParams } from "../utils/email-helper";
 import type { OcppAlertSeverity, OcppAlertType } from "../ocpp/alerts-service";
 
-const resend = new Resend(process.env.Resend ?? "");
+// Inicializar Resend
+const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
+const resend = new Resend(resendApiKey);
 
 const FROM_EMAIL = "EVGreen <alertas@evgreen.lat>";
 

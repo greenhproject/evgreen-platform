@@ -479,7 +479,10 @@ async function processSubscriptionPayment(
           title: "¡Suscripción activada!",
           body: `Tu plan ${planName} (${formatCurrency(amount)}/mes) está activo. Disfruta de tus descuentos en cargas.`,
           clickAction: "/wallet",
-          data: { reference, planId },
+          data: {
+            reference,
+            planId,
+          },
         });
       }
     } catch (pushErr) {
@@ -537,7 +540,10 @@ async function notifyPaymentFailed(reference: string, status: string) {
           title: `Pago ${statusLabel}`,
           body: `Tu ${typeLabel} no pudo ser procesado. Intenta de nuevo o usa otro método de pago.`,
           clickAction: "/wallet",
-          data: { reference, status },
+          data: {
+            reference,
+            status,
+          },
         });
       }
     } catch (pushErr) {

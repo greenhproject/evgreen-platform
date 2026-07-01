@@ -10,8 +10,6 @@
  * 3. LoadingGuard catches timeout → shows retry UI
  */
 
-import { getApiUrl } from "@/lib/utils";
-
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 let consecutiveFailures = 0;
 const MAX_FAILURES_BEFORE_ALERT = 3;
@@ -24,8 +22,8 @@ export async function checkServerHealth(): Promise<{
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
-
-    const response = await fetch(getApiUrl('/api/health'), {
+    
+    const response = await fetch('/api/health', {
       signal: controller.signal,
       cache: 'no-store',
       headers: { 'X-Health-Check': 'frontend' },

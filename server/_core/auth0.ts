@@ -13,40 +13,30 @@ import { ENV } from "./env";
 // Auth0 configuration from environment variables
 const AUTH0_DOMAIN = ENV.auth0Domain;
 const AUTH0_CLIENT_ID = ENV.auth0ClientId;
-const AUTH0_MOBILE_CLIENT_ID = ENV.auth0MobileClientId;
 const AUTH0_CLIENT_SECRET = ENV.auth0ClientSecret;
 
-let webClient: any = null;
-let mobileClient: any = null;
+let auth0Client: any = null;
 
-async function getAuth0Client(isMobile = false) {
-  if (isMobile && mobileClient) return mobileClient;
-  if (!isMobile && webClient) return webClient;
+async function getAuth0Client() {
+  if (auth0Client) return auth0Client;
 
-  const clientId = isMobile ? AUTH0_MOBILE_CLIENT_ID : AUTH0_CLIENT_ID;
-
-  if (!AUTH0_DOMAIN || !clientId) {
-    console.error(`[Auth0] Missing configuration for ${isMobile ? "mobile" : "web"}.`);
+  if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID || !AUTH0_CLIENT_SECRET) {
+    console.error("[Auth0] Missing configuration. Set AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET");
     return null;
   }
 
   try {
     const issuer = await Issuer.discover(`https://${AUTH0_DOMAIN}`);
-    const client = new issuer.Client({
-      client_id: clientId,
-      client_secret: isMobile ? undefined : AUTH0_CLIENT_SECRET,
-      token_endpoint_auth_method: isMobile ? "none" : "client_secret_basic",
+    auth0Client = new issuer.Client({
+      client_id: AUTH0_CLIENT_ID,
+      client_secret: AUTH0_CLIENT_SECRET,
       redirect_uris: [],
       response_types: ["code"],
     });
-
-    if (isMobile) mobileClient = client;
-    else webClient = client;
-
-    console.log(`[Auth0] ${isMobile ? "Mobile" : "Web"} client initialized for domain:`, AUTH0_DOMAIN);
-    return client;
+    console.log("[Auth0] Client initialized for domain:", AUTH0_DOMAIN);
+    return auth0Client;
   } catch (error) {
-    console.error(`[Auth0] Failed to initialize ${isMobile ? "mobile" : "web"} client:`, error);
+    console.error("[Auth0] Failed to initialize client:", error);
     return null;
   }
 }
@@ -76,19 +66,14 @@ export function registerAuth0Routes(app: Express) {
   // Login route - redirects to Auth0
   app.get("/api/auth/login", async (req: Request, res: Response) => {
     try {
-      const isMobile = req.query.platform === "mobile";
-      const client = await getAuth0Client(isMobile);
+      const client = await getAuth0Client();
       if (!client) {
         res.status(500).json({ error: "Auth0 not configured" });
         return;
       }
 
       const origin = getOrigin(req);
-      const redirectUri = `${origin}/api/auth/callback${isMobile ? "?platform=mobile" : ""}`;
-
-      console.log(`[Auth0 DEBUG] Intentando login. isMobile: ${isMobile}`);
-      console.log(`[Auth0 DEBUG] Redirect URI generada: ${redirectUri}`);
-      console.log(`[Auth0 DEBUG] Client ID usado: ${isMobile ? AUTH0_MOBILE_CLIENT_ID : AUTH0_CLIENT_ID}`);
+      const redirectUri = `${origin}/api/auth/callback`;
 
       // Generate state for CSRF protection
       const state = generators.state();
@@ -101,7 +86,6 @@ export function registerAuth0Routes(app: Express) {
         sameSite: isSecure ? "none" : "lax",
         maxAge: 5 * 60 * 1000, // 5 minutes
         path: "/",
-        domain: req.hostname // Asegura que la cookie se asocie al host actual
       });
 
       // Track mobile logins so callback can redirect to the native app
@@ -119,7 +103,7 @@ export function registerAuth0Routes(app: Express) {
         scope: "openid profile email",
         redirect_uri: redirectUri,
         state,
-        prompt: "login",
+        prompt: "login", // Force login screen (no auto-login with cached session)
       });
 
       res.redirect(authUrl);
@@ -132,62 +116,62 @@ export function registerAuth0Routes(app: Express) {
   // Callback route - handles Auth0 response
   app.get("/api/auth/callback", async (req: Request, res: Response) => {
     try {
-      const isMobile = req.query.platform === "mobile";
-      const client = await getAuth0Client(isMobile);
+      const client = await getAuth0Client();
       if (!client) {
         res.status(500).json({ error: "Auth0 not configured" });
         return;
       }
 
       const origin = getOrigin(req);
-      const redirectUri = `${origin}/api/auth/callback${isMobile ? "?platform=mobile" : ""}`;
+      const redirectUri = `${origin}/api/auth/callback`;
 
       // Get the state from cookie
       const storedState = req.cookies?.auth0_state;
 
-      console.log(`[Auth0 DEBUG] Callback recibido. State en cookie: ${storedState ? "SÍ" : "NO"}`);
       const params = client.callbackParams(req);
-      console.log(`[Auth0 DEBUG] State en URL: ${params.state ? "SÍ" : "NO"}`);
-
-      let tokenSet;
-      try {
-        tokenSet = await client.callback(redirectUri, params, {
-          state: storedState,
-        });
-      } catch (err) {
-        console.error("[Auth0 DEBUG] Error en client.callback:", err);
-        // En desarrollo, si falla el state, intentamos procesar sin él
-        if (process.env.NODE_ENV === "development") {
-          console.warn("[Auth0 DEBUG] Reintentando validación sin verificar state (solo dev)");
-          tokenSet = await client.callback(redirectUri, params);
-        } else {
-          throw err;
-        }
-      }
+      const tokenSet = await client.callback(redirectUri, params, {
+        state: storedState,
+      });
 
       // Clear the state cookie
       res.clearCookie("auth0_state", { path: "/" });
 
       // Get user info from Auth0
       const userInfo = await client.userinfo(tokenSet.access_token!);
-      console.log(`[Auth0 DEBUG] UserInfo obtenido para: ${userInfo.email}`);
 
       if (!userInfo.sub) {
         res.status(400).json({ error: "No user identifier from Auth0" });
         return;
       }
 
-      // ... (código intermedio de loginMethod y db)
+      // Use Auth0 sub as the openId (unique user identifier)
       const openId = userInfo.sub;
       const email = userInfo.email || null;
       const name = userInfo.name || userInfo.nickname || null;
       const avatarUrl = userInfo.picture || null;
 
+      // Determine login method from Auth0 sub prefix
       let loginMethod = "auth0";
       if (openId.startsWith("google-oauth2|")) loginMethod = "google";
+      else if (openId.startsWith("github|")) loginMethod = "github";
       else if (openId.startsWith("apple|")) loginMethod = "apple";
-      // ... rest of logic ...
+      else if (openId.startsWith("windowslive|") || openId.startsWith("waad|")) loginMethod = "microsoft";
+      else if (openId.startsWith("auth0|")) loginMethod = "email";
 
+      // Check if user exists by email first (for linking pre-created accounts)
+      let existingUser = await db.getUserByOpenId(openId);
+
+      if (!existingUser && email) {
+        const userByEmail = await db.getUserByEmail(email);
+        if (userByEmail) {
+          // Link existing user with Auth0 openId
+          console.log(`[Auth0] Linking existing user ${email} with Auth0 sub ${openId}`);
+          await db.linkUserOpenId(userByEmail.id, openId);
+          existingUser = await db.getUserByOpenId(openId);
+        }
+      }
+
+      // Upsert user in database
       await db.upsertUser({
         openId,
         name,
@@ -197,23 +181,21 @@ export function registerAuth0Routes(app: Express) {
         lastSignedIn: new Date(),
       });
 
-      // Create session token
+      // Create session token (same JWT mechanism as before)
       const sessionToken = await sdk.createSessionToken(openId, {
         name: name || "",
         expiresInMs: ONE_YEAR_MS,
       });
 
-      console.log(`[Auth0 DEBUG] Sesión creada. Redirigiendo a móvil: ${isMobile}`);
-
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
+      const isMobile = req.cookies?.auth0_mobile === "1";
       res.clearCookie("auth0_mobile", { path: "/" });
 
       if (isMobile) {
-        const finalUrl = `${ENV.mobileAppScheme}://home?token=${sessionToken}`;
-        console.log(`[Auth0 DEBUG] URL final de redirección: ${finalUrl}`);
-        res.redirect(302, finalUrl);
+        console.log(`[Auth0] Mobile callback success → redirecting to native app`);
+        res.redirect(302, `com.greenhproject.evgreen://home?token=${sessionToken}`);
       } else {
         res.redirect(302, "/");
       }
@@ -256,52 +238,4 @@ export function registerAuth0Routes(app: Express) {
   app.get("/api/oauth/callback", (_req: Request, res: Response) => {
     res.redirect("/api/auth/login");
   });
-}
-
-/**
- * Delete a user from Auth0 using the Management API.
- * Called after deleting the user from our own database.
- * Errors are logged but do not block the local deletion.
- */
-export async function deleteAuth0User(openId: string): Promise<void> {
-  if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID || !AUTH0_CLIENT_SECRET) {
-    console.warn("[Auth0] Cannot delete user from Auth0: missing config");
-    return;
-  }
-
-  try {
-    const tokenRes = await fetch(`https://${AUTH0_DOMAIN}/oauth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id: AUTH0_CLIENT_ID,
-        client_secret: AUTH0_CLIENT_SECRET,
-        audience: `https://${AUTH0_DOMAIN}/api/v2/`,
-        grant_type: "client_credentials",
-      }),
-    });
-
-    if (!tokenRes.ok) {
-      console.error("[Auth0] Management API token failed:", await tokenRes.text());
-      return;
-    }
-
-    const { access_token } = await tokenRes.json() as { access_token: string };
-
-    const deleteRes = await fetch(
-      `https://${AUTH0_DOMAIN}/api/v2/users/${encodeURIComponent(openId)}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${access_token}` },
-      }
-    );
-
-    if (!deleteRes.ok && deleteRes.status !== 404) {
-      console.error("[Auth0] Delete user failed:", deleteRes.status, await deleteRes.text());
-    } else {
-      console.log(`[Auth0] User deleted from Auth0: ${openId}`);
-    }
-  } catch (e) {
-    console.error("[Auth0] deleteAuth0User error:", e);
-  }
 }

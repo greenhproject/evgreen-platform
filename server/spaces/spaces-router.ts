@@ -770,7 +770,8 @@ export const spacesRouter = router({
         });
 
         // Enviar email
-        const resend = new Resend(process.env.Resend ?? "");
+        const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
+        const resend = new Resend(resendApiKey);
 
         const emailParams = buildEmailParams({
           from: "EVGreen <admin@evgreen.lat>",
@@ -1288,7 +1289,8 @@ Responde en formato JSON con la siguiente estructura:`;
 
       // Enviar email de confirmaci\u00f3n al inversionista
       try {
-        const resend = new Resend(process.env.Resend ?? "");
+        const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
+        const resend = new Resend(resendApiKey);
         const emailParams = buildEmailParams({
           from: "EVGreen <admin@evgreen.lat>",
           to: input.email,

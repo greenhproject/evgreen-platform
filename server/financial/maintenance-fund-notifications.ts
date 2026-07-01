@@ -22,7 +22,9 @@ import { getStationInvestors, getMaintenanceFundSummary, getChargingStationById 
 import { sendUserPush, sendUserPushToMultiple } from "../push/unified-push";
 import { buildEmailParams } from "../utils/email-helper";
 
-const resend = new Resend(process.env.Resend ?? "");
+// Resend client
+const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
+const resend = new Resend(resendApiKey);
 
 // ============================================================================
 // TYPES
