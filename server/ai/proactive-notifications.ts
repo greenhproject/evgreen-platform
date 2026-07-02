@@ -224,6 +224,26 @@ async function checkHabitualChargingTime(): Promise<void> {
         });
       } catch (_) { /* push optional */ }
 
+      // WhatsApp
+      try {
+        const userForWa = await dbOps.getUserById(profile.userId);
+        if (userForWa?.phone) {
+          const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
+          sendWhatsAppMessage({
+            toPhone: userForWa.phone,
+            message: WaTemplates.chargingReminder({
+              hour: String(currentHour),
+              stationHint: topStations.length > 0 ? `Tu estación favorita: "${topStations[0].name}"` : undefined,
+              userName: userForWa.name?.split(" ")[0],
+            }),
+            eventType: "charging_reminder",
+            userId: profile.userId,
+          }).catch((e: Error) => console.error("[WhatsApp] charging_reminder error:", e.message));
+        }
+      } catch (waErr) {
+        console.error("[WhatsApp] charging_reminder trigger error:", waErr);
+      }
+
       markAsSent(profile.userId, 'habitual_time');
       console.log(`[ProactiveNotif] Habitual time alert sent to user ${profile.userId} at ${currentHour}:00`);
     }

@@ -17,7 +17,12 @@ export type WaEventType =
   | "wallet_recharge"
   | "charger_offline"
   | "reservation_confirmed"
-  | "monthly_summary";
+  | "monthly_summary"
+  | "card_removed"
+  | "card_added"
+  | "charging_reminder"
+  | "refund"
+  | "claim_resolved";
 
 export interface SendWhatsAppOptions {
   toPhone: string;           // Número en formato internacional sin + (ej: 573229587443)
@@ -138,6 +143,11 @@ function eventTypeToConfigKey(eventType: WaEventType): string | null {
     charger_offline: "notifyChargerOffline",
     reservation_confirmed: "notifyReservation",
     monthly_summary: "notifyMonthlySummary",
+    card_removed: "notifyWalletRecharge",    // reutiliza el flag de billetera
+    card_added: "notifyWalletRecharge",
+    charging_reminder: "notifyChargeStart",  // reutiliza el flag de carga
+    refund: "notifyWalletRecharge",
+    claim_resolved: "notifyWalletRecharge",
   };
   return map[eventType] ?? null;
 }
@@ -208,4 +218,21 @@ export const WaTemplates = {
     userName?: string;
   }) =>
     `📊 *EVGreen — Resumen de ${params.month}*\n\nHola${params.userName ? ` ${params.userName}` : ""}! Aquí está tu resumen mensual:\n\n🔋 *Sesiones:* ${params.sessions}\n⚡ *Energía total:* ${params.kwhTotal} kWh\n💰 *Total gastado:* ${params.totalSpent}\n\n¡Gracias por ser parte de la red verde! 🌱`,
+
+  // ─── Nuevos templates ─────────────────────────────────────────────────────
+
+  cardRemoved: (params: { userName?: string }) =>
+    `🗑️ *EVGreen — Tarjeta Eliminada*\n\nHola${params.userName ? ` ${params.userName}` : ""}!\n\nTu tarjeta ha sido desvinculada exitosamente de tu cuenta EVGreen.\n\nPuedes inscribir una nueva tarjeta en cualquier momento desde la sección *Billetera* de la app.\n\n¿Necesitas ayuda? Escríbenos 💬`,
+
+  cardAdded: (params: { cardBrand: string; cardLastFour: string; userName?: string }) =>
+    `✅ *EVGreen — Tarjeta Inscrita*\n\nHola${params.userName ? ` ${params.userName}` : ""}!\n\nTu tarjeta *${params.cardBrand} ····${params.cardLastFour}* ha sido inscrita exitosamente.\n\nAhora puedes recargar tu billetera con un solo toque. 🚀\n\n_Protegida con encriptación PCI DSS · Wompi_ 🔒`,
+
+  chargingReminder: (params: { hour: string; stationHint?: string; userName?: string }) =>
+    `⚡ *EVGreen — Hora de Carga*\n\nHola${params.userName ? ` ${params.userName}` : ""}!\n\nNormalmente cargas alrededor de las *${params.hour}:00*. ¿Necesitas cargar hoy?${params.stationHint ? `\n\n📍 ${params.stationHint}` : ""}\n\nAbre la app para encontrar el cargador más cercano 🗺️`,
+
+  refund: (params: { amount: string; newBalance: string; reason: string; userName?: string }) =>
+    `💰 *EVGreen — Reembolso Aplicado*\n\nHola${params.userName ? ` ${params.userName}` : ""}!\n\n✅ Se te ha reembolsado *${params.amount}* a tu billetera.\n💳 *Nuevo saldo:* ${params.newBalance}\n📋 *Motivo:* ${params.reason}\n\n¡Ya puedes seguir cargando! 🌱`,
+
+  claimResolved: (params: { status: "RESOLVED" | "REJECTED"; resolution: string; userName?: string }) =>
+    `${params.status === "RESOLVED" ? "✅" : "❌"} *EVGreen — Reclamo ${params.status === "RESOLVED" ? "Resuelto" : "Rechazado"}*\n\nHola${params.userName ? ` ${params.userName}` : ""}!\n\nTu reclamo ha sido *${params.status === "RESOLVED" ? "resuelto" : "rechazado"}*.\n📋 *Resolución:* ${params.resolution}\n\n¿Tienes más preguntas? Contáctanos en soporte.evgreen.lat 💬`,
 };

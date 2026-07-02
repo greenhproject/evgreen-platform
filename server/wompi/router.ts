@@ -864,6 +864,26 @@ export const wompiRouter = router({
 
       console.log(`[Wompi] Tarjeta tokenizada para usuario ${ctx.user.id}: ${cardBrand} ****${input.cardLastFour || "????"}, PS: ${paymentSource.paymentSourceId}`);
 
+      // WhatsApp: notificar tarjeta inscrita
+      try {
+        const userForWa = await db.getUserById(ctx.user.id);
+        if (userForWa?.phone) {
+          const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
+          sendWhatsAppMessage({
+            toPhone: userForWa.phone,
+            message: WaTemplates.cardAdded({
+              cardBrand,
+              cardLastFour: input.cardLastFour || "????" ,
+              userName: userForWa.name?.split(" ")[0],
+            }),
+            eventType: "card_added",
+            userId: ctx.user.id,
+          }).catch((e: Error) => console.error("[WhatsApp] card_added error:", e.message));
+        }
+      } catch (waErr) {
+        console.error("[WhatsApp] card_added trigger error:", waErr);
+      }
+
       return {
         success: true,
         paymentSourceId: paymentSource.paymentSourceId,
@@ -1117,7 +1137,7 @@ export const wompiRouter = router({
 
     console.log(`[Wompi] Tarjeta eliminada para usuario ${ctx.user.id}`);
 
-    // Notificación
+    // Notificación in-app
     try {
       await db.createNotification({
         userId: ctx.user.id,
@@ -1128,6 +1148,22 @@ export const wompiRouter = router({
       });
     } catch (notifErr) {
       console.warn("[Wompi] Error creando notificación de eliminación de tarjeta:", notifErr);
+    }
+
+    // WhatsApp
+    try {
+      const userForWa = await db.getUserById(ctx.user.id);
+      if (userForWa?.phone) {
+        const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
+        sendWhatsAppMessage({
+          toPhone: userForWa.phone,
+          message: WaTemplates.cardRemoved({ userName: userForWa.name?.split(" ")[0] }),
+          eventType: "card_removed",
+          userId: ctx.user.id,
+        }).catch((e: Error) => console.error("[WhatsApp] card_removed error:", e.message));
+      }
+    } catch (waErr) {
+      console.error("[WhatsApp] card_removed trigger error:", waErr);
     }
 
     return {
