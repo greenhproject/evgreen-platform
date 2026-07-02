@@ -46,13 +46,13 @@ export async function getWhatsAppConfig() {
 // ─── Nombres de plantillas aprobadas por Meta ────────────────────────────────
 
 export const WA_TEMPLATE_NAMES = {
-  recarga_billetera: "evgreen_recarga_billetera",   // params: nombre, monto, saldo
-  inicio_carga: "evgreen_inicio_carga",             // params: nombre, estacion, potencia, conector
-  fin_carga: "evgreen_fin_carga",                   // params: nombre, kwh, duracion, costo
-  tarjeta_inscrita: "evgreen_tarjeta_inscrita",     // params: nombre, marca, ultimos4
-  tarjeta_eliminada: "evgreen_tarjeta_eliminada",   // params: nombre, marca, ultimos4
-  recordatorio_carga: "evgreen_recordatorio_carga", // params: nombre, hora
-  pago_sesion: "evgreen_pago_sesion",               // params: nombre, monto, estacion, saldo
+  recarga_billetera: "evgreen_recarga_billetera_v2",   // params: nombre, monto, saldo
+  inicio_carga: "evgreen_inicio_carga_v2",             // params: nombre, estacion, conector, hora
+  fin_carga: "evgreen_fin_carga_v2",                   // params: nombre, kwh, duracion, costo, saldo
+  tarjeta_inscrita: "evgreen_tarjeta_inscrita_v2",     // params: nombre, marca, ultimos4
+  tarjeta_eliminada: "evgreen_tarjeta_eliminada_v2",   // params: nombre
+  recordatorio_carga: "evgreen_recordatorio_carga_v2", // params: nombre, hora
+  pago_sesion: "evgreen_pago_sesion_v2",               // params: nombre, monto, estacion, saldo
 } as const;
 
 // ─── Enviar mensaje con plantilla aprobada (funciona sin ventana de 24h) ─────
