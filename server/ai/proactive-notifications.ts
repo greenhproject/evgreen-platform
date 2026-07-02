@@ -224,17 +224,18 @@ async function checkHabitualChargingTime(): Promise<void> {
         });
       } catch (_) { /* push optional */ }
 
-      // WhatsApp: recordatorio de carga
+      // WhatsApp: recordatorio de carga (plantilla aprobada)
       try {
         const userForWa = await dbOps.getUserById(profile.userId);
         if (userForWa?.phone) {
-          const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
-          sendWhatsAppMessage({
+          const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
+          sendWhatsAppTemplate({
             toPhone: userForWa.phone,
-            message: WaTemplates.chargingReminder({
-              userName: userForWa.name?.split(" ")[0],
-              hour: String(currentHour),
-            }),
+            templateName: WA_TEMPLATE_NAMES.recordatorio_carga,
+            parameters: [
+              userForWa.name?.split(" ")[0] || "Usuario",
+              String(currentHour).padStart(2, "0"),
+            ],
             eventType: "charging_reminder",
             userId: profile.userId,
           }).catch((e: Error) => console.error("[WhatsApp] charging_reminder error:", e.message));

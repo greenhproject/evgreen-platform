@@ -2712,18 +2712,19 @@ const walletRouter = router({
         description: `Recarga de billetera por $${input.amount.toLocaleString()} COP`,
       });
       
-      // WhatsApp: notificar recarga de billetera
+      // WhatsApp: notificar recarga de billetera (plantilla aprobada)
       try {
         const userForWa = await db.getUserById(ctx.user.id);
         if (userForWa?.phone) {
-          const { sendWhatsAppMessage, WaTemplates } = await import("./whatsapp/whatsapp-service");
-          sendWhatsAppMessage({
+          const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("./whatsapp/whatsapp-service");
+          sendWhatsAppTemplate({
             toPhone: userForWa.phone,
-            message: WaTemplates.walletRecharge({
-              userName: userForWa.name?.split(" ")[0],
-              amount: `$${input.amount.toLocaleString("es-CO")}`,
-              newBalance: `$${Math.round(newBalance).toLocaleString("es-CO")}`,
-            }),
+            templateName: WA_TEMPLATE_NAMES.recarga_billetera,
+            parameters: [
+              userForWa.name?.split(" ")[0] || "Usuario",
+              `$${input.amount.toLocaleString("es-CO")}`,
+              `$${Math.round(newBalance).toLocaleString("es-CO")}`,
+            ],
             eventType: "wallet_recharge",
             userId: ctx.user.id,
           }).catch((e: Error) => console.error("[WhatsApp] wallet_recharge error:", e.message));
