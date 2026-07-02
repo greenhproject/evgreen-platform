@@ -284,7 +284,7 @@ export default function TVDashboard() {
   const sorted = [...byStatus.charging, ...byStatus.available, ...byStatus.faulted, ...byStatus.offline, ...byStatus.inactive];
 
   return (
-    <div className="flex flex-col bg-[#050d1a] text-white" style={{ minHeight: "100dvh" }}>
+    <div className="flex flex-col bg-[#050d1a] text-white" style={{ height: "100dvh", overflow: "hidden" }}>
 
       {/* ── HEADER ── */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-[#080f1f] gap-3 flex-wrap">
@@ -323,11 +323,11 @@ export default function TVDashboard() {
 
       {/* ── MAIN: mapa + panel ── */}
       {/* Mobile: stacked. Desktop: side-by-side */}
-      <div className="flex flex-col lg:flex-row flex-1" style={{ minHeight: 0 }}>
+      <div className="flex flex-col lg:flex-row" style={{ flex: "1 1 0", minHeight: 0, overflow: "hidden" }}>
 
-        {/* MAP — fixed height on mobile, fills remaining height on desktop */}
-        <div className="relative flex-1 lg:flex-1" style={{ minHeight: "340px" }}>
-          <div className="w-full h-full relative" style={{ minHeight: "340px" }}>
+        {/* MAP — fills remaining height, never overflows */}
+        <div className="relative" style={{ flex: "1 1 0", minHeight: "300px", overflow: "hidden" }}>
+          <div className="w-full h-full relative">
             <MapView
               className="w-full h-full"
               onMapReady={handleMapReady}
@@ -360,7 +360,7 @@ export default function TVDashboard() {
         </div>
 
         {/* STATION PANEL */}
-        <div className="border-t lg:border-t-0 lg:border-l border-white/10 bg-[#06101e] overflow-y-auto lg:w-[360px] lg:shrink-0">
+        <div className="border-t lg:border-t-0 lg:border-l border-white/10 bg-[#06101e] overflow-y-auto lg:w-[360px] lg:shrink-0" style={{ maxHeight: "100%" }}>
           {/* sticky header */}
           <div className="sticky top-0 z-10 bg-[#06101e] border-b border-white/10 px-3 py-2 flex items-center justify-between">
             <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Estaciones ({stations.length})</span>
