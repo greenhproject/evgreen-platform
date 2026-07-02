@@ -325,11 +325,9 @@ export default function TVDashboard() {
       {/* Mobile: stacked. Desktop: side-by-side */}
       <div className="flex flex-col lg:flex-row flex-1" style={{ minHeight: 0 }}>
 
-        {/* MAP */}
-        <div className="relative" style={{ height: "340px", flexShrink: 0 }} /* mobile fixed height */>
-          {/* On desktop, fill remaining space */}
-          <style>{`@media (min-width: 1024px) { #noc-map-wrap { height: auto !important; flex: 1 1 0; } }`}</style>
-          <div id="noc-map-wrap" className="w-full h-full relative" style={{ height: "340px" }}>
+        {/* MAP — fixed height on mobile, fills remaining height on desktop */}
+        <div className="relative flex-1 lg:flex-1" style={{ minHeight: "340px" }}>
+          <div className="w-full h-full relative" style={{ minHeight: "340px" }}>
             <MapView
               className="w-full h-full"
               onMapReady={handleMapReady}
