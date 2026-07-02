@@ -211,11 +211,37 @@ export function MapView({
     if (onMapReady) {
       onMapReady(map.current);
     }
+
+    // Trigger resize after a short delay to handle cases where the container
+    // is inside a tab/conditional render and has zero size at mount time
+    setTimeout(() => {
+      if (map.current) {
+        google.maps.event.trigger(map.current, 'resize');
+      }
+    }, 100);
+    setTimeout(() => {
+      if (map.current) {
+        google.maps.event.trigger(map.current, 'resize');
+      }
+    }, 500);
   });
 
   useEffect(() => {
     init();
   }, [init]);
+
+  // ResizeObserver: trigger map resize whenever the container changes size
+  // This handles sidebar collapse/expand and tab switching on large screens
+  useEffect(() => {
+    if (!mapContainer.current) return;
+    const observer = new ResizeObserver(() => {
+      if (map.current) {
+        google.maps.event.trigger(map.current, 'resize');
+      }
+    });
+    observer.observe(mapContainer.current);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div ref={mapContainer} className={cn("w-full h-[500px]", className)} />
