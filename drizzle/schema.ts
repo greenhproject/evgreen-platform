@@ -3903,7 +3903,7 @@ export const whatsappNotificationLog = mysqlTable("whatsapp_notification_log", {
   toPhone: varchar("toPhone", { length: 30 }).notNull(),
   eventType: varchar("eventType", { length: 50 }).notNull(),
   messageBody: text("messageBody").notNull(),
-  status: mysqlEnum("wa_notif_status", ["sent", "delivered", "read", "failed"]).default("sent").notNull(),
+  status: mysqlEnum("status", ["sent", "delivered", "read", "failed"]).default("sent").notNull(),
   wamid: varchar("wamid", { length: 128 }),
   errorMessage: text("errorMessage"),
   referenceId: int("referenceId"),
