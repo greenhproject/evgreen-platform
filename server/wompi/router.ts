@@ -864,21 +864,22 @@ export const wompiRouter = router({
 
       console.log(`[Wompi] Tarjeta tokenizada para usuario ${ctx.user.id}: ${cardBrand} ****${input.cardLastFour || "????"}, PS: ${paymentSource.paymentSourceId}`);
 
-      // WhatsApp: notificar tarjeta inscrita
+      // WhatsApp: notificar tarjeta inscrita (usando plantilla aprobada)
       try {
         const userForWa = await db.getUserById(ctx.user.id);
         if (userForWa?.phone) {
-          const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
-          sendWhatsAppMessage({
+          const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
+          sendWhatsAppTemplate({
             toPhone: userForWa.phone,
-            message: WaTemplates.cardAdded({
+            templateName: WA_TEMPLATE_NAMES.tarjeta_inscrita,
+            parameters: [
+              userForWa.name?.split(" ")[0] || "Usuario",
               cardBrand,
-              cardLastFour: input.cardLastFour || "????" ,
-              userName: userForWa.name?.split(" ")[0],
-            }),
+              input.cardLastFour || "????",
+            ],
             eventType: "card_added",
             userId: ctx.user.id,
-          }).catch((e: Error) => console.error("[WhatsApp] card_added error:", e.message));
+          }).catch((e: Error) => console.error("[WhatsApp] card_added template error:", e.message));
         }
       } catch (waErr) {
         console.error("[WhatsApp] card_added trigger error:", waErr);
@@ -1150,17 +1151,23 @@ export const wompiRouter = router({
       console.warn("[Wompi] Error creando notificación de eliminación de tarjeta:", notifErr);
     }
 
-    // WhatsApp
+    // WhatsApp (usando plantilla aprobada)
     try {
       const userForWa = await db.getUserById(ctx.user.id);
       if (userForWa?.phone) {
-        const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
-        sendWhatsAppMessage({
+        const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
+        // Obtener datos de la tarjeta antes de eliminar (ya se eliminó, usar datos del input o subscription)
+        sendWhatsAppTemplate({
           toPhone: userForWa.phone,
-          message: WaTemplates.cardRemoved({ userName: userForWa.name?.split(" ")[0] }),
+          templateName: WA_TEMPLATE_NAMES.tarjeta_eliminada,
+          parameters: [
+            userForWa.name?.split(" ")[0] || "Usuario",
+            "Tarjeta",
+            "registrada",
+          ],
           eventType: "card_removed",
           userId: ctx.user.id,
-        }).catch((e: Error) => console.error("[WhatsApp] card_removed error:", e.message));
+        }).catch((e: Error) => console.error("[WhatsApp] card_removed template error:", e.message));
       }
     } catch (waErr) {
       console.error("[WhatsApp] card_removed trigger error:", waErr);

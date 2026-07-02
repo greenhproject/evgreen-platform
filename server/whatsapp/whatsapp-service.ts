@@ -43,6 +43,114 @@ export async function getWhatsAppConfig() {
   return rows[0] ?? null;
 }
 
+// ─── Nombres de plantillas aprobadas por Meta ────────────────────────────────
+
+export const WA_TEMPLATE_NAMES = {
+  recarga_billetera: "evgreen_recarga_billetera",   // params: nombre, monto, saldo
+  inicio_carga: "evgreen_inicio_carga",             // params: nombre, estacion, potencia, conector
+  fin_carga: "evgreen_fin_carga",                   // params: nombre, kwh, duracion, costo
+  tarjeta_inscrita: "evgreen_tarjeta_inscrita",     // params: nombre, marca, ultimos4
+  tarjeta_eliminada: "evgreen_tarjeta_eliminada",   // params: nombre, marca, ultimos4
+  recordatorio_carga: "evgreen_recordatorio_carga", // params: nombre, hora
+  pago_sesion: "evgreen_pago_sesion",               // params: nombre, monto, estacion, saldo
+} as const;
+
+// ─── Enviar mensaje con plantilla aprobada (funciona sin ventana de 24h) ─────
+
+export interface SendWhatsAppTemplateOptions {
+  toPhone: string;
+  templateName: string;
+  parameters: string[];   // Valores en orden para {{1}}, {{2}}, etc.
+  eventType: WaEventType;
+  userId?: number;
+  referenceId?: number;
+  referenceType?: string;
+}
+
+export async function sendWhatsAppTemplate(opts: SendWhatsAppTemplateOptions): Promise<boolean> {
+  const cfg = await getWhatsAppConfig();
+  if (!cfg || !cfg.enabled || !cfg.phoneNumberId || !cfg.accessToken) {
+    console.log("[WhatsApp] Servicio deshabilitado o sin credenciales — omitiendo plantilla");
+    return false;
+  }
+
+  let toPhone = opts.toPhone.replace(/[\s\-\+]/g, "");
+  if (toPhone.length === 10 && (toPhone.startsWith("3") || toPhone.startsWith("6"))) {
+    toPhone = "57" + toPhone;
+  }
+
+  const bodyParams = opts.parameters.map(p => ({ type: "text", text: p }));
+
+  let wamid: string | undefined;
+  let status: "sent" | "failed" = "sent";
+  let errorMessage: string | undefined;
+
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${cfg.phoneNumberId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${cfg.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: toPhone,
+          type: "template",
+          template: {
+            name: opts.templateName,
+            language: { code: "es" },
+            components: [
+              {
+                type: "body",
+                parameters: bodyParams,
+              },
+            ],
+          },
+        }),
+      }
+    );
+
+    const data = (await res.json()) as { messages?: { id: string }[]; error?: { message: string } };
+
+    if (res.ok && data.messages?.[0]?.id) {
+      wamid = data.messages[0].id;
+      console.log(`[WhatsApp] ✅ Template '${opts.templateName}' enviado a ${toPhone} | wamid: ${wamid}`);
+    } else {
+      status = "failed";
+      errorMessage = data.error?.message ?? `HTTP ${res.status}`;
+      console.error(`[WhatsApp] ❌ Error enviando template '${opts.templateName}' a ${toPhone}: ${errorMessage}`);
+    }
+  } catch (err) {
+    status = "failed";
+    errorMessage = err instanceof Error ? err.message : String(err);
+    console.error(`[WhatsApp] ❌ Excepción enviando template: ${errorMessage}`);
+  }
+
+  // Registrar en el log
+  try {
+    const dbForLog = await getDb();
+    if (dbForLog) {
+      await dbForLog.insert(whatsappNotificationLog).values({
+        userId: opts.userId,
+        toPhone,
+        eventType: opts.eventType,
+        messageBody: `[template:${opts.templateName}] ${opts.parameters.join(" | ")}`,
+        status,
+        wamid,
+        errorMessage,
+        referenceId: opts.referenceId,
+        referenceType: opts.referenceType,
+      });
+    }
+  } catch (logErr) {
+    console.error("[WhatsApp] Error guardando log de template:", logErr);
+  }
+
+  return status === "sent";
+}
+
 // ─── Enviar mensaje de texto ──────────────────────────────────────────────────
 
 export async function sendWhatsAppMessage(opts: SendWhatsAppOptions): Promise<boolean> {
