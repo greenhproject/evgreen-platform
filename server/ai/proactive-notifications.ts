@@ -32,7 +32,32 @@ import {
 // Evitar enviar la misma notificación más de una vez al día
 const sentNotifications = new Map<string, number>(); // key: `${userId}-${type}`, value: timestamp
 
-const NOTIFICATION_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 horas entre notificaciones del mismo tipo
+const NOTIFICATION_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 horas entre notificaciones del mismo tipo
+
+/**
+ * Verifica en la BD si ya se envió una notificación WhatsApp de este tipo
+ * en las últimas 24 horas para este usuario. Persiste entre reinicios.
+ */
+async function wasRecentlySentInDb(userId: number, eventType: string): Promise<boolean> {
+  try {
+    const db = await getDb();
+    if (!db) return false;
+    const { whatsappNotificationLog } = await import("../../drizzle/schema");
+    const { and, eq, gte } = await import("drizzle-orm");
+    const since = new Date(Date.now() - NOTIFICATION_COOLDOWN_MS);
+    const rows = await db.select({ id: whatsappNotificationLog.id })
+      .from(whatsappNotificationLog)
+      .where(and(
+        eq(whatsappNotificationLog.userId, userId),
+        eq(whatsappNotificationLog.eventType, eventType),
+        gte(whatsappNotificationLog.createdAt, since),
+      ))
+      .limit(1);
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Verifica si ya se envió una notificación similar recientemente
@@ -76,6 +101,7 @@ async function checkLowPriceAtFavoriteStations(): Promise<void> {
 
   for (const profile of profiles) {
     if (wasRecentlySent(profile.userId, 'low_price')) continue;
+    if (await wasRecentlySentInDb(profile.userId, 'low_price')) continue;
 
     const topStations = (typeof profile.topStations === 'string'
       ? JSON.parse(profile.topStations)
@@ -176,6 +202,8 @@ async function checkHabitualChargingTime(): Promise<void> {
 
   for (const profile of profiles) {
     if (wasRecentlySent(profile.userId, 'habitual_time')) continue;
+    // Verificar también en BD para sobrevivir reinicios del servidor
+    if (await wasRecentlySentInDb(profile.userId, 'charging_reminder')) continue;
     if (profile.totalSessions < 3) continue; // Necesita al menos 3 sesiones para patrones
 
     const preferredHours = (typeof profile.preferredHours === 'string'
@@ -266,6 +294,7 @@ async function checkChargePrediction(): Promise<void> {
 
   for (const profile of profiles) {
     if (wasRecentlySent(profile.userId, 'charge_prediction')) continue;
+    if (await wasRecentlySentInDb(profile.userId, 'charge_prediction')) continue;
     if (!profile.nextPredictedChargeAt) continue;
     if (profile.totalSessions < 5) continue; // Necesita suficiente historial
 
