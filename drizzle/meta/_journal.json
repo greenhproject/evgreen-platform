@@ -50,6 +50,13 @@
       "when": 1782569156518,
       "tag": "0006_glossy_wolverine",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1782962755257,
+      "tag": "0007_numerous_puma",
+      "breakpoints": true
     }
   ]
 }

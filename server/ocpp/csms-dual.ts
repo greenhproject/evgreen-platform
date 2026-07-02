@@ -773,6 +773,25 @@ export class DualCSMS {
         try {
           const isOnline = req.status !== "Unavailable" && req.status !== "Faulted";
           await db.updateChargingStation(stationId, { isOnline });
+          // WhatsApp: notificar cargador desconectado al admin si pasa a offline
+          if (!isOnline) {
+            try {
+              const station = await db.getChargingStationById(stationId);
+              const { sendWhatsAppMessage, WaTemplates, getWhatsAppConfig } = await import("../whatsapp/whatsapp-service");
+              const waCfg = await getWhatsAppConfig();
+              const adminPhone = waCfg?.adminPhone;
+              if (adminPhone) {
+                sendWhatsAppMessage({
+                  toPhone: adminPhone,
+                  message: WaTemplates.chargerOffline({ stationName: station?.name || conn.ocppIdentity }),
+                  eventType: "charger_offline",
+                  skipConfigCheck: false,
+                }).catch((e: Error) => console.error("[WhatsApp] charger_offline error:", e.message));
+              }
+            } catch (waOfflineErr) {
+              console.error("[CSMS-DUAL] WhatsApp charger_offline error:", waOfflineErr);
+            }
+          }
         } catch (e) {
           // No es crítico
         }
@@ -1122,21 +1141,22 @@ export class DualCSMS {
         referenceType: "transaction",
       });
       console.log(`[CSMS-DUAL] StartTransaction: Notification sent to user ${userId} for charging started at $${formattedPrice}/kWh`);
-      // WhatsApp: notificar inicio de carga
+      // WhatsApp: notificar inicio de carga (plantilla aprobada)
       if (userId) {
         const userForWa = await db.getUserById(userId);
         if (userForWa?.phone) {
-          const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
+          const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
           const { getStationTimezone, formatTimeInTz } = await import("../utils/timezone");
           const stationTz = getStationTimezone(station ?? {});
-          sendWhatsAppMessage({
+          sendWhatsAppTemplate({
             toPhone: userForWa.phone,
-            message: WaTemplates.chargeStart({
+            templateName: WA_TEMPLATE_NAMES.inicio_carga,
+            parameters: [
+              userForWa.name?.split(" ")[0] || "Usuario",
               stationName,
-              connectorId: req.connectorId,
-              time: formatTimeInTz(new Date(), stationTz),
-              userName: userForWa.name?.split(" ")[0],
-            }),
+              String(req.connectorId),
+              formatTimeInTz(new Date(), stationTz),
+            ],
             eventType: "charge_start",
             userId,
             referenceId: transactionId,
@@ -1385,21 +1405,23 @@ export class DualCSMS {
       console.error(`[CSMS-DUAL] Error sending push notification:`, pushError);
     }
 
-    // WhatsApp: notificar fin de carga
+    // WhatsApp: notificar fin de carga (plantilla aprobada)
     try {
       if (userForEmail?.phone) {
-        const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
-        const { getStationTimezone } = await import("../utils/timezone");
-        const _stationTzEnd = getStationTimezone(stationForEmail ?? {});
-        sendWhatsAppMessage({
+        const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
+        // Obtener saldo actualizado
+        const walletForEnd = await db.getWalletByUserId(transaction.userId);
+        const balanceStr = walletForEnd ? `$${Math.round(parseFloat(walletForEnd.balance)).toLocaleString("es-CO")}` : "$0";
+        sendWhatsAppTemplate({
           toPhone: userForEmail.phone,
-          message: WaTemplates.chargeEnd({
-            stationName: stationForEmail?.name || "Estaci\u00f3n EVGreen",
-            kwhConsumed: energyDelivered.toFixed(2),
-            durationMin: Math.round(duration),
-            totalCost: `$${Math.round(totalCost).toLocaleString("es-CO")} COP`,
-            userName: userForEmail.name?.split(" ")[0],
-          }),
+          templateName: WA_TEMPLATE_NAMES.fin_carga,
+          parameters: [
+            userForEmail.name?.split(" ")[0] || "Usuario",
+            energyDelivered.toFixed(2),
+            String(Math.round(duration)),
+            `$${Math.round(totalCost).toLocaleString("es-CO")}`,
+            balanceStr,
+          ],
           eventType: "charge_end",
           userId: transaction.userId,
           referenceId: transaction.id,

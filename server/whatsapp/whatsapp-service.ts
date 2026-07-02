@@ -73,7 +73,12 @@ export async function sendWhatsAppTemplate(opts: SendWhatsAppTemplateOptions): P
     console.log("[WhatsApp] Servicio deshabilitado o sin credenciales — omitiendo plantilla");
     return false;
   }
-
+  // Verificar que el tipo de notificación esté habilitado
+  const notifKey = eventTypeToConfigKey(opts.eventType);
+  if (notifKey && !(cfg as Record<string, unknown>)[notifKey]) {
+    console.log(`[WhatsApp] Notificación tipo '${opts.eventType}' deshabilitada — omitiendo plantilla`);
+    return false;
+  }
   let toPhone = opts.toPhone.replace(/[\s\-\+]/g, "");
   if (toPhone.length === 10 && (toPhone.startsWith("3") || toPhone.startsWith("6"))) {
     toPhone = "57" + toPhone;

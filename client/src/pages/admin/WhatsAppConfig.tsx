@@ -99,6 +99,7 @@ export default function WhatsAppConfig() {
     accessToken: "",
     wabaId: "",
     fromPhone: "",
+    adminPhone: "",
   });
   const [showToken, setShowToken] = useState(false);
   const [testPhone, setTestPhone] = useState("");
@@ -112,9 +113,10 @@ export default function WhatsAppConfig() {
         accessToken: config.accessToken ?? "",
         wabaId: config.wabaId ?? "",
         fromPhone: config.displayPhone ?? "",
+        adminPhone: config.adminPhone ?? "",
       });
     }
-  }, [config?.phoneNumberId, config?.accessToken, config?.wabaId, config?.displayPhone]);
+  }, [config?.phoneNumberId, config?.accessToken, config?.wabaId, config?.displayPhone, config?.adminPhone]);
 
   const handleSaveCredentials = () => {
     saveMutation.mutate({
@@ -122,6 +124,7 @@ export default function WhatsAppConfig() {
       accessToken: form.accessToken,
       wabaId: form.wabaId,
       fromPhone: form.fromPhone,
+      adminPhone: form.adminPhone,
     });
   };
 
@@ -260,6 +263,20 @@ export default function WhatsAppConfig() {
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">Sin + ni espacios. Ej: 573229587443 para +57 322 9587443</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Teléfono del administrador (alertas operativas)</Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="ej: 573001234567"
+                    value={form.adminPhone}
+                    onChange={(e) => setForm({ ...form, adminPhone: e.target.value })}
+                    className="pl-9 font-mono text-sm"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">Recibe alertas cuando un cargador se desconecta. Sin + ni espacios.</p>
               </div>
             </div>
 

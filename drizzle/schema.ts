@@ -3878,6 +3878,8 @@ export const whatsappConfig = mysqlTable("whatsapp_config", {
   verifyToken: varchar("verifyToken", { length: 255 }),
   // Número visible para el usuario (ej: +57 322 9587443)
   displayPhone: varchar("displayPhone", { length: 30 }),
+  // Número del administrador para alertas operativas (cargador offline, etc.)
+  adminPhone: varchar("adminPhone", { length: 30 }),
   // Estado general
   enabled: boolean("enabled").default(false).notNull(),
   // Tipos de notificación habilitados
