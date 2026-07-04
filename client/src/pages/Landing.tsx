@@ -210,8 +210,26 @@ export default function Landing() {
                 Ver estaciones
                 <MapPin className="w-5 h-5 ml-2" />
               </Button>
-              <InstallButton className="px-8 py-6 text-lg" />
-
+              {/* Botón App Store — siempre visible */}
+              <a
+                href="https://apps.apple.com/co/app/evgreen/id6783473071?l=en-GB"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group inline-flex items-center gap-3 bg-black/80 hover:bg-black border border-white/15 hover:border-white/30 text-white px-6 py-4 rounded-xl transition-all duration-200 hover:scale-[1.03] hover:shadow-xl hover:shadow-green-500/20 backdrop-blur-sm"
+                aria-label="Descargar EVGreen en App Store"
+              >
+                {/* Apple logo */}
+                <svg viewBox="0 0 24 24" className="h-7 w-7 flex-shrink-0" fill="white" aria-hidden="true">
+                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
+                </svg>
+                <div className="text-left">
+                  <p className="text-white/50 text-[9px] uppercase tracking-widest leading-none font-medium">Download on the</p>
+                  <p className="text-white font-semibold text-base leading-tight">App Store</p>
+                </div>
+                <div className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                </div>
+              </a>
             </motion.div>
 
             {/* Stats */}
@@ -975,6 +993,111 @@ export default function Landing() {
               </div>
             </motion.div>
           </div>
+        </div>
+      </section>
+
+      {/* App Download Section */}
+      <section className="py-16 sm:py-20 px-4 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-zinc-900/80 via-green-950/40 to-zinc-900/80" />
+        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-green-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="container relative z-10">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-80px" }}
+            transition={{ duration: 0.7 }}
+            className="max-w-5xl mx-auto"
+          >
+            <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16">
+              {/* Texto y botón */}
+              <div className="flex-1 text-center lg:text-left">
+                <div className="inline-flex items-center gap-2 bg-green-500/15 border border-green-500/30 text-green-400 text-xs font-bold px-4 py-2 rounded-full mb-5 uppercase tracking-wider">
+                  <Zap className="h-3.5 w-3.5" />
+                  Ya en App Store
+                </div>
+                <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 leading-tight">
+                  Lleva EVGreen{" "}
+                  <span className="text-gradient">en tu bolsillo</span>
+                </h2>
+                <p className="text-muted-foreground text-lg mb-6 max-w-md mx-auto lg:mx-0">
+                  Descarga la app oficial para iPhone. Encuentra estaciones, inicia cargas, chatea con la IA y paga — todo desde tu celular.
+                </p>
+                {/* Rating */}
+                <div className="flex items-center gap-2 justify-center lg:justify-start mb-8">
+                  <div className="flex gap-0.5">
+                    {[...Array(5)].map((_, i) => (
+                      <svg key={i} className="w-4 h-4 text-yellow-400 fill-yellow-400" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                    ))}
+                  </div>
+                  <span className="text-sm text-muted-foreground">App Store · iOS</span>
+                </div>
+                {/* Botón principal */}
+                <a
+                  href="https://apps.apple.com/co/app/evgreen/id6783473071?l=en-GB"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group inline-block"
+                  aria-label="Descargar EVGreen en App Store"
+                >
+                  <div className="relative">
+                    <div className="absolute -inset-1.5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl blur-xl opacity-50 group-hover:opacity-80 transition-opacity duration-300" />
+                    <div className="relative bg-black rounded-2xl px-6 py-4 flex items-center gap-4 border border-white/10 group-hover:border-white/25 transition-all duration-300 group-hover:scale-[1.04] group-hover:shadow-2xl group-hover:shadow-green-500/30">
+                      <svg viewBox="0 0 24 24" className="h-10 w-10 flex-shrink-0" fill="white" aria-hidden="true">
+                        <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
+                      </svg>
+                      <div>
+                        <p className="text-white/50 text-[10px] font-semibold uppercase tracking-widest leading-none mb-1">Download on the</p>
+                        <p className="text-white text-2xl font-bold leading-none tracking-tight">App Store</p>
+                      </div>
+                    </div>
+                  </div>
+                </a>
+                {/* Trust badges */}
+                <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 justify-center lg:justify-start text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5"><Shield className="h-3 w-3 text-green-500" />Gratis</span>
+                  <span className="w-px h-3 bg-border" />
+                  <span>iOS 15.0 o superior</span>
+                  <span className="w-px h-3 bg-border" />
+                  <span>Colombia 🇨🇴</span>
+                  <span className="w-px h-3 bg-border" />
+                  <span className="flex items-center gap-1">Verificada por Apple <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></span>
+                </div>
+              </div>
+
+              {/* Mockup de teléfono */}
+              <div className="flex-shrink-0 flex justify-center">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-gradient-to-b from-green-500/30 to-emerald-500/20 rounded-[3rem] blur-2xl scale-110" />
+                  <div className="relative w-56 h-[28rem] bg-gradient-to-b from-zinc-800 to-zinc-900 rounded-[3rem] border-2 border-white/10 shadow-2xl flex flex-col items-center justify-start pt-8 px-4 overflow-hidden">
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 w-24 h-5 bg-black rounded-full z-10" />
+                    <div className="w-full h-full bg-gradient-to-b from-green-950 to-zinc-950 rounded-[2.4rem] flex flex-col items-center justify-center gap-4 mt-2">
+                      <div className="w-16 h-16 bg-gradient-to-br from-green-400 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-500/40">
+                        <Zap className="h-9 w-9 text-white" />
+                      </div>
+                      <p className="text-white font-bold text-lg tracking-tight">EVGreen</p>
+                      <p className="text-green-400/70 text-xs">Red de Carga EV · Colombia</p>
+                      <div className="w-full px-4 mt-1 space-y-2">
+                        <div className="h-2 bg-white/10 rounded-full w-full" />
+                        <div className="h-2 bg-green-500/30 rounded-full w-3/4" />
+                        <div className="h-2 bg-white/10 rounded-full w-5/6" />
+                      </div>
+                      <div className="mt-2 flex items-center gap-2 bg-green-500/15 border border-green-500/30 rounded-full px-4 py-2">
+                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                        <span className="text-green-400 text-xs font-medium">Cargando · 47 kWh</span>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-2">
+                        <Brain className="w-3 h-3 text-blue-400" />
+                        <span className="text-blue-400 text-xs font-medium">IA activa</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="absolute -top-3 -right-3 bg-gradient-to-br from-green-400 to-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg shadow-green-500/40 rotate-6">
+                    ¡Nuevo!
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
         </div>
       </section>
 
