@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -64,13 +64,21 @@ export default function AdminReports() {
   const { startDate, endDate } = useMemo(() => getPeriodDates(period), [period]);
 
   // Obtener transacciones filtradas por período
-  const { data: txResult, isLoading: transactionsLoading } = trpc.transactions.listAll.useQuery({
+  const { data: txResult, isLoading: transactionsLoading, error: txError } = trpc.transactions.listAll.useQuery({
     startDate,
     endDate,
-    limit: 500,
+    limit: 1000,
     page: 1,
   });
   const allTransactions = txResult?.data || [];
+
+  // Mostrar error si la query falla
+  useEffect(() => {
+    if (txError) {
+      console.error("[Reports] Error cargando transacciones:", txError.message);
+      toast.error(`Error al cargar datos: ${txError.message}`);
+    }
+  }, [txError]);
 
   // Obtener métricas del dashboard (siempre del mes actual para referencia)
   const { data: metrics, isLoading: metricsLoading } = trpc.dashboard.adminMetrics.useQuery(undefined, {

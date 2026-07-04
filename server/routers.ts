@@ -1402,7 +1402,7 @@ const transactionsRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
       status: z.string().optional(),
-      limit: z.number().min(1).max(100).default(20),
+      limit: z.number().min(1).max(1000).default(20),
       page: z.number().min(1).default(1),
     }).optional())
     .query(async ({ input }) => {
