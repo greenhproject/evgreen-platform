@@ -21,6 +21,7 @@ import * as db from "../db";
 import { transactions, evses, tariffs, overstayLocks } from "../../drizzle/schema";
 import { eq, and, desc, lt } from "drizzle-orm";
 import { sendUserPush } from "../push/unified-push";
+import { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } from "../whatsapp/whatsapp-service";
 import { autoChargeIfNeeded } from "../wompi/auto-charge";
 import crypto from "crypto";
 
@@ -855,26 +856,73 @@ async function sendOverstayNotification(
       data: { overstayType: type },
     });
 
-    // WhatsApp: notificar penalización (solo en penalty_started)
-    if (type === "penalty_started" && data.stationName) {
+    // WhatsApp: notificar según el tipo de evento
+    if ((type === "penalty_started" || type === "finishing" || type === "warning") && data.stationName) {
       try {
         const userForWa = await db.getUserById(userId);
         if (userForWa?.phone) {
-          const { sendWhatsAppMessage, WaTemplates } = await import("../whatsapp/whatsapp-service");
-          sendWhatsAppMessage({
-            toPhone: userForWa.phone,
-            message: WaTemplates.penalty({
-              stationName: data.stationName,
-              amount: `$${data.penaltyPerMinute.toLocaleString("es-CO")}/min`,
-              reason: "Ocupaci\u00f3n del conector despu\u00e9s del per\u00edodo de gracia",
-              userName: userForWa.name?.split(" ")[0],
-            }),
-            eventType: "penalty",
-            userId,
-          }).catch((e: Error) => console.error("[WhatsApp] penalty error:", e.message));
+          const now = new Date();
+          const timeStr = now.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: true });
+          const firstName = userForWa.name?.split(" ")[0] || "Usuario";
+
+          if (type === "finishing") {
+            // Aviso de período de gracia: usar plantilla fin_carga con datos de gracia
+            console.log(`[WhatsApp] overstay finishing: sending grace period warning to ${userForWa.phone}`);
+            const result = await sendWhatsAppTemplate({
+              toPhone: userForWa.phone,
+              templateName: WA_TEMPLATE_NAMES.fin_carga,
+              parameters: [
+                firstName,
+                "0.00",  // kWh (ya completó la carga)
+                `${data.gracePeriodMinutes || 10} min de gracia`,
+                "$0",    // costo adicional aún
+                `Desconecta antes de ${timeStr} para evitar $${(data.penaltyPerMinute || 500).toLocaleString("es-CO")}/min`,
+              ],
+              eventType: "charge_end",
+              userId,
+            });
+            console.log(`[WhatsApp] overstay finishing result=${result}`);
+
+          } else if (type === "warning") {
+            // Aviso 2 min antes de penalización
+            console.log(`[WhatsApp] overstay warning: sending 2-min grace warning to ${userForWa.phone}`);
+            const result = await sendWhatsAppTemplate({
+              toPhone: userForWa.phone,
+              templateName: WA_TEMPLATE_NAMES.fin_carga,
+              parameters: [
+                firstName,
+                "0.00",
+                `${data.graceRemaining || 2} min restantes`,
+                "$0",
+                `¡Desconecta ya! En ${data.graceRemaining || 2} min inicia la tarifa de $${(data.penaltyPerMinute || 500).toLocaleString("es-CO")}/min`,
+              ],
+              eventType: "charge_end",
+              userId,
+            });
+            console.log(`[WhatsApp] overstay warning result=${result}`);
+
+          } else if (type === "penalty_started") {
+            // Penalización iniciada: usar plantilla pago_sesion con datos de penalización
+            console.log(`[WhatsApp] overstay penalty_started: sending penalty notification to ${userForWa.phone}`);
+            const result = await sendWhatsAppTemplate({
+              toPhone: userForWa.phone,
+              templateName: WA_TEMPLATE_NAMES.pago_sesion,
+              parameters: [
+                firstName,
+                `$${(data.penaltyPerMinute || 500).toLocaleString("es-CO")}/min`,
+                data.stationName,
+                `Acumulado: $${Math.round(data.accumulatedCost || 0).toLocaleString("es-CO")} COP`,
+              ],
+              eventType: "penalty",
+              userId,
+            });
+            console.log(`[WhatsApp] overstay penalty_started result=${result}`);
+          }
+        } else {
+          console.log(`[WhatsApp] overstay ${type}: user ${userId} has no phone number — skipping`);
         }
       } catch (waErr) {
-        console.error("[OverstayMonitor] WhatsApp penalty error:", waErr);
+        console.error("[OverstayMonitor] WhatsApp error:", waErr);
       }
     }
 
