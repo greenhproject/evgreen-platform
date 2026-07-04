@@ -1142,12 +1142,15 @@ export class DualCSMS {
       });
       console.log(`[CSMS-DUAL] StartTransaction: Notification sent to user ${userId} for charging started at $${formattedPrice}/kWh`);
       // WhatsApp: notificar inicio de carga (plantilla aprobada)
+      console.log(`[WhatsApp] charge_start: checking userId=${userId}`);
       if (userId) {
         const userForWa = await db.getUserById(userId);
+        console.log(`[WhatsApp] charge_start: user found=${!!userForWa}, phone=${userForWa?.phone || 'NULL'}`);
         if (userForWa?.phone) {
           const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
           const { getStationTimezone, formatTimeInTz } = await import("../utils/timezone");
           const stationTz = getStationTimezone(station ?? {});
+          console.log(`[WhatsApp] charge_start: sending template ${WA_TEMPLATE_NAMES.inicio_carga} to ${userForWa.phone}`);
           sendWhatsAppTemplate({
             toPhone: userForWa.phone,
             templateName: WA_TEMPLATE_NAMES.inicio_carga,
@@ -1161,8 +1164,12 @@ export class DualCSMS {
             userId,
             referenceId: transactionId,
             referenceType: "transaction",
-          }).catch((e: Error) => console.error("[WhatsApp] charge_start error:", e.message));
+          }).then(ok => console.log(`[WhatsApp] charge_start: result=${ok}`)).catch((e: Error) => console.error("[WhatsApp] charge_start error:", e.message));
+        } else {
+          console.warn(`[WhatsApp] charge_start: SKIPPED — user ${userId} has no phone number`);
         }
+      } else {
+        console.warn(`[WhatsApp] charge_start: SKIPPED — userId is 0 (unassigned transaction)`);
       }
     } catch (notifError: any) {
       console.error(`[CSMS-DUAL] StartTransaction: Failed to send notification to user ${userId}:`, notifError.message);
@@ -1407,11 +1414,13 @@ export class DualCSMS {
 
     // WhatsApp: notificar fin de carga (plantilla aprobada)
     try {
+      console.log(`[WhatsApp] charge_end: checking userForEmail phone=${userForEmail?.phone || 'NULL'}, userId=${transaction.userId}`);
       if (userForEmail?.phone) {
         const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
         // Obtener saldo actualizado
         const walletForEnd = await db.getWalletByUserId(transaction.userId);
         const balanceStr = walletForEnd ? `$${Math.round(parseFloat(walletForEnd.balance)).toLocaleString("es-CO")}` : "$0";
+        console.log(`[WhatsApp] charge_end: sending template ${WA_TEMPLATE_NAMES.fin_carga} to ${userForEmail.phone}`);
         sendWhatsAppTemplate({
           toPhone: userForEmail.phone,
           templateName: WA_TEMPLATE_NAMES.fin_carga,
@@ -1426,7 +1435,9 @@ export class DualCSMS {
           userId: transaction.userId,
           referenceId: transaction.id,
           referenceType: "transaction",
-        }).catch((e: Error) => console.error("[WhatsApp] charge_end error:", e.message));
+        }).then(ok => console.log(`[WhatsApp] charge_end: result=${ok}`)).catch((e: Error) => console.error("[WhatsApp] charge_end error:", e.message));
+      } else {
+        console.warn(`[WhatsApp] charge_end: SKIPPED — userForEmail=${!!userForEmail}, phone=${userForEmail?.phone || 'NULL'}`);
       }
     } catch (waError) {
       console.error("[CSMS-DUAL] Error sending WhatsApp charge_end:", waError);
