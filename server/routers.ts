@@ -1684,6 +1684,7 @@ const transactionsRouter = router({
         startTime: new Date(),
         chargeMode: "full_charge",
         targetValue: "0",
+        appliedPricePerKwh: pricing.dynamicPricePerKwh.toString(), // Guardar precio dinámico al inicio
       });
       
       // Actualizar estado del EVSE
@@ -1733,9 +1734,17 @@ const transactionsRouter = router({
       
       // Calcular energía consumida y costo
       const kwhConsumed = parseFloat(transaction.kwhConsumed?.toString() || "0");
-      // Obtener tarifa de la estación (usa precios globales si no tiene tarifa propia)
-      const effectivePriceForStop = await db.getEffectiveStationPrice(transaction.stationId);
-      const pricePerKwh = effectivePriceForStop.pricePerKwh;
+      // Usar el precio dinámico guardado al inicio de la sesión (appliedPricePerKwh)
+      // Si no existe (transacciones antiguas), caer al precio efectivo de la estación
+      let pricePerKwh: number;
+      if (transaction.appliedPricePerKwh && parseFloat(transaction.appliedPricePerKwh.toString()) > 0) {
+        pricePerKwh = parseFloat(transaction.appliedPricePerKwh.toString());
+        console.log(`[Charging] stopChargingSession: usando precio dinámico guardado $${pricePerKwh}/kWh`);
+      } else {
+        const effectivePriceForStop = await db.getEffectiveStationPrice(transaction.stationId);
+        pricePerKwh = effectivePriceForStop.pricePerKwh;
+        console.log(`[Charging] stopChargingSession: usando precio base de estación $${pricePerKwh}/kWh (sin precio dinámico guardado)`);
+      }
       const totalCost = Math.round(kwhConsumed * pricePerKwh);
       
       // Calcular distribución según configuración del admin

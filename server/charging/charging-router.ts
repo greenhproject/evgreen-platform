@@ -834,7 +834,31 @@ export const chargingRouter = router({
           message: `Se ha enviado la orden de carga al conector ${connectorId} de ${stationNameForNotif}. Tarifa: $${formattedPrice} COP/kWh. Conecta tu vehículo si aún no lo has hecho.`,
           type: "CHARGE_REQUESTED",
         });
-        
+
+        // WhatsApp: notificar solicitud de inicio de carga
+        try {
+          const userForWa = await db.getUserById(ctx.user.id);
+          if (userForWa?.phone) {
+            const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
+            const now = new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: true });
+            sendWhatsAppTemplate({
+              toPhone: userForWa.phone,
+              templateName: WA_TEMPLATE_NAMES.inicio_carga,
+              parameters: [
+                userForWa.name?.split(" ")[0] || "Usuario",
+                stationNameForNotif,
+                String(connectorId),
+                now,
+              ],
+              eventType: "charge_start",
+              userId: ctx.user.id,
+              referenceType: "session",
+            }).catch((e: Error) => console.error("[WhatsApp] charge_start (startCharge) error:", e.message));
+          }
+        } catch (waErr) {
+          console.error("[startCharge] WhatsApp error:", waErr);
+        }
+
         return {
           sessionId,
           status: "pending_connection",
@@ -2144,6 +2168,33 @@ async function completeTransactionLocally(transactionId: number, transaction: an
           referenceId: transactionId,
           referenceType: "transaction",
         });
+
+        // WhatsApp: notificar fin de carga
+        try {
+          const userForWa = await db.getUserById(transaction.userId);
+          if (userForWa?.phone) {
+            const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
+            const wallet = await db.getWalletByUserId(transaction.userId);
+            const balance = wallet?.balance ? parseFloat(wallet.balance).toLocaleString("es-CO") : "0";
+            sendWhatsAppTemplate({
+              toPhone: userForWa.phone,
+              templateName: WA_TEMPLATE_NAMES.fin_carga,
+              parameters: [
+                userForWa.name?.split(" ")[0] || "Usuario",
+                energyDelivered.toFixed(2),
+                String(Math.round(durationMinutes)),
+                `$${Math.round(totalCost).toLocaleString("es-CO")} COP`,
+                `$${balance} COP`,
+              ],
+              eventType: "charge_end",
+              userId: transaction.userId,
+              referenceId: transactionId,
+              referenceType: "transaction",
+            }).catch((e: Error) => console.error("[WhatsApp] charge_end (completeLocally) error:", e.message));
+          }
+        } catch (waEndErr) {
+          console.error("[completeTransactionLocally] WhatsApp charge_end error:", waEndErr);
+        }
       } catch (notifErr) {
         console.error(`[completeTransactionLocally] Error sending notification:`, notifErr);
       }
