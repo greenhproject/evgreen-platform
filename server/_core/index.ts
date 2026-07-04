@@ -1209,6 +1209,32 @@ async function handleOCPP16Message(
             referenceId: null,
             referenceType: "transaction",
           });
+          // WhatsApp: notificar inicio de carga
+          try {
+            const userForWa = await db.getUserById(userId);
+            console.log(`[WhatsApp] charge_start (legacy): user=${userId}, phone=${userForWa?.phone || 'NULL'}`);
+            if (userForWa?.phone) {
+              const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
+              const { getStationTimezone, formatTimeInTz } = await import("../utils/timezone");
+              const stationTz = getStationTimezone(station ?? {});
+              sendWhatsAppTemplate({
+                toPhone: userForWa.phone,
+                templateName: WA_TEMPLATE_NAMES.inicio_carga,
+                parameters: [
+                  userForWa.name?.split(" ")[0] || "Usuario",
+                  stationName,
+                  String(payload.connectorId),
+                  formatTimeInTz(new Date(), stationTz),
+                ],
+                eventType: "charge_start",
+                userId,
+                referenceId: newTxId,
+                referenceType: "transaction",
+              }).then(ok => console.log(`[WhatsApp] charge_start (legacy): result=${ok}`)).catch((e: Error) => console.error("[WhatsApp] charge_start (legacy) error:", e.message));
+            }
+          } catch (waErr: any) {
+            console.error(`[WhatsApp] charge_start (legacy) exception:`, waErr?.message);
+          }
         } catch (notifErr) {
           console.error(`[OCPP] Error sending charge start notification:`, notifErr);
         }
@@ -1483,6 +1509,33 @@ async function handleOCPP16Message(
             referenceType: "transaction",
           });
           console.log(`[OCPP] Notification sent to user ${transaction.userId} for completed charge`);
+          // WhatsApp: notificar fin de carga
+          try {
+            const userForWaEnd = await db.getUserById(transaction.userId);
+            console.log(`[WhatsApp] charge_end (legacy): user=${transaction.userId}, phone=${userForWaEnd?.phone || 'NULL'}`);
+            if (userForWaEnd?.phone) {
+              const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
+              const walletForEnd = await db.getWalletByUserId(transaction.userId);
+              const balanceStr = walletForEnd ? `$${Math.round(parseFloat(walletForEnd.balance)).toLocaleString("es-CO")}` : "$0";
+              sendWhatsAppTemplate({
+                toPhone: userForWaEnd.phone,
+                templateName: WA_TEMPLATE_NAMES.fin_carga,
+                parameters: [
+                  userForWaEnd.name?.split(" ")[0] || "Usuario",
+                  energyDelivered.toFixed(2),
+                  String(Math.round(durationMinutes)),
+                  `$${Math.round(totalCost).toLocaleString("es-CO")}`,
+                  balanceStr,
+                ],
+                eventType: "charge_end",
+                userId: transaction.userId,
+                referenceId: transaction.id,
+                referenceType: "transaction",
+              }).then(ok => console.log(`[WhatsApp] charge_end (legacy): result=${ok}`)).catch((e: Error) => console.error("[WhatsApp] charge_end (legacy) error:", e.message));
+            }
+          } catch (waErr: any) {
+            console.error(`[WhatsApp] charge_end (legacy) exception:`, waErr?.message);
+          }
         } catch (notifErr) {
           console.error(`[OCPP] Error sending charge complete notification:`, notifErr);
         }
