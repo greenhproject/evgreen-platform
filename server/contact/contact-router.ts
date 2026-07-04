@@ -2,9 +2,9 @@
  * EVGreen - Contact Router
  * Handles contact form submissions and sends emails via Resend to evgreen@greenhproject.com
  */
+import { getResendClient } from "../email/resend-client";
 import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
-import { Resend } from "resend";
 
 const CONTACT_TO = "evgreen@greenhproject.com";
 const CONTACT_FROM = "EVGreen Contacto <noreply@evgreen.lat>";
@@ -43,15 +43,7 @@ export const contactRouter = router({
       const { name, email, topic, message } = input;
       const topicLabel = TOPIC_LABELS[topic] ?? topic;
       const isUrgent = message.toLowerCase().includes("urgente");
-
-      const resendKey = process.env.RESEND_API_KEY ?? process.env.Resend;
-      if (!resendKey) {
-        console.warn("[Contact] Resend API key not configured. Message from:", email);
-        console.info("[Contact] Message:", { name, email, topic, message });
-        return { success: true };
-      }
-
-      const resend = new Resend(resendKey);
+      const resend = await getResendClient();
       const subject = `${isUrgent ? "🚨 URGENTE - " : ""}[EVGreen Contacto] ${topicLabel} - ${name}`;
 
       const htmlBody = `<!DOCTYPE html>
@@ -77,7 +69,7 @@ export const contactRouter = router({
 </body></html>`;
 
       try {
-        await resend.emails.send({
+        await (await getResendClient()).emails.send({
           from: CONTACT_FROM,
           to: CONTACT_TO,
           replyTo: email,
@@ -91,7 +83,7 @@ export const contactRouter = router({
 
       // Confirmation email to user (non-critical)
       try {
-        await resend.emails.send({
+        await (await getResendClient()).emails.send({
           from: CONTACT_FROM,
           to: email,
           subject: `Recibimos tu mensaje — EVGreen`,

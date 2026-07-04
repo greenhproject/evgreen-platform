@@ -1,11 +1,9 @@
+import { getResendClient } from "./resend-client";
 /**
  * Email de bienvenida para nuevas organizaciones SaaS activadas
  * Enviado automáticamente al activar una org o al crear una con usuario asignado
  */
-import { Resend } from "resend";
 
-const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
-const resend = new Resend(resendApiKey);
 const FROM_EMAIL = "EVGreen <admin@greenhproject.com>";
 const BCC_EMAIL = "admin@greenhproject.com";
 
@@ -252,7 +250,7 @@ export async function sendOrgWelcomeEmail(data: OrgWelcomeEmailData): Promise<bo
 </html>`;
 
   try {
-    const result = await resend.emails.send({
+    const result = await (await getResendClient()).emails.send({
       from: FROM_EMAIL,
       to: data.contactEmail,
       bcc: BCC_EMAIL,

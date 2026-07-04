@@ -3,7 +3,7 @@
  * Servicio para enviar notificaciones masivas a usuarios de la plataforma
  */
 
-import { Resend } from "resend";
+import { getResendClient } from "../email/resend-client";
 import { getDb } from "../db";
 import { users, notifications } from "../../drizzle/schema";
 import { eq, and, isNotNull, inArray, sql } from "drizzle-orm";
@@ -13,8 +13,6 @@ import { sendWebPush, isWebPushAvailable, type PushSubscriptionData } from "../p
 import { buildEmailParams } from "../utils/email-helper";
 
 // Inicializar Resend con la API key
-const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-const resend = new Resend(resendApiKey);
 
 // Tipos de notificación del admin
 export type AdminNotificationType = "INFO" | "SUCCESS" | "WARNING" | "ALERT" | "PROMOTION";
@@ -207,7 +205,7 @@ export async function sendBroadcastNotification(
         
         for (const user of batch) {
           try {
-            await resend.emails.send(buildEmailParams({
+            await (await getResendClient()).emails.send(buildEmailParams({
               from: "EVGreen <notificaciones@evgreen.lat>",
               to: user.email!,
               subject: input.title,

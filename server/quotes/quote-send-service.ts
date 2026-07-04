@@ -2,14 +2,12 @@
  * Servicio de envío de cotizaciones por email
  * Genera PDF (HTML), envía email premium con adjunto
  */
-import { Resend } from "resend";
+import { getResendClient } from "../email/resend-client";
 import { buildEmailParams } from "../utils/email-helper";
 import { generateQuoteHTML } from "./quote-pdf";
 import { generateQuoteEmailHTML, generateQuoteEmailSubject } from "./quote-email";
 import { storagePut } from "../storage";
 
-const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-const resend = new Resend(resendApiKey);
 
 const FROM_EMAIL = "EVGreen <admin@evgreen.lat>";
 const CC_EMAIL = "gerencia@greenhproject.com";
@@ -120,7 +118,7 @@ export async function sendQuoteEmail(params: SendQuoteParams): Promise<{ success
       replyTo: params.settings.companyEmail || "gerencia@greenhproject.com",
     });
 
-    const result = await resend.emails.send({
+    const result = await (await getResendClient()).emails.send({
       ...emailParams,
       cc: CC_EMAIL,
     });

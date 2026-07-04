@@ -3648,6 +3648,11 @@ const settingsRouter = router({
       if (data.alegraToken?.startsWith("****")) delete data.alegraToken;
       
       await db.upsertPlatformSettings(data);
+      // Invalidar caché de Resend si se actualizó la key
+      if (data.resendApiKey || data.emailFrom) {
+        const { invalidateResendCache } = await import("./email/resend-client");
+        invalidateResendCache();
+      }
       return { success: true };
     }),
 

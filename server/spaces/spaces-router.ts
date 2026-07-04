@@ -8,6 +8,7 @@ import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getDb } from "../db";
+import { getResendClient } from "../email/resend-client";
 import {
   spaceSubmissions,
   spacePhotos,
@@ -18,7 +19,6 @@ import { eq, desc, and, sql, like, or, inArray, count, gte, lte, isNull, isNotNu
 import { randomBytes } from "crypto";
 import { storagePut } from "../storage";
 import { invokeLLM } from "../_core/llm";
-import { Resend } from "resend";
 import { buildEmailParams } from "../utils/email-helper";
 
 // ============================================================================
@@ -344,35 +344,32 @@ export const spacesRouter = router({
       // Enviar copia del PDF al firmante por email (trazabilidad)
       try {
         if (pdfUrl && submission.submitterEmail) {
-          const resendApiKey = process.env.Resend;
-          if (resendApiKey) {
-            const resend = new Resend(resendApiKey);
-            const emailParams = buildEmailParams({
-              from: "EVGreen <notificaciones@evgreen.lat>",
-              to: submission.submitterEmail,
-              subject: `Constancia de Firma - Carta de Intención EVGreen (${submission.spaceName})`,
-              html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                  <div style="background: linear-gradient(135deg, #10b981, #059669); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
-                    <h1 style="color: white; margin: 0; font-size: 24px;">\u26a1 EVGreen</h1>
-                    <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 13px;">Green House Project S.A.S.</p>
-                  </div>
-                  <div style="padding: 24px; background: #f9fafb; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
-                    <h2 style="color: #111827; font-size: 18px; margin: 0 0 12px;">Carta de Intención Firmada</h2>
-                    <p style="color: #4b5563; font-size: 14px; line-height: 1.6;">Estimado(a) <strong>${input.signerName}</strong>,</p>
-                    <p style="color: #4b5563; font-size: 14px; line-height: 1.6;">Adjuntamos la constancia de firma digital de la carta de intención para el espacio <strong>${submission.spaceName}</strong> (Código: ${submission.code}).</p>
-                    <p style="color: #4b5563; font-size: 14px; line-height: 1.6;">Este documento sirve como evidencia legal de su aceptación y contiene todos los datos de la firma digital.</p>
-                    <div style="text-align: center; margin: 24px 0;">
-                      <a href="${pdfUrl}" style="display: inline-block; background: #10b981; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">\ud83d\udcc4 Descargar Constancia PDF</a>
-                    </div>
-                    <p style="color: #9ca3af; font-size: 12px; text-align: center;">Conserve este documento para sus registros.</p>
-                  </div>
+          const resend = await getResendClient();
+          const emailParams = buildEmailParams({
+            from: "EVGreen <notificaciones@evgreen.lat>",
+            to: submission.submitterEmail,
+            subject: `Constancia de Firma - Carta de Intención EVGreen (${submission.spaceName})`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background: linear-gradient(135deg, #10b981, #059669); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
+                  <h1 style="color: white; margin: 0; font-size: 24px;">⚡ EVGreen</h1>
+                  <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 13px;">Green House Project S.A.S.</p>
                 </div>
-              `,
-            });
-            await resend.emails.send(emailParams as any);
-            console.log(`[Spaces] Email con constancia PDF enviado a ${submission.submitterEmail}`);
-          }
+                <div style="padding: 24px; background: #f9fafb; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+                  <h2 style="color: #111827; font-size: 18px; margin: 0 0 12px;">Carta de Intención Firmada</h2>
+                  <p style="color: #4b5563; font-size: 14px; line-height: 1.6;">Estimado(a) <strong>${input.signerName}</strong>,</p>
+                  <p style="color: #4b5563; font-size: 14px; line-height: 1.6;">Adjuntamos la constancia de firma digital de la carta de intención para el espacio <strong>${submission.spaceName}</strong> (Código: ${submission.code}).</p>
+                  <p style="color: #4b5563; font-size: 14px; line-height: 1.6;">Este documento sirve como evidencia legal de su aceptación y contiene todos los datos de la firma digital.</p>
+                  <div style="text-align: center; margin: 24px 0;">
+                    <a href="${pdfUrl}" style="display: inline-block; background: #10b981; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">📄 Descargar Constancia PDF</a>
+                  </div>
+                  <p style="color: #9ca3af; font-size: 12px; text-align: center;">Conserve este documento para sus registros.</p>
+                </div>
+              </div>
+            `,
+          });
+          await resend.emails.send(emailParams as any);
+          console.log(`[Spaces] Email con constancia PDF enviado a ${submission.submitterEmail}`);
         }
       } catch (emailErr) {
         console.error("[Spaces] Error enviando email con constancia:", emailErr);
@@ -770,8 +767,7 @@ export const spacesRouter = router({
         });
 
         // Enviar email
-        const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-        const resend = new Resend(resendApiKey);
+        const resend = await getResendClient();
 
         const emailParams = buildEmailParams({
           from: "EVGreen <admin@evgreen.lat>",
@@ -1289,8 +1285,7 @@ Responde en formato JSON con la siguiente estructura:`;
 
       // Enviar email de confirmaci\u00f3n al inversionista
       try {
-        const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-        const resend = new Resend(resendApiKey);
+        const resend = await getResendClient();
         const emailParams = buildEmailParams({
           from: "EVGreen <admin@evgreen.lat>",
           to: input.email,

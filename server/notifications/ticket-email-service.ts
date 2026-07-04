@@ -6,14 +6,12 @@
  * - A critical ticket is created
  */
 
-import { Resend } from "resend";
+import { getResendClient } from "../email/resend-client";
 import { buildEmailParams } from "../utils/email-helper";
 import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
 import { eq, or } from "drizzle-orm";
 
-const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-const resend = new Resend(resendApiKey);
 
 const FROM_EMAIL = "EVGreen <admin@evgreen.lat>";
 const ADMIN_CC = "gerencia@greenhproject.com";
@@ -144,7 +142,7 @@ export async function sendTicketEmailToAdmin(params: TicketEmailParams): Promise
 
     for (const email of allRecipients) {
       try {
-        await resend.emails.send(buildEmailParams({
+        await (await getResendClient()).emails.send(buildEmailParams({
           from: FROM_EMAIL,
           to: email,
           subject,

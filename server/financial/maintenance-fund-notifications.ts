@@ -15,7 +15,7 @@
  * ============================================================================
  */
 
-import { Resend } from "resend";
+import { getResendClient } from "../email/resend-client";
 import { getDb } from "../db";
 import { notifications } from "../../drizzle/schema";
 import { getStationInvestors, getMaintenanceFundSummary, getChargingStationById } from "../db";
@@ -23,8 +23,6 @@ import { sendUserPush, sendUserPushToMultiple } from "../push/unified-push";
 import { buildEmailParams } from "../utils/email-helper";
 
 // Resend client
-const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
-const resend = new Resend(resendApiKey);
 
 // ============================================================================
 // TYPES
@@ -97,7 +95,7 @@ async function createInAppNotification(userId: number, title: string, message: s
  */
 async function sendEmail(to: string, subject: string, html: string) {
   try {
-    await resend.emails.send(buildEmailParams({
+    await (await getResendClient()).emails.send(buildEmailParams({
       from: "EVGreen <notificaciones@evgreen.lat>",
       to,
       subject,

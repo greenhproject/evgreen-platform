@@ -9,6 +9,7 @@
  * - Registro de pagos de reserva
  */
 
+import { getResendClient } from "../email/resend-client";
 import { z } from "zod";
 import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
@@ -16,7 +17,6 @@ import { getDb, getPlatformSettings } from "../db";
 import { eventGuests, eventPayments, users } from "../../drizzle/schema";
 import { eq, desc, sql, and, like } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
-import { Resend } from "resend";
 import { buildEmailParams } from "../utils/email-helper";
 import { generateQRCodeUrl } from "../utils/qr-generator";
 import {
@@ -34,8 +34,6 @@ import {
 } from "./event-export";
 
 // Resend para envío de emails
-const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
-const resend = new Resend(resendApiKey);
 
 // URL de la imagen de fondo del evento (S3/CloudFront - hospedada en nuestro propio storage)
 const EVENT_BG_IMAGE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663169336317/UcUrociZeo4QVAHHN9vAuZ/evgreen/email-assets/event-bg-a8147fd468f251ce.png";
@@ -592,9 +590,9 @@ export const eventRouter = router({
       const eventName = eventConfig?.eventName || "Gran Lanzamiento Red de Carga EVGreen";
 
       try {
-        console.log(`[Event] Enviando invitación a ${guest.email} con API Key: ${resendApiKey.substring(0, 10)}...`);
+        console.log(`[Event] Enviando invitación a ${guest.email}...`);
         
-        const result = await resend.emails.send({
+        const result = await (await getResendClient()).emails.send({
           ...buildEmailParams({
             from: "EVGreen <invitaciones@evgreen.lat>",
             to: guest.email,
@@ -669,7 +667,7 @@ export const eventRouter = router({
           const emailHtml = await generateInvitationEmail(guest, qrUrl, eventCfg);
 
           console.log(`[Event Bulk] Enviando invitación a ${guest.email}...`);
-          const result = await resend.emails.send({
+          const result = await (await getResendClient()).emails.send({
             ...buildEmailParams({
               from: "EVGreen <invitaciones@evgreen.lat>",
               to: guest.email,
@@ -733,7 +731,7 @@ export const eventRouter = router({
       }
 
       try {
-        const emailDetail = await resend.emails.get(guest.invitationEmailId);
+        const emailDetail = await (await getResendClient()).emails.get(guest.invitationEmailId);
         if (emailDetail.error) {
           return { status: "unknown", message: "No se pudo verificar el estado del email" };
         }
@@ -786,7 +784,7 @@ export const eventRouter = router({
 
       try {
         console.log(`[Event] Re-enviando invitaci\u00f3n a ${guest.email}...`);
-        const result = await resend.emails.send({
+        const result = await (await getResendClient()).emails.send({
           ...buildEmailParams({
             from: "EVGreen <invitaciones@evgreen.lat>",
             to: guest.email,

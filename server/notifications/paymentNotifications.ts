@@ -1,8 +1,8 @@
+import { getResendClient } from "../email/resend-client";
 import { Resend } from 'resend';
 import { buildEmailParams } from '../utils/email-helper';
 
 // Inicializar Resend con la API key
-const resend = new Resend(process.env.RESEND_API_KEY || 're_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b');
 
 const FROM_EMAIL = 'EVGreen <notificaciones@evgreen.lat>';
 const SUPPORT_EMAIL = 'soporte@evgreen.lat';
@@ -294,7 +294,7 @@ const chargingCompleteTemplate = (data: ChargingNotificationData): string => `
 // Enviar notificación de recarga de billetera
 export async function sendWalletRechargeNotification(data: PaymentNotificationData): Promise<boolean> {
   try {
-    const { error } = await resend.emails.send(buildEmailParams({
+    const { error } = await (await getResendClient()).emails.send(buildEmailParams({
       from: FROM_EMAIL,
       to: data.userEmail,
       subject: `✓ Recarga exitosa de ${formatCurrency(data.amount)} - EVGreen`,
@@ -317,7 +317,7 @@ export async function sendWalletRechargeNotification(data: PaymentNotificationDa
 // Enviar notificación de carga completada
 export async function sendChargingCompleteNotification(data: ChargingNotificationData): Promise<boolean> {
   try {
-    const { error } = await resend.emails.send(buildEmailParams({
+    const { error } = await (await getResendClient()).emails.send(buildEmailParams({
       from: FROM_EMAIL,
       to: data.userEmail,
       subject: `🔋 Carga completada: ${data.energyKwh.toFixed(1)} kWh en ${data.stationName} - EVGreen`,

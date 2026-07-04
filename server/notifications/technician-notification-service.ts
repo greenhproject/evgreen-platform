@@ -16,7 +16,7 @@
  * - techWorkingHoursStart/End: horario laboral
  */
 
-import { Resend } from "resend";
+import { getResendClient } from "../email/resend-client";
 import { getDb } from "../db";
 import { users, notifications } from "../../drizzle/schema";
 import { eq, and, inArray } from "drizzle-orm";
@@ -25,8 +25,6 @@ import { buildEmailParams } from "../utils/email-helper";
 import type { OcppAlertSeverity, OcppAlertType } from "../ocpp/alerts-service";
 
 // Inicializar Resend
-const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-const resend = new Resend(resendApiKey);
 
 const FROM_EMAIL = "EVGreen <alertas@evgreen.lat>";
 
@@ -289,7 +287,7 @@ export async function notifyTechniciansOfAlert(
         if (tech.techNotifyByEmail !== false && tech.email) {
           try {
             const emailHtml = buildAlertEmailHtml(alert);
-            const emailResult = await resend.emails.send(buildEmailParams({
+            const emailResult = await (await getResendClient()).emails.send(buildEmailParams({
               from: FROM_EMAIL,
               to: tech.email,
               subject: `${alert.severity === "critical" ? "🚨 CRÍTICA" : "⚠️ Alerta"}: ${alert.title} - EVGreen`,
@@ -385,7 +383,7 @@ export async function notifyTechniciansOfNewTicket(ticket: {
       // Email
       if (tech.techNotifyByEmail !== false && tech.email) {
         try {
-          await resend.emails.send(buildEmailParams({
+          await (await getResendClient()).emails.send(buildEmailParams({
             from: FROM_EMAIL,
             to: tech.email,
             subject: `${title} - EVGreen`,

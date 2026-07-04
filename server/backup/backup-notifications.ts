@@ -7,14 +7,12 @@
  * @author Green House Project | @version 1.0.0 (Abril 2026)
  */
 
-import { Resend } from "resend";
+import { getResendClient } from "../email/resend-client";
 import { buildEmailParams } from "../utils/email-helper";
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
 const FROM_EMAIL = "EVGreen Backup <backup@evgreen.lat>";
 const ADMIN_EMAIL = "gerencia@greenhproject.com";
 
-const resend = new Resend(RESEND_API_KEY);
 
 interface BackupResult {
   backupId: number;
@@ -122,7 +120,7 @@ export async function sendBackupNotification(result: BackupResult): Promise<bool
       html,
     });
     
-    await resend.emails.send(emailParams);
+    await (await getResendClient()).emails.send(emailParams);
     console.log(`[Backup Notification] Email enviado a ${ADMIN_EMAIL}`);
     return true;
   } catch (error: any) {

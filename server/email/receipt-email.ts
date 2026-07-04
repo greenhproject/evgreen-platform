@@ -1,11 +1,9 @@
+import { getResendClient } from "./resend-client";
 /**
  * Servicio de envío de recibos de carga por email
  * Usa Resend como proveedor de email
  */
-import { Resend } from "resend";
 
-const resendApiKey = process.env.RESEND_API_KEY || "re_CeRTmETR_MHxYaF2sShjXcmSmZKE5qSzr";
-const resend = new Resend(resendApiKey);
 
 const FROM_EMAIL = "EVGreen <admin@greenhproject.com>";
 const BCC_EMAIL = "admin@greenhproject.com"; // Copia para trazabilidad
@@ -242,7 +240,7 @@ export async function sendChargingReceiptEmail(data: ReceiptEmailData): Promise<
     const html = buildReceiptHTML(data);
     const subject = `Recibo de Carga EVGreen #${data.transactionId} - ${formatCurrency(data.totalCost)}`;
 
-    const result = await resend.emails.send({
+    const result = await (await getResendClient()).emails.send({
       from: FROM_EMAIL,
       to: data.userEmail,
       bcc: BCC_EMAIL,

@@ -1,3 +1,4 @@
+import { getResendClient } from "../email/resend-client";
 /**
  * EVGreen SaaS Landing — Router de formularios públicos
  * Maneja solicitudes de demo y contacto desde la landing page /saas
@@ -8,16 +9,11 @@ import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { demoRequests, contactSubmissions } from "../../drizzle/schema";
-import { Resend } from "resend";
 
 const SAAS_EMAIL = "evgreen@greenhproject.com";
 const FROM_EMAIL = "EVGreen for Business <noreply@evgreen.lat>";
 
-function getResend() {
-  const key = process.env.RESEND_API_KEY ?? process.env.Resend;
-  if (!key) return null;
-  return new Resend(key);
-}
+// getResendClient imported from ../email/resend-client
 
 const PLAN_LABELS: Record<string, string> = {
   starter: "Starter",
@@ -69,7 +65,7 @@ export const saasRouter = router({
       }
 
       // 2. Enviar email de notificación al equipo de ventas
-      const resend = getResend();
+      const resend = await getResendClient();
       const planLabel = PLAN_LABELS[plan ?? ""] ?? plan;
       const chargerLabel = CHARGER_COUNT_LABELS[chargerCount ?? ""] ?? chargerCount;
 
@@ -173,7 +169,7 @@ export const saasRouter = router({
       }
 
       // 2. Notificar al equipo
-      const resend = getResend();
+      const resend = await getResendClient();
       const htmlNotification = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1a1a1a;">

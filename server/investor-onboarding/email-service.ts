@@ -2,13 +2,11 @@
  * EVGreen - Servicio de Email de Bienvenida para Inversionistas
  * Envía emails premium HTML usando Resend cuando se confirma una inversión
  */
-import { Resend } from "resend";
+import { getResendClient } from "../email/resend-client";
 import { buildEmailParams } from "../utils/email-helper";
 import * as db from "../db";
 
 // Resend API key - same pattern as ticket-email-service
-const resendApiKey = process.env.RESEND_API_KEY || "re_VBTGfE43_MrkUuQ96ji8kyvY4ZrfEiy9b";
-const resend = new Resend(resendApiKey);
 
 const FROM_EMAIL = "EVGreen <admin@evgreen.lat>";
 const CC_EMAIL = "gerencia@greenhproject.com"; // Copia para trazabilidad
@@ -287,7 +285,7 @@ export async function sendWelcomeEmail(data: WelcomeEmailData): Promise<boolean>
     
     for (const email of recipients) {
       try {
-        await resend.emails.send(buildEmailParams({
+        await (await getResendClient()).emails.send(buildEmailParams({
           from: FROM_EMAIL,
           to: email,
           subject,
