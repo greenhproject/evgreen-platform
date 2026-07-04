@@ -3497,6 +3497,9 @@ const settingsRouter = router({
         alegraPaymentMethodId: "",
         alegraPaymentAccountId: "",
         alegraResolutionNumber: "",
+        // Email (Resend)
+        resendApiKey: "",
+        emailFrom: "noreply@evgreen.lat",
         // Soporte
         supportEmail: "soporte@greenhproject.com",
         supportPhone: "",
@@ -3564,6 +3567,9 @@ const settingsRouter = router({
       alegraPaymentMethodId: settings.alegraPaymentMethodId || "",
       alegraPaymentAccountId: settings.alegraPaymentAccountId || "",
       alegraResolutionNumber: settings.alegraResolutionNumber || "",
+      // Email (Resend) - mask key for security
+      resendApiKey: settings.resendApiKey ? "re_****" + settings.resendApiKey.slice(-4) : "",
+      emailFrom: settings.emailFrom || "noreply@evgreen.lat",
       // Soporte
       supportEmail: settings.supportEmail || "soporte@greenhproject.com",
       supportPhone: settings.supportPhone || "",
@@ -3632,6 +3638,9 @@ const settingsRouter = router({
       alegraPaymentMethodId: z.string().optional(),
       alegraPaymentAccountId: z.string().optional(),
       alegraResolutionNumber: z.string().optional(),
+      // Email (Resend)
+      resendApiKey: z.string().optional(),
+      emailFrom: z.string().optional(),
       // Soporte
       supportEmail: z.string().optional(),
       supportPhone: z.string().optional(),
@@ -3646,6 +3655,7 @@ const settingsRouter = router({
       if (data.wompiEventsSecret?.startsWith("****")) delete data.wompiEventsSecret;
       if (data.upmeToken?.startsWith("****")) delete data.upmeToken;
       if (data.alegraToken?.startsWith("****")) delete data.alegraToken;
+      if (data.resendApiKey?.startsWith("re_****")) delete data.resendApiKey;
       
       await db.upsertPlatformSettings(data);
       // Invalidar caché de Resend si se actualizó la key

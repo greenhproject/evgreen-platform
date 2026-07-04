@@ -58,6 +58,11 @@ export default function AdminSettings() {
     wompiEventsSecret: false,
   });
 
+  const [emailConfigForm, setEmailConfigForm] = useState({
+    resendApiKey: "",
+    emailFrom: "noreply@evgreen.lat",
+  });
+
   const [notificationsForm, setNotificationsForm] = useState({
     notifyChargeComplete: true,
     notifyReservationReminder: true,
@@ -185,6 +190,11 @@ export default function AdminSettings() {
         notifyPromotions: settings.notifyPromotions,
       });
 
+      setEmailConfigForm({
+        resendApiKey: (settings as any).resendApiKey || "",
+        emailFrom: (settings as any).emailFrom || "noreply@evgreen.lat",
+      });
+
       setIntegrationsForm({
         upmeEndpoint: settings.upmeEndpoint || "",
         upmeToken: settings.upmeToken || "",
@@ -274,6 +284,10 @@ export default function AdminSettings() {
     updateMutation.mutate(payload);
   };
 
+  const handleSaveEmailConfig = () => {
+    updateMutation.mutate(emailConfigForm as any);
+  };
+
   const handleSaveNotifications = () => {
     updateMutation.mutate(notificationsForm);
   };
@@ -349,7 +363,7 @@ export default function AdminSettings() {
       </div>
 
       <Tabs defaultValue="general" className="space-y-6">
-        <TabsList>
+        <TabsList className="flex flex-wrap h-auto gap-1">
           <TabsTrigger value="general">
             <Settings className="w-4 h-4 mr-2" />
             General
@@ -699,6 +713,52 @@ export default function AdminSettings() {
                 </>
               ) : (
                 "Guardar cambios"
+              )}
+            </Button>
+          </Card>
+
+          <Card className="p-6 space-y-6 mt-6">
+            <div>
+              <h3 className="font-semibold mb-1">Configuración de Email</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Configura el servicio de envío de correos electrónicos (Resend)
+              </p>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>API Key de Resend</Label>
+                  <Input
+                    type="password"
+                    value={emailConfigForm.resendApiKey}
+                    onChange={(e) => setEmailConfigForm({ ...emailConfigForm, resendApiKey: e.target.value })}
+                    placeholder="re_xxxxxxxxxxxxxxxxxxxx"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Obtén tu API key en <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="underline">resend.com/api-keys</a>
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Email remitente</Label>
+                  <Input
+                    type="email"
+                    value={emailConfigForm.emailFrom}
+                    onChange={(e) => setEmailConfigForm({ ...emailConfigForm, emailFrom: e.target.value })}
+                    placeholder="noreply@evgreen.lat"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Dirección desde la que se enviarán los correos. Debe estar verificada en Resend.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <Button onClick={handleSaveEmailConfig} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Guardando...
+                </>
+              ) : (
+                "Guardar configuración de email"
               )}
             </Button>
           </Card>

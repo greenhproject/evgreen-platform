@@ -1267,6 +1267,10 @@ export const platformSettings = mysqlTable("platform_settings", {
   alegraPaymentAccountId: varchar("alegraPaymentAccountId", { length: 50 }), // ID de la cuenta bancaria en Alegra
   alegraResolutionNumber: varchar("alegraResolutionNumber", { length: 100 }), // Número de resolución DIAN
   
+  // Configuración de Email (Resend)
+  resendApiKey: varchar("resendApiKey", { length: 255 }), // API Key de Resend (se guarda enmascarada)
+  emailFrom: varchar("emailFrom", { length: 255 }).default("noreply@evgreen.lat"), // Email remitente
+
   // Configuración de Soporte
   supportEmail: varchar("supportEmail", { length: 255 }).default("soporte@greenhproject.com"), // Email buzón de soporte
   supportPhone: varchar("supportPhone", { length: 50 }).default("+573001234567"), // Teléfono de soporte
