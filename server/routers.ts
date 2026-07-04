@@ -6300,24 +6300,26 @@ const adminRemoteStartRouter = router({
       const selectedConnector = evsesList.find((c: any) => c.connectorId === connectorId || c.evseIdLocal === connectorId) || evsesList[0];
       const evseId = selectedConnector?.id || evsesList[0]?.id;
 
-      const tariff = await db.getActiveTariffByStationId(stationId);
-      const useAutoPricing = tariff?.autoPricing || false;
       const effectivePriceData = await db.getEffectiveStationPrice(stationId);
       const tariffSource = effectivePriceData.source;
 
+      // Siempre calcular precio dinámico (IA) si hay evseId disponible
       let pricePerKwh: number;
-      if (useAutoPricing && evseId) {
-        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
-        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
-        pricePerKwh = priceByType.price;
-      } else {
-        const basePrice = effectivePriceData.pricePerKwh;
-        if (evseId) {
+      let dynamicPriceApplied = false;
+      if (evseId) {
+        try {
+          const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+          const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
+          pricePerKwh = priceByType.price;
+          dynamicPriceApplied = true;
+        } catch {
+          // Fallback al precio base si falla el cálculo dinámico
+          const basePrice = effectivePriceData.pricePerKwh;
           const priceByType = await db.getPriceByConnectorType(evseId, basePrice, tariffSource);
           pricePerKwh = priceByType.price;
-        } else {
-          pricePerKwh = basePrice;
         }
+      } else {
+        pricePerKwh = effectivePriceData.pricePerKwh;
       }
 
       // Aplicar descuento de suscripción del usuario
@@ -6342,7 +6344,7 @@ const adminRemoteStartRouter = router({
         subscriptionDiscount,
         userBalance: balance,
         tariffSource,
-        useAutoPricing,
+        useAutoPricing: dynamicPriceApplied,
         connectorType: selectedConnector?.connectorType || "Type2",
         maxPowerKw: (selectedConnector as any)?.maxPowerKw || (selectedConnector as any)?.powerKw || 0,
       };
@@ -6375,29 +6377,29 @@ const adminRemoteStartRouter = router({
       const wallet = await db.getWalletByUserId(userId);
       const balance = wallet?.balance ? parseFloat(wallet.balance) : 0;
 
-      // 3. Calcular precio (misma lógica que startCharge)
+      // 3. Calcular precio dinámico (IA) siempre - misma lógica que startCharge
       const evsesList = await db.getEvsesByStationId(stationId);
       const selectedConnector = evsesList.find((c: any) => c.connectorId === connectorId || c.evseIdLocal === connectorId) || evsesList[0];
       const evseId = selectedConnector?.id || evsesList[0]?.id;
 
-      const tariff = await db.getActiveTariffByStationId(stationId);
-      const useAutoPricing = tariff?.autoPricing || false;
       const effectivePriceData = await db.getEffectiveStationPrice(stationId);
       const tariffSource = effectivePriceData.source;
 
+      // Siempre usar precio dinámico de la IA
       let pricePerKwh: number;
-      if (useAutoPricing && evseId) {
-        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
-        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
-        pricePerKwh = priceByType.price;
-      } else {
-        const basePrice = effectivePriceData.pricePerKwh;
-        if (evseId) {
+      if (evseId) {
+        try {
+          const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+          const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
+          pricePerKwh = priceByType.price;
+        } catch {
+          // Fallback al precio base si falla el cálculo dinámico
+          const basePrice = effectivePriceData.pricePerKwh;
           const priceByType = await db.getPriceByConnectorType(evseId, basePrice, tariffSource);
           pricePerKwh = priceByType.price;
-        } else {
-          pricePerKwh = basePrice;
         }
+      } else {
+        pricePerKwh = effectivePriceData.pricePerKwh;
       }
 
       // Aplicar descuento de suscripción
