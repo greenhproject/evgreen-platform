@@ -4,7 +4,7 @@
  * Phone Number ID: 1169338359590445 | WABA ID: 590534007472553
  */
 import { getDb } from "../db";
-import { whatsappConfig, whatsappNotificationLog } from "../../drizzle/schema";
+import { whatsappConfig, whatsappNotificationLog, users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -67,17 +67,52 @@ export interface SendWhatsAppTemplateOptions {
   referenceType?: string;
 }
 
+// Mapeo de eventType a campo de preferencia del usuario
+function eventTypeToUserPrefKey(eventType: WaEventType): keyof typeof users.$inferSelect | null {
+  const map: Partial<Record<WaEventType, keyof typeof users.$inferSelect>> = {
+    charge_start:      "waNotifyChargeStart",
+    charge_end:        "waNotifyChargeEnd",
+    charging_reminder: "waNotifyReminder",
+    penalty:           "waNotifyPenalty",
+    wallet_recharge:   "waNotifyWallet",
+    card_added:        "waNotifyWallet",
+    card_removed:      "waNotifyWallet",
+    refund:            "waNotifyWallet",
+  };
+  return map[eventType] ?? null;
+}
+
 export async function sendWhatsAppTemplate(opts: SendWhatsAppTemplateOptions): Promise<boolean> {
   const cfg = await getWhatsAppConfig();
   if (!cfg || !cfg.enabled || !cfg.phoneNumberId || !cfg.accessToken) {
     console.log("[WhatsApp] Servicio deshabilitado o sin credenciales — omitiendo plantilla");
     return false;
   }
-  // Verificar que el tipo de notificación esté habilitado
+  // Verificar que el tipo de notificación esté habilitado (control global admin)
   const notifKey = eventTypeToConfigKey(opts.eventType);
   if (notifKey && !(cfg as Record<string, unknown>)[notifKey]) {
-    console.log(`[WhatsApp] Notificación tipo '${opts.eventType}' deshabilitada — omitiendo plantilla`);
+    console.log(`[WhatsApp] Notificación tipo '${opts.eventType}' deshabilitada globalmente — omitiendo plantilla`);
     return false;
+  }
+  // Verificar preferencias del usuario (control individual)
+  if (opts.userId) {
+    const userPrefKey = eventTypeToUserPrefKey(opts.eventType);
+    if (userPrefKey) {
+      try {
+        const db = await getDb();
+        if (db) {
+          const userRows = await db.select().from(users).where(eq(users.id, opts.userId)).limit(1);
+          const user = userRows[0];
+          if (user && user[userPrefKey] === false) {
+            console.log(`[WhatsApp] Usuario ${opts.userId} desactivó notificación '${opts.eventType}' — omitiendo`);
+            return false;
+          }
+        }
+      } catch (prefErr) {
+        console.error("[WhatsApp] Error verificando preferencias de usuario:", prefErr);
+        // Si falla la verificación, continuar con el envío (fail-open)
+      }
+    }
   }
   let toPhone = opts.toPhone.replace(/[\s\-\+]/g, "");
   if (toPhone.length === 10 && (toPhone.startsWith("3") || toPhone.startsWith("6"))) {

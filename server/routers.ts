@@ -4766,6 +4766,71 @@ const userConfigRouter = router({
       return { success: true };
     }),
 
+  // Obtener preferencias de WhatsApp del usuario
+  getWhatsAppPreferences: protectedProcedure.query(async ({ ctx }) => {
+    const database = await getDb();
+    if (!database) {
+      return {
+        waNotifyChargeStart: true,
+        waNotifyChargeEnd: true,
+        waNotifyReminder: false,
+        waNotifyPenalty: true,
+        waNotifyWallet: true,
+      };
+    }
+    const [user] = await database
+      .select({
+        waNotifyChargeStart: users.waNotifyChargeStart,
+        waNotifyChargeEnd: users.waNotifyChargeEnd,
+        waNotifyReminder: users.waNotifyReminder,
+        waNotifyPenalty: users.waNotifyPenalty,
+        waNotifyWallet: users.waNotifyWallet,
+      })
+      .from(users)
+      .where(eq(users.id, ctx.user.id))
+      .limit(1);
+
+    return {
+      waNotifyChargeStart: user?.waNotifyChargeStart ?? true,
+      waNotifyChargeEnd: user?.waNotifyChargeEnd ?? true,
+      waNotifyReminder: user?.waNotifyReminder ?? false,
+      waNotifyPenalty: user?.waNotifyPenalty ?? true,
+      waNotifyWallet: user?.waNotifyWallet ?? true,
+    };
+  }),
+
+  // Actualizar preferencias de WhatsApp del usuario
+  updateWhatsAppPreferences: protectedProcedure
+    .input(z.object({
+      waNotifyChargeStart: z.boolean().optional(),
+      waNotifyChargeEnd: z.boolean().optional(),
+      waNotifyReminder: z.boolean().optional(),
+      waNotifyPenalty: z.boolean().optional(),
+      waNotifyWallet: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      }
+
+      const updateData: Record<string, unknown> = {};
+      if (input.waNotifyChargeStart !== undefined) updateData.waNotifyChargeStart = input.waNotifyChargeStart;
+      if (input.waNotifyChargeEnd !== undefined) updateData.waNotifyChargeEnd = input.waNotifyChargeEnd;
+      if (input.waNotifyReminder !== undefined) updateData.waNotifyReminder = input.waNotifyReminder;
+      if (input.waNotifyPenalty !== undefined) updateData.waNotifyPenalty = input.waNotifyPenalty;
+      if (input.waNotifyWallet !== undefined) updateData.waNotifyWallet = input.waNotifyWallet;
+
+      if (Object.keys(updateData).length > 0) {
+        await database
+          .update(users)
+          .set(updateData)
+          .where(eq(users.id, ctx.user.id));
+      }
+
+      return { success: true };
+    }),
+
   // Limpiar caché del usuario (resetear datos locales)
   clearCache: protectedProcedure.mutation(async ({ ctx }) => {
     // Limpiar caché del servidor para este usuario (si existe)
