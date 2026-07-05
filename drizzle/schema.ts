@@ -181,6 +181,11 @@ export const users = mysqlTable("users", {
   proximityRadiusKm: int("proximityRadiusKm").default(5), // Radio de búsqueda en km (1-10)
   lastProximityAlertAt: timestamp("lastProximityAlertAt"), // Cooldown de alertas
   lastProximityStationId: int("lastProximityStationId"), // Última estación notificada
+  // Preferencias de notificaciones por email (controladas por el usuario)
+  emailNotifyEnabled: boolean("emailNotifyEnabled").default(true),          // Email habilitado globalmente
+  emailNotifyReceipts: boolean("emailNotifyReceipts").default(true),        // Recibos de carga
+  emailNotifyWeeklyReport: boolean("emailNotifyWeeklyReport").default(false), // Reporte semanal
+  emailNotifyPromotions: boolean("emailNotifyPromotions").default(false),   // Promociones y novedades
   // Preferencias de notificaciones WhatsApp (controladas por el usuario)
   waNotifyChargeStart: boolean("waNotifyChargeStart").default(true),   // Inicio de carga
   waNotifyChargeEnd: boolean("waNotifyChargeEnd").default(true),       // Fin de carga

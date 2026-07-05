@@ -4766,6 +4766,66 @@ const userConfigRouter = router({
       return { success: true };
     }),
 
+  // Obtener preferencias de email del usuario
+  getEmailPreferences: protectedProcedure.query(async ({ ctx }) => {
+    const database = await getDb();
+    if (!database) {
+      return {
+        emailNotifyEnabled: true,
+        emailNotifyReceipts: true,
+        emailNotifyWeeklyReport: false,
+        emailNotifyPromotions: false,
+      };
+    }
+    const [user] = await database
+      .select({
+        emailNotifyEnabled: users.emailNotifyEnabled,
+        emailNotifyReceipts: users.emailNotifyReceipts,
+        emailNotifyWeeklyReport: users.emailNotifyWeeklyReport,
+        emailNotifyPromotions: users.emailNotifyPromotions,
+      })
+      .from(users)
+      .where(eq(users.id, ctx.user.id))
+      .limit(1);
+
+    return {
+      emailNotifyEnabled: user?.emailNotifyEnabled ?? true,
+      emailNotifyReceipts: user?.emailNotifyReceipts ?? true,
+      emailNotifyWeeklyReport: user?.emailNotifyWeeklyReport ?? false,
+      emailNotifyPromotions: user?.emailNotifyPromotions ?? false,
+    };
+  }),
+
+  // Actualizar preferencias de email del usuario
+  updateEmailPreferences: protectedProcedure
+    .input(z.object({
+      emailNotifyEnabled: z.boolean().optional(),
+      emailNotifyReceipts: z.boolean().optional(),
+      emailNotifyWeeklyReport: z.boolean().optional(),
+      emailNotifyPromotions: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      }
+
+      const updateData: Record<string, unknown> = {};
+      if (input.emailNotifyEnabled !== undefined) updateData.emailNotifyEnabled = input.emailNotifyEnabled;
+      if (input.emailNotifyReceipts !== undefined) updateData.emailNotifyReceipts = input.emailNotifyReceipts;
+      if (input.emailNotifyWeeklyReport !== undefined) updateData.emailNotifyWeeklyReport = input.emailNotifyWeeklyReport;
+      if (input.emailNotifyPromotions !== undefined) updateData.emailNotifyPromotions = input.emailNotifyPromotions;
+
+      if (Object.keys(updateData).length > 0) {
+        await database
+          .update(users)
+          .set(updateData)
+          .where(eq(users.id, ctx.user.id));
+      }
+
+      return { success: true };
+    }),
+
   // Obtener preferencias de WhatsApp del usuario
   getWhatsAppPreferences: protectedProcedure.query(async ({ ctx }) => {
     const database = await getDb();
