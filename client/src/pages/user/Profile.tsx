@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
@@ -6,6 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   User,
   Mail,
@@ -17,6 +28,7 @@ import {
   HelpCircle,
   FileText,
   LogOut,
+  Trash2,
   ChevronRight,
   Crown,
   Settings,
@@ -82,6 +94,18 @@ function ActiveAvailabilityAlerts() {
 export default function UserProfile() {
   const { user, logout, refresh } = useAuth();
   const [, setLocation] = useLocation();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const deleteAccountMutation = trpc.auth.deleteMyAccount.useMutation({
+    onSuccess: () => {
+      toast.success("Cuenta eliminada correctamente");
+      logout();
+      setLocation("/");
+    },
+    onError: () => {
+      toast.error("No se pudo eliminar la cuenta. Intenta de nuevo.");
+    },
+  });
 
   const { data: socSuggestion } = trpc.charging.getSocAccuracySuggestion.useQuery(undefined, {
     staleTime: 5 * 60 * 1000,
@@ -392,11 +416,49 @@ export default function UserProfile() {
           </Button>
         </motion.div>
 
+        {/* Eliminar cuenta */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.55 }}
+        >
+          <Button
+            variant="ghost"
+            className="w-full text-destructive/60 hover:text-destructive hover:bg-destructive/10 text-sm"
+            onClick={() => setShowDeleteDialog(true)}
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Eliminar mi cuenta
+          </Button>
+        </motion.div>
+
         {/* Versión de la app */}
         <div className="text-center text-xs text-muted-foreground">
           EVGreen v1.0.0
         </div>
       </div>
+
+      {/* Dialog de confirmación */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar tu cuenta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción es permanente e irreversible. Se eliminarán todos tus datos: historial de cargas, billetera, vehículos y preferencias. No podrás recuperar tu cuenta.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteAccountMutation.mutate()}
+              disabled={deleteAccountMutation.isPending}
+            >
+              {deleteAccountMutation.isPending ? "Eliminando..." : "Sí, eliminar mi cuenta"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </UserLayout>
   );
 }
