@@ -172,6 +172,21 @@ async function bootstrap() {
 
     CapacitorApp.addListener('appUrlOpen', async (data: { url: string }) => {
       console.log("[Auth] appUrlOpen recibido:", data.url);
+
+      // Wompi payment return: com.greenhproject.evgreen://wallet?payment=wompi&reference=xxx
+      if (data.url.includes("payment=wompi")) {
+        const refMatch = data.url.match(/reference=([^&]+)/);
+        if (refMatch) {
+          console.log("[Wompi] Deep link de pago recibido, referencia:", refMatch[1]);
+          try {
+            const { Browser } = await import('@capacitor/browser');
+            await Browser.close();
+          } catch {}
+          window.location.href = `/wallet?payment=wompi&reference=${refMatch[1]}`;
+          return;
+        }
+      }
+
       const token = extractToken(data.url);
       if (!token) {
         console.warn("[Auth] appUrlOpen sin token:", data.url);

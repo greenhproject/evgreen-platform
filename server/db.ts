@@ -2505,13 +2505,13 @@ export const db = {
 // STRIPE / PAYMENT OPERATIONS
 // ============================================================================
 
-export async function addUserWalletBalance(userId: number, amount: number) {
+export async function addUserWalletBalance(userId: number, amount: number, description = "Recarga de saldo") {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
+
   // Obtener o crear wallet del usuario
   let wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
-  
+
   if (wallet.length === 0) {
     await db.insert(wallets).values({
       userId,
@@ -2523,7 +2523,7 @@ export async function addUserWalletBalance(userId: number, amount: number) {
       balance: sql`${wallets.balance} + ${amount}`,
     }).where(eq(wallets.userId, userId));
   }
-  
+
   // Registrar transacción de wallet
   const currentWallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
   if (currentWallet[0]) {
@@ -2531,11 +2531,11 @@ export async function addUserWalletBalance(userId: number, amount: number) {
     await db.insert(walletTransactions).values({
       walletId: currentWallet[0].id,
       userId,
-      type: "RECHARGE",
+      type: "WOMPI_RECHARGE",
       amount: amount.toString(),
       balanceBefore: balanceBefore.toString(),
       balanceAfter: currentWallet[0].balance,
-      description: "Recarga de saldo vía Stripe",
+      description,
     });
   }
 }
