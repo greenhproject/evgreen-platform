@@ -97,10 +97,9 @@ export default function UserProfile() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const deleteAccountMutation = trpc.auth.deleteMyAccount.useMutation({
-    onSuccess: () => {
-      toast.success("Cuenta eliminada correctamente");
-      logout();
-      setLocation("/");
+    onSuccess: async () => {
+      toast.success("Tu cuenta ha sido eliminada");
+      await logout();
     },
     onError: () => {
       toast.error("No se pudo eliminar la cuenta. Intenta de nuevo.");
@@ -416,20 +415,33 @@ export default function UserProfile() {
           </Button>
         </motion.div>
 
-        {/* Eliminar cuenta */}
+        {/* Zona de peligro */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.55 }}
+          className="pt-2"
         >
-          <Button
-            variant="ghost"
-            className="w-full text-destructive/60 hover:text-destructive hover:bg-destructive/10 text-sm"
-            onClick={() => setShowDeleteDialog(true)}
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Eliminar mi cuenta
-          </Button>
+          <h3 className="text-sm font-medium text-muted-foreground mb-2 px-1">
+            Zona de peligro
+          </h3>
+          <Card className="border-destructive/20 overflow-hidden">
+            <button
+              onClick={() => setShowDeleteDialog(true)}
+              className="w-full flex items-center gap-4 p-4 hover:bg-destructive/5 active:bg-destructive/10 transition-colors text-left"
+            >
+              <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-destructive" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="font-medium text-destructive">Eliminar mi cuenta</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Acción permanente e irreversible
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+            </button>
+          </Card>
         </motion.div>
 
         {/* Versión de la app */}
