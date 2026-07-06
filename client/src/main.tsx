@@ -207,8 +207,14 @@ async function bootstrap() {
         console.warn("[Auth] Browser.close error:", e);
       }
 
-      // Exchange token for session cookie via server (sets cookie in WKWebView store)
-      let exchangeOk = false;
+      // Always store in localStorage first so Authorization: Bearer header is available.
+      // On Android, Chromium rejects SameSite=None cookies without Secure (HTTP dev server),
+      // so the server-side Set-Cookie response is silently ignored. localStorage is the
+      // reliable channel in all environments.
+      setAuthCookie(token);
+
+      // Also exchange token server-side (best-effort) to set an httpOnly cookie via
+      // Set-Cookie — useful on HTTPS where cross-origin cookies work correctly.
       try {
         const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
         const resp = await fetch(`${apiBase}/api/auth/mobile-token`, {
@@ -217,15 +223,9 @@ async function bootstrap() {
           credentials: 'include',
           body: JSON.stringify({ token }),
         });
-        exchangeOk = resp.ok;
-        console.log("[Auth] mobile-token exchange:", exchangeOk ? "ok" : "failed");
+        console.log("[Auth] mobile-token exchange:", resp.ok ? "ok" : "failed");
       } catch (e) {
         console.warn("[Auth] mobile-token POST failed:", e);
-      }
-
-      // Fallback: store in localStorage so Authorization: Bearer header works
-      if (!exchangeOk) {
-        setAuthCookie(token);
       }
 
       queryClient.invalidateQueries();
