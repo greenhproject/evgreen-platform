@@ -115,9 +115,13 @@ run-*.mjs
 .manus/
 .project-config.json
 
-# Capacitor native projects (built locally, not CI/CD)
-ios/
-android/
+# Capacitor native - ignore build artifacts only
+android/.gradle/
+android/local.properties
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+ios/App/Pods/
+ios/App/DerivedData/
 
 # Certificates and production secrets
 upload_cert.pem
