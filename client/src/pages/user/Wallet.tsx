@@ -643,10 +643,21 @@ export default function UserWallet() {
 
   // Mutation para crear checkout de recarga con Wompi
   const createWompiRecharge = trpc.wompi.createWalletRecharge.useMutation({
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (data.checkoutUrl) {
         toast.info("Redirigiendo a Wompi para completar el pago...");
-        window.open(data.checkoutUrl, "_blank");
+        if (isCapacitorNative()) {
+          const { Browser } = await import("@capacitor/browser");
+          const ref = data.reference;
+          await Browser.removeAllListeners();
+          await Browser.addListener('browserFinished', () => {
+            Browser.removeAllListeners();
+            window.location.href = `/wallet?payment=wompi&reference=${ref}`;
+          });
+          await Browser.open({ url: data.checkoutUrl, presentationStyle: "fullscreen" });
+        } else {
+          window.open(data.checkoutUrl, "_blank");
+        }
       }
       setIsProcessing(false);
     },
