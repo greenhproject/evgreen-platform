@@ -157,6 +157,39 @@ async function startServer() {
   // Wompi webhook
   app.post("/api/wompi/webhook", express.json(), handleWompiWebhook);
 
+  // Wompi native redirect relay: Chrome Custom Tab bloquea 302 a custom schemes,
+  // pero SÍ permite window.location.href desde JavaScript.
+  app.get("/api/wompi/redirect", (req, res) => {
+    const { reference, platform } = req.query as { reference?: string; platform?: string };
+    if (!reference || typeof reference !== "string" || !/^[A-Z0-9_\-]+$/i.test(reference)) {
+      return res.status(400).send("Missing or invalid reference");
+    }
+    if (platform === "native") {
+      const safeRef = encodeURIComponent(reference);
+      const deepLink = `com.greenhproject.evgreen://wallet?payment=wompi&reference=${safeRef}`;
+      const fallback = `https://app.evgreen.lat/wallet?payment=wompi&reference=${safeRef}`;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Regresando a EVGreen...</title>
+  <style>body{background:#052E16;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}</style>
+</head>
+<body>
+  <div><p style="font-size:1.2rem">Regresando a la app EVGreen...</p></div>
+  <script>
+    window.location.href = '${deepLink}';
+    setTimeout(function() { window.location.replace('${fallback}'); }, 2000);
+  </script>
+</body>
+</html>`);
+    } else {
+      res.redirect(302, `https://app.evgreen.lat/wallet?payment=wompi&reference=${encodeURIComponent(reference)}`);
+    }
+  });
+
   // API Pública REST v1 para integración externa
   const { default: publicApiRouter } = await import("../api/public-api");
   app.use("/api/v1", express.json(), publicApiRouter);

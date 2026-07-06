@@ -9,7 +9,7 @@
  */
 
 import * as db from "../db";
-import { getWompiKeys, getTransactionStatus } from "./config";
+import { getWompiKeys, getTransactionStatus, getTransactionByReference } from "./config";
 
 let reconciliationInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -44,10 +44,9 @@ export async function reconcilePendingTransactions(): Promise<{
     // Obtener transacciones PENDING
     const pendingTxs = await db.getPendingWompiTransactions();
 
-    // Filtrar solo las que tienen wompiTransactionId y son de las últimas 48h
+    // Filtrar transacciones de las últimas 48h (con o sin wompiTransactionId)
     const cutoffTime = Date.now() - (MAX_AGE_HOURS * 60 * 60 * 1000);
     const eligibleTxs = pendingTxs.filter(tx => {
-      if (!tx.wompiTransactionId) return false;
       const txTime = tx.createdAt ? new Date(tx.createdAt).getTime() : 0;
       return txTime > cutoffTime;
     });
@@ -62,8 +61,29 @@ export async function reconcilePendingTransactions(): Promise<{
     for (const tx of eligibleTxs) {
       processed++;
       try {
-        const txDetail = await getTransactionStatus(tx.wompiTransactionId!, keys);
-        const wompiStatus = txDetail?.data?.status;
+        // Si no tenemos wompiTransactionId (webhook nunca llegó), buscar por referencia
+        let wompiStatus: string | undefined;
+        let resolvedWompiTxId: string | undefined = tx.wompiTransactionId ?? undefined;
+
+        if (tx.wompiTransactionId) {
+          const txDetail = await getTransactionStatus(tx.wompiTransactionId, keys);
+          wompiStatus = txDetail?.data?.status;
+        } else {
+          const refResult = await getTransactionByReference(tx.reference, keys);
+          const wompiTx = refResult?.data?.[0];
+          if (!wompiTx) {
+            stillPending++;
+            continue;
+          }
+          wompiStatus = wompiTx.status;
+          resolvedWompiTxId = wompiTx.id;
+          // Guardar el ID de Wompi para futuras consultas
+          if (resolvedWompiTxId) {
+            await db.updateWompiTransactionByReference(tx.reference, {
+              wompiTransactionId: resolvedWompiTxId,
+            });
+          }
+        }
 
         if (wompiStatus === "APPROVED") {
           // Actualizar estado en BD
@@ -78,20 +98,10 @@ export async function reconcilePendingTransactions(): Promise<{
           const alreadyCredited = recentTxs.some(t => t.description?.includes(tx.reference));
 
           if (!alreadyCredited) {
-            // Acreditar billetera
-            await db.addUserWalletBalance(tx.userId, amount);
+            // Acreditar billetera (crea la wallet transaction internamente)
+            await db.addUserWalletBalance(tx.userId, amount, `Reconciliación automática: ${tx.reference}`);
             const wallet = await db.getUserWallet(tx.userId);
             const newBalance = wallet ? parseFloat(wallet.balance) : amount;
-
-            await db.createWalletTransaction({
-              walletId: wallet?.id || 0,
-              userId: tx.userId,
-              type: "WOMPI_RECHARGE",
-              amount: amount.toString(),
-              balanceBefore: (newBalance - amount).toString(),
-              balanceAfter: newBalance.toString(),
-              description: `Reconciliación automática: ${tx.reference}`,
-            });
 
             const formatCOP = (n: number) =>
               new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(n);

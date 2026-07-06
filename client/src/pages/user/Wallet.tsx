@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { isCapacitorNative } from "@/const";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import UserLayout from "@/layouts/UserLayout";
@@ -917,7 +918,7 @@ export default function UserWallet() {
     const amount = validateAmount();
     if (!amount) return;
     setIsProcessing(true);
-    createWompiRecharge.mutate({ amount });
+    createWompiRecharge.mutate({ amount, isNative: isCapacitorNative() });
   };
 
   // Botón principal: recarga rápida si tiene tarjeta, sino checkout
@@ -1039,7 +1040,7 @@ export default function UserWallet() {
       case "QUICK_RECHARGE":
         return "Recarga rápida con tarjeta";
       case "RECONCILIATION":
-        return "Recarga reconciliada";
+        return "Recarga con Wompi";
       case "ADMIN_ADJUSTMENT":
         return tx.description || "Ajuste administrativo";
       case "CHARGE":

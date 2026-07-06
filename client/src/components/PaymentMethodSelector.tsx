@@ -110,6 +110,7 @@ export function PaymentMethodSelector({
 
       const result = await createWompiSession.mutateAsync({
         amount: finalAmount,
+        isNative: isCapacitorNative(),
       });
 
       if (result.checkoutUrl) {

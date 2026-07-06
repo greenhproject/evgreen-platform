@@ -140,7 +140,7 @@ async function processWalletRecharge(
 
   try {
     // Agregar saldo a la billetera del usuario
-    await db.addUserWalletBalance(localTx.userId, amount);
+    await db.addUserWalletBalance(localTx.userId, amount, `Recarga Wompi: ${reference}`);
 
     // Guardar datos de la tarjeta si es pago con tarjeta (para futuras recargas con un clic)
     if (paymentMethod === "CARD") {
@@ -169,14 +169,11 @@ async function processWalletRecharge(
         }
 
         if (cardBrand && cardLastFour) {
-          // Si la transacción incluye payment_source_id, guardarlo para cobros directos futuros
-          const txPaymentSourceId = transaction?.payment_source_id?.toString();
           await db.updateUserSubscription(localTx.userId, {
             cardBrand,
             cardLastFour,
-            ...(txPaymentSourceId ? { wompiPaymentSourceId: txPaymentSourceId } : {}),
           });
-          console.log(`[Wompi] Datos de tarjeta guardados: ${cardBrand} ****${cardLastFour}${txPaymentSourceId ? ` (PS: ${txPaymentSourceId})` : " (sin payment source)"}`);
+          console.log(`[Wompi] Datos de tarjeta guardados: ${cardBrand} ****${cardLastFour}`);
         } else {
           console.warn(`[Wompi] No se pudieron obtener datos de tarjeta para tx ${wompiTxId}`);
         }
@@ -291,23 +288,12 @@ async function processQuickRecharge(reference: string, amount: number, wompiTxId
       return;
     }
 
-    // Acreditar billetera
-    await db.addUserWalletBalance(localTx.userId, amount);
+    // Acreditar billetera (crea la wallet transaction internamente)
+    await db.addUserWalletBalance(localTx.userId, amount, `${prefix} con tarjeta: ${reference}`);
 
     // Obtener wallet actualizada para el registro
     const wallet = await db.getUserWallet(localTx.userId);
     const newBalance = wallet ? parseFloat(wallet.balance) : amount;
-
-    // Registrar transacción de billetera
-    await db.createWalletTransaction({
-      walletId: wallet?.id || 0,
-      userId: localTx.userId,
-      type: "WOMPI_RECHARGE",
-      amount: amount.toString(),
-      balanceBefore: (newBalance - amount).toString(),
-      balanceAfter: newBalance.toString(),
-      description: `${prefix} con tarjeta: ${reference}`,
-    });
 
     const formatCOP = (n: number) =>
       new Intl.NumberFormat("es-CO", {
@@ -482,10 +468,7 @@ async function processSubscriptionPayment(
           title: "¡Suscripción activada!",
           body: `Tu plan ${planName} (${formatCurrency(amount)}/mes) está activo. Disfruta de tus descuentos en cargas.`,
           clickAction: "/wallet",
-          data: {
-            reference,
-            planId,
-          },
+          data: { reference, planId },
         });
       }
     } catch (pushErr) {
@@ -543,10 +526,7 @@ async function notifyPaymentFailed(reference: string, status: string) {
           title: `Pago ${statusLabel}`,
           body: `Tu ${typeLabel} no pudo ser procesado. Intenta de nuevo o usa otro método de pago.`,
           clickAction: "/wallet",
-          data: {
-            reference,
-            status,
-          },
+          data: { reference, status },
         });
       }
     } catch (pushErr) {
