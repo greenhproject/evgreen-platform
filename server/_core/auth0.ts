@@ -99,11 +99,16 @@ export function registerAuth0Routes(app: Express) {
         });
       }
 
+      const isMobile = req.query.platform === "mobile";
       const authUrl = client.authorizationUrl({
         scope: "openid profile email",
         redirect_uri: redirectUri,
         state,
-        prompt: "login",
+        // Mobile: "select_account" shows the device's Google account picker instead of the
+        // web sign-in form. "login" forces web re-auth which blocks on Android when device
+        // accounts are already present (Chrome Custom Tab behavior).
+        // Web: "login" prevents auto-login from cached Auth0 sessions.
+        prompt: isMobile ? "select_account" : "login",
       });
 
       res.redirect(authUrl);
