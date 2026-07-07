@@ -99,11 +99,16 @@ export function registerAuth0Routes(app: Express) {
         });
       }
 
+      // Mobile: "select_account" shows the native Android/iOS account picker for accounts
+      // already on the device — avoids the "This account already exists on your device"
+      // blocking error that appears with "login" when the Google account is already registered.
+      // Web: "login" forces re-authentication to prevent auto-login with cached sessions.
+      const isMobileLogin = req.query.platform === "mobile";
       const authUrl = client.authorizationUrl({
         scope: "openid profile email",
         redirect_uri: redirectUri,
         state,
-        prompt: "login", // Force login screen (no auto-login with cached session)
+        prompt: isMobileLogin ? "select_account" : "login",
       });
 
       res.redirect(authUrl);
