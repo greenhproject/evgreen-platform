@@ -286,6 +286,7 @@ function RoleBasedRedirect() {
   const { user, isAuthenticated, loading, refresh } = useAuth();
   const [, setLocation] = useLocation();
   const loginBrowserOpened = useRef(false);
+  const browserOpenedAtRef = useRef<number>(0);
   const isAuthenticatedRef = useRef(isAuthenticated);
   const pendingBrowserCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAutoRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -361,6 +362,7 @@ function RoleBasedRedirect() {
 
   const doOpenLogin = useCallback(async () => {
     loginBrowserOpened.current = true;
+    browserOpenedAtRef.current = Date.now();
     setShowRetryButton(false);
     try {
       await openLoginBrowser();
@@ -368,12 +370,13 @@ function RoleBasedRedirect() {
       // Remove previous listeners to avoid accumulation across retries
       await Browser.removeAllListeners();
       await Browser.addListener('browserFinished', async () => {
-        // On some Android devices (especially new ones with aggressive memory management),
-        // Capacitor's BrowserPlugin.handleOnResume() fires browserFinished whenever
-        // MainActivity briefly resumes — even while the Chrome Custom Tab is still open.
-        // This causes a spurious retry loop. Fix: watch appStateChange for 1.5s after
-        // browserFinished. If the app goes back to background within that window, the
-        // Custom Tab is still alive and this event is a false alarm — skip the retry.
+        // How long was the browser open? Used below to decide whether to auto-retry.
+        const timeOpenMs = Date.now() - browserOpenedAtRef.current;
+
+        // On some Android devices, Capacitor fires browserFinished whenever MainActivity
+        // briefly resumes — even while the Chrome Custom Tab is still open (spurious).
+        // Fix: watch appStateChange for 1.5s. If the app goes back to background within
+        // that window, the Custom Tab is still alive → skip retry.
         let appPausedAgain = false;
         let stateHandle: { remove: () => Promise<void> } | null = null;
         try {
@@ -391,12 +394,18 @@ function RoleBasedRedirect() {
           if (isAuthenticatedRef.current) return;
           loginBrowserOpened.current = false;
           setShowRetryButton(true);
-          pendingAutoRetryRef.current = setTimeout(() => {
-            pendingAutoRetryRef.current = null;
-            if (!loginBrowserOpened.current && !isAuthenticatedRef.current) {
-              doOpenLogin();
-            }
-          }, 2000);
+          // Auto-retry only for very quick closes (< 3s open = accidental swipe/dismiss).
+          // If the browser was open longer, the user was actively in the OAuth flow
+          // (e.g., adding a Google account to the device). Don't interfere — they'll
+          // tap the retry button when ready.
+          if (timeOpenMs < 3000) {
+            pendingAutoRetryRef.current = setTimeout(() => {
+              pendingAutoRetryRef.current = null;
+              if (!loginBrowserOpened.current && !isAuthenticatedRef.current) {
+                doOpenLogin();
+              }
+            }, 2000);
+          }
         }, 1500);
       });
     } catch (e) {
