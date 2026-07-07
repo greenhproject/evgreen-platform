@@ -367,12 +367,27 @@ function RoleBasedRedirect() {
       const { Browser } = await import('@capacitor/browser');
       // Remove previous listeners to avoid accumulation across retries
       await Browser.removeAllListeners();
-      await Browser.addListener('browserFinished', () => {
-        // 500ms to let appUrlOpen + evgreen-auth-updated arrive before checking.
-        // Both timers are stored in refs so handleAuthUpdated can cancel them
-        // if the deep link arrives after browserFinished but before the timers fire.
-        pendingBrowserCheckRef.current = setTimeout(() => {
+      await Browser.addListener('browserFinished', async () => {
+        // On some Android devices (especially new ones with aggressive memory management),
+        // Capacitor's BrowserPlugin.handleOnResume() fires browserFinished whenever
+        // MainActivity briefly resumes — even while the Chrome Custom Tab is still open.
+        // This causes a spurious retry loop. Fix: watch appStateChange for 1.5s after
+        // browserFinished. If the app goes back to background within that window, the
+        // Custom Tab is still alive and this event is a false alarm — skip the retry.
+        let appPausedAgain = false;
+        let stateHandle: { remove: () => Promise<void> } | null = null;
+        try {
+          const { App: CapApp } = await import('@capacitor/app');
+          stateHandle = await CapApp.addListener('appStateChange', (state) => {
+            if (!state.isActive) appPausedAgain = true;
+          });
+        } catch {}
+
+        pendingBrowserCheckRef.current = setTimeout(async () => {
+          try { await stateHandle?.remove(); } catch {}
           pendingBrowserCheckRef.current = null;
+          // Spurious event: app went back to background → Custom Tab still active, don't retry
+          if (appPausedAgain) return;
           if (isAuthenticatedRef.current) return;
           loginBrowserOpened.current = false;
           setShowRetryButton(true);
@@ -382,7 +397,7 @@ function RoleBasedRedirect() {
               doOpenLogin();
             }
           }, 2000);
-        }, 500);
+        }, 1500);
       });
     } catch (e) {
       console.error("[Auth] openLoginBrowser failed:", e);
