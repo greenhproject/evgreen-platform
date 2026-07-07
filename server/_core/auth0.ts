@@ -99,11 +99,18 @@ export function registerAuth0Routes(app: Express) {
         });
       }
 
+      const isMobile = req.query.platform === "mobile";
       const authUrl = client.authorizationUrl({
         scope: "openid profile email",
         redirect_uri: redirectUri,
         state,
-        prompt: "login",
+        // Web: prompt=login forces fresh auth, prevents cached session reuse.
+        // Mobile: prompt=select_account shows the device account picker on Android 17+
+        // (prompt=login shows a web form instead on newer Chrome). max_age=0 forces
+        // Auth0 to re-authenticate even if it has an active session, preventing silent
+        // auto-login after logout without requiring the web form from Google.
+        prompt: isMobile ? "select_account" : "login",
+        ...(isMobile ? { max_age: 0 } : {}),
       });
 
       res.redirect(authUrl);
