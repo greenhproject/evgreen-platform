@@ -2,8 +2,12 @@ import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { COOKIE_NAME, NATIVE_TOKEN_KEY } from "@shared/const";
 import { TRPCClientError } from "@trpc/client";
-import { Capacitor } from '@capacitor/core';
 import { useCallback, useEffect, useMemo } from "react";
+
+function isNativePlatform(): boolean {
+  return typeof (window as any).Capacitor !== 'undefined' &&
+    (window as any).Capacitor?.isNativePlatform?.() === true;
+}
 
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
@@ -18,7 +22,7 @@ export function useAuth(options?: UseAuthOptions) {
   const meQuery = trpc.auth.me.useQuery(undefined, {
     // On native, allow 1 retry for transient network errors post-login.
     // On web, retry:false prevents redirect loops when not authenticated.
-    retry: Capacitor.isNativePlatform() ? 1 : false,
+    retry: isNativePlatform() ? 1 : false,
     retryDelay: 2000,
     refetchOnWindowFocus: false,
   });
@@ -44,7 +48,7 @@ export function useAuth(options?: UseAuthOptions) {
       // Clear local cookie (set on evgreen://localhost, not app.evgreen.lat)
       document.cookie = `${COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
 
-      if (Capacitor.isNativePlatform()) {
+      if (isNativePlatform()) {
         // Do NOT call setData(null) or invalidate() before reloading on native.
         // setData(null) makes isAuthenticated=false → React re-renders → RoleBasedRedirect's
         // effect fires doOpenLogin() BEFORE window.location.reload() runs, opening a zombie
