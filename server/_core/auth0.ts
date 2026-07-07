@@ -99,16 +99,11 @@ export function registerAuth0Routes(app: Express) {
         });
       }
 
-      const isMobile = req.query.platform === "mobile";
       const authUrl = client.authorizationUrl({
         scope: "openid profile email",
         redirect_uri: redirectUri,
         state,
-        // Mobile: "select_account" shows the device's Google account picker instead of the
-        // web sign-in form. "login" forces web re-auth which blocks on Android when device
-        // accounts are already present (Chrome Custom Tab behavior).
-        // Web: "login" prevents auto-login from cached Auth0 sessions.
-        prompt: isMobile ? "select_account" : "login",
+        prompt: "login",
       });
 
       res.redirect(authUrl);
@@ -200,7 +195,14 @@ export function registerAuth0Routes(app: Express) {
 
       if (isMobile) {
         console.log(`[Auth0] Mobile callback success → redirecting to native app`);
-        res.redirect(302, `com.greenhproject.evgreen://home?token=${sessionToken}`);
+        const deepLink = `com.greenhproject.evgreen://home?token=${sessionToken}`;
+        // Serve an HTML page that redirects via JS instead of a 302.
+        // Chrome Custom Tab on Android 17+ does not fire the custom-scheme intent
+        // from a server-side 302 redirect, but does fire it from a JS window.location
+        // assignment. iOS SFSafariViewController handles both correctly.
+        res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<script>window.location.href="${deepLink}";</script>
+</head><body></body></html>`);
       } else {
         res.redirect(302, "/");
       }
