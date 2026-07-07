@@ -1503,7 +1503,7 @@ function App() {
                 <Router />
                 <Suspense fallback={null}>
                   <ActiveChargingBanner />
-                  <AIChatWidget />
+                  {isAuthenticated && <AIChatWidget />}
                   <InstallBanner />
                 </Suspense>
               </>
