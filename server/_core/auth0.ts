@@ -75,10 +75,13 @@ export function registerAuth0Routes(app: Express) {
       const origin = getOrigin(req);
       const redirectUri = `${origin}/api/auth/callback`;
 
-      // Generate state for CSRF protection
-      const state = generators.state();
+      // Encode mobile flag directly in state so it survives the OAuth redirect chain
+      // without relying on cookies (which can be partitioned or blocked in Chrome CCT).
+      const nonce = generators.state();
+      const isMobilePlatform = req.query.platform === "mobile";
+      const state = isMobilePlatform ? `${nonce}:m` : nonce;
 
-      // Store state in a short-lived cookie
+      // Store state in a short-lived cookie for CSRF validation
       const isSecure = origin.startsWith("https");
       res.cookie("auth0_state", state, {
         httpOnly: true,
@@ -87,17 +90,6 @@ export function registerAuth0Routes(app: Express) {
         maxAge: 5 * 60 * 1000, // 5 minutes
         path: "/",
       });
-
-      // Track mobile logins so callback can redirect to the native app
-      if (req.query.platform === "mobile") {
-        res.cookie("auth0_mobile", "1", {
-          httpOnly: true,
-          secure: isSecure,
-          sameSite: isSecure ? "none" : "lax",
-          maxAge: 5 * 60 * 1000,
-          path: "/",
-        });
-      }
 
       const authUrl = client.authorizationUrl({
         scope: "openid profile email",
@@ -125,16 +117,21 @@ export function registerAuth0Routes(app: Express) {
       const origin = getOrigin(req);
       const redirectUri = `${origin}/api/auth/callback`;
 
-      // Get the state from cookie
+      // Get the state from cookie and extract mobile flag from the state value itself
       const storedState = req.cookies?.auth0_state;
-
       const params = client.callbackParams(req);
+
+      // Mobile flag is encoded as ":m" suffix in the state to survive cross-site redirects
+      const incomingState: string = (params as any).state || '';
+      const isMobile = incomingState.endsWith(':m') || req.cookies?.auth0_mobile === "1";
+
       const tokenSet = await client.callback(redirectUri, params, {
         state: storedState,
       });
 
-      // Clear the state cookie
+      // Clear state and legacy mobile cookies
       res.clearCookie("auth0_state", { path: "/" });
+      res.clearCookie("auth0_mobile", { path: "/" });
 
       // Get user info from Auth0
       const userInfo = await client.userinfo(tokenSet.access_token!);
@@ -190,12 +187,13 @@ export function registerAuth0Routes(app: Express) {
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      const isMobile = req.cookies?.auth0_mobile === "1";
-      res.clearCookie("auth0_mobile", { path: "/" });
-
       if (isMobile) {
         console.log(`[Auth0] Mobile callback success → redirecting to native app`);
-        res.redirect(302, `com.greenhproject.evgreen://home?token=${sessionToken}`);
+        const deepLink = `com.greenhproject.evgreen://home?token=${encodeURIComponent(sessionToken)}`;
+        // Chrome Custom Tab on Android 13+ blocks 302 redirects to custom URL schemes.
+        // A JS window.location assignment is not blocked and fires the Android intent correctly.
+        // iOS SFSafariViewController handles both methods.
+        res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><script>window.location.href=${JSON.stringify(deepLink)};</script></head><body></body></html>`);
       } else {
         res.redirect(302, "/");
       }
