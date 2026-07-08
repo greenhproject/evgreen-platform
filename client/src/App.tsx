@@ -137,6 +137,7 @@ const SpaceLetterAccept = lazy(() => import("./pages/SpaceLetterAccept"));
 const Crowdfunding = lazy(() => import("./pages/Crowdfunding"));
 const AdminSpaces = lazy(() => import("./pages/admin/Spaces"));
 const AdminOccupancyLiquidations = lazy(() => import("./pages/admin/OccupancyLiquidations"));
+const AdminFeedback = lazy(() => import("./pages/admin/Feedback"));
 
 // Páginas de Aliado Comercial (Host)
 const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
@@ -911,6 +912,15 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin", "staff"]}>
             <AdminLayout>
               <AdminOrganizations />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* Feedback de sesiones de carga */}
+        <Route path="/admin/feedback">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminFeedback />
             </AdminLayout>
           </ProtectedRoute>
         </Route>

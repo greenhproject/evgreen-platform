@@ -3929,3 +3929,16 @@ export const whatsappNotificationLog = mysqlTable("whatsapp_notification_log", {
 });
 export type WhatsappNotificationLog = typeof whatsappNotificationLog.$inferSelect;
 export type InsertWhatsappNotificationLog = typeof whatsappNotificationLog.$inferInsert;
+
+// ─── Feedback de Sesión de Carga ──────────────────────────────────────────────
+export const sessionFeedback = mysqlTable("session_feedback", {
+  id: int("id").autoincrement().primaryKey(),
+  transactionId: int("transactionId").notNull(),
+  userId: int("userId").notNull(),
+  stationId: int("stationId"),
+  rating: int("rating").notNull(), // 1=Muy mala, 2=Mala, 3=Regular, 4=Buena, 5=Excelente
+  comment: varchar("comment", { length: 300 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type SessionFeedback = typeof sessionFeedback.$inferSelect;
+export type InsertSessionFeedback = typeof sessionFeedback.$inferInsert;

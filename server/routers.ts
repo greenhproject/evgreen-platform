@@ -17,7 +17,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { getDb } from "./db";
-import { users, userVehicles, favoriteStations, notifications } from "../drizzle/schema";
+import { users, userVehicles, favoriteStations, notifications, sessionFeedback } from "../drizzle/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { aiRouter } from "./ai/ai-router";
 import { wompiRouter } from "./wompi/router";
@@ -7157,6 +7157,149 @@ const nocRouter = router({
   }),
 });
 
+// ─── Router de Feedback de Sesión de Carga ──────────────────────────────────
+const feedbackRouter = router({
+  // Enviar calificación al terminar una sesión
+  submit: protectedProcedure
+    .input(z.object({
+      transactionId: z.number().int().positive(),
+      rating: z.number().int().min(1).max(5),
+      comment: z.string().max(300).optional(),
+      stationId: z.number().int().positive().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+      // Verificar que no haya feedback previo para esta transacción
+      const existing = await database.select({ id: sessionFeedback.id })
+        .from(sessionFeedback)
+        .where(eq(sessionFeedback.transactionId, input.transactionId))
+        .limit(1);
+      if (existing.length > 0) {
+        throw new TRPCError({ code: "CONFLICT", message: "Ya enviaste feedback para esta sesión." });
+      }
+      await database.insert(sessionFeedback).values({
+        transactionId: input.transactionId,
+        userId: ctx.user.id,
+        stationId: input.stationId ?? null,
+        rating: input.rating,
+        comment: input.comment ?? null,
+      });
+      // Notificar al admin si la calificación es baja (1 o 2)
+      if (input.rating <= 2) {
+        const { notifyOwner } = await import("./_core/notification");
+        const ratingLabel = input.rating === 1 ? "Muy mala" : "Mala";
+        await notifyOwner({
+          title: `⚠️ Feedback negativo en sesión #${input.transactionId}`,
+          content: `Usuario ID ${ctx.user.id} calificó su sesión de carga con **${ratingLabel} (${input.rating}/5)**.${
+            input.comment ? `\n\nComentario: "${input.comment}"` : ""
+          }\n\nEstación ID: ${input.stationId ?? "desconocida"}`,
+        });
+      }
+      return { success: true };
+    }),
+
+  // Verificar si ya existe feedback para una transacción
+  checkExists: protectedProcedure
+    .input(z.object({ transactionId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return { exists: false };
+      const existing = await database.select({ id: sessionFeedback.id })
+        .from(sessionFeedback)
+        .where(eq(sessionFeedback.transactionId, input.transactionId))
+        .limit(1);
+      return { exists: existing.length > 0 };
+    }),
+
+  // Admin: listar todos los feedbacks con paginación
+  adminList: adminProcedure
+    .input(z.object({
+      page: z.number().int().min(1).default(1),
+      limit: z.number().int().min(1).max(100).default(20),
+      minRating: z.number().int().min(1).max(5).optional(),
+      maxRating: z.number().int().min(1).max(5).optional(),
+      stationId: z.number().int().positive().optional(),
+    }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return { items: [], total: 0, page: 1, totalPages: 0, avgRating: null };
+      const offset = (input.page - 1) * input.limit;
+      const conditions: any[] = [];
+      if (input.minRating !== undefined) conditions.push(sql`${sessionFeedback.rating} >= ${input.minRating}`);
+      if (input.maxRating !== undefined) conditions.push(sql`${sessionFeedback.rating} <= ${input.maxRating}`);
+      if (input.stationId !== undefined) conditions.push(eq(sessionFeedback.stationId, input.stationId));
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [items, totals] = await Promise.all([
+        database.select({
+          id: sessionFeedback.id,
+          transactionId: sessionFeedback.transactionId,
+          userId: sessionFeedback.userId,
+          stationId: sessionFeedback.stationId,
+          rating: sessionFeedback.rating,
+          comment: sessionFeedback.comment,
+          createdAt: sessionFeedback.createdAt,
+          userName: users.name,
+          userEmail: users.email,
+        })
+          .from(sessionFeedback)
+          .leftJoin(users, eq(sessionFeedback.userId, users.id))
+          .where(whereClause)
+          .orderBy(sql`${sessionFeedback.createdAt} DESC`)
+          .limit(input.limit)
+          .offset(offset),
+        database.select({ total: sql<number>`COUNT(*)` })
+          .from(sessionFeedback)
+          .where(whereClause),
+      ]);
+
+      const total = Number(totals[0]?.total ?? 0);
+      const avgResult = await database.select({ avg: sql<number>`AVG(${sessionFeedback.rating})` })
+        .from(sessionFeedback)
+        .where(whereClause);
+
+      return {
+        items,
+        total,
+        page: input.page,
+        totalPages: Math.ceil(total / input.limit),
+        avgRating: avgResult[0]?.avg ? parseFloat(String(avgResult[0].avg)).toFixed(1) : null,
+      };
+    }),
+
+  // Admin: resumen de calificaciones por estación
+  adminSummary: adminProcedure
+    .query(async () => {
+      const database = await getDb();
+      if (!database) return [];
+      const summary = await database.select({
+        stationId: sessionFeedback.stationId,
+        total: sql<number>`COUNT(*)`,
+        avgRating: sql<number>`AVG(${sessionFeedback.rating})`,
+        rating1: sql<number>`SUM(CASE WHEN ${sessionFeedback.rating} = 1 THEN 1 ELSE 0 END)`,
+        rating2: sql<number>`SUM(CASE WHEN ${sessionFeedback.rating} = 2 THEN 1 ELSE 0 END)`,
+        rating3: sql<number>`SUM(CASE WHEN ${sessionFeedback.rating} = 3 THEN 1 ELSE 0 END)`,
+        rating4: sql<number>`SUM(CASE WHEN ${sessionFeedback.rating} = 4 THEN 1 ELSE 0 END)`,
+        rating5: sql<number>`SUM(CASE WHEN ${sessionFeedback.rating} = 5 THEN 1 ELSE 0 END)`,
+      })
+        .from(sessionFeedback)
+        .groupBy(sessionFeedback.stationId)
+        .orderBy(sql`AVG(${sessionFeedback.rating}) ASC`);
+
+      return summary.map(s => ({
+        stationId: s.stationId,
+        total: Number(s.total),
+        avgRating: parseFloat(String(s.avgRating)).toFixed(1),
+        distribution: {
+          1: Number(s.rating1), 2: Number(s.rating2), 3: Number(s.rating3),
+          4: Number(s.rating4), 5: Number(s.rating5),
+        },
+      }));
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -7212,6 +7355,7 @@ export const appRouter = router({
   occupancyLiquidations: occupancyLiquidationsRouter,
   whatsapp: whatsappRouter,
   noc: nocRouter,
+  feedback: feedbackRouter,
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

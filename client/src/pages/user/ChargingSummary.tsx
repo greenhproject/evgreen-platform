@@ -38,6 +38,7 @@ import {
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
+import SessionFeedbackModal from "@/components/SessionFeedbackModal";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { savePdfCrossPlatform } from "@/lib/pdf-download";
@@ -222,11 +223,18 @@ export default function ChargingSummary() {
   
   // Estado para controlar la animación de confetti
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const feedbackShownRef = useRef(false);
   
   // Efecto para lanzar confetti cuando se carga la transacción completada
   useEffect(() => {
     if (transaction && transaction.status !== "IN_PROGRESS" && !showConfetti) {
       setShowConfetti(true);
+      // Mostrar modal de feedback 4 segundos después del confetti
+      if (!feedbackShownRef.current) {
+        feedbackShownRef.current = true;
+        setTimeout(() => setShowFeedback(true), 4000);
+      }
       
       const duration = 3000;
       const animationEnd = Date.now() + duration;
@@ -863,6 +871,16 @@ export default function ChargingSummary() {
         </div>
       </div>
       
+      {/* Modal de feedback */}
+      {showFeedback && (
+        <SessionFeedbackModal
+          transactionId={transaction.id}
+          stationId={transaction.stationId}
+          stationName={transaction.stationName}
+          onClose={() => setShowFeedback(false)}
+        />
+      )}
+
       {/* Banner publicitario */}
       <div className="px-4 mt-6">
         <ChargingSummaryBanner />

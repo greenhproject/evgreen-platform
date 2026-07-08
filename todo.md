@@ -3666,3 +3666,14 @@
 - [ ] Checklist de primer día en dashboard org (completa perfil, conecta cargador, configura tarifa, ¡listo!)
 - [ ] Página real de Facturación org (/org/billing) con liquidaciones del período e historial de pagos
 - [ ] Página real de API & Webhooks org (/org/api) con gestión de API keys propias de la org
+
+## Sistema de Feedback de Sesión de Carga
+
+- [ ] Agregar tabla session_feedback en schema.ts (sessionId, userId, rating 1-5, comment, stationId)
+- [ ] Migrar BD con nueva tabla
+- [ ] Crear procedimiento tRPC feedback.submit (protectedProcedure)
+- [ ] Crear procedimiento tRPC feedback.adminList (adminProcedure) con paginación y filtros
+- [ ] Crear componente SessionFeedbackModal.tsx con caritas/estrellas + comentario opcional
+- [ ] Disparar modal automáticamente al terminar sesión
+- [ ] Notificar al admin via notifyOwner cuando rating <= 2
+- [ ] Agregar sección de feedback en panel admin
