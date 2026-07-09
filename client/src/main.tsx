@@ -196,22 +196,20 @@ async function bootstrap() {
       }
       console.log("[Auth] Token recibido vía appUrlOpen:", token.substring(0, 10) + "...");
 
-      // Signal auth change immediately so browserFinished retry timer is cancelled
+      // Store token BEFORE dispatching the event so that any auth.me refetch
+      // triggered by the event finds the token already in localStorage.
+      setAuthCookie(token);
+
+      // Now signal auth change: cancels browserFinished retry timers and triggers auth.me refetch.
       window.dispatchEvent(new Event('evgreen-auth-updated'));
 
-      // Close SFSafariViewController
+      // Close SFSafariViewController / Chrome Custom Tab
       try {
         const { Browser } = await import('@capacitor/browser');
         await Browser.close();
       } catch (e) {
         console.warn("[Auth] Browser.close error:", e);
       }
-
-      // Always store in localStorage first so Authorization: Bearer header is available.
-      // On Android, Chromium rejects SameSite=None cookies without Secure (HTTP dev server),
-      // so the server-side Set-Cookie response is silently ignored. localStorage is the
-      // reliable channel in all environments.
-      setAuthCookie(token);
 
       // Also exchange token server-side (best-effort) to set an httpOnly cookie via
       // Set-Cookie — useful on HTTPS where cross-origin cookies work correctly.

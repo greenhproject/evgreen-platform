@@ -189,10 +189,15 @@ export function registerAuth0Routes(app: Express) {
 
       if (isMobile) {
         console.log(`[Auth0] Mobile callback success → redirecting to native app`);
-        const deepLink = `com.greenhproject.evgreen://home?token=${encodeURIComponent(sessionToken)}`;
-        // Chrome Custom Tab on Android 13+ blocks 302 redirects to custom URL schemes.
-        // A JS window.location assignment is not blocked and fires the Android intent correctly.
-        // iOS SFSafariViewController handles both methods.
+        const encodedToken = encodeURIComponent(sessionToken);
+        const ua = req.headers['user-agent'] || '';
+        const isAndroid = /Android/i.test(ua);
+        // Android: use intent:// format — works in ALL Chrome/CCT versions.
+        // Bare custom URL schemes (com.xxx://) are blocked in Chrome CCT on some Android versions.
+        // iOS: SFSafariViewController handles custom URL schemes reliably.
+        const deepLink = isAndroid
+          ? `intent://home?token=${encodedToken}#Intent;scheme=com.greenhproject.evgreen;package=com.greenhproject.evgreen;end`
+          : `com.greenhproject.evgreen://home?token=${encodedToken}`;
         res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><script>window.location.href=${JSON.stringify(deepLink)};</script></head><body></body></html>`);
       } else {
         res.redirect(302, "/");
