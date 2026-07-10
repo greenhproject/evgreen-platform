@@ -24,7 +24,7 @@ import { wompiRouter } from "./wompi/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
 import { dualCSMS } from "./ocpp/csms-dual";
 import * as ocppManager from "./ocpp/connection-manager";
-import { chargingRouter } from "./charging/charging-router";
+import { chargingRouter, getAllActiveSessionsPower } from "./charging/charging-router";
 import { pushRouter } from "./push/push-router";
 import { generateExcelReport, generatePDFReport } from "./reports/export-transactions";
 import { sendBroadcastNotification, getNotificationStats, getBroadcastHistory } from "./notifications/broadcast-service";
@@ -6936,6 +6936,33 @@ const nocRouter = router({
     const activeTxs = await dbInst.select().from(transactions)
       .where(eqOp(transactions.status, "IN_PROGRESS"));
 
+    // Potencia real de sesiones activas (desde memoria — MeterValues en tiempo real)
+    const liveSessionPower = getAllActiveSessionsPower();
+
+    // Fallback: si la sesión no está en memoria (reinicio del servidor), buscar último MeterValue en BD
+    // Solo para transacciones sin datos en memoria
+    const txIdsWithoutLiveData = activeTxs
+      .filter(tx => !liveSessionPower.has(tx.id))
+      .map(tx => tx.id);
+    const fallbackPowerMap = new Map<number, number>();
+    if (txIdsWithoutLiveData.length > 0) {
+      try {
+        const { meterValues } = await import("../drizzle/schema");
+        const { sql: sqlRaw } = await import("drizzle-orm");
+        // Obtener el último MeterValue con powerKw para cada transacción sin datos en memoria
+        for (const txId of txIdsWithoutLiveData) {
+          const lastMv = await dbInst.select({ powerKw: meterValues.powerKw })
+            .from(meterValues)
+            .where(eqOp(meterValues.transactionId, txId))
+            .orderBy(desc(meterValues.timestamp))
+            .limit(1);
+          if (lastMv.length > 0 && lastMv[0].powerKw !== null) {
+            fallbackPowerMap.set(txId, parseFloat(lastMv[0].powerKw?.toString() || "0"));
+          }
+        }
+      } catch { /* fallback silencioso */ }
+    }
+
     // KPIs del día
     const todayStats = await dbInst.select({
       count: count(),
@@ -7040,7 +7067,19 @@ const nocRouter = router({
       const chargingEvses = stationEvses.filter(e => activeTxByEvse.has(e.id));
       const availableEvses = stationEvses.filter(e => e.status === "AVAILABLE" && !activeTxByEvse.has(e.id));
       const faultedEvses = stationEvses.filter(e => e.status === "FAULTED");
-      const totalPowerKw = chargingEvses.reduce((sum, e) => sum + parseFloat(e.powerKw?.toString() || "0"), 0);
+      // Calcular potencia real usando MeterValues (desde memoria o BD), no la potencia nominal del EVSE
+      const totalPowerKw = chargingEvses.reduce((sum, e) => {
+        const tx = activeTxByEvse.get(e.id);
+        if (!tx) return sum;
+        // 1. Potencia real desde sesión en memoria (MeterValues en tiempo real)
+        const liveData = liveSessionPower.get(tx.id);
+        if (liveData && liveData.currentPower > 0) return sum + liveData.currentPower;
+        // 2. Fallback: último MeterValue desde BD (si el servidor se reinició)
+        const fallbackPower = fallbackPowerMap.get(tx.id);
+        if (fallbackPower && fallbackPower > 0) return sum + fallbackPower;
+        // 3. Último recurso: potencia nominal del EVSE (estática)
+        return sum + parseFloat(e.powerKw?.toString() || "0");
+      }, 0);
 
       // Determinar estado general de la estación
       let overallStatus: "charging" | "available" | "offline" | "faulted" | "inactive" = "inactive";
@@ -7078,12 +7117,23 @@ const nocRouter = router({
           powerKw: e.powerKw,
           status: e.status,
           isCharging: activeTxByEvse.has(e.id),
-          currentTx: activeTxByEvse.get(e.id) ? {
-            id: activeTxByEvse.get(e.id)!.id,
-            kwhConsumed: activeTxByEvse.get(e.id)!.kwhConsumed,
-            totalCost: activeTxByEvse.get(e.id)!.totalCost,
-            startTime: activeTxByEvse.get(e.id)!.startTime,
-          } : null,
+          currentTx: activeTxByEvse.get(e.id) ? (() => {
+            const tx = activeTxByEvse.get(e.id)!;
+            const liveData = liveSessionPower.get(tx.id);
+            const fallbackPower = fallbackPowerMap.get(tx.id);
+            const realPower = (liveData && liveData.currentPower > 0)
+              ? liveData.currentPower
+              : (fallbackPower && fallbackPower > 0 ? fallbackPower : 0);
+            return {
+              id: tx.id,
+              kwhConsumed: liveData ? liveData.currentKwh.toFixed(4) : tx.kwhConsumed,
+              totalCost: tx.totalCost,
+              startTime: tx.startTime,
+              currentPower: Math.round(realPower * 10) / 10,
+              soc: liveData?.soc ?? null,
+              lastMeterUpdate: liveData?.lastMeterUpdate ?? null,
+            };
+          })() : null,
         })),
       };
     });

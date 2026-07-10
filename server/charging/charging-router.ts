@@ -2038,6 +2038,24 @@ export function getActiveSessionPowerHistory(transactionId: number): PowerHistor
 }
 
 /**
+ * Obtener potencia real actual de todas las sesiones activas en memoria.
+ * Retorna un mapa transactionId -> { currentPower, currentKwh, soc, lastMeterUpdate }
+ * Usado por el NOC y dashboards para mostrar potencia real en lugar de potencia nominal.
+ */
+export function getAllActiveSessionsPower(): Map<number, { currentPower: number; currentKwh: number; soc: number | null; lastMeterUpdate: Date | null }> {
+  const result = new Map<number, { currentPower: number; currentKwh: number; soc: number | null; lastMeterUpdate: Date | null }>();
+  for (const [txId, session] of Array.from(activeChargeSessions.entries())) {
+    result.set(txId, {
+      currentPower: session.currentPower || 0,
+      currentKwh: session.currentKwh || 0,
+      soc: session.soc ?? null,
+      lastMeterUpdate: session.lastMeterUpdate ?? null,
+    });
+  }
+  return result;
+}
+
+/**
  * Buscar sesión pendiente por stationId y connectorId (para vincular con StartTransaction OCPP)
  */
 export function findPendingSessionByStation(stationId: number, connectorId: number): { sessionId: string; session: ReturnType<typeof getPendingSession> } | null {
