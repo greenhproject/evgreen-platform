@@ -19,15 +19,36 @@ import * as simulator from "./charging-simulator";
 import { sendUserPush } from "../push/unified-push";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
-function getConnectionByStationId(stationId: number) {
+// Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
+// (ocurre después de reinicio del servidor antes de que se resuelva el stationId)
+function getConnectionByStationId(stationId: number, ocppIdentity?: string) {
+  // 1. Intento principal: buscar por stationId en dualCSMS (camino más rápido)
   const dualConn = dualCSMS.getConnectionByStationId(stationId);
   if (dualConn) {
     return {
       ocppIdentity: dualConn.ocppIdentity,
       ws: dualConn.ws,
-      connectorStatuses: new Map<number, string>(), // dualCSMS no trackea esto directamente
+      connectorStatuses: new Map<number, string>(),
     };
   }
+
+  // 2. Fallback: buscar en dualCSMS por ocppIdentity (maneja stationId=null tras reinicio)
+  if (ocppIdentity) {
+    const conn = (dualCSMS as any).connections?.get(ocppIdentity);
+    if (conn && conn.ws?.readyState === 1) {
+      // Reparar el stationId en caché para que futuros lookups por stationId funcionen
+      if (!conn.stationId) {
+        dualCSMS.updateExternalConnectionStationId(ocppIdentity, stationId);
+      }
+      return {
+        ocppIdentity,
+        ws: conn.ws,
+        connectorStatuses: new Map<number, string>(),
+      };
+    }
+  }
+
+  // 3. Fallback legacy
   return legacyGetConnectionByStationId(stationId);
 }
 
@@ -237,8 +258,14 @@ export const chargingRouter = router({
       const connectors = await db.getEvsesByStationId(station.id);
       
       // Verificar si la estación está conectada al servidor OCPP
-      const ocppConnection = getConnectionByStationId(station.id);
-      const isOcppConnected = !!ocppConnection && ocppConnection.ws.readyState === 1;
+      // Se pasa ocppIdentity para que el helper pueda buscar por identidad cuando stationId=null
+      const ocppConnection = getConnectionByStationId(station.id, stationOcppId);
+      // También verificar directamente en dualCSMS por ocppIdentity (más robusto ante stationId=null)
+      const isDualConnectedByIdentity = stationOcppId
+        ? dualCSMS.isStationConnected(stationOcppId) && 
+          (() => { const c = (dualCSMS as any).connections?.get(stationOcppId); return c?.ws?.readyState === 1; })()
+        : false;
+      const isOcppConnected = isDualConnectedByIdentity || (!!ocppConnection && ocppConnection.ws?.readyState === 1);
       
       // La estación está online si:
       // 1. Es estación demo (siempre online), O
