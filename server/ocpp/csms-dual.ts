@@ -64,9 +64,16 @@ interface ChargingStationConnection {
   ocppIdentity: string;
   ocppVersion: OCPPVersion;
   connectedAt: Date;
+  originalConnectedAt: Date;        // Timestamp de la primera conexión (no se resetea en reconexiones seamless)
   lastHeartbeat: Date;
+  lastMessage: Date;                 // Timestamp del último mensaje recibido
   messageIdCounter: number;
   pendingCalls: Map<string, { resolve: (value: any) => void; reject: (error: any) => void; timeout: NodeJS.Timeout }>;
+  // Estado persistente (sobrevive reconexiones seamless)
+  connectorStatuses: Map<number, string>;  // connectorId -> status OCPP
+  bootInfo: { vendor?: string; model?: string; serialNumber?: string; firmwareVersion?: string } | undefined;
+  seamlessReconnections: number;
+  lastSeamlessReconnect: Date | null;
 }
 
 // OCPP Message Types
@@ -238,9 +245,23 @@ export class DualCSMS {
   private isRunning: boolean = false;
   private transactionIdCounter: number = 1;
   private ocpp16Transactions: Map<number, string> = new Map(); // OCPP 1.6 transactionId -> internal transactionId
-  private reconnectionGrace: Map<string, NodeJS.Timeout> = new Map(); // Grace period para reconexión
+  private reconnectionGrace: Map<string, NodeJS.Timeout> = new Map(); // Grace period para reconexión (legacy, mantenido para compatibilidad)
   private pingIntervals: Map<string, NodeJS.Timeout> = new Map(); // Ping keepalive intervals
   private static GRACE_PERIOD_MS = 300000; // 5 minutos de gracia para reconexión (evitar notificaciones por desconexiones temporales)
+  // Estado persistente durante grace period (fuente única de verdad para estado de conexión)
+  private gracePeriodStates: Map<string, {
+    stationId: number | null;
+    ocppVersion: OCPPVersion;
+    originalConnectedAt: Date;
+    lastHeartbeat: Date;
+    lastMessage: Date;
+    connectorStatuses: Map<number, string>;
+    bootInfo: { vendor?: string; model?: string; serialNumber?: string; firmwareVersion?: string } | undefined;
+    seamlessReconnections: number;
+    lastSeamlessReconnect: Date | null;
+    gracePeriodStart: Date;
+  }> = new Map();
+  private gracePeriodTimers: Map<string, NodeJS.Timeout> = new Map(); // Timers de grace period
   private static PING_INTERVAL_MS = 20000; // Ping cada 20 segundos (debe ser < timeout del proxy ~120-180s)
 
   constructor() {
@@ -344,15 +365,33 @@ export class DualCSMS {
       }
 
       // Registrar la conexión con stationId ya resuelto
+      // Restaurar estado persistente si hay una reconexión seamless
+      const prevConn = this.connections.get(ocppIdentity);
+      const gracePrevState = this.gracePeriodStates.get(ocppIdentity);
+      const isSeamless = gracePrevState !== undefined;
+      if (isSeamless) {
+        // Cancelar el timer de grace period
+        const timer = this.gracePeriodTimers.get(ocppIdentity);
+        if (timer) { clearTimeout(timer); this.gracePeriodTimers.delete(ocppIdentity); }
+        this.gracePeriodStates.delete(ocppIdentity);
+        console.log(`[CSMS-DUAL] ⚡ SEAMLESS RECONNECTION #${(gracePrevState.seamlessReconnections || 0) + 1}: ${ocppIdentity}`);
+      }
+      const now = new Date();
       const connection: ChargingStationConnection = {
         ws,
-        stationId: preResolvedStationId,
+        stationId: preResolvedStationId ?? (gracePrevState?.stationId ?? null),
         ocppIdentity,
         ocppVersion,
-        connectedAt: new Date(),
-        lastHeartbeat: new Date(),
+        connectedAt: now,
+        originalConnectedAt: gracePrevState?.originalConnectedAt ?? now,
+        lastHeartbeat: now,
+        lastMessage: now,
         messageIdCounter: 0,
         pendingCalls: new Map(),
+        connectorStatuses: gracePrevState?.connectorStatuses ?? new Map(),
+        bootInfo: gracePrevState?.bootInfo,
+        seamlessReconnections: isSeamless ? (gracePrevState.seamlessReconnections || 0) + 1 : 0,
+        lastSeamlessReconnect: isSeamless ? now : null,
       };
       this.connections.set(ocppIdentity, connection);
 
@@ -2423,16 +2462,14 @@ export class DualCSMS {
    * Las alertas y grace periods son responsabilidad EXCLUSIVA de index.ts + connection-manager.
    * Este handler solo limpia el estado interno del dualCSMS (pendingCalls, conexión del mapa).
    */
-  private async handleDisconnection(ocppIdentity: string): Promise<void> {
+    private async handleDisconnection(ocppIdentity: string): Promise<void> {
     const conn = this.connections.get(ocppIdentity);
-    
     // Limpiar ping interval
     const pingInterval = this.pingIntervals.get(ocppIdentity);
     if (pingInterval) {
       clearInterval(pingInterval);
       this.pingIntervals.delete(ocppIdentity);
     }
-    
     // Limpiar pending calls
     if (conn) {
       conn.pendingCalls.forEach((pending) => {
@@ -2440,10 +2477,34 @@ export class DualCSMS {
         pending.reject(new Error("Connection closed"));
       });
     }
-    
+    // Guardar estado persistente en grace period ANTES de eliminar la conexión
+    // Esto permite reconexiones seamless y que isStationOnline() retorne true durante el grace period
+    if (conn) {
+      const existingGraceTimer = this.gracePeriodTimers.get(ocppIdentity);
+      if (existingGraceTimer) { clearTimeout(existingGraceTimer); }
+      this.gracePeriodStates.set(ocppIdentity, {
+        stationId: conn.stationId,
+        ocppVersion: conn.ocppVersion,
+        originalConnectedAt: conn.originalConnectedAt,
+        lastHeartbeat: conn.lastHeartbeat,
+        lastMessage: conn.lastMessage,
+        connectorStatuses: new Map(conn.connectorStatuses),
+        bootInfo: conn.bootInfo,
+        seamlessReconnections: conn.seamlessReconnections,
+        lastSeamlessReconnect: conn.lastSeamlessReconnect,
+        gracePeriodStart: new Date(),
+      });
+      const graceTimer = setTimeout(() => {
+        // Grace period expirado sin reconexión → desconexión real
+        this.gracePeriodStates.delete(ocppIdentity);
+        this.gracePeriodTimers.delete(ocppIdentity);
+        console.log(`[CSMS-DUAL] ❌ Grace period expired for ${ocppIdentity} — marking as truly offline`);
+      }, DualCSMS.GRACE_PERIOD_MS);
+      this.gracePeriodTimers.set(ocppIdentity, graceTimer);
+      console.log(`[CSMS-DUAL] ⏳ Grace period started for ${ocppIdentity} (${DualCSMS.GRACE_PERIOD_MS / 1000}s)`);
+    }
     // Eliminar la conexión del mapa inmediatamente
     this.connections.delete(ocppIdentity);
-
     // Log de desconexión para auditoría (sin generar alertas — eso lo hace index.ts)
     try {
       await db.createOcppLog({
@@ -2456,7 +2517,6 @@ export class DualCSMS {
     } catch (err) {
       console.error(`[CSMS-DUAL] Error logging disconnection:`, err);
     }
-
     console.log(`[CSMS-DUAL] Connection cleaned up: ${ocppIdentity} (alerts/grace handled by index.ts)`);
   }
 
@@ -2804,16 +2864,207 @@ export class DualCSMS {
   /**
    * Verifica si una estación está conectada
    */
+    /**
+   * Verifica si una estación está conectada (WebSocket OPEN).
+   * @deprecated Usar isStationOnline() que también cubre el grace period.
+   */
   isStationConnected(ocppIdentity: string): boolean {
-    return this.connections.has(ocppIdentity);
+    const conn = this.connections.get(ocppIdentity);
+    return conn !== undefined && conn.ws.readyState === 1;
+  }
+
+  /**
+   * Fuente única de verdad para el estado online de una estación.
+   * Retorna true si:
+   *   1. El WebSocket está abierto (readyState === OPEN), O
+   *   2. Está en grace period (desconexión temporal, esperando reconexión)
+   * Esto elimina los falsos "Sin conexión" por ciclos de proxy o reinicios breves.
+   */
+  isStationOnline(ocppIdentity: string): boolean {
+    const conn = this.connections.get(ocppIdentity);
+    if (conn && conn.ws.readyState === 1) return true;
+    return this.gracePeriodStates.has(ocppIdentity);
+  }
+
+  /**
+   * Verifica si una estación está en grace period (desconexión temporal).
+   */
+  isInGracePeriod(ocppIdentity: string): boolean {
+    return this.gracePeriodStates.has(ocppIdentity);
+  }
+
+  /**
+   * Actualiza el heartbeat de una estación (llamado desde index.ts al recibir Heartbeat).
+   */
+  updateHeartbeat(ocppIdentity: string): void {
+    const conn = this.connections.get(ocppIdentity);
+    if (conn) {
+      conn.lastHeartbeat = new Date();
+      conn.lastMessage = new Date();
+    }
+  }
+
+  /**
+   * Actualiza el timestamp del último mensaje (llamado desde index.ts en cada mensaje).
+   */
+  updateLastMessage(ocppIdentity: string): void {
+    const conn = this.connections.get(ocppIdentity);
+    if (conn) conn.lastMessage = new Date();
+  }
+
+  /**
+   * Actualiza el estado de un conector (llamado desde index.ts al recibir StatusNotification).
+   */
+  updateConnectorStatus(ocppIdentity: string, connectorId: number, status: string): void {
+    const conn = this.connections.get(ocppIdentity);
+    if (conn) conn.connectorStatuses.set(connectorId, status);
+  }
+
+  /**
+   * Actualiza la información de boot (llamado desde index.ts al recibir BootNotification).
+   */
+  updateBootInfo(ocppIdentity: string, bootInfo: { vendor?: string; model?: string; serialNumber?: string; firmwareVersion?: string }, stationId?: number): void {
+    const conn = this.connections.get(ocppIdentity);
+    if (conn) {
+      conn.bootInfo = bootInfo;
+      if (stationId !== undefined) conn.stationId = stationId;
+    }
+  }
+
+  /**
+   * Obtiene la conexión activa de una estación por su stationId de BD.
+   * Busca primero por stationId resuelto, luego por ocppIdentity como fallback.
+   */
+  getConnectionByStationId(stationId: number): { ocppIdentity: string; ws: WebSocket; ocppVersion: OCPPVersion } | null {
+    const entries = Array.from(this.connections.entries());
+    for (let i = 0; i < entries.length; i++) {
+      const [identity, conn] = entries[i];
+      if (conn.stationId === stationId && conn.ws.readyState === 1) {
+        return { ocppIdentity: identity, ws: conn.ws, ocppVersion: conn.ocppVersion };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Obtiene todas las conexiones activas + estaciones en grace period.
+   * Reemplaza getAllConnections() del connection-manager legacy.
+   */
+  getAllConnectionsInfo(): Array<{
+    ocppIdentity: string;
+    ocppVersion: string;
+    stationId: number | null;
+    connectedAt: string;
+    lastHeartbeat: string;
+    lastMessage: string;
+    connectorStatuses: Record<string, string>;
+    bootInfo: { vendor?: string; model?: string; serialNumber?: string; firmwareVersion?: string } | undefined;
+    isConnected: boolean;
+    isInGracePeriod: boolean;
+    seamlessReconnections: number;
+    lastSeamlessReconnect: string | null;
+  }> {
+    const result: ReturnType<DualCSMS['getAllConnectionsInfo']> = [];
+    // Conexiones activas
+    for (const [identity, conn] of Array.from(this.connections.entries())) {
+      result.push({
+        ocppIdentity: identity,
+        ocppVersion: conn.ocppVersion,
+        stationId: conn.stationId,
+        connectedAt: conn.originalConnectedAt.toISOString(),
+        lastHeartbeat: conn.lastHeartbeat.toISOString(),
+        lastMessage: conn.lastMessage.toISOString(),
+        connectorStatuses: Object.fromEntries(conn.connectorStatuses),
+        bootInfo: conn.bootInfo,
+        isConnected: conn.ws.readyState === 1,
+        isInGracePeriod: false,
+        seamlessReconnections: conn.seamlessReconnections,
+        lastSeamlessReconnect: conn.lastSeamlessReconnect?.toISOString() ?? null,
+      });
+    }
+    // Estaciones en grace period (no están en connections pero aún se consideran online)
+    for (const [identity, state] of Array.from(this.gracePeriodStates.entries())) {
+      if (!this.connections.has(identity)) {
+        result.push({
+          ocppIdentity: identity,
+          ocppVersion: state.ocppVersion,
+          stationId: state.stationId,
+          connectedAt: state.originalConnectedAt.toISOString(),
+          lastHeartbeat: state.lastHeartbeat.toISOString(),
+          lastMessage: state.lastMessage.toISOString(),
+          connectorStatuses: Object.fromEntries(state.connectorStatuses),
+          bootInfo: state.bootInfo,
+          isConnected: false,
+          isInGracePeriod: true,
+          seamlessReconnections: state.seamlessReconnections,
+          lastSeamlessReconnect: state.lastSeamlessReconnect?.toISOString() ?? null,
+        });
+      }
+    }
+    return result;
   }
 
   /**
    * Obtiene la versión OCPP de una estación conectada
    */
-  getStationOCPPVersion(ocppIdentity: string): OCPPVersion | null {
+    getStationOCPPVersion(ocppIdentity: string): OCPPVersion | null {
     const conn = this.connections.get(ocppIdentity);
     return conn?.ocppVersion || null;
+  }
+
+  /**
+   * Obtiene información completa de una conexión (activa o en grace period).
+   * Usado por connection-manager como adaptador.
+   */
+  getConnectionInfo(ocppIdentity: string): {
+    ocppIdentity: string;
+    ocppVersion: string;
+    stationId: number | null;
+    connectedAt: string;
+    lastHeartbeat: string;
+    lastMessage: string;
+    connectorStatuses: Record<string, string>;
+    bootInfo: { vendor?: string; model?: string; serialNumber?: string; firmwareVersion?: string } | undefined;
+    isConnected: boolean;
+    isInGracePeriod: boolean;
+    seamlessReconnections: number;
+    lastSeamlessReconnect: string | null;
+  } | null {
+    const conn = this.connections.get(ocppIdentity);
+    if (conn) {
+      return {
+        ocppIdentity,
+        ocppVersion: conn.ocppVersion,
+        stationId: conn.stationId,
+        connectedAt: conn.originalConnectedAt.toISOString(),
+        lastHeartbeat: conn.lastHeartbeat.toISOString(),
+        lastMessage: conn.lastMessage.toISOString(),
+        connectorStatuses: Object.fromEntries(conn.connectorStatuses),
+        bootInfo: conn.bootInfo,
+        isConnected: conn.ws.readyState === 1,
+        isInGracePeriod: false,
+        seamlessReconnections: conn.seamlessReconnections,
+        lastSeamlessReconnect: conn.lastSeamlessReconnect?.toISOString() ?? null,
+      };
+    }
+    const grace = this.gracePeriodStates.get(ocppIdentity);
+    if (grace) {
+      return {
+        ocppIdentity,
+        ocppVersion: grace.ocppVersion,
+        stationId: grace.stationId,
+        connectedAt: grace.originalConnectedAt.toISOString(),
+        lastHeartbeat: grace.lastHeartbeat.toISOString(),
+        lastMessage: grace.lastMessage.toISOString(),
+        connectorStatuses: Object.fromEntries(grace.connectorStatuses),
+        bootInfo: grace.bootInfo,
+        isConnected: false,
+        isInGracePeriod: true,
+        seamlessReconnections: grace.seamlessReconnections,
+        lastSeamlessReconnect: grace.lastSeamlessReconnect?.toISOString() ?? null,
+      };
+    }
+    return null;
   }
 
   /**
@@ -2839,25 +3090,7 @@ export class DualCSMS {
     }
   }
 
-  /**
-   * Obtiene la conexión de un cargador por su stationId de la BD
-   */
-  getConnectionByStationId(stationId: number): { ocppIdentity: string; ws: WebSocket; ocppVersion: OCPPVersion } | null {
-    const entries = Array.from(this.connections.entries());
-    for (let i = 0; i < entries.length; i++) {
-      const [identity, conn] = entries[i];
-      if (conn.stationId === stationId && conn.ws.readyState === 1) {
-        return {
-          ocppIdentity: identity,
-          ws: conn.ws,
-          ocppVersion: conn.ocppVersion,
-        };
-      }
-    }
-    return null;
-  }
-
-  /**
+    /**
    * Envía un comando genérico si el cargador está conectado.
    * Retorna true si el comando fue enviado, false si no está conectado
    */
@@ -3087,15 +3320,31 @@ export class DualCSMS {
       });
     }
 
+    // Restaurar estado persistente si hay reconexión seamless
+    const extGracePrevState = this.gracePeriodStates.get(ocppIdentity);
+    const extIsSeamless = extGracePrevState !== undefined;
+    if (extIsSeamless) {
+      const timer = this.gracePeriodTimers.get(ocppIdentity);
+      if (timer) { clearTimeout(timer); this.gracePeriodTimers.delete(ocppIdentity); }
+      this.gracePeriodStates.delete(ocppIdentity);
+      console.log(`[CSMS-DUAL] ⚡ SEAMLESS RECONNECTION (external) #${(extGracePrevState.seamlessReconnections || 0) + 1}: ${ocppIdentity}`);
+    }
+    const extNow = new Date();
     const connection: ChargingStationConnection = {
       ws,
-      stationId,
+      stationId: stationId ?? (extGracePrevState?.stationId ?? null),
       ocppIdentity,
       ocppVersion,
-      connectedAt: new Date(),
-      lastHeartbeat: new Date(),
+      connectedAt: extNow,
+      originalConnectedAt: extGracePrevState?.originalConnectedAt ?? extNow,
+      lastHeartbeat: extNow,
+      lastMessage: extNow,
       messageIdCounter: 0,
       pendingCalls: new Map(),
+      connectorStatuses: extGracePrevState?.connectorStatuses ?? new Map(),
+      bootInfo: extGracePrevState?.bootInfo,
+      seamlessReconnections: extIsSeamless ? (extGracePrevState.seamlessReconnections || 0) + 1 : 0,
+      lastSeamlessReconnect: extIsSeamless ? extNow : null,
     };
     this.connections.set(ocppIdentity, connection);
     console.log(`[CSMS-DUAL] Registered external connection: ${ocppIdentity} (ocppVersion=${ocppVersion}, stationId=${stationId}, wsReadyState=${ws.readyState})`);

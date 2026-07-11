@@ -257,25 +257,14 @@ export const chargingRouter = router({
       // Obtener conectores de la estación
       const connectors = await db.getEvsesByStationId(station.id);
       
-      // Verificar si la estación está conectada al servidor OCPP
-      // Se pasa ocppIdentity para que el helper pueda buscar por identidad cuando stationId=null
-      const ocppConnection = getConnectionByStationId(station.id, stationOcppId);
-      // También verificar directamente en dualCSMS por ocppIdentity (más robusto ante stationId=null)
-      const isDualConnectedByIdentity = stationOcppId
-        ? dualCSMS.isStationConnected(stationOcppId) && 
-          (() => { const c = (dualCSMS as any).connections?.get(stationOcppId); return c?.ws?.readyState === 1; })()
-        : false;
-      const isOcppConnected = isDualConnectedByIdentity || (!!ocppConnection && ocppConnection.ws?.readyState === 1);
-      
-      // La estación está online si:
-      // 1. Es estación demo (siempre online), O
-      // 2. Tiene conexión OCPP activa (WebSocket abierto), O
-      // 3. Está en grace period (reconectando — mostrar como online para no confundir)
-      // NOTA: Ya NO se usa station.isOnline de BD como fallback porque puede estar
-      // desactualizado si el servidor se reinició sin actualizar la BD.
-      const inGracePeriod = getConnection(stationOcppId) === undefined && 
-        (await import('../ocpp/connection-manager')).isInGracePeriod(stationOcppId);
-      const isOnline = isDemo || isOcppConnected || inGracePeriod;
+      // ===== FUENTE ÚNICA DE VERDAD: dualCSMS.isStationOnline() =====
+      // Retorna true si: WebSocket OPEN (readyState===1) O grace period activo.
+      // Cubre todos los casos: conexión directa, stationId=null tras reinicio,
+      // reconexiones seamless por ciclos de proxy (~180s), etc.
+      const isOcppConnected = stationOcppId ? dualCSMS.isStationOnline(stationOcppId) : false;
+      const isOnline = isDemo || isOcppConnected;
+      // Obtener conexión WebSocket para comandos (solo si está realmente conectado)
+      const ocppConnection = isOcppConnected ? getConnectionByStationId(station.id, stationOcppId) : null;
       
       // Para estaciones demo, forzar conectores como AVAILABLE PERO respetar RESERVED
       // Para estaciones offline, marcar todos como UNAVAILABLE excepto CHARGING/RESERVED
@@ -327,19 +316,12 @@ export const chargingRouter = router({
       const { stationId } = input;
       
       const connectors = await db.getEvsesByStationId(stationId);
-      const ocppConnection = getConnectionByStationId(stationId);
-      
       // Verificar si es estación demo
       const station = await db.getChargingStationById(stationId);
       const isDemo = station?.ocppIdentity ? simulator.isDemoStation(station.ocppIdentity) : false;
-      
-      // Determinar si la estación está online usando connection-manager
+      // ===== FUENTE ÚNICA DE VERDAD: dualCSMS.isStationOnline() =====
       const stationOcppIdForAvail = station?.ocppIdentity || '';
-      const isOcppConnectedForAvail = !!ocppConnection && ocppConnection.ws.readyState === 1;
-      const { isInGracePeriod: checkGrace } = await import('../ocpp/connection-manager');
-      const inGracePeriodForAvail = !isOcppConnectedForAvail && stationOcppIdForAvail 
-        ? checkGrace(stationOcppIdForAvail) : false;
-      const stationIsOnline = isDemo || isOcppConnectedForAvail || inGracePeriodForAvail;
+      const stationIsOnline = isDemo || (stationOcppIdForAvail ? dualCSMS.isStationOnline(stationOcppIdForAvail) : false);
 
       // Combinar estado de BD con estado OCPP en tiempo real
       return connectors.map(c => {
@@ -353,16 +335,9 @@ export const chargingRouter = router({
           if (realTimeStatus !== 'CHARGING' && realTimeStatus !== 'RESERVED') {
             realTimeStatus = 'UNAVAILABLE' as typeof c.status;
           }
-        } else if (!isDemo && ocppConnection && ocppConnection.connectorStatuses.size > 0) {
-          const ocppStatus = ocppConnection.connectorStatuses.get(c.evseIdLocal);
-          if (ocppStatus) {
-            // No sobreescribir RESERVED con AVAILABLE del OCPP
-            if (realTimeStatus === 'RESERVED' && ocppStatus.toUpperCase() === 'AVAILABLE') {
-              // Mantener RESERVED
-            } else {
-              realTimeStatus = ocppStatus as typeof c.status;
-            }
-          }
+        } else if (!isDemo && stationIsOnline) {
+          // Está online: el estado de BD es la fuente de verdad (actualizado por StatusNotification OCPP).
+          // No necesitamos sobreescribir — el estado ya está sincronizado.
         }
         
         const normalizedStatus = realTimeStatus?.toUpperCase() || 'UNAVAILABLE';
@@ -660,29 +635,12 @@ export const chargingRouter = router({
         
         // Buscar conexión OCPP: primero por stationId, luego por ocppIdentity
         const hasOcppConnection = !!ocppConnection && ocppConnection.ws.readyState === 1;
-        let ocppIdentityForCommand = ocppConnection?.ocppIdentity || stationData?.ocppIdentity || '';
-        
-        // Si no hay conexión por stationId, intentar por ocppIdentity directamente
-        let isConnectedByIdentity = false;
-        if (!hasOcppConnection && ocppIdentityForCommand) {
-          isConnectedByIdentity = dualCSMS.isStationConnected(ocppIdentityForCommand);
-          if (isConnectedByIdentity) {
-            console.log(`[startCharge] No connection by stationId but found by ocppIdentity: ${ocppIdentityForCommand}`);
-          }
-        }
-        
-        // Verificar disponibilidad usando connection-manager (fuente de verdad):
-        // La estación está disponible SOLO si tiene conexión OCPP activa o está en grace period.
-        // Ya NO se usa isOnline de BD como fallback para evitar que estaciones offline
-        // aparezcan como disponibles cuando el servidor se reinicia.
+                const ocppIdentityForCommand = ocppConnection?.ocppIdentity || stationData?.ocppIdentity || '';
+        // ===== FUENTE ÚNICA DE VERDAD: dualCSMS.isStationOnline() =====
+        // Retorna true si WebSocket OPEN o grace period activo en dualCSMS.
         const stationOcppIdForStart = ocppIdentityForCommand || stationData?.ocppIdentity || '';
-        const { isInGracePeriod: checkGraceForStart } = await import('../ocpp/connection-manager');
-        const inGracePeriodForStart = stationOcppIdForStart 
-          ? checkGraceForStart(stationOcppIdForStart) : false;
-        
-        const isAvailable = hasOcppConnection || isConnectedByIdentity || inGracePeriodForStart;
-        
-        console.log(`[startCharge] Station ${stationId} availability: hasOcppConnection=${hasOcppConnection}, isConnectedByIdentity=${isConnectedByIdentity}, inGracePeriod=${inGracePeriodForStart}, isAvailable=${isAvailable}`);
+        const isAvailable = isDemo || (stationOcppIdForStart ? dualCSMS.isStationOnline(stationOcppIdForStart) : false);
+        console.log(`[startCharge] Station ${stationId} availability: isStationOnline(${stationOcppIdForStart})=${isAvailable}, isDemo=${isDemo}`);
         
         if (!isAvailable) {
           throw new TRPCError({
@@ -832,7 +790,7 @@ export const chargingRouter = router({
           if (commandMaySentAlready) {
             console.log(`[startCharge] Command may have been sent before connection died. Starting deferred retry with EVSE status check.`);
             startDeferredRemoteStart(sessionId, ocppIdentityForCommand, connectorId, idTag, { commandMaySentAlready: true });
-          } else if (hasOcppConnection || isConnectedByIdentity) {
+          } else if (isAvailable) {
             // Había conexión pero el envío falló completamente - iniciar deferred retry en vez de error
             console.log(`[startCharge] Connection existed but send failed. Starting deferred retry for session ${sessionId}`);
             startDeferredRemoteStart(sessionId, ocppIdentityForCommand, connectorId, idTag);

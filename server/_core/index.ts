@@ -638,7 +638,9 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
       stationId = station.id;
       // CRÍTICO: Actualizar stationId en el connection-manager para que getConnectionByStationId funcione
       connection.stationId = station.id;
-      console.log(`[OCPP] Pre-resolved stationId=${stationId} for ${ocppIdentity} at connection time (updated in connection-manager)`);
+      // CRÍTICO: Actualizar stationId en dualCSMS también (fuente única de verdad)
+      dualCSMS.updateExternalConnectionStationId(ocppIdentity, station.id);
+      console.log(`[OCPP] Pre-resolved stationId=${stationId} for ${ocppIdentity} at connection time (updated in connection-manager AND dualCSMS)`);
       // Marcar como online
       await db.updateStationOnlineStatus(ocppIdentity, true);
       
@@ -788,17 +790,20 @@ async function handleOCPPConnection(ws: WebSocket, ocppIdentity: string, ocppVer
             }, 3000); // Esperar 3s después de BootNotification para que el cargador esté listo
           }
           
-          // Actualizar heartbeat
+                    // Actualizar heartbeat
           if (action === "Heartbeat") {
             ocppManager.updateHeartbeat(ocppIdentity);
+            dualCSMS.updateHeartbeat(ocppIdentity); // Sincronizar en dualCSMS (fuente única de verdad)
           }
-          
+          // Actualizar timestamp del último mensaje en dualCSMS
+          dualCSMS.updateLastMessage(ocppIdentity);
           // Actualizar estado de conector
           if (action === "StatusNotification") {
             const connectorId = payload.connectorId || payload.evseId || 0;
             const status = payload.status || payload.connectorStatus || "Unknown";
             const errorCode = payload.errorCode || "NoError";
             ocppManager.updateConnectorStatus(ocppIdentity, connectorId, status);
+            dualCSMS.updateConnectorStatus(ocppIdentity, connectorId, status); // Sincronizar en dualCSMS
             
             // Generar alerta si hay error
             if (errorCode !== "NoError") {
