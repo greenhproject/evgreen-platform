@@ -1731,8 +1731,24 @@ async function handleOCPP16Message(
                 energyWh = unit === "kwh" ? value * 1000 : value; // Normalizar a Wh
               }
               // Power.Active.Import (W o kW)
+              // OCPP 1.6: la unidad puede ser "W", "kW", o vacía (default W según spec)
+              // Wallbox y otros cargadores a veces envían kW sin indicar la unidad explicitamente
               else if (measurand.includes("Power.Active.Import") || measurand === "Power.Active.Import") {
-                powerW = unit === "kw" ? value * 1000 : value; // Normalizar a W
+                if (unit === "kw") {
+                  powerW = value * 1000; // kW → W
+                } else if (unit === "w" || unit === "") {
+                  // Heurística: si el valor es < 100 y la unidad es W o vacía,
+                  // probablemente está en kW (ej: Wallbox envía 5.1 con unit="W")
+                  // Si el valor es >= 100, es W real (ej: 5100 W)
+                  if (value < 100 && value > 0) {
+                    powerW = value * 1000; // Tratar como kW → W
+                    console.log(`[OCPP] MeterValues - Power heuristic: value=${value} with unit='${unit}' treated as kW`);
+                  } else {
+                    powerW = value; // Tratar como W
+                  }
+                } else {
+                  powerW = value; // Unidad desconocida, asumir W
+                }
               }
               // SoC (State of Charge) - porcentaje de batería del vehículo
               else if (measurand === "SoC" || measurand.includes("SoC")) {

@@ -1197,11 +1197,29 @@ export const chargingRouter = router({
         currentCost = energyCost + timeCost + sessionFee;
       }
       
-      // Si no hay potencia real del cargador (el cargador no reporta MeterValues con Power),
-      // usar la potencia nominal del conector en lugar del promedio acumulado.
-      // El promedio acumulado (kWh/h) crece linealmente con el tiempo y es visualmente incorrecto.
+      // Si no hay potencia instantánea real del cargador (no reporta Power.Active.Import),
+      // intentar estimar por la última diferencia de energía del historial de potencia en memoria.
+      // Solo usar nominalPowerKw como último recurso cuando no hay ningún dato real.
       if (currentPower <= 0) {
-        currentPower = nominalPowerKw;
+        // Intentar usar la potencia del último punto del historial (calculada por diferencia de energía en MeterValues)
+        const powerHistory = activeSessionInfo?.powerHistory;
+        if (powerHistory && powerHistory.length >= 2) {
+          // Tomar la potencia del último punto del historial (calculada en tiempo real por OCPP handler)
+          const lastPoint = powerHistory[powerHistory.length - 1];
+          if (lastPoint.power > 0) {
+            currentPower = lastPoint.power;
+          }
+        }
+        // Si aun no hay dato, estimar por kWh totales / tiempo transcurrido
+        // Esto da el promedio real de la sesión, no la potencia máxima del conector
+        if (currentPower <= 0 && currentKwh > 0 && elapsedMinutes > 2) {
+          const elapsedHours = elapsedMinutes / 60;
+          currentPower = currentKwh / elapsedHours;
+          // Limitar al nominal para no mostrar valores imposibles
+          if (currentPower > nominalPowerKw * 1.1) currentPower = nominalPowerKw;
+        }
+        // Solo si no hay absolutamente ninguna información, mostrar 0 (sin dato) en lugar de nominal
+        // El frontend ya maneja currentPower=0 mostrando "---" en lugar de un valor incorrecto
       }
       
       // ============================================================
