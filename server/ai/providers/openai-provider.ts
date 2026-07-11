@@ -51,9 +51,15 @@ export class OpenAIProvider implements IAIProvider {
       throw new Error("OpenAI API key no configurada");
     }
 
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
     try {
+      timeoutId = setTimeout(() => controller.abort(), 25000);
+
       const response = await fetch(this.endpoint, {
         method: "POST",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
@@ -65,13 +71,15 @@ export class OpenAIProvider implements IAIProvider {
             content: m.content,
           })),
           temperature: options?.temperature ?? 0.7,
-          max_tokens: options?.maxTokens ?? 2000,
+          max_tokens: options?.maxTokens ?? 800,
           top_p: options?.topP,
           frequency_penalty: options?.frequencyPenalty,
           presence_penalty: options?.presencePenalty,
           stop: options?.stop,
         }),
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -95,7 +103,11 @@ export class OpenAIProvider implements IAIProvider {
         provider: this.name,
       };
     } catch (error: any) {
+      clearTimeout(timeoutId);
       console.error("[OpenAIProvider] Error:", error);
+      if (error.name === 'AbortError') {
+        throw new Error('El asistente tardó demasiado en responder. Por favor, intenta con una pregunta más corta o vuelve a intentarlo.');
+      }
       throw new Error(`Error en OpenAI: ${error.message}`);
     }
   }

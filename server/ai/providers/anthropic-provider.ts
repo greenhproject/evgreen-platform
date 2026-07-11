@@ -53,13 +53,22 @@ export class AnthropicProvider implements IAIProvider {
       throw new Error("Anthropic API key no configurada");
     }
 
+    // Timeout de 25s para que el servidor responda antes de que el proxy HTTP corte la conexión (~30s).
+    // Si Anthropic no responde en 25s, devolvemos un error claro en lugar de dejar que el proxy
+    // cierre la conexión y el cliente reciba "signal is aborted without reason".
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
     try {
       // Anthropic requiere separar el system message
       const systemMessage = messages.find((m) => m.role === "system");
       const conversationMessages = messages.filter((m) => m.role !== "system");
 
+      timeoutId = setTimeout(() => controller.abort(), 25000);
+
       const response = await fetch(this.endpoint, {
         method: "POST",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
           "x-api-key": this.apiKey!,
@@ -67,7 +76,9 @@ export class AnthropicProvider implements IAIProvider {
         },
         body: JSON.stringify({
           model: this.model,
-          max_tokens: options?.maxTokens ?? 2000,
+          // Reducido de 2000 a 800 para respuestas conversacionales rápidas.
+          // Esto reduce el tiempo de respuesta de Anthropic de ~20-40s a ~5-15s.
+          max_tokens: options?.maxTokens ?? 800,
           system: systemMessage?.content,
           messages: conversationMessages.map((m) => ({
             role: m.role === "assistant" ? "assistant" : "user",
@@ -78,6 +89,8 @@ export class AnthropicProvider implements IAIProvider {
           stop_sequences: options?.stop,
         }),
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -106,7 +119,11 @@ export class AnthropicProvider implements IAIProvider {
         provider: this.name,
       };
     } catch (error: any) {
+      clearTimeout(timeoutId);
       console.error("[AnthropicProvider] Error:", error);
+      if (error.name === 'AbortError') {
+        throw new Error('El asistente tardó demasiado en responder. Por favor, intenta con una pregunta más corta o vuelve a intentarlo.');
+      }
       throw new Error(`Error en Anthropic: ${error.message}`);
     }
   }

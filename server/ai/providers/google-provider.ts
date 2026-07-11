@@ -47,6 +47,9 @@ export class GoogleProvider implements IAIProvider {
       throw new Error("Google AI API key no configurada");
     }
 
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
 
@@ -59,8 +62,11 @@ export class GoogleProvider implements IAIProvider {
         parts: [{ text: m.content }],
       }));
 
+      timeoutId = setTimeout(() => controller.abort(), 25000);
+
       const response = await fetch(endpoint, {
         method: "POST",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
         },
@@ -71,12 +77,14 @@ export class GoogleProvider implements IAIProvider {
             : undefined,
           generationConfig: {
             temperature: options?.temperature ?? 0.7,
-            maxOutputTokens: options?.maxTokens ?? 2000,
+            maxOutputTokens: options?.maxTokens ?? 800,
             topP: options?.topP,
             stopSequences: options?.stop,
           },
         }),
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -111,7 +119,11 @@ export class GoogleProvider implements IAIProvider {
         provider: this.name,
       };
     } catch (error: any) {
+      clearTimeout(timeoutId);
       console.error("[GoogleProvider] Error:", error);
+      if (error.name === 'AbortError') {
+        throw new Error('El asistente tardó demasiado en responder. Por favor, intenta con una pregunta más corta o vuelve a intentarlo.');
+      }
       throw new Error(`Error en Google AI: ${error.message}`);
     }
   }
