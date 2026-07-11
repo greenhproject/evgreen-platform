@@ -420,22 +420,11 @@ const stationsRouter = router({
           // Verificar si es estación demo para forzar online y conectores AVAILABLE
           const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
           
-          // Determinar estado online real usando connection-manager (fuente de verdad)
-          // Prioridad: 1) Conexión activa en connection-manager, 2) Grace period (reconectando), 3) BD como fallback
+          // Determinar estado online real usando dualCSMS (fuente única de verdad)
+          // isStationOnline verifica: WebSocket OPEN (readyState===1) || grace period activo (5 min tras desconexion)
           let realIsOnline = station.isOnline;
           if (!isDemo && station.ocppIdentity) {
-            const liveConn = ocppManager.getConnection(station.ocppIdentity);
-            const inGracePeriod = ocppManager.isInGracePeriod(station.ocppIdentity);
-            if (liveConn && liveConn.ws.readyState === 1) {
-              // WebSocket activo = online
-              realIsOnline = true;
-            } else if (inGracePeriod) {
-              // En grace period = reconectando, mostrar como online para no confundir usuarios
-              realIsOnline = true;
-            } else if (liveConn === undefined && !inGracePeriod) {
-              // Sin conexión activa y sin grace period = realmente offline
-              realIsOnline = false;
-            }
+            realIsOnline = dualCSMS.isStationOnline(station.ocppIdentity);
           }
           
           // Si la estación está offline, todos sus EVSEs deben mostrarse como UNAVAILABLE
@@ -584,21 +573,12 @@ const stationsRouter = router({
       if (ctx.user.role === "investor" && station.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes acceso a esta estaci\u00f3n" });
       }
-      // Calcular estado online REAL usando connection-manager (misma l\u00f3gica que listPublic)
+      // Calcular estado online REAL usando dualCSMS (fuente única de verdad)
       const { isDemoStation } = await import("./charging/charging-simulator");
-      const ocppMgr = await import("./ocpp/connection-manager");
       const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
       let realIsOnline = station.isOnline;
       if (!isDemo && station.ocppIdentity) {
-        const liveConn = ocppMgr.getConnection(station.ocppIdentity);
-        const inGracePeriod = ocppMgr.isInGracePeriod(station.ocppIdentity);
-        if (liveConn && liveConn.ws.readyState === 1) {
-          realIsOnline = true;
-        } else if (inGracePeriod) {
-          realIsOnline = true;
-        } else if (liveConn === undefined && !inGracePeriod) {
-          realIsOnline = false;
-        }
+        realIsOnline = dualCSMS.isStationOnline(station.ocppIdentity);
       }
       return { ...station, isOnline: isDemo ? true : realIsOnline };
     }),
@@ -756,21 +736,12 @@ const stationsRouter = router({
       const station = await db.getChargingStationById(input.stationId);
       if (!station) return evses;
       const { isDemoStation } = await import("./charging/charging-simulator");
-      const ocppMgr = await import("./ocpp/connection-manager");
       const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
       if (isDemo) return evses; // Demo: siempre estado real
-      let realIsOnline = station.isOnline;
-      if (station.ocppIdentity) {
-        const liveConn = ocppMgr.getConnection(station.ocppIdentity);
-        const inGracePeriod = ocppMgr.isInGracePeriod(station.ocppIdentity);
-        if (liveConn && liveConn.ws.readyState === 1) {
-          realIsOnline = true;
-        } else if (inGracePeriod) {
-          realIsOnline = true;
-        } else if (liveConn === undefined && !inGracePeriod) {
-          realIsOnline = false;
-        }
-      }
+      // Verificar estado online usando dualCSMS (fuente única de verdad)
+      const realIsOnline = station.ocppIdentity
+        ? dualCSMS.isStationOnline(station.ocppIdentity)
+        : station.isOnline;
       if (realIsOnline) return evses; // Online: estado real de BD
       // Offline: marcar todos como UNAVAILABLE excepto CHARGING/RESERVED
       return evses.map((e: any) => ({
