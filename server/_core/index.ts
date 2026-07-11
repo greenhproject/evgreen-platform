@@ -1582,6 +1582,40 @@ async function handleOCPP16Message(
           } catch (waErr: any) {
             console.error(`[WhatsApp] charge_end (legacy) exception:`, waErr?.message);
           }
+          // Email: enviar recibo de carga
+          try {
+            const { sendChargingReceiptEmail } = await import("../email/receipt-email");
+            const userForReceipt = await db.getUserById(transaction.userId);
+            const stationForReceipt = await db.getChargingStationById(transaction.stationId);
+            if (userForReceipt?.email) {
+              const txPriceKwh = transaction.pricePerKwh ? parseFloat(String(transaction.pricePerKwh)) : 0;
+              sendChargingReceiptEmail({
+                transactionId: transaction.id,
+                userEmail: userForReceipt.email,
+                userName: userForReceipt.name || "Usuario",
+                userDocumentType: null,
+                userDocumentNumber: null,
+                stationName,
+                stationAddress: stationForReceipt?.address || "",
+                stationCity: stationForReceipt?.city || "",
+                startTime: transaction.startTime || new Date(Date.now() - durationMinutes * 60000),
+                endTime: new Date(),
+                kwhConsumed: energyDelivered,
+                appliedPricePerKwh: txPriceKwh,
+                energyCost: energyDelivered * txPriceKwh,
+                timeCost: 0,
+                sessionCost: totalCost,
+                overstayCost: 0,
+                totalCost,
+                chargeMode: "AC",
+                startMethod: "RFID/App",
+                stopReason: payload.reason || "Local",
+                durationMinutes: Math.round(durationMinutes),
+              }).then(ok => console.log(`[Email] receipt (legacy): result=${JSON.stringify(ok)}`)).catch((e: Error) => console.error("[Email] receipt (legacy) error:", e.message));
+            }
+          } catch (emailErr: any) {
+            console.error(`[Email] receipt (legacy) exception:`, emailErr?.message);
+          }
         } catch (notifErr) {
           console.error(`[OCPP] Error sending charge complete notification:`, notifErr);
         }

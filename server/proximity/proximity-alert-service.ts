@@ -7,7 +7,7 @@
 import { getDb, getEffectiveStationPrice } from "../db";
 import { users, chargingStations, evses, userVehicles, tariffs } from "../../drizzle/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
-import { sendPushNotification, type NotificationType } from "../firebase/fcm";
+// sendPushNotification reemplazado por sendUserPush (ver línea de uso)
 import { calculateDynamicKwhPrice, getDemandLevel } from "../pricing/dynamic-pricing";
 import {
   calculateOccupancyMultiplier,
@@ -96,10 +96,8 @@ export async function checkProximityAndNotify(
     return { checked: true, notificationSent: false, nearbyCompatibleStations: [], reason: "Proximity alerts disabled" };
   }
 
-  // 3. Verificar que tiene token FCM
-  if (!user.fcmToken) {
-    return { checked: true, notificationSent: false, nearbyCompatibleStations: [], reason: "No FCM token" };
-  }
+  // 3. Verificar que tiene algún canal de notificación (FCM o WebPush)
+  // No bloqueamos aquí — sendUserPush intentará ambos canales automáticamente
 
   // 4. Verificar cooldown
   if (user.lastProximityAlertAt) {
@@ -289,8 +287,9 @@ export async function checkProximityAndNotify(
     ? "Precio bajo"
     : "Precio normal";
 
-  const notificationSent = await sendPushNotification(user.fcmToken, {
-    type: "station_available" as NotificationType,
+  const { sendUserPush } = await import("../push/unified-push");
+  const notificationSent = await sendUserPush(request.userId, {
+    type: "station_available",
     title: `${demandText} cerca de ti`,
     body: `${bestStation.stationName} a ${bestStation.distanceKm} km · $${bestStation.pricePerKwh.toLocaleString()}/kWh · ${bestStation.availableConnectors} conectores ${connectorText} para ${vehicleName}`,
     clickAction: `/station/${bestStation.stationId}`,
