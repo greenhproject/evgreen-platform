@@ -1139,6 +1139,24 @@ export const chargingRouter = router({
       let currentPower: number = 0;
       let voltage: number | null = null;
       let currentAmp: number | null = null;
+
+      // ── Reconstruir powerHistory desde BD si la memoria está vacía (ej: tras reinicio) ──
+      if (activeSessionInfo && activeSessionInfo.powerHistory.length < 2) {
+        try {
+          const storedMeterValues = await db.getMeterValuesByTransactionId(activeTransaction.id);
+          if (storedMeterValues.length >= 2) {
+            const meterStart = activeTransaction.meterStart ? parseFloat(activeTransaction.meterStart) : 0;
+            activeSessionInfo.powerHistory = storedMeterValues
+              .filter(mv => mv.powerKw !== null && mv.powerKw !== undefined)
+              .map(mv => ({
+                timestamp: new Date(mv.timestamp).getTime(),
+                power: mv.powerKw ? parseFloat(mv.powerKw) : 0,
+                energy: mv.energyKwh ? Math.max(0, parseFloat(mv.energyKwh) - meterStart / 1000) : 0,
+                soc: mv.soc ?? null,
+              }));
+          }
+        } catch (_e) { /* no-op: no bloquear si falla */ }
+      }
       
       if (activeSessionInfo) {
         // Datos actualizados en tiempo real desde MeterValues
