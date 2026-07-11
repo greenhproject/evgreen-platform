@@ -405,11 +405,20 @@ export const chargingRouter = router({
       let pricePerKwh: number;
       let dynamicMultiplier = 1;
       
+      // Siempre calcular el multiplicador dinámico para mostrar el nivel de demanda real al usuario.
+      // Esto es independiente de autoPricing: el usuario siempre ve el contexto de demanda actual.
+      if (evseId) {
+        try {
+          const demandCalc = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+          dynamicMultiplier = demandCalc.factors?.finalMultiplier || 1;
+        } catch (_e) {
+          dynamicMultiplier = 1; // Fallback a NORMAL si falla el cálculo
+        }
+      }
+      
       if (useAutoPricing && evseId) {
-        // Usar precio dinámico calculado por IA
+        // Usar precio dinámico calculado por IA (ya calculado arriba)
         const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
-        dynamicMultiplier = dynamicPrice.factors?.finalMultiplier || 1;
-        
         // CORREGIDO: Pasar tariffSource para NO sobreescribir con precios globales AC/DC
         const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
         pricePerKwh = priceByType.price;
@@ -421,7 +430,7 @@ export const chargingRouter = router({
           // CORREGIDO: Pasar tariffSource para respetar tarifa de estación
           const priceByType = await db.getPriceByConnectorType(evseId, basePrice, tariffSource);
           pricePerKwh = priceByType.price;
-          console.log(`[validateAndEstimate] Using fixed pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, source: ${tariffSource})`);
+          console.log(`[validateAndEstimate] Using fixed pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, source: ${tariffSource}, demand: ${dynamicPricing.getDemandLevel(dynamicMultiplier)})`);
         } else {
           pricePerKwh = basePrice;
           console.log(`[validateAndEstimate] Using fixed pricing: $${pricePerKwh}/kWh (source: ${tariffSource})`);
@@ -484,9 +493,20 @@ export const chargingRouter = router({
       
       const hasSufficientBalance = balance >= estimatedCost;
       
+      // Calcular precio base (sin descuentos) para mostrar en UI
+      const basePricePerKwh = useAutoPricing
+        ? Math.round(parseFloat(effectivePriceData.pricePerKwh.toString()))
+        : Math.round(parseFloat(effectivePriceData.pricePerKwh.toString()));
+      // Descuento por demanda (solo aplica si autoPricing=true)
+      const demandDiscountPercent = useAutoPricing && dynamicMultiplier < 1
+        ? Math.round((1 - dynamicMultiplier) * 100)
+        : 0;
+      
       return {
         balance,
         pricePerKwh,
+        basePricePerKwh, // Precio base sin descuentos dinámicos
+        demandDiscountPercent, // % de descuento por baja demanda (0 si no aplica)
         estimatedKwh: Math.round(estimatedKwh * 100) / 100,
         estimatedCost: Math.round(estimatedCost),
         estimatedTime: Math.round(estimatedTime),

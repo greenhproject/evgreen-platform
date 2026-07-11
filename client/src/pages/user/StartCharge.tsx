@@ -685,14 +685,25 @@ export default function StartCharge() {
                     <Zap className="h-4 w-4 text-primary" />
                     <span className="text-sm">Tarifa actual</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {/* Precio base tachado si hay descuento dinámico */}
+                    {estimateQuery.data && (estimateQuery.data as any).demandDiscountPercent > 0 && (
+                      <span className="text-xs text-muted-foreground line-through">
+                        ${(estimateQuery.data as any).basePricePerKwh?.toLocaleString()}/kWh
+                      </span>
+                    )}
                     <span className="font-bold">
                       ${estimateQuery.data?.pricePerKwh.toLocaleString() || 0}/kWh
                     </span>
                     {estimateQuery.data && (
                       <span className={`flex items-center gap-1 text-xs ${getDemandColor(estimateQuery.data.demandLevel)}`}>
                         {getDemandIcon(estimateQuery.data.demandLevel)}
-                        {estimateQuery.data.demandLevel}
+                        {estimateQuery.data.demandLevel === 'LOW' ? 'Baja demanda' :
+                         estimateQuery.data.demandLevel === 'HIGH' ? 'Alta demanda' :
+                         estimateQuery.data.demandLevel === 'SURGE' ? 'Demanda pico' : 'Normal'}
+                        {(estimateQuery.data as any).demandDiscountPercent > 0 && (
+                          <span className="text-green-500 font-semibold ml-1">-{(estimateQuery.data as any).demandDiscountPercent}%</span>
+                        )}
                       </span>
                     )}
                   </div>
