@@ -43,6 +43,7 @@ const Investors = lazy(() => import("./pages/Investors"));
 const ThankYouInvestors = lazy(() => import("./pages/ThankYouInvestors"));
 const Partners = lazy(() => import("./pages/Partners"));
 const SaaSLanding = lazy(() => import("./pages/SaaSLanding"));
+const AdsDemo = lazy(() => import("./pages/AdsDemo"));
 const AdminOrganizations = lazy(() => import("./pages/admin/Organizations"));
 
 // Páginas de usuario
@@ -380,6 +381,7 @@ function Router() {
         <Route path="/investors" component={Investors} />
         <Route path="/partners" component={Partners} />
         <Route path="/saas" component={SaaSLanding} />
+        <Route path="/ads" component={AdsDemo} />
         <Route path="/gracias-inversionistas" component={ThankYouInvestors} />
         <Route path="/terms">
           <Suspense fallback={<LazySpinner />}><Terms /></Suspense>

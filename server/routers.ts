@@ -45,6 +45,7 @@ import { profilesRouter } from "./profiles/profiles-router";
 import { buildOrganizationsRouter } from "./organizations/organizations-router";
 import { contactRouter } from "./contact/contact-router";
 import { saasRouter } from "./saas/saas-router";
+import { campaignWizardRouter } from "./banners/campaign-wizard-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -7615,6 +7616,7 @@ export const appRouter = router({
   whatsapp: whatsappRouter,
   noc: nocRouter,
   feedback: feedbackRouter,
+  campaignWizard: campaignWizardRouter,
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

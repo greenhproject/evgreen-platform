@@ -52,9 +52,11 @@ import {
   Wallet,
   Activity,
   Target,
+  Sparkles,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { CampaignWizard } from "./CampaignWizard";
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
 
@@ -549,6 +551,7 @@ function SegmentationPanel({
 export default function AdminBanners() {
   const [, setLocation] = useLocation();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
   const [imageMode, setImageMode] = useState<"url" | "upload">("upload");
   const [isUploading, setIsUploading] = useState(false);
@@ -885,6 +888,15 @@ export default function AdminBanners() {
             Administra los banners publicitarios con segmentación avanzada de audiencia
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+            onClick={() => setShowWizard(true)}
+          >
+            <Sparkles className="w-4 h-4 mr-2" />
+            Crear con IA
+          </Button>
         <Dialog open={showCreateDialog} onOpenChange={(open) => {
           setShowCreateDialog(open);
           if (!open) { setEditingBanner(null); resetForm(); }
@@ -1089,6 +1101,7 @@ export default function AdminBanners() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* ── KPI cards ── */}
@@ -1250,6 +1263,13 @@ export default function AdminBanners() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* AI Campaign Wizard */}
+      <CampaignWizard
+        open={showWizard}
+        onClose={() => setShowWizard(false)}
+        onCampaignCreated={() => refetch()}
+      />
     </div>
   );
 }
