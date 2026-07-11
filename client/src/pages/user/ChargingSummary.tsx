@@ -203,6 +203,8 @@ export default function ChargingSummary() {
   const { user } = useAuth();
   const receiptRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const sendReceiptEmailMutation = trpc.transactions.sendReceiptEmail.useMutation();
   
   const parsedTxId = parseInt(transactionId || "0");
   
@@ -225,13 +227,19 @@ export default function ChargingSummary() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const feedbackShownRef = useRef(false);
+
+  // Verificar si ya existe feedback para esta sesión
+  const { data: feedbackExists } = trpc.feedback.checkExists.useQuery(
+    { transactionId: parsedTxId },
+    { enabled: !!parsedTxId && parsedTxId > 0 && !!user }
+  );
   
   // Efecto para lanzar confetti cuando se carga la transacción completada
   useEffect(() => {
     if (transaction && transaction.status !== "IN_PROGRESS" && !showConfetti) {
       setShowConfetti(true);
-      // Mostrar modal de feedback 4 segundos después del confetti
-      if (!feedbackShownRef.current) {
+      // Mostrar modal de feedback 4 segundos después del confetti, solo si no hay feedback previo
+      if (!feedbackShownRef.current && feedbackExists !== undefined && !feedbackExists.exists) {
         feedbackShownRef.current = true;
         setTimeout(() => setShowFeedback(true), 4000);
       }
@@ -270,7 +278,15 @@ export default function ChargingSummary() {
       
       setTimeout(() => clearInterval(interval), duration);
     }
-  }, [transaction, showConfetti]);
+  }, [transaction, showConfetti, feedbackExists]);
+
+  // Efecto separado: si feedbackExists llega despues del confetti (race condition)
+  useEffect(() => {
+    if (showConfetti && feedbackExists !== undefined && !feedbackExists.exists && !feedbackShownRef.current) {
+      feedbackShownRef.current = true;
+      setTimeout(() => setShowFeedback(true), 4000);
+    }
+  }, [feedbackExists, showConfetti]);
   
   // Construir los conceptos del recibo
   const buildLineItems = (): ReceiptLineItem[] => {
@@ -343,28 +359,222 @@ export default function ChargingSummary() {
     window.open(url, "_blank");
   };
   
-  // Compartir por Email
-  const shareEmail = () => {
+  // Compartir por Email — genera PDF y lo envía como adjunto via Resend
+  const shareEmail = async () => {
     if (!transaction) return;
     
-    const items = buildLineItems();
-    let detailLines = items.map(i => 
-      `  - ${i.concept}: ${formatCurrency(i.amount)}`
-    ).join("\n");
+    setIsSendingEmail(true);
+    toast.info("Preparando recibo para enviar...");
     
-    const subject = `Recibo de Carga EVGreen #${transaction.id} - ${formatDate(transaction.startTime)}`;
-    const body = `Recibo de Carga EVGreen #${transaction.id}\n\n` +
-      `Estación: ${transaction.stationName}\n` +
-      `Fecha: ${formatDate(transaction.startTime)}\n\n` +
-      `Detalle del cobro:\n${detailLines}\n\n` +
-      `Total pagado: ${formatCurrency(transaction.totalCost || 0)}\n\n` +
-      `Energía: ${transaction.kwhConsumed} kWh\n` +
-      `Duración: ${formatDuration(transaction.durationMinutes)}\n\n` +
-      `Gracias por usar EVGreen para cargar tu vehículo eléctrico.\n` +
-      `www.evgreen.lat`;
-    
-    const url = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = url;
+    try {
+      // Generar PDF (misma lógica que downloadReceiptPdf)
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+      
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 20;
+      let y = 0;
+      
+      const primaryColor: [number, number, number] = [16, 185, 129];
+      const darkColor: [number, number, number] = [31, 41, 55];
+      const lightGray: [number, number, number] = [107, 114, 128];
+      const white: [number, number, number] = [255, 255, 255];
+      const warningColor: [number, number, number] = [220, 38, 38];
+      
+      // HEADER
+      doc.setFillColor(...primaryColor);
+      doc.rect(0, 0, pageWidth, 50, "F");
+      try {
+        doc.addImage(EVGREEN_LOGO_BASE64, "PNG", margin, 6, 40, 22);
+      } catch {
+        doc.setTextColor(...white);
+        doc.setFontSize(24);
+        doc.setFont("helvetica", "bold");
+        doc.text("EVGreen", margin, 22);
+      }
+      doc.setTextColor(...white);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("RECIBO DE CARGA", pageWidth - margin, 14, { align: "right" });
+      doc.setFontSize(16);
+      doc.text(`#${transaction.id}`, pageWidth - margin, 24, { align: "right" });
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.text(formatDateShort(transaction.startTime), pageWidth - margin, 32, { align: "right" });
+      doc.setFontSize(8);
+      doc.text("Carga de Vehículo Eléctrico", margin, 35);
+      doc.text("www.evgreen.lat", margin, 40);
+      y = 58;
+      
+      // CLIENTE
+      doc.setFillColor(249, 250, 251);
+      doc.roundedRect(margin, y, pageWidth - 2 * margin, 22, 2, 2, "F");
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("CLIENTE", margin + 4, y + 6);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(user?.name || "Cliente EVGreen", margin + 4, y + 13);
+      doc.setFontSize(8);
+      doc.setTextColor(...lightGray);
+      doc.text(user?.email || "", margin + 4, y + 18);
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.text("MÉTODO DE PAGO", pageWidth - margin - 4, y + 6, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text("Billetera EVGreen", pageWidth - margin - 4, y + 13, { align: "right" });
+      y += 28;
+      
+      // ESTACIÓN
+      doc.setFillColor(249, 250, 251);
+      doc.roundedRect(margin, y, pageWidth - 2 * margin, 28, 2, 2, "F");
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("ESTACIÓN DE CARGA", margin + 4, y + 6);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(transaction.stationName, margin + 4, y + 13);
+      doc.setFontSize(8);
+      doc.setTextColor(...lightGray);
+      const address = [transaction.stationAddress, transaction.stationCity].filter(Boolean).join(", ");
+      if (address) doc.text(address, margin + 4, y + 18);
+      doc.text(`Conector #${transaction.connectorId} • ${getConnectorLabel(transaction.connectorType)} • ${transaction.chargeType}`, margin + 4, y + 23);
+      y += 34;
+      
+      // DATOS DE SESIÓN
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Datos de la Sesión", margin, y + 2);
+      y += 7;
+      const sessionData = [
+        ["Fecha y hora de inicio", formatDateShort(transaction.startTime)],
+        ["Fecha y hora de fin", transaction.endTime ? formatDateShort(transaction.endTime) : "-"],
+        ["Duración total", formatDuration(transaction.durationMinutes)],
+        ["Energía consumida", `${transaction.kwhConsumed} kWh`],
+        ["Modo de carga", getChargeModeLabel(transaction.chargeMode)],
+        ["Método de inicio", getStartMethodLabel(transaction.startMethod)],
+      ];
+      if (transaction.stopReason) sessionData.push(["Razón de finalización", getStopReasonLabel(transaction.stopReason)]);
+      autoTable(doc, {
+        startY: y,
+        head: [],
+        body: sessionData,
+        theme: "plain",
+        styles: { fontSize: 9, cellPadding: { top: 2, bottom: 2, left: 4, right: 4 }, textColor: darkColor },
+        columnStyles: { 0: { fontStyle: "normal", textColor: lightGray, cellWidth: 55 }, 1: { fontStyle: "bold", halign: "right" } },
+        margin: { left: margin, right: margin },
+      });
+      y = (doc as any).lastAutoTable.finalY + 8;
+      
+      // DETALLE DEL COBRO
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Detalle del Cobro", margin, y + 2);
+      y += 7;
+      const lineItems = buildLineItems();
+      const chargeRows: (string | { content: string; styles: any })[][] = [];
+      lineItems.forEach((item) => {
+        if (item.isWarning) {
+          chargeRows.push([
+            { content: `⚠ ${item.concept}`, styles: { textColor: warningColor, fontStyle: "bold" } },
+            { content: item.detail, styles: { textColor: warningColor, fontSize: 7 } },
+            { content: formatCurrency(item.amount), styles: { textColor: warningColor, fontStyle: "bold", halign: "right" } },
+          ]);
+        } else {
+          chargeRows.push([
+            item.concept,
+            { content: item.detail, styles: { fontSize: 7, textColor: lightGray } },
+            { content: formatCurrency(item.amount), styles: { halign: "right", fontStyle: "bold" } },
+          ]);
+        }
+      });
+      autoTable(doc, {
+        startY: y,
+        head: [["Concepto", "Detalle", "Valor"]],
+        body: chargeRows,
+        theme: "striped",
+        headStyles: { fillColor: [31, 41, 55], textColor: white, fontSize: 9, fontStyle: "bold", cellPadding: { top: 3, bottom: 3, left: 4, right: 4 } },
+        styles: { fontSize: 9, cellPadding: { top: 3, bottom: 3, left: 4, right: 4 }, textColor: darkColor },
+        columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: "auto" }, 2: { cellWidth: 35, halign: "right" } },
+        alternateRowStyles: { fillColor: [249, 250, 251] },
+        margin: { left: margin, right: margin },
+      });
+      y = (doc as any).lastAutoTable.finalY + 4;
+      
+      // TOTAL
+      doc.setFillColor(...primaryColor);
+      doc.roundedRect(margin, y, pageWidth - 2 * margin, 18, 2, 2, "F");
+      doc.setTextColor(...white);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("TOTAL PAGADO", margin + 6, y + 11);
+      doc.setFontSize(18);
+      doc.text(formatCurrency(transaction.totalCost || 0), pageWidth - margin - 6, y + 12, { align: "right" });
+      y += 26;
+      
+      // NOTAS
+      doc.setDrawColor(229, 231, 235);
+      doc.setLineWidth(0.3);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 6;
+      doc.setTextColor(...lightGray);
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "normal");
+      doc.text("Este documento es un comprobante de pago por el servicio de carga eléctrica.", margin, y);
+      y += 4;
+      doc.text("Conserve este recibo para cualquier reclamación o consulta.", margin, y);
+      y += 4;
+      doc.text(`Tarifa base de la estación: ${formatCurrency(transaction.pricePerKwh)}/kWh`, margin, y);
+      if (transaction.appliedPricePerKwh && transaction.appliedPricePerKwh !== transaction.pricePerKwh) {
+        y += 4;
+        doc.text(`Tarifa dinámica aplicada al momento de la carga: ${formatCurrency(transaction.appliedPricePerKwh)}/kWh`, margin, y);
+      }
+      y += 10;
+      
+      // FOOTER
+      doc.setDrawColor(229, 231, 235);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 6;
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("EVGreen - Movilidad Eléctrica Sostenible", pageWidth / 2, y, { align: "center" });
+      y += 4;
+      doc.setTextColor(...lightGray);
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "normal");
+      doc.text("www.evgreen.lat | soporte@evgreen.lat", pageWidth / 2, y, { align: "center" });
+      y += 3;
+      doc.text("Green House Project S.A.S.", pageWidth / 2, y, { align: "center" });
+      
+      // Convertir PDF a base64 y enviar
+      const pdfBase64 = doc.output("datauristring").split(",")[1];
+      
+      const result = await sendReceiptEmailMutation.mutateAsync({
+        transactionId: parsedTxId,
+        pdfBase64,
+      });
+      
+      if (result.success) {
+        toast.success("Recibo enviado a tu email");
+      } else {
+        toast.error(result.error || "Error al enviar el recibo");
+      }
+    } catch (err: any) {
+      console.error("Error enviando recibo por email:", err);
+      toast.error("Error al enviar el recibo. Intenta de nuevo.");
+    } finally {
+      setIsSendingEmail(false);
+    }
   };
   
   // Generar y descargar recibo PDF profesional
@@ -918,9 +1128,14 @@ export default function ChargingSummary() {
             variant="outline"
             className="flex-col h-auto py-4 gap-2"
             onClick={shareEmail}
+            disabled={isSendingEmail}
           >
-            <Mail className="w-5 h-5 text-blue-600" />
-            <span className="text-xs">Email</span>
+            {isSendingEmail ? (
+              <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+            ) : (
+              <Mail className="w-5 h-5 text-blue-600" />
+            )}
+            <span className="text-xs">{isSendingEmail ? "Enviando..." : "Email"}</span>
           </Button>
           
           <Button

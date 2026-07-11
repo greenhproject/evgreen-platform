@@ -17,7 +17,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { getDb } from "./db";
-import { users, userVehicles, favoriteStations, notifications, sessionFeedback, tariffs as tariffsTable } from "../drizzle/schema";
+import { users, userVehicles, favoriteStations, notifications, sessionFeedback, tariffs as tariffsTable, transactions } from "../drizzle/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { aiRouter } from "./ai/ai-router";
 import { wompiRouter } from "./wompi/router";
@@ -2132,6 +2132,93 @@ const transactionsRouter = router({
         newTotalCost: totalCost - input.refundAmount,
         refundId,
       };
+    }),
+
+  // Enviar recibo por email con PDF adjunto
+  sendReceiptEmail: protectedProcedure
+    .input(z.object({
+      transactionId: z.number().int().positive(),
+      pdfBase64: z.string(), // PDF generado en el frontend, en base64
+      toEmail: z.string().email().optional(), // Si no se pasa, usa el email del usuario
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const database = await getDb();
+        if (!database) return { success: false, error: "Sin conexión a BD" };
+
+        // Obtener la transacción y verificar que pertenece al usuario
+        const [tx] = await database
+          .select()
+          .from(transactions)
+          .where(and(eq(transactions.id, input.transactionId), eq(transactions.userId, ctx.user.id)))
+          .limit(1);
+
+        if (!tx) throw new TRPCError({ code: "NOT_FOUND", message: "Transacción no encontrada" });
+
+        const { getResendApiKey, getEmailFrom } = await import("./email/resend-client");
+        const { Resend } = await import("resend");
+        const apiKey = await getResendApiKey();
+        if (!apiKey) return { success: false, error: "No hay API Key de Resend configurada" };
+
+        const fromEmail = await getEmailFrom();
+        const toEmail = input.toEmail || ctx.user.email;
+        if (!toEmail) return { success: false, error: "El usuario no tiene email registrado" };
+
+        const resend = new Resend(apiKey);
+        const receiptDate = new Date(tx.startTime).toLocaleDateString("es-CO", {
+          year: "numeric", month: "long", day: "numeric"
+        });
+        const totalFormatted = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(Number(tx.totalCost) || 0);
+
+        // Convertir base64 a Buffer para el adjunto
+        const pdfBuffer = Buffer.from(input.pdfBase64, "base64");
+
+        const result = await resend.emails.send({
+          from: `EVGreen <${fromEmail}>`,
+          to: [toEmail],
+          subject: `Recibo de carga #${tx.id} — ${totalFormatted} · EVGreen`,
+          html: `
+            <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#fff">
+              <div style="background:#10b981;padding:20px 24px;border-radius:12px 12px 0 0;text-align:center">
+                <h1 style="color:#fff;margin:0;font-size:22px">Recibo de Carga EVGreen</h1>
+                <p style="color:#d1fae5;margin:4px 0 0;font-size:14px">${receiptDate}</p>
+              </div>
+              <div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:24px">
+                <p style="color:#374151;font-size:15px">Hola <strong>${ctx.user.name}</strong>,</p>
+                <p style="color:#374151;font-size:14px">Adjuntamos el recibo de tu sesión de carga en <strong>${(tx as any).stationName || "EVGreen"}</strong>.</p>
+                <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+                  <tr style="background:#f9fafb">
+                    <td style="padding:8px 12px;color:#6b7280">Sesión #</td>
+                    <td style="padding:8px 12px;color:#111827;text-align:right;font-weight:600">${tx.id}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 12px;color:#6b7280">Energía</td>
+                    <td style="padding:8px 12px;color:#111827;text-align:right">${tx.kwhConsumed} kWh</td>
+                  </tr>
+                  <tr style="background:#f9fafb">
+                    <td style="padding:8px 12px;color:#6b7280">Total</td>
+                    <td style="padding:8px 12px;color:#10b981;text-align:right;font-weight:700;font-size:16px">${totalFormatted}</td>
+                  </tr>
+                </table>
+                <p style="color:#6b7280;font-size:13px">El recibo detallado se encuentra adjunto en formato PDF.</p>
+                <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0">
+                <p style="color:#9ca3af;font-size:12px;text-align:center">EVGreen · Carga el Futuro · www.evgreen.lat</p>
+              </div>
+            </div>`,
+          attachments: [{
+            filename: `recibo-evgreen-${tx.id}.pdf`,
+            content: pdfBuffer,
+          }],
+        });
+
+        if (result.error) {
+          return { success: false, error: result.error.message || "Error de Resend" };
+        }
+        return { success: true, messageId: result.data?.id || "" };
+      } catch (err: any) {
+        console.error("[sendReceiptEmail] Error:", err.message);
+        return { success: false, error: err.message || "Error al enviar el email" };
+      }
     }),
 });
 
