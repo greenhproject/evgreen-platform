@@ -1229,6 +1229,19 @@ async function handleOCPP16Message(
             referenceId: null,
             referenceType: "transaction",
           });
+          // Push notification: notificar inicio de carga
+          try {
+            const { sendUserPush } = await import("../push/unified-push");
+            sendUserPush(userId, {
+              type: "charging_started",
+              title: "\u26a1 Carga iniciada",
+              body: `Tu carga ha comenzado en ${stationName}. Tarifa: $${formattedPrice} COP/kWh`,
+              clickAction: "/charging-monitor",
+              data: { stationId: resolvedStId.toString(), connectorId: String(payload.connectorId) },
+            }).then(ok => console.log(`[Push] charge_start: result=${ok}`)).catch((e: Error) => console.error("[Push] charge_start error:", e.message));
+          } catch (pushErr: any) {
+            console.error(`[Push] charge_start exception:`, pushErr?.message);
+          }
           // WhatsApp: notificar inicio de carga
           try {
             const userForWa = await db.getUserById(userId);
@@ -1529,6 +1542,19 @@ async function handleOCPP16Message(
             referenceType: "transaction",
           });
           console.log(`[OCPP] Notification sent to user ${transaction.userId} for completed charge`);
+          // Push notification: notificar fin de carga
+          try {
+            const { sendUserPush } = await import("../push/unified-push");
+            sendUserPush(transaction.userId, {
+              type: "charging_complete",
+              title: "\u26a1 Carga completada",
+              body: `Tu carga en ${stationName} finalizó. ${energyDelivered.toFixed(2)} kWh por $${Math.round(totalCost).toLocaleString("es-CO")} COP`,
+              clickAction: "/charging-history",
+              data: { transactionId: transaction.id, kwhDelivered: energyDelivered.toFixed(2) },
+            }).then(ok => console.log(`[Push] charge_end: result=${ok}`)).catch((e: Error) => console.error("[Push] charge_end error:", e.message));
+          } catch (pushErr: any) {
+            console.error(`[Push] charge_end exception:`, pushErr?.message);
+          }
           // WhatsApp: notificar fin de carga
           try {
             const userForWaEnd = await db.getUserById(transaction.userId);
