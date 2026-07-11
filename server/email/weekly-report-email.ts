@@ -14,8 +14,8 @@ import {
   getChargingStationById,
 } from "../db";
 
-const FROM_EMAIL = "EVGreen <admin@greenhproject.com>";
-const BCC_EMAIL = "admin@greenhproject.com";
+// FROM se obtiene dinámicamente desde la configuración de la plataforma (Admin → Configuración → Notificaciones)
+const BCC_EMAIL = "admin@evgreen.lat";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -348,8 +348,10 @@ export async function sendWeeklyReportToUser(userId: number, mode: WeekRangeMode
 
     const html = buildWeeklyReportHTML(reportData);
     const resend = await getResendClient();
+    const fromEmail = await getEmailFrom();
+    const fromDisplay = fromEmail.includes("<") ? fromEmail : `EVGreen <${fromEmail}>`;
     const result = await resend.emails.send({
-      from: FROM_EMAIL,
+      from: fromDisplay,
       to: user.email,
       bcc: BCC_EMAIL,
       subject: `📊 Tu resumen semanal EVGreen — ${label}`,
