@@ -3955,6 +3955,39 @@ const settingsRouter = router({
       return { accounts: [], error: e.message };
     }
   }),
+  // Resend: Test connection
+  testResendConnection: adminProcedure
+    .input(z.object({
+      apiKey: z.string().optional(),
+      emailFrom: z.string().optional(),
+      testEmailTo: z.string().email(),
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        const { getResendApiKey, getEmailFrom } = await import("./email/resend-client");
+        const { Resend } = await import("resend");
+        const apiKey = (input.apiKey && !input.apiKey.startsWith("re_****"))
+          ? input.apiKey
+          : await getResendApiKey();
+        if (!apiKey) {
+          return { success: false, error: "No hay API Key de Resend configurada. Guarda la key primero." };
+        }
+        const fromEmail = input.emailFrom || await getEmailFrom();
+        const resend = new Resend(apiKey);
+        const result = await resend.emails.send({
+          from: `EVGreen <${fromEmail}>`,
+          to: [input.testEmailTo],
+          subject: "\u2705 Prueba de conexi\u00f3n Resend \u2014 EVGreen",
+          html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px"><h2 style="color:#16a34a">Conexi\u00f3n exitosa con Resend</h2><p>Este es un email de prueba enviado desde el panel de administraci\u00f3n de <strong>EVGreen</strong>.</p><p style="color:#6b7280;font-size:14px">Si recibiste este mensaje, la configuraci\u00f3n de Resend est\u00e1 funcionando correctamente.</p><hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"><p style="color:#9ca3af;font-size:12px">EVGreen \u00b7 Carga el Futuro</p></div>`,
+        });
+        if (result.error) {
+          return { success: false, error: result.error.message || "Error desconocido de Resend" };
+        }
+        return { success: true, messageId: result.data?.id || "" };
+      } catch (err: any) {
+        return { success: false, error: err.message || "Error al conectar con Resend" };
+      }
+    }),
 });
 
 // ============================================================================

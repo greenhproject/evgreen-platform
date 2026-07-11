@@ -113,6 +113,32 @@ export default function AdminSettings() {
   const [alegraConnectionStatus, setAlegraConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [alegraCompanyName, setAlegraCompanyName] = useState("");
 
+  // Estado para prueba de conexión Resend
+  const [resendTestEmail, setResendTestEmail] = useState("");
+  const [resendConnectionStatus, setResendConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [resendKeyTouched, setResendKeyTouched] = useState(false);
+  const [resendKeySaved, setResendKeySaved] = useState(false);
+
+  const resendTestMutation = trpc.settings.testResendConnection.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        setResendConnectionStatus("success");
+        toast.success("Conexión exitosa con Resend", {
+          description: `Email de prueba enviado a ${resendTestEmail}`,
+        });
+      } else {
+        setResendConnectionStatus("error");
+        toast.error("Error de conexión con Resend", {
+          description: data.error || "Error desconocido",
+        });
+      }
+    },
+    onError: (err) => {
+      setResendConnectionStatus("error");
+      toast.error(`Error: ${err.message}`);
+    },
+  });
+
   const alegraTestMutation = trpc.settings.alegraTestConnection.useMutation({
     onSuccess: (data) => {
       if (data.success) {
@@ -190,8 +216,11 @@ export default function AdminSettings() {
         notifyPromotions: settings.notifyPromotions,
       });
 
+      const maskedKey = (settings as any).resendApiKey || "";
+      setResendKeySaved(maskedKey.startsWith("re_****"));
+      setResendKeyTouched(false);
       setEmailConfigForm({
-        resendApiKey: (settings as any).resendApiKey || "",
+        resendApiKey: maskedKey.startsWith("re_****") ? "" : maskedKey,
         emailFrom: (settings as any).emailFrom || "noreply@evgreen.lat",
       });
 
@@ -285,7 +314,36 @@ export default function AdminSettings() {
   };
 
   const handleSaveEmailConfig = () => {
-    updateMutation.mutate(emailConfigForm as any);
+    const payload: any = { emailFrom: emailConfigForm.emailFrom };
+    if (resendKeyTouched && emailConfigForm.resendApiKey) {
+      payload.resendApiKey = emailConfigForm.resendApiKey;
+    }
+    updateMutation.mutate(payload, {
+      onSuccess: () => {
+        setResendKeyTouched(false);
+        setResendConnectionStatus("idle");
+      },
+    });
+  };
+
+  const handleTestResendConnection = () => {
+    if (!resendTestEmail) {
+      toast.error("Ingresa un email de destino para la prueba");
+      return;
+    }
+    if (!emailConfigForm.resendApiKey && !resendKeySaved) {
+      toast.error("Ingresa la API Key de Resend primero");
+      return;
+    }
+    if (!emailConfigForm.resendApiKey && resendKeySaved) {
+      toast.info("Para probar con una nueva key, ingésala primero. Probando con la key guardada...");
+    }
+    setResendConnectionStatus("testing");
+    resendTestMutation.mutate({
+      apiKey: emailConfigForm.resendApiKey || undefined,
+      emailFrom: emailConfigForm.emailFrom,
+      testEmailTo: resendTestEmail,
+    });
   };
 
   const handleSaveNotifications = () => {
@@ -664,13 +722,16 @@ export default function AdminSettings() {
         <TabsContent value="notifications">
           <Card className="p-6 space-y-6">
             <div>
-              <h3 className="font-semibold mb-4">Notificaciones push</h3>
+              <h3 className="font-semibold mb-1">Notificaciones push — Configuración global</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Controla qué eventos generan notificaciones push para los usuarios de la plataforma. Los usuarios pueden ajustar sus propias preferencias desde su perfil.
+              </p>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between py-2 border-b border-border/50">
                   <div>
-                    <Label>Carga completada</Label>
+                    <Label className="font-medium">Carga completada</Label>
                     <p className="text-sm text-muted-foreground">
-                      Notificar cuando termine una carga
+                      Notificar al usuario cuando su sesión de carga finalice
                     </p>
                   </div>
                   <Switch
@@ -678,11 +739,11 @@ export default function AdminSettings() {
                     onCheckedChange={(checked) => setNotificationsForm({ ...notificationsForm, notifyChargeComplete: checked })}
                   />
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between py-2 border-b border-border/50">
                   <div>
-                    <Label>Reserva próxima</Label>
+                    <Label className="font-medium">Recordatorio de reserva</Label>
                     <p className="text-sm text-muted-foreground">
-                      Recordatorio 15 min antes de la reserva
+                      Recordatorio 15 minutos antes del inicio de una reserva
                     </p>
                   </div>
                   <Switch
@@ -690,11 +751,11 @@ export default function AdminSettings() {
                     onCheckedChange={(checked) => setNotificationsForm({ ...notificationsForm, notifyReservationReminder: checked })}
                   />
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between py-2">
                   <div>
-                    <Label>Promociones</Label>
+                    <Label className="font-medium">Promociones y campañas</Label>
                     <p className="text-sm text-muted-foreground">
-                      Enviar ofertas y descuentos
+                      Notificaciones de ofertas, descuentos y campañas activas
                     </p>
                   </div>
                   <Switch
@@ -703,6 +764,10 @@ export default function AdminSettings() {
                   />
                 </div>
               </div>
+            </div>
+
+            <div className="text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-2">
+              <strong>Nota:</strong> Estas son las preferencias globales de la plataforma. Cada usuario puede activar o desactivar individualmente las notificaciones desde su perfil (inicio de carga, fin de carga, alertas de disponibilidad, reporte semanal).
             </div>
 
             <Button onClick={handleSaveNotifications} disabled={updateMutation.isPending}>
@@ -719,18 +784,41 @@ export default function AdminSettings() {
 
           <Card className="p-6 space-y-6 mt-6">
             <div>
-              <h3 className="font-semibold mb-1">Configuración de Email</h3>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-semibold">Configuración de Email</h3>
+                {resendConnectionStatus === "success" && (
+                  <span className="flex items-center gap-1.5 text-xs text-green-500 font-medium">
+                    <CheckCircle className="w-3.5 h-3.5" /> Conexión verificada
+                  </span>
+                )}
+                {resendConnectionStatus === "error" && (
+                  <span className="flex items-center gap-1.5 text-xs text-red-500 font-medium">
+                    <XCircle className="w-3.5 h-3.5" /> Error de conexión
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground mb-4">
                 Configura el servicio de envío de correos electrónicos (Resend)
               </p>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>API Key de Resend</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>API Key de Resend</Label>
+                    {resendKeySaved && !resendKeyTouched && (
+                      <span className="text-xs text-green-500 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" /> Key guardada
+                      </span>
+                    )}
+                  </div>
                   <Input
                     type="password"
                     value={emailConfigForm.resendApiKey}
-                    onChange={(e) => setEmailConfigForm({ ...emailConfigForm, resendApiKey: e.target.value })}
-                    placeholder="re_xxxxxxxxxxxxxxxxxxxx"
+                    onChange={(e) => {
+                      setEmailConfigForm({ ...emailConfigForm, resendApiKey: e.target.value });
+                      setResendKeyTouched(true);
+                      setResendConnectionStatus("idle");
+                    }}
+                    placeholder={resendKeySaved && !resendKeyTouched ? "re_**** (key guardada — escribe para cambiar)" : "re_xxxxxxxxxxxxxxxxxxxx"}
                   />
                   <p className="text-xs text-muted-foreground">
                     Obtén tu API key en <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="underline">resend.com/api-keys</a>
@@ -747,6 +835,44 @@ export default function AdminSettings() {
                   <p className="text-xs text-muted-foreground">
                     Dirección desde la que se enviarán los correos. Debe estar verificada en Resend.
                   </p>
+                </div>
+
+                {/* Prueba de conexión */}
+                <div className="border rounded-lg p-4 bg-muted/20 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Probar conexión</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Envía un email de prueba para verificar que la configuración funciona correctamente.
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      type="email"
+                      placeholder="tu@email.com"
+                      value={resendTestEmail}
+                      onChange={(e) => setResendTestEmail(e.target.value)}
+                      className="h-9"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleTestResendConnection}
+                      disabled={resendTestMutation.isPending || (!emailConfigForm.resendApiKey && !resendKeySaved)}
+                      className="shrink-0"
+                    >
+                      {resendTestMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : resendConnectionStatus === "success" ? (
+                        <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
+                      ) : resendConnectionStatus === "error" ? (
+                        <XCircle className="w-4 h-4 mr-2 text-red-500" />
+                      ) : (
+                        <Mail className="w-4 h-4 mr-2" />
+                      )}
+                      {resendTestMutation.isPending ? "Enviando..." : "Probar conexión"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
