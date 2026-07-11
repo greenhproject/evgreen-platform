@@ -40,7 +40,8 @@ import {
   Mail,
   Smartphone,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  CalendarDays
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -63,6 +64,37 @@ const TARGET_AUDIENCES = [
 
 export default function AdminNotifications() {
   const [showSendDialog, setShowSendDialog] = useState(false);
+  const [weeklyReportUserId, setWeeklyReportUserId] = useState("");
+
+  // Mutación para disparar el reporte semanal
+  const triggerWeeklyReport = trpc.system.triggerWeeklyReport.useMutation({
+    onSuccess: (result) => {
+      if (result.success) {
+        if (result.count === -1) {
+          toast.success("Reporte semanal enviado", {
+            description: "El job de reporte semanal se ejecutó correctamente para todos los usuarios elegibles.",
+          });
+        } else if (result.count === 1) {
+          toast.success("Reporte enviado al usuario", {
+            description: `El reporte semanal fue enviado exitosamente.`,
+          });
+        } else {
+          toast.info("Reporte no enviado", {
+            description: result.reason || "El usuario no cumple los criterios (sin sesiones la semana pasada o notificaciones desactivadas).",
+          });
+        }
+      } else {
+        toast.error("Error al enviar reporte", {
+          description: result.reason || "Error desconocido.",
+        });
+      }
+    },
+    onError: (error) => {
+      toast.error("Error al ejecutar el reporte semanal", {
+        description: error.message,
+      });
+    },
+  });
   const [formData, setFormData] = useState({
     title: "",
     message: "",
@@ -384,6 +416,76 @@ export default function AdminNotifications() {
           </div>
         </Card>
       </div>
+
+      {/* Reporte Semanal */}
+      <Card className="p-5">
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+            <CalendarDays className="w-5 h-5 text-blue-500" />
+          </div>
+          <div className="flex-1 space-y-4">
+            <div>
+              <h2 className="font-semibold">Reporte Semanal por Email</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Se envía automáticamente cada lunes a las 8:00 a.m. (hora Colombia) a usuarios con al menos una sesión de carga la semana anterior y la preferencia activada. Puedes dispararlo manualmente aquí.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3 items-end">
+              {/* Enviar a todos */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => triggerWeeklyReport.mutate({})}
+                disabled={triggerWeeklyReport.isPending}
+              >
+                {triggerWeeklyReport.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4 mr-2" />
+                )}
+                Enviar reporte ahora (todos)
+              </Button>
+
+              {/* Enviar a usuario específico */}
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  placeholder="ID de usuario"
+                  value={weeklyReportUserId}
+                  onChange={(e) => setWeeklyReportUserId(e.target.value)}
+                  className="w-36 h-9"
+                  min={1}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const uid = parseInt(weeklyReportUserId, 10);
+                    if (!uid || uid <= 0) {
+                      toast.error("Ingresa un ID de usuario válido");
+                      return;
+                    }
+                    triggerWeeklyReport.mutate({ userId: uid });
+                  }}
+                  disabled={triggerWeeklyReport.isPending || !weeklyReportUserId}
+                >
+                  {triggerWeeklyReport.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Mail className="w-4 h-4 mr-2" />
+                  )}
+                  Enviar a usuario
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              El reporte incluye: sesiones de la semana pasada, kWh consumidos, costo total, CO₂ ahorrado y saldo de billetera. Solo se envía a usuarios con <code className="bg-muted px-1 rounded">emailNotifyWeeklyReport = true</code>.
+            </p>
+          </div>
+        </div>
+      </Card>
 
       {/* Historial de notificaciones */}
       <Card>

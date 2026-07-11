@@ -20,6 +20,8 @@ import { startProactiveNotifications } from "../ai/proactive-notifications";
 import { startDemandForecastJob } from "../ai/demand-forecast-service";
 import { startOverstayMonitor, onChargingFinished, onCableDisconnected } from "../charging/overstay-monitor";
 import { reservationJobs } from "../notifications/reservation-notifications";
+import cron from "node-cron";
+import { runWeeklyReportJob } from "../email/weekly-report-email";
 import * as ocppManager from "../ocpp/connection-manager";
 import * as alertsService from "../ocpp/alerts-service";
 import { dualCSMS } from "../ocpp/csms-dual";
@@ -2262,6 +2264,14 @@ function startKeepAlive() {
 setTimeout(() => {
   startKeepAlive();
 }, 30000);
+
+// ─── Cron jobs internos (Railway) ───────────────────────────────────────────
+// Reporte semanal: cada lunes a las 8:00am hora Colombia (UTC-5 = 13:00 UTC)
+cron.schedule("0 13 * * 1", () => {
+  console.log("[Cron] Running weekly report job...");
+  runWeeklyReportJob().catch((err) => console.error("[Cron] Weekly report job error:", err));
+}, { timezone: "America/Bogota" });
+console.log("[Cron] Weekly report job scheduled: every Monday at 8:00am Colombia");
 
 startServer().catch((err) => {
   console.error('[PROCESS] Failed to start server:', err);
