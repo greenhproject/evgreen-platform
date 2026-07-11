@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, ne, inArray, isNull, not, like } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, lt, gt, sql, or, count, sum, avg, ne, inArray, isNull, not, like } from "drizzle-orm";
 /**
  * ============================================================================
  * EVGreen Platform - Funciones de Base de Datos (db.ts)
@@ -35,6 +35,7 @@ import {
   ocppLogs,
   banners,
   bannerViews,
+  bannerDailyStats,
   InsertChargingStation,
   InsertEvse,
   InsertTransaction,
@@ -2164,14 +2165,31 @@ export async function deleteBanner(id: number) {
   await db.delete(banners).where(eq(banners.id, id));
 }
 
-export async function recordBannerImpression(bannerId: number, userId?: number, context?: string) {
+export async function recordBannerImpression(
+  bannerId: number,
+  userId?: number,
+  context?: string,
+  extra?: { city?: string; vehicleType?: string; deviceType?: string; stationId?: number }
+) {
   const db = await getDb();
   if (!db) return;
+  
+  const hourOfDay = new Date().getHours();
   
   // Incrementar contador de impresiones
   await db.update(banners).set({
     impressions: sql`${banners.impressions} + 1`,
   }).where(eq(banners.id, bannerId));
+  
+  // Actualizar stats diarias
+  const today = new Date().toISOString().split('T')[0];
+  try {
+    await db.execute(sql`
+      INSERT INTO banner_daily_stats (bannerId, date, impressions, clicks, uniqueViews, totalDwellSeconds, dwellCount)
+      VALUES (${bannerId}, ${today}, 1, 0, 0, 0, 0)
+      ON DUPLICATE KEY UPDATE impressions = impressions + 1
+    `);
+  } catch (_e) { /* non-critical */ }
   
   // Registrar vista si hay usuario
   if (userId) {
@@ -2179,10 +2197,14 @@ export async function recordBannerImpression(bannerId: number, userId?: number, 
       bannerId,
       userId,
       viewContext: context,
+      deviceType: extra?.deviceType,
+      city: extra?.city,
+      vehicleType: extra?.vehicleType,
+      hourOfDay,
     });
     
     // Actualizar vistas únicas
-    const existingViews = await db.select().from(bannerViews)
+    const existingViews = await db.select({ id: bannerViews.id }).from(bannerViews)
       .where(and(eq(bannerViews.bannerId, bannerId), eq(bannerViews.userId, userId)))
       .limit(2);
     
@@ -2190,8 +2212,40 @@ export async function recordBannerImpression(bannerId: number, userId?: number, 
       await db.update(banners).set({
         uniqueViews: sql`${banners.uniqueViews} + 1`,
       }).where(eq(banners.id, bannerId));
+      // También en stats diarias
+      try {
+        await db.execute(sql`
+          INSERT INTO banner_daily_stats (bannerId, date, impressions, clicks, uniqueViews, totalDwellSeconds, dwellCount)
+          VALUES (${bannerId}, ${today}, 0, 0, 1, 0, 0)
+          ON DUPLICATE KEY UPDATE uniqueViews = uniqueViews + 1
+        `);
+      } catch (_e) { /* non-critical */ }
     }
   }
+}
+
+export async function recordBannerDwellTime(bannerId: number, userId: number, durationSeconds: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  // Actualizar la última vista del usuario para este banner con el dwell time
+  await db.execute(sql`
+    UPDATE banner_views
+    SET viewDurationSeconds = ${durationSeconds}
+    WHERE bannerId = ${bannerId} AND userId = ${userId} AND viewDurationSeconds IS NULL
+    ORDER BY viewedAt DESC
+    LIMIT 1
+  `);
+  
+  // Actualizar stats diarias
+  const today = new Date().toISOString().split('T')[0];
+  try {
+    await db.execute(sql`
+      INSERT INTO banner_daily_stats (bannerId, date, impressions, clicks, uniqueViews, totalDwellSeconds, dwellCount)
+      VALUES (${bannerId}, ${today}, 0, 0, 0, ${durationSeconds}, 1)
+      ON DUPLICATE KEY UPDATE totalDwellSeconds = totalDwellSeconds + ${durationSeconds}, dwellCount = dwellCount + 1
+    `);
+  } catch (_e) { /* non-critical */ }
 }
 
 export async function recordBannerClick(bannerId: number, userId?: number) {
@@ -2202,6 +2256,16 @@ export async function recordBannerClick(bannerId: number, userId?: number) {
   await db.update(banners).set({
     clicks: sql`${banners.clicks} + 1`,
   }).where(eq(banners.id, bannerId));
+  
+  // Actualizar stats diarias
+  const today = new Date().toISOString().split('T')[0];
+  try {
+    await db.execute(sql`
+      INSERT INTO banner_daily_stats (bannerId, date, impressions, clicks, uniqueViews, totalDwellSeconds, dwellCount)
+      VALUES (${bannerId}, ${today}, 0, 1, 0, 0, 0)
+      ON DUPLICATE KEY UPDATE clicks = clicks + 1
+    `);
+  } catch (_e) { /* non-critical */ }
   
   // Actualizar registro de vista si hay usuario
   if (userId) {
@@ -2214,6 +2278,123 @@ export async function recordBannerClick(bannerId: number, userId?: number) {
       eq(bannerViews.clicked, false),
     ));
   }
+}
+
+export async function getBannerCampaignAnalytics(bannerId: number, startDate?: Date, endDate?: Date) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const banner = await db.select().from(banners).where(eq(banners.id, bannerId)).limit(1);
+  if (!banner[0]) return null;
+  
+  // Filtro de fechas para banner_views
+  const dateConditions: any[] = [eq(bannerViews.bannerId, bannerId)];
+  if (startDate) dateConditions.push(gte(bannerViews.viewedAt, startDate));
+  if (endDate) dateConditions.push(lte(bannerViews.viewedAt, endDate));
+  
+  // Métricas agregadas
+  const [metrics] = await db.select({
+    totalViews: count(bannerViews.id),
+    uniqueUsers: sql<number>`COUNT(DISTINCT ${bannerViews.userId})`,
+    totalClicks: sum(sql<number>`CASE WHEN ${bannerViews.clicked} = 1 THEN 1 ELSE 0 END`),
+    avgDwellSeconds: avg(bannerViews.viewDurationSeconds),
+    totalDwellSeconds: sum(bannerViews.viewDurationSeconds),
+  }).from(bannerViews).where(and(...dateConditions));
+  
+  const totalImpressions = banner[0].impressions;
+  const totalClicks = Number(metrics.totalClicks) || 0;
+  const reach = Number(metrics.uniqueUsers) || 0;
+  const frequency = reach > 0 ? (totalImpressions / reach) : 0;
+  const ctr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100) : 0;
+  const avgDwell = Number(metrics.avgDwellSeconds) || 0;
+  
+  return {
+    banner: banner[0],
+    summary: {
+      impressions: totalImpressions,
+      clicks: totalClicks,
+      ctr: Math.round(ctr * 100) / 100,
+      reach,
+      frequency: Math.round(frequency * 100) / 100,
+      avgDwellSeconds: Math.round(avgDwell),
+      totalDwellMinutes: Math.round(Number(metrics.totalDwellSeconds) / 60),
+    },
+  };
+}
+
+export async function getBannerDailyStats(bannerId: number, daysBack: number = 30) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const since = new Date();
+  since.setDate(since.getDate() - daysBack);
+  const sinceStr = since.toISOString().split('T')[0];
+  
+  const stats = await db.select().from(bannerDailyStats)
+    .where(and(
+      eq(bannerDailyStats.bannerId, bannerId),
+      gte(bannerDailyStats.date, sinceStr as any)
+    ))
+    .orderBy(asc(bannerDailyStats.date));
+  
+  return stats.map(s => ({
+    date: s.date,
+    impressions: s.impressions,
+    clicks: s.clicks,
+    uniqueViews: s.uniqueViews,
+    avgDwellSeconds: s.dwellCount > 0 ? Math.round(s.totalDwellSeconds / s.dwellCount) : 0,
+    ctr: s.impressions > 0 ? Math.round((s.clicks / s.impressions) * 10000) / 100 : 0,
+  }));
+}
+
+export async function getBannerAudienceProfile(bannerId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  // Distribución por hora del día
+  const byHour = await db.select({
+    hour: bannerViews.hourOfDay,
+    views: count(bannerViews.id),
+  }).from(bannerViews)
+    .where(and(eq(bannerViews.bannerId, bannerId), sql`${bannerViews.hourOfDay} IS NOT NULL`))
+    .groupBy(bannerViews.hourOfDay)
+    .orderBy(bannerViews.hourOfDay);
+  
+  // Distribución por ciudad
+  const byCity = await db.select({
+    city: bannerViews.city,
+    views: count(bannerViews.id),
+    clicks: sum(sql<number>`CASE WHEN ${bannerViews.clicked} = 1 THEN 1 ELSE 0 END`),
+  }).from(bannerViews)
+    .where(and(eq(bannerViews.bannerId, bannerId), sql`${bannerViews.city} IS NOT NULL`))
+    .groupBy(bannerViews.city)
+    .orderBy(desc(count(bannerViews.id)))
+    .limit(10);
+  
+  // Distribución por tipo de vehículo
+  const byVehicle = await db.select({
+    vehicleType: bannerViews.vehicleType,
+    views: count(bannerViews.id),
+  }).from(bannerViews)
+    .where(and(eq(bannerViews.bannerId, bannerId), sql`${bannerViews.vehicleType} IS NOT NULL`))
+    .groupBy(bannerViews.vehicleType)
+    .orderBy(desc(count(bannerViews.id)))
+    .limit(10);
+  
+  // Distribución por dispositivo
+  const byDevice = await db.select({
+    deviceType: bannerViews.deviceType,
+    views: count(bannerViews.id),
+  }).from(bannerViews)
+    .where(and(eq(bannerViews.bannerId, bannerId), sql`${bannerViews.deviceType} IS NOT NULL`))
+    .groupBy(bannerViews.deviceType);
+  
+  return {
+    byHour: byHour.map(h => ({ hour: h.hour ?? 0, views: Number(h.views) })),
+    byCity: byCity.map(c => ({ city: c.city || 'Desconocida', views: Number(c.views), clicks: Number(c.clicks) || 0 })),
+    byVehicle: byVehicle.map(v => ({ vehicleType: v.vehicleType || 'Desconocido', views: Number(v.views) })),
+    byDevice: byDevice.map(d => ({ deviceType: d.deviceType || 'Desconocido', views: Number(d.views) })),
+  };
 }
 
 

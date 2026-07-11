@@ -54,25 +54,64 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-// Componente de banner publicitario durante la carga
-function ChargingBanner() {
-  const { data: banners } = trpc.banners.getActive.useQuery({ 
-    type: "charging_session" 
-  });
-  
+// Componente de banner publicitario durante la carga con tracking completo
+function ChargingBanner({ userCity, userVehicleType }: { userCity?: string; userVehicleType?: string }) {
+  const { user } = useAuth();
+  const { data: bannerList } = trpc.banners.getActive.useQuery({ type: "CHARGING" });
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
-  
+  const [bannerStartTime, setBannerStartTime] = useState<number>(Date.now());
+
+  const recordImpression = trpc.banners.recordImpression.useMutation();
+  const recordClick = trpc.banners.recordClick.useMutation();
+  const recordDwellTime = trpc.banners.recordDwellTime.useMutation();
+
+  const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+
+  // Registrar impresión cuando cambia el banner activo
   useEffect(() => {
-    if (!banners || banners.length <= 1) return;
-    
+    if (!bannerList || bannerList.length === 0) return;
+    const banner = bannerList[currentBannerIndex];
+    if (!banner) return;
+    setBannerStartTime(Date.now());
+    recordImpression.mutate({
+      bannerId: banner.id,
+      context: "CHARGING",
+      city: userCity,
+      vehicleType: userVehicleType,
+      deviceType: isMobile ? "MOBILE" : "WEB",
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentBannerIndex, bannerList?.length]);
+
+  // Registrar dwell time al desmontar o cambiar de banner
+  useEffect(() => {
+    return () => {
+      if (!bannerList || bannerList.length === 0 || !user) return;
+      const banner = bannerList[currentBannerIndex];
+      if (!banner) return;
+      const durationSeconds = Math.round((Date.now() - bannerStartTime) / 1000);
+      if (durationSeconds >= 2) {
+        recordDwellTime.mutate({ bannerId: banner.id, durationSeconds });
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentBannerIndex, bannerList, bannerStartTime, user]);
+
+  // Rotar banners cada 10 segundos
+  useEffect(() => {
+    if (!bannerList || bannerList.length <= 1) return;
     const interval = setInterval(() => {
-      setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
+      setCurrentBannerIndex((prev) => (prev + 1) % bannerList.length);
     }, 10000);
-    
     return () => clearInterval(interval);
-  }, [banners]);
-  
-  if (!banners || banners.length === 0) {
+  }, [bannerList]);
+
+  const handleBannerClick = (banner: { id: number; linkUrl?: string | null }) => {
+    recordClick.mutate({ bannerId: banner.id });
+    if (banner.linkUrl) window.open(banner.linkUrl, "_blank", "noopener,noreferrer");
+  };
+
+  if (!bannerList || bannerList.length === 0) {
     return (
       <div className="w-full rounded-xl overflow-hidden shadow-lg mb-4 bg-gradient-to-r from-emerald-500 to-teal-600 p-4">
         <div className="text-center text-white">
@@ -82,25 +121,59 @@ function ChargingBanner() {
       </div>
     );
   }
-  
-  const banner = banners[currentBannerIndex];
-  
+
+  const banner = bannerList[currentBannerIndex];
+
   return (
-    <div className="w-full rounded-xl overflow-hidden shadow-lg mb-4">
+    <div
+      className="w-full rounded-xl overflow-hidden shadow-lg mb-4 cursor-pointer active:opacity-90 transition-opacity"
+      onClick={() => handleBannerClick(banner)}
+      role={banner.linkUrl ? "link" : undefined}
+      aria-label={banner.linkUrl ? `Ir a ${banner.title}` : undefined}
+    >
       {banner.imageUrl ? (
-        <img 
-          src={banner.imageUrl} 
-          alt={banner.title}
-          className="w-full h-24 object-cover"
-        />
+        <div className="relative">
+          <img
+            src={banner.imageUrl}
+            alt={banner.title}
+            className="w-full h-28 sm:h-32 object-cover"
+          />
+          {banner.ctaText && (
+            <div className="absolute bottom-2 right-2">
+              <span className="bg-white/90 text-gray-900 text-xs font-semibold px-3 py-1 rounded-full shadow">
+                {banner.ctaText}
+              </span>
+            </div>
+          )}
+          {bannerList.length > 1 && (
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+              {bannerList.map((_, i) => (
+                <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all ${i === currentBannerIndex ? 'bg-white' : 'bg-white/40'}`} />
+              ))}
+            </div>
+          )}
+        </div>
       ) : (
-        <div className="w-full h-24 bg-gradient-to-r from-emerald-500 to-teal-600 flex items-center justify-center p-4">
+        <div className="w-full h-28 sm:h-32 bg-gradient-to-r from-emerald-500 to-teal-600 flex items-center justify-center p-4 relative">
           <div className="text-center text-white">
             <p className="font-bold text-lg">{banner.title}</p>
-            {banner.description && (
-              <p className="text-sm opacity-90">{banner.description}</p>
-            )}
+            {banner.subtitle && <p className="text-sm opacity-90 mt-0.5">{banner.subtitle}</p>}
+            {banner.description && <p className="text-xs opacity-75 mt-1">{banner.description}</p>}
           </div>
+          {banner.ctaText && (
+            <div className="absolute bottom-2 right-2">
+              <span className="bg-white/20 text-white text-xs font-semibold px-3 py-1 rounded-full border border-white/30">
+                {banner.ctaText}
+              </span>
+            </div>
+          )}
+          {bannerList.length > 1 && (
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+              {bannerList.map((_, i) => (
+                <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all ${i === currentBannerIndex ? 'bg-white' : 'bg-white/40'}`} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -818,7 +891,10 @@ export default function ChargingMonitor() {
         
         {/* Banner publicitario */}
         <div className="mt-6">
-          <ChargingBanner />
+          <ChargingBanner
+            userCity={(user as any)?.city || undefined}
+            userVehicleType={defaultVehicle ? `${defaultVehicle.brand} ${defaultVehicle.model}` : undefined}
+          />
         </div>
 
         {/* Indicador de Overstay / Grace Period */}

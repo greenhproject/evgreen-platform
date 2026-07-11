@@ -3677,3 +3677,37 @@
 - [ ] Disparar modal automáticamente al terminar sesión
 - [ ] Notificar al admin via notifyOwner cuando rating <= 2
 - [ ] Agregar sección de feedback en panel admin
+
+## Sistema de Métricas Publicitarias Profesionales - Jul 2026
+
+### Fase 1 - Esquema BD
+- [ ] Agregar columna viewDurationSeconds a banner_views
+- [ ] Agregar columna city a banner_views
+- [ ] Agregar columna vehicleType a banner_views
+- [ ] Crear tabla banner_daily_stats
+- [ ] Ejecutar pnpm db:push
+
+### Fase 2 - Backend
+- [ ] Endpoint banners.getCampaignAnalytics
+- [ ] Endpoint banners.getDailyStats
+- [ ] Endpoint banners.getAudienceProfile
+- [ ] Actualizar recordBannerImpression con city/vehicleType/deviceType
+- [ ] Endpoint banners.recordDwellTime
+
+### Fase 3 - Frontend tracking
+- [ ] ChargingMonitor: registrar impresión con contexto completo
+- [ ] ChargingMonitor: registrar dwell time en cleanup
+- [ ] ChargingMonitor: registrar clic con navegación
+
+### Fase 4 - Admin Dashboard Campaña
+- [ ] Página /admin/banners/:id/analytics
+- [ ] KPI cards: Impresiones, Clics, CTR, Alcance, Frecuencia, Dwell Time
+- [ ] Gráfica línea: impresiones/clics por día
+- [ ] Gráfica barras: horas pico
+- [ ] Gráfica dona: distribución por ciudad
+- [ ] Perfil de audiencia: vehículos, ciudades, horarios
+
+### Fase 5 - Exportación
+- [ ] PDF reporte campaña con branding EVGreen
+- [ ] Excel con datos crudos por día
+

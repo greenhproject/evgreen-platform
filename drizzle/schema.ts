@@ -16,6 +16,7 @@ import {
   bigint,
   tinyint,
   float,
+  date,
 } from "drizzle-orm/mysql-core";
 import { relations } from "drizzle-orm";
 
@@ -985,7 +986,30 @@ export const bannerViews = mysqlTable("banner_views", {
   viewContext: varchar("viewContext", { length: 50 }), // SPLASH, CHARGING, MAP
   sessionId: varchar("sessionId", { length: 100 }),
   deviceType: varchar("deviceType", { length: 50 }), // MOBILE, WEB
+  // Métricas de exposición
+  viewDurationSeconds: int("viewDurationSeconds"), // Tiempo real de exposición (dwell time)
+  // Perfil de audiencia (snapshot al momento de la vista)
+  city: varchar("city", { length: 100 }), // Ciudad del usuario
+  vehicleType: varchar("vehicleType", { length: 100 }), // Tipo de vehículo
+  hourOfDay: tinyint("hourOfDay"), // Hora del día (0-23) para análisis de horas pico
 });
+
+// Tabla de estadísticas diarias agregadas por banner (para gráficas de tendencia)
+export const bannerDailyStats = mysqlTable("banner_daily_stats", {
+  id: int("id").autoincrement().primaryKey(),
+  bannerId: int("bannerId").notNull(), // FK a banners
+  date: date("date").notNull(), // Fecha (YYYY-MM-DD)
+  impressions: int("impressions").default(0).notNull(),
+  clicks: int("clicks").default(0).notNull(),
+  uniqueViews: int("uniqueViews").default(0).notNull(),
+  totalDwellSeconds: int("totalDwellSeconds").default(0).notNull(), // Suma total de dwell time
+  dwellCount: int("dwellCount").default(0).notNull(), // Cuántas vistas tienen dwell time registrado
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type BannerDailyStat = typeof bannerDailyStats.$inferSelect;
+export type InsertBannerDailyStat = typeof bannerDailyStats.$inferInsert;
 
 export type BannerView = typeof bannerViews.$inferSelect;
 export type InsertBannerView = typeof bannerViews.$inferInsert;

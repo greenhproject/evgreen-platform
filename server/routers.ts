@@ -3434,9 +3434,19 @@ const bannersRouter = router({
     }),
 
   recordImpression: publicProcedure
-    .input(z.object({ bannerId: z.number(), context: z.string().optional() }))
+    .input(z.object({
+      bannerId: z.number(),
+      context: z.string().optional(),
+      city: z.string().optional(),
+      vehicleType: z.string().optional(),
+      deviceType: z.string().optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
-      await db.recordBannerImpression(input.bannerId, ctx.user?.id, input.context);
+      await db.recordBannerImpression(input.bannerId, ctx.user?.id, input.context, {
+        city: input.city,
+        vehicleType: input.vehicleType,
+        deviceType: input.deviceType,
+      });
       return { success: true };
     }),
   
@@ -3445,6 +3455,75 @@ const bannersRouter = router({
     .mutation(async ({ ctx, input }) => {
       await db.recordBannerClick(input.bannerId, ctx.user?.id);
       return { success: true };
+    }),
+
+  recordDwellTime: protectedProcedure
+    .input(z.object({ bannerId: z.number(), durationSeconds: z.number().min(1).max(7200) }))
+    .mutation(async ({ ctx, input }) => {
+      await db.recordBannerDwellTime(input.bannerId, ctx.user.id, input.durationSeconds);
+      return { success: true };
+    }),
+
+  getCampaignAnalytics: adminProcedure
+    .input(z.object({
+      bannerId: z.number(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getBannerCampaignAnalytics(input.bannerId, input.startDate, input.endDate);
+    }),
+
+  getDailyStats: adminProcedure
+    .input(z.object({
+      bannerId: z.number(),
+      daysBack: z.number().min(7).max(365).default(30),
+    }))
+    .query(async ({ input }) => {
+      return db.getBannerDailyStats(input.bannerId, input.daysBack);
+    }),
+
+  getAudienceProfile: adminProcedure
+    .input(z.object({ bannerId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getBannerAudienceProfile(input.bannerId);
+    }),
+
+  exportCampaignReport: adminProcedure
+    .input(z.object({
+      bannerId: z.number(),
+      format: z.enum(["excel", "pdf"]),
+      daysBack: z.number().min(7).max(365).default(30),
+    }))
+    .mutation(async ({ input }) => {
+      const { exportCampaignExcel, exportCampaignPdf } = await import("./banner-export");
+      const analytics = await db.getBannerCampaignAnalytics(input.bannerId);
+      const dailyStats = await db.getBannerDailyStats(input.bannerId, input.daysBack);
+      const audience = await db.getBannerAudienceProfile(input.bannerId);
+
+      if (!analytics?.banner || !analytics?.summary) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Banner no encontrado" });
+      }
+
+      let buffer: Buffer;
+      let filename: string;
+      let mimeType: string;
+
+      if (input.format === "excel") {
+        buffer = await exportCampaignExcel(analytics.banner as any, analytics.summary as any, dailyStats as any, audience as any);
+        filename = `reporte_campana_${analytics.banner.id}_${new Date().toISOString().split("T")[0]}.xlsx`;
+        mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      } else {
+        buffer = exportCampaignPdf(analytics.banner as any, analytics.summary as any, dailyStats as any, audience as any);
+        filename = `reporte_campana_${analytics.banner.id}_${new Date().toISOString().split("T")[0]}.pdf`;
+        mimeType = "application/pdf";
+      }
+
+      return {
+        filename,
+        mimeType,
+        data: buffer.toString("base64"),
+      };
     }),
 });
 

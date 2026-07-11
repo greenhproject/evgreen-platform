@@ -43,6 +43,7 @@ import {
   Info,
   X,
 } from "lucide-react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 // Tipos de banners según el esquema
@@ -84,6 +85,7 @@ interface Banner {
 }
 
 export default function AdminBanners() {
+  const [, setLocation] = useLocation();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
   const [imageMode, setImageMode] = useState<"url" | "upload">("upload");
@@ -776,6 +778,15 @@ export default function AdminBanners() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Ver analytics"
+                        onClick={() => setLocation(`/admin/banners/${banner.id}/analytics`)}
+                        className="text-cyan-500 hover:text-cyan-400"
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                      </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleEdit(banner)}>
                         <Pencil className="w-4 h-4" />
                       </Button>
