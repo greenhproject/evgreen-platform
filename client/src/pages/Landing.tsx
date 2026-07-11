@@ -1131,6 +1131,33 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Anunciantes Section */}
+      <section className="py-12 px-4 bg-muted/20 border-t border-border">
+        <div className="container">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <Target className="w-5 h-5 text-green-500" />
+                <span className="text-sm font-semibold text-green-500 uppercase tracking-wide">Para marcas y empresas</span>
+              </div>
+              <h3 className="text-xl font-bold mb-2">Llega a conductores de VE en Colombia</h3>
+              <p className="text-muted-foreground text-sm max-w-md">
+                Conecta tu marca con +10,000 conductores de vehículos eléctricos activos. Campañas inteligentes con IA, segmentación por ubicación y tipo de vehículo.
+              </p>
+            </div>
+            <div className="flex-shrink-0">
+              <Link href="/ads">
+                <Button variant="outline" className="border-green-500/50 text-green-400 hover:bg-green-500/10 gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  Ver plataforma de anuncios
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="py-12 px-4 border-t border-border">
         <div className="container">
@@ -1145,6 +1172,7 @@ export default function Landing() {
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
               <Link href="/saas" className="hover:text-green-400 transition-colors font-medium">Empresas</Link>
+              <Link href="/ads" className="hover:text-green-400 transition-colors font-medium">Anunciantes</Link>
               <Link href="/terms" className="hover:text-foreground transition-colors">Términos</Link>
               <Link href="/privacy" className="hover:text-foreground transition-colors">Privacidad</Link>
               <Link href="/contact" className="hover:text-foreground transition-colors">Contacto</Link>
