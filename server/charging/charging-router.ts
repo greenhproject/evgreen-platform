@@ -392,7 +392,7 @@ export const chargingRouter = router({
       
       // Obtener tarifa de la estación para verificar si usa precio automático
       const tariff = await db.getActiveTariffByStationId(stationId);
-      const useAutoPricing = tariff?.autoPricing || false;
+      const useAutoPricing = tariff?.autoPricing === true || (tariff?.autoPricing as any) === 1;
       
       // Obtener el conector seleccionado para determinar tipo AC/DC
       const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;
@@ -543,7 +543,7 @@ export const chargingRouter = router({
       
       // Obtener tarifa de la estación para verificar si usa precio automático
       const tariff = await db.getActiveTariffByStationId(stationId);
-      const useAutoPricing = tariff?.autoPricing || false;
+      const useAutoPricing = tariff?.autoPricing === true || (tariff?.autoPricing as any) === 1;
       
       // Obtener el conector seleccionado para determinar tipo AC/DC
       const selectedConnector = evsesForPrice.find(c => c.connectorId === connectorId) || firstEvse;

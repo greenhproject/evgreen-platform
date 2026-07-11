@@ -108,10 +108,12 @@ export default function InvestorStations() {
     { enabled: !!selectedStation && showConfigModal && !autoPricing }
   );
   
+  const utils = trpc.useUtils();
   const updateTariff = trpc.tariffs.updateByStation.useMutation({
     onSuccess: () => {
       toast.success("Tarifa actualizada correctamente");
       setShowConfigModal(false);
+      utils.stations.listOwned.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || "Error al actualizar tarifa");

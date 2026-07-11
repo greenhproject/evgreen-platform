@@ -17,8 +17,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { getDb } from "./db";
-import { users, userVehicles, favoriteStations, notifications, sessionFeedback } from "../drizzle/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { users, userVehicles, favoriteStations, notifications, sessionFeedback, tariffs as tariffsTable } from "../drizzle/schema";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { aiRouter } from "./ai/ai-router";
 import { wompiRouter } from "./wompi/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
@@ -474,11 +474,27 @@ const stationsRouter = router({
     const stationIds = stations.map((s: any) => s.id);
     const evsesMap = await db.getAllEvsesForStations(stationIds);
     
-    // Enriquecer estaciones con EVSEs y datos OCPP (sin queries adicionales)
+    // Batch: obtener TODAS las tarifas activas de todas las estaciones
+    const tariffsMap = new Map<number, any>();
+    if (stationIds.length > 0) {
+      try {
+        const dbConn = await getDb();
+        if (dbConn) {
+          const activeTariffs = await dbConn.select().from(tariffsTable)
+            .where(and(inArray(tariffsTable.stationId, stationIds), eq(tariffsTable.isActive, true)));
+          for (const t of activeTariffs) {
+            if (!tariffsMap.has(t.stationId)) tariffsMap.set(t.stationId, t);
+          }
+        }
+      } catch (e) { /* fallback: no tariff data */ }
+    }
+    
+    // Enriquecer estaciones con EVSEs, tarifas y datos OCPP (sin queries adicionales)
     const stationsWithEvses = stations.map((station: any) => {
       const stationEvses = evsesMap.get(station.id) || [];
       const ocppId = station.ocppIdentity || station.id?.toString();
       const ocppConn = csmsMap.get(ocppId);
+      const tariff = tariffsMap.get(station.id);
       return {
         ...station,
         evses: stationEvses,
@@ -487,6 +503,15 @@ const stationsRouter = router({
           : (station.lastBootNotification
             ? (station.lastBootNotification instanceof Date ? station.lastBootNotification.toISOString() : String(station.lastBootNotification))
             : null),
+        tariff: tariff ? {
+          id: tariff.id,
+          pricePerKwh: tariff.pricePerKwh?.toString() || "1300",
+          reservationFee: tariff.reservationFee?.toString() || "5000",
+          idleFeePerMin: tariff.overstayPenaltyPerMinute?.toString() || "500",
+          connectionFee: tariff.pricePerSession?.toString() || "2000",
+          overstayGracePeriodMinutes: tariff.overstayGracePeriodMinutes ?? 10,
+          autoPricing: tariff.autoPricing === true || tariff.autoPricing === 1,
+        } : undefined,
       };
     });
     return stationsWithEvses;
@@ -546,7 +571,7 @@ const stationsRouter = router({
             idleFeePerMin: tariff.overstayPenaltyPerMinute?.toString() || "500",
             connectionFee: tariff.pricePerSession?.toString() || "2000",
             overstayGracePeriodMinutes: tariff.overstayGracePeriodMinutes ?? 10,
-            autoPricing: tariff.autoPricing || false,
+            autoPricing: tariff.autoPricing === true || (tariff.autoPricing as any) === 1,
           } : undefined,
           evses: evses.map(e => ({
             id: e.id,
@@ -1553,7 +1578,7 @@ const transactionsRouter = router({
     .query(async ({ input, ctx }) => {
       // Verificar si la estación tiene autoPricing activado
       const tariff = await db.getActiveTariffByStationId(input.stationId);
-      const useAutoPricing = tariff?.autoPricing ?? false;
+      const useAutoPricing = tariff?.autoPricing === true || (tariff?.autoPricing as any) === 1;
 
       if (!useAutoPricing) {
         // Precio fijo: retornar sin multiplicadores dinámicos
@@ -2438,7 +2463,7 @@ const reservationsRouter = router({
     .query(async ({ input }) => {
       // Verificar si la estación tiene autoPricing activado
       const tariff = await db.getActiveTariffByStationId(input.stationId);
-      const useAutoPricing = tariff?.autoPricing ?? false;
+      const useAutoPricing = tariff?.autoPricing === true || (tariff?.autoPricing as any) === 1;
 
       if (!useAutoPricing) {
         // Precio fijo: retornar sin multiplicadores dinámicos
