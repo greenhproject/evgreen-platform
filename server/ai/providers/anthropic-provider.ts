@@ -15,13 +15,15 @@ export class AnthropicProvider implements IAIProvider {
   readonly name = "anthropic" as const;
   readonly displayName = "Anthropic Claude";
   readonly supportedModels = [
+    "claude-opus-4-5",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
     "claude-3-5-sonnet-20241022",
     "claude-3-5-haiku-20241022",
     "claude-3-opus-20240229",
-    "claude-3-sonnet-20240229",
     "claude-3-haiku-20240307",
   ];
-  readonly defaultModel = "claude-3-5-sonnet-20241022";
+  readonly defaultModel = "claude-sonnet-4-5";
 
   private apiKey: string | undefined;
   private model: string;
@@ -110,16 +112,18 @@ export class AnthropicProvider implements IAIProvider {
   }
 
   estimateCost(inputTokens: number, outputTokens: number): number {
-    // Precios aproximados en USD por 1M tokens (enero 2026)
+    // Precios aproximados en USD por 1M tokens (julio 2026)
     const pricing: Record<string, { input: number; output: number }> = {
+      "claude-opus-4-5": { input: 15, output: 75 },
+      "claude-sonnet-4-5": { input: 3, output: 15 },
+      "claude-haiku-4-5": { input: 0.8, output: 4 },
       "claude-3-5-sonnet-20241022": { input: 3, output: 15 },
       "claude-3-5-haiku-20241022": { input: 0.8, output: 4 },
       "claude-3-opus-20240229": { input: 15, output: 75 },
-      "claude-3-sonnet-20240229": { input: 3, output: 15 },
       "claude-3-haiku-20240307": { input: 0.25, output: 1.25 },
     };
 
-    const modelPricing = pricing[this.model] || pricing["claude-3-5-sonnet-20241022"];
+    const modelPricing = pricing[this.model] || pricing["claude-sonnet-4-5"];
     const inputCost = (inputTokens / 1_000_000) * modelPricing.input;
     const outputCost = (outputTokens / 1_000_000) * modelPricing.output;
 
