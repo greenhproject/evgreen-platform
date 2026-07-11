@@ -160,8 +160,21 @@ export async function getWebPushSubscription(): Promise<PushSubscription | null>
     let subscription = await registration.pushManager.getSubscription();
 
     if (subscription) {
-      console.log("[Push] Suscripción Web Push existente encontrada");
-      return subscription;
+      // Detectar endpoint FCM legacy (/fcm/send/) — deprecado desde junio 2024
+      // Si el usuario tiene una suscripción legacy, forzar re-suscripción
+      if (subscription.endpoint.includes('/fcm/send/')) {
+        console.warn('[Push] Suscripción FCM legacy detectada — forzando re-suscripción...');
+        try {
+          await subscription.unsubscribe();
+          console.log('[Push] Suscripción legacy eliminada');
+        } catch (e) {
+          console.warn('[Push] Error al eliminar suscripción legacy:', e);
+        }
+        subscription = null;
+      } else {
+        console.log('[Push] Suscripción Web Push existente encontrada (endpoint válido)');
+        return subscription;
+      }
     }
 
     // Crear nueva suscripción
