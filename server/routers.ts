@@ -1551,6 +1551,35 @@ const transactionsRouter = router({
       evseId: z.number().optional(),
     }))
     .query(async ({ input, ctx }) => {
+      // Verificar si la estación tiene autoPricing activado
+      const tariff = await db.getActiveTariffByStationId(input.stationId);
+      const useAutoPricing = tariff?.autoPricing ?? false;
+
+      if (!useAutoPricing) {
+        // Precio fijo: retornar sin multiplicadores dinámicos
+        const basePricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "1300");
+        const fixedFactors = {
+          occupancyMultiplier: 1,
+          timeMultiplier: 1,
+          dayMultiplier: 1,
+          demandMultiplier: 1,
+          finalMultiplier: 1,
+          demandLevel: "NORMAL" as const,
+        };
+        return {
+          basePricePerKwh,
+          dynamicPricePerKwh: basePricePerKwh,
+          multiplier: 1,
+          factors: fixedFactors,
+          demandVisualization: dynamicPricing.getDemandVisualization(fixedFactors),
+          validUntil: new Date(Date.now() + 15 * 60 * 1000),
+          currency: "COP",
+          subscriptionDiscount: 0,
+          priceBeforeDiscount: undefined,
+          useAutoPricing: false,
+        };
+      }
+
       const pricing = await dynamicPricing.calculateDynamicKwhPrice(
         input.stationId,
         input.evseId
@@ -1582,6 +1611,7 @@ const transactionsRouter = router({
         // Precio sin descuento (para mostrar comparación)
         priceBeforeDiscount: subscriptionDiscount > 0 ? pricing.dynamicPricePerKwh : undefined,
         subscriptionDiscount,
+        useAutoPricing: true,
       };
     }),
   
@@ -2406,18 +2436,48 @@ const reservationsRouter = router({
       estimatedDurationMinutes: z.number().min(15).max(480).default(60),
     }))
     .query(async ({ input }) => {
+      // Verificar si la estación tiene autoPricing activado
+      const tariff = await db.getActiveTariffByStationId(input.stationId);
+      const useAutoPricing = tariff?.autoPricing ?? false;
+
+      if (!useAutoPricing) {
+        // Precio fijo: retornar sin multiplicadores dinámicos
+        const basePricePerKwh = parseFloat(tariff?.pricePerKwh?.toString() || "1300");
+        const reservationFee = parseFloat(tariff?.reservationFee?.toString() || "5000");
+        const fixedFactors = {
+          occupancyMultiplier: 1,
+          timeMultiplier: 1,
+          dayMultiplier: 1,
+          demandMultiplier: 1,
+          finalMultiplier: 1,
+          demandLevel: "NORMAL" as const,
+        };
+        const visualization = dynamicPricing.getDemandVisualization(fixedFactors);
+        return {
+          basePrice: basePricePerKwh,
+          finalPrice: basePricePerKwh,
+          factors: fixedFactors,
+          reservationFee,
+          noShowPenalty: reservationFee,
+          estimatedTotal: basePricePerKwh * 10 + reservationFee,
+          currency: "COP",
+          validUntil: new Date(Date.now() + 15 * 60 * 1000),
+          visualization,
+          useAutoPricing: false,
+        };
+      }
+
       const price = await dynamicPricing.calculateDynamicPrice(
         input.stationId,
         input.evseId,
         input.requestedDate || new Date(),
         input.estimatedDurationMinutes
       );
-      
       const visualization = dynamicPricing.getDemandVisualization(price.factors);
-      
       return {
         ...price,
         visualization,
+        useAutoPricing: true,
       };
     }),
   

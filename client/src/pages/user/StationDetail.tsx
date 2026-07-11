@@ -87,20 +87,20 @@ function DynamicPricingCard({ stationId }: { stationId: number }) {
           <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
         </span>
       </h3>
-      <Card className={`p-4 backdrop-blur border-2 ${kwhPrice ? getDemandBg(kwhPrice.factors.demandLevel) : 'bg-card/50 border-border/50'}`}>
+      <Card className={`p-4 backdrop-blur border-2 ${kwhPrice && (kwhPrice as any).useAutoPricing ? getDemandBg(kwhPrice.factors.demandLevel) : 'bg-card/50 border-border/50'}`}>
         <div className="space-y-4">
-          {/* Precio dinámico principal */}
+          {/* Precio principal */}
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm text-muted-foreground">Precio actual por kWh</div>
               <div className="flex items-baseline gap-2">
-                <span className={`text-3xl font-bold ${kwhPrice ? getDemandColor(kwhPrice.factors.demandLevel) : ''}`}>
+                <span className={`text-3xl font-bold ${kwhPrice && (kwhPrice as any).useAutoPricing ? getDemandColor(kwhPrice.factors.demandLevel) : 'text-foreground'}`}>
                   ${kwhPrice?.dynamicPricePerKwh?.toLocaleString() || '---'}
                 </span>
                 <span className="text-muted-foreground">COP</span>
               </div>
             </div>
-            {kwhPrice && (
+            {kwhPrice && (kwhPrice as any).useAutoPricing && (
               <div className="text-right">
                 <div className={`text-sm font-medium ${getDemandColor(kwhPrice.factors.demandLevel)}`}>
                   {kwhPrice.demandVisualization?.message}
@@ -110,10 +110,15 @@ function DynamicPricingCard({ stationId }: { stationId: number }) {
                 </div>
               </div>
             )}
+            {kwhPrice && !(kwhPrice as any).useAutoPricing && (
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground">Precio fijo</div>
+              </div>
+            )}
           </div>
 
-          {/* Comparación con precio base */}
-          {kwhPrice && kwhPrice.multiplier !== 1 && (
+          {/* Comparación con precio base (solo si autoPricing y hay descuento) */}
+          {kwhPrice && (kwhPrice as any).useAutoPricing && kwhPrice.multiplier !== 1 && (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Precio base:</span>
               <span className="line-through text-muted-foreground">
