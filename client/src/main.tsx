@@ -109,7 +109,9 @@ const trpcClient = trpc.createClient({
         const token = cookies[COOKIE_NAME] || localStorage.getItem(NATIVE_TOKEN_KEY) || '';
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        // AI calls (Anthropic, OpenAI, Google) can take 20-45s for complex prompts.
+        // Use a 90s timeout to avoid aborting legitimate AI responses.
+        const timeoutId = setTimeout(() => controller.abort(), 90000);
 
         return globalThis.fetch(input, {
           ...(init ?? {}),

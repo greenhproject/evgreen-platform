@@ -24,7 +24,20 @@ export const aiRouter = router({
    */
   getConfig: adminProcedure.query(async () => {
     await aiService.loadConfig();
-    return aiService.getConfig();
+    // Also return masked key indicators from DB so the frontend can show
+    // "key saved" state without exposing the actual key value
+    const dbConfig = await dbOps.getAIConfig();
+    const config = aiService.getConfig();
+    return {
+      ...config,
+      // Indicate whether each provider has a key stored (masked, not the real value)
+      hasOpenaiKey: !!(dbConfig?.openaiApiKey),
+      hasAnthropicKey: !!(dbConfig?.anthropicApiKey),
+      hasGoogleKey: !!(dbConfig?.googleApiKey),
+      hasAzureKey: !!(dbConfig?.azureApiKey),
+      hasCustomKey: !!(dbConfig?.customApiKey),
+      savedModelName: dbConfig?.modelName || null,
+    };
   }),
 
   /**
@@ -84,16 +97,37 @@ export const aiRouter = router({
     }))
     .mutation(async ({ input }) => {
       try {
+        // Load saved keys from DB as fallback when frontend doesn't send a new key
+        const dbConfig = await dbOps.getAIConfig();
+        const resolvedApiKey = input.apiKey || (() => {
+          switch (input.provider) {
+            case "openai": return dbConfig?.openaiApiKey || undefined;
+            case "anthropic": return dbConfig?.anthropicApiKey || undefined;
+            case "google": return dbConfig?.googleApiKey || undefined;
+            case "azure": return dbConfig?.azureApiKey || undefined;
+            case "custom": return dbConfig?.customApiKey || undefined;
+            default: return undefined;
+          }
+        })();
+        const resolvedEndpoint = input.endpoint || (() => {
+          switch (input.provider) {
+            case "azure": return dbConfig?.azureEndpoint || undefined;
+            case "custom": return dbConfig?.customEndpoint || undefined;
+            default: return undefined;
+          }
+        })();
+        const resolvedModel = input.model || dbConfig?.modelName || undefined;
+
         // Configurar temporalmente el proveedor
         const success = await aiService.setActiveProvider(input.provider, {
-          openai: input.provider === "openai" ? input.apiKey : undefined,
-          anthropic: input.provider === "anthropic" ? input.apiKey : undefined,
-          google: input.provider === "google" ? input.apiKey : undefined,
-          azure: input.provider === "azure" ? input.apiKey : undefined,
-          azureEndpoint: input.endpoint,
-          custom: input.provider === "custom" ? input.apiKey : undefined,
-          customEndpoint: input.endpoint,
-          model: input.model,
+          openai: input.provider === "openai" ? resolvedApiKey : undefined,
+          anthropic: input.provider === "anthropic" ? resolvedApiKey : undefined,
+          google: input.provider === "google" ? resolvedApiKey : undefined,
+          azure: input.provider === "azure" ? resolvedApiKey : undefined,
+          azureEndpoint: resolvedEndpoint,
+          custom: input.provider === "custom" ? resolvedApiKey : undefined,
+          customEndpoint: resolvedEndpoint,
+          model: resolvedModel,
         });
 
         if (!success && input.provider !== "manus") {
@@ -108,6 +142,9 @@ export const aiRouter = router({
           { role: "user", content: "Di 'OK' si puedes responder." },
         ], { maxTokens: 50 });
 
+        // Restore the configured provider after the test
+        await aiService.loadConfig();
+
         return {
           success: true,
           response: response.content,
@@ -115,6 +152,8 @@ export const aiRouter = router({
           provider: response.provider,
         };
       } catch (error: any) {
+        // Restore the configured provider even on error
+        await aiService.loadConfig();
         return {
           success: false,
           error: error.message,

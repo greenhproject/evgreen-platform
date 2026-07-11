@@ -177,6 +177,10 @@ export default function AISettings() {
       setEnableAdminAnalytics(config.enableAdminAnalytics);
       setDailyUserLimit(config.dailyUserLimit || 50);
       setDailyTotalLimit(config.dailyTotalLimit || 10000);
+      // Restore saved model name so the selector shows the right value
+      if ((config as any).savedModelName) {
+        setModelName((config as any).savedModelName);
+      }
     }
   }, [config]);
 
@@ -416,24 +420,25 @@ export default function AISettings() {
               {provider === "openai" && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="openai-key">OpenAI API Key</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="openai-key">OpenAI API Key</Label>
+                      {(config as any)?.hasOpenaiKey && !openaiApiKey && (
+                        <span className="text-xs text-emerald-400 flex items-center gap-1">
+                          <Check className="h-3 w-3" /> Key guardada
+                        </span>
+                      )}
+                    </div>
                     <Input
                       id="openai-key"
                       type={showApiKeys ? "text" : "password"}
-                      placeholder="sk-..."
+                      placeholder={(config as any)?.hasOpenaiKey ? "••••••••••••••••••••••••••" : "sk-..."}
                       value={openaiApiKey}
                       onChange={(e) => setOpenaiApiKey(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Obtén tu API key en{" "}
-                      <a
-                        href="https://platform.openai.com/api-keys"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        platform.openai.com
-                      </a>
+                      {(config as any)?.hasOpenaiKey && !openaiApiKey
+                        ? "Deja vacío para mantener la key guardada, o ingresa una nueva para reemplazarla."
+                        : <>Obtén tu API key en{" "}<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">platform.openai.com</a></>}
                     </p>
                   </div>
                   <div className="space-y-2">
@@ -455,24 +460,25 @@ export default function AISettings() {
               {provider === "anthropic" && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="anthropic-key">Anthropic API Key</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="anthropic-key">Anthropic API Key</Label>
+                      {(config as any)?.hasAnthropicKey && !anthropicApiKey && (
+                        <span className="text-xs text-emerald-400 flex items-center gap-1">
+                          <Check className="h-3 w-3" /> Key guardada
+                        </span>
+                      )}
+                    </div>
                     <Input
                       id="anthropic-key"
                       type={showApiKeys ? "text" : "password"}
-                      placeholder="sk-ant-..."
+                      placeholder={(config as any)?.hasAnthropicKey ? "••••••••••••••••••••••••••" : "sk-ant-..."}
                       value={anthropicApiKey}
                       onChange={(e) => setAnthropicApiKey(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Obtén tu API key en{" "}
-                      <a
-                        href="https://console.anthropic.com/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        console.anthropic.com
-                      </a>
+                      {(config as any)?.hasAnthropicKey && !anthropicApiKey
+                        ? "Deja vacío para mantener la key guardada, o ingresa una nueva para reemplazarla."
+                        : <>Obtén tu API key en{" "}<a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">console.anthropic.com</a></>}
                     </p>
                   </div>
                   <div className="space-y-2">
@@ -494,24 +500,25 @@ export default function AISettings() {
               {provider === "google" && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="google-key">Google AI API Key</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="google-key">Google AI API Key</Label>
+                      {(config as any)?.hasGoogleKey && !googleApiKey && (
+                        <span className="text-xs text-emerald-400 flex items-center gap-1">
+                          <Check className="h-3 w-3" /> Key guardada
+                        </span>
+                      )}
+                    </div>
                     <Input
                       id="google-key"
                       type={showApiKeys ? "text" : "password"}
-                      placeholder="AIza..."
+                      placeholder={(config as any)?.hasGoogleKey ? "••••••••••••••••••••••••••" : "AIza..."}
                       value={googleApiKey}
                       onChange={(e) => setGoogleApiKey(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Obtén tu API key en{" "}
-                      <a
-                        href="https://aistudio.google.com/apikey"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        aistudio.google.com
-                      </a>
+                      {(config as any)?.hasGoogleKey && !googleApiKey
+                        ? "Deja vacío para mantener la key guardada, o ingresa una nueva para reemplazarla."
+                        : <>Obtén tu API key en{" "}<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">aistudio.google.com</a></>}
                     </p>
                   </div>
                   <div className="space-y-2">
