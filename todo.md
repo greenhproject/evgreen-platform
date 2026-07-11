@@ -3711,3 +3711,14 @@
 - [ ] PDF reporte campaña con branding EVGreen
 - [ ] Excel con datos crudos por día
 
+
+## Alertas de disponibilidad de estaciones - 11 Julio 2026
+- [ ] Crear tabla station_availability_alerts en drizzle/schema.ts
+- [ ] Migrar schema con pnpm db:push
+- [ ] Agregar helpers de BD: createAvailabilityAlert, getAlertsByStation, markAlertSent, deleteAlert
+- [ ] Implementar AI tool register_availability_alert en ai-router.ts
+- [ ] Conectar OCPP StatusNotification con dispatcher de alertas
+- [ ] Enviar Push notification (FCM) cuando estacion se desocupa
+- [ ] Enviar WhatsApp cuando estacion se desocupa
+- [ ] Agregar UI de alertas activas en perfil del usuario (ver y cancelar)
+- [ ] Agregar tRPC procedures: getMyAlerts, cancelAlert

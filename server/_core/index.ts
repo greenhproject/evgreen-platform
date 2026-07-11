@@ -1021,6 +1021,21 @@ async function handleOCPP16Message(
             onCableDisconnected(evse.id).catch(err => 
               console.error(`[OCPP] Error finalizing overstay:`, err)
             );
+            // ALERTAS DE DISPONIBILIDAD: Notificar a usuarios que esperaban este cargador
+            if (resolvedStationId) {
+              import("../notifications/availability-alert-dispatcher")
+                .then(({ dispatchAvailabilityAlerts }) => {
+                  // Obtener el tipo de conector del EVSE para filtrar alertas
+                  db.getEvsesByStationId(resolvedStationId!).then((evses: any[]) => {
+                    const thisEvse = evses.find((e: any) => e.id === evse.id);
+                    const connectorType = thisEvse?.connectorType || undefined;
+                    dispatchAvailabilityAlerts(resolvedStationId!, connectorType).catch(err =>
+                      console.error(`[OCPP] Error dispatching availability alerts:`, err)
+                    );
+                  }).catch(() => dispatchAvailabilityAlerts(resolvedStationId!).catch(() => {}));
+                })
+                .catch(err => console.error(`[OCPP] Error importing availability dispatcher:`, err));
+            }
           }
         }
       } else if (payload.connectorId === 0 && resolvedStationId) {
@@ -2043,6 +2058,17 @@ async function handleOCPP201Message(
             onCableDisconnected(evse.id).catch(err => 
               console.error(`[OCPP 2.0.1] Error finalizing overstay:`, err)
             );
+            // ALERTAS DE DISPONIBILIDAD: Notificar a usuarios que esperaban este cargador
+            if (stationId) {
+              import("../notifications/availability-alert-dispatcher")
+                .then(({ dispatchAvailabilityAlerts }) => {
+                  const connectorType = (evse as any).connectorType || undefined;
+                  dispatchAvailabilityAlerts(stationId, connectorType).catch(err =>
+                    console.error(`[OCPP 2.0.1] Error dispatching availability alerts:`, err)
+                  );
+                })
+                .catch(err => console.error(`[OCPP 2.0.1] Error importing availability dispatcher:`, err));
+            }
           }
         }
       }

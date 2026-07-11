@@ -52,6 +52,7 @@ import {
   CheckCircle2,
   MapPinned,
   Battery,
+  Bell,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -220,7 +221,8 @@ function ChatMessage({
     .replace(/\[NAV:(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\|([^\]]+)\]/g, '')
     .replace(/\[ROUTE:([^\]]+)\]/g, '')
     .replace(/\[RESERVE:([^\]]+)\]/g, '')
-    .replace(/\[BATTERY:(\d+)\]/g, '');
+    .replace(/\[BATTERY:(\d+)\]/g, '')
+    .replace(/\[NOTIFY:[^\]]+\]/g, '');
 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -257,6 +259,7 @@ function ChatMessage({
                 <RouteButton content={rawText} />
                 <ReservationButton content={rawText} onConfirm={onReservationConfirm} />
                 <BatteryUpdateHandler content={rawText} />
+                <AvailabilityAlertHandler content={rawText} />
               </>
             )}
           </div>
@@ -548,6 +551,53 @@ function BatteryUpdateHandler({ content }: { content: string }) {
           'Actualizando batería...'
         ) : (
           `Batería: ${level}%`
+        )}
+      </span>
+    </div>
+  );
+}
+
+// ============================================================================
+// ALERTA DE DISPONIBILIDAD DE ESTACIÓN
+// ============================================================================
+
+function AvailabilityAlertHandler({ content }: { content: string }) {
+  const [registered, setRegistered] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const registerAlert = trpc.ai.registerAvailabilityAlert.useMutation({
+    onSuccess: () => setRegistered(true),
+    onError: (err) => setError(err.message),
+  });
+
+  // Detectar tag [NOTIFY:stationId,stationName,connectorType]
+  const notifyRegex = /\[NOTIFY:(\d+),([^,\]]+),([^\]]+)\]/;
+  const match = content.match(notifyRegex);
+
+  useEffect(() => {
+    if (match && !registered && !registerAlert.isPending) {
+      const stationId = parseInt(match[1], 10);
+      const stationName = match[2].trim();
+      const connectorType = match[3].trim();
+      registerAlert.mutate({ stationId, stationName, connectorType });
+    }
+  }, [match?.[1]]);
+
+  if (!match) return null;
+
+  const stationName = match[2].trim();
+
+  return (
+    <div className="mt-2 flex items-center gap-2 text-xs bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2">
+      <Bell className="w-4 h-4 text-blue-500 shrink-0" />
+      <span className="text-muted-foreground">
+        {registered ? (
+          <span className="text-blue-500 font-medium">✅ Alerta activada para {stationName} — te notificaremos por Push y WhatsApp</span>
+        ) : registerAlert.isPending ? (
+          'Registrando alerta...'
+        ) : error ? (
+          <span className="text-red-500">Error al registrar alerta: {error}</span>
+        ) : (
+          `Activando alerta para ${stationName}...`
         )}
       </span>
     </div>

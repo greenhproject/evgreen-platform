@@ -32,6 +32,53 @@ import {
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
+// ── Alertas de disponibilidad activas ────────────────────────────────────
+function ActiveAvailabilityAlerts() {
+  const { data: alerts, isLoading, refetch } = trpc.ai.getMyAvailabilityAlerts.useQuery();
+  const cancelAlert = trpc.ai.cancelAvailabilityAlert.useMutation({
+    onSuccess: () => {
+      toast.success("Alerta cancelada");
+      refetch();
+    },
+  });
+
+  if (isLoading || !alerts || alerts.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.15 }}
+    >
+      <h3 className="text-sm font-medium text-muted-foreground mb-2 px-1">Alertas de disponibilidad</h3>
+      <Card className="divide-y">
+        {alerts.map((alert) => (
+          <div key={alert.id} className="flex items-center gap-3 p-4">
+            <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+              <Bell className="w-5 h-5 text-blue-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{(alert as any).stationName || `Estación #${alert.stationId}`}</p>
+              <p className="text-xs text-muted-foreground">
+                {(alert as any).connectorType ? `Conector: ${(alert as any).connectorType}` : "Cualquier conector"}
+                {" · "}
+                {(alert as any).sendPush && (alert as any).sendWhatsapp ? "Push + WhatsApp" : (alert as any).sendPush ? "Push" : "WhatsApp"}
+              </p>
+            </div>
+            <button
+              onClick={() => cancelAlert.mutate({ alertId: alert.id })}
+              disabled={cancelAlert.isPending}
+              className="text-xs text-destructive hover:text-destructive/80 transition-colors px-2 py-1 rounded border border-destructive/20"
+            >
+              Cancelar
+            </button>
+          </div>
+        ))}
+      </Card>
+    </motion.div>
+  );
+}
+
 export default function UserProfile() {
   const { user, logout, refresh } = useAuth();
   const [, setLocation] = useLocation();
@@ -296,6 +343,9 @@ export default function UserProfile() {
             )}
           </Card>
         </motion.div>
+
+        {/* Alertas de disponibilidad activas */}
+        <ActiveAvailabilityAlerts />
 
         {/* Secciones del menú */}
         {menuSections.map((section, sectionIndex) => (

@@ -8411,3 +8411,135 @@ export async function markOccupancyLiquidationsPaid(
       isNull(occupancyLiquidations.allyPaidAt),
     ));
 }
+
+
+// ─── Alertas de Disponibilidad de Estaciones ──────────────────────────────────
+import { stationAvailabilityAlerts, StationAvailabilityAlert } from "../drizzle/schema";
+
+/**
+ * Crea una alerta de disponibilidad para una estación.
+ * Si ya existe una alerta PENDING del mismo usuario para la misma estación, la reutiliza.
+ */
+export async function createAvailabilityAlert(data: {
+  userId: number;
+  stationId: number;
+  connectorType?: string;
+  stationName?: string;
+  userPhone?: string;
+  userName?: string;
+  sendPush?: boolean;
+  sendWhatsapp?: boolean;
+}): Promise<StationAvailabilityAlert | null> {
+  const database = await getDb();
+  if (!database) return null;
+
+  // Verificar si ya existe una alerta PENDING para este usuario+estación
+  const existing = await database.select().from(stationAvailabilityAlerts)
+    .where(and(
+      eq(stationAvailabilityAlerts.userId, data.userId),
+      eq(stationAvailabilityAlerts.stationId, data.stationId),
+      eq(stationAvailabilityAlerts.status, "PENDING"),
+    ))
+    .limit(1);
+
+  if (existing.length > 0) return existing[0];
+
+  // Calcular expiración: 24 horas desde ahora
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  const [result] = await database.insert(stationAvailabilityAlerts).values({
+    userId: data.userId,
+    stationId: data.stationId,
+    connectorType: data.connectorType,
+    stationName: data.stationName,
+    userPhone: data.userPhone,
+    userName: data.userName,
+    sendPush: data.sendPush !== false,
+    sendWhatsapp: data.sendWhatsapp !== false,
+    status: "PENDING",
+    expiresAt,
+  });
+
+  const insertId = (result as any).insertId;
+  if (!insertId) return null;
+
+  const [created] = await database.select().from(stationAvailabilityAlerts)
+    .where(eq(stationAvailabilityAlerts.id, insertId));
+  return created || null;
+}
+
+/**
+ * Obtiene todas las alertas PENDING para una estación específica.
+ * Se usa cuando OCPP reporta que un conector quedó AVAILABLE.
+ */
+export async function getPendingAlertsByStation(stationId: number): Promise<StationAvailabilityAlert[]> {
+  const database = await getDb();
+  if (!database) return [];
+
+  return database.select().from(stationAvailabilityAlerts)
+    .where(and(
+      eq(stationAvailabilityAlerts.stationId, stationId),
+      eq(stationAvailabilityAlerts.status, "PENDING"),
+    ))
+    .orderBy(asc(stationAvailabilityAlerts.createdAt));
+}
+
+/**
+ * Marca una alerta como enviada.
+ */
+export async function markAlertSent(alertId: number): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+
+  await database.update(stationAvailabilityAlerts)
+    .set({ status: "SENT", sentAt: new Date() })
+    .where(eq(stationAvailabilityAlerts.id, alertId));
+}
+
+/**
+ * Cancela una alerta (por solicitud del usuario).
+ */
+export async function cancelAvailabilityAlert(alertId: number, userId: number): Promise<boolean> {
+  const database = await getDb();
+  if (!database) return false;
+
+  await database.update(stationAvailabilityAlerts)
+    .set({ status: "CANCELLED" })
+    .where(and(
+      eq(stationAvailabilityAlerts.id, alertId),
+      eq(stationAvailabilityAlerts.userId, userId),
+      eq(stationAvailabilityAlerts.status, "PENDING"),
+    ));
+  return true;
+}
+
+/**
+ * Obtiene todas las alertas activas (PENDING) de un usuario.
+ */
+export async function getMyAvailabilityAlerts(userId: number): Promise<StationAvailabilityAlert[]> {
+  const database = await getDb();
+  if (!database) return [];
+
+  return database.select().from(stationAvailabilityAlerts)
+    .where(and(
+      eq(stationAvailabilityAlerts.userId, userId),
+      eq(stationAvailabilityAlerts.status, "PENDING"),
+    ))
+    .orderBy(desc(stationAvailabilityAlerts.createdAt));
+}
+
+/**
+ * Expira alertas vencidas (más de 24 horas sin enviarse).
+ */
+export async function expireOldAvailabilityAlerts(): Promise<number> {
+  const database = await getDb();
+  if (!database) return 0;
+
+  const [result] = await database.update(stationAvailabilityAlerts)
+    .set({ status: "EXPIRED" })
+    .where(and(
+      eq(stationAvailabilityAlerts.status, "PENDING"),
+      lt(stationAvailabilityAlerts.expiresAt, new Date()),
+    ));
+  return (result as any).affectedRows || 0;
+}

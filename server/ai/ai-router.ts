@@ -429,6 +429,56 @@ export const aiRouter = router({
       estimatedCost: 0,
     };
   }),
+
+  // --------------------------------------------------------------------------
+  // ALERTAS DE DISPONIBILIDAD DE ESTACIONES
+  // --------------------------------------------------------------------------
+
+  /**
+   * Registrar alerta de disponibilidad (llamado por la IA o el usuario directamente)
+   */
+  registerAvailabilityAlert: protectedProcedure
+    .input(z.object({
+      stationId: z.number(),
+      connectorType: z.string().optional(),
+      stationName: z.string().optional(),
+      sendPush: z.boolean().optional().default(true),
+      sendWhatsapp: z.boolean().optional().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const user = await dbOps.getUserById(ctx.user.id);
+      const alert = await dbOps.createAvailabilityAlert({
+        userId: ctx.user.id,
+        stationId: input.stationId,
+        connectorType: input.connectorType,
+        stationName: input.stationName,
+        userPhone: user?.phone || undefined,
+        userName: user?.name || undefined,
+        sendPush: input.sendPush,
+        sendWhatsapp: input.sendWhatsapp,
+      });
+      if (!alert) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo registrar la alerta" });
+      }
+      return { success: true, alertId: alert.id, alreadyExists: false };
+    }),
+
+  /**
+   * Obtener alertas activas del usuario
+   */
+  getMyAvailabilityAlerts: protectedProcedure.query(async ({ ctx }) => {
+    return dbOps.getMyAvailabilityAlerts(ctx.user.id);
+  }),
+
+  /**
+   * Cancelar una alerta de disponibilidad
+   */
+  cancelAvailabilityAlert: protectedProcedure
+    .input(z.object({ alertId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      await dbOps.cancelAvailabilityAlert(input.alertId, ctx.user.id);
+      return { success: true };
+    }),
 });
 
 export type AIRouter = typeof aiRouter;

@@ -3992,3 +3992,25 @@ export const sessionFeedback = mysqlTable("session_feedback", {
 });
 export type SessionFeedback = typeof sessionFeedback.$inferSelect;
 export type InsertSessionFeedback = typeof sessionFeedback.$inferInsert;
+
+// ─── Alertas de Disponibilidad de Estaciones ──────────────────────────────────
+// Cuando un usuario solicita ser notificado cuando una estación se desocupe,
+// se crea un registro aquí. El dispatcher de OCPP lo lee y envía Push + WhatsApp.
+export const stationAvailabilityAlerts = mysqlTable("station_availability_alerts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),                          // Usuario que solicita la alerta
+  stationId: int("stationId").notNull(),                    // Estación a monitorear
+  connectorType: varchar("connectorType", { length: 30 }),  // Tipo de conector requerido (ej. GBT_AC, CCS2)
+  stationName: varchar("stationName", { length: 200 }),     // Nombre de la estación (cache)
+  userPhone: varchar("userPhone", { length: 30 }),          // Teléfono para WhatsApp (cache)
+  userName: varchar("userName", { length: 100 }),           // Nombre del usuario (cache)
+  sendPush: boolean("sendPush").default(true).notNull(),    // Enviar notificación push
+  sendWhatsapp: boolean("sendWhatsapp").default(true).notNull(), // Enviar WhatsApp
+  status: mysqlEnum("alert_req_status", ["PENDING", "SENT", "CANCELLED", "EXPIRED"])
+    .default("PENDING").notNull(),
+  sentAt: timestamp("sentAt"),                              // Cuándo se envió la alerta
+  expiresAt: timestamp("expiresAt"),                        // Expiración automática (24h)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type StationAvailabilityAlert = typeof stationAvailabilityAlerts.$inferSelect;
+export type InsertStationAvailabilityAlert = typeof stationAvailabilityAlerts.$inferInsert;
