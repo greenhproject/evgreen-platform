@@ -39,8 +39,21 @@ function formatDuration(minutes: number): string {
   return m > 0 ? `${h}h ${m}min` : `${h}h`;
 }
 
-function getWeekRange(): { start: Date; end: Date; label: string } {
+export type WeekRangeMode = "last_week" | "last_7_days";
+
+function getWeekRange(mode: WeekRangeMode = "last_week"): { start: Date; end: Date; label: string } {
   const now = new Date();
+  const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "long" };
+
+  if (mode === "last_7_days") {
+    const end = new Date(now);
+    const start = new Date(now);
+    start.setDate(now.getDate() - 7);
+    start.setHours(0, 0, 0, 0);
+    const label = `${start.toLocaleDateString("es-CO", opts)} – ${end.toLocaleDateString("es-CO", opts)}`;
+    return { start, end, label };
+  }
+
   // Semana pasada: lunes 00:00 a domingo 23:59
   const dayOfWeek = now.getDay(); // 0=dom, 1=lun ... 6=sab
   const daysToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
@@ -51,7 +64,6 @@ function getWeekRange(): { start: Date; end: Date; label: string } {
   lastSunday.setDate(lastMonday.getDate() + 6);
   lastSunday.setHours(23, 59, 59, 999);
 
-  const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "long" };
   const label = `${lastMonday.toLocaleDateString("es-CO", opts)} – ${lastSunday.toLocaleDateString("es-CO", opts)}`;
   return { start: lastMonday, end: lastSunday, label };
 }
@@ -255,9 +267,9 @@ function buildWeeklyReportHTML(data: WeeklyReportData): string {
 
 // ─── Función principal de envío ──────────────────────────────────────────────
 
-export async function sendWeeklyReportToUser(userId: number): Promise<{ sent: boolean; reason?: string }> {
+export async function sendWeeklyReportToUser(userId: number, mode: WeekRangeMode = "last_week"): Promise<{ sent: boolean; reason?: string }> {
   try {
-    const { start, end, label } = getWeekRange();
+    const { start, end, label } = getWeekRange(mode);
 
     // Obtener transacciones de la semana pasada
     const allTxs = await getTransactionsByUserId(userId, 200);
@@ -359,10 +371,12 @@ export async function sendWeeklyReportToUser(userId: number): Promise<{ sent: bo
 
 /**
  * Envía el reporte semanal a TODOS los usuarios que lo tienen habilitado
- * y tuvieron al menos una sesión la semana pasada.
+ * y tuvieron al menos una sesión en el rango indicado.
+ * @param mode "last_week" = semana pasada lunes-domingo (para cron automático)
+ *             "last_7_days" = últimos 7 días (para trigger manual)
  */
-export async function runWeeklyReportJob(): Promise<void> {
-  console.log("[WeeklyReport] Starting weekly report job...");
+export async function runWeeklyReportJob(mode: WeekRangeMode = "last_week"): Promise<{ sent: number; skipped: number; errors: number; eligible: number }> {
+  console.log(`[WeeklyReport] Starting weekly report job (mode=${mode})...`);
   try {
     const allUsers = await getAllUsers("user");
     const eligible = allUsers.filter((u) => u.emailNotifyWeeklyReport && u.email);
@@ -374,7 +388,7 @@ export async function runWeeklyReportJob(): Promise<void> {
     let errors = 0;
 
     for (const user of eligible) {
-      const result = await sendWeeklyReportToUser(user.id);
+      const result = await sendWeeklyReportToUser(user.id, mode);
       if (result.sent) sent++;
       else if (result.reason === "no_sessions_this_week") skipped++;
       else errors++;
@@ -384,7 +398,9 @@ export async function runWeeklyReportJob(): Promise<void> {
     }
 
     console.log(`[WeeklyReport] Job complete — sent=${sent}, skipped=${skipped}, errors=${errors}`);
+    return { sent, skipped, errors, eligible: eligible.length };
   } catch (err: any) {
     console.error("[WeeklyReport] Job failed:", err.message);
+    return { sent: 0, skipped: 0, errors: 1, eligible: 0 };
   }
 }

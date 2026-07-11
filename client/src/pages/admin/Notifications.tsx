@@ -69,24 +69,38 @@ export default function AdminNotifications() {
   // Mutación para disparar el reporte semanal
   const triggerWeeklyReport = trpc.system.triggerWeeklyReport.useMutation({
     onSuccess: (result) => {
-      if (result.success) {
-        if (result.count === -1) {
-          toast.success("Reporte semanal enviado", {
-            description: "El job de reporte semanal se ejecutó correctamente para todos los usuarios elegibles.",
-          });
-        } else if (result.count === 1) {
+      // Envio a usuario específico
+      if (result.eligible === 1) {
+        if (result.sent === 1) {
           toast.success("Reporte enviado al usuario", {
-            description: `El reporte semanal fue enviado exitosamente.`,
+            description: "El reporte semanal fue enviado exitosamente (últimos 7 días).",
           });
         } else {
+          const reasonMap: Record<string, string> = {
+            no_sessions_this_week: "El usuario no tiene sesiones en los últimos 7 días.",
+            preference_disabled: "El usuario tiene el reporte semanal desactivado.",
+            no_email: "El usuario no tiene email registrado.",
+          };
           toast.info("Reporte no enviado", {
-            description: result.reason || "El usuario no cumple los criterios (sin sesiones la semana pasada o notificaciones desactivadas).",
+            description: reasonMap[result.reason ?? ""] || result.reason || "Sin sesiones en el período.",
           });
         }
       } else {
-        toast.error("Error al enviar reporte", {
-          description: result.reason || "Error desconocido.",
-        });
+        // Envio masivo
+        const { sent = 0, skipped = 0, errors = 0, eligible = 0 } = result;
+        if (eligible === 0) {
+          toast.info("Sin usuarios elegibles", {
+            description: "Ningún usuario tiene el reporte semanal activado.",
+          });
+        } else if (sent > 0) {
+          toast.success(`Reporte enviado a ${sent} usuario${sent !== 1 ? "s" : ""}`, {
+            description: `De ${eligible} elegibles: ${sent} enviados, ${skipped} sin sesiones recientes${errors > 0 ? `, ${errors} errores` : ""}.`,
+          });
+        } else {
+          toast.info("Sin sesiones recientes", {
+            description: `${eligible} usuario${eligible !== 1 ? "s" : ""} tienen el reporte activado pero ninguno tuvo sesiones en los últimos 7 días.`,
+          });
+        }
       }
     },
     onError: (error) => {
@@ -436,7 +450,7 @@ export default function AdminNotifications() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => triggerWeeklyReport.mutate({})}
+                onClick={() => triggerWeeklyReport.mutate({ mode: "last_7_days" })}
                 disabled={triggerWeeklyReport.isPending}
               >
                 {triggerWeeklyReport.isPending ? (
@@ -466,7 +480,7 @@ export default function AdminNotifications() {
                       toast.error("Ingresa un ID de usuario válido");
                       return;
                     }
-                    triggerWeeklyReport.mutate({ userId: uid });
+                    triggerWeeklyReport.mutate({ userId: uid, mode: "last_7_days" });
                   }}
                   disabled={triggerWeeklyReport.isPending || !weeklyReportUserId}
                 >
@@ -481,7 +495,7 @@ export default function AdminNotifications() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              El reporte incluye: sesiones de la semana pasada, kWh consumidos, costo total, CO₂ ahorrado y saldo de billetera. Solo se envía a usuarios con <code className="bg-muted px-1 rounded">emailNotifyWeeklyReport = true</code>.
+              El trigger manual usa <strong>"últimos 7 días"</strong>. El cron automático del lunes usa la semana cerrada (lunes–domingo anterior). Solo se envía a usuarios con <code className="bg-muted px-1 rounded">emailNotifyWeeklyReport = true</code>.
             </p>
           </div>
         </div>
