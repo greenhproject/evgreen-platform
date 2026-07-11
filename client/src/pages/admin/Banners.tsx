@@ -29,11 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+
 import {
   Plus,
   Image as ImageIcon,
@@ -225,49 +221,326 @@ function TagSelector({
   );
 }
 
-// ─── Componente auxiliar: sección colapsable de segmentación ──────────────────
+// ─── Componente auxiliar: tab de segmentación ────────────────────────────────
 
-function SegmentSection({
+function SegmentTab({
   icon: Icon,
-  title,
+  label,
   color,
   activeCount,
-  children,
+  isActive,
+  onClick,
 }: {
   icon: React.ElementType;
-  title: string;
+  label: string;
   color: string;
   activeCount: number;
-  children: React.ReactNode;
+  isActive: boolean;
+  onClick: () => void;
 }) {
-  const [open, setOpen] = useState(activeCount > 0);
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <button
-          type="button"
-          className="w-full flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-muted/30 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <div className={`w-7 h-7 rounded-md flex items-center justify-center ${color}`}>
-              <Icon className="w-4 h-4" />
-            </div>
-            <span className="text-sm font-medium">{title}</span>
-            {activeCount > 0 && (
-              <Badge className="bg-primary/20 text-primary border-0 text-xs h-5">
-                {activeCount} activo{activeCount !== 1 ? "s" : ""}
-              </Badge>
-            )}
-          </div>
-          {open ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-        </button>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="mt-2 p-3 rounded-lg bg-muted/20 border border-border/50 space-y-4">
-          {children}
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex flex-col items-center gap-1 px-3 py-2.5 rounded-lg text-xs font-medium transition-all flex-1 min-w-0 ${
+        isActive
+          ? "bg-card border border-border shadow-sm text-foreground"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+      }`}
+    >
+      <div className={`w-7 h-7 rounded-md flex items-center justify-center ${isActive ? color : "bg-muted/50"}`}>
+        <Icon className="w-3.5 h-3.5" />
+      </div>
+      <span className="truncate w-full text-center leading-tight">{label}</span>
+      {activeCount > 0 && (
+        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
+          {activeCount}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ─── Componente de segmentación tabbed ──────────────────────────────────────
+
+function SegmentationPanel({
+  formData,
+  setFormData,
+  toggleTag,
+  geoCount,
+  vehicleCount,
+  behaviorCount,
+  subCount,
+  financeCount,
+  rfmCount,
+  totalActiveSegments,
+}: {
+  formData: any;
+  setFormData: (d: any) => void;
+  toggleTag: (field: any, value: string) => void;
+  geoCount: number;
+  vehicleCount: number;
+  behaviorCount: number;
+  subCount: number;
+  financeCount: number;
+  rfmCount: number;
+  totalActiveSegments: number;
+}) {
+  const [activeTab, setActiveTab] = useState(0);
+
+  const tabs = [
+    { icon: MapPin,     label: "Geo",         color: "bg-blue-500/15 text-blue-400",   count: geoCount },
+    { icon: Car,        label: "Vehículo",     color: "bg-green-500/15 text-green-400", count: vehicleCount },
+    { icon: Zap,        label: "Carga",        color: "bg-yellow-500/15 text-yellow-400", count: behaviorCount },
+    { icon: CreditCard, label: "Suscripción",  color: "bg-purple-500/15 text-purple-400", count: subCount },
+    { icon: Wallet,     label: "Finanzas",     color: "bg-orange-500/15 text-orange-400", count: financeCount },
+    { icon: Activity,   label: "Actividad",    color: "bg-red-500/15 text-red-400",    count: rfmCount },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Target className="w-4 h-4 text-primary" />
+          <span className="text-sm font-semibold">Segmentación de audiencia</span>
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+        <div className="flex items-center gap-2">
+          {totalActiveSegments > 0 ? (
+            <Badge className="bg-primary/15 text-primary border-0 text-xs">
+              {totalActiveSegments} filtro{totalActiveSegments !== 1 ? "s" : ""} activo{totalActiveSegments !== 1 ? "s" : ""}
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">Todos los usuarios</span>
+          )}
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 p-1 bg-muted/40 rounded-xl">
+        {tabs.map((tab, i) => (
+          <SegmentTab
+            key={i}
+            icon={tab.icon}
+            label={tab.label}
+            color={tab.color}
+            activeCount={tab.count}
+            isActive={activeTab === i}
+            onClick={() => setActiveTab(i)}
+          />
+        ))}
+      </div>
+
+      {/* Panel content */}
+      <div className="rounded-xl border border-border bg-muted/10 p-4 min-h-[180px]">
+
+        {/* Tab 0: Geografía */}
+        {activeTab === 0 && (
+          <div className="space-y-4">
+            <TagSelector
+              label="Ciudad de residencia"
+              options={[
+                "Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena",
+                "Bucaramanga", "Manizales", "Pereira", "Armenia", "Ibagué",
+                "Villavicencio", "Cúcuta", "Pasto", "Montería", "Santa Marta",
+              ].map(c => ({ value: c, label: c }))}
+              selected={formData.targetCities}
+              onToggle={(v) => toggleTag("targetCities", v)}
+              placeholder="vacío = todas las ciudades"
+            />
+            <TagSelector
+              label="Departamento"
+              options={COLOMBIA_DEPARTMENTS.map(d => ({ value: d, label: d }))}
+              selected={formData.targetDepartments}
+              onToggle={(v) => toggleTag("targetDepartments", v)}
+            />
+            <TagSelector
+              label="Ciudad de la estación de carga"
+              options={[
+                "Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena",
+                "Bucaramanga", "Manizales", "Pereira", "Armenia",
+              ].map(c => ({ value: c, label: c }))}
+              selected={formData.targetStationCities}
+              onToggle={(v) => toggleTag("targetStationCities", v)}
+            />
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">IDs de estaciones específicas</Label>
+              <Input
+                placeholder="ej: 101, 205, 318"
+                value={formData.targetStationIdsText}
+                onChange={(e) => setFormData({ ...formData, targetStationIdsText: e.target.value })}
+                className="text-sm h-8"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Tab 1: Vehículo */}
+        {activeTab === 1 && (
+          <div className="space-y-4">
+            <TagSelector
+              label="Marca del vehículo"
+              options={VEHICLE_BRANDS.map(b => ({ value: b, label: b }))}
+              selected={formData.targetVehicleBrands}
+              onToggle={(v) => toggleTag("targetVehicleBrands", v)}
+            />
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Modelos específicos (separados por coma)</Label>
+              <Input
+                placeholder="ej: Model 3, Dolphin, Zoe"
+                value={formData.targetVehicleModelsText}
+                onChange={(e) => setFormData({ ...formData, targetVehicleModelsText: e.target.value })}
+                className="text-sm h-8"
+              />
+            </div>
+            <TagSelector
+              label="Tipo de conector"
+              options={CONNECTOR_OPTIONS}
+              selected={formData.targetConnectorTypes}
+              onToggle={(v) => toggleTag("targetConnectorTypes", v)}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Batería mín. (kWh)</Label>
+                <Input type="number" placeholder="ej: 40" value={formData.targetBatteryMinKwh}
+                  onChange={(e) => setFormData({ ...formData, targetBatteryMinKwh: e.target.value })} className="text-sm h-8" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Batería máx. (kWh)</Label>
+                <Input type="number" placeholder="ej: 100" value={formData.targetBatteryMaxKwh}
+                  onChange={(e) => setFormData({ ...formData, targetBatteryMaxKwh: e.target.value })} className="text-sm h-8" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: Comportamiento de carga */}
+        {activeTab === 2 && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Cargas/mes mín.</Label>
+                <Input type="number" placeholder="ej: 4" value={formData.targetMinChargesPerMonth}
+                  onChange={(e) => setFormData({ ...formData, targetMinChargesPerMonth: e.target.value })} className="text-sm h-8" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Cargas/mes máx.</Label>
+                <Input type="number" placeholder="ej: 20" value={formData.targetMaxChargesPerMonth}
+                  onChange={(e) => setFormData({ ...formData, targetMaxChargesPerMonth: e.target.value })} className="text-sm h-8" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Gasto/mes mín. (COP)</Label>
+                <Input type="number" placeholder="ej: 50000" value={formData.targetMinSpendPerMonth}
+                  onChange={(e) => setFormData({ ...formData, targetMinSpendPerMonth: e.target.value })} className="text-sm h-8" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Gasto/mes máx. (COP)</Label>
+                <Input type="number" placeholder="ej: 500000" value={formData.targetMaxSpendPerMonth}
+                  onChange={(e) => setFormData({ ...formData, targetMaxSpendPerMonth: e.target.value })} className="text-sm h-8" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Hora típica desde (0-23)</Label>
+                <Input type="number" min="0" max="23" placeholder="ej: 8" value={formData.targetChargeHoursStart}
+                  onChange={(e) => setFormData({ ...formData, targetChargeHoursStart: e.target.value })} className="text-sm h-8" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Hora típica hasta (0-23)</Label>
+                <Input type="number" min="0" max="23" placeholder="ej: 18" value={formData.targetChargeHoursEnd}
+                  onChange={(e) => setFormData({ ...formData, targetChargeHoursEnd: e.target.value })} className="text-sm h-8" />
+              </div>
+            </div>
+            <TagSelector
+              label="Método de inicio de carga"
+              options={START_METHOD_OPTIONS}
+              selected={formData.targetStartMethods}
+              onToggle={(v) => toggleTag("targetStartMethods", v)}
+            />
+          </div>
+        )}
+
+        {/* Tab 3: Suscripción y rol */}
+        {activeTab === 3 && (
+          <div className="space-y-4">
+            <TagSelector
+              label="Rol del usuario"
+              options={ROLE_OPTIONS}
+              selected={formData.targetRoles}
+              onToggle={(v) => toggleTag("targetRoles", v)}
+            />
+            <TagSelector
+              label="Tier de suscripción"
+              options={SUBSCRIPTION_OPTIONS}
+              selected={formData.targetSubscriptionTiers}
+              onToggle={(v) => toggleTag("targetSubscriptionTiers", v)}
+            />
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Tarjeta de crédito/débito registrada</Label>
+              <Select value={formData.targetHasCard} onValueChange={(v: any) => setFormData({ ...formData, targetHasCard: v })}>
+                <SelectTrigger className="text-sm h-8"><SelectValue placeholder="Sin filtro" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sin filtro</SelectItem>
+                  <SelectItem value="true">Solo usuarios con tarjeta</SelectItem>
+                  <SelectItem value="false">Solo usuarios sin tarjeta</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 4: Perfil financiero */}
+        {activeTab === 4 && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Saldo billetera mín. (COP)</Label>
+                <Input type="number" placeholder="ej: 10000" value={formData.targetWalletMinBalance}
+                  onChange={(e) => setFormData({ ...formData, targetWalletMinBalance: e.target.value })} className="text-sm h-8" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Saldo billetera máx. (COP)</Label>
+                <Input type="number" placeholder="ej: 1000000" value={formData.targetWalletMaxBalance}
+                  onChange={(e) => setFormData({ ...formData, targetWalletMaxBalance: e.target.value })} className="text-sm h-8" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Promedio de recarga mín. (COP)</Label>
+              <Input type="number" placeholder="ej: 50000" value={formData.targetMinAvgRecharge}
+                onChange={(e) => setFormData({ ...formData, targetMinAvgRecharge: e.target.value })} className="text-sm h-8" />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Segmenta por poder adquisitivo. Usuarios con mayor saldo o recargas frecuentes son audiencias premium.
+            </p>
+          </div>
+        )}
+
+        {/* Tab 5: Actividad RFM */}
+        {activeTab === 5 && (
+          <div className="space-y-4">
+            <TagSelector
+              label="Segmento de actividad"
+              options={ACTIVITY_SEGMENT_OPTIONS}
+              selected={formData.targetActivitySegments}
+              onToggle={(v) => toggleTag("targetActivitySegments", v)}
+              placeholder="vacío = todos los segmentos"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { color: "bg-green-500/10 text-green-400 border-green-500/20",  label: "Activo",    desc: "Cargó en los últimos 30 días" },
+                { color: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20", label: "En riesgo", desc: "Sin carga entre 30–60 días" },
+                { color: "bg-red-500/10 text-red-400 border-red-500/20",         label: "Dormido",   desc: "Sin carga hace más de 60 días" },
+                { color: "bg-blue-500/10 text-blue-400 border-blue-500/20",      label: "Nuevo",     desc: "Cuenta creada hace < 30 días" },
+              ].map(s => (
+                <div key={s.label} className={`p-2.5 rounded-lg border text-xs ${s.color}`}>
+                  <p className="font-semibold">{s.label}</p>
+                  <p className="opacity-80 mt-0.5">{s.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
   );
 }
 
@@ -776,212 +1049,20 @@ export default function AdminBanners() {
               </div>
 
               {/* ══════════════════════════════════════════════════════════════ */}
-              {/* SEGMENTACIÓN AVANZADA                                         */}
+              {/* SEGMENTACIÓN AVANZADA — diseño tabbed                          */}
               {/* ══════════════════════════════════════════════════════════════ */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 pt-2">
-                  <Target className="w-4 h-4 text-primary" />
-                  <Label className="text-sm font-semibold">Segmentación de audiencia</Label>
-                  {totalActiveSegments > 0 && (
-                    <Badge className="bg-primary/20 text-primary border-0 text-xs">
-                      {totalActiveSegments} filtro{totalActiveSegments !== 1 ? "s" : ""} activo{totalActiveSegments !== 1 ? "s" : ""}
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Sin filtros = todos los usuarios. Cada filtro activo restringe la audiencia.
-                </p>
-
-                <div className="space-y-2 pt-1">
-
-                  {/* D1: Geografía */}
-                  <SegmentSection icon={MapPin} title="Geografía" color="bg-blue-500/10 text-blue-400" activeCount={geoCount}>
-                    <TagSelector
-                      label="Ciudad de residencia del usuario"
-                      options={[
-                        "Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena",
-                        "Bucaramanga", "Manizales", "Pereira", "Armenia", "Ibagué",
-                        "Villavicencio", "Cúcuta", "Pasto", "Montería", "Santa Marta",
-                      ].map(c => ({ value: c, label: c }))}
-                      selected={formData.targetCities}
-                      onToggle={(v) => toggleTag("targetCities", v)}
-                      placeholder="vacío = todas las ciudades"
-                    />
-                    <TagSelector
-                      label="Departamento"
-                      options={COLOMBIA_DEPARTMENTS.map(d => ({ value: d, label: d }))}
-                      selected={formData.targetDepartments}
-                      onToggle={(v) => toggleTag("targetDepartments", v)}
-                    />
-                    <TagSelector
-                      label="Ciudad de la estación de carga"
-                      options={[
-                        "Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena",
-                        "Bucaramanga", "Manizales", "Pereira", "Armenia",
-                      ].map(c => ({ value: c, label: c }))}
-                      selected={formData.targetStationCities}
-                      onToggle={(v) => toggleTag("targetStationCities", v)}
-                    />
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">IDs de estaciones específicas (separados por coma)</Label>
-                      <Input
-                        placeholder="ej: 101, 205, 318"
-                        value={formData.targetStationIdsText}
-                        onChange={(e) => setFormData({ ...formData, targetStationIdsText: e.target.value })}
-                        className="text-sm"
-                      />
-                    </div>
-                  </SegmentSection>
-
-                  {/* D2: Vehículo */}
-                  <SegmentSection icon={Car} title="Vehículo" color="bg-green-500/10 text-green-400" activeCount={vehicleCount}>
-                    <TagSelector
-                      label="Marca del vehículo"
-                      options={VEHICLE_BRANDS.map(b => ({ value: b, label: b }))}
-                      selected={formData.targetVehicleBrands}
-                      onToggle={(v) => toggleTag("targetVehicleBrands", v)}
-                    />
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Modelos específicos (separados por coma)</Label>
-                      <Input
-                        placeholder="ej: Model 3, Dolphin, Zoe"
-                        value={formData.targetVehicleModelsText}
-                        onChange={(e) => setFormData({ ...formData, targetVehicleModelsText: e.target.value })}
-                        className="text-sm"
-                      />
-                    </div>
-                    <TagSelector
-                      label="Tipo de conector"
-                      options={CONNECTOR_OPTIONS}
-                      selected={formData.targetConnectorTypes}
-                      onToggle={(v) => toggleTag("targetConnectorTypes", v)}
-                    />
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Batería mínima (kWh)</Label>
-                        <Input type="number" placeholder="ej: 40" value={formData.targetBatteryMinKwh}
-                          onChange={(e) => setFormData({ ...formData, targetBatteryMinKwh: e.target.value })} className="text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Batería máxima (kWh)</Label>
-                        <Input type="number" placeholder="ej: 100" value={formData.targetBatteryMaxKwh}
-                          onChange={(e) => setFormData({ ...formData, targetBatteryMaxKwh: e.target.value })} className="text-sm" />
-                      </div>
-                    </div>
-                  </SegmentSection>
-
-                  {/* D3: Comportamiento */}
-                  <SegmentSection icon={Zap} title="Comportamiento de carga" color="bg-yellow-500/10 text-yellow-400" activeCount={behaviorCount}>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Cargas/mes mínimo</Label>
-                        <Input type="number" placeholder="ej: 4" value={formData.targetMinChargesPerMonth}
-                          onChange={(e) => setFormData({ ...formData, targetMinChargesPerMonth: e.target.value })} className="text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Cargas/mes máximo</Label>
-                        <Input type="number" placeholder="ej: 20" value={formData.targetMaxChargesPerMonth}
-                          onChange={(e) => setFormData({ ...formData, targetMaxChargesPerMonth: e.target.value })} className="text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Gasto/mes mínimo (COP)</Label>
-                        <Input type="number" placeholder="ej: 50000" value={formData.targetMinSpendPerMonth}
-                          onChange={(e) => setFormData({ ...formData, targetMinSpendPerMonth: e.target.value })} className="text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Gasto/mes máximo (COP)</Label>
-                        <Input type="number" placeholder="ej: 500000" value={formData.targetMaxSpendPerMonth}
-                          onChange={(e) => setFormData({ ...formData, targetMaxSpendPerMonth: e.target.value })} className="text-sm" />
-                      </div>
-                    </div>
-                    <TagSelector
-                      label="Método de inicio de carga"
-                      options={START_METHOD_OPTIONS}
-                      selected={formData.targetStartMethods}
-                      onToggle={(v) => toggleTag("targetStartMethods", v)}
-                    />
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Hora típica desde (0-23)</Label>
-                        <Input type="number" min="0" max="23" placeholder="ej: 8" value={formData.targetChargeHoursStart}
-                          onChange={(e) => setFormData({ ...formData, targetChargeHoursStart: e.target.value })} className="text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Hora típica hasta (0-23)</Label>
-                        <Input type="number" min="0" max="23" placeholder="ej: 18" value={formData.targetChargeHoursEnd}
-                          onChange={(e) => setFormData({ ...formData, targetChargeHoursEnd: e.target.value })} className="text-sm" />
-                      </div>
-                    </div>
-                  </SegmentSection>
-
-                  {/* D4: Suscripción y rol */}
-                  <SegmentSection icon={CreditCard} title="Suscripción y rol" color="bg-purple-500/10 text-purple-400" activeCount={subCount}>
-                    <TagSelector
-                      label="Rol del usuario"
-                      options={ROLE_OPTIONS}
-                      selected={formData.targetRoles}
-                      onToggle={(v) => toggleTag("targetRoles", v)}
-                    />
-                    <TagSelector
-                      label="Tier de suscripción"
-                      options={SUBSCRIPTION_OPTIONS}
-                      selected={formData.targetSubscriptionTiers}
-                      onToggle={(v) => toggleTag("targetSubscriptionTiers", v)}
-                    />
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Tarjeta registrada</Label>
-                      <Select value={formData.targetHasCard} onValueChange={(v: any) => setFormData({ ...formData, targetHasCard: v })}>
-                        <SelectTrigger className="text-sm"><SelectValue placeholder="Sin filtro" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="">Sin filtro</SelectItem>
-                          <SelectItem value="true">Solo con tarjeta</SelectItem>
-                          <SelectItem value="false">Solo sin tarjeta</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </SegmentSection>
-
-                  {/* D5: Perfil financiero */}
-                  <SegmentSection icon={Wallet} title="Perfil financiero" color="bg-orange-500/10 text-orange-400" activeCount={financeCount}>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Saldo billetera mínimo (COP)</Label>
-                        <Input type="number" placeholder="ej: 10000" value={formData.targetWalletMinBalance}
-                          onChange={(e) => setFormData({ ...formData, targetWalletMinBalance: e.target.value })} className="text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Saldo billetera máximo (COP)</Label>
-                        <Input type="number" placeholder="ej: 1000000" value={formData.targetWalletMaxBalance}
-                          onChange={(e) => setFormData({ ...formData, targetWalletMaxBalance: e.target.value })} className="text-sm" />
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Monto promedio de recarga mínimo (COP)</Label>
-                      <Input type="number" placeholder="ej: 50000" value={formData.targetMinAvgRecharge}
-                        onChange={(e) => setFormData({ ...formData, targetMinAvgRecharge: e.target.value })} className="text-sm" />
-                    </div>
-                  </SegmentSection>
-
-                  {/* D7: Actividad RFM */}
-                  <SegmentSection icon={Activity} title="Actividad del usuario (RFM)" color="bg-red-500/10 text-red-400" activeCount={rfmCount}>
-                    <TagSelector
-                      label="Segmento de actividad"
-                      options={ACTIVITY_SEGMENT_OPTIONS}
-                      selected={formData.targetActivitySegments}
-                      onToggle={(v) => toggleTag("targetActivitySegments", v)}
-                      placeholder="vacío = todos los segmentos"
-                    />
-                    <div className="p-2.5 rounded-lg bg-muted/30 text-xs text-muted-foreground space-y-1">
-                      <p className="font-medium text-foreground">¿Cómo se calcula?</p>
-                      <p><span className="text-green-400">Activo:</span> última carga hace menos de 30 días</p>
-                      <p><span className="text-yellow-400">En riesgo:</span> sin carga entre 30 y 60 días</p>
-                      <p><span className="text-red-400">Dormido:</span> sin carga hace más de 60 días</p>
-                      <p><span className="text-blue-400">Nuevo:</span> cuenta creada hace menos de 30 días sin cargas</p>
-                    </div>
-                  </SegmentSection>
-
-                </div>
-              </div>
+              <SegmentationPanel
+                formData={formData}
+                setFormData={setFormData}
+                toggleTag={toggleTag}
+                geoCount={geoCount}
+                vehicleCount={vehicleCount}
+                behaviorCount={behaviorCount}
+                subCount={subCount}
+                financeCount={financeCount}
+                rfmCount={rfmCount}
+                totalActiveSegments={totalActiveSegments}
+              />
 
               {/* ── Vista previa ── */}
               {formData.imageUrl && (
