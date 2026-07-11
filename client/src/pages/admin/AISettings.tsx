@@ -40,6 +40,56 @@ import {
 
 type AIProvider = "manus" | "openai" | "anthropic" | "google" | "azure" | "custom";
 
+// ─── Metadata amigable por modelo ────────────────────────────────────────────
+const MODEL_METADATA: Record<string, { label: string; description: string; badge?: string; badgeColor?: string }> = {
+  // Anthropic Claude 4
+  "claude-opus-4-5":           { label: "Claude Opus 4.5",           description: "Máxima inteligencia para tareas complejas de análisis",   badge: "Más potente",   badgeColor: "bg-purple-500/20 text-purple-300 border-purple-500/30" },
+  "claude-sonnet-4-5":         { label: "Claude Sonnet 4.5",         description: "Balance óptimo calidad/costo — ideal para el asistente IA", badge: "Recomendado",   badgeColor: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
+  "claude-haiku-4-5":          { label: "Claude Haiku 4.5",          description: "Respuestas rápidas y económicas para consultas simples",   badge: "Más rápido",    badgeColor: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
+  // Anthropic Claude 3.5 (legado)
+  "claude-3-5-sonnet-20241022": { label: "Claude 3.5 Sonnet",         description: "Versión anterior — mantenida por compatibilidad",           badge: "Legado",        badgeColor: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30" },
+  "claude-3-5-haiku-20241022":  { label: "Claude 3.5 Haiku",          description: "Versión anterior rápida — mantenida por compatibilidad",   badge: "Legado",        badgeColor: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30" },
+  "claude-3-opus-20240229":     { label: "Claude 3 Opus",             description: "Versión anterior de máxima capacidad",                    badge: "Legado",        badgeColor: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30" },
+  "claude-3-haiku-20240307":    { label: "Claude 3 Haiku",            description: "Versión anterior económica",                              badge: "Legado",        badgeColor: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30" },
+  // OpenAI GPT-4
+  "gpt-4o":                    { label: "GPT-4o",                    description: "Modelo multimodal más capaz de OpenAI",                   badge: "Recomendado",   badgeColor: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
+  "gpt-4o-mini":               { label: "GPT-4o Mini",               description: "Versión compacta y económica de GPT-4o",                  badge: "Más rápido",    badgeColor: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
+  "gpt-4-turbo":               { label: "GPT-4 Turbo",               description: "Alta capacidad con contexto extendido",                   badge: "Potente",       badgeColor: "bg-purple-500/20 text-purple-300 border-purple-500/30" },
+  "gpt-4":                     { label: "GPT-4",                     description: "Modelo base de alta calidad",                             badge: "Legado",        badgeColor: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30" },
+  "gpt-3.5-turbo":             { label: "GPT-3.5 Turbo",             description: "Rápido y económico para tareas básicas",                  badge: "Económico",     badgeColor: "bg-amber-500/20 text-amber-300 border-amber-500/30" },
+  // Google Gemini
+  "gemini-1.5-pro":            { label: "Gemini 1.5 Pro",            description: "Modelo avanzado con contexto de 1M tokens",               badge: "Recomendado",   badgeColor: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
+  "gemini-1.5-flash":          { label: "Gemini 1.5 Flash",          description: "Respuestas rápidas y eficientes",                         badge: "Más rápido",    badgeColor: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
+  "gemini-pro":                { label: "Gemini Pro",                description: "Modelo base de Google AI",                                badge: "Legado",        badgeColor: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30" },
+};
+
+function ModelSelectItem({ model, defaultModel }: { model: string; defaultModel?: string }) {
+  const meta = MODEL_METADATA[model];
+  const isDefault = model === defaultModel;
+  return (
+    <SelectItem key={model} value={model} className="py-2.5">
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-sm">{meta?.label ?? model}</span>
+          {meta?.badge && (
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${meta.badgeColor}`}>
+              {meta.badge}
+            </span>
+          )}
+          {isDefault && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-primary/20 text-primary border-primary/30">
+              Default
+            </span>
+          )}
+        </div>
+        {meta?.description && (
+          <span className="text-xs text-muted-foreground leading-tight">{meta.description}</span>
+        )}
+      </div>
+    </SelectItem>
+  );
+}
+
 interface ProviderInfo {
   name: AIProvider;
   displayName: string;
@@ -392,11 +442,9 @@ export default function AISettings() {
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar modelo" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-h-72">
                         {getProviderModels("openai").map((model) => (
-                          <SelectItem key={model} value={model}>
-                            {model}
-                          </SelectItem>
+                          <ModelSelectItem key={model} model={model} defaultModel={providers?.find(p => p.name === "openai")?.defaultModel} />
                         ))}
                       </SelectContent>
                     </Select>
@@ -433,11 +481,9 @@ export default function AISettings() {
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar modelo" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-h-72">
                         {getProviderModels("anthropic").map((model) => (
-                          <SelectItem key={model} value={model}>
-                            {model}
-                          </SelectItem>
+                          <ModelSelectItem key={model} model={model} defaultModel={providers?.find(p => p.name === "anthropic")?.defaultModel} />
                         ))}
                       </SelectContent>
                     </Select>
@@ -474,11 +520,9 @@ export default function AISettings() {
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar modelo" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-h-72">
                         {getProviderModels("google").map((model) => (
-                          <SelectItem key={model} value={model}>
-                            {model}
-                          </SelectItem>
+                          <ModelSelectItem key={model} model={model} defaultModel={providers?.find(p => p.name === "google")?.defaultModel} />
                         ))}
                       </SelectContent>
                     </Select>
