@@ -1,5 +1,14 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  CHANGELOG,
+  CURRENT_SEMANTIC_VERSION,
+  getAppVersion,
+  loadDeployHash,
+} from "@/lib/changelog";
+import { Sparkles, TrendingUp, Wrench, ShieldCheck } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +35,128 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+
+// ─── VersionBadge component ───────────────────────────────────────────────────────────────
+
+const TYPE_CONFIG = {
+  feature:     { icon: Sparkles,    color: "text-emerald-400", bg: "bg-emerald-500/10", label: "Nuevo" },
+  fix:         { icon: Wrench,      color: "text-amber-400",   bg: "bg-amber-500/10",   label: "Fix" },
+  security:    { icon: ShieldCheck, color: "text-blue-400",    bg: "bg-blue-500/10",    label: "Seguridad" },
+  improvement: { icon: TrendingUp,  color: "text-purple-400",  bg: "bg-purple-500/10",  label: "Mejora" },
+};
+
+function VersionBadge() {
+  const [appVersion, setAppVersion] = useState(CURRENT_SEMANTIC_VERSION);
+  const { state } = useSidebar();
+  const isCollapsed = state === "collapsed";
+
+  useEffect(() => {
+    loadDeployHash().then(() => setAppVersion(getAppVersion(CURRENT_SEMANTIC_VERSION)));
+  }, []);
+
+  const recent = CHANGELOG.slice(0, 5);
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-accent/40 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center"
+        >
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+          </span>
+          {!isCollapsed && (
+            <>
+              <span className="text-xs font-mono text-muted-foreground">{appVersion}</span>
+              <span className="ml-auto text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors">changelog</span>
+            </>
+          )}
+        </button>
+      </PopoverTrigger>
+
+      <PopoverContent
+        side="right"
+        align="end"
+        className="w-80 p-0 flex flex-col"
+        style={{ maxHeight: "min(540px, calc(100vh - 60px))", overflow: "hidden" }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div>
+            <p className="text-sm font-semibold">Historial de versiones</p>
+            <p className="text-xs text-muted-foreground">EVGreen Platform</p>
+          </div>
+          <Badge variant="outline" className="text-xs font-mono">{CURRENT_SEMANTIC_VERSION}</Badge>
+        </div>
+
+        {/* Entries */}
+        <div
+          className="flex-1 overflow-y-auto"
+          style={{ maxHeight: "min(420px, calc(100vh - 160px))" }}
+        >
+          <div className="p-3 space-y-3">
+            {recent.map((entry, i) => {
+              const cfg = TYPE_CONFIG[entry.type];
+              const Icon = cfg.icon;
+              const isLatest = i === 0;
+              return (
+                <div key={entry.version} className="rounded-xl border border-border bg-card p-3 space-y-2">
+                  {/* Entry header */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-6 h-6 rounded-md flex items-center justify-center ${cfg.bg}`}>
+                        <Icon className={`w-3.5 h-3.5 ${cfg.color}`} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-mono font-semibold">{entry.version}</span>
+                          {isLatest && (
+                            <Badge className="bg-emerald-500/15 text-emerald-400 border-0 text-[9px] h-4 px-1.5">ACTUAL</Badge>
+                          )}
+                          <Badge variant="outline" className={`text-[9px] h-4 px-1.5 border-0 ${cfg.bg} ${cfg.color}`}>{cfg.label}</Badge>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">{entry.date}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Title */}
+                  <p className="text-xs font-medium leading-snug">{entry.title}</p>
+
+                  {/* Changes list */}
+                  <ul className="space-y-0.5">
+                    {entry.changes.slice(0, 4).map((c, j) => (
+                      <li key={j} className="text-[11px] text-muted-foreground flex gap-1.5">
+                        <span className="mt-1 shrink-0 w-1 h-1 rounded-full bg-muted-foreground/50" />
+                        <span>{c}</span>
+                      </li>
+                    ))}
+                    {entry.changes.length > 4 && (
+                      <li className="text-[11px] text-muted-foreground/60 pl-2.5">
+                        +{entry.changes.length - 4} cambios más...
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 py-2 border-t border-border">
+          <p className="text-[10px] text-muted-foreground/60 text-center">
+            Mostrando las últimas {recent.length} versiones · EVGreen © 2026
+          </p>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Page 1", path: "/" },
@@ -201,7 +332,10 @@ function DashboardLayoutContent({
             </SidebarMenu>
           </SidebarContent>
 
-          <SidebarFooter className="p-3">
+          <SidebarFooter className="p-3 space-y-1">
+            {/* ── Version Badge ── */}
+            <VersionBadge />
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
