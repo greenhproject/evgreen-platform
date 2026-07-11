@@ -946,10 +946,36 @@ export const banners = mysqlTable("banners", {
   // Programación
   startDate: timestamp("startDate"),
   endDate: timestamp("endDate"),
-  // Segmentación
-  targetRoles: json("targetRoles"), // ["user", "investor"] - null = todos
+  // Segmentación — Dimensión 1: Geografía
   targetCities: json("targetCities"), // ["Bogotá", "Medellín"] - null = todas
+  targetDepartments: json("targetDepartments"), // ["Cundinamarca", "Antioquia"] - null = todos
+  targetStationCities: json("targetStationCities"), // ciudades de estaciones donde carga
+  targetStationIds: json("targetStationIds"), // [1, 5, 12] - null = todas
+  // Segmentación — Dimensión 2: Vehículo
+  targetVehicleBrands: json("targetVehicleBrands"), // ["Tesla", "BYD"] - null = todos
+  targetVehicleModels: json("targetVehicleModels"), // ["Model 3", "Dolphin"] - null = todos
+  targetConnectorTypes: json("targetConnectorTypes"), // ["CCS_2", "TYPE_2"] - null = todos
+  targetBatteryMinKwh: int("targetBatteryMinKwh"), // capacidad mínima de batería
+  targetBatteryMaxKwh: int("targetBatteryMaxKwh"), // capacidad máxima de batería
+  // Segmentación — Dimensión 3: Comportamiento de carga
+  targetMinChargesPerMonth: int("targetMinChargesPerMonth"), // mínimo de cargas/mes
+  targetMaxChargesPerMonth: int("targetMaxChargesPerMonth"), // máximo de cargas/mes
+  targetMinSpendPerMonth: int("targetMinSpendPerMonth"), // gasto mínimo mensual en COP
+  targetMaxSpendPerMonth: int("targetMaxSpendPerMonth"), // gasto máximo mensual en COP
+  targetStartMethods: json("targetStartMethods"), // ["QR", "APP", "NFC"] - null = todos
+  targetChargeHoursStart: int("targetChargeHoursStart"), // hora inicio (0-23)
+  targetChargeHoursEnd: int("targetChargeHoursEnd"), // hora fin (0-23)
+  // Segmentación — Dimensión 4: Suscripción
+  targetRoles: json("targetRoles"), // ["user", "investor"] - null = todos
   targetSubscriptionTiers: json("targetSubscriptionTiers"), // ["FREE", "PREMIUM"] - null = todos
+  targetHasCard: boolean("targetHasCard"), // null = indiferente, true = con tarjeta, false = sin tarjeta
+  // Segmentación — Dimensión 5: Perfil financiero
+  targetWalletMinBalance: int("targetWalletMinBalance"), // saldo mínimo en billetera (COP)
+  targetWalletMaxBalance: int("targetWalletMaxBalance"), // saldo máximo en billetera (COP)
+  targetMinAvgRecharge: int("targetMinAvgRecharge"), // recarga promedio mínima (COP)
+  // Segmentación — Dimensión 7: Actividad RFM
+  targetActivitySegments: json("targetActivitySegments"), // ["active", "at_risk", "dormant", "new"] - null = todos
+  // (Dimensión 6: Rol ya cubierta por targetRoles; Dimensión 8: Estación ya cubierta por targetStationIds)
   // Configuración de visualización
   priority: int("priority").default(0).notNull(), // Mayor = más prioridad
   displayDurationMs: int("displayDurationMs").default(5000), // Duración en splash

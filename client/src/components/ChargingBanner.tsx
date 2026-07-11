@@ -15,15 +15,19 @@ export function ChargingBanner({ className = "", stationId }: ChargingBannerProp
   const [dismissed, setDismissed] = useState(false);
   const { user } = useAuth();
   
-  // Obtener banners activos de tipo CHARGING con segmentación por usuario
+  // Obtener banners activos de tipo CHARGING con segmentación completa por usuario
   const { data: banners, isLoading } = trpc.banners.getActive.useQuery(
     {
       type: "CHARGING",
+      // Si el usuario está autenticado, resolver contexto completo (8 dimensiones)
+      userId: user?.id ?? undefined,
+      resolveFullContext: user?.id ? true : undefined,
+      // Fallback para usuarios no autenticados
       userRole: user?.role ?? undefined,
       userCity: (user as any)?.city ?? undefined,
       stationId: stationId ?? undefined,
     },
-    { refetchOnWindowFocus: false }
+    { refetchOnWindowFocus: false, enabled: true }
   );
   
   const recordImpression = trpc.banners.recordImpression.useMutation();

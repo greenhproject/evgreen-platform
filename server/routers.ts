@@ -3292,18 +3292,36 @@ const bannersRouter = router({
     .input(z.object({
       type: z.string().optional(),
       location: z.string().optional(),
+      // Contexto básico (para usuarios no autenticados)
       userRole: z.string().optional(),
       userCity: z.string().optional(),
       stationId: z.number().optional(),
-      userId: z.number().optional(), // Fase 3: para ranking por relevancia
+      stationCity: z.string().optional(),
+      // Contexto enriquecido (para usuarios autenticados)
+      userId: z.number().optional(),
+      resolveFullContext: z.boolean().optional(), // Si true, resuelve contexto completo desde BD
     }).optional())
     .query(async ({ input }) => {
-      const userContext = (input?.userRole || input?.userCity || input?.stationId)
-        ? { role: input?.userRole, city: input?.userCity, stationId: input?.stationId }
-        : undefined;
+      let userContext: import("./db").BannerUserContext | undefined;
+
+      // Si hay userId y se solicita contexto completo, resolver desde BD
+      if (input?.userId && input?.resolveFullContext) {
+        try {
+          userContext = await db.resolveUserBannerContext(input.userId, {
+            stationId: input.stationId,
+            stationCity: input.stationCity,
+          });
+        } catch (err) {
+          console.error("[Banners] Error resolving user context, using basic context:", err);
+          userContext = { role: input?.userRole, city: input?.userCity, stationId: input?.stationId };
+        }
+      } else if (input?.userRole || input?.userCity || input?.stationId) {
+        userContext = { role: input?.userRole, city: input?.userCity, stationId: input?.stationId, stationCity: input?.stationCity };
+      }
+
       const activeBanners = await db.getActiveBanners(input?.type, input?.location, userContext);
-      
-      // Fase 3 IA: Si hay userId, rankear por relevancia personalizada
+
+      // IA: Si hay userId, rankear por relevancia personalizada
       if (input?.userId && activeBanners.length > 1) {
         try {
           const { rankBannersByRelevance, getUserAdProfile } = await import("./ai/ad-relevance-service");
@@ -3334,8 +3352,36 @@ const bannersRouter = router({
       ctaText: z.string().optional(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
-      targetRoles: z.array(z.string()).optional(),
+      // Segmentación — Dimensión 1: Geografía
       targetCities: z.array(z.string()).optional(),
+      targetDepartments: z.array(z.string()).optional(),
+      targetStationCities: z.array(z.string()).optional(),
+      targetStationIds: z.array(z.number()).optional(),
+      // Segmentación — Dimensión 2: Vehículo
+      targetVehicleBrands: z.array(z.string()).optional(),
+      targetVehicleModels: z.array(z.string()).optional(),
+      targetConnectorTypes: z.array(z.string()).optional(),
+      targetBatteryMinKwh: z.number().optional(),
+      targetBatteryMaxKwh: z.number().optional(),
+      // Segmentación — Dimensión 3: Comportamiento
+      targetMinChargesPerMonth: z.number().optional(),
+      targetMaxChargesPerMonth: z.number().optional(),
+      targetMinSpendPerMonth: z.number().optional(),
+      targetMaxSpendPerMonth: z.number().optional(),
+      targetStartMethods: z.array(z.string()).optional(),
+      targetChargeHoursStart: z.number().optional(),
+      targetChargeHoursEnd: z.number().optional(),
+      // Segmentación — Dimensión 4: Suscripción y rol
+      targetRoles: z.array(z.string()).optional(),
+      targetSubscriptionTiers: z.array(z.string()).optional(),
+      targetHasCard: z.boolean().optional(),
+      // Segmentación — Dimensión 5: Perfil financiero
+      targetWalletMinBalance: z.number().optional(),
+      targetWalletMaxBalance: z.number().optional(),
+      targetMinAvgRecharge: z.number().optional(),
+      // Segmentación — Dimensión 7: Actividad RFM
+      targetActivitySegments: z.array(z.string()).optional(),
+      // Configuración
       priority: z.number().optional(),
       displayDurationMs: z.number().optional(),
       advertiserName: z.string().optional(),
@@ -3366,8 +3412,36 @@ const bannersRouter = router({
         ctaText: z.string().optional(),
         startDate: z.date().optional(),
         endDate: z.date().optional(),
-        targetRoles: z.array(z.string()).optional(),
+        // Segmentación — Dimensión 1: Geografía
         targetCities: z.array(z.string()).optional(),
+        targetDepartments: z.array(z.string()).optional(),
+        targetStationCities: z.array(z.string()).optional(),
+        targetStationIds: z.array(z.number()).optional(),
+        // Segmentación — Dimensión 2: Vehículo
+        targetVehicleBrands: z.array(z.string()).optional(),
+        targetVehicleModels: z.array(z.string()).optional(),
+        targetConnectorTypes: z.array(z.string()).optional(),
+        targetBatteryMinKwh: z.number().optional(),
+        targetBatteryMaxKwh: z.number().optional(),
+        // Segmentación — Dimensión 3: Comportamiento
+        targetMinChargesPerMonth: z.number().optional(),
+        targetMaxChargesPerMonth: z.number().optional(),
+        targetMinSpendPerMonth: z.number().optional(),
+        targetMaxSpendPerMonth: z.number().optional(),
+        targetStartMethods: z.array(z.string()).optional(),
+        targetChargeHoursStart: z.number().optional(),
+        targetChargeHoursEnd: z.number().optional(),
+        // Segmentación — Dimensión 4: Suscripción y rol
+        targetRoles: z.array(z.string()).optional(),
+        targetSubscriptionTiers: z.array(z.string()).optional(),
+        targetHasCard: z.boolean().optional(),
+        // Segmentación — Dimensión 5: Perfil financiero
+        targetWalletMinBalance: z.number().optional(),
+        targetWalletMaxBalance: z.number().optional(),
+        targetMinAvgRecharge: z.number().optional(),
+        // Segmentación — Dimensión 7: Actividad RFM
+        targetActivitySegments: z.array(z.string()).optional(),
+        // Configuración
         priority: z.number().optional(),
         status: z.enum(["DRAFT", "ACTIVE", "PAUSED", "EXPIRED", "ARCHIVED"]).optional(),
         advertiserName: z.string().optional(),
@@ -3375,7 +3449,7 @@ const bannersRouter = router({
       }),
     }))
     .mutation(async ({ input }) => {
-      await db.updateBanner(input.id, input.data);
+      await db.updateBanner(input.id, input.data as any);
       return { success: true };
     }),
   

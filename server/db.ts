@@ -130,6 +130,9 @@ import {
   offlineTransactions,
   OfflineTransaction,
   InsertOfflineTransaction,
+  userVehicles,
+  UserVehicle,
+  InsertUserVehicle,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -2093,64 +2096,330 @@ export async function getAllBanners(status?: string) {
   return db.select().from(banners).orderBy(desc(banners.priority), desc(banners.createdAt));
 }
 
+// ============================================================================
+// BANNER SEGMENTATION ENGINE — 8 DIMENSIONS
+// ============================================================================
+
+/**
+ * Contexto enriquecido del usuario para el motor de segmentación de banners.
+ * Se resuelve una sola vez por request y se pasa al filtro.
+ */
+export interface BannerUserContext {
+  // Dimensión 1: Geografía
+  city?: string;                    // ciudad de residencia
+  department?: string;              // departamento de residencia
+  stationId?: number;               // estación actual (para carga activa)
+  stationCity?: string;             // ciudad de la estación actual
+  // Dimensión 2: Vehículo
+  vehicleBrands?: string[];         // marcas de vehículos del usuario
+  vehicleModels?: string[];         // modelos de vehículos del usuario
+  connectorTypes?: string[];        // tipos de conector del usuario
+  batteryCapacityKwh?: number;      // capacidad de batería del vehículo principal (kWh)
+  // Dimensión 3: Comportamiento de carga
+  chargesThisMonth?: number;        // cargas realizadas este mes
+  spendThisMonth?: number;          // gasto este mes en COP
+  usedStartMethods?: string[];      // métodos de inicio usados (QR, APP, NFC)
+  typicalChargeHour?: number;       // hora típica de carga (0-23)
+  // Dimensión 4: Suscripción y rol
+  role?: string;                    // rol del usuario
+  subscriptionTier?: string;        // tier de suscripción
+  hasCard?: boolean;                // tiene tarjeta registrada
+  // Dimensión 5: Perfil financiero
+  walletBalance?: number;           // saldo actual en billetera (COP)
+  avgRechargeAmount?: number;       // monto promedio de recarga (COP)
+  // Dimensión 7: Actividad RFM
+  activitySegment?: "active" | "at_risk" | "dormant" | "new"; // segmento RFM
+}
+
+/**
+ * Resuelve el contexto completo del usuario para segmentación de banners.
+ * Hace queries adicionales solo cuando es necesario.
+ */
+export async function resolveUserBannerContext(
+  userId: number,
+  baseContext?: Partial<BannerUserContext>
+): Promise<BannerUserContext> {
+  const db = await getDb();
+  if (!db) return baseContext || {};
+
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgoForNew = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  // Consulta paralela de todos los datos necesarios
+  const [user, userVehiclesRows, walletRow, subscriptionRow, monthlyTxRows, allTxRows] =
+    await Promise.all([
+      // Usuario base
+      db.select({
+        city: users.city,
+        fiscalDepartment: users.fiscalDepartment,
+        role: users.role,
+        createdAt: users.createdAt,
+      }).from(users).where(eq(users.id, userId)).limit(1),
+
+      // Vehículos activos del usuario
+      db.select({
+        brand: userVehicles.brand,
+        model: userVehicles.model,
+        connectorTypes: userVehicles.connectorTypes,
+        batteryCapacityKwh: userVehicles.batteryCapacityKwh,
+        isDefault: userVehicles.isDefault,
+      }).from(userVehicles)
+        .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, true))),
+
+      // Billetera
+      db.select({ balance: wallets.balance })
+        .from(wallets).where(eq(wallets.userId, userId)).limit(1),
+
+      // Suscripción activa
+      db.select({
+        tier: subscriptions.tier,
+        wompiCardToken: subscriptions.wompiCardToken,
+        isActive: subscriptions.isActive,
+      }).from(subscriptions)
+        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.isActive, true)))
+        .limit(1),
+
+      // Transacciones de este mes
+      db.select({
+        totalCost: transactions.totalCost,
+        startMethod: transactions.startMethod,
+        startTime: transactions.startTime,
+      }).from(transactions)
+        .where(and(
+          eq(transactions.userId, userId),
+          eq(transactions.status, "COMPLETED"),
+          gte(transactions.startTime, startOfMonth)
+        )),
+
+      // Todas las transacciones (para RFM)
+      db.select({ startTime: transactions.startTime })
+        .from(transactions)
+        .where(and(eq(transactions.userId, userId), eq(transactions.status, "COMPLETED")))
+        .orderBy(desc(transactions.startTime))
+        .limit(1),
+    ]);
+
+  // Promedio de recargas de billetera
+  const rechargeRows = await db.select({ amount: walletTransactions.amount })
+    .from(walletTransactions)
+    .where(and(
+      eq(walletTransactions.userId, userId),
+      eq(walletTransactions.type, "RECHARGE"),
+      eq(walletTransactions.status, "COMPLETED")
+    ))
+    .limit(20);
+
+  const u = user[0];
+  const sub = subscriptionRow[0];
+  const wallet = walletRow[0];
+
+  // Calcular métricas de comportamiento
+  const chargesThisMonth = monthlyTxRows.length;
+  const spendThisMonth = monthlyTxRows.reduce((s, t) => s + parseFloat(t.totalCost as any || "0"), 0);
+  const usedStartMethods = Array.from(new Set(monthlyTxRows.map(t => t.startMethod).filter(Boolean) as string[]));
+  const typicalHours = monthlyTxRows.map(t => new Date(t.startTime).getHours());
+  const typicalChargeHour = typicalHours.length > 0
+    ? Math.round(typicalHours.reduce((a, b) => a + b, 0) / typicalHours.length)
+    : undefined;
+
+  // Calcular RFM
+  let activitySegment: BannerUserContext["activitySegment"] = "dormant";
+  const lastTx = allTxRows[0];
+  const userCreatedAt = u?.createdAt ? new Date(u.createdAt) : null;
+  if (lastTx) {
+    const lastTxDate = new Date(lastTx.startTime);
+    if (lastTxDate >= thirtyDaysAgo) activitySegment = "active";
+    else if (lastTxDate >= sixtyDaysAgo) activitySegment = "at_risk";
+    else if (lastTxDate >= ninetyDaysAgo) activitySegment = "dormant";
+    else activitySegment = "dormant";
+  } else if (userCreatedAt && userCreatedAt >= thirtyDaysAgoForNew) {
+    activitySegment = "new";
+  }
+
+  // Calcular promedio de recarga
+  const avgRechargeAmount = rechargeRows.length > 0
+    ? rechargeRows.reduce((s, r) => s + parseFloat(r.amount as any || "0"), 0) / rechargeRows.length
+    : 0;
+
+  // Vehículo principal para batería
+  const defaultVehicle = userVehiclesRows.find(v => v.isDefault) || userVehiclesRows[0];
+
+  return {
+    // Dimensión 1: Geografía
+    city: baseContext?.city || u?.city || undefined,
+    department: u?.fiscalDepartment || undefined,
+    stationId: baseContext?.stationId,
+    stationCity: baseContext?.stationCity,
+    // Dimensión 2: Vehículo
+    vehicleBrands: userVehiclesRows.map(v => v.brand).filter(Boolean),
+    vehicleModels: userVehiclesRows.map(v => v.model).filter(Boolean),
+    connectorTypes: Array.from(new Set(userVehiclesRows.flatMap(v => (v.connectorTypes as string[]) || []))),
+    batteryCapacityKwh: defaultVehicle?.batteryCapacityKwh
+      ? parseFloat(defaultVehicle.batteryCapacityKwh as any)
+      : undefined,
+    // Dimensión 3: Comportamiento
+    chargesThisMonth,
+    spendThisMonth,
+    usedStartMethods,
+    typicalChargeHour,
+    // Dimensión 4: Suscripción y rol
+    role: u?.role || baseContext?.role,
+    subscriptionTier: sub?.tier || "FREE",
+    hasCard: !!(sub?.wompiCardToken),
+    // Dimensión 5: Perfil financiero
+    walletBalance: wallet?.balance ? parseFloat(wallet.balance as any) : 0,
+    avgRechargeAmount,
+    // Dimensión 7: RFM
+    activitySegment,
+  };
+}
+
+/**
+ * Motor de filtrado de banners con las 8 dimensiones de segmentación.
+ * Retorna true si el banner aplica para el contexto del usuario.
+ */
+function matchesBannerSegmentation(banner: any, ctx: BannerUserContext): boolean {
+  // ── Dimensión 1: Geografía ──────────────────────────────────────────────────
+  if (banner.targetCities?.length > 0) {
+    if (!ctx.city) return false;
+    const match = banner.targetCities.some((c: string) =>
+      c.toLowerCase() === ctx.city!.toLowerCase());
+    if (!match) return false;
+  }
+  if (banner.targetDepartments?.length > 0) {
+    if (!ctx.department) return false;
+    const match = banner.targetDepartments.some((d: string) =>
+      d.toLowerCase() === ctx.department!.toLowerCase());
+    if (!match) return false;
+  }
+  if (banner.targetStationCities?.length > 0) {
+    if (!ctx.stationCity) return false;
+    const match = banner.targetStationCities.some((c: string) =>
+      c.toLowerCase() === ctx.stationCity!.toLowerCase());
+    if (!match) return false;
+  }
+  if (banner.targetStationIds?.length > 0) {
+    if (!ctx.stationId) return false;
+    if (!banner.targetStationIds.includes(ctx.stationId)) return false;
+  }
+
+  // ── Dimensión 2: Vehículo ───────────────────────────────────────────────────
+  if (banner.targetVehicleBrands?.length > 0) {
+    if (!ctx.vehicleBrands?.length) return false;
+    const match = ctx.vehicleBrands.some(b =>
+      banner.targetVehicleBrands.some((tb: string) =>
+        tb.toLowerCase() === b.toLowerCase()));
+    if (!match) return false;
+  }
+  if (banner.targetVehicleModels?.length > 0) {
+    if (!ctx.vehicleModels?.length) return false;
+    const match = ctx.vehicleModels.some(m =>
+      banner.targetVehicleModels.some((tm: string) =>
+        tm.toLowerCase() === m.toLowerCase()));
+    if (!match) return false;
+  }
+  if (banner.targetConnectorTypes?.length > 0) {
+    if (!ctx.connectorTypes?.length) return false;
+    const match = ctx.connectorTypes.some(c =>
+      banner.targetConnectorTypes.includes(c));
+    if (!match) return false;
+  }
+  if (banner.targetBatteryMinKwh != null) {
+    if ((ctx.batteryCapacityKwh ?? 0) < banner.targetBatteryMinKwh) return false;
+  }
+  if (banner.targetBatteryMaxKwh != null) {
+    if ((ctx.batteryCapacityKwh ?? 999) > banner.targetBatteryMaxKwh) return false;
+  }
+
+  // ── Dimensión 3: Comportamiento de carga ────────────────────────────────────
+  if (banner.targetMinChargesPerMonth != null) {
+    if ((ctx.chargesThisMonth ?? 0) < banner.targetMinChargesPerMonth) return false;
+  }
+  if (banner.targetMaxChargesPerMonth != null) {
+    if ((ctx.chargesThisMonth ?? 0) > banner.targetMaxChargesPerMonth) return false;
+  }
+  if (banner.targetMinSpendPerMonth != null) {
+    if ((ctx.spendThisMonth ?? 0) < banner.targetMinSpendPerMonth) return false;
+  }
+  if (banner.targetMaxSpendPerMonth != null) {
+    if ((ctx.spendThisMonth ?? 0) > banner.targetMaxSpendPerMonth) return false;
+  }
+  if (banner.targetStartMethods?.length > 0) {
+    if (!ctx.usedStartMethods?.length) return false;
+    const match = ctx.usedStartMethods.some(m =>
+      banner.targetStartMethods.includes(m));
+    if (!match) return false;
+  }
+  if (banner.targetChargeHoursStart != null && banner.targetChargeHoursEnd != null) {
+    const h = ctx.typicalChargeHour ?? -1;
+    if (h < 0) return false;
+    const start = banner.targetChargeHoursStart;
+    const end = banner.targetChargeHoursEnd;
+    const inRange = start <= end ? (h >= start && h <= end) : (h >= start || h <= end);
+    if (!inRange) return false;
+  }
+
+  // ── Dimensión 4: Suscripción y rol ──────────────────────────────────────────
+  if (banner.targetRoles?.length > 0) {
+    if (!ctx.role || !banner.targetRoles.includes(ctx.role)) return false;
+  }
+  if (banner.targetSubscriptionTiers?.length > 0) {
+    if (!ctx.subscriptionTier || !banner.targetSubscriptionTiers.includes(ctx.subscriptionTier)) return false;
+  }
+  if (banner.targetHasCard != null) {
+    if (banner.targetHasCard === true && !ctx.hasCard) return false;
+    if (banner.targetHasCard === false && ctx.hasCard) return false;
+  }
+
+  // ── Dimensión 5: Perfil financiero ──────────────────────────────────────────
+  if (banner.targetWalletMinBalance != null) {
+    if ((ctx.walletBalance ?? 0) < banner.targetWalletMinBalance) return false;
+  }
+  if (banner.targetWalletMaxBalance != null) {
+    if ((ctx.walletBalance ?? 0) > banner.targetWalletMaxBalance) return false;
+  }
+  if (banner.targetMinAvgRecharge != null) {
+    if ((ctx.avgRechargeAmount ?? 0) < banner.targetMinAvgRecharge) return false;
+  }
+
+  // ── Dimensión 7: Actividad RFM ───────────────────────────────────────────────
+  if (banner.targetActivitySegments?.length > 0) {
+    if (!ctx.activitySegment || !banner.targetActivitySegments.includes(ctx.activitySegment)) return false;
+  }
+
+  return true;
+}
+
 export async function getActiveBanners(
   type?: string,
   location?: string,
-  userContext?: { role?: string; city?: string; stationId?: number }
+  userContext?: BannerUserContext
 ) {
   const db = await getDb();
   if (!db) return [];
-  
+
   const conditions = [
     eq(banners.status, "ACTIVE"),
     or(isNull(banners.startDate), lte(banners.startDate, new Date())),
     or(isNull(banners.endDate), gte(banners.endDate, new Date())),
   ];
-  
+
   if (type) {
     conditions.push(eq(banners.type, type as any));
   }
-  
-  // Fetch all active banners first, then filter by targeting in JS
-  // (JSON columns can't be efficiently filtered in SQL with Drizzle)
-  const allBanners = await db.select().from(banners).where(and(...conditions)).orderBy(desc(banners.priority));
-  
+
+  // Fetch all active banners, then apply JS-side segmentation engine
+  const allBanners = await db.select().from(banners)
+    .where(and(...conditions))
+    .orderBy(desc(banners.priority));
+
   if (!userContext) return allBanners;
-  
-  return allBanners.filter(banner => {
-    // Filter by targetRoles: if set, user's role must be in the list
-    if (banner.targetRoles) {
-      const roles = banner.targetRoles as string[];
-      if (Array.isArray(roles) && roles.length > 0) {
-        if (!userContext.role || !roles.includes(userContext.role)) {
-          return false;
-        }
-      }
-    }
-    
-    // Filter by targetCities: if set, user's city must be in the list
-    if ((banner as any).targetCities) {
-      const cities = (banner as any).targetCities as string[];
-      if (Array.isArray(cities) && cities.length > 0) {
-        if (!userContext.city) return false;
-        const userCityLower = userContext.city.toLowerCase();
-        const match = cities.some(c => c.toLowerCase() === userCityLower);
-        if (!match) return false;
-      }
-    }
-    
-    // Filter by targetStations: if set, user's current station must be in the list
-    if ((banner as any).targetStations) {
-      const stations = (banner as any).targetStations as number[];
-      if (Array.isArray(stations) && stations.length > 0) {
-        if (!userContext.stationId || !stations.includes(userContext.stationId)) {
-          return false;
-        }
-      }
-    }
-    
-    return true;
-  });
+
+  return allBanners.filter(banner => matchesBannerSegmentation(banner, userContext));
 }
 
 export async function updateBanner(id: number, data: Partial<InsertBanner>) {
@@ -5187,11 +5456,7 @@ export async function getPendingWompiTransactions(): Promise<WompiTransaction[]>
 // USER VEHICLES OPERATIONS
 // ============================================================================
 
-import {
-  userVehicles,
-  UserVehicle,
-  InsertUserVehicle,
-} from "../drizzle/schema";
+// userVehicles, UserVehicle, InsertUserVehicle already imported at top of file
 
 export async function getUserVehicles(userId: number): Promise<UserVehicle[]> {
   const db = await getDb();
