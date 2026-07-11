@@ -478,7 +478,7 @@ function SegmentationPanel({
               <Select value={formData.targetHasCard} onValueChange={(v: any) => setFormData({ ...formData, targetHasCard: v })}>
                 <SelectTrigger className="text-sm h-8"><SelectValue placeholder="Sin filtro" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sin filtro</SelectItem>
+                  <SelectItem value="all">Sin filtro</SelectItem>
                   <SelectItem value="true">Solo usuarios con tarjeta</SelectItem>
                   <SelectItem value="false">Solo usuarios sin tarjeta</SelectItem>
                 </SelectContent>
@@ -592,7 +592,7 @@ export default function AdminBanners() {
     // Segmentación D4: Suscripción y rol
     targetRoles: [] as string[],
     targetSubscriptionTiers: [] as string[],
-    targetHasCard: "" as "" | "true" | "false",
+    targetHasCard: "all" as "all" | "true" | "false",
     // Segmentación D5: Perfil financiero
     targetWalletMinBalance: "",
     targetWalletMaxBalance: "",
@@ -653,7 +653,7 @@ export default function AdminBanners() {
       targetMinChargesPerMonth: "", targetMaxChargesPerMonth: "",
       targetMinSpendPerMonth: "", targetMaxSpendPerMonth: "",
       targetStartMethods: [], targetChargeHoursStart: "", targetChargeHoursEnd: "",
-      targetRoles: [], targetSubscriptionTiers: [], targetHasCard: "",
+      targetRoles: [], targetSubscriptionTiers: [], targetHasCard: "all",
       targetWalletMinBalance: "", targetWalletMaxBalance: "", targetMinAvgRecharge: "",
       targetActivitySegments: [],
     });
@@ -694,7 +694,7 @@ export default function AdminBanners() {
     targetChargeHoursEnd: formData.targetChargeHoursEnd !== "" ? parseInt(formData.targetChargeHoursEnd) : undefined,
     targetRoles: formData.targetRoles.length > 0 ? formData.targetRoles : undefined,
     targetSubscriptionTiers: formData.targetSubscriptionTiers.length > 0 ? formData.targetSubscriptionTiers : undefined,
-    targetHasCard: formData.targetHasCard === "true" ? true : formData.targetHasCard === "false" ? false : undefined,
+    targetHasCard: formData.targetHasCard === "true" ? true : formData.targetHasCard === "false" ? false : undefined, // "all" → undefined (no filter)
     targetWalletMinBalance: formData.targetWalletMinBalance ? parseFloat(formData.targetWalletMinBalance) : undefined,
     targetWalletMaxBalance: formData.targetWalletMaxBalance ? parseFloat(formData.targetWalletMaxBalance) : undefined,
     targetMinAvgRecharge: formData.targetMinAvgRecharge ? parseFloat(formData.targetMinAvgRecharge) : undefined,
@@ -819,7 +819,7 @@ export default function AdminBanners() {
       targetChargeHoursEnd: banner.targetChargeHoursEnd != null ? String(banner.targetChargeHoursEnd) : "",
       targetRoles: (banner.targetRoles as string[]) || [],
       targetSubscriptionTiers: (banner.targetSubscriptionTiers as string[]) || [],
-      targetHasCard: banner.targetHasCard === true ? "true" : banner.targetHasCard === false ? "false" : "",
+      targetHasCard: banner.targetHasCard === true ? "true" : banner.targetHasCard === false ? "false" : "all",
       targetWalletMinBalance: banner.targetWalletMinBalance != null ? String(banner.targetWalletMinBalance) : "",
       targetWalletMaxBalance: banner.targetWalletMaxBalance != null ? String(banner.targetWalletMaxBalance) : "",
       targetMinAvgRecharge: banner.targetMinAvgRecharge != null ? String(banner.targetMinAvgRecharge) : "",
