@@ -405,35 +405,36 @@ export const chargingRouter = router({
       let pricePerKwh: number;
       let dynamicMultiplier = 1;
       
-      // Siempre calcular el multiplicador dinámico para mostrar el nivel de demanda real al usuario.
-      // Esto es independiente de autoPricing: el usuario siempre ve el contexto de demanda actual.
-      if (evseId) {
-        try {
-          const demandCalc = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
-          dynamicMultiplier = demandCalc.factors?.finalMultiplier || 1;
-        } catch (_e) {
-          dynamicMultiplier = 1; // Fallback a NORMAL si falla el cálculo
-        }
-      }
-      
       if (useAutoPricing && evseId) {
-        // Usar precio dinámico calculado por IA (ya calculado arriba)
-        const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
-        // CORREGIDO: Pasar tariffSource para NO sobreescribir con precios globales AC/DC
-        const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
-        pricePerKwh = priceByType.price;
-        console.log(`[validateAndEstimate] Using dynamic pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, source: ${tariffSource}, multiplier: ${dynamicMultiplier.toFixed(2)})`);
+        // autoPricing=true: calcular precio dinámico por IA y mostrar nivel de demanda real
+        try {
+          const dynamicPrice = await dynamicPricing.calculateDynamicPrice(stationId, evseId);
+          dynamicMultiplier = dynamicPrice.factors?.finalMultiplier || 1;
+          // CORREGIDO: Pasar tariffSource para NO sobreescribir con precios globales AC/DC
+          const priceByType = await db.getPriceByConnectorType(evseId, dynamicPrice.finalPrice, tariffSource);
+          pricePerKwh = priceByType.price;
+          console.log(`[validateAndEstimate] autoPricing=ON: $${pricePerKwh}/kWh (${priceByType.chargeType}, source: ${tariffSource}, multiplier: ${dynamicMultiplier.toFixed(2)}, demand: ${dynamicPricing.getDemandLevel(dynamicMultiplier)})`);
+        } catch (_e) {
+          // Fallback a precio fijo si falla el cálculo dinámico
+          const basePrice = effectivePriceData.pricePerKwh;
+          const priceByType = evseId ? await db.getPriceByConnectorType(evseId, basePrice, tariffSource) : { price: basePrice };
+          pricePerKwh = priceByType.price;
+          dynamicMultiplier = 1;
+          console.warn(`[validateAndEstimate] autoPricing=ON but calculation failed, using fixed: $${pricePerKwh}/kWh`);
+        }
       } else {
-        // Usar precio fijo configurado por el inversionista
+        // autoPricing=false: precio fijo configurado por el inversionista.
+        // NO calcular nivel de demanda dinámico (respetar la configuración del dueño).
+        // dynamicMultiplier queda en 1 → demandLevel = 'NORMAL' (no se muestra en UI cuando autoPricing=false)
         const basePrice = effectivePriceData.pricePerKwh;
         if (evseId) {
           // CORREGIDO: Pasar tariffSource para respetar tarifa de estación
           const priceByType = await db.getPriceByConnectorType(evseId, basePrice, tariffSource);
           pricePerKwh = priceByType.price;
-          console.log(`[validateAndEstimate] Using fixed pricing: $${pricePerKwh}/kWh (${priceByType.chargeType}, source: ${tariffSource}, demand: ${dynamicPricing.getDemandLevel(dynamicMultiplier)})`);
+          console.log(`[validateAndEstimate] autoPricing=OFF (fixed): $${pricePerKwh}/kWh (${priceByType.chargeType}, source: ${tariffSource})`);
         } else {
           pricePerKwh = basePrice;
-          console.log(`[validateAndEstimate] Using fixed pricing: $${pricePerKwh}/kWh (source: ${tariffSource})`);
+          console.log(`[validateAndEstimate] autoPricing=OFF (fixed): $${pricePerKwh}/kWh (source: ${tariffSource})`);
         }
       }
       
@@ -507,6 +508,7 @@ export const chargingRouter = router({
         pricePerKwh,
         basePricePerKwh, // Precio base sin descuentos dinámicos
         demandDiscountPercent, // % de descuento por baja demanda (0 si no aplica)
+        useAutoPricing, // Si la estación usa precio dinámico por IA (controla qué muestra la UI)
         estimatedKwh: Math.round(estimatedKwh * 100) / 100,
         estimatedCost: Math.round(estimatedCost),
         estimatedTime: Math.round(estimatedTime),

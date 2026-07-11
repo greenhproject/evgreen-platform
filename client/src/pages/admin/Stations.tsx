@@ -42,7 +42,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign, Clock, Cpu, ImagePlus, Loader2, Map, List } from "lucide-react";
+import { Search, Plus, MapPin, Zap, Settings, Eye, Pencil, Trash2, X, QrCode, FileText, Wifi, WifiOff, ExternalLink, Activity, Crown, DollarSign, Clock, Cpu, ImagePlus, Loader2, Map, List, Brain, ArrowRight } from "lucide-react";
 import { MapView } from "@/components/Map";
 import { toast } from "sonner";
 import { StationQRCode } from "@/components/StationQRCode";
@@ -152,6 +152,14 @@ export default function AdminStations() {
   const [showQRDialog, setShowQRDialog] = useState(false);
   const [qrStation, setQrStation] = useState<any>(null);
   const [detailsTab, setDetailsTab] = useState("info");
+  // Estado del modal de tarifas (admin)
+  const [showTariffModal, setShowTariffModal] = useState(false);
+  const [tariffStation, setTariffStation] = useState<any>(null);
+  const [tariffPricePerKwh, setTariffPricePerKwh] = useState("");
+  const [tariffReservationFee, setTariffReservationFee] = useState("");
+  const [tariffIdleFee, setTariffIdleFee] = useState("");
+  const [tariffConnectionFee, setTariffConnectionFee] = useState("");
+  const [tariffAutoPricing, setTariffAutoPricing] = useState(false);
   
   // Estado del formulario
   const [formData, setFormData] = useState<StationFormData>(initialFormData);
@@ -201,6 +209,45 @@ export default function AdminStations() {
     );
   };
   
+  const updateTariffMutation = trpc.tariffs.updateByStation.useMutation({
+    onSuccess: () => {
+      toast.success("Tarifas actualizadas exitosamente");
+      setShowTariffModal(false);
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Error al actualizar tarifas: ${error.message}`);
+    },
+  });
+  const { data: priceRanges } = trpc.tariffs.getPriceRanges.useQuery();
+  const handleOpenTariffModal = (station: any) => {
+    setTariffStation(station);
+    const t = station.tariff;
+    setTariffPricePerKwh(t?.pricePerKwh?.toString() || "1300");
+    setTariffReservationFee(t?.reservationFee?.toString() || "5000");
+    setTariffIdleFee((t?.overstayPenaltyPerMinute || t?.idleFeePerMin || "500").toString());
+    setTariffConnectionFee((t?.pricePerSession || t?.connectionFee || "2000").toString());
+    setTariffAutoPricing(t?.autoPricing || false);
+    setShowTariffModal(true);
+  };
+  const handleSaveTariff = () => {
+    if (!tariffStation) return;
+    const price = parseFloat(tariffPricePerKwh) || 1300;
+    if (!tariffAutoPricing && priceRanges) {
+      if (price < priceRanges.minPrice || price > priceRanges.maxPrice) {
+        toast.error(`El precio debe estar entre $${priceRanges.minPrice.toLocaleString("es-CO")} y $${priceRanges.maxPrice.toLocaleString("es-CO")} COP/kWh`);
+        return;
+      }
+    }
+    updateTariffMutation.mutate({
+      stationId: tariffStation.id,
+      pricePerKwh: price,
+      reservationFee: parseFloat(tariffReservationFee) || 5000,
+      idleFeePerMin: parseFloat(tariffIdleFee) || 500,
+      connectionFee: parseFloat(tariffConnectionFee) || 2000,
+      autoPricing: tariffAutoPricing,
+    });
+  };
   const createStationMutation = trpc.stations.create.useMutation({
     onError: (error) => {
       toast.error(`Error al crear estación: ${error.message}`);
@@ -1865,6 +1912,14 @@ export default function AdminStations() {
                       <Button 
                         variant="ghost" 
                         size="icon"
+                        onClick={() => handleOpenTariffModal(station)}
+                        title="Configurar tarifas"
+                      >
+                        <DollarSign className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
                         className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
                         onClick={() => {
                           setStationToDelete(station);
@@ -2228,10 +2283,140 @@ export default function AdminStations() {
           )}
         </DialogContent>
       </Dialog>
+          {/* Modal de Configuración de Tarifas (Admin) */}
+      <Dialog open={showTariffModal} onOpenChange={setShowTariffModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5" />
+              Configurar Tarifas
+            </DialogTitle>
+            <DialogDescription>
+              {tariffStation?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Toggle Precio Automático IA */}
+            <div className="p-4 rounded-lg border-2 border-purple-200 bg-purple-50/50 dark:bg-purple-950/20 dark:border-purple-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
+                    <Brain className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <Label htmlFor="adminAutoPricing" className="font-semibold cursor-pointer">
+                      Precio Automático IA
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      La IA ajusta el precio según demanda y horario
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  id="adminAutoPricing"
+                  checked={tariffAutoPricing}
+                  onCheckedChange={setTariffAutoPricing}
+                />
+              </div>
+            </div>
+            {/* Campos de precio manual */}
+            <div className={`space-y-4 transition-opacity ${tariffAutoPricing ? "opacity-50 pointer-events-none" : ""}`}>
+              <div>
+                <Label htmlFor="adminPricePerKwh">Precio por kWh (COP)</Label>
+                <div className="relative mt-1">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="adminPricePerKwh"
+                    type="number"
+                    value={tariffPricePerKwh}
+                    onChange={(e) => setTariffPricePerKwh(e.target.value)}
+                    className="pl-10"
+                    placeholder="1300"
+                    disabled={tariffAutoPricing}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Precio base por kilovatio-hora</p>
+                {priceRanges && !tariffAutoPricing && (
+                  <p className={`text-xs mt-1 font-medium ${
+                    tariffPricePerKwh && (parseFloat(tariffPricePerKwh) < priceRanges.minPrice || parseFloat(tariffPricePerKwh) > priceRanges.maxPrice)
+                      ? "text-red-500"
+                      : "text-emerald-600"
+                  }`}>
+                    Rango permitido: ${priceRanges.minPrice.toLocaleString("es-CO")} - ${priceRanges.maxPrice.toLocaleString("es-CO")} COP/kWh
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="adminReservationFee">Tarifa de Reserva (COP)</Label>
+                <div className="relative mt-1">
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="adminReservationFee"
+                    type="number"
+                    value={tariffReservationFee}
+                    onChange={(e) => setTariffReservationFee(e.target.value)}
+                    className="pl-10"
+                    placeholder="5000"
+                    disabled={tariffAutoPricing}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Cargo fijo por reservar un conector</p>
+              </div>
+              <div>
+                <Label htmlFor="adminIdleFee">Penalización por Ocupación (COP/min)</Label>
+                <div className="relative mt-1">
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="adminIdleFee"
+                    type="number"
+                    value={tariffIdleFee}
+                    onChange={(e) => setTariffIdleFee(e.target.value)}
+                    className="pl-10"
+                    placeholder="500"
+                    disabled={tariffAutoPricing}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Cargo por minuto si el vehículo permanece conectado después de cargar</p>
+              </div>
+              <div>
+                <Label htmlFor="adminConnectionFee">Tarifa de Conexión (COP)</Label>
+                <div className="relative mt-1">
+                  <Zap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="adminConnectionFee"
+                    type="number"
+                    value={tariffConnectionFee}
+                    onChange={(e) => setTariffConnectionFee(e.target.value)}
+                    className="pl-10"
+                    placeholder="2000"
+                    disabled={tariffAutoPricing}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Cargo fijo por iniciar una sesión de carga</p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowTariffModal(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleSaveTariff}
+                disabled={updateTariffMutation.isPending}
+              >
+                {updateTariffMutation.isPending ? "Guardando..." : "Guardar Cambios"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
 // ─── Admin Stations Map Component ─────────────────────────────────────────────
 function AdminStationsMap({ stations, ocppConnections, onEdit, onView }: {
   stations: any[];

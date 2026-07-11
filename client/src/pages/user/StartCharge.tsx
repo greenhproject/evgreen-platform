@@ -686,8 +686,8 @@ export default function StartCharge() {
                     <span className="text-sm">Tarifa actual</span>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
-                    {/* Precio base tachado si hay descuento dinámico */}
-                    {estimateQuery.data && (estimateQuery.data as any).demandDiscountPercent > 0 && (
+                    {/* Solo mostrar precio base tachado y nivel de demanda si autoPricing=true */}
+                    {estimateQuery.data && (estimateQuery.data as any).useAutoPricing && (estimateQuery.data as any).demandDiscountPercent > 0 && (
                       <span className="text-xs text-muted-foreground line-through">
                         ${(estimateQuery.data as any).basePricePerKwh?.toLocaleString()}/kWh
                       </span>
@@ -695,7 +695,8 @@ export default function StartCharge() {
                     <span className="font-bold">
                       ${estimateQuery.data?.pricePerKwh.toLocaleString() || 0}/kWh
                     </span>
-                    {estimateQuery.data && (
+                    {/* Nivel de demanda dinámica: solo si autoPricing=true */}
+                    {estimateQuery.data && (estimateQuery.data as any).useAutoPricing && (
                       <span className={`flex items-center gap-1 text-xs ${getDemandColor(estimateQuery.data.demandLevel)}`}>
                         {getDemandIcon(estimateQuery.data.demandLevel)}
                         {estimateQuery.data.demandLevel === 'LOW' ? 'Baja demanda' :
@@ -705,6 +706,10 @@ export default function StartCharge() {
                           <span className="text-green-500 font-semibold ml-1">-{(estimateQuery.data as any).demandDiscountPercent}%</span>
                         )}
                       </span>
+                    )}
+                    {/* Precio fijo: mostrar badge cuando autoPricing=false */}
+                    {estimateQuery.data && !(estimateQuery.data as any).useAutoPricing && (
+                      <span className="text-xs text-muted-foreground">Precio fijo</span>
                     )}
                   </div>
                 </div>
