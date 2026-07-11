@@ -1197,9 +1197,11 @@ export const chargingRouter = router({
         currentCost = energyCost + timeCost + sessionFee;
       }
       
-      // Si no hay potencia real del cargador, estimar basada en energía y tiempo
-      if (currentPower <= 0 && elapsedMinutes > 0 && currentKwh > 0) {
-        currentPower = currentKwh / (elapsedMinutes / 60);
+      // Si no hay potencia real del cargador (el cargador no reporta MeterValues con Power),
+      // usar la potencia nominal del conector en lugar del promedio acumulado.
+      // El promedio acumulado (kWh/h) crece linealmente con el tiempo y es visualmente incorrecto.
+      if (currentPower <= 0) {
+        currentPower = nominalPowerKw;
       }
       
       // ============================================================
@@ -2005,15 +2007,24 @@ export function updateActiveSessionMeterData(transactionId: number, data: {
   }
   
   // Agregar punto al historial de potencia (máx 360 puntos = ~30 min a 5s interval)
-  const power = data.currentPower !== undefined ? data.currentPower : session.currentPower;
+  const rawPower = data.currentPower !== undefined ? data.currentPower : session.currentPower;
   const energy = data.currentKwh !== undefined ? data.currentKwh : session.currentKwh;
   const soc = data.soc !== undefined ? data.soc : session.soc;
   
+  // Si el cargador no reporta potencia real (rawPower <= 0), NO guardar 0 en el historial
+  // porque genera una línea diagonal ascendente (promedio acumulado). En su lugar, omitir
+  // el punto de potencia (se mostrará como plano en la gráfica) o usar el último valor conocido.
+  const lastKnownPower = session.powerHistory?.length
+    ? session.powerHistory[session.powerHistory.length - 1].power
+    : null;
+  const power = rawPower > 0 ? rawPower : (lastKnownPower && lastKnownPower > 0 ? lastKnownPower : null);
+  
+  // Solo agregar punto si tenemos dato de energía (siempre disponible) o potencia
   if (!session.powerHistory) session.powerHistory = [];
   
   session.powerHistory.push({
     timestamp: Date.now(),
-    power: power,
+    power: power ?? 0,
     energy: energy,
     soc: soc,
   });
