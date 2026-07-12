@@ -105,7 +105,7 @@ const authRouter = router({
   
   logout: publicProcedure.mutation(({ ctx }) => {
     const cookieOptions = getSessionCookieOptions(ctx.req);
-    ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    ctx.res.clearCookie(COOKIE_NAME, cookieOptions);
     return { success: true } as const;
   }),
 
@@ -113,7 +113,7 @@ const authRouter = router({
     const cookieOptions = getSessionCookieOptions(ctx.req);
     const { id: userId, openId } = ctx.user;
     await db.deleteUser(userId);
-    ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    ctx.res.clearCookie(COOKIE_NAME, cookieOptions);
     console.log(`[Auth] Account deleted: userId=${userId}`);
     deleteAuth0User(openId).catch((e) =>
       console.error("[Auth0] Background delete failed:", e)

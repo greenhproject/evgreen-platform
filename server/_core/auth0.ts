@@ -312,7 +312,7 @@ export function registerAuth0Routes(app: Express) {
   // Logout route
   app.get("/api/auth/logout", (req: Request, res: Response) => {
     const cookieOptions = getSessionCookieOptions(req);
-    res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    res.clearCookie(COOKIE_NAME, cookieOptions);
 
     // Redirect to Auth0 logout to clear Auth0 session too
     const origin = getOrigin(req);
