@@ -14,10 +14,37 @@ import { ENV } from "./env";
 const AUTH0_DOMAIN = ENV.auth0Domain;
 const AUTH0_CLIENT_ID = ENV.auth0ClientId;
 const AUTH0_CLIENT_SECRET = ENV.auth0ClientSecret;
+const AUTH0_MOBILE_CLIENT_ID = ENV.auth0MobileClientId;
+const AUTH0_MOBILE_CLIENT_SECRET = ENV.auth0MobileClientSecret;
 
 let auth0Client: any = null;
+let auth0MobileClient: any = null;
 
-async function getAuth0Client() {
+async function getAuth0Client(mobile = false) {
+  if (mobile) {
+    if (auth0MobileClient) return auth0MobileClient;
+    const clientId = AUTH0_MOBILE_CLIENT_ID || AUTH0_CLIENT_ID;
+    const clientSecret = AUTH0_MOBILE_CLIENT_SECRET || AUTH0_CLIENT_SECRET;
+    if (!AUTH0_DOMAIN || !clientId || !clientSecret) {
+      console.error("[Auth0] Missing mobile configuration");
+      return null;
+    }
+    try {
+      const issuer = await Issuer.discover(`https://${AUTH0_DOMAIN}`);
+      auth0MobileClient = new issuer.Client({
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uris: [],
+        response_types: ["code"],
+      });
+      console.log("[Auth0] Mobile client initialized | clientId:", clientId.substring(0, 8) + "...");
+      return auth0MobileClient;
+    } catch (error) {
+      console.error("[Auth0] Failed to initialize mobile client:", error);
+      return null;
+    }
+  }
+
   if (auth0Client) return auth0Client;
 
   if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID || !AUTH0_CLIENT_SECRET) {
@@ -43,6 +70,7 @@ async function getAuth0Client() {
 
 // Initialize on startup
 getAuth0Client().catch(console.error);
+getAuth0Client(true).catch(console.error);
 
 /**
  * Get the origin URL respecting reverse proxy headers (Railway uses x-forwarded-proto)
@@ -66,7 +94,8 @@ export function registerAuth0Routes(app: Express) {
   // Login route - redirects to Auth0
   app.get("/api/auth/login", async (req: Request, res: Response) => {
     try {
-      const client = await getAuth0Client();
+      const isMobilePlatform = req.query.platform === "mobile";
+      const client = await getAuth0Client(isMobilePlatform);
       if (!client) {
         res.status(500).json({ error: "Auth0 not configured" });
         return;
@@ -78,7 +107,6 @@ export function registerAuth0Routes(app: Express) {
       // Encode mobile flag directly in state so it survives the OAuth redirect chain
       // without relying on cookies (which can be partitioned or blocked in Chrome CCT).
       const nonce = generators.state();
-      const isMobilePlatform = req.query.platform === "mobile";
       const state = isMobilePlatform ? `${nonce}:m` : nonce;
 
       // Store state in a short-lived cookie for CSRF validation
@@ -98,6 +126,7 @@ export function registerAuth0Routes(app: Express) {
         prompt: "login", // Force login screen (no auto-login with cached session)
       });
 
+      console.log(`[Auth0] Redirecting to Auth0 | mobile=${isMobilePlatform} | state_suffix=${state.slice(-4)} | redirect_uri=${redirectUri}`);
       res.redirect(authUrl);
     } catch (error) {
       console.error("[Auth0] Login redirect failed:", error);
@@ -124,8 +153,11 @@ export function registerAuth0Routes(app: Express) {
       // Mobile flag is encoded as ":m" suffix in the state to survive cross-site redirects
       const incomingState: string = (params as any).state || '';
       const isMobile = incomingState.endsWith(':m') || req.cookies?.auth0_mobile === "1";
+      console.log(`[Auth0] Callback state | isMobile=${isMobile} | storedState=${storedState ? 'present' : 'MISSING'} | incomingState_suffix=${incomingState.slice(-4)}`);
 
-      const tokenSet = await client.callback(redirectUri, params, {
+      // Use mobile client for mobile callbacks so the client_id matches the one used in login
+      const callbackClient = isMobile ? await getAuth0Client(true) : client;
+      const tokenSet = await callbackClient.callback(redirectUri, params, {
         state: storedState,
       });
 
@@ -134,7 +166,7 @@ export function registerAuth0Routes(app: Express) {
       res.clearCookie("auth0_mobile", { path: "/" });
 
       // Get user info from Auth0
-      const userInfo = await client.userinfo(tokenSet.access_token!);
+      const userInfo = await callbackClient.userinfo(tokenSet.access_token!);
 
       if (!userInfo.sub) {
         res.status(400).json({ error: "No user identifier from Auth0" });
@@ -183,22 +215,26 @@ export function registerAuth0Routes(app: Express) {
         name: name || "",
         expiresInMs: ONE_YEAR_MS,
       });
+      console.log(`[Auth0] Session token created | user=${email || openId.substring(0, 20)} | method=${loginMethod}`);
 
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
       if (isMobile) {
-        console.log(`[Auth0] Mobile callback success → redirecting to native app`);
-        const encodedToken = encodeURIComponent(sessionToken);
         const ua = req.headers['user-agent'] || '';
         const isAndroid = /Android/i.test(ua);
-        // Android: use intent:// format — works in ALL Chrome/CCT versions.
-        // Bare custom URL schemes (com.xxx://) are blocked in Chrome CCT on some Android versions.
-        // iOS: SFSafariViewController handles custom URL schemes reliably.
-        const deepLink = isAndroid
-          ? `intent://home?token=${encodedToken}#Intent;scheme=com.greenhproject.evgreen;package=com.greenhproject.evgreen;end`
-          : `com.greenhproject.evgreen://home?token=${encodedToken}`;
-        res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><script>window.location.href=${JSON.stringify(deepLink)};</script></head><body></body></html>`);
+        const encodedToken = encodeURIComponent(sessionToken);
+        // Use the same bare custom scheme for both Android and iOS.
+        // Chrome CCT on modern Android (6+) handles custom URL scheme navigations
+        // by routing through Android's intent resolver — no need for intent:// wrapper.
+        // SFSafariViewController on iOS handles them natively.
+        const deepLink = `com.greenhproject.evgreen://home?token=${encodedToken}`;
+        console.log(`[Auth0] Mobile callback OK | platform=${isAndroid ? 'android' : 'ios'} | deepLink=${deepLink.substring(0, 60)}...`);
+        res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>
+var dl=${JSON.stringify(deepLink)};
+try{window.location.href=dl;}catch(e){}
+setTimeout(function(){try{var a=document.createElement('a');a.href=dl;document.body.appendChild(a);a.click();}catch(e){}},200);
+</script></body></html>`);
       } else {
         res.redirect(302, "/");
       }
@@ -208,14 +244,15 @@ export function registerAuth0Routes(app: Express) {
     }
   });
 
-  // Mobile token exchange: WKWebView calls this after receiving the deep-link token
-  // to set the session cookie in the WKWebView cookie store
+  // Mobile token exchange: app calls this after receiving the deep-link token
+  // to set the session cookie in the WebView cookie store
   app.post("/api/auth/mobile-token", (req: Request, res: Response) => {
     const token = req.body?.token;
     if (!token || typeof token !== "string") {
       res.status(400).json({ error: "Missing token" });
       return;
     }
+    console.log(`[Auth0] mobile-token exchange received | token_prefix=${token.substring(0, 10)}`);
     const cookieOptions = getSessionCookieOptions(req);
     res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
     res.json({ ok: true });

@@ -36,7 +36,10 @@ const extractToken = (urlStr: string): string | null => {
   try {
     return new URL(urlStr).searchParams.get('token');
   } catch {
-    return null;
+    // Fallback for custom URL schemes (e.g. com.xxx://) that older Android WebView
+    // versions may fail to parse with the URL constructor
+    const m = urlStr.match(/[?&]token=([^&#]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
   }
 };
 
@@ -171,6 +174,13 @@ async function bootstrap() {
 
     // Registrar listener de deep links (appUrlOpen)
     const { App: CapacitorApp } = await import('@capacitor/app');
+    const { Browser } = await import('@capacitor/browser');
+
+    // Fallback: when Chrome CCT closes, re-check auth state.
+    // Handles Android devices where appUrlOpen may not fire for intent:// deep links.
+    Browser.addListener('browserFinished', () => {
+      setTimeout(() => queryClient.invalidateQueries(), 400);
+    });
 
     CapacitorApp.addListener('appUrlOpen', async (data: { url: string }) => {
       console.log("[Auth] appUrlOpen recibido:", data.url);
@@ -181,7 +191,6 @@ async function bootstrap() {
         if (refMatch) {
           console.log("[Wompi] Deep link de pago recibido, referencia:", refMatch[1]);
           try {
-            const { Browser } = await import('@capacitor/browser');
             await Browser.close();
           } catch {}
           window.location.href = `/wallet?payment=wompi&reference=${refMatch[1]}`;
@@ -205,7 +214,6 @@ async function bootstrap() {
 
       // Close SFSafariViewController / Chrome Custom Tab
       try {
-        const { Browser } = await import('@capacitor/browser');
         await Browser.close();
       } catch (e) {
         console.warn("[Auth] Browser.close error:", e);
