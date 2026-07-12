@@ -260,12 +260,58 @@ async function bootstrap() {
       queryClient.invalidateQueries();
     });
 
+    // Claim on app resume: if Android killed the Activity while the CCT was open,
+    // browserFinished may have fired with no listener. When the app comes back to
+    // foreground, try claiming if login_sk is still in localStorage.
+    CapacitorApp.addListener('appStateChange', async ({ isActive }: { isActive: boolean }) => {
+      if (!isActive) return;
+      const sk = localStorage.getItem('login_sk');
+      if (!sk) return;
+      try {
+        const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
+        const resp = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.token) {
+            localStorage.removeItem('login_sk');
+            setAuthCookie(data.token);
+            window.dispatchEvent(new Event('evgreen-auth-updated'));
+            console.log('[Auth] Token claimed on app resume');
+            setTimeout(() => queryClient.invalidateQueries(), 300);
+          }
+        }
+      } catch (e) {
+        console.warn('[Auth] resume claim failed:', e);
+      }
+    });
+
+    // Startup claim: app may have been killed while CCT was open and auth completed
+    // while dead. Try claiming immediately if login_sk is present.
+    const startupSk = localStorage.getItem('login_sk');
+    if (startupSk) {
+      try {
+        const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
+        const resp = await fetch(`${apiBase}/api/auth/claim?sk=${startupSk}`, { credentials: 'include' });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.token) {
+            localStorage.removeItem('login_sk');
+            setAuthCookie(data.token);
+            console.log('[Auth] Token claimed on startup');
+          }
+        }
+      } catch (e) {
+        console.warn('[Auth] startup claim failed:', e);
+      }
+    }
+
     // Verificar deep link de lanzamiento
     try {
       const launchUrl = await CapacitorApp.getLaunchUrl();
       if (launchUrl?.url) {
         const token = extractToken(launchUrl.url);
         if (token) {
+          localStorage.removeItem('login_sk');
           // If the user just logged out, skip deep-link re-auth and go straight to login screen
           if (sessionStorage.getItem('evgreen_logout')) {
             sessionStorage.removeItem('evgreen_logout');
