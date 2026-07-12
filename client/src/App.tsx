@@ -291,6 +291,7 @@ function RoleBasedRedirect() {
   const pendingBrowserCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAutoRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshRef = useRef(refresh);
+  const browserFinishedHandleRef = useRef<{ remove: () => Promise<void> } | null>(null);
   const [showRetryButton, setShowRetryButton] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoRetries, setLogoRetries] = useState(0);
@@ -367,9 +368,13 @@ function RoleBasedRedirect() {
     try {
       await openLoginBrowser();
       const { Browser } = await import('@capacitor/browser');
-      // Remove previous listeners to avoid accumulation across retries
-      await Browser.removeAllListeners();
-      await Browser.addListener('browserFinished', async () => {
+      // Remove only the previous UI listener (not all listeners) so the claim
+      // handler registered in bootstrap() (main.tsx) stays alive.
+      if (browserFinishedHandleRef.current) {
+        try { await browserFinishedHandleRef.current.remove(); } catch {}
+        browserFinishedHandleRef.current = null;
+      }
+      browserFinishedHandleRef.current = await Browser.addListener('browserFinished', async () => {
         // How long was the browser open? Used below to decide whether to auto-retry.
         const timeOpenMs = Date.now() - browserOpenedAtRef.current;
 
