@@ -19,6 +19,18 @@ const AUTH0_MOBILE_CLIENT_ID = ENV.auth0MobileClientId;
 let auth0Client: any = null;
 let auth0MobileClient: any = null;
 
+// Short-lived server-side store for mobile auth tokens.
+// The app generates a random sk before opening the CCT, the server stores the
+// session token here after a successful OAuth callback, and the app claims it
+// via GET /api/auth/claim once the CCT closes — no deep link required.
+const pendingTokens = new Map<string, { token: string; expires: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of pendingTokens) {
+    if (v.expires < now) pendingTokens.delete(k);
+  }
+}, 60_000);
+
 async function getAuth0Client(mobile = false) {
   if (mobile) {
     if (auth0MobileClient) return auth0MobileClient;
@@ -119,6 +131,19 @@ export function registerAuth0Routes(app: Express) {
         path: "/",
       });
 
+      // Store the session key (sk) sent by the native app so the callback can
+      // associate the completed auth with the pending token store.
+      const sk = typeof req.query.sk === "string" ? req.query.sk : null;
+      if (sk) {
+        res.cookie("auth0_sk", sk, {
+          httpOnly: true,
+          secure: isSecure,
+          sameSite: isSecure ? "none" : "lax",
+          maxAge: 5 * 60 * 1000,
+          path: "/",
+        });
+      }
+
       const authUrl = client.authorizationUrl({
         scope: "openid profile email",
         redirect_uri: redirectUri,
@@ -162,8 +187,10 @@ export function registerAuth0Routes(app: Express) {
       });
 
       // Clear state and legacy mobile cookies
+      const sk = req.cookies?.auth0_sk || null;
       res.clearCookie("auth0_state", { path: "/" });
       res.clearCookie("auth0_mobile", { path: "/" });
+      res.clearCookie("auth0_sk", { path: "/" });
 
       // Get user info from Auth0
       const userInfo = await callbackClient.userinfo(tokenSet.access_token!);
@@ -223,18 +250,26 @@ export function registerAuth0Routes(app: Express) {
       if (isMobile) {
         const ua = req.headers['user-agent'] || '';
         const isAndroid = /Android/i.test(ua);
-        const encodedToken = encodeURIComponent(sessionToken);
-        // Use the same bare custom scheme for both Android and iOS.
-        // Chrome CCT on modern Android (6+) handles custom URL scheme navigations
-        // by routing through Android's intent resolver — no need for intent:// wrapper.
-        // SFSafariViewController on iOS handles them natively.
-        const deepLink = `com.greenhproject.evgreen://home?token=${encodedToken}`;
-        console.log(`[Auth0] Mobile callback OK | platform=${isAndroid ? 'android' : 'ios'} | deepLink=${deepLink.substring(0, 60)}...`);
-        res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>
-var dl=${JSON.stringify(deepLink)};
-try{window.location.href=dl;}catch(e){}
-setTimeout(function(){try{var a=document.createElement('a');a.href=dl;document.body.appendChild(a);a.click();}catch(e){}},200);
-</script></body></html>`);
+
+        // Primary: store token in server-side Map so the app can claim it via
+        // GET /api/auth/claim?sk=... once the CCT closes (browserFinished event).
+        // This avoids relying on deep links, which Chrome 83+ blocks from scripts.
+        if (sk) {
+          pendingTokens.set(sk, { token: sessionToken, expires: Date.now() + 5 * 60_000 });
+          console.log(`[Auth0] Mobile callback OK | platform=${isAndroid ? 'android' : 'ios'} | sk=${sk.substring(0, 8)}... | pending token stored`);
+        } else {
+          console.log(`[Auth0] Mobile callback OK | platform=${isAndroid ? 'android' : 'ios'} | no sk (legacy flow)`);
+        }
+
+        res.send(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;background:#052E16;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:-apple-system,sans-serif;color:#fff;text-align:center}
+.box{padding:32px 24px}.icon{font-size:56px;margin-bottom:16px}.title{font-size:22px;font-weight:600;margin-bottom:8px}.sub{color:#86efac;font-size:15px}</style>
+</head><body><div class="box">
+<div class="icon">✓</div>
+<div class="title">¡Sesión iniciada!</div>
+<div class="sub">Regresa a la app Evgreen</div>
+</div></body></html>`);
       } else {
         res.redirect(302, "/");
       }
@@ -242,6 +277,29 @@ setTimeout(function(){try{var a=document.createElement('a');a.href=dl;document.b
       console.error("[Auth0] Callback failed:", error);
       res.redirect("/?auth_error=callback_failed");
     }
+  });
+
+  // Native app claims the session token after the CCT closes (browserFinished).
+  // The app generates a random sk before opening the CCT; the server stores the
+  // token here after a successful OAuth callback; the app retrieves it once.
+  app.get("/api/auth/claim", (req: Request, res: Response) => {
+    const sk = typeof req.query.sk === "string" ? req.query.sk : null;
+    if (!sk) {
+      res.status(400).json({ error: "Missing sk" });
+      return;
+    }
+    const entry = pendingTokens.get(sk);
+    if (!entry || entry.expires < Date.now()) {
+      pendingTokens.delete(sk);
+      res.status(404).json({ error: "No pending token" });
+      return;
+    }
+    const { token } = entry;
+    pendingTokens.delete(sk); // single-use
+    console.log(`[Auth0] Token claimed | sk=${sk.substring(0, 8)}...`);
+    const cookieOptions = getSessionCookieOptions(req);
+    res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+    res.json({ token });
   });
 
   // Mobile token exchange: app calls this after receiving the deep-link token

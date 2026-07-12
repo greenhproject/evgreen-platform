@@ -15,15 +15,22 @@ export const getLoginUrl = () => {
 // En nativo abre SFSafariViewController (el WKWebView principal queda intacto).
 // En web hace la navegación normal.
 export async function openLoginBrowser(): Promise<void> {
-  const url = getLoginUrl();
-  console.log("[Auth] openLoginBrowser →", url, "| nativo:", isCapacitorNative());
   if (isCapacitorNative()) {
+    // Generate a session key so the server can store the token server-side and
+    // the app can claim it via /api/auth/claim once the CCT closes.
+    // This avoids relying on deep links (Chrome 83+ blocks script-initiated
+    // navigation to custom URL schemes from CCT).
+    const sk = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    sessionStorage.setItem('login_sk', sk);
+
+    const url = getLoginUrl() + `&sk=${sk}`;
+    console.log("[Auth] openLoginBrowser →", url);
+
     const { Browser } = await import('@capacitor/browser');
-    // Cierra cualquier SFSafariViewController huérfano de una sesión previa
-    // (p. ej. si la página se recargó durante logout con el browser de Auth0 aún abierto).
     try { await Browser.close(); } catch (_) { /* already closed */ }
     await Browser.open({ url, presentationStyle: 'popover' });
   } else {
-    window.location.href = url;
+    window.location.href = getLoginUrl();
   }
 }

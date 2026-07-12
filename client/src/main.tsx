@@ -176,10 +176,28 @@ async function bootstrap() {
     const { App: CapacitorApp } = await import('@capacitor/app');
     const { Browser } = await import('@capacitor/browser');
 
-    // Fallback: when Chrome CCT closes, re-check auth state.
-    // Handles Android devices where appUrlOpen may not fire for intent:// deep links.
-    Browser.addListener('browserFinished', () => {
-      setTimeout(() => queryClient.invalidateQueries(), 400);
+    // When the CCT closes, claim the pending session token from the server.
+    // The app stored a random sk in sessionStorage before opening the CCT;
+    // the server saved the token under that sk after a successful OAuth callback.
+    Browser.addListener('browserFinished', async () => {
+      const sk = sessionStorage.getItem('login_sk');
+      if (sk) {
+        sessionStorage.removeItem('login_sk');
+        try {
+          const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
+          const resp = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.token) {
+              setAuthCookie(data.token);
+              console.log('[Auth] Token claimed from server after CCT close');
+            }
+          }
+        } catch (e) {
+          console.warn('[Auth] claim failed:', e);
+        }
+      }
+      setTimeout(() => queryClient.invalidateQueries(), 300);
     });
 
     CapacitorApp.addListener('appUrlOpen', async (data: { url: string }) => {
