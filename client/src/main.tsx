@@ -180,9 +180,9 @@ async function bootstrap() {
     // The app stored a random sk in sessionStorage before opening the CCT;
     // the server saved the token under that sk after a successful OAuth callback.
     Browser.addListener('browserFinished', async () => {
-      const sk = sessionStorage.getItem('login_sk');
+      const sk = localStorage.getItem('login_sk');
       if (sk) {
-        sessionStorage.removeItem('login_sk');
+        localStorage.removeItem('login_sk');
         try {
           const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
           const resp = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
@@ -190,6 +190,7 @@ async function bootstrap() {
             const data = await resp.json();
             if (data.token) {
               setAuthCookie(data.token);
+              window.dispatchEvent(new Event('evgreen-auth-updated'));
               console.log('[Auth] Token claimed from server after CCT close');
             }
           }
@@ -225,7 +226,7 @@ async function bootstrap() {
 
       // Prevent browserFinished from making a redundant /api/auth/claim call
       // now that the token arrived via the OS-level intent redirect.
-      sessionStorage.removeItem('login_sk');
+      localStorage.removeItem('login_sk');
 
       // Store token BEFORE dispatching the event so that any auth.me refetch
       // triggered by the event finds the token already in localStorage.

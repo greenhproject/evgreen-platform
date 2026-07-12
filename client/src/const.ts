@@ -22,7 +22,7 @@ export async function openLoginBrowser(): Promise<void> {
     // navigation to custom URL schemes from CCT).
     const sk = Array.from(crypto.getRandomValues(new Uint8Array(16)))
       .map(b => b.toString(16).padStart(2, '0')).join('');
-    sessionStorage.setItem('login_sk', sk);
+    localStorage.setItem('login_sk', sk);
 
     const url = getLoginUrl() + `&sk=${sk}`;
     console.log("[Auth] openLoginBrowser →", url);
