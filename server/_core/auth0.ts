@@ -15,7 +15,6 @@ const AUTH0_DOMAIN = ENV.auth0Domain;
 const AUTH0_CLIENT_ID = ENV.auth0ClientId;
 const AUTH0_CLIENT_SECRET = ENV.auth0ClientSecret;
 const AUTH0_MOBILE_CLIENT_ID = ENV.auth0MobileClientId;
-const AUTH0_MOBILE_CLIENT_SECRET = ENV.auth0MobileClientSecret;
 
 let auth0Client: any = null;
 let auth0MobileClient: any = null;
@@ -24,16 +23,17 @@ async function getAuth0Client(mobile = false) {
   if (mobile) {
     if (auth0MobileClient) return auth0MobileClient;
     const clientId = AUTH0_MOBILE_CLIENT_ID || AUTH0_CLIENT_ID;
-    const clientSecret = AUTH0_MOBILE_CLIENT_SECRET || AUTH0_CLIENT_SECRET;
-    if (!AUTH0_DOMAIN || !clientId || !clientSecret) {
+    if (!AUTH0_DOMAIN || !clientId) {
       console.error("[Auth0] Missing mobile configuration");
       return null;
     }
     try {
       const issuer = await Issuer.discover(`https://${AUTH0_DOMAIN}`);
+      // Native apps in Auth0 are public clients (token_endpoint_auth_method: none)
+      // No client_secret is used or required for the code exchange
       auth0MobileClient = new issuer.Client({
         client_id: clientId,
-        client_secret: clientSecret,
+        token_endpoint_auth_method: "none",
         redirect_uris: [],
         response_types: ["code"],
       });

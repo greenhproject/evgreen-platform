@@ -12,7 +12,6 @@ export const ENV = {
   auth0ClientId: process.env.AUTH0_CLIENT_ID ?? "",
   auth0ClientSecret: process.env.AUTH0_CLIENT_SECRET ?? "",
   auth0MobileClientId: process.env.AUTH0_MOBILE_CLIENT_ID ?? "",
-  auth0MobileClientSecret: process.env.AUTH0_MOBILE_CLIENT_SECRET ?? "",
 };
 
 // Alias para compatibilidad
