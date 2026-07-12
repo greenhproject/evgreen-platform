@@ -251,25 +251,18 @@ export function registerAuth0Routes(app: Express) {
         const ua = req.headers['user-agent'] || '';
         const isAndroid = /Android/i.test(ua);
 
-        // Primary: store token in server-side Map so the app can claim it via
-        // GET /api/auth/claim?sk=... once the CCT closes (browserFinished event).
-        // This avoids relying on deep links, which Chrome 83+ blocks from scripts.
+        // Store token as fallback in case the OS-level redirect below doesn't reach
+        // the app (e.g. no registered intent filter found). The app claims it via
+        // GET /api/auth/claim?sk=... when browserFinished fires.
         if (sk) {
           pendingTokens.set(sk, { token: sessionToken, expires: Date.now() + 5 * 60_000 });
-          console.log(`[Auth0] Mobile callback OK | platform=${isAndroid ? 'android' : 'ios'} | sk=${sk.substring(0, 8)}... | pending token stored`);
-        } else {
-          console.log(`[Auth0] Mobile callback OK | platform=${isAndroid ? 'android' : 'ios'} | no sk (legacy flow)`);
         }
+        console.log(`[Auth0] Mobile callback OK | platform=${isAndroid ? 'android' : 'ios'} | sk=${sk ? sk.substring(0, 8) + '...' : 'none'}`);
 
-        res.send(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{margin:0;background:#052E16;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:-apple-system,sans-serif;color:#fff;text-align:center}
-.box{padding:32px 24px}.icon{font-size:56px;margin-bottom:16px}.title{font-size:22px;font-weight:600;margin-bottom:8px}.sub{color:#86efac;font-size:15px}</style>
-</head><body><div class="box">
-<div class="icon">✓</div>
-<div class="title">¡Sesión iniciada!</div>
-<div class="sub">Regresa a la app Evgreen</div>
-</div></body></html>`);
+        // HTTP 302 redirect to the app's custom scheme. Unlike JavaScript-initiated
+        // navigation (blocked by Chrome 83+), a server-side redirect is handled by
+        // the OS: Chrome CCT forwards it as an intent, the app opens and appUrlOpen fires.
+        res.redirect(302, `com.greenhproject.evgreen://callback?token=${encodeURIComponent(sessionToken)}`);
       } else {
         res.redirect(302, "/");
       }

@@ -223,6 +223,10 @@ async function bootstrap() {
       }
       console.log("[Auth] Token recibido vía appUrlOpen:", token.substring(0, 10) + "...");
 
+      // Prevent browserFinished from making a redundant /api/auth/claim call
+      // now that the token arrived via the OS-level intent redirect.
+      sessionStorage.removeItem('login_sk');
+
       // Store token BEFORE dispatching the event so that any auth.me refetch
       // triggered by the event finds the token already in localStorage.
       setAuthCookie(token);
