@@ -290,6 +290,7 @@ function RoleBasedRedirect() {
   const isAuthenticatedRef = useRef(isAuthenticated);
   const pendingBrowserCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAutoRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const authWasCancelledRef = useRef(false);
   const refreshRef = useRef(refresh);
   const browserFinishedHandleRef = useRef<{ remove: () => Promise<void> } | null>(null);
   const [showRetryButton, setShowRetryButton] = useState(false);
@@ -340,6 +341,15 @@ function RoleBasedRedirect() {
     // Fired by main.tsx when CCT closes but no token was returned (user cancelled login).
     // Resets to the login screen immediately instead of waiting for the 15s giveUpTimer.
     const handleAuthCancelled = () => {
+      // Signal the 1.5s browserFinished timer to skip auto-retry (handles the race
+      // where cancel fires before the timer sets pendingAutoRetryRef).
+      authWasCancelledRef.current = true;
+      // Also cancel an already-scheduled auto-retry (handles the race where the timer
+      // fires before cancel is dispatched and pendingAutoRetryRef is already set).
+      if (pendingAutoRetryRef.current) {
+        clearTimeout(pendingAutoRetryRef.current);
+        pendingAutoRetryRef.current = null;
+      }
       setTokenPending(false);
       loginBrowserOpened.current = false;
       setShowRetryButton(true);
@@ -375,6 +385,7 @@ function RoleBasedRedirect() {
   }, [tokenPending]);
 
   const doOpenLogin = useCallback(async () => {
+    authWasCancelledRef.current = false;
     loginBrowserOpened.current = true;
     browserOpenedAtRef.current = Date.now();
     setShowRetryButton(false);
@@ -410,6 +421,12 @@ function RoleBasedRedirect() {
           // Spurious event: app went back to background → Custom Tab still active, don't retry
           if (appPausedAgain) return;
           if (isAuthenticatedRef.current) return;
+          // evgreen-auth-cancelled already handled the UI reset — skip auto-retry.
+          // This covers the timing where cancel fires (at ~1.2s) before this timer (at 1.5s).
+          if (authWasCancelledRef.current) {
+            authWasCancelledRef.current = false;
+            return;
+          }
           loginBrowserOpened.current = false;
           setShowRetryButton(true);
           // Auto-retry only for very quick closes (< 3s open = accidental swipe/dismiss).
