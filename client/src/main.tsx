@@ -206,13 +206,27 @@ async function bootstrap() {
               console.log('[Auth] Token claimed from server after CCT close');
             }
           }
+          // Retry once — on Android, appStateChange fires before browserFinished and may
+          // race the server callback. Give the server 1s to finish storing the token.
+          if (!claimed) {
+            await new Promise(r => setTimeout(r, 1000));
+            const r2 = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
+            if (r2.ok) {
+              const d2 = await r2.json();
+              if (d2.token) {
+                claimed = true;
+                setAuthCookie(d2.token);
+                console.log('[Auth] Token claimed on retry after CCT close');
+              }
+            }
+          }
         } catch (e) {
           console.warn('[Auth] claim failed:', e);
         } finally {
           claimInProgress = false;
         }
-        // User cancelled (no token returned) — signal App.tsx to reset to login screen immediately
-        // instead of waiting for the 15s giveUpTimer.
+        // Only cancel after retry also fails — avoids false cancel during successful logins
+        // where the server needed a moment to finish the Auth0 callback.
         if (!claimed) {
           window.dispatchEvent(new Event('evgreen-auth-cancelled'));
         }
@@ -294,14 +308,12 @@ async function bootstrap() {
       claimInProgress = true;
       // Signal loading state immediately, same as the browserFinished handler.
       window.dispatchEvent(new Event('evgreen-auth-updated'));
-      let claimed = false;
       try {
         const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
         const resp = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
         if (resp.ok) {
           const data = await resp.json();
           if (data.token) {
-            claimed = true;
             localStorage.removeItem('login_sk');
             setAuthCookie(data.token);
             console.log('[Auth] Token claimed on app resume');
@@ -313,9 +325,9 @@ async function bootstrap() {
       } finally {
         claimInProgress = false;
       }
-      if (!claimed) {
-        window.dispatchEvent(new Event('evgreen-auth-cancelled'));
-      }
+      // Do NOT dispatch evgreen-auth-cancelled here — appStateChange fires before
+      // browserFinished on Android and may race the server callback. browserFinished
+      // handles cancel after a retry that gives the server time to finish.
     });
 
     // Startup claim: app may have been killed while CCT was open and auth completed
