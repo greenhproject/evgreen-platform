@@ -225,9 +225,8 @@ async function bootstrap() {
         } finally {
           claimInProgress = false;
         }
-        // Only cancel after retry also fails — avoids false cancel during successful logins
-        // where the server needed a moment to finish the Auth0 callback.
-        if (!claimed) {
+        // Only cancel if neither this handler nor appStateChange claimed a token.
+        if (!claimed && !localStorage.getItem(NATIVE_TOKEN_KEY)) {
           window.dispatchEvent(new Event('evgreen-auth-cancelled'));
         }
       }
@@ -297,17 +296,18 @@ async function bootstrap() {
       queryClient.invalidateQueries();
     });
 
-    // Claim on app resume: if Android killed the Activity while the CCT was open,
-    // browserFinished may have fired with no listener. When the app comes back to
-    // foreground, try claiming if login_sk is still in localStorage.
-    // claimInProgress prevents racing with the browserFinished handler above.
+    // Claim on app resume: silent background attempt — no UI changes, no claimInProgress.
+    // browserFinished is the authoritative handler for spinner and cancel logic.
+    // This only helps when browserFinished fired before listeners were registered
+    // (e.g. app killed while CCT was open).
+    // NOTE: we intentionally do NOT set claimInProgress here. On Android, appStateChange
+    // fires milliseconds before browserFinished. If we set claimInProgress, browserFinished
+    // sees it and skips its entire block — including dispatching evgreen-auth-cancelled —
+    // leaving the user stuck on the spinner until the 15s giveUpTimer fires.
     CapacitorApp.addListener('appStateChange', async ({ isActive }: { isActive: boolean }) => {
       if (!isActive) return;
       const sk = localStorage.getItem('login_sk');
       if (!sk || claimInProgress) return;
-      claimInProgress = true;
-      // Signal loading state immediately, same as the browserFinished handler.
-      window.dispatchEvent(new Event('evgreen-auth-updated'));
       try {
         const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
         const resp = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
@@ -322,12 +322,7 @@ async function bootstrap() {
         }
       } catch (e) {
         console.warn('[Auth] resume claim failed:', e);
-      } finally {
-        claimInProgress = false;
       }
-      // Do NOT dispatch evgreen-auth-cancelled here — appStateChange fires before
-      // browserFinished on Android and may race the server callback. browserFinished
-      // handles cancel after a retry that gives the server time to finish.
     });
 
     // Startup claim: app may have been killed while CCT was open and auth completed
