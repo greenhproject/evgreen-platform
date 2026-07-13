@@ -189,6 +189,42 @@ async function checkLowPriceAtFavoriteStations(): Promise<void> {
 // NOTIFICACIÓN 2: Hora habitual de carga
 // ============================================================================
 
+/**
+ * Verifica en la tabla notifications si ya se envió una notificación
+ * de tipo habitual_time HOY para este usuario. Persiste entre reinicios.
+ */
+async function wasHabitualNotifSentToday(userId: number): Promise<boolean> {
+  try {
+    const db = await getDb();
+    if (!db) return false;
+    // Inicio del día en hora local Colombia (UTC-5)
+    const nowUtc = Date.now();
+    const colombiaOffset = -5 * 60 * 60 * 1000;
+    const nowColombia = new Date(nowUtc + colombiaOffset);
+    const startOfDayColombia = new Date(
+      nowColombia.getUTCFullYear(),
+      nowColombia.getUTCMonth(),
+      nowColombia.getUTCDate(),
+      0, 0, 0, 0
+    );
+    // Convertir de vuelta a UTC para comparar con la BD
+    const startOfDayUtc = new Date(startOfDayColombia.getTime() - colombiaOffset);
+
+    const rows = await db.select({ id: notifications.id })
+      .from(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.type, "CHARGING"),
+        sql`${notifications.title} LIKE '%hora habitual%'`,
+        gte(notifications.createdAt, startOfDayUtc),
+      ))
+      .limit(1);
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function checkHabitualChargingTime(): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -201,8 +237,11 @@ async function checkHabitualChargingTime(): Promise<void> {
     .where(isNotNull(userConsumptionProfile.preferredHours));
 
   for (const profile of profiles) {
+    // Deduplicación 1: cache en memoria (rápido, para el mismo proceso)
     if (wasRecentlySent(profile.userId, 'habitual_time')) continue;
-    // Verificar también en BD para sobrevivir reinicios del servidor
+    // Deduplicación 2: tabla notifications en BD (persiste entre reinicios de Railway)
+    if (await wasHabitualNotifSentToday(profile.userId)) continue;
+    // Deduplicación 3: tabla whatsappNotificationLog (para WhatsApp)
     if (await wasRecentlySentInDb(profile.userId, 'charging_reminder')) continue;
     if (profile.totalSessions < 3) continue; // Necesita al menos 3 sesiones para patrones
 

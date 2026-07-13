@@ -76,33 +76,25 @@ export async function sendUserPush(
     if (user.pushSubscription && isWebPushAvailable()) {
       try {
         const subscription: PushSubscriptionData = JSON.parse(user.pushSubscription);
-        
-        // Detectar endpoint FCM legacy (/fcm/send/) — deprecado desde junio 2024
-        // Chrome en Android generaba estos endpoints antes; ya no funcionan con VAPID
-        const isLegacyFcmEndpoint = subscription.endpoint?.includes('/fcm/send/');
-        if (isLegacyFcmEndpoint) {
-          console.warn(`[UnifiedPush] User ${userId} has legacy FCM endpoint (deprecated since Jun 2024) — skipping Web Push, trying FCM token`);
-        } else {
-          const sent = await sendWebPush(subscription, {
-            title: payload.title,
-            body: payload.body,
-            image: payload.imageUrl,
-            tag: payload.type,
-            requireInteraction: ["low_balance", "charging_error", "overstay_alert"].includes(payload.type),
-            data: {
-              type: payload.type,
-              url: payload.clickAction || "/",
-              clickAction: payload.clickAction || "/",
-              ...payload.data,
-            },
-          });
+        const sent = await sendWebPush(subscription, {
+          title: payload.title,
+          body: payload.body,
+          image: payload.imageUrl,
+          tag: payload.type,
+          requireInteraction: ["low_balance", "charging_error", "overstay_alert"].includes(payload.type),
+          data: {
+            type: payload.type,
+            url: payload.clickAction || "/",
+            clickAction: payload.clickAction || "/",
+            ...payload.data,
+          },
+        });
 
-          if (sent) {
-            console.log(`[UnifiedPush] Web Push sent to user ${userId}: "${payload.title}"`);
-            return true;
-          }
-          console.warn(`[UnifiedPush] Web Push failed for user ${userId}, trying FCM fallback...`);
+        if (sent) {
+          console.log(`[UnifiedPush] Web Push sent to user ${userId}: "${payload.title}"`);
+          return true;
         }
+        console.warn(`[UnifiedPush] Web Push failed for user ${userId}, trying FCM fallback...`);
       } catch (parseError) {
         console.error(`[UnifiedPush] Invalid pushSubscription JSON for user ${userId}:`, parseError);
       }
