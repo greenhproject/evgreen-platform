@@ -194,12 +194,14 @@ async function bootstrap() {
         // shows the loading spinner instead of the "Iniciar sesión" button while
         // the claim fetch is in flight.
         window.dispatchEvent(new Event('evgreen-auth-updated'));
+        let claimed = false;
         try {
           const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
           const resp = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
           if (resp.ok) {
             const data = await resp.json();
             if (data.token) {
+              claimed = true;
               setAuthCookie(data.token);
               console.log('[Auth] Token claimed from server after CCT close');
             }
@@ -208,6 +210,11 @@ async function bootstrap() {
           console.warn('[Auth] claim failed:', e);
         } finally {
           claimInProgress = false;
+        }
+        // User cancelled (no token returned) — signal App.tsx to reset to login screen immediately
+        // instead of waiting for the 15s giveUpTimer.
+        if (!claimed) {
+          window.dispatchEvent(new Event('evgreen-auth-cancelled'));
         }
       }
       // Only invalidate if the token is already in storage; avoids firing auth.me
@@ -287,12 +294,14 @@ async function bootstrap() {
       claimInProgress = true;
       // Signal loading state immediately, same as the browserFinished handler.
       window.dispatchEvent(new Event('evgreen-auth-updated'));
+      let claimed = false;
       try {
         const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
         const resp = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
         if (resp.ok) {
           const data = await resp.json();
           if (data.token) {
+            claimed = true;
             localStorage.removeItem('login_sk');
             setAuthCookie(data.token);
             console.log('[Auth] Token claimed on app resume');
@@ -303,6 +312,9 @@ async function bootstrap() {
         console.warn('[Auth] resume claim failed:', e);
       } finally {
         claimInProgress = false;
+      }
+      if (!claimed) {
+        window.dispatchEvent(new Event('evgreen-auth-cancelled'));
       }
     });
 

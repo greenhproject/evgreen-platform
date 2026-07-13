@@ -337,8 +337,19 @@ function RoleBasedRedirect() {
       setTokenPending(true);
       setShowRetryButton(false);
     };
+    // Fired by main.tsx when CCT closes but no token was returned (user cancelled login).
+    // Resets to the login screen immediately instead of waiting for the 15s giveUpTimer.
+    const handleAuthCancelled = () => {
+      setTokenPending(false);
+      loginBrowserOpened.current = false;
+      setShowRetryButton(true);
+    };
     window.addEventListener('evgreen-auth-updated', handleAuthUpdated);
-    return () => window.removeEventListener('evgreen-auth-updated', handleAuthUpdated);
+    window.addEventListener('evgreen-auth-cancelled', handleAuthCancelled);
+    return () => {
+      window.removeEventListener('evgreen-auth-updated', handleAuthUpdated);
+      window.removeEventListener('evgreen-auth-cancelled', handleAuthCancelled);
+    };
   }, []);
 
   // Safety timeout: if tokenPending for too long and auth.me never confirmed, retry then give up.
