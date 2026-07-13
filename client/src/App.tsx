@@ -331,7 +331,9 @@ function RoleBasedRedirect() {
         clearTimeout(pendingAutoRetryRef.current);
         pendingAutoRetryRef.current = null;
       }
-      isAuthenticatedRef.current = true;
+      // Do NOT set isAuthenticatedRef here — let auth.me confirm via useEffect.
+      // Setting it here would prevent the 15s giveUpTimer from recovering
+      // if the claim fetch fails and the token never arrives.
       setTokenPending(true);
       setShowRetryButton(false);
     };

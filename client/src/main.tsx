@@ -190,6 +190,10 @@ async function bootstrap() {
       if (sk && !claimInProgress) {
         claimInProgress = true;
         localStorage.removeItem('login_sk');
+        // Dispatch early so App.tsx cancels the 1.5s retry timer immediately and
+        // shows the loading spinner instead of the "Iniciar sesión" button while
+        // the claim fetch is in flight.
+        window.dispatchEvent(new Event('evgreen-auth-updated'));
         try {
           const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
           const resp = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
@@ -197,7 +201,6 @@ async function bootstrap() {
             const data = await resp.json();
             if (data.token) {
               setAuthCookie(data.token);
-              window.dispatchEvent(new Event('evgreen-auth-updated'));
               console.log('[Auth] Token claimed from server after CCT close');
             }
           }
@@ -282,6 +285,8 @@ async function bootstrap() {
       const sk = localStorage.getItem('login_sk');
       if (!sk || claimInProgress) return;
       claimInProgress = true;
+      // Signal loading state immediately, same as the browserFinished handler.
+      window.dispatchEvent(new Event('evgreen-auth-updated'));
       try {
         const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
         const resp = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
@@ -290,7 +295,6 @@ async function bootstrap() {
           if (data.token) {
             localStorage.removeItem('login_sk');
             setAuthCookie(data.token);
-            window.dispatchEvent(new Event('evgreen-auth-updated'));
             console.log('[Auth] Token claimed on app resume');
             setTimeout(() => queryClient.invalidateQueries(), 300);
           }
