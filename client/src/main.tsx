@@ -176,12 +176,19 @@ async function bootstrap() {
     const { App: CapacitorApp } = await import('@capacitor/app');
     const { Browser } = await import('@capacitor/browser');
 
+    // Guard: only one claim fetch in flight at a time.
+    // On Android, appStateChange(isActive=true) fires just before browserFinished when
+    // the CCT closes. Without this flag both handlers race to claim the same sk,
+    // the loser gets an empty response and auth becomes intermittent.
+    let claimInProgress = false;
+
     // When the CCT closes, claim the pending session token from the server.
-    // The app stored a random sk in sessionStorage before opening the CCT;
+    // The app stored a random sk in localStorage before opening the CCT;
     // the server saved the token under that sk after a successful OAuth callback.
     Browser.addListener('browserFinished', async () => {
       const sk = localStorage.getItem('login_sk');
-      if (sk) {
+      if (sk && !claimInProgress) {
+        claimInProgress = true;
         localStorage.removeItem('login_sk');
         try {
           const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
@@ -196,9 +203,15 @@ async function bootstrap() {
           }
         } catch (e) {
           console.warn('[Auth] claim failed:', e);
+        } finally {
+          claimInProgress = false;
         }
       }
-      setTimeout(() => queryClient.invalidateQueries(), 300);
+      // Only invalidate if the token is already in storage; avoids firing auth.me
+      // before setAuthCookie completes when appStateChange is still fetching.
+      setTimeout(() => {
+        if (localStorage.getItem(NATIVE_TOKEN_KEY)) queryClient.invalidateQueries();
+      }, 300);
     });
 
     CapacitorApp.addListener('appUrlOpen', async (data: { url: string }) => {
@@ -263,10 +276,12 @@ async function bootstrap() {
     // Claim on app resume: if Android killed the Activity while the CCT was open,
     // browserFinished may have fired with no listener. When the app comes back to
     // foreground, try claiming if login_sk is still in localStorage.
+    // claimInProgress prevents racing with the browserFinished handler above.
     CapacitorApp.addListener('appStateChange', async ({ isActive }: { isActive: boolean }) => {
       if (!isActive) return;
       const sk = localStorage.getItem('login_sk');
-      if (!sk) return;
+      if (!sk || claimInProgress) return;
+      claimInProgress = true;
       try {
         const apiBase = (import.meta.env.VITE_API_URL as string) || window.location.origin;
         const resp = await fetch(`${apiBase}/api/auth/claim?sk=${sk}`, { credentials: 'include' });
@@ -282,6 +297,8 @@ async function bootstrap() {
         }
       } catch (e) {
         console.warn('[Auth] resume claim failed:', e);
+      } finally {
+        claimInProgress = false;
       }
     });
 
