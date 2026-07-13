@@ -286,11 +286,8 @@ function RoleBasedRedirect() {
   const { user, isAuthenticated, loading, refresh } = useAuth();
   const [, setLocation] = useLocation();
   const loginBrowserOpened = useRef(false);
-  const browserOpenedAtRef = useRef<number>(0);
   const isAuthenticatedRef = useRef(isAuthenticated);
   const pendingBrowserCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingAutoRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const authWasCancelledRef = useRef(false);
   const refreshRef = useRef(refresh);
   const browserFinishedHandleRef = useRef<{ remove: () => Promise<void> } | null>(null);
   const [showRetryButton, setShowRetryButton] = useState(false);
@@ -321,16 +318,12 @@ function RoleBasedRedirect() {
   }, [loading, isAuthenticated, tokenPending]);
 
   // Mark as authenticated immediately when deep-link token arrives (before auth.me completes).
-  // Also cancel any pending browserFinished retry timers — the deep link arrived, no need to retry.
+  // Cancel the 1.5s browserFinished check when the token arrives via deep link.
   useEffect(() => {
     const handleAuthUpdated = () => {
       if (pendingBrowserCheckRef.current) {
         clearTimeout(pendingBrowserCheckRef.current);
         pendingBrowserCheckRef.current = null;
-      }
-      if (pendingAutoRetryRef.current) {
-        clearTimeout(pendingAutoRetryRef.current);
-        pendingAutoRetryRef.current = null;
       }
       // Do NOT set isAuthenticatedRef here — let auth.me confirm via useEffect.
       // Setting it here would prevent the 15s giveUpTimer from recovering
@@ -341,15 +334,6 @@ function RoleBasedRedirect() {
     // Fired by main.tsx when CCT closes but no token was returned (user cancelled login).
     // Resets to the login screen immediately instead of waiting for the 15s giveUpTimer.
     const handleAuthCancelled = () => {
-      // Signal the 1.5s browserFinished timer to skip auto-retry (handles the race
-      // where cancel fires before the timer sets pendingAutoRetryRef).
-      authWasCancelledRef.current = true;
-      // Also cancel an already-scheduled auto-retry (handles the race where the timer
-      // fires before cancel is dispatched and pendingAutoRetryRef is already set).
-      if (pendingAutoRetryRef.current) {
-        clearTimeout(pendingAutoRetryRef.current);
-        pendingAutoRetryRef.current = null;
-      }
       setTokenPending(false);
       loginBrowserOpened.current = false;
       setShowRetryButton(true);
@@ -385,9 +369,7 @@ function RoleBasedRedirect() {
   }, [tokenPending]);
 
   const doOpenLogin = useCallback(async () => {
-    authWasCancelledRef.current = false;
     loginBrowserOpened.current = true;
-    browserOpenedAtRef.current = Date.now();
     setShowRetryButton(false);
     try {
       await openLoginBrowser();
@@ -399,9 +381,6 @@ function RoleBasedRedirect() {
         browserFinishedHandleRef.current = null;
       }
       browserFinishedHandleRef.current = await Browser.addListener('browserFinished', async () => {
-        // How long was the browser open? Used below to decide whether to auto-retry.
-        const timeOpenMs = Date.now() - browserOpenedAtRef.current;
-
         // On some Android devices, Capacitor fires browserFinished whenever MainActivity
         // briefly resumes — even while the Chrome Custom Tab is still open (spurious).
         // Fix: watch appStateChange for 1.5s. If the app goes back to background within
@@ -418,29 +397,12 @@ function RoleBasedRedirect() {
         pendingBrowserCheckRef.current = setTimeout(async () => {
           try { await stateHandle?.remove(); } catch {}
           pendingBrowserCheckRef.current = null;
-          // Spurious event: app went back to background → Custom Tab still active, don't retry
+          // Spurious event: app went back to background → Custom Tab still active, skip
           if (appPausedAgain) return;
           if (isAuthenticatedRef.current) return;
-          // evgreen-auth-cancelled already handled the UI reset — skip auto-retry.
-          // This covers the timing where cancel fires (at ~1.2s) before this timer (at 1.5s).
-          if (authWasCancelledRef.current) {
-            authWasCancelledRef.current = false;
-            return;
-          }
+          // CCT genuinely closed (user pressed X or dismiss): show login button.
           loginBrowserOpened.current = false;
           setShowRetryButton(true);
-          // Auto-retry only for very quick closes (< 3s open = accidental swipe/dismiss).
-          // If the browser was open longer, the user was actively in the OAuth flow
-          // (e.g., adding a Google account to the device). Don't interfere — they'll
-          // tap the retry button when ready.
-          if (timeOpenMs < 3000) {
-            pendingAutoRetryRef.current = setTimeout(() => {
-              pendingAutoRetryRef.current = null;
-              if (!loginBrowserOpened.current && !isAuthenticatedRef.current) {
-                doOpenLogin();
-              }
-            }, 2000);
-          }
         }, 1500);
       });
     } catch (e) {
