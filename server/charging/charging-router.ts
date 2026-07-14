@@ -842,29 +842,8 @@ export const chargingRouter = router({
           type: "CHARGE_REQUESTED",
         });
 
-        // WhatsApp: notificar solicitud de inicio de carga
-        try {
-          const userForWa = await db.getUserById(ctx.user.id);
-          if (userForWa?.phone) {
-            const { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } = await import("../whatsapp/whatsapp-service");
-            const now = new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: true });
-            sendWhatsAppTemplate({
-              toPhone: userForWa.phone,
-              templateName: WA_TEMPLATE_NAMES.inicio_carga,
-              parameters: [
-                userForWa.name?.split(" ")[0] || "Usuario",
-                stationNameForNotif,
-                String(connectorId),
-                now,
-              ],
-              eventType: "charge_start",
-              userId: ctx.user.id,
-              referenceType: "session",
-            }).catch((e: Error) => console.error("[WhatsApp] charge_start (startCharge) error:", e.message));
-          }
-        } catch (waErr) {
-          console.error("[startCharge] WhatsApp error:", waErr);
-        }
+        // WhatsApp de inicio de carga se envía desde index.ts (StartTransaction OCPP)
+        // para garantizar hora correcta (Colombia) y evitar duplicados.
 
         return {
           sessionId,
