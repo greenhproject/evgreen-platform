@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { isCapacitorNative } from "@/const";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import UserLayout from "@/layouts/UserLayout";
@@ -642,10 +643,21 @@ export default function UserWallet() {
 
   // Mutation para crear checkout de recarga con Wompi
   const createWompiRecharge = trpc.wompi.createWalletRecharge.useMutation({
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (data.checkoutUrl) {
         toast.info("Redirigiendo a Wompi para completar el pago...");
-        window.open(data.checkoutUrl, "_blank");
+        if (isCapacitorNative()) {
+          const { Browser } = await import("@capacitor/browser");
+          const ref = data.reference;
+          await Browser.removeAllListeners();
+          await Browser.addListener('browserFinished', () => {
+            Browser.removeAllListeners();
+            window.location.href = `/wallet?payment=wompi&reference=${ref}`;
+          });
+          await Browser.open({ url: data.checkoutUrl, presentationStyle: "fullscreen" });
+        } else {
+          window.open(data.checkoutUrl, "_blank");
+        }
       }
       setIsProcessing(false);
     },
@@ -917,7 +929,7 @@ export default function UserWallet() {
     const amount = validateAmount();
     if (!amount) return;
     setIsProcessing(true);
-    createWompiRecharge.mutate({ amount });
+    createWompiRecharge.mutate({ amount, isNative: isCapacitorNative() });
   };
 
   // Botón principal: recarga rápida si tiene tarjeta, sino checkout
@@ -1039,7 +1051,7 @@ export default function UserWallet() {
       case "QUICK_RECHARGE":
         return "Recarga rápida con tarjeta";
       case "RECONCILIATION":
-        return "Recarga reconciliada";
+        return "Recarga con Wompi";
       case "ADMIN_ADJUSTMENT":
         return tx.description || "Ajuste administrativo";
       case "CHARGE":

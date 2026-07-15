@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
@@ -6,6 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   User,
   Mail,
@@ -17,6 +28,7 @@ import {
   HelpCircle,
   FileText,
   LogOut,
+  Trash2,
   ChevronRight,
   Crown,
   Settings,
@@ -82,6 +94,17 @@ function ActiveAvailabilityAlerts() {
 export default function UserProfile() {
   const { user, logout, refresh } = useAuth();
   const [, setLocation] = useLocation();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const deleteAccountMutation = trpc.auth.deleteMyAccount.useMutation({
+    onSuccess: async () => {
+      toast.success("Tu cuenta ha sido eliminada");
+      await logout();
+    },
+    onError: () => {
+      toast.error("No se pudo eliminar la cuenta. Intenta de nuevo.");
+    },
+  });
 
   const { data: socSuggestion } = trpc.charging.getSocAccuracySuggestion.useQuery(undefined, {
     staleTime: 5 * 60 * 1000,
@@ -392,11 +415,62 @@ export default function UserProfile() {
           </Button>
         </motion.div>
 
+        {/* Zona de peligro */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.55 }}
+          className="pt-2"
+        >
+          <h3 className="text-sm font-medium text-muted-foreground mb-2 px-1">
+            Zona de peligro
+          </h3>
+          <Card className="border-destructive/20 overflow-hidden">
+            <button
+              onClick={() => setShowDeleteDialog(true)}
+              className="w-full flex items-center gap-4 p-4 hover:bg-destructive/5 active:bg-destructive/10 transition-colors text-left"
+            >
+              <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-destructive" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="font-medium text-destructive">Eliminar mi cuenta</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Acción permanente e irreversible
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+            </button>
+          </Card>
+        </motion.div>
+
         {/* Versión de la app */}
         <div className="text-center text-xs text-muted-foreground">
           EVGreen v1.0.0
         </div>
       </div>
+
+      {/* Dialog de confirmación */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar tu cuenta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción es permanente e irreversible. Se eliminarán todos tus datos: historial de cargas, billetera, vehículos y preferencias. No podrás recuperar tu cuenta.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteAccountMutation.mutate()}
+              disabled={deleteAccountMutation.isPending}
+            >
+              {deleteAccountMutation.isPending ? "Eliminando..." : "Sí, eliminar mi cuenta"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </UserLayout>
   );
 }

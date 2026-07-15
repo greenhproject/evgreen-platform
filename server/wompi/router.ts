@@ -53,6 +53,7 @@ export const wompiRouter = router({
     .input(
       z.object({
         amount: z.number().min(10000).max(50000000), // Min $10,000 COP, Max $50M COP
+        isNative: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -76,8 +77,11 @@ export const wompiRouter = router({
         keys.integritySecret
       );
 
-      // Obtener URL de origen para redirección
-      const origin = (ctx.req.headers.origin as string) || "https://evgreen.lat";
+      const origin = "https://app.evgreen.lat";
+      // En apps nativas, usar relay /api/wompi/redirect → JS navega a com.greenhproject.evgreen://
+      // para forzar el cierre del Chrome Custom Tab y retorno a la app.
+      const platform = input.isNative ? "native" : "web";
+      const redirectUrl = `${origin}/api/wompi/redirect?reference=${reference}&platform=${platform}`;
 
       // Construir URL de checkout
       const checkoutUrl = buildCheckoutUrl({
@@ -86,7 +90,7 @@ export const wompiRouter = router({
         amountInCents,
         currency,
         signature,
-        redirectUrl: `${origin}/wallet?payment=wompi&reference=${reference}`,
+        redirectUrl,
         customerEmail: ctx.user.email || "",
         customerName: ctx.user.name ?? undefined,
       });
