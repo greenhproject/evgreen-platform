@@ -47,13 +47,6 @@
                 <data android:scheme="${auth0Scheme}" />
             </intent-filter>
 
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="${appHost}" />
-            </intent-filter>
-
         </activity>
 
         <provider
