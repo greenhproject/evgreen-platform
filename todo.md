@@ -3722,3 +3722,44 @@
 - [ ] Enviar WhatsApp cuando estacion se desocupa
 - [ ] Agregar UI de alertas activas en perfil del usuario (ver y cancelar)
 - [ ] Agregar tRPC procedures: getMyAlerts, cancelAlert
+
+## Roadmap Producción y Lanzamiento - 14 Julio 2026
+
+### 1. Aprobación a Producción
+- [x] Fix login Android 16: App Link autoVerify interceptaba callback de Auth0 (commit 193e60a)
+- [x] AAB firmado 1.3.1 (versionCode 26) generado con el fix
+- [x] Validado en emuladores Android 16 (API 37) y Android 15 (API 35) apuntando a producción
+- [ ] Subir 1.3.1 a Internal Testing en Play Console
+- [ ] Validar login en dispositivo físico real vía Internal Testing (no solo emulador)
+- [ ] Aprobación de versión 25 (1.3.0) en revisión de Play Store
+- [ ] Promover 1.3.1 a producción una vez aprobada la 25
+
+### 2. Estabilización y reparación de bugs funcionales
+- [ ] Edge-to-edge Android 16: agregar `viewport-fit=cover` en `client/index.html`
+- [ ] Edge-to-edge: replicar clases `safe-area-inset-*` (ya existen en UserLayout.tsx) en AdminLayout, EngineerLayout, HostLayout, InvestorLayout, OrgLayout, StaffLayout, TechnicianLayout
+- [ ] Confirmar visualmente en emulador Android 16 que ningún header/nav queda tapado por barra de estado/gestos
+- [ ] Revisar y cerrar bugs funcionales `[ ]` pendientes en secciones anteriores de este archivo
+- [ ] Log "[Auth] Missing session cookie" limpiado (commit 7885e9f) — verificar en Railway que no reaparece ruido similar en otros flujos
+- [x] `tsconfig.json` sin `target` rompía `pnpm check` por completo (Map iteration en auth0.ts) — agregado `target: ES2020`, 0 errores ahora
+- [x] Nombre de marca "Evgreen"→"EVGreen" corregido en `capacitor.config.ts` (única fuente desalineada; todo lo user-facing ya era consistente)
+- [x] 3 tests desactualizados corregidos (no eran bugs reales, solo no se habían actualizado tras cambios intencionales): `auth.logout.test.ts` (maxAge innecesario), `ai-service.test.ts` (modelo default ya es claude-sonnet-4-5), `consumption-profile.test.ts` (cooldown notificaciones ya es 24h, no 12h — fix real de spam del 13 jul)
+- [x] `consumption-profile.test.ts` tenía rutas absolutas hardcodeadas `/home/ubuntu/...` del sandbox cloud original — reemplazadas por `process.cwd()`, ahora portable a cualquier máquina
+- [ ] 6 archivos de test siguen fallando (31 tests) por falta de BD/Firebase/Resend real en este entorno local: `spaces.test.ts`, `spaces-bulk.test.ts`, `partners.test.ts`, `local-auth-list.test.ts`, `fcm.test.ts`, `receipt-email.test.ts` — verificar en un entorno con esas credenciales/red (CI o similar) para confirmar si esconden bugs reales
+- [ ] Push notifications: usuarios con `pushSubscription` (Web Push) expirada nunca se limpia ni se re-solicita — se pierden notificaciones silenciosamente cuando FCM tampoco está disponible (visto en Railway, user 570001)
+- [ ] Escalabilidad: pool de MySQL con `connectionLimit: 10` — evaluar si alcanza para un pico de usuarios en el lanzamiento
+
+### 3. Versión estable
+- [ ] Definir criterio de "versión estable" (ej. 0 bugs críticos abiertos, X días sin incidentes en producción)
+- [ ] Congelar features nuevas hasta cumplir el criterio
+
+### 4. Plan de migración a aplicación nativa
+- [ ] Definir alcance concreto (¿reemplazo de Capacitor por nativo puro, u otra estrategia?)
+
+### 5. Lanzamiento oficial al público — Noviembre 2026
+- [ ] Definir checklist de lanzamiento (marketing, soporte, monitoreo reforzado día 1)
+
+### 6. Soporte a producción y resolución de bugs
+- [ ] Definir canal/proceso de reporte de bugs post-lanzamiento
+
+### 7. Mantenimiento y estar en línea
+- [ ] Definir SLA/monitoreo de uptime post-lanzamiento

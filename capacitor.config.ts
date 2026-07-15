@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.greenhproject.evgreen',
-  appName: 'Evgreen',
+  appName: 'EVGreen',
   webDir: 'dist/public',
   server: {
     androidScheme: 'https',
