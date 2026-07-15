@@ -3748,6 +3748,14 @@
 - [ ] Push notifications: usuarios con `pushSubscription` (Web Push) expirada nunca se limpia ni se re-solicita — se pierden notificaciones silenciosamente cuando FCM tampoco está disponible (visto en Railway, user 570001)
 - [ ] Escalabilidad: pool de MySQL con `connectionLimit: 10` — evaluar si alcanza para un pico de usuarios en el lanzamiento
 
+### 2b. Estabilizar iOS (siguiente paso una vez Android quede listo)
+- [x] Confirmado: iOS nunca tuvo el bug de App Link/Universal Links del login (Auth0) ni del redirect de Wompi — no hay `.entitlements` ni Associated Domains configurados, no hay nada que portar de esos dos fixes
+- [x] BUG real encontrado y corregido: `sk` siempre llegaba `none` en iOS porque `isPWAInstalled()` (App.tsx) usa `navigator.standalone === true`, un flag de WebKit que también se activa dentro del WKWebView nativo de Capacitor (no solo en una PWA agregada a inicio) — la app nativa se auto-detectaba como PWA y caía en `PWALoginScreen`, que no manda `sk`. Login igual funcionaba (por el deep link), pero sin ningún respaldo de `claim` si el deep link fallara algún día. Fix: `isPWAInstalled()` ahora retorna `false` de una si `isCapacitorNative()` es true (commit pendiente de push)
+- [x] Dependencia `@capacitor/ios` faltaba en `package.json` (sí estaba `@capacitor/android`) — impedía que `cap sync ios` funcionara en esta máquina. Instalada 8.4.1 (misma versión que android) en devDependencies
+- [x] Build iOS generado apuntando a producción (`pnpm build:ios:prod`) con el fix del sk, listo para probar en Xcode/simulador
+- [ ] Validar en Xcode/simulador iOS: login/logout/cancelar, y confirmar que ahora `sk` sí llega con valor real en los logs de Railway (no `none`)
+- [ ] Auditoría general iOS: revisar si los demás bugs ya corregidos para Android (edge-to-edge, etc.) tienen equivalente en iOS y corregir donde aplique
+
 ### 3. Versión estable
 - [ ] Definir criterio de "versión estable" (ej. 0 bugs críticos abiertos, X días sin incidentes en producción)
 - [ ] Congelar features nuevas hasta cumplir el criterio
