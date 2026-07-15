@@ -3771,3 +3771,65 @@
 
 ### 7. Mantenimiento y estar en línea
 - [ ] Definir SLA/monitoreo de uptime post-lanzamiento
+
+## Plan: Seguridad de Credenciales, Versionamiento, Ramas y Escalabilidad - 14 Julio 2026
+
+### A. Rotación de credenciales (URGENTE — filtración confirmada, no es hipotética)
+Confirmado en `git log`: el commit `a7fe785` (2026-05-13, "Ajustes capacitor local dev") agregó `.env`, `.env.production` y `.env.development` con secretos reales. El commit `82b16c4` (2026-05-15, "Security: Remove environment files from tracking...") los quitó del tracking hacia adelante, **pero no purgó el historial** — cualquiera con acceso al repo puede recuperarlos hoy con `git show a7fe785:.env.production`.
+
+- [ ] **Confirmar visibilidad del repo** (público/privado) en GitHub → Settings → General. Esto define la urgencia real (público = ya pudo ser indexado por bots que escanean GitHub buscando secretos 24/7)
+- [ ] Revisar quién tiene/tuvo acceso al repo (colaboradores actuales y pasados) — la ventana de exposición es desde el 13 de mayo 2026 hasta hoy
+- [ ] **Rotar cada secreto en su origen** (no solo cambiar el valor en Railway — hay que regenerarlo en el proveedor para invalidar el viejo):
+  - [ ] `DATABASE_URL` (TiDB Cloud) — regenerar contraseña del usuario de BD
+  - [ ] `AUTH0_CLIENT_SECRET` — regenerar en Auth0 dashboard (client web, no el mobile que es público por diseño)
+  - [ ] `FIREBASE_PRIVATE_KEY` / service account — generar nueva clave en Firebase Console, revocar la vieja
+  - [ ] `JWT_SECRET` — regenerar (esto invalida TODAS las sesiones activas, avisar a usuarios o programar en ventana de bajo tráfico)
+  - [ ] `RESEND_API_KEY` — regenerar en Resend dashboard
+  - [ ] `VAPID_PRIVATE_KEY`/`VAPID_PUBLIC_KEY` (Web Push) — regenerar par de llaves (esto invalida suscripciones push existentes, los usuarios necesitarán re-suscribirse)
+  - [ ] `VITE_GOOGLE_MAPS_API_KEY` — regenerar en Google Cloud Console, restringir por dominio/paquete si no está ya restringida
+  - [ ] `BUILT_IN_FORGE_API_KEY` / `VITE_FRONTEND_FORGE_API_KEY` — regenerar si el proveedor lo permite
+  - [ ] Credenciales de Wompi (public key / integrity secret / events secret) — regenerar en dashboard Wompi
+  - [ ] Cualquier otra key en `.env.production` no listada arriba — auditar el archivo completo
+- [ ] Actualizar cada variable rotada en Railway (Settings → Variables) y confirmar redeploy exitoso antes de pasar a la siguiente
+- [ ] **Después** de rotar todo (no antes): purgar el secreto del historial de git con `git filter-repo` (recomendado sobre BFG, más mantenido) y force-push — esto reescribe hashes de commits, coordinar con cualquier colaborador para que vuelva a clonar
+- [ ] Agregar verificación automática (pre-commit hook o GitHub Action tipo `gitleaks`/`trufflehog`) para bloquear que un `.env` con secretos vuelva a commitearse
+- [ ] Confirmar que `.env.example` (si sigue trackeado) no tiene valores reales, solo placeholders
+
+### B. Versionamiento — unificar 4 fuentes de verdad desincronizadas
+Estado actual confirmado (todas independientes, ninguna se actualiza en conjunto):
+- `package.json`: `"version": "1.0.0"` — nunca se ha tocado
+- `client/src/lib/changelog.ts`: `CURRENT_SEMANTIC_VERSION = "v1.12"` — es la que se muestra en la UI (`DashboardLayout.tsx`), mantenida a mano
+- Android `build.gradle`: `versionCode 26` / `versionName "1.3.1"`
+- iOS `App.xcodeproj`: `MARKETING_VERSION = 1.0` / `CURRENT_PROJECT_VERSION = 1` — **nunca actualizado ni una sola vez**, bloquearía cualquier resubida a App Store tal cual está
+
+- [ ] Definir un único esquema semver (`MAJOR.MINOR.PATCH`) como fuente de verdad para toda la plataforma
+- [ ] Decidir dónde vive la fuente de verdad única (recomendado: `package.json`, y que un script derive de ahí `CURRENT_SEMANTIC_VERSION`, `versionName` de Android y `MARKETING_VERSION` de iOS en el momento del build, en vez de mantenerlas a mano en 4 lugares)
+- [ ] `versionCode` (Android, entero incremental) y `CURRENT_PROJECT_VERSION` (iOS, build number) siguen siendo independientes por requisito de las stores — pero sí deberían incrementarse junto con cada release, no quedarse congelados como iOS hoy
+- [ ] Sincronizar iOS ya mismo a algo real (mínimo igualar `MARKETING_VERSION` a `1.3.1` y `CURRENT_PROJECT_VERSION` a un número coherente) antes de cualquier submit
+- [ ] Mostrar la versión de forma consistente en todas las superficies: badge web (ya existe), pantalla "Acerca de" en la app nativa, y considerar exponerla en un endpoint tipo `/api/version` para debugging remoto
+- [ ] Atar cada release a un **git tag** (`v1.3.1`, etc.) — hoy `git tag -l` está vacío, no hay forma de saber qué commit exacto corresponde a qué versión publicada, lo que complica cualquier rollback/backup
+
+### C. Estandarización de ramas y GitHub
+Estado actual confirmado: todos los commits recientes van directo a `main` (autores `Evgreen` y `Manus` — otro agente trabajando en este mismo repo en paralelo), sin PRs. Hay 13 ramas remotas acumuladas sin limpiar (`backup/main-2026-07-06`, `backup/main-pre-mobile-merge`, `backup/pre-mobile-merge`, `capacitorConfig`, `feature/android-config`, `feature/config-fusion`, `feature/ios-config`, `integration/wompi-android-fix`, `main-backup-pre-auth0`, `merge/config-fusion`, `mobile-integration`, `mobile/to-main`), la mayoría ya mergeadas a `main` y candidatas a borrar.
+
+- [ ] Definir convención de nombres de rama: `feature/<slug>`, `fix/<slug>`, `chore/<slug>` (ya se usa parcialmente, formalizarlo)
+- [ ] Auditar las 13 ramas remotas actuales: cuáles ya están mergeadas (borrar) vs cuáles son backups intencionales que hay que conservar (documentar por qué existen y cuándo se pueden borrar)
+- [ ] Definir política de **tags para backup/rollback**: en vez de ramas `backup/*` ad-hoc, usar tags (`pre-mobile-merge`, `v1.3.0-approved`, etc.) — más ligero y no contamina la lista de branches activas
+- [ ] Evaluar protección de rama en `main`:
+  - Dado que hay más de un agente/persona commiteando directo a `main`, aunque sea equipo pequeño, vale la pena como mínimo: **requerir que pasen `pnpm check` y `pnpm test` antes de mergear** (GitHub Actions + branch protection "required status checks") — esto habría atrapado el `tsconfig.json` roto de este mismo checklist antes de que llegara a `main`
+  - Full PR review (aprobación humana obligatoria) es más discutible para un equipo de 1-2 personas — probablemente overhead sin beneficio real hasta que el equipo crezca; revisar de nuevo cuando se sume gente
+  - Como mínimo intermedio: bloquear force-push y borrado de `main`, sin exigir PR review todavía
+- [ ] Documentar el flujo esperado en `README.md` o `CONTRIBUTING.md`: cuándo se trabaja directo en `main` (fixes urgentes ya probados) vs cuándo se abre rama (features grandes, cambios riesgosos)
+
+### D. Plan de migración de escalabilidad (para soportar carga masiva en el lanzamiento)
+Punto de partida ya identificado en la sección de estabilización: pool de MySQL con `connectionLimit: 10`. Falta investigación más profunda antes de proponer arquitectura final — este ítem es un plan a desarrollar, no una decisión tomada.
+
+- [ ] Establecer una línea base real: cuántos usuarios/conexiones concurrentes se esperan el día del lanzamiento (noviembre 2026) para dimensionar todo lo demás con un número concreto, no a ciegas
+- [ ] Hacer load testing (ej. k6, Artillery) contra un entorno de staging antes de decidir qué migrar — evitar migrar por intuición
+- [ ] Evaluar cuellos de botella conocidos: pool de conexiones MySQL (`connectionLimit: 10`), servidor único de Railway sin auto-scaling horizontal configurado, WebSocket OCPP corriendo en el mismo proceso que la API HTTP
+- [ ] Evaluar opciones de base de datos: TiDB Cloud ya es distribuido/escalable por diseño — probablemente solo requiera subir `connectionLimit` y usar un pooler externo (ej. ProxySQL o el pooler nativo de TiDB) antes de migrar de proveedor
+- [ ] Evaluar separar el servidor OCPP (WebSocket, tiempo real, stateful) del servidor API HTTP (stateless, escalable horizontalmente) — hoy comparten proceso en `server/_core/index.ts`
+- [ ] Evaluar necesidad de cache/capa intermedia (Redis) para sesiones, rate limiting distribuido (hoy es en memoria por proceso, no sirve con más de una instancia corriendo) y datos de lectura frecuente (estaciones, tarifas)
+- [ ] Evaluar CDN para assets estáticos del build web (hoy servidos directo desde el mismo proceso Express)
+- [ ] Definir criterio de éxito antes de migrar nada: qué SLA/latencia/capacidad debe cumplir la plataforma bajo la carga esperada
+- [ ] Con datos reales de load testing, decidir si hace falta migrar de infraestructura (Railway → algo con auto-scaling nativo) o si con ajustes de configuración alcanza — no asumir que hace falta una migración grande sin medir primero
