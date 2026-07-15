@@ -8,7 +8,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Zap, Mail, Lock, User, Phone, ArrowRight, Sparkles, ChevronLeft } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Zap, Mail, Lock, User, Phone, ArrowRight, Sparkles, ChevronLeft, Shield } from "lucide-react";
 import { getLoginUrl, trpc } from "@/lib/trpc";
 
 // ─── Detección de subdominio de org ───────────────────────────────────────────
@@ -164,9 +165,9 @@ const LoginForm = ({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.3 }}
-      className="space-y-6"
+      className="space-y-5"
     >
-      <div className="text-center mb-8">
+      <div className="text-center mb-6">
         <h2 className="text-2xl font-bold text-white mb-2">¡Bienvenido de vuelta!</h2>
         <p className="text-gray-400">
           {orgName ? `Inicia sesión en ${orgName}` : "Inicia sesión para continuar cargando"}
@@ -183,61 +184,31 @@ const LoginForm = ({
           }}
         >
           <Sparkles className="w-5 h-5 mr-2" />
-          Continuar con Manus
+          Iniciar sesión
           <ArrowRight className="w-5 h-5 ml-2" />
         </Button>
       </motion.div>
 
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-700" />
-        </div>
-        <div className="relative flex justify-center text-sm">
-          <span className="px-4 bg-slate-900 text-gray-500">o continúa con email</span>
-        </div>
-      </div>
-
-      <div className="space-y-4 opacity-50 pointer-events-none">
-        <div className="space-y-2">
-          <Label htmlFor="email" className="text-gray-300">Correo electrónico</Label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-            <Input
-              id="email"
-              type="email"
-              placeholder="tu@email.com"
-              className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl"
-              disabled
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password" className="text-gray-300">Contraseña</Label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-            <Input
-              id="password"
-              type="password"
-              placeholder="••••••••"
-              className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl"
-              disabled
-            />
-          </div>
-        </div>
-        <Button className="w-full h-12 bg-slate-800 hover:bg-slate-700 text-white rounded-xl" disabled>
-          Iniciar sesión
-        </Button>
-      </div>
-
-      <p className="text-center text-gray-400 text-sm">
-        ¿No tienes cuenta?{" "}
-        <button
+      {/* Registro prominente */}
+      <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+        <Button
           onClick={onSwitchToRegister}
-          className="font-medium transition-colors hover:opacity-80"
-          style={{ color: primaryColor }}
+          variant="outline"
+          className="w-full h-12 font-semibold text-base rounded-xl border-2 transition-all duration-300"
+          style={{
+            borderColor: `${primaryColor}60`,
+            color: primaryColor,
+            backgroundColor: `${primaryColor}10`,
+          }}
         >
-          Regístrate gratis
-        </button>
+          <User className="w-5 h-5 mr-2" />
+          Crear cuenta gratis
+          <ArrowRight className="w-4 h-4 ml-2" />
+        </Button>
+      </motion.div>
+
+      <p className="text-center text-gray-500 text-xs pt-1">
+        ¿Ya tienes cuenta? El botón de arriba también sirve para iniciar sesión.
       </p>
     </motion.div>
   );
@@ -253,20 +224,25 @@ const RegisterForm = ({
   primaryColor: string;
   orgName?: string;
 }) => {
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const allAccepted = termsAccepted && privacyAccepted;
+
   const handleOAuthRegister = () => {
+    if (!allAccepted) return;
     window.location.href = getLoginUrl();
   };
 
   const benefits = orgName
     ? [
         { icon: "⚡", text: "Carga en red" },
-        { icon: "💳", text: "Pagos fáciles" },
+        { icon: "🌟", text: "Puntos por kWh" },
         { icon: "📍", text: "Estaciones cercanas" },
         { icon: "📊", text: "Historial completo" },
       ]
     : [
         { icon: "⚡", text: "Carga rápida" },
-        { icon: "💰", text: "Mejores precios" },
+        { icon: "🌟", text: "Gana puntos" },
         { icon: "📍", text: "Encuentra estaciones" },
         { icon: "📊", text: "Historial completo" },
       ];
@@ -277,16 +253,16 @@ const RegisterForm = ({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.3 }}
-      className="space-y-6"
+      className="space-y-5"
     >
-      <div className="text-center mb-8">
+      <div className="text-center mb-5">
         <h2 className="text-2xl font-bold text-white mb-2">
           {orgName ? `Únete a ${orgName}` : "Únete a EVGreen"}
         </h2>
         <p className="text-gray-400">Crea tu cuenta y empieza a cargar</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mb-6">
+      <div className="grid grid-cols-2 gap-3">
         {benefits.map((benefit, i) => (
           <motion.div
             key={i}
@@ -301,58 +277,64 @@ const RegisterForm = ({
         ))}
       </div>
 
-      <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+      {/* Términos y condiciones obligatorios */}
+      <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <Shield className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: primaryColor }} />
+          <p className="text-xs text-gray-400 font-medium">Para registrarte debes aceptar:</p>
+        </div>
+        <label className="flex items-start gap-3 cursor-pointer group">
+          <Checkbox
+            id="terms"
+            checked={termsAccepted}
+            onCheckedChange={(v) => setTermsAccepted(!!v)}
+            className="mt-0.5 flex-shrink-0"
+            style={{ accentColor: primaryColor }}
+          />
+          <span className="text-sm text-gray-300 leading-relaxed">
+            Acepto los{" "}
+            <a href="/terms" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline" style={{ color: primaryColor }}>Términos y Condiciones</a>
+            {" "}del servicio EVGreen
+          </span>
+        </label>
+        <label className="flex items-start gap-3 cursor-pointer group">
+          <Checkbox
+            id="privacy"
+            checked={privacyAccepted}
+            onCheckedChange={(v) => setPrivacyAccepted(!!v)}
+            className="mt-0.5 flex-shrink-0"
+          />
+          <span className="text-sm text-gray-300 leading-relaxed">
+            Acepto la{" "}
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline" style={{ color: primaryColor }}>Política de Privacidad</a>
+            {" "}y el tratamiento de mis datos personales (Ley 1581/2012)
+          </span>
+        </label>
+      </div>
+
+      <motion.div whileHover={{ scale: allAccepted ? 1.02 : 1 }} whileTap={{ scale: allAccepted ? 0.98 : 1 }}>
         <Button
           onClick={handleOAuthRegister}
-          className="w-full h-14 text-white font-semibold text-lg rounded-xl shadow-lg transition-all duration-300"
+          disabled={!allAccepted}
+          className="w-full h-14 text-white font-semibold text-lg rounded-xl shadow-lg transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
           style={{
-            background: `linear-gradient(135deg, ${primaryColor}, ${primaryColor}cc)`,
-            boxShadow: `0 8px 32px ${primaryColor}40`,
+            background: allAccepted
+              ? `linear-gradient(135deg, ${primaryColor}, ${primaryColor}cc)`
+              : "#334155",
+            boxShadow: allAccepted ? `0 8px 32px ${primaryColor}40` : "none",
           }}
         >
           <Sparkles className="w-5 h-5 mr-2" />
-          Registrarse con Manus
+          Crear mi cuenta
           <ArrowRight className="w-5 h-5 ml-2" />
         </Button>
       </motion.div>
 
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-700" />
-        </div>
-        <div className="relative flex justify-center text-sm">
-          <span className="px-4 bg-slate-900 text-gray-500">o regístrate con email</span>
-        </div>
-      </div>
-
-      <div className="space-y-4 opacity-50 pointer-events-none">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="name" className="text-gray-300">Nombre</Label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <Input id="name" type="text" placeholder="Tu nombre" className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl" disabled />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="phone" className="text-gray-300">Teléfono</Label>
-            <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <Input id="phone" type="tel" placeholder="+57..." className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl" disabled />
-            </div>
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="reg-email" className="text-gray-300">Correo electrónico</Label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-            <Input id="reg-email" type="email" placeholder="tu@email.com" className="pl-11 h-12 bg-slate-800/50 border-slate-700 text-white placeholder:text-gray-500 rounded-xl" disabled />
-          </div>
-        </div>
-        <Button className="w-full h-12 bg-slate-800 hover:bg-slate-700 text-white rounded-xl" disabled>
-          Crear cuenta
-        </Button>
-      </div>
+      {!allAccepted && (
+        <p className="text-center text-amber-400/80 text-xs">
+          Debes aceptar los términos para continuar
+        </p>
+      )}
 
       <p className="text-center text-gray-400 text-sm">
         ¿Ya tienes cuenta?{" "}
@@ -363,13 +345,6 @@ const RegisterForm = ({
         >
           Inicia sesión
         </button>
-      </p>
-
-      <p className="text-center text-gray-500 text-xs">
-        Al registrarte, aceptas nuestros{" "}
-        <a href="/terms" className="hover:underline" style={{ color: primaryColor }}>Términos de servicio</a>
-        {" "}y{" "}
-        <a href="/privacy" className="hover:underline" style={{ color: primaryColor }}>Política de privacidad</a>
       </p>
     </motion.div>
   );

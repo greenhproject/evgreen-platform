@@ -47,6 +47,7 @@ import { buildOrganizationsRouter } from "./organizations/organizations-router";
 import { contactRouter } from "./contact/contact-router";
 import { saasRouter } from "./saas/saas-router";
 import { campaignWizardRouter } from "./banners/campaign-wizard-router";
+import { buildLoyaltyRouter } from "./loyalty/loyalty-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -179,6 +180,33 @@ const authRouter = router({
         compressedSize: compressedBuffer.length,
       };
     }),
+
+  /** Aceptar términos y condiciones */
+  acceptTerms: protectedProcedure
+    .input(z.object({ version: z.string().default("1.0") }))
+    .mutation(async ({ ctx, input }) => {
+      const dbConn = (await getDb())!;
+      await dbConn
+        .update(users)
+        .set({ termsAcceptedAt: new Date(), termsVersion: input.version })
+        .where(eq(users.id, ctx.user.id));
+      return { success: true, acceptedAt: new Date() };
+    }),
+
+  /** Verificar si el usuario ha aceptado T&C */
+  getTermsStatus: protectedProcedure.query(async ({ ctx }) => {
+    const dbConn = (await getDb())!;
+    const [user] = await dbConn
+      .select({ termsAcceptedAt: users.termsAcceptedAt, termsVersion: users.termsVersion })
+      .from(users)
+      .where(eq(users.id, ctx.user.id))
+      .limit(1);
+    return {
+      accepted: !!user?.termsAcceptedAt,
+      acceptedAt: user?.termsAcceptedAt ?? null,
+      version: user?.termsVersion ?? null,
+    };
+  }),
 });
 
 // ============================================================================
@@ -7663,6 +7691,7 @@ export const appRouter = router({
   noc: nocRouter,
   feedback: feedbackRouter,
   campaignWizard: campaignWizardRouter,
+  loyalty: buildLoyaltyRouter(router, publicProcedure, protectedProcedure, adminProcedure),
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

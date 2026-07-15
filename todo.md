@@ -3722,3 +3722,26 @@
 - [ ] Enviar WhatsApp cuando estacion se desocupa
 - [ ] Agregar UI de alertas activas en perfil del usuario (ver y cancelar)
 - [ ] Agregar tRPC procedures: getMyAlerts, cancelAlert
+
+## Mejoras UX/Fidelización - Julio 2026
+
+- [x] Botón de registro más visible en pantalla de bienvenida/login
+- [x] Términos y condiciones con checkbox obligatorio en flujo de registro
+- [x] Schema BD: tabla vehicle_profiles (marca, modelo, año, capacidad kWh, autonomía)
+- [x] Schema BD: tabla loyalty_points (userId, points, source, transactionId, createdAt)
+- [x] Schema BD: tabla loyalty_redemptions (userId, points, type, discountAmount, createdAt)
+- [x] Schema BD: tabla loyalty_config (pointsPerKwh, pointValueCop, minRedemptionPoints, marketplaceUrl, marketplaceName)
+- [x] Schema BD: campo termsAcceptedAt en tabla users
+- [x] Backend: procedure vehicles.saveProfile
+- [x] Backend: procedure vehicles.getProfile
+- [x] Backend: procedure loyalty.getBalance
+- [x] Backend: procedure loyalty.getHistory
+- [x] Backend: procedure loyalty.redeem
+- [x] Backend: procedure loyalty.getConfig
+- [x] Backend: procedure admin.loyalty.updateConfig
+- [x] Integración: acumular puntos al completar StopTransaction OCPP
+- [x] Frontend: perfil de vehículo en pantalla de perfil de usuario
+- [x] Frontend: tarjeta virtual de puntos en billetera/perfil
+- [x] Frontend: historial de puntos acumulados
+- [x] Frontend: botón redimir puntos (descuento en carga o link marketplace)
+- [x] Frontend admin: sección configuración de fidelización

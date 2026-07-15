@@ -1655,6 +1655,22 @@ async function handleOCPP16Message(
           console.error(`[OCPP] Error sending charge complete notification:`, notifErr);
         }
       }
+      // ============================================================
+      // ACUMULACIÓN DE PUNTOS DE FIDELIZACIÓN (1 pt por kWh)
+      // ============================================================
+      if (transaction.userId && energyDelivered > 0) {
+        try {
+          const { awardLoyaltyPoints } = await import("../loyalty/loyalty-service");
+          await awardLoyaltyPoints({
+            userId: transaction.userId,
+            transactionId: transaction.id,
+            kwhDelivered: energyDelivered,
+          });
+          console.log(`[Loyalty] Points awarded to user ${transaction.userId} for ${energyDelivered.toFixed(2)} kWh`);
+        } catch (loyaltyErr: any) {
+          console.error(`[Loyalty] Error awarding points:`, loyaltyErr?.message);
+        }
+      }
       
       ocpp16Transactions.delete(payload.transactionId);
       

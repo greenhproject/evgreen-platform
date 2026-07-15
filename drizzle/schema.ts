@@ -193,6 +193,9 @@ export const users = mysqlTable("users", {
   waNotifyReminder: boolean("waNotifyReminder").default(false),        // Recordatorio de carga (default OFF para ahorrar costos)
   waNotifyPenalty: boolean("waNotifyPenalty").default(true),           // Penalización (siempre recomendado)
   waNotifyWallet: boolean("waNotifyWallet").default(true),             // Recarga de billetera
+  // Términos y condiciones
+  termsAcceptedAt: timestamp("termsAcceptedAt"),  // NULL = no aceptados aún
+  termsVersion: varchar("termsVersion", { length: 20 }).default("1.0"), // Versión aceptada
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -4014,3 +4017,79 @@ export const stationAvailabilityAlerts = mysqlTable("station_availability_alerts
 });
 export type StationAvailabilityAlert = typeof stationAvailabilityAlerts.$inferSelect;
 export type InsertStationAvailabilityAlert = typeof stationAvailabilityAlerts.$inferInsert;
+
+// ============================================================================
+// SISTEMA DE FIDELIZACIÓN (LOYALTY POINTS)
+// ============================================================================
+
+// Configuración global del sistema de puntos (singleton)
+export const loyaltyConfig = mysqlTable("loyalty_config", {
+  id: int("id").autoincrement().primaryKey(),
+  pointsPerKwh: decimal("pointsPerKwh", { precision: 6, scale: 2 }).default("1.00").notNull(), // puntos por kWh
+  pointValueCop: decimal("pointValueCop", { precision: 10, scale: 2 }).default("75.00").notNull(), // COP por punto al redimir
+  minRedemptionPoints: int("minRedemptionPoints").default(100).notNull(), // mínimo para redimir
+  maxRedemptionPercent: decimal("maxRedemptionPercent", { precision: 5, scale: 2 }).default("20.00").notNull(), // % máx de descuento por sesión
+  marketplaceUrl: text("marketplaceUrl"), // URL del marketplace externo
+  marketplaceName: varchar("marketplaceName", { length: 100 }).default("Marketplace EVGreen"),
+  marketplaceDescription: varchar("marketplaceDescription", { length: 300 }),
+  enabled: boolean("enabled").default(true).notNull(),
+  termsUrl: text("termsUrl"), // URL de T&C de la app
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type LoyaltyConfig = typeof loyaltyConfig.$inferSelect;
+export type InsertLoyaltyConfig = typeof loyaltyConfig.$inferInsert;
+
+// Movimientos de puntos por usuario
+export const loyaltyPoints = mysqlTable("loyalty_points", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  points: decimal("points", { precision: 10, scale: 2 }).notNull(), // positivo = ganados, negativo = redimidos
+  balanceAfter: decimal("balanceAfter", { precision: 10, scale: 2 }).notNull(), // saldo tras el movimiento
+  source: mysqlEnum("loyalty_source", ["charge_session", "redemption", "bonus", "adjustment", "expiry"]).notNull(),
+  transactionId: int("transactionId"), // FK a transactions (si aplica)
+  kwhCharged: decimal("kwhCharged", { precision: 10, scale: 4 }), // kWh de la sesión (para auditoría)
+  description: varchar("description", { length: 200 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type LoyaltyPoint = typeof loyaltyPoints.$inferSelect;
+export type InsertLoyaltyPoint = typeof loyaltyPoints.$inferInsert;
+
+// Redenciones de puntos
+export const loyaltyRedemptions = mysqlTable("loyalty_redemptions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  pointsUsed: decimal("pointsUsed", { precision: 10, scale: 2 }).notNull(),
+  discountAmountCop: decimal("discountAmountCop", { precision: 12, scale: 2 }).notNull(), // COP de descuento
+  redemptionType: mysqlEnum("redemption_type", ["charge_discount", "marketplace"]).notNull(),
+  transactionId: int("transactionId"), // FK a transactions (si fue descuento en carga)
+  status: mysqlEnum("redemption_status", ["pending", "applied", "cancelled"]).default("pending").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  appliedAt: timestamp("appliedAt"),
+});
+export type LoyaltyRedemption = typeof loyaltyRedemptions.$inferSelect;
+export type InsertLoyaltyRedemption = typeof loyaltyRedemptions.$inferInsert;
+
+// ============================================================================
+// PERFIL DE VEHÍCULO
+// ============================================================================
+
+export const vehicleProfiles = mysqlTable("vehicle_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(), // 1 perfil activo por usuario
+  brand: varchar("brand", { length: 100 }).notNull(),
+  model: varchar("model", { length: 100 }).notNull(),
+  year: int("year"),
+  batteryCapacityKwh: decimal("batteryCapacityKwh", { precision: 6, scale: 2 }), // kWh totales
+  realRangeKm: int("realRangeKm"), // autonomía real en km
+  connectorType: varchar("connectorType", { length: 30 }), // TYPE_2, CCS_2, etc.
+  chargeType: varchar("chargeType", { length: 10 }), // AC, DC, BOTH
+  maxChargePowerKw: decimal("maxChargePowerKw", { precision: 6, scale: 2 }), // potencia máx de carga
+  color: varchar("color", { length: 50 }),
+  licensePlate: varchar("licensePlate", { length: 20 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type VehicleProfile = typeof vehicleProfiles.$inferSelect;
+export type InsertVehicleProfile = typeof vehicleProfiles.$inferInsert;

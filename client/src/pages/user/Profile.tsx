@@ -40,9 +40,13 @@ import {
   CheckCircle2,
   Info,
   Building2,
+  Star,
+  Gift,
+  ExternalLink,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { LoyaltyCard } from "@/components/LoyaltyCard";
 
 // ── Alertas de disponibilidad activas ────────────────────────────────────
 function ActiveAvailabilityAlerts() {
@@ -369,6 +373,9 @@ export default function UserProfile() {
 
         {/* Alertas de disponibilidad activas */}
         <ActiveAvailabilityAlerts />
+
+        {/* Tarjeta de puntos de fidelización */}
+        <LoyaltyCard />
 
         {/* Secciones del menú */}
         {menuSections.map((section, sectionIndex) => (

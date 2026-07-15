@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw, CalendarDays, MapPin, Phone, Mail, Navigation, ExternalLink, FileText, CheckCircle, XCircle, Zap, Headphones, Key, Copy, Trash2, Plus, Eye, EyeOff, Code } from "lucide-react";
+import { Settings, Bell, CreditCard, Globe, Loader2, Calculator, RefreshCw, CalendarDays, MapPin, Phone, Mail, Navigation, ExternalLink, FileText, CheckCircle, XCircle, Zap, Headphones, Key, Copy, Trash2, Plus, Eye, EyeOff, Code, Star, Gift } from "lucide-react";
+import { LoyaltyAdminPanel } from "@/components/LoyaltyAdminPanel";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
@@ -453,6 +454,10 @@ export default function AdminSettings() {
           <TabsTrigger value="soporte">
             <Headphones className="w-4 h-4 mr-2" />
             Soporte
+          </TabsTrigger>
+          <TabsTrigger value="loyalty">
+            <Star className="w-4 h-4 mr-2" />
+            Puntos
           </TabsTrigger>
         </TabsList>
 
@@ -1600,6 +1605,11 @@ export default function AdminSettings() {
               )}
             </Button>
           </Card>
+        </TabsContent>
+
+        {/* ── Tab Loyalty / Puntos ──────────────────────────────────────── */}
+        <TabsContent value="loyalty">
+          <LoyaltyAdminPanel />
         </TabsContent>
       </Tabs>
     </div>

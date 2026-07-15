@@ -1685,15 +1685,26 @@ export class DualCSMS {
       console.error(`[CSMS-DUAL] Error updating consumption profile:`, profileErr);
     }
 
+        // =========================================================================
+    // PROGRAMA DE PUNTOS: Acumular puntos por kWh cargado
+    // =========================================================================
+    try {
+      const { awardLoyaltyPoints } = await import("../loyalty/loyalty-service");
+      await awardLoyaltyPoints({
+        userId: transaction.userId,
+        transactionId: transaction.id,
+        kwhDelivered: energyDelivered,
+      });
+    } catch (loyaltyErr) {
+      console.error(`[CSMS-DUAL] Error awarding loyalty points for tx=${transaction.id}:`, loyaltyErr);
+    }
     console.log(`[CSMS-DUAL] StopTransaction completed: tx=${transaction.id}, user=${transaction.userId}, ${energyDelivered.toFixed(2)} kWh, $${Math.round(totalCost)} COP`);
-
     return {
       idTagInfo: {
         status: "Accepted",
       },
     };
   }
-
   private async handleOCPP16MeterValues(conn: ChargingStationConnection, req: OCPP16MeterValuesRequest): Promise<any> {
     console.log(`[CSMS-DUAL] OCPP 1.6 MeterValues from ${conn.ocppIdentity}: connectorId=${req.connectorId}, transactionId=${req.transactionId}`);
     
