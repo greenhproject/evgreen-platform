@@ -2505,11 +2505,18 @@ export class DualCSMS {
         lastSeamlessReconnect: conn.lastSeamlessReconnect,
         gracePeriodStart: new Date(),
       });
-      const graceTimer = setTimeout(() => {
+      const graceTimer = setTimeout(async () => {
         // Grace period expirado sin reconexión → desconexión real
         this.gracePeriodStates.delete(ocppIdentity);
         this.gracePeriodTimers.delete(ocppIdentity);
         console.log(`[CSMS-DUAL] ❌ Grace period expired for ${ocppIdentity} — marking as truly offline`);
+        // Persistir estado offline en BD para que el NOC funcione en cualquier instancia del servidor
+        try {
+          await db.updateStationOnlineStatus(ocppIdentity, false);
+          console.log(`[CSMS-DUAL] ✅ Station ${ocppIdentity} marked offline in DB`);
+        } catch (e) {
+          console.error(`[CSMS-DUAL] Error marking station offline in DB:`, e);
+        }
       }, DualCSMS.GRACE_PERIOD_MS);
       this.gracePeriodTimers.set(ocppIdentity, graceTimer);
       console.log(`[CSMS-DUAL] ⏳ Grace period started for ${ocppIdentity} (${DualCSMS.GRACE_PERIOD_MS / 1000}s)`);
