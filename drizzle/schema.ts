@@ -389,6 +389,7 @@ export const transactions = mysqlTable("transactions", {
   stopReason: varchar("stopReason", { length: 100 }), // REMOTE, LOCAL, ENERGY_LIMIT, etc.
   // SoC manual ingresado por el usuario (cuando el cargador no lo reporta)
   manualSoc: int("manualSoc"), // Porcentaje de batería ingresado manualmente (0-100)
+  manualSocEnd: int("manualSocEnd"), // SoC estimado al final de la carga (calculado: manualSoc + kWh/capacidad*100)
   manualBatteryCapacityKwh: decimal("manualBatteryCapacityKwh", { precision: 6, scale: 2 }), // Capacidad de batería en kWh
   // Modo de carga y valor objetivo (para restaurar sesión desde BD)
   chargeMode: varchar("chargeMode", { length: 20 }).default("full_charge"), // fixed_amount, percentage, full_charge

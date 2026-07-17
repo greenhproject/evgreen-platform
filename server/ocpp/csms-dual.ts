@@ -1356,7 +1356,21 @@ export class DualCSMS {
     const endTime = new Date(req.timestamp);
     const startTime = transaction.startTime ? new Date(transaction.startTime) : new Date();
     const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
-
+    // Calcular SoC final estimado para cargadores AC sin lectura real de SoC
+    // Se usa la sesión activa en memoria para obtener manualSoc y capacidad de batería
+    let manualSocEndValue: number | null = null;
+    try {
+      const manualSocStart = transaction.manualSoc ?? activeSession?.manualSoc ?? null;
+      const battCapKwh = transaction.manualBatteryCapacityKwh
+        ? parseFloat(String(transaction.manualBatteryCapacityKwh))
+        : (activeSession?.manualBatteryCapacityKwh ?? null);
+      if (manualSocStart !== null && battCapKwh && battCapKwh > 0 && energyDelivered > 0) {
+        manualSocEndValue = Math.min(100, Math.round(manualSocStart + (energyDelivered / battCapKwh) * 100));
+        console.log(`[CSMS-DUAL] manualSocEnd calculado: ${manualSocStart}% + (${energyDelivered.toFixed(3)} kWh / ${battCapKwh} kWh) * 100 = ${manualSocEndValue}%`);
+      }
+    } catch (socCalcErr) {
+      console.error(`[CSMS-DUAL] Error calculando manualSocEnd:`, socCalcErr);
+    }
     // Actualizar transacción
     await db.updateTransaction(transaction.id, {
       endTime,
@@ -1370,6 +1384,7 @@ export class DualCSMS {
       platformFee: platformFee.toString(),
       status: "COMPLETED",
       stopReason: req.reason,
+      ...(manualSocEndValue !== null ? { manualSocEnd: manualSocEndValue } : {}),
     });
 
     // Actualizar estado del EVSE

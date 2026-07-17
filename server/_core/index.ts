@@ -1418,7 +1418,22 @@ async function handleOCPP16Message(
       const revenueConfig = await db.getRevenueShareConfig();
       const investorShare = totalCost * (revenueConfig.investorPercent / 100);
       const platformFee = totalCost * (revenueConfig.platformPercent / 100);
-      
+      // Calcular SoC final estimado para cargadores AC sin lectura real de SoC
+      // Se usa la sesión activa en memoria para obtener manualSoc y capacidad de batería
+      let manualSocEndValue: number | null = null;
+      try {
+        const { getActiveSessionById: getSessionForSoc } = await import("../charging/charging-router");
+        const sessionForSoc = getSessionForSoc(transaction.id);
+        const manualSocStart = sessionForSoc?.manualSoc ?? (transaction as any).manualSoc ?? null;
+        const battCapKwh = sessionForSoc?.manualBatteryCapacityKwh
+          ?? ((transaction as any).manualBatteryCapacityKwh ? parseFloat(String((transaction as any).manualBatteryCapacityKwh)) : null);
+        if (manualSocStart !== null && battCapKwh && battCapKwh > 0 && energyDelivered > 0) {
+          manualSocEndValue = Math.min(100, Math.round(manualSocStart + (energyDelivered / battCapKwh) * 100));
+          console.log(`[OCPP] StopTransaction - manualSocEnd calculado: ${manualSocStart}% + (${energyDelivered.toFixed(3)} kWh / ${battCapKwh} kWh) * 100 = ${manualSocEndValue}%`);
+        }
+      } catch (socCalcErr) {
+        console.error(`[OCPP] Error calculando manualSocEnd:`, socCalcErr);
+      }
       await db.updateTransaction(transaction.id, {
         endTime,
         meterEnd: String(payload.meterStop),
@@ -1431,6 +1446,7 @@ async function handleOCPP16Message(
         platformFee: platformFee.toFixed(2),
         status: "COMPLETED",
         stopReason: payload.reason || "Remote",
+        ...(manualSocEndValue !== null ? { manualSocEnd: manualSocEndValue } : {}),
       });
       
       // Actualizar estado del EVSE a FINISHING (cable aún puede estar conectado)
