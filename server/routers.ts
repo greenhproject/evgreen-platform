@@ -18,8 +18,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { getDb } from "./db";
-import { users, userVehicles, favoriteStations, notifications, sessionFeedback, tariffs as tariffsTable } from "../drizzle/schema";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { users, userVehicles, favoriteStations, notifications, sessionFeedback, tariffs as tariffsTable, whatsappNotificationLog } from "../drizzle/schema";
+import { eq, and, sql, inArray, desc, gte, lte, like, or } from "drizzle-orm";
 import { aiRouter } from "./ai/ai-router";
 import { wompiRouter } from "./wompi/router";
 import { ocppRouter } from "./ocpp/ocpp-router";
@@ -4029,6 +4029,95 @@ const settingsRouter = router({
         return { success: false, error: err.message || "Error al conectar con Resend" };
       }
     }),
+  // ─── Historial de notificaciones WhatsApp ────────────────────────────────
+  getWhatsAppLog: adminProcedure
+    .input(z.object({
+      page: z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(1).max(100).default(50),
+      search: z.string().optional(),
+      eventType: z.string().optional(),
+      status: z.enum(["sent", "failed", "delivered", "read", "all"]).default("all"),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const dbInstance = await getDb();
+      if (!dbInstance) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const offset = (input.page - 1) * input.pageSize;
+      const conditions: any[] = [];
+      if (input.status && input.status !== "all") {
+        conditions.push(eq(whatsappNotificationLog.status, input.status as any));
+      }
+      if (input.eventType) {
+        conditions.push(eq(whatsappNotificationLog.eventType, input.eventType));
+      }
+      if (input.dateFrom) {
+        conditions.push(gte(whatsappNotificationLog.createdAt, new Date(input.dateFrom)));
+      }
+      if (input.dateTo) {
+        const dateTo = new Date(input.dateTo);
+        dateTo.setHours(23, 59, 59, 999);
+        conditions.push(lte(whatsappNotificationLog.createdAt, dateTo));
+      }
+      if (input.search) {
+        conditions.push(
+          or(
+            like(whatsappNotificationLog.toPhone, `%${input.search}%`),
+            like(whatsappNotificationLog.messageBody, `%${input.search}%`),
+          )
+        );
+      }
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const logs = await dbInstance
+        .select({
+          id: whatsappNotificationLog.id,
+          userId: whatsappNotificationLog.userId,
+          toPhone: whatsappNotificationLog.toPhone,
+          eventType: whatsappNotificationLog.eventType,
+          messageBody: whatsappNotificationLog.messageBody,
+          status: whatsappNotificationLog.status,
+          wamid: whatsappNotificationLog.wamid,
+          errorMessage: whatsappNotificationLog.errorMessage,
+          referenceId: whatsappNotificationLog.referenceId,
+          referenceType: whatsappNotificationLog.referenceType,
+          createdAt: whatsappNotificationLog.createdAt,
+          userName: users.name,
+          userEmail: users.email,
+        })
+        .from(whatsappNotificationLog)
+        .leftJoin(users, eq(users.id, whatsappNotificationLog.userId))
+        .where(whereClause)
+        .orderBy(desc(whatsappNotificationLog.createdAt))
+        .limit(input.pageSize)
+        .offset(offset);
+      const countResult = await dbInstance
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(whatsappNotificationLog)
+        .where(whereClause);
+      const total = Number(countResult[0]?.count ?? 0);
+      const statsResult = await dbInstance
+        .select({
+          status: whatsappNotificationLog.status,
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(whatsappNotificationLog)
+        .groupBy(whatsappNotificationLog.status);
+      const stats = { sent: 0, failed: 0, delivered: 0, read: 0, total: 0 };
+      for (const row of statsResult) {
+        const s = row.status as string;
+        if (s in stats) (stats as any)[s] = Number(row.count);
+        stats.total += Number(row.count);
+      }
+      return {
+        logs,
+        total,
+        page: input.page,
+        pageSize: input.pageSize,
+        totalPages: Math.ceil(total / input.pageSize),
+        stats,
+      };
+    }),
+
 });
 
 // ============================================================================

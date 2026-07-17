@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { WhatsAppLogPanel } from "@/components/admin/WhatsAppLogPanel";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +42,8 @@ import {
   Smartphone,
   Loader2,
   RefreshCw,
-  CalendarDays
+  CalendarDays,
+  MessageSquare
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -63,6 +65,7 @@ const TARGET_AUDIENCES = [
 ];
 
 export default function AdminNotifications() {
+  const [activeTab, setActiveTab] = useState<"notifications" | "whatsapp">("notifications");
   const [showSendDialog, setShowSendDialog] = useState(false);
   const [weeklyReportUserId, setWeeklyReportUserId] = useState("");
 
@@ -211,9 +214,11 @@ export default function AdminNotifications() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="icon" onClick={() => { refetchStats(); refetchHistory(); }}>
-            <RefreshCw className="w-4 h-4" />
-          </Button>
+          {activeTab === "notifications" && (
+            <Button variant="outline" size="icon" onClick={() => { refetchStats(); refetchHistory(); }}>
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          )}
           <Dialog open={showSendDialog} onOpenChange={setShowSendDialog}>
             <DialogTrigger asChild>
               <Button>
@@ -375,6 +380,45 @@ export default function AdminNotifications() {
         </div>
       </div>
 
+      {/* Tabs de navegación */}
+      <div className="flex gap-1 border-b">
+        <button
+          onClick={() => setActiveTab("notifications")}
+          className={`px-4 py-2 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+            activeTab === "notifications"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Bell className="w-4 h-4" />
+          Notificaciones push
+        </button>
+        <button
+          onClick={() => setActiveTab("whatsapp")}
+          className={`px-4 py-2 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+            activeTab === "whatsapp"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          Historial WhatsApp
+        </button>
+      </div>
+
+      {activeTab === "whatsapp" && (
+        <Card className="p-5">
+          <div className="mb-4">
+            <h2 className="font-semibold text-lg">Historial de mensajes WhatsApp</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Registro completo de todos los mensajes enviados por la plataforma vía WhatsApp Business API.
+            </p>
+          </div>
+          <WhatsAppLogPanel />
+        </Card>
+      )}
+
+      {activeTab === "notifications" && <>
       {/* Estadísticas */}
       <div className="grid grid-cols-4 gap-4">
         <Card className="p-4">
@@ -581,6 +625,7 @@ export default function AdminNotifications() {
           </TableBody>
         </Table>
       </Card>
+      </> }
     </div>
   );
 }
