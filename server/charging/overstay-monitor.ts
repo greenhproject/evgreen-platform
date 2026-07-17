@@ -857,7 +857,8 @@ async function sendOverstayNotification(
     });
 
     // WhatsApp: notificar según el tipo de evento
-    if ((type === "penalty_started" || type === "finishing" || type === "warning") && data.stationName) {
+    // WhatsApp solo para penalización y warning (NO para "finishing" — ese mensaje ya lo envió StopTransaction OCPP)
+    if ((type === "penalty_started" || type === "warning") && data.stationName) {
       try {
         const userForWa = await db.getUserById(userId);
         if (userForWa?.phone) {
@@ -865,25 +866,7 @@ async function sendOverstayNotification(
           const timeStr = now.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: true });
           const firstName = userForWa.name?.split(" ")[0] || "Usuario";
 
-          if (type === "finishing") {
-            // Aviso de período de gracia: usar plantilla fin_carga con datos de gracia
-            console.log(`[WhatsApp] overstay finishing: sending grace period warning to ${userForWa.phone}`);
-            const result = await sendWhatsAppTemplate({
-              toPhone: userForWa.phone,
-              templateName: WA_TEMPLATE_NAMES.fin_carga,
-              parameters: [
-                firstName,
-                "0.00",  // kWh (ya completó la carga)
-                `${data.gracePeriodMinutes || 10} min de gracia`,
-                "$0",    // costo adicional aún
-                `Desconecta antes de ${timeStr} para evitar $${(data.penaltyPerMinute || 500).toLocaleString("es-CO")}/min`,
-              ],
-              eventType: "charge_end",
-              userId,
-            });
-            console.log(`[WhatsApp] overstay finishing result=${result}`);
-
-          } else if (type === "warning") {
+          if (type === "warning") {
             // Aviso 2 min antes de penalización
             console.log(`[WhatsApp] overstay warning: sending 2-min grace warning to ${userForWa.phone}`);
             const result = await sendWhatsAppTemplate({
