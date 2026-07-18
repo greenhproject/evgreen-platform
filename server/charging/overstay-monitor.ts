@@ -68,6 +68,8 @@ interface OverstaySession {
   occupancyRatePerMinute: number;
   /** hostUserId del aliado para registrar la liquidación */
   hostUserId: number | null;
+  /** Cada cuántos minutos de penalización enviar WhatsApp (configurable desde admin) */
+  whatsappNotifIntervalMinutes: number;
 }
 
 // In-memory map of active overstay sessions: evseId → OverstaySession
@@ -283,6 +285,7 @@ export async function onChargingFinished(evseId: number, stationId: number) {
     const globalPriceRanges = await db.getPriceRanges();
     let gracePeriodMinutes = globalPriceRanges.defaultOverstayGracePeriodMinutes ?? 10;
     let penaltyPerMinute = globalPriceRanges.defaultOverstayPenaltyPerMin ?? 500;
+    const whatsappNotifIntervalMinutes = globalPriceRanges.whatsappPenaltyNotifIntervalMinutes ?? 5;
 
     if (transaction.tariffId) {
       const tariff = await db.getTariffById(transaction.tariffId);
@@ -338,6 +341,7 @@ export async function onChargingFinished(evseId: number, stationId: number) {
       parkingRatePerMinute,
       occupancyRatePerMinute: penaltyPerMinute,
       hostUserId,
+      whatsappNotifIntervalMinutes,
     };
 
     // Try to acquire DB lock before starting
@@ -764,15 +768,18 @@ async function chargeOverstayForSession(session: OverstaySession, isFinal: boole
         accumulatedCost: session.accumulatedCost,
       });
     } else {
-      // Send WhatsApp update on EVERY penalty cycle so user knows exactly what is being charged
-      await sendOverstayNotification(session.userId, "penalty_update", {
-        stationName: session.stationName,
-        connectorId: session.connectorId,
-        penaltyPerMinute: session.penaltyPerMinute,
-        accumulatedCost: session.accumulatedCost,
-        elapsedMinutes: Math.round(elapsedMinutes - session.gracePeriodMinutes),
-        cycleAmount: penaltyAmount,
-      });
+      // Send WhatsApp update every N minutes (configurable from admin, default 5)
+      const interval = session.whatsappNotifIntervalMinutes ?? 5;
+      if (session.chargeCount % interval === 0) {
+        await sendOverstayNotification(session.userId, "penalty_update", {
+          stationName: session.stationName,
+          connectorId: session.connectorId,
+          penaltyPerMinute: session.penaltyPerMinute,
+          accumulatedCost: session.accumulatedCost,
+          elapsedMinutes: Math.round(elapsedMinutes - session.gracePeriodMinutes),
+          cycleAmount: penaltyAmount * interval,
+        });
+      }
     }
 
     // Add earnings to investor

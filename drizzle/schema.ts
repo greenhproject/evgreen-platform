@@ -1266,6 +1266,7 @@ export const platformSettings = mysqlTable("platform_settings", {
   defaultReservationFee: decimal("defaultReservationFee", { precision: 10, scale: 2 }).default("5000").notNull(), // Fee de reserva por defecto
   defaultOverstayPenaltyPerMin: decimal("defaultOverstayPenaltyPerMin", { precision: 10, scale: 2 }).default("500").notNull(), // Penalización por minuto
   defaultOverstayGracePeriodMinutes: int("defaultOverstayGracePeriodMinutes").default(10).notNull(), // Período de gracia antes de cobrar ocupación (minutos)
+  whatsappPenaltyNotifIntervalMinutes: int("whatsappPenaltyNotifIntervalMinutes").default(5).notNull(), // Cada cuántos minutos de penalización enviar WhatsApp (1=cada ciclo, 5=cada 5 min)
   defaultConnectionFee: decimal("defaultConnectionFee", { precision: 10, scale: 2 }).default("2000").notNull(), // Tarifa de conexión
   
   // Tarifas diferenciadas por tipo de conector (AC vs DC)

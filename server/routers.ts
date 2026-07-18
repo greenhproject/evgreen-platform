@@ -1207,6 +1207,7 @@ const tariffsRouter = router({
       defaultPricePerKwhDC: z.number().min(100).max(10000).optional(),
       enableDifferentiatedPricing: z.boolean().optional(),
       defaultOverstayGracePeriodMinutes: z.number().min(0).max(60).optional(),
+      whatsappPenaltyNotifIntervalMinutes: z.number().min(1).max(60).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       if (input.minPrice >= input.maxPrice) {
@@ -1263,7 +1264,8 @@ const tariffsRouter = router({
         input.defaultPricePerKwhDC,
         input.enableDifferentiatedPricing,
         input.defaultBasePricePerKwh,
-        input.defaultOverstayGracePeriodMinutes
+        input.defaultOverstayGracePeriodMinutes,
+        input.whatsappPenaltyNotifIntervalMinutes
       );
       
       // Registrar cambio global en log de auditoría

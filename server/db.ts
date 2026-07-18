@@ -4495,6 +4495,7 @@ export async function getPriceRanges(): Promise<{
   defaultReservationFee: number;
   defaultOverstayPenaltyPerMin: number;
   defaultOverstayGracePeriodMinutes: number;
+  whatsappPenaltyNotifIntervalMinutes: number;
   defaultConnectionFee: number;
   defaultPricePerKwhAC: number;
   defaultPricePerKwhDC: number;
@@ -4509,6 +4510,7 @@ export async function getPriceRanges(): Promise<{
     defaultReservationFee: parseFloat(settings?.defaultReservationFee?.toString() || "5000"),
     defaultOverstayPenaltyPerMin: parseFloat(settings?.defaultOverstayPenaltyPerMin?.toString() || "500"),
     defaultOverstayGracePeriodMinutes: settings?.defaultOverstayGracePeriodMinutes ?? 10,
+    whatsappPenaltyNotifIntervalMinutes: settings?.whatsappPenaltyNotifIntervalMinutes ?? 5,
     defaultConnectionFee: parseFloat(settings?.defaultConnectionFee?.toString() || "2000"),
     defaultPricePerKwhAC: parseFloat(settings?.defaultPricePerKwhAC?.toString() || "800"),
     defaultPricePerKwhDC: parseFloat(settings?.defaultPricePerKwhDC?.toString() || "1200"),
@@ -4528,7 +4530,8 @@ export async function updatePriceRanges(
   defaultPricePerKwhDC?: number,
   enableDifferentiatedPricing?: boolean,
   defaultBasePricePerKwh?: number,
-  defaultOverstayGracePeriodMinutes?: number
+  defaultOverstayGracePeriodMinutes?: number,
+  whatsappPenaltyNotifIntervalMinutes?: number
 ): Promise<void> {
   const updateData: Record<string, any> = {
     minPricePerKwh: minPrice.toString(),
@@ -4560,6 +4563,9 @@ export async function updatePriceRanges(
   }
   if (defaultOverstayGracePeriodMinutes !== undefined) {
     updateData.defaultOverstayGracePeriodMinutes = defaultOverstayGracePeriodMinutes;
+  }
+  if (whatsappPenaltyNotifIntervalMinutes !== undefined) {
+    updateData.whatsappPenaltyNotifIntervalMinutes = whatsappPenaltyNotifIntervalMinutes;
   }
   
   await upsertPlatformSettings(updateData);

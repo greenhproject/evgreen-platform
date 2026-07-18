@@ -48,7 +48,8 @@ import {
   Save,
   Loader2,
   History,
-  FileText
+  FileText,
+  Bell
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -116,6 +117,7 @@ export default function AdminTariffs() {
     defaultReservationFee: 5000,
     defaultOverstayPenaltyPerMin: 500,
     defaultOverstayGracePeriodMinutes: 10,
+    whatsappPenaltyNotifIntervalMinutes: 5,
     defaultConnectionFee: 2000,
     defaultPricePerKwhAC: 800,
     defaultPricePerKwhDC: 1200,
@@ -149,6 +151,7 @@ export default function AdminTariffs() {
         defaultReservationFee: priceRanges.defaultReservationFee,
         defaultOverstayPenaltyPerMin: priceRanges.defaultOverstayPenaltyPerMin,
         defaultOverstayGracePeriodMinutes: priceRanges.defaultOverstayGracePeriodMinutes,
+        whatsappPenaltyNotifIntervalMinutes: priceRanges.whatsappPenaltyNotifIntervalMinutes ?? 5,
         defaultConnectionFee: priceRanges.defaultConnectionFee,
         defaultPricePerKwhAC: priceRanges.defaultPricePerKwhAC,
         defaultPricePerKwhDC: priceRanges.defaultPricePerKwhDC,
@@ -198,6 +201,7 @@ export default function AdminTariffs() {
       defaultReservationFee: localPriceRanges.defaultReservationFee,
       defaultOverstayPenaltyPerMin: localPriceRanges.defaultOverstayPenaltyPerMin,
       defaultOverstayGracePeriodMinutes: localPriceRanges.defaultOverstayGracePeriodMinutes,
+      whatsappPenaltyNotifIntervalMinutes: localPriceRanges.whatsappPenaltyNotifIntervalMinutes ?? 5,
       defaultConnectionFee: localPriceRanges.defaultConnectionFee,
       defaultPricePerKwhAC: localPriceRanges.defaultPricePerKwhAC,
       defaultPricePerKwhDC: localPriceRanges.defaultPricePerKwhDC,
@@ -814,6 +818,27 @@ export default function AdminTariffs() {
               <p className="text-xs text-muted-foreground">Tiempo libre antes de cobrar ocupación</p>
             </div>
             
+            {/* Intervalo WhatsApp penalización - Editable */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-green-600" />
+                Notif. WhatsApp
+              </Label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Cada</span>
+                <Input
+                  type="number"
+                  value={localPriceRanges.whatsappPenaltyNotifIntervalMinutes ?? 5}
+                  onChange={(e) => setLocalPriceRanges(prev => ({ ...prev, whatsappPenaltyNotifIntervalMinutes: parseInt(e.target.value) || 1 }))}
+                  className="w-20"
+                  min={1}
+                  max={60}
+                />
+                <span className="text-muted-foreground">min</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Frecuencia de avisos WhatsApp durante penalización</p>
+            </div>
+
             {/* Tarifa de conexión - Editable */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
