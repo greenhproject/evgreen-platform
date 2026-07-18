@@ -763,14 +763,15 @@ async function chargeOverstayForSession(session: OverstaySession, isFinal: boole
         penaltyPerMinute: session.penaltyPerMinute,
         accumulatedCost: session.accumulatedCost,
       });
-    } else if (session.chargeCount % 5 === 0) {
-      // Send periodic update every 5 charges (~5 minutes)
+    } else {
+      // Send WhatsApp update on EVERY penalty cycle so user knows exactly what is being charged
       await sendOverstayNotification(session.userId, "penalty_update", {
         stationName: session.stationName,
         connectorId: session.connectorId,
         penaltyPerMinute: session.penaltyPerMinute,
         accumulatedCost: session.accumulatedCost,
         elapsedMinutes: Math.round(elapsedMinutes - session.gracePeriodMinutes),
+        cycleAmount: penaltyAmount,
       });
     }
 
@@ -807,6 +808,7 @@ interface OverstayNotificationData {
   penaltyPerMinute: number;
   accumulatedCost?: number;
   elapsedMinutes?: number;
+  cycleAmount?: number;
 }
 
 async function sendOverstayNotification(
@@ -823,7 +825,7 @@ async function sendOverstayNotification(
     switch (type) {
       case "finishing":
         title = "⚡ Carga completada";
-        message = `Tu vehículo terminó de cargar ${stationLabel}${connectorLabel}. Tienes ${data.gracePeriodMinutes || 10} minutos de gracia para desconectar el cable. Después se aplicará una tarifa de ocupación de $${data.penaltyPerMinute.toLocaleString()}/min.`;
+        message = `Tu vehículo terminó de cargar ${stationLabel}${connectorLabel}. Tienes ${data.gracePeriodMinutes ?? 10} minutos de gracia para desconectar el cable sin costo. Después se aplicará una tarifa de ocupación de $${data.penaltyPerMinute.toLocaleString()}/min.`;
         break;
       case "warning":
         title = `⏰ ¡Quedan ${data.graceRemaining} min de gracia!`;
@@ -834,8 +836,8 @@ async function sendOverstayNotification(
         message = `Se está cobrando $${data.penaltyPerMinute.toLocaleString()}/min por ocupación ${stationLabel}${connectorLabel}. Desconecta tu vehículo para detener el cobro. Acumulado: $${Math.round(data.accumulatedCost || 0).toLocaleString()} COP.`;
         break;
       case "penalty_update":
-        title = "💸 Ocupación en curso";
-        message = `Llevas ${data.elapsedMinutes} min de ocupación ${stationLabel}${connectorLabel}. Acumulado: $${Math.round(data.accumulatedCost || 0).toLocaleString()} COP ($${data.penaltyPerMinute.toLocaleString()}/min). Desconecta tu vehículo.`;
+        title = "💸 Tarifa de ocupación activa";
+        message = `Cobro este ciclo: $${Math.round(data.cycleAmount || data.penaltyPerMinute).toLocaleString()} COP. Acumulado: $${Math.round(data.accumulatedCost || 0).toLocaleString()} COP. Llevas ${data.elapsedMinutes} min de ocupación ${stationLabel}${connectorLabel}. Desconecta ya para detener el cobro.`;
         break;
     }
 
@@ -858,7 +860,7 @@ async function sendOverstayNotification(
 
     // WhatsApp: notificar según el tipo de evento
     // WhatsApp solo para penalización y warning (NO para "finishing" — ese mensaje ya lo envió StopTransaction OCPP)
-    if ((type === "penalty_started" || type === "warning") && data.stationName) {
+    if ((type === "penalty_started" || type === "warning" || type === "penalty_update") && data.stationName) {
       try {
         const userForWa = await db.getUserById(userId);
         if (userForWa?.phone) {
@@ -877,7 +879,7 @@ async function sendOverstayNotification(
                 "0.00",
                 `${data.graceRemaining || 2} min restantes`,
                 "$0",
-                `¡Desconecta ya! En ${data.graceRemaining || 2} min inicia la tarifa de $${(data.penaltyPerMinute || 500).toLocaleString("es-CO")}/min`,
+                `¡Desconecta ya! En ${data.graceRemaining || 2} min inicia la tarifa de $${data.penaltyPerMinute.toLocaleString("es-CO")}/min`,
               ],
               eventType: "charge_end",
               userId,
@@ -892,7 +894,7 @@ async function sendOverstayNotification(
               templateName: WA_TEMPLATE_NAMES.pago_sesion,
               parameters: [
                 firstName,
-                `$${(data.penaltyPerMinute || 500).toLocaleString("es-CO")}/min`,
+                `$${data.penaltyPerMinute.toLocaleString("es-CO")}/min`,
                 data.stationName,
                 `Acumulado: $${Math.round(data.accumulatedCost || 0).toLocaleString("es-CO")} COP`,
               ],
@@ -900,6 +902,24 @@ async function sendOverstayNotification(
               userId,
             });
             console.log(`[WhatsApp] overstay penalty_started result=${result}`);
+          } else if (type === "penalty_update") {
+            // Actualización por ciclo: informar cobro de este ciclo y acumulado
+            const cycleAmt = Math.round(data.cycleAmount || data.penaltyPerMinute);
+            const accumulated = Math.round(data.accumulatedCost || 0);
+            console.log(`[WhatsApp] overstay penalty_update: cycle=$${cycleAmt} accumulated=$${accumulated} to ${userForWa.phone}`);
+            const result = await sendWhatsAppTemplate({
+              toPhone: userForWa.phone,
+              templateName: WA_TEMPLATE_NAMES.pago_sesion,
+              parameters: [
+                firstName,
+                `$${cycleAmt.toLocaleString("es-CO")} (ciclo ${data.elapsedMinutes ?? "?"} min)`,
+                data.stationName,
+                `Acumulado: $${accumulated.toLocaleString("es-CO")} COP`,
+              ],
+              eventType: "penalty",
+              userId,
+            });
+            console.log(`[WhatsApp] overstay penalty_update result=${result}`);
           }
         } else {
           console.log(`[WhatsApp] overstay ${type}: user ${userId} has no phone number — skipping`);
