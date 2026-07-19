@@ -2,9 +2,12 @@
  * Tests para el módulo de Espacios Postulados
  * Verifica: submit público, consulta de estado, listado admin, scoring IA, etc.
  */
-import { describe, expect, it, vi, beforeAll } from "vitest";
+import { describe, expect, it, vi, beforeAll, afterAll } from "vitest";
 import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
+import { getDb } from "../db";
+import { spaceSubmissions } from "../../drizzle/schema";
+import { like, or } from "drizzle-orm";
 
 // ============================================================================
 // HELPERS
@@ -474,4 +477,23 @@ describe("spaces → crowdfunding integration", () => {
     const drafts = publicProjects.filter((p: any) => p.status === "DRAFT");
     expect(drafts.length).toBe(0);
   });
+});
+
+// ============================================================================
+// CLEANUP: eliminar todos los registros de test creados por este archivo
+// ============================================================================
+afterAll(async () => {
+  try {
+    const db = await getDb();
+    await db.delete(spaceSubmissions).where(
+      or(
+        like(spaceSubmissions.spaceName, "%Test%"),
+        like(spaceSubmissions.submitterName, "%Test%"),
+        like(spaceSubmissions.submitterEmail, "%example.com%")
+      )
+    );
+  } catch (e) {
+    // Silenciar errores de cleanup para no afectar resultados de tests
+    console.warn("[spaces.test cleanup] Error limpiando registros de test:", e);
+  }
 });
