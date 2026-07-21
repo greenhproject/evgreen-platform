@@ -13,10 +13,10 @@
   "experiments": null,
   "git_remote": {
     "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663169336317/UcUrociZeo4QVAHHN9vAuZ",
-    "access_key_id": "ASIAZV3A2ECZCHAV7XCS",
-    "secret_access_key": "rmqJVpqqHz9KV7t75SAdPG5ATvsckxi4r7Bo5uXQ",
-    "session_token": "IQoJb3JpZ2luX2VjEMf//////////wEaCXVzLWVhc3QtMSJIMEYCIQDUZdGodIMc1z9T5OPLnIrUG6pYaBS9Sbf24zgaraPkZwIhAKnMSo4WVgXsZ2r4VvJa0qp6yaMO0DewljFg1rl9A78aKv4DCJD//////////wEQBBoMNjY1Mzg2MDk4ODY2IgxfI2VpfWoXG7uWcW8q0gNtdJSWVozCd4Lbk9qeavKoJ4947KXBUbMkOw4sGwuqY7e1yIouyH5hYSiExuAxKbHHNxwrJk3hFPEJo2XF3UyV3LG2l8TGmOdUYtkUizImmVjs0uju0zUBtNynQadQo/oq/E4X3r8buc671TlpmIYiBhdST2AczcaqVHMe2H2m57wAwciYQG4BthJGiQMftEhgQFo2950LSFxCHBVROvFoPyr0TkeWsT280cpsC/n2q6wIRFeLsBWXIlOd2K2oO+Ml7FgRllJQxCUufoUR8cmGvQFyB6IDJ1CHaeGCI3ohJGvAlv35GdwChgvdXDV2i/odp5Suxg3aGllMh+VJVzUsdXHd5oleBqztRuDxshOrAdFtfufAP/wITWWbsM/Mei/xAWRaW4YAMYZgXYacgCGy3ML0TnKY9oa77u8LRTKxQ1FSKL3pX+rYBA5DQIy/JMDFYVuF9wURzLxIqL/ReC6LOjEmzwPtz/oGrdxHwTPFRRmgdzX3quIlMz2IdK5ImP4MQQlL1NxTdMj+tb0FbSDoHt731KstlWjpyiHRIRhN7aes0p3pgiQYIYWwGYz1cVRmYkCK2OdA7Svv+efZr9ytcUOu1mgGHsG/i4oej0HMO7sWMJXB89IGOpwByZnJlV7Jy0u1R2Zn1NWdAENdAhVqCZ2GS6uXnCmGFTIB7ctNRcqgvzcUSOyd/0cRl+u+i44s9iym77r9lTd9n6oCrCaw1Kkpoe24wBo7vB+MIkiln/zDQZUuP72IH0qM5G9IJo6rToBC+KmEbkg7fh5TmgwTsg1RfFBMF2143vJrp1mFzHbNTM3kfIzMsIz3W9vHshsEDKcriLhQ",
-    "expiration": "2026-07-20T02:35:01.000Z",
+    "access_key_id": "ASIAZV3A2ECZL2YUBYNQ",
+    "secret_access_key": "R7sBVsp3i6TqTUgAHPeAdHsBInfj5puC9RUBlSK7",
+    "session_token": "IQoJb3JpZ2luX2VjEO3//////////wEaCXVzLWVhc3QtMSJIMEYCIQCidy4fDio0Xp1luWv4SWlbwRc81h1Hi4VvIqwXTNquYAIhALJKjldri7y7oTIhz9zCC9nVRTz0Y5zz/v34561AChUjKv4DCLX//////////wEQBBoMNjY1Mzg2MDk4ODY2IgyfMc185HVrk6ZQrpAq0gNG5je3z5rnGNHeuVQrSVRxoSH1gOK855M3iItZLVcCh4gC5PD5ijuX2nx6FhrT0qMH7VUzdWotTf2dNDI/edSrNtOEpScSrz4cG0fSBgz6DRtMYzjBT7KEOcBDNURXotGOF9erkh0kdEp1y3ION8j8e5BwOOf2b0KZV1emGalGxnFc9xxRFdCnMdyniKnpepG/cIhp3/CbO66f6qYfzGFYOHgfZjZhxksQGwAtQAF1Jlm4fGVbo/2V6ARwg+b4Rh7hhVkvKQST9RZUs+pRJodbyTEzDAfwKOlacph3OteaTCBotNC22BFx0MMEefj7qDRV012qfNKlKQoTFkkW6zV/F37h2fJW/B2XvL+4h+rgPFmDJwC+K8RRhClRdIxLs7m4k4vVcfvQrNPl23d8utNJQp2i+amu08ZKz8rmsfVf+dnCy/Ij/spxuOP1ztTJQWxBSFwbBWSxIhUM/7sT9tbP+JB5Mtwe4bAJ8eBWyHZJJrH2tTtACguxDfN/hgWYTffvExf8iXalqtVoCKcHO0EWpCzg4LQwgjNaOgS2jxgQ6HE+TZqOydjsdXBfnN/uIVYYOcKlxMDlsQ+SV1OzLya+/HAEy0KMXbqll6PwdWbxogvEMJLk+9IGOpwBJBCdNdcjCukVyOF48iOvB1LCtMIYF5qcJr5z7Y/sbXwl2Hbo9jUecsx+lxM/PrwK69WfffAsDK0TmFdNu5doLr5Owjz1Iy6CYPs8HysAcKpXvKkS6YHc9maJg01f4nIJ7gSGl3a1FV0GzjgVf3QLGWclV3/vQzAnTcZt9OxjtVzm+99YU9I4eqIOibVTKguI24mYCkeTR4E+SXtW",
+    "expiration": "2026-07-21T16:14:10.000Z",
     "backend": "GIT_BACKEND_S3"
   },
   "name": "green-ev-platform",
