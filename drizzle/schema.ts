@@ -384,6 +384,9 @@ export const transactions = mysqlTable("transactions", {
   platformFee: decimal("platformFee", { precision: 12, scale: 2 }).default("0"), // 20%
   // Estado
   status: transactionStatusEnum.default("PENDING").notNull(),
+  // Estado real de la transacción (actualizado por el servidor OCPP)
+  // Nota: la BD tiene dos columnas: 'status' (legacy) y 'transaction_status' (activa)
+  transactionStatus: mysqlEnum("transaction_status", ["PENDING","IN_PROGRESS","COMPLETED","FAILED","CANCELLED"]).default("PENDING").notNull(),
   // Método de inicio
   startMethod: varchar("startMethod", { length: 50 }), // QR, NFC, APP, RFID
   stopReason: varchar("stopReason", { length: 100 }), // REMOTE, LOCAL, ENERGY_LIMIT, etc.

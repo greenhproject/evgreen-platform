@@ -19,7 +19,7 @@
 
 import * as db from "../db";
 import { transactions, evses, tariffs, overstayLocks } from "../../drizzle/schema";
-import { eq, and, desc, lt } from "drizzle-orm";
+import { eq, and, desc, lt, or } from "drizzle-orm";
 import { sendUserPush } from "../push/unified-push";
 import { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } from "../whatsapp/whatsapp-service";
 import { autoChargeIfNeeded } from "../wompi/auto-charge";
@@ -266,11 +266,16 @@ export async function onChargingFinished(evseId: number, stationId: number) {
     }
     
     // Buscar la transacción completada más reciente
+    // NOTA: La BD tiene dos columnas de estado: 'status' (legacy, siempre PENDING) y
+    // 'transaction_status' (activa). Se verifica ambas.
     const recentTx = await dbInstance.select()
       .from(transactions)
       .where(and(
         eq(transactions.evseId, evseId),
-        eq(transactions.status, "COMPLETED")
+        or(
+          eq(transactions.status, "COMPLETED"),
+          eq(transactions.transactionStatus, "COMPLETED")
+        )
       ))
       .orderBy(desc(transactions.endTime))
       .limit(1);
@@ -471,12 +476,16 @@ async function scanForUnmonitoredOverstay() {
       if (activeOverstaySessions.has(evse.id)) continue;
 
       // Find the most recent COMPLETED transaction for this EVSE
+      // NOTA: La BD tiene dos columnas de estado: 'status' (legacy) y 'transaction_status' (activa).
       const recentTx = await dbInstance.select()
         .from(transactions)
         .where(
           and(
             eq(transactions.evseId, evse.id),
-            eq(transactions.status, "COMPLETED")
+            or(
+              eq(transactions.status, "COMPLETED"),
+              eq(transactions.transactionStatus, "COMPLETED")
+            )
           )
         )
         .orderBy(desc(transactions.endTime))

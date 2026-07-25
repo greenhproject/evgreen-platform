@@ -1084,8 +1084,17 @@ export async function updateTransaction(id: number, data: Partial<InsertTransact
 export async function getActiveTransaction(evseId: number) {
   const db = await getDb();
   if (!db) return undefined;
+  // IMPORTANTE: La BD tiene dos columnas de estado: 'status' (legacy, siempre PENDING) y
+  // 'transaction_status' (activa, actualizada por el servidor OCPP).
+  // Se verifica ambas para detectar correctamente transacciones en curso.
   const result = await db.select().from(transactions)
-    .where(and(eq(transactions.evseId, evseId), eq(transactions.status, "IN_PROGRESS")))
+    .where(and(
+      eq(transactions.evseId, evseId),
+      or(
+        eq(transactions.status, "IN_PROGRESS"),
+        eq(transactions.transactionStatus, "IN_PROGRESS")
+      )
+    ))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -4115,7 +4124,10 @@ export async function getActiveTransactionByUserId(userId: number) {
     .where(
       and(
         eq(transactions.userId, userId),
-        eq(transactions.status, "IN_PROGRESS")
+        or(
+          eq(transactions.status, "IN_PROGRESS"),
+          eq(transactions.transactionStatus, "IN_PROGRESS")
+        )
       )
     )
     .orderBy(desc(transactions.startTime))
@@ -6064,7 +6076,10 @@ export async function getActiveTransactionsByStationId(stationId: number) {
     .where(
       and(
         eq(transactions.stationId, stationId),
-        eq(transactions.status, "IN_PROGRESS")
+        or(
+          eq(transactions.status, "IN_PROGRESS"),
+          eq(transactions.transactionStatus, "IN_PROGRESS")
+        )
       )
     )
     .orderBy(desc(transactions.startTime))
