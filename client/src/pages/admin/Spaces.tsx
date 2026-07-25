@@ -754,6 +754,7 @@ function SpaceDetailDialog({
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [showProspectoDialog, setShowProspectoDialog] = useState(false);
   const [prospectoConfig, setProspectoConfig] = useState({
+    allySharePercent: 10,
     investorSharePercent: 70,
     platformSharePercent: 30,
     projectedMonthlySessionsYear1: undefined as number | undefined,
@@ -1299,9 +1300,22 @@ function SpaceDetailDialog({
               <h4 className="text-emerald-400 text-sm font-semibold flex items-center gap-2">
                 <Settings2 className="w-4 h-4" /> Modelo de Reparto de Ingresos
               </h4>
-              <div className="grid grid-cols-2 gap-3">
+              <p className="text-gray-500 text-xs">El aliado recibe su % del ingreso bruto. Inversor y EVGreen se reparten el resto.</p>
+              <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">Inversor (%)</Label>
+                  <Label className="text-gray-300 text-xs mb-1 block">Aliado (% bruto)</Label>
+                  <Input
+                    type="number" min={0} max={50}
+                    value={prospectoConfig.allySharePercent}
+                    onChange={e => {
+                      const v = Math.min(50, Math.max(0, parseInt(e.target.value) || 10));
+                      setProspectoConfig(c => ({ ...c, allySharePercent: v }));
+                    }}
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                  />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Inversor (% neto)</Label>
                   <Input
                     type="number" min={1} max={99}
                     value={prospectoConfig.investorSharePercent}
@@ -1313,7 +1327,7 @@ function SpaceDetailDialog({
                   />
                 </div>
                 <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">EVGreen (%)</Label>
+                  <Label className="text-gray-300 text-xs mb-1 block">EVGreen (% neto)</Label>
                   <Input
                     type="number" min={1} max={99}
                     value={prospectoConfig.platformSharePercent}
@@ -1325,17 +1339,25 @@ function SpaceDetailDialog({
                   />
                 </div>
               </div>
-              {/* Barra visual de reparto */}
-              <div className="w-full h-3 rounded-full overflow-hidden flex">
-                <div
-                  className="bg-emerald-500 transition-all duration-300"
-                  style={{ width: `${prospectoConfig.investorSharePercent}%` }}
-                />
-                <div className="bg-gray-600 flex-1" />
-              </div>
-              <p className="text-gray-500 text-xs text-center">
-                Inversor {prospectoConfig.investorSharePercent}% · EVGreen {prospectoConfig.platformSharePercent}%
-              </p>
+              {/* Barra visual de reparto 3 segmentos */}
+              {(() => {
+                const allyEff = prospectoConfig.allySharePercent;
+                const net = 100 - allyEff;
+                const invEff = (prospectoConfig.investorSharePercent / 100) * net;
+                const platEff = (prospectoConfig.platformSharePercent / 100) * net;
+                return (
+                  <>
+                    <div className="w-full h-3 rounded-full overflow-hidden flex">
+                      <div className="bg-blue-500 transition-all duration-300" style={{ width: `${allyEff}%` }} />
+                      <div className="bg-emerald-500 transition-all duration-300" style={{ width: `${invEff}%` }} />
+                      <div className="bg-gray-500 flex-1" />
+                    </div>
+                    <p className="text-gray-500 text-xs text-center">
+                      <span className="text-blue-400">Aliado {allyEff}%</span> · <span className="text-emerald-400">Inversor {invEff.toFixed(0)}%</span> · <span className="text-gray-400">EVGreen {platEff.toFixed(0)}%</span> <span className="text-gray-600">(% sobre bruto)</span>
+                    </p>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Proyección financiera */}
@@ -1375,6 +1397,7 @@ function SpaceDetailDialog({
                 try {
                   const result = await generateProspectoMutation.mutateAsync({
                     submissionId: id,
+                    allySharePercent: prospectoConfig.allySharePercent,
                     investorSharePercent: prospectoConfig.investorSharePercent,
                     platformSharePercent: prospectoConfig.platformSharePercent,
                     projectedMonthlySessionsYear1: prospectoConfig.projectedMonthlySessionsYear1,

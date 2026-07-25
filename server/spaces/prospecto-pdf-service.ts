@@ -21,7 +21,7 @@ export interface ProspectoPdfData {
   spaceTypeOther?: string | null;
   address: string;
   city: string;
-  department: string;
+  department?: string | null;
   country: string;
   latitude?: number | null;
   longitude?: number | null;
@@ -57,8 +57,10 @@ export interface ProspectoPdfData {
   estimatedChargerCount?: number | null;
 
   // Configuración dinámica del prospecto
-  investorSharePercent: number;   // ej: 70
-  platformSharePercent: number;   // ej: 30
+  // Modelo Opción A: aliado recibe 10% del bruto, inversor y EVGreen se reparten el 90% restante
+  allySharePercent: number;       // ej: 10 (fijo, del bruto)
+  investorSharePercent: number;   // ej: 70 (sobre el 90% restante)
+  platformSharePercent: number;   // ej: 30 (sobre el 90% restante)
   projectedMonthlySessionsYear1?: number; // sesiones/mes estimadas año 1
   avgSessionRevenueCop?: number;  // ingreso promedio por sesión en COP
 
@@ -616,40 +618,64 @@ function addProyeccionFinanciera(
   const sessions = data.projectedMonthlySessionsYear1 || (data.estimatedDailyVehicles ? Math.round(data.estimatedDailyVehicles * (data.estimatedEvPercent || 5) / 100 * 30 * 0.6) : 120);
   const avgRev = data.avgSessionRevenueCop || 8500;
   const monthlyGross = sessions * avgRev;
-  const investorShare = data.investorSharePercent / 100;
-  const platformShare = data.platformSharePercent / 100;
-  const monthlyInvestor = monthlyGross * investorShare;
-  const monthlyPlatform = monthlyGross * platformShare;
+  // Modelo Opción A: aliado 10% del bruto, inversor y EVGreen sobre el 90% restante
+  const allySharePct = data.allySharePercent / 100;
+  const netAfterAlly = monthlyGross * (1 - allySharePct);
+  const investorShare = data.investorSharePercent / 100; // sobre el neto
+  const platformShare = data.platformSharePercent / 100; // sobre el neto
+  const monthlyAlly = monthlyGross * allySharePct;
+  const monthlyInvestor = netAfterAlly * investorShare;
+  const monthlyPlatform = netAfterAlly * platformShare;
 
-  // Modelo de reparto
+  // Modelo de reparto (3 partes)
+  const allyPct = data.allySharePercent;       // % del bruto para el aliado
+  const netPct = 100 - allyPct;               // % restante para inversor + EVGreen
+  const investorNetPct = data.investorSharePercent; // % del neto para inversor
+  const platformNetPct = data.platformSharePercent; // % del neto para EVGreen
+  // Porcentajes efectivos sobre el bruto
+  const investorEffective = (investorNetPct / 100) * netPct;
+  const platformEffective = (platformNetPct / 100) * netPct;
+
   setColor(doc, C.greenLight, "fill");
-  doc.roundedRect(M, y, CW, 22, 3, 3, "F");
+  doc.roundedRect(M, y, CW, 28, 3, 3, "F");
 
   setColor(doc, C.greenDark, "text");
   doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
-  doc.text("MODELO DE REPARTO DE INGRESOS", M + 4, y + 6);
+  doc.text("MODELO DE REPARTO DE INGRESOS (sobre ingreso bruto)", M + 4, y + 6);
 
-  // Barra de reparto visual
-  const barY = y + 10;
+  // Barra de reparto visual (3 segmentos)
+  const barY = y + 11;
   const barW = CW - 8;
   const barH = 7;
-  const investorW = barW * investorShare;
+  const allyW = barW * (allyPct / 100);
+  const investorW = barW * (investorEffective / 100);
+  const platformW = barW - allyW - investorW;
 
+  // Aliado (azul)
+  setColor(doc, C.blue, "fill");
+  doc.roundedRect(M + 4, barY, allyW, barH, 1, 1, "F");
+  // Inversor (verde)
   setColor(doc, C.green, "fill");
-  doc.roundedRect(M + 4, barY, investorW, barH, 1, 1, "F");
-  setColor(doc, C.gray200, "fill");
-  doc.rect(M + 4 + investorW, barY, barW - investorW, barH, "F");
+  doc.rect(M + 4 + allyW, barY, investorW, barH, "F");
+  // EVGreen (gris)
+  setColor(doc, C.gray500, "fill");
+  doc.rect(M + 4 + allyW + investorW, barY, platformW, barH, "F");
 
   setColor(doc, C.white, "text");
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setFont("helvetica", "bold");
-  if (investorW > 20) doc.text(`Inversor ${data.investorSharePercent}%`, M + 4 + investorW / 2, barY + 5, { align: "center" });
+  if (allyW > 18) doc.text(`Aliado ${allyPct}%`, M + 4 + allyW / 2, barY + 5, { align: "center" });
+  if (investorW > 18) doc.text(`Inversor ${investorEffective.toFixed(0)}%`, M + 4 + allyW + investorW / 2, barY + 5, { align: "center" });
+  if (platformW > 18) doc.text(`EVGreen ${platformEffective.toFixed(0)}%`, M + 4 + allyW + investorW + platformW / 2, barY + 5, { align: "center" });
 
+  // Leyenda detallada
   setColor(doc, C.gray700, "text");
-  if (barW - investorW > 20) doc.text(`EVGreen ${data.platformSharePercent}%`, M + 4 + investorW + (barW - investorW) / 2, barY + 5, { align: "center" });
+  doc.setFontSize(7.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Aliado dueño del espacio: ${allyPct}% del bruto  ·  Inversor: ${investorNetPct}% del neto (${investorEffective.toFixed(0)}% bruto)  ·  EVGreen: ${platformNetPct}% del neto (${platformEffective.toFixed(0)}% bruto)`, M + 4, barY + 14);
 
-  y += 28;
+  y += 34;
 
   // Tabla de proyección a 3 años
   const years = [1, 2, 3];
@@ -660,8 +686,10 @@ function addProyeccionFinanciera(
     ["Sesiones/mes estimadas", ...years.map((_, i) => `${Math.round(sessions * growthRates[i]).toLocaleString("es-CO")}`)],
     ["Ingreso bruto mensual", ...years.map((_, i) => formatCOP(Math.round(monthlyGross * growthRates[i])))],
     ["Ingreso bruto anual", ...years.map((_, i) => formatCOP(Math.round(monthlyGross * growthRates[i] * 12)))],
-    [`Retorno inversor (${data.investorSharePercent}%) mensual`, ...years.map((_, i) => formatCOP(Math.round(monthlyInvestor * growthRates[i])))],
+    [`Pago aliado (${data.allySharePercent}% bruto) mensual`, ...years.map((_, i) => formatCOP(Math.round(monthlyAlly * growthRates[i])))],
+    [`Retorno inversor (${data.investorSharePercent}% neto) mensual`, ...years.map((_, i) => formatCOP(Math.round(monthlyInvestor * growthRates[i])))],
     [`Retorno inversor anual`, ...years.map((_, i) => formatCOP(Math.round(monthlyInvestor * growthRates[i] * 12)))],
+    [`EVGreen (${data.platformSharePercent}% neto) mensual`, ...years.map((_, i) => formatCOP(Math.round(monthlyPlatform * growthRates[i])))],
     ...(inv > 0 ? [["ROI estimado (sobre inversión)", ...years.map((_, i) => `${((monthlyInvestor * growthRates[i] * 12) / inv * 100).toFixed(1)}% anual`)]] : []),
     ...(inv > 0 ? [["Recuperación de inversión", ...years.map((_, i) => {
       const months = inv / (monthlyInvestor * growthRates[i]);
@@ -691,7 +719,7 @@ function addProyeccionFinanciera(
   setColor(doc, C.gray500, "text");
   doc.setFontSize(7.5);
   doc.setFont("helvetica", "italic");
-  const nota = `* Proyecciones basadas en ${sessions} sesiones/mes (Año 1), ingreso promedio de ${formatCOP(avgRev)}/sesión. Las cifras son estimaciones orientativas. El rendimiento real depende de la demanda local, tarifas vigentes y condiciones del mercado.`;
+  const nota = `* Proyecciones basadas en ${sessions} sesiones/mes (Año 1), ingreso promedio de ${formatCOP(avgRev)}/sesión. Modelo: aliado ${data.allySharePercent}% del bruto; inversor ${data.investorSharePercent}% y EVGreen ${data.platformSharePercent}% del neto restante. Las cifras son estimaciones orientativas.`;
   const notaLines = doc.splitTextToSize(nota, CW);
   doc.text(notaLines, M, y);
   y += notaLines.length * 4.5 + 6;
