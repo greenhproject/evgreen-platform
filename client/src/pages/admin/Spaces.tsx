@@ -21,7 +21,7 @@ import {
   ChevronRight, Building2, Phone, Mail, Camera, BarChart3,
   TrendingUp, DollarSign, ArrowUpRight, ExternalLink, RefreshCw,
   ChevronDown, X, Pencil, Trash2, AlertTriangle, Users, Download,
-  CheckSquare, Square, Minus, SlidersHorizontal, Calendar,
+  CheckSquare, Square, Minus, SlidersHorizontal, Calendar, FileDown, Settings2,
 } from "lucide-react";
 
 // ============================================================================
@@ -750,8 +750,15 @@ function SpaceDetailDialog({
   const publishMutation = trpc.spaces.admin.publishToCrowdfunding.useMutation();
   const updateSpaceMutation = trpc.spaces.admin.updateSpace.useMutation();
   const deleteSpaceMutation = trpc.spaces.admin.deleteSpace.useMutation();
-
+  const generateProspectoMutation = trpc.spaces.generateProspectoPdf.useMutation();
   const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [showProspectoDialog, setShowProspectoDialog] = useState(false);
+  const [prospectoConfig, setProspectoConfig] = useState({
+    investorSharePercent: 70,
+    platformSharePercent: 30,
+    projectedMonthlySessionsYear1: undefined as number | undefined,
+    avgSessionRevenueCop: 8500,
+  });
   const [publishAmount, setPublishAmount] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [showRejectDialog, setShowRejectDialog] = useState(false);
@@ -891,6 +898,10 @@ function SpaceDetailDialog({
                   Re-evaluar IA
                 </Button>
               )}
+              {/* Prospecto de Inversión */}
+              <Button size="sm" onClick={() => setShowProspectoDialog(true)} className="bg-emerald-700 hover:bg-emerald-600 text-white flex-shrink-0 text-xs">
+                <FileDown className="w-3.5 h-3.5 mr-1" /> Prospecto PDF
+              </Button>
               {/* Edit & Delete */}
               <Button size="sm" variant="outline" onClick={() => { setEditForm({ spaceName: space.spaceName, address: space.address, city: space.city, department: space.department || "", submitterName: space.submitterName, submitterEmail: space.submitterEmail, submitterPhone: space.submitterPhone || "", estimatedInvestmentCop: space.estimatedInvestmentCop || "", estimatedPowerKw: space.estimatedPowerKw || "", estimatedChargerCount: space.estimatedChargerCount || "", additionalNotes: space.additionalNotes || "", investmentType: (space as any).investmentType || "individual" }); setShowEditDialog(true); }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-shrink-0 text-xs">
                 <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
@@ -1263,6 +1274,130 @@ function SpaceDetailDialog({
             <Button onClick={handlePublish} disabled={publishMutation.isPending} className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto">
               {publishMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Globe className="w-4 h-4 mr-1.5" />}
               Publicar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== MODAL PROSPECTO DE INVERSIÓN ===== */}
+      <Dialog open={showProspectoDialog} onOpenChange={setShowProspectoDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <FileDown className="w-5 h-5 text-emerald-400" />
+              Generar Prospecto de Inversión
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-gray-400 text-sm">
+              Configura los parámetros financieros del prospecto antes de generarlo.
+              El PDF incluirá fotos, mapa, análisis IA y proyección de retorno.
+            </p>
+
+            {/* Reparto */}
+            <div className="bg-[#1f2937] rounded-lg p-4 space-y-3">
+              <h4 className="text-emerald-400 text-sm font-semibold flex items-center gap-2">
+                <Settings2 className="w-4 h-4" /> Modelo de Reparto de Ingresos
+              </h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Inversor (%)</Label>
+                  <Input
+                    type="number" min={1} max={99}
+                    value={prospectoConfig.investorSharePercent}
+                    onChange={e => {
+                      const v = Math.min(99, Math.max(1, parseInt(e.target.value) || 70));
+                      setProspectoConfig(c => ({ ...c, investorSharePercent: v, platformSharePercent: 100 - v }));
+                    }}
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                  />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">EVGreen (%)</Label>
+                  <Input
+                    type="number" min={1} max={99}
+                    value={prospectoConfig.platformSharePercent}
+                    onChange={e => {
+                      const v = Math.min(99, Math.max(1, parseInt(e.target.value) || 30));
+                      setProspectoConfig(c => ({ ...c, platformSharePercent: v, investorSharePercent: 100 - v }));
+                    }}
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                  />
+                </div>
+              </div>
+              {/* Barra visual de reparto */}
+              <div className="w-full h-3 rounded-full overflow-hidden flex">
+                <div
+                  className="bg-emerald-500 transition-all duration-300"
+                  style={{ width: `${prospectoConfig.investorSharePercent}%` }}
+                />
+                <div className="bg-gray-600 flex-1" />
+              </div>
+              <p className="text-gray-500 text-xs text-center">
+                Inversor {prospectoConfig.investorSharePercent}% · EVGreen {prospectoConfig.platformSharePercent}%
+              </p>
+            </div>
+
+            {/* Proyección financiera */}
+            <div className="bg-[#1f2937] rounded-lg p-4 space-y-3">
+              <h4 className="text-emerald-400 text-sm font-semibold flex items-center gap-2">
+                <TrendingUp className="w-4 h-4" /> Parámetros de Proyección
+              </h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Sesiones/mes (Año 1)</Label>
+                  <Input
+                    type="number" min={1}
+                    placeholder="Auto (estimado)"
+                    value={prospectoConfig.projectedMonthlySessionsYear1 || ""}
+                    onChange={e => setProspectoConfig(c => ({ ...c, projectedMonthlySessionsYear1: parseInt(e.target.value) || undefined }))}
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm placeholder:text-gray-600"
+                  />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Ingreso prom/sesión (COP)</Label>
+                  <Input
+                    type="number" min={1000}
+                    value={prospectoConfig.avgSessionRevenueCop}
+                    onChange={e => setProspectoConfig(c => ({ ...c, avgSessionRevenueCop: parseInt(e.target.value) || 8500 }))}
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowProspectoDialog(false)} className="border-[#374151] text-gray-300">
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                try {
+                  const result = await generateProspectoMutation.mutateAsync({
+                    submissionId: id,
+                    investorSharePercent: prospectoConfig.investorSharePercent,
+                    platformSharePercent: prospectoConfig.platformSharePercent,
+                    projectedMonthlySessionsYear1: prospectoConfig.projectedMonthlySessionsYear1,
+                    avgSessionRevenueCop: prospectoConfig.avgSessionRevenueCop,
+                  });
+                  if (result.pdfUrl) {
+                    // Abrir en nueva pestaña para descarga
+                    window.open(result.pdfUrl, "_blank");
+                    toast.success("✅ Prospecto generado exitosamente");
+                    setShowProspectoDialog(false);
+                  }
+                } catch (err: any) {
+                  toast.error(err.message || "Error al generar el prospecto");
+                }
+              }}
+              disabled={generateProspectoMutation.isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {generateProspectoMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generando PDF...</>
+              ) : (
+                <><FileDown className="w-4 h-4 mr-2" /> Generar y Descargar</>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

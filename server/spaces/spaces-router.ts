@@ -1300,6 +1300,100 @@ Responde en formato JSON con la siguiente estructura:`;
 
       return { success: true };
     }),
+
+  // ============================================================
+  // GENERAR PROSPECTO DE INVERSIÓN PDF
+  // ============================================================
+  generateProspectoPdf: protectedProcedure
+    .input(z.object({
+      submissionId: z.number(),
+      investorSharePercent: z.number().min(1).max(99).default(70),
+      platformSharePercent: z.number().min(1).max(99).default(30),
+      projectedMonthlySessionsYear1: z.number().optional(),
+      avgSessionRevenueCop: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // Solo admins pueden generar prospectos
+      if (ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Solo administradores pueden generar prospectos" });
+      }
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+      // Obtener datos del espacio
+      const [submission] = await db.select().from(spaceSubmissions)
+        .where(eq(spaceSubmissions.id, input.submissionId))
+        .limit(1);
+
+      if (!submission) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no encontrado" });
+      }
+
+      // Obtener fotos
+      const photos = await db.select().from(spacePhotos)
+        .where(eq(spacePhotos.submissionId, input.submissionId))
+        .orderBy(spacePhotos.sortOrder)
+        .limit(5);
+
+      // Parsear análisis IA
+      let aiData: any = null;
+      if (submission.aiAnalysis) {
+        try { aiData = JSON.parse(submission.aiAnalysis as string); } catch { /* ignore */ }
+      }
+
+      // Generar PDF
+      const { generateProspectoPdf } = await import("./prospecto-pdf-service");
+      const pdfBuffer = await generateProspectoPdf({
+        code: submission.code,
+        spaceName: submission.spaceName,
+        spaceType: submission.space_type,
+        spaceTypeOther: submission.spaceTypeOther,
+        address: submission.address,
+        city: submission.city,
+        department: submission.department,
+        country: submission.country,
+        latitude: submission.latitude ? parseFloat(submission.latitude as string) : null,
+        longitude: submission.longitude ? parseFloat(submission.longitude as string) : null,
+        submitterName: submission.submitterName,
+        submitterEmail: submission.submitterEmail,
+        submitterPhone: submission.submitterPhone,
+        submitterCompany: submission.submitterCompany,
+        availableAreaM2: submission.availableAreaM2 ? parseFloat(submission.availableAreaM2 as string) : null,
+        parkingSpots: submission.parkingSpots,
+        transformerCapacityKva: submission.transformerCapacityKva ? parseFloat(submission.transformerCapacityKva as string) : null,
+        hasElectricalPanel: submission.hasElectricalPanel === 1 || submission.hasElectricalPanel === true,
+        electricalDistance: submission.electricalDistance,
+        hasInternet: submission.hasInternet === 1 || submission.hasInternet === true,
+        operatingHoursStart: submission.operatingHoursStart,
+        operatingHoursEnd: submission.operatingHoursEnd,
+        is24Hours: submission.is24Hours === 1 || submission.is24Hours === true,
+        estimatedDailyVehicles: submission.estimatedDailyVehicles,
+        estimatedEvPercent: submission.estimatedEvPercent,
+        nearbyAttractions: submission.nearbyAttractions,
+        socioeconomicStratum: submission.socioeconomicStratum,
+        aiScore: submission.aiScore,
+        aiAnalysis: submission.aiAnalysis as string | null,
+        estimatedInvestmentCop: submission.estimatedInvestmentCop ? parseFloat(submission.estimatedInvestmentCop as string) : null,
+        estimatedPowerKw: submission.estimatedPowerKw ? parseFloat(submission.estimatedPowerKw as string) : null,
+        estimatedChargerCount: submission.estimatedChargerCount,
+        investorSharePercent: input.investorSharePercent,
+        platformSharePercent: input.platformSharePercent,
+        projectedMonthlySessionsYear1: input.projectedMonthlySessionsYear1,
+        avgSessionRevenueCop: input.avgSessionRevenueCop,
+        photos: photos.map(p => ({ url: p.photoUrl, caption: p.caption })),
+        generatedAt: new Date(),
+      });
+
+      // Subir a S3
+      const { storagePut } = await import("../storage");
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const fileKey = `spaces/prospectos/${submission.code}-prospecto-${randomSuffix}.pdf`;
+      const { url: pdfUrl } = await storagePut(fileKey, pdfBuffer, "application/pdf");
+
+      console.log(`[Spaces] Prospecto PDF generado: ${pdfUrl}`);
+      return { success: true, pdfUrl, fileName: `Prospecto-${submission.code}-${submission.city}.pdf` };
+    }),
 });
 
 // ============================================================================
