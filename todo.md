@@ -3756,3 +3756,10 @@
 - [ ] Permitir editar lat/lng desde el modal (campos de texto + link a Google Maps)
 - [ ] Corregir mapa en PDF: usar makeRequest del proxy de Forge en lugar de VITE_GOOGLE_MAPS_API_KEY
 - [ ] Corregir botón Prospecto PDF en Android: usar window.location.href en lugar de window.open
+
+## Corrección técnica simulador inversión (Opción B)
+- [x] Corregir investorPercentage fallback 70%→80% en getCalculatorParams
+- [x] Corregir PAQUETES→PAQUETES_DYN en calculos del simulador (línea 330)
+- [x] Unificar texto ahorro energético solar a valor consistente
+- [x] Cambiar badge "Mayor Rentabilidad" por "Mayor Ingreso Mensual" en Colectivo
+- [x] Mejorar copy del Colectivo para reflejar ventaja real (margen/kWh, menor riesgo)

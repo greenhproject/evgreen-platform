@@ -3669,8 +3669,8 @@ const settingsRouter = router({
   getInvestorPercentage: publicProcedure.query(async () => {
     const settings = await db.getPlatformSettings();
     return {
-      investorPercentage: settings?.investorPercentage ?? 70,
-      platformFeePercentage: settings?.platformFeePercentage ?? 30,
+      investorPercentage: settings?.investorPercentage ?? 80,
+      platformFeePercentage: settings?.platformFeePercentage ?? 20,
     };
   }),
 
@@ -3678,7 +3678,7 @@ const settingsRouter = router({
   getCalculatorParams: publicProcedure.query(async () => {
     const settings = await db.getPlatformSettings();
     return {
-      investorPercentage: settings?.investorPercentage ?? 70,
+      investorPercentage: settings?.investorPercentage ?? 80,
       factorUtilizacionPremium: parseFloat(String(settings?.factorUtilizacionPremium ?? "2.00")),
       costosOperativosIndividual: settings?.costosOperativosIndividual ?? 15,
       costosOperativosColectivo: settings?.costosOperativosColectivo ?? 10,
@@ -3708,8 +3708,8 @@ const settingsRouter = router({
         businessLine: "Green EV",
         nit: "",
         contactEmail: "",
-        investorPercentage: 70,
-        platformFeePercentage: 30,
+        investorPercentage: 80,
+        platformFeePercentage: 20,
         wompiPublicKey: "",
         wompiPrivateKey: "",
         wompiIntegritySecret: "",

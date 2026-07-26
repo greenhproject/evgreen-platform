@@ -327,7 +327,7 @@ export default function Investors() {
   // ============================================================================
   
   const calculos = useMemo(() => {
-    const paquete = PAQUETES[paqueteSeleccionado];
+    const paquete = PAQUETES_DYN[paqueteSeleccionado];
     
     // Costo de energía según tipo de paquete (desde backend)
     const costoEnergia = paquete.conSolar ? params.costoEnergiaSolar : params.costoEnergiaRed;
@@ -365,6 +365,7 @@ export default function Investors() {
       potenciaTotal = paquete.potenciaKw * paquete.cantidadCargadores; // 120kW
     } else {
       // Inversión colectiva - participación proporcional
+      // paquete.precio viene de PAQUETES_DYN → usa capexEstacionPremium del backend
       inversionBase = participacionColectiva;
       porcentajeParticipacion = participacionColectiva / paquete.precio;
       potenciaTotal = (paquete as any).potenciaTotal; // 480kW total de la estación
@@ -2234,7 +2235,7 @@ export default function Investors() {
               <CardHeader className="pb-4 relative">
                 <div className="flex items-center justify-between mb-2">
                   <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 text-sm font-medium">
-                    Mayor Rentabilidad
+                    Mayor Ingreso Mensual
                   </span>
                   <Sun className="w-8 h-8 text-amber-400" />
                 </div>
@@ -2253,7 +2254,7 @@ export default function Investors() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded-lg bg-black/30 text-center">
                     <p className="text-2xl font-bold text-amber-400">~{paqueteROIs.COLECTIVO.roiAnual}%</p>
-                    <p className="text-xs text-white/60">ROI Anual (ubicación premium)</p>
+                    <p className="text-xs text-white/60">ROI Anual · ~2x margen/kWh</p>
                   </div>
                   <div className="p-3 rounded-lg bg-black/30 text-center">
                     <p className="text-2xl font-bold text-amber-400">~{paqueteROIs.COLECTIVO.paybackMeses}</p>
@@ -2261,19 +2262,28 @@ export default function Investors() {
                   </div>
                 </div>
 
+                {/* Ventaja clave: margen por kWh */}
+                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <p className="text-xs text-amber-300 font-semibold mb-1">⚡ Ventaja Solar vs Red Eléctrica</p>
+                  <p className="text-xs text-white/70">
+                    Costo energía solar: <span className="text-amber-400 font-bold">${params.costoEnergiaSolar}/kWh</span> vs red: <span className="text-white/50">${params.costoEnergiaRed}/kWh</span>
+                    {" — "}<span className="text-amber-400 font-bold">~{params.costoEnergiaRed > 0 ? Math.round((1 - params.costoEnergiaSolar / params.costoEnergiaRed) * 100) : 71}% menos costo de energía</span>, generando casi el doble de margen por kWh vendido.
+                  </p>
+                </div>
                 <ul className="space-y-3">
-                  {PAQUETES_DYN.COLECTIVO.caracteristicas.map((item, i) => {
-                    // Reemplazar dinámicamente el porcentaje de reducción de energía solar
-                    const displayItem = item.includes("Reducción ~70%") 
-                      ? `Reducción ~${params.costoEnergiaRed > 0 ? Math.round((1 - params.costoEnergiaSolar / params.costoEnergiaRed) * 100) : 70}% costo de energía`
-                      : item;
-                    return (
+                  {[
+                    `4 cargadores DC 120kW (480kW total)`,
+                    `Sistema solar integrado: ~${params.costoEnergiaRed > 0 ? Math.round((1 - params.costoEnergiaSolar / params.costoEnergiaRed) * 100) : 71}% menos costo de energía`,
+                    `Margen por kWh ~1.9x mayor que cargador individual`,
+                    `Menor riesgo: 4 cargadores diversifican el ingreso`,
+                    `Ubicaciones premium con mayor tráfico garantizado`,
+                    `Participación proporcional como socio co-propietario`,
+                  ].map((item, i) => (
                     <li key={i} className="flex items-center gap-3 text-white/80">
                       <CheckCircle2 className="w-5 h-5 text-amber-400 flex-shrink-0" />
-                      <span>{displayItem}</span>
+                      <span>{item}</span>
                     </li>
-                    );
-                  })}
+                  ))}
                 </ul>
 
                 <a href="#crowdfunding">
