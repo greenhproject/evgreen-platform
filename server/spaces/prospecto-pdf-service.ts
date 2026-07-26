@@ -6,8 +6,11 @@
  * Diseño: fondo blanco, acentos verde EVGreen, estilo prospecto financiero
  * Optimizado para impresión en papel carta/A4.
  */
-import jsPDF from "jspdf";
+// jsPDF 4.x ESM compatible import for Node.js
+import jsPDFModule from "jspdf";
 import "jspdf-autotable";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const jsPDF = ((jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default?.jsPDF ?? (jsPDFModule as any).default ?? jsPDFModule) as typeof import("jspdf").jsPDF;
 import axios from "axios";
 
 // ============================================================
@@ -93,7 +96,7 @@ const C = {
 // ============================================================
 // HELPERS
 // ============================================================
-function setColor(doc: jsPDF, color: [number, number, number], type: "fill" | "text" | "draw" = "text") {
+function setColor(doc: InstanceType<typeof jsPDF>, color: [number, number, number], type: "fill" | "text" | "draw" = "text") {
   if (type === "fill") doc.setFillColor(color[0], color[1], color[2]);
   else if (type === "text") doc.setTextColor(color[0], color[1], color[2]);
   else doc.setDrawColor(color[0], color[1], color[2]);
@@ -224,7 +227,7 @@ export async function generateProspectoPdf(data: ProspectoPdfData): Promise<Buff
 // PORTADA
 // ============================================================
 function addPortada(
-  doc: jsPDF, data: ProspectoPdfData,
+  doc: InstanceType<typeof jsPDF>, data: ProspectoPdfData,
   PW: number, PH: number, M: number, CW: number,
   logoImg: { data: string; format: string } | null,
   heroImg: { data: string; format: string } | null,
@@ -356,7 +359,7 @@ function addPortada(
 // ENCABEZADO DE PÁGINA (páginas 2-5)
 // ============================================================
 function addPageHeader(
-  doc: jsPDF, data: ProspectoPdfData,
+  doc: InstanceType<typeof jsPDF>, data: ProspectoPdfData,
   PW: number, M: number,
   logoImg: { data: string; format: string } | null,
   pageNum: number,
@@ -386,7 +389,7 @@ function addPageHeader(
 // RESUMEN EJECUTIVO
 // ============================================================
 function addResumenEjecutivo(
-  doc: jsPDF, data: ProspectoPdfData, aiData: any,
+  doc: InstanceType<typeof jsPDF>, data: ProspectoPdfData, aiData: any,
   y: number, M: number, CW: number, PW: number, PH: number,
 ): number {
   y = drawSectionTitle(doc, "RESUMEN EJECUTIVO", M, y, CW);
@@ -477,7 +480,7 @@ function addResumenEjecutivo(
   return y;
 }
 
-function addScoreVisual(doc: jsPDF, score: number, y: number, M: number, CW: number, PW: number): number {
+function addScoreVisual(doc: InstanceType<typeof jsPDF>, score: number, y: number, M: number, CW: number, PW: number): number {
   // Barra de score
   const barW = CW;
   const barH = 8;
@@ -509,7 +512,7 @@ function addScoreVisual(doc: jsPDF, score: number, y: number, M: number, CW: num
 // DATOS TÉCNICOS
 // ============================================================
 function addDatosTecnicos(
-  doc: jsPDF, data: ProspectoPdfData,
+  doc: InstanceType<typeof jsPDF>, data: ProspectoPdfData,
   y: number, M: number, CW: number, PW: number, PH: number,
 ): number {
   y = drawSectionTitle(doc, "CARACTERÍSTICAS TÉCNICAS DEL ESPACIO", M, y, CW);
@@ -561,7 +564,7 @@ function addDatosTecnicos(
 // FOTOS
 // ============================================================
 function addFotos(
-  doc: jsPDF,
+  doc: InstanceType<typeof jsPDF>,
   photoImgs: Array<{ data: string; format: string } | null>,
   photoData: Array<{ url: string; caption?: string | null }>,
   y: number, M: number, CW: number, PW: number, PH: number,
@@ -609,7 +612,7 @@ function addFotos(
 // PROYECCIÓN FINANCIERA
 // ============================================================
 function addProyeccionFinanciera(
-  doc: jsPDF, data: ProspectoPdfData,
+  doc: InstanceType<typeof jsPDF>, data: ProspectoPdfData,
   y: number, M: number, CW: number, PW: number, PH: number,
 ): number {
   y = drawSectionTitle(doc, "PROYECCIÓN FINANCIERA", M, y, CW);
@@ -731,7 +734,7 @@ function addProyeccionFinanciera(
 // MAPA + PROPIETARIO
 // ============================================================
 function addMapaYPropietario(
-  doc: jsPDF, data: ProspectoPdfData,
+  doc: InstanceType<typeof jsPDF>, data: ProspectoPdfData,
   y: number, M: number, CW: number, PW: number, PH: number,
 ): number {
   y = drawSectionTitle(doc, "UBICACIÓN GEOGRÁFICA", M, y, CW);
@@ -797,7 +800,7 @@ function addMapaYPropietario(
 // ============================================================
 // CIERRE
 // ============================================================
-function addCierre(doc: jsPDF, data: ProspectoPdfData, PW: number, PH: number, M: number, CW: number) {
+function addCierre(doc: InstanceType<typeof jsPDF>, data: ProspectoPdfData, PW: number, PH: number, M: number, CW: number) {
   const cierreY = PH - 55;
 
   // Línea divisora
@@ -828,7 +831,7 @@ function addCierre(doc: jsPDF, data: ProspectoPdfData, PW: number, PH: number, M
 // ============================================================
 // HELPER: TÍTULO DE SECCIÓN
 // ============================================================
-function drawSectionTitle(doc: jsPDF, title: string, x: number, y: number, width: number): number {
+function drawSectionTitle(doc: InstanceType<typeof jsPDF>, title: string, x: number, y: number, width: number): number {
   setColor(doc, C.green, "fill");
   doc.rect(x, y - 1, 4, 8, "F");
   doc.setFontSize(10.5);
