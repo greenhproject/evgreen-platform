@@ -861,7 +861,9 @@ function SpaceDetailDialog({
           </DialogHeader>
 
           <div className="space-y-4 sm:space-y-6 mt-2">
-            {/* Action buttons - scrollable on mobile */}
+            {/* Action buttons - two rows for mobile visibility */}
+            <div className="flex flex-col gap-2">
+            {/* Row 1: Status-specific actions */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
               {space.status === "pending" && (
                 <Button size="sm" onClick={() => handleStatusUpdate("under_review")} className="bg-blue-600 hover:bg-blue-700 text-white flex-shrink-0 text-xs">
@@ -893,23 +895,23 @@ function SpaceDetailDialog({
                   <Globe className="w-3.5 h-3.5 mr-1" /> Publicar
                 </Button>
               )}
-              {!["pending", "under_review"].includes(space.status) && (
-                <Button size="sm" variant="outline" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="border-[#374151] text-gray-300 flex-shrink-0 text-xs">
+            </div>
+              {/* Row 2: Permanent actions - always visible 2x2 grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <Button size="sm" onClick={() => setShowProspectoDialog(true)} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs w-full">
+                  <FileDown className="w-3.5 h-3.5 mr-1" /> Prospecto PDF
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="border-[#374151] text-gray-300 text-xs w-full">
                   {generateAIMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Brain className="w-3.5 h-3.5 mr-1" />}
                   Re-evaluar IA
                 </Button>
-              )}
-              {/* Prospecto de Inversión */}
-              <Button size="sm" onClick={() => setShowProspectoDialog(true)} className="bg-emerald-700 hover:bg-emerald-600 text-white flex-shrink-0 text-xs">
-                <FileDown className="w-3.5 h-3.5 mr-1" /> Prospecto PDF
-              </Button>
-              {/* Edit & Delete */}
-              <Button size="sm" variant="outline" onClick={() => { setEditForm({ spaceName: space.spaceName, address: space.address, city: space.city, department: space.department || "", submitterName: space.submitterName, submitterEmail: space.submitterEmail, submitterPhone: space.submitterPhone || "", estimatedInvestmentCop: space.estimatedInvestmentCop || "", estimatedPowerKw: space.estimatedPowerKw || "", estimatedChargerCount: space.estimatedChargerCount || "", additionalNotes: space.additionalNotes || "", investmentType: (space as any).investmentType || "individual" }); setShowEditDialog(true); }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-shrink-0 text-xs">
-                <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setShowDeleteDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 flex-shrink-0 text-xs">
-                <Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar
-              </Button>
+                <Button size="sm" variant="outline" onClick={() => { setEditForm({ spaceName: space.spaceName, address: space.address, city: space.city, department: space.department || "", submitterName: space.submitterName, submitterEmail: space.submitterEmail, submitterPhone: space.submitterPhone || "", estimatedInvestmentCop: space.estimatedInvestmentCop || "", estimatedPowerKw: space.estimatedPowerKw || "", estimatedChargerCount: space.estimatedChargerCount || "", additionalNotes: space.additionalNotes || "", investmentType: (space as any).investmentType || "individual" }); setShowEditDialog(true); }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs w-full">
+                  <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setShowDeleteDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs w-full">
+                  <Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar
+                </Button>
+              </div>
             </div>
 
             {/* Content grid - single column on mobile, two columns on desktop */}

@@ -44,8 +44,11 @@ import {
 } from "lucide-react";
 import { AIInsightCard } from "@/components/AIInsightCard";
 import { toast } from "sonner";
-import jsPDF from "jspdf";
+// jsPDF 4.x compatible import
+import jsPDFModule from "jspdf";
 import autoTable from "jspdf-autotable";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const jsPDF = ((jsPDFModule as any).jsPDF ?? jsPDFModule) as typeof import("jspdf").jsPDF;
 import { savePdfCrossPlatform } from "@/lib/pdf-download";
 
 // Tipo para transacción con estación (extendido con campos de costos)
