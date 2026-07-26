@@ -905,7 +905,47 @@ function SpaceDetailDialog({
                   {generateAIMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Brain className="w-3.5 h-3.5 mr-1" />}
                   Re-evaluar IA
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => { setEditForm({ spaceName: space.spaceName, address: space.address, city: space.city, department: space.department || "", submitterName: space.submitterName, submitterEmail: space.submitterEmail, submitterPhone: space.submitterPhone || "", estimatedInvestmentCop: space.estimatedInvestmentCop || "", estimatedPowerKw: space.estimatedPowerKw || "", estimatedChargerCount: space.estimatedChargerCount || "", additionalNotes: space.additionalNotes || "", investmentType: (space as any).investmentType || "individual" }); setShowEditDialog(true); }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs w-full">
+                <Button size="sm" variant="outline" onClick={() => {
+                    // Pre-poblar con TODOS los datos actuales del espacio
+                    const techNotes = (() => { try { return space.technicalNotes ? JSON.parse(space.technicalNotes) : {}; } catch { return {}; } })();
+                    const ai = aiAnalysis || {};
+                    setEditForm({
+                      spaceName: space.spaceName, address: space.address, city: space.city,
+                      department: space.department || "",
+                      latitude: space.latitude ? String(space.latitude) : "",
+                      longitude: space.longitude ? String(space.longitude) : "",
+                      submitterName: space.submitterName, submitterEmail: space.submitterEmail,
+                      submitterPhone: space.submitterPhone || "", submitterCompany: (space as any).submitterCompany || "",
+                      estimatedInvestmentCop: space.estimatedInvestmentCop || "",
+                      estimatedPowerKw: space.estimatedPowerKw || "",
+                      estimatedChargerCount: space.estimatedChargerCount || "",
+                      additionalNotes: space.additionalNotes || "",
+                      nearbyAttractions: (space as any).nearbyAttractions || "",
+                      investmentType: (space as any).investmentType || "individual",
+                      transformerCapacityKva: space.transformerCapacityKva ? String(space.transformerCapacityKva) : "",
+                      electricalDistance: (space as any).electricalDistance || "",
+                      availableAreaM2: space.availableAreaM2 ? String(space.availableAreaM2) : "",
+                      parkingSpots: (space as any).parkingSpots || "",
+                      estimatedDailyVehicles: (space as any).estimatedDailyVehicles || "",
+                      estimatedEvPercent: (space as any).estimatedEvPercent || "",
+                      socioeconomicStratum: (space as any).socioeconomicStratum || "",
+                      operatingHoursStart: (space as any).operatingHoursStart || "06:00",
+                      operatingHoursEnd: (space as any).operatingHoursEnd || "22:00",
+                      hasElectricalPanel: !!space.hasElectricalPanel,
+                      hasInternet: !!space.hasInternet,
+                      is24Hours: !!(space as any).is24Hours,
+                      electricalViability: (space as any).electricalViability || "",
+                      requiresNewTransformer: !!techNotes.requiresNewTransformer,
+                      proposedTransformerKva: techNotes.proposedTransformerKva || "",
+                      aiScore: space.aiScore || "",
+                      aiSummary: ai.summary || "",
+                      aiRecommendation: ai.recommendation || "",
+                      aiEstimatedChargers: ai.estimatedChargers || "",
+                      aiEstimatedPowerKw: ai.estimatedPowerKw || "",
+                      aiInvestmentAppeal: ai.investmentAppeal || "",
+                    });
+                    setShowEditDialog(true);
+                  }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs w-full">
                   <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setShowDeleteDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs w-full">
@@ -993,6 +1033,53 @@ function SpaceDetailDialog({
                       </div>
                     </div>
                   </DetailSection>
+                )}
+
+                {/* Mapa de coordenadas */}
+                {(space.latitude && space.longitude) ? (
+                  <DetailSection title="Ubicación GPS" icon={<MapPin className="w-4 h-4 text-blue-400" />}>
+                    <div className="space-y-2">
+                      <div className="flex gap-2 text-xs">
+                        <span className="text-gray-500">Lat:</span><span className="text-gray-300 font-mono">{space.latitude}</span>
+                        <span className="text-gray-500 ml-2">Lng:</span><span className="text-gray-300 font-mono">{space.longitude}</span>
+                      </div>
+                      <a
+                        href={`https://maps.google.com/?q=${space.latitude},${space.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block"
+                      >
+                        <img
+                          src={`https://maps.googleapis.com/maps/api/staticmap?center=${space.latitude},${space.longitude}&zoom=15&size=400x180&maptype=roadmap&markers=color:green%7Clabel:EV%7C${space.latitude},${space.longitude}&key=${(window as any).__VITE_GOOGLE_MAPS_API_KEY__ || ""}`}
+                          alt="Mapa"
+                          className="w-full rounded-lg border border-[#374151] object-cover"
+                          style={{ height: 140 }}
+                          onError={e => {
+                            // Si falla la imagen del mapa, mostrar enlace de texto
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                        <p className="text-xs text-blue-400 hover:underline mt-1">📌 Ver en Google Maps</p>
+                      </a>
+                    </div>
+                  </DetailSection>
+                ) : (
+                  <div className="bg-[#0a0f1a] border border-dashed border-[#374151] rounded-xl p-3 text-center">
+                    <MapPin className="w-5 h-5 text-gray-600 mx-auto mb-1" />
+                    <p className="text-xs text-gray-500">Sin coordenadas GPS</p>
+                    <button
+                      onClick={() => {
+                        setEditForm({
+                          spaceName: space.spaceName, address: space.address, city: space.city,
+                          department: space.department || "", latitude: "", longitude: "",
+                        });
+                        setShowEditDialog(true);
+                      }}
+                      className="text-xs text-blue-400 hover:underline mt-1"
+                    >
+                      + Agregar coordenadas
+                    </button>
+                  </div>
                 )}
 
                 {/* Photos */}
@@ -1107,58 +1194,205 @@ function SpaceDetailDialog({
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog */}
+      {/* Edit Dialog — EXPANDIDO */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Pencil className="w-4 h-4 text-blue-400" /> Editar espacio</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Pencil className="w-4 h-4 text-blue-400" /> Editar espacio — {space.code}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label className="text-gray-300 text-xs mb-1 block">Nombre del espacio</Label>
-              <Input value={editForm.spaceName || ""} onChange={e => setEditForm(p => ({ ...p, spaceName: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+          <div className="space-y-4">
+
+            {/* SECCIÓN: Datos básicos */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
+              <p className="text-emerald-400 text-xs font-semibold mb-2 uppercase tracking-wide">📍 Datos del Espacio</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="sm:col-span-2">
+                  <Label className="text-gray-300 text-xs mb-1 block">Nombre del espacio</Label>
+                  <Input value={editForm.spaceName || ""} onChange={e => setEditForm(p => ({ ...p, spaceName: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label className="text-gray-300 text-xs mb-1 block">Dirección</Label>
+                  <Input value={editForm.address || ""} onChange={e => setEditForm(p => ({ ...p, address: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Ciudad</Label>
+                  <Input value={editForm.city || ""} onChange={e => setEditForm(p => ({ ...p, city: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Departamento</Label>
+                  <Input value={editForm.department || ""} onChange={e => setEditForm(p => ({ ...p, department: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+              </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label className="text-gray-300 text-xs mb-1 block">Dirección</Label>
-                <Input value={editForm.address || ""} onChange={e => setEditForm(p => ({ ...p, address: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+
+            {/* SECCIÓN: Coordenadas */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
+              <p className="text-blue-400 text-xs font-semibold mb-2 uppercase tracking-wide">🗺️ Coordenadas GPS</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Latitud</Label>
+                  <Input placeholder="Ej: 4.7110" value={editForm.latitude || ""} onChange={e => setEditForm(p => ({ ...p, latitude: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Longitud</Label>
+                  <Input placeholder="Ej: -74.0721" value={editForm.longitude || ""} onChange={e => setEditForm(p => ({ ...p, longitude: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
               </div>
-              <div>
-                <Label className="text-gray-300 text-xs mb-1 block">Ciudad</Label>
-                <Input value={editForm.city || ""} onChange={e => setEditForm(p => ({ ...p, city: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              {editForm.latitude && editForm.longitude && (
+                <a href={`https://maps.google.com/?q=${editForm.latitude},${editForm.longitude}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline mt-1 block">
+                  📌 Ver en Google Maps
+                </a>
+              )}
+            </div>
+
+            {/* SECCIÓN: Datos técnicos */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
+              <p className="text-yellow-400 text-xs font-semibold mb-2 uppercase tracking-wide">⚡ Datos Técnicos</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Transformador (kVA)</Label>
+                  <Input type="number" placeholder="Ej: 112.5" value={editForm.transformerCapacityKva || ""} onChange={e => setEditForm(p => ({ ...p, transformerCapacityKva: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Distancia tablero (m)</Label>
+                  <Input type="number" value={editForm.electricalDistance || ""} onChange={e => setEditForm(p => ({ ...p, electricalDistance: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Área disponible (m²)</Label>
+                  <Input type="number" value={editForm.availableAreaM2 || ""} onChange={e => setEditForm(p => ({ ...p, availableAreaM2: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Puestos de parqueo</Label>
+                  <Input type="number" value={editForm.parkingSpots || ""} onChange={e => setEditForm(p => ({ ...p, parkingSpots: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Vehículos/día</Label>
+                  <Input type="number" value={editForm.estimatedDailyVehicles || ""} onChange={e => setEditForm(p => ({ ...p, estimatedDailyVehicles: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">% EV estimado</Label>
+                  <Input type="number" min={0} max={100} value={editForm.estimatedEvPercent || ""} onChange={e => setEditForm(p => ({ ...p, estimatedEvPercent: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Estrato</Label>
+                  <Input type="number" min={1} max={6} value={editForm.socioeconomicStratum || ""} onChange={e => setEditForm(p => ({ ...p, socioeconomicStratum: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Horario inicio</Label>
+                  <Input type="time" value={editForm.operatingHoursStart || "06:00"} onChange={e => setEditForm(p => ({ ...p, operatingHoursStart: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Horario fin</Label>
+                  <Input type="time" value={editForm.operatingHoursEnd || "22:00"} onChange={e => setEditForm(p => ({ ...p, operatingHoursEnd: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
               </div>
-              <div>
-                <Label className="text-gray-300 text-xs mb-1 block">Departamento</Label>
-                <Input value={editForm.department || ""} onChange={e => setEditForm(p => ({ ...p, department: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              <div className="flex flex-wrap gap-4 mt-2">
+                <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                  <input type="checkbox" checked={!!editForm.hasElectricalPanel} onChange={e => setEditForm(p => ({ ...p, hasElectricalPanel: e.target.checked }))} className="accent-emerald-500" />
+                  Tablero eléctrico accesible
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                  <input type="checkbox" checked={!!editForm.hasInternet} onChange={e => setEditForm(p => ({ ...p, hasInternet: e.target.checked }))} className="accent-emerald-500" />
+                  Internet disponible
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                  <input type="checkbox" checked={!!editForm.is24Hours} onChange={e => setEditForm(p => ({ ...p, is24Hours: e.target.checked }))} className="accent-emerald-500" />
+                  Operación 24 horas
+                </label>
               </div>
-              <div>
-                <Label className="text-gray-300 text-xs mb-1 block">Postulante</Label>
-                <Input value={editForm.submitterName || ""} onChange={e => setEditForm(p => ({ ...p, submitterName: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+            </div>
+
+            {/* SECCIÓN: Transformador nuevo */}
+            <div className="bg-[#0a0f1a] border border-orange-500/30 rounded-lg p-3">
+              <p className="text-orange-400 text-xs font-semibold mb-2 uppercase tracking-wide">🔧 Infraestructura Eléctrica</p>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-200 cursor-pointer">
+                  <input type="checkbox" checked={!!editForm.requiresNewTransformer} onChange={e => setEditForm(p => ({ ...p, requiresNewTransformer: e.target.checked }))} className="accent-orange-500 w-4 h-4" />
+                  <span>Requiere instalación de <strong>transformador nuevo</strong></span>
+                </label>
+                {editForm.requiresNewTransformer && (
+                  <div className="ml-6">
+                    <Label className="text-gray-300 text-xs mb-1 block">Capacidad propuesta del nuevo transformador (kVA)</Label>
+                    <Input type="number" placeholder="Ej: 250" value={editForm.proposedTransformerKva || ""} onChange={e => setEditForm(p => ({ ...p, proposedTransformerKva: parseFloat(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm w-40" />
+                  </div>
+                )}
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Viabilidad eléctrica</Label>
+                  <Select value={editForm.electricalViability || ""} onValueChange={v => setEditForm(p => ({ ...p, electricalViability: v }))}>
+                    <SelectTrigger className="bg-[#111827] border-[#374151] text-white text-sm">
+                      <SelectValue placeholder="Seleccionar..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1f2937] border-[#374151]">
+                      <SelectItem value="viable" className="text-green-300">✅ Viable</SelectItem>
+                      <SelectItem value="requires_upgrade" className="text-yellow-300">⚠️ Requiere mejora</SelectItem>
+                      <SelectItem value="not_viable" className="text-red-300">❌ No viable</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div>
-                <Label className="text-gray-300 text-xs mb-1 block">Email postulante</Label>
-                <Input value={editForm.submitterEmail || ""} onChange={e => setEditForm(p => ({ ...p, submitterEmail: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+            </div>
+
+            {/* SECCIÓN: Evaluación IA (editable) */}
+            <div className="bg-[#0a0f1a] border border-purple-500/30 rounded-lg p-3">
+              <p className="text-purple-400 text-xs font-semibold mb-2 uppercase tracking-wide">🤖 Evaluación IA (editable manualmente)</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Score IA (0-100)</Label>
+                  <Input type="number" min={0} max={100} value={editForm.aiScore ?? ""} onChange={e => setEditForm(p => ({ ...p, aiScore: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Cargadores estimados</Label>
+                  <Input type="number" value={editForm.aiEstimatedChargers ?? ""} onChange={e => setEditForm(p => ({ ...p, aiEstimatedChargers: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Potencia IA (kW)</Label>
+                  <Input type="number" value={editForm.aiEstimatedPowerKw ?? ""} onChange={e => setEditForm(p => ({ ...p, aiEstimatedPowerKw: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Atractivo inversión</Label>
+                  <Select value={editForm.aiInvestmentAppeal || ""} onValueChange={v => setEditForm(p => ({ ...p, aiInvestmentAppeal: v }))}>
+                    <SelectTrigger className="bg-[#111827] border-[#374151] text-white text-sm">
+                      <SelectValue placeholder="Seleccionar..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1f2937] border-[#374151]">
+                      <SelectItem value="alto" className="text-green-300">Alto</SelectItem>
+                      <SelectItem value="medio" className="text-yellow-300">Medio</SelectItem>
+                      <SelectItem value="bajo" className="text-red-300">Bajo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div>
-                <Label className="text-gray-300 text-xs mb-1 block">Teléfono</Label>
-                <Input value={editForm.submitterPhone || ""} onChange={e => setEditForm(p => ({ ...p, submitterPhone: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              <div className="mt-2">
+                <Label className="text-gray-300 text-xs mb-1 block">Resumen IA</Label>
+                <Textarea value={editForm.aiSummary || ""} onChange={e => setEditForm(p => ({ ...p, aiSummary: e.target.value }))} rows={2} placeholder="Resumen del análisis IA..." className="bg-[#111827] border-[#374151] text-white text-sm resize-none" />
               </div>
-              <div>
-                <Label className="text-gray-300 text-xs mb-1 block">Inversión estimada (COP)</Label>
-                <Input type="number" value={editForm.estimatedInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, estimatedInvestmentCop: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+              <div className="mt-2">
+                <Label className="text-gray-300 text-xs mb-1 block">Recomendación IA</Label>
+                <Textarea value={editForm.aiRecommendation || ""} onChange={e => setEditForm(p => ({ ...p, aiRecommendation: e.target.value }))} rows={2} placeholder="Recomendación del tipo de cargador..." className="bg-[#111827] border-[#374151] text-white text-sm resize-none" />
               </div>
-              <div>
-                <Label className="text-gray-300 text-xs mb-1 block">Potencia (kW)</Label>
-                <Input type="number" value={editForm.estimatedPowerKw || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPowerKw: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
+            </div>
+
+            {/* SECCIÓN: Inversión y comercial */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
+              <p className="text-emerald-400 text-xs font-semibold mb-2 uppercase tracking-wide">💰 Datos Comerciales</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Inversión estimada (COP)</Label>
+                  <Input type="number" value={editForm.estimatedInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, estimatedInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Potencia (kW)</Label>
+                  <Input type="number" value={editForm.estimatedPowerKw || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPowerKw: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Cargadores</Label>
+                  <Input type="number" value={editForm.estimatedChargerCount || ""} onChange={e => setEditForm(p => ({ ...p, estimatedChargerCount: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
               </div>
-              <div>
-                <Label className="text-gray-300 text-xs mb-1 block">Cargadores</Label>
-                <Input type="number" value={editForm.estimatedChargerCount || ""} onChange={e => setEditForm(p => ({ ...p, estimatedChargerCount: e.target.value }))} className="bg-[#0a0f1a] border-[#374151] text-white text-sm" />
-              </div>
-              <div>
+              <div className="mt-2">
                 <Label className="text-gray-300 text-xs mb-1 block">Tipo de inversión</Label>
                 <Select value={editForm.investmentType || "individual"} onValueChange={v => setEditForm(p => ({ ...p, investmentType: v }))}>
-                  <SelectTrigger className="bg-[#0a0f1a] border-[#374151] text-white text-sm">
+                  <SelectTrigger className="bg-[#111827] border-[#374151] text-white text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#1f2937] border-[#374151]">
@@ -1168,30 +1402,103 @@ function SpaceDetailDialog({
                 </Select>
               </div>
             </div>
+
+            {/* SECCIÓN: Postulante */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
+              <p className="text-gray-400 text-xs font-semibold mb-2 uppercase tracking-wide">👤 Datos del Postulante</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Nombre</Label>
+                  <Input value={editForm.submitterName || ""} onChange={e => setEditForm(p => ({ ...p, submitterName: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Email</Label>
+                  <Input value={editForm.submitterEmail || ""} onChange={e => setEditForm(p => ({ ...p, submitterEmail: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Teléfono</Label>
+                  <Input value={editForm.submitterPhone || ""} onChange={e => setEditForm(p => ({ ...p, submitterPhone: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Empresa</Label>
+                  <Input value={editForm.submitterCompany || ""} onChange={e => setEditForm(p => ({ ...p, submitterCompany: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+              </div>
+            </div>
+
+            {/* Notas */}
             <div>
-              <Label className="text-gray-300 text-xs mb-1 block">Notas adicionales</Label>
-              <Textarea value={editForm.additionalNotes || ""} onChange={e => setEditForm(p => ({ ...p, additionalNotes: e.target.value }))} rows={3} className="bg-[#0a0f1a] border-[#374151] text-white text-sm resize-none" />
+              <Label className="text-gray-300 text-xs mb-1 block">Notas adicionales del postulante</Label>
+              <Textarea value={editForm.additionalNotes || ""} onChange={e => setEditForm(p => ({ ...p, additionalNotes: e.target.value }))} rows={2} className="bg-[#0a0f1a] border-[#374151] text-white text-sm resize-none" />
+            </div>
+            <div>
+              <Label className="text-gray-300 text-xs mb-1 block">Puntos de interés cercanos</Label>
+              <Textarea value={editForm.nearbyAttractions || ""} onChange={e => setEditForm(p => ({ ...p, nearbyAttractions: e.target.value }))} rows={2} className="bg-[#0a0f1a] border-[#374151] text-white text-sm resize-none" />
             </div>
           </div>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
+
+          <DialogFooter className="flex-col sm:flex-row gap-2 mt-2">
             <Button variant="outline" onClick={() => setShowEditDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
               Cancelar
             </Button>
             <Button onClick={async () => {
               try {
                 const payload: Record<string, any> = { id };
-                if (editForm.spaceName) payload.spaceName = editForm.spaceName;
-                if (editForm.address) payload.address = editForm.address;
-                if (editForm.city) payload.city = editForm.city;
-                if (editForm.department) payload.department = editForm.department;
-                if (editForm.submitterName) payload.submitterName = editForm.submitterName;
-                if (editForm.submitterEmail) payload.submitterEmail = editForm.submitterEmail;
-                if (editForm.submitterPhone) payload.submitterPhone = editForm.submitterPhone;
+                // Campos básicos
+                if (editForm.spaceName !== undefined) payload.spaceName = editForm.spaceName;
+                if (editForm.address !== undefined) payload.address = editForm.address;
+                if (editForm.city !== undefined) payload.city = editForm.city;
+                if (editForm.department !== undefined) payload.department = editForm.department;
+                if (editForm.submitterName !== undefined) payload.submitterName = editForm.submitterName;
+                if (editForm.submitterEmail !== undefined) payload.submitterEmail = editForm.submitterEmail;
+                if (editForm.submitterPhone !== undefined) payload.submitterPhone = editForm.submitterPhone;
+                if (editForm.submitterCompany !== undefined) payload.submitterCompany = editForm.submitterCompany;
+                if (editForm.additionalNotes !== undefined) payload.additionalNotes = editForm.additionalNotes;
+                if (editForm.nearbyAttractions !== undefined) payload.nearbyAttractions = editForm.nearbyAttractions;
+                if (editForm.investmentType) payload.investmentType = editForm.investmentType;
+                // Coordenadas
+                if (editForm.latitude) payload.latitude = editForm.latitude;
+                if (editForm.longitude) payload.longitude = editForm.longitude;
+                // Técnicos
+                if (editForm.transformerCapacityKva) payload.transformerCapacityKva = editForm.transformerCapacityKva;
+                if (editForm.electricalDistance !== undefined) payload.electricalDistance = editForm.electricalDistance;
+                if (editForm.availableAreaM2) payload.availableAreaM2 = editForm.availableAreaM2;
+                if (editForm.parkingSpots !== undefined) payload.parkingSpots = editForm.parkingSpots;
+                if (editForm.estimatedDailyVehicles !== undefined) payload.estimatedDailyVehicles = editForm.estimatedDailyVehicles;
+                if (editForm.estimatedEvPercent !== undefined) payload.estimatedEvPercent = editForm.estimatedEvPercent;
+                if (editForm.socioeconomicStratum !== undefined) payload.socioeconomicStratum = editForm.socioeconomicStratum;
+                if (editForm.operatingHoursStart) payload.operatingHoursStart = editForm.operatingHoursStart;
+                if (editForm.operatingHoursEnd) payload.operatingHoursEnd = editForm.operatingHoursEnd;
+                if (editForm.hasElectricalPanel !== undefined) payload.hasElectricalPanel = editForm.hasElectricalPanel;
+                if (editForm.hasInternet !== undefined) payload.hasInternet = editForm.hasInternet;
+                if (editForm.is24Hours !== undefined) payload.is24Hours = editForm.is24Hours;
+                if (editForm.electricalViability) payload.electricalViability = editForm.electricalViability;
+                // Transformador nuevo
+                if (editForm.requiresNewTransformer !== undefined) payload.requiresNewTransformer = editForm.requiresNewTransformer;
+                if (editForm.proposedTransformerKva !== undefined) payload.proposedTransformerKva = editForm.proposedTransformerKva;
+                // Comerciales
                 if (editForm.estimatedInvestmentCop) payload.estimatedInvestmentCop = parseInt(editForm.estimatedInvestmentCop);
                 if (editForm.estimatedPowerKw) payload.estimatedPowerKw = parseInt(editForm.estimatedPowerKw);
                 if (editForm.estimatedChargerCount) payload.estimatedChargerCount = parseInt(editForm.estimatedChargerCount);
-                if (editForm.additionalNotes !== undefined) payload.additionalNotes = editForm.additionalNotes;
-                if (editForm.investmentType) payload.investmentType = editForm.investmentType;
+                // IA manual
+                if (editForm.aiScore !== undefined) payload.aiScore = editForm.aiScore;
+                // Construir aiAnalysis actualizado si se editaron campos de IA
+                const hasAiEdits = editForm.aiSummary !== undefined || editForm.aiRecommendation !== undefined ||
+                  editForm.aiEstimatedChargers !== undefined || editForm.aiEstimatedPowerKw !== undefined ||
+                  editForm.aiInvestmentAppeal !== undefined;
+                if (hasAiEdits) {
+                  const existingAi = space.aiAnalysis ? JSON.parse(space.aiAnalysis) : {};
+                  const updatedAi = {
+                    ...existingAi,
+                    ...(editForm.aiSummary !== undefined ? { summary: editForm.aiSummary } : {}),
+                    ...(editForm.aiRecommendation !== undefined ? { recommendation: editForm.aiRecommendation } : {}),
+                    ...(editForm.aiEstimatedChargers !== undefined ? { estimatedChargers: editForm.aiEstimatedChargers } : {}),
+                    ...(editForm.aiEstimatedPowerKw !== undefined ? { estimatedPowerKw: editForm.aiEstimatedPowerKw } : {}),
+                    ...(editForm.aiInvestmentAppeal !== undefined ? { investmentAppeal: editForm.aiInvestmentAppeal } : {}),
+                    ...(editForm.aiScore !== undefined ? { score: editForm.aiScore } : {}),
+                  };
+                  payload.aiAnalysis = JSON.stringify(updatedAi);
+                }
                 await updateSpaceMutation.mutateAsync(payload as any);
                 toast.success("Espacio actualizado correctamente");
                 setShowEditDialog(false);
@@ -1407,8 +1714,15 @@ function SpaceDetailDialog({
                     tarifaKwhCop: prospectoConfig.tarifaKwhCop,
                   });
                   if (result.pdfUrl) {
-                    // Abrir en nueva pestaña para descarga
-                    window.open(result.pdfUrl, "_blank");
+                    // Usar elemento <a> para compatibilidad con Android WebView
+                    const link = document.createElement("a");
+                    link.href = result.pdfUrl;
+                    link.target = "_blank";
+                    link.rel = "noopener noreferrer";
+                    link.download = `prospecto-${space.code}.pdf`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
                     toast.success("✅ Prospecto generado exitosamente");
                     setShowProspectoDialog(false);
                   }

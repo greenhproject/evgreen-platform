@@ -3745,3 +3745,14 @@
 - [x] Frontend: historial de puntos acumulados
 - [x] Frontend: botón redimir puntos (descuento en carga o link marketplace)
 - [x] Frontend admin: sección configuración de fidelización
+
+## Mejoras módulo Espacios Postulados (Jul 2026)
+- [ ] Actualizar logo en PDF a nuevo logo EVGreen (CDN URL nueva)
+- [ ] Mostrar TODAS las fotos en el PDF (eliminar límite de 5 en router, pasar todas al servicio)
+- [ ] Agregar galería de fotos en páginas adicionales del PDF si hay más de 4
+- [ ] Expandir modal de edición: todos los campos técnicos + lat/lng + aiScore + aiAnalysis
+- [ ] Agregar campo "Requiere transformador nuevo" (checkbox + kVA propuesto) en modal edición y PDF
+- [ ] Mostrar mapa con coordenadas en el modal de detalle del espacio
+- [ ] Permitir editar lat/lng desde el modal (campos de texto + link a Google Maps)
+- [ ] Corregir mapa en PDF: usar makeRequest del proxy de Forge en lugar de VITE_GOOGLE_MAPS_API_KEY
+- [ ] Corregir botón Prospecto PDF en Android: usar window.location.href en lugar de window.open

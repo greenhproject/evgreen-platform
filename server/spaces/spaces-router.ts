@@ -1035,16 +1035,42 @@ Responde en formato JSON con la siguiente estructura:`;
         estimatedChargerCount: z.number().int().optional(),
         recommendedChargerType: z.string().optional(),
         investmentType: z.enum(["individual", "colectiva"]).optional(),
+        // Campos de evaluación manual
+        technicalScore: z.number().int().min(0).max(100).optional(),
+        technicalNotes: z.string().optional(),
+        electricalViability: z.enum(["viable", "requires_upgrade", "not_viable"]).optional(),
+        accessibilityScore: z.number().int().min(0).max(10).optional(),
+        trafficPotentialScore: z.number().int().min(0).max(10).optional(),
+        // Campos de IA editables manualmente
+        aiScore: z.number().int().min(0).max(100).optional(),
+        aiAnalysis: z.string().optional(), // JSON string
+        // Transformador nuevo
+        requiresNewTransformer: z.boolean().optional(), // Se guarda en technicalNotes como JSON
+        proposedTransformerKva: z.number().optional(), // kVA del transformador propuesto
       }))
       .mutation(async ({ input }) => {
         const db = await getDatabase();
-        const { id, ...updateFields } = input;
+        const { id, requiresNewTransformer, proposedTransformerKva, ...updateFields } = input;
 
         const cleanFields: Record<string, any> = {};
         for (const [key, value] of Object.entries(updateFields)) {
           if (value !== undefined) {
             cleanFields[key] = value;
           }
+        }
+
+        // Manejar transformador nuevo: merge en technicalNotes como JSON
+        if (requiresNewTransformer !== undefined || proposedTransformerKva !== undefined) {
+          // Leer technicalNotes actual
+          const [current] = await db.select({ technicalNotes: spaceSubmissions.technicalNotes })
+            .from(spaceSubmissions).where(eq(spaceSubmissions.id, id)).limit(1);
+          let notesData: any = {};
+          try {
+            if (current?.technicalNotes) notesData = JSON.parse(current.technicalNotes);
+          } catch { notesData = { text: current?.technicalNotes || "" }; }
+          if (requiresNewTransformer !== undefined) notesData.requiresNewTransformer = requiresNewTransformer;
+          if (proposedTransformerKva !== undefined) notesData.proposedTransformerKva = proposedTransformerKva;
+          cleanFields.technicalNotes = JSON.stringify(notesData);
         }
 
         if (Object.keys(cleanFields).length === 0) {
@@ -1331,11 +1357,10 @@ Responde en formato JSON con la siguiente estructura:`;
         throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no encontrado" });
       }
 
-      // Obtener fotos
+      // Obtener TODAS las fotos (sin límite)
       const photos = await db.select().from(spacePhotos)
         .where(eq(spacePhotos.submissionId, input.submissionId))
-        .orderBy(spacePhotos.sortOrder)
-        .limit(5);
+        .orderBy(spacePhotos.sortOrder);
 
       // Parsear análisis IA
       let aiData: any = null;

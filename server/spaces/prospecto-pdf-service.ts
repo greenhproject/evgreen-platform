@@ -17,7 +17,7 @@ import axios from "axios";
 // ============================================================
 // ASSETS ESTÁTICOS (CDN público — disponible en el servidor)
 // ============================================================
-const LOGO_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/echMUSirUTlZKrZI.png";
+const LOGO_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/XXADhbJOsjLOaeVi.png";
 const COVER_BG_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/WYwUkpexDtndNYrd.jpg";
 
 // ============================================================
@@ -177,7 +177,7 @@ export async function generateProspectoPdf(data: ProspectoPdfData): Promise<Buff
   const [logoImg, coverBgImg, ...photoImgs] = await Promise.all([
     downloadImageAsBase64(LOGO_URL),
     downloadImageAsBase64(COVER_BG_URL),
-    ...data.photos.slice(0, 4).map(p => downloadImageAsBase64(p.url)),
+    ...data.photos.map(p => downloadImageAsBase64(p.url)),
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -198,7 +198,10 @@ export async function generateProspectoPdf(data: ProspectoPdfData): Promise<Buff
   doc.addPage();
   y = addPageHeader(doc, data, PW, M, logoImg);
   y = addDatosTecnicos(doc, data, y, M, CW, PW, PH);
-  y = addFotos(doc, photoImgs.slice(1), data.photos.slice(1), y, M, CW, PW, PH);
+  // Fotos: primera en portada, resto en página 3 y páginas adicionales si es necesario
+  const remainingPhotos = photoImgs.slice(1);
+  const remainingPhotoData = data.photos.slice(1);
+  y = addFotos(doc, remainingPhotos, remainingPhotoData, y, M, CW, PW, PH, doc, logoImg);
 
   // PÁGINA 4 — PROYECCIÓN FINANCIERA POR ESCENARIOS
   doc.addPage();
@@ -469,39 +472,80 @@ function addDatosTecnicos(
 }
 
 // ============================================================
-// GALERÍA DE FOTOS
+// GALERÍA DE FOTOS (con soporte de páginas adicionales)
 // ============================================================
 function addFotos(
   doc: InstanceType<typeof jsPDF>,
   photoImgs: (({ data: string; format: string } | null))[],
   photos: Array<{ url: string; caption?: string | null }>,
   y: number, M: number, CW: number, PW: number, PH: number,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _docRef?: InstanceType<typeof jsPDF>,
+  logoImg?: { data: string; format: string } | null,
 ): number {
-  const validPhotos = photoImgs.filter(Boolean);
+  const validPhotos = photoImgs.filter(Boolean) as { data: string; format: string }[];
   if (validPhotos.length === 0) return y;
-
-  y = drawSectionTitle(doc, "GALERÍA DEL ESPACIO", M, y, CW);
 
   const photoW = (CW - 6) / 2;
   const photoH = 45;
+  const pageMarginBottom = 20;
 
-  validPhotos.slice(0, 4).forEach((img, i) => {
-    if (!img) return;
-    const col = i % 2;
-    const row = Math.floor(i / 2);
-    const px = M + col * (photoW + 6);
-    const py = y + row * (photoH + 8);
-    if (py + photoH > PH - 20) return;
-    try {
-      doc.addImage(img.data, img.format, px, py, photoW, photoH, undefined, "FAST");
-      setColor(doc, C.gray200, "draw");
-      doc.setLineWidth(0.3);
-      doc.rect(px, py, photoW, photoH);
-    } catch { /* skip */ }
+  // Dividir fotos en grupos de 4 por página
+  const PHOTOS_PER_PAGE = 4;
+  const groups: { data: string; format: string }[][] = [];
+  for (let i = 0; i < validPhotos.length; i += PHOTOS_PER_PAGE) {
+    groups.push(validPhotos.slice(i, i + PHOTOS_PER_PAGE));
+  }
+
+  groups.forEach((group, groupIdx) => {
+    if (groupIdx === 0) {
+      // Primera página de fotos: usar y actual
+      y = drawSectionTitle(doc, `GALERÍA DEL ESPACIO (${validPhotos.length} fotos)`, M, y, CW);
+    } else {
+      // Páginas adicionales de fotos
+      doc.addPage();
+      if (logoImg !== undefined) {
+        // Redibujar header en página adicional
+        setColor(doc, C.green, "fill");
+        doc.rect(0, 0, PW, 14, "F");
+        if (logoImg) {
+          try { doc.addImage(logoImg.data, logoImg.format, M, 2, 28, 10); } catch { /* skip */ }
+        }
+        setColor(doc, C.white, "text");
+        doc.setFontSize(7.5); doc.setFont("helvetica", "normal");
+        doc.text("Galería de Fotos (continuación)", PW - M, 9, { align: "right" });
+      }
+      y = 22;
+      y = drawSectionTitle(doc, `GALERÍA DEL ESPACIO — Página ${groupIdx + 1}`, M, y, CW);
+    }
+
+    group.forEach((img, i) => {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const px = M + col * (photoW + 6);
+      const py = y + row * (photoH + 8);
+      if (py + photoH > PH - pageMarginBottom) return;
+      try {
+        doc.addImage(img.data, img.format, px, py, photoW, photoH, undefined, "FAST");
+        setColor(doc, C.gray200, "draw");
+        doc.setLineWidth(0.3);
+        doc.rect(px, py, photoW, photoH);
+        // Caption si existe
+        const photoIdx = groupIdx * PHOTOS_PER_PAGE + i;
+        const caption = photos[photoIdx]?.caption;
+        if (caption) {
+          setColor(doc, C.gray500, "text");
+          doc.setFontSize(6.5); doc.setFont("helvetica", "italic");
+          doc.text(caption.substring(0, 40), px + photoW / 2, py + photoH + 4, { align: "center" });
+        }
+      } catch { /* skip */ }
+    });
+
+    const rows = Math.ceil(group.length / 2);
+    y = y + rows * (photoH + 8) + 6;
   });
 
-  const rows = Math.ceil(Math.min(validPhotos.length, 4) / 2);
-  return y + rows * (photoH + 8) + 6;
+  return y;
 }
 
 // ============================================================
@@ -651,7 +695,12 @@ async function addMapa(
   y = drawSectionTitle(doc, "UBICACIÓN GEOGRÁFICA DEL PUNTO", M, y, CW);
 
   if (data.latitude && data.longitude) {
-    const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${data.latitude},${data.longitude}&zoom=15&size=600x300&maptype=roadmap&markers=color:green%7Clabel:EV%7C${data.latitude},${data.longitude}&key=${process.env.VITE_GOOGLE_MAPS_API_KEY || ""}`;
+    // Usar el proxy de Forge para Google Static Maps (no requiere API key pública)
+    const forgeApiUrl = (process.env.BUILT_IN_FORGE_API_URL || "").replace(/\/+$/, "");
+    const forgeApiKey = process.env.BUILT_IN_FORGE_API_KEY || "";
+    const mapUrl = forgeApiUrl && forgeApiKey
+      ? `${forgeApiUrl}/v1/maps/proxy/maps/api/staticmap?center=${data.latitude},${data.longitude}&zoom=15&size=600x300&maptype=roadmap&markers=color:green%7Clabel:EV%7C${data.latitude},${data.longitude}&key=${forgeApiKey}`
+      : `https://maps.googleapis.com/maps/api/staticmap?center=${data.latitude},${data.longitude}&zoom=15&size=600x300&maptype=roadmap&markers=color:green%7Clabel:EV%7C${data.latitude},${data.longitude}`;
     const mapImg = await downloadImageAsBase64(mapUrl);
     if (mapImg) {
       try {
