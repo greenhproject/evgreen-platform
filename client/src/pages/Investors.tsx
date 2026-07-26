@@ -125,7 +125,7 @@ const PAQUETES = {
   COLECTIVO: {
     nombre: "Estación Premium Colectiva",
     descripcion: "4 Cargadores DC 120kW = 480kW potencia total + Solar",
-    precio: 1000000000, // $1,000 millones COP
+    precio: 1500000000, // Valor base; se sobreescribe dinámicamente desde calcParams
     potenciaKw: 120, // 120 kW por cargador
     cantidadCargadores: 4, // 4 cargadores
     potenciaTotal: 480, // 4 × 120kW = 480kW total
@@ -135,7 +135,7 @@ const PAQUETES = {
     horasUsoOptimista: 14,
     horasUsoRealista: 8, // Mayor uso por ubicación premium
     eficienciaCarga: 0.92,
-    participacionMinima: 50000000, // $50 millones mínimo
+    participacionMinima: 50000000, // Valor base; se sobreescribe dinámicamente desde calcParams
     caracteristicas: [
       "4 cargadores DC 120kW (480kW total)",
       "Sistema de energía solar integrado",
@@ -248,6 +248,21 @@ export default function Investors() {
   // Cargar parámetros de la calculadora desde el backend
   const { data: calcParams } = trpc.settings.getCalculatorParams.useQuery();
 
+  // Valores dinámicos del modelo de negocio colectivo (del backend)
+  const capexPremium = calcParams?.capexEstacionPremium ?? 1500000000;
+  const participacionMinima = calcParams?.participacionMinimaColectiva ?? 50000000;
+  const sliderMax = calcParams?.sliderMaxSimulador ?? 1500000000;
+
+  // PAQUETES con valores dinámicos del backend
+  const PAQUETES_DYN = useMemo(() => ({
+    ...PAQUETES,
+    COLECTIVO: {
+      ...PAQUETES.COLECTIVO,
+      precio: capexPremium,
+      participacionMinima: participacionMinima,
+    }
+  }), [capexPremium, participacionMinima]);
+
   // Parámetros dinámicos (del backend o defaults)
   const params = useMemo(() => ({
     factorUtilizacionPremium: calcParams?.factorUtilizacionPremium ?? 2.0,
@@ -274,7 +289,7 @@ export default function Investors() {
 
   // ROI estimado dinámico para las cards de paquetes (escenario conservador: 4h/día)
   const paqueteROIs = useMemo(() => {
-    const calcROI = (paquete: typeof PAQUETES.AC | typeof PAQUETES.INDIVIDUAL, costoEnergia: number, costosOpPct: number, horasBase: number, factorUtil: number = 1) => {
+    const calcROI = (paquete: typeof PAQUETES_DYN.AC | typeof PAQUETES_DYN.INDIVIDUAL, costoEnergia: number, costosOpPct: number, horasBase: number, factorUtil: number = 1) => {
       const potencia = 'potenciaTotal' in paquete ? (paquete as any).potenciaTotal : paquete.potenciaKw * paquete.cantidadCargadores;
       const eficiencia = paquete.tipo.includes('AC') ? params.eficienciaAC : params.eficienciaDC;
       const energiaDia = potencia * horasBase * factorUtil * eficiencia;
@@ -288,9 +303,9 @@ export default function Investors() {
       return { roiAnual: Math.round(roiAnual), paybackMeses: Math.round(paybackMeses) };
     };
     return {
-      AC: calcROI(PAQUETES.AC, params.costoEnergiaRed, params.costosOpAC, PAQUETES.AC.horasUsoConservador),
-      INDIVIDUAL: calcROI(PAQUETES.INDIVIDUAL, params.costoEnergiaRed, params.costosOpIndividual, PAQUETES.INDIVIDUAL.horasUsoConservador),
-      COLECTIVO: calcROI(PAQUETES.COLECTIVO, params.costoEnergiaSolar, 0, PAQUETES.COLECTIVO.horasUsoConservador, params.factorUtilizacionPremium), // Sin costos op separados en colectivo
+      AC: calcROI(PAQUETES_DYN.AC, params.costoEnergiaRed, params.costosOpAC, PAQUETES_DYN.AC.horasUsoConservador),
+      INDIVIDUAL: calcROI(PAQUETES_DYN.INDIVIDUAL, params.costoEnergiaRed, params.costosOpIndividual, PAQUETES_DYN.INDIVIDUAL.horasUsoConservador),
+      COLECTIVO: calcROI(PAQUETES_DYN.COLECTIVO, params.costoEnergiaSolar, 0, PAQUETES_DYN.COLECTIVO.horasUsoConservador, params.factorUtilizacionPremium), // Sin costos op separados en colectivo
     };
   }, [params]);
 
@@ -631,7 +646,7 @@ export default function Investors() {
             </h2>
             <p className="text-white/60 text-lg max-w-2xl mx-auto">
               Únete a otros inversionistas para financiar estaciones premium en las principales ciudades de Colombia.
-              Meta por estación: <span className="text-amber-400 font-bold">$1,000 millones COP</span>
+              Meta por estación: <span className="text-amber-400 font-bold">{formatCOP(capexPremium)}</span>
             </p>
           </div>
 
@@ -2121,15 +2136,15 @@ export default function Investors() {
                   </span>
                   <Battery className="w-8 h-8 text-blue-400" />
                 </div>
-                <CardTitle className="text-xl text-white">{PAQUETES.AC.nombre}</CardTitle>
-                <p className="text-white/60 text-sm">{PAQUETES.AC.descripcion}</p>
+                <CardTitle className="text-xl text-white">{PAQUETES_DYN.AC.nombre}</CardTitle>
+                <p className="text-white/60 text-sm">{PAQUETES_DYN.AC.descripcion}</p>
               </CardHeader>
               <CardContent className="space-y-4 relative">
                 <div className="text-center py-3 rounded-xl bg-black/30">
                   <p className="text-white/60 text-sm">Inversión Total</p>
-                  <p className="text-3xl font-bold text-white">{formatCOP(PAQUETES.AC.precio)}</p>
+                  <p className="text-3xl font-bold text-white">{formatCOP(PAQUETES_DYN.AC.precio)}</p>
                   <p className="text-blue-400 text-sm mt-1">
-                    {PAQUETES.AC.potenciaKw}kW de potencia
+                    {PAQUETES_DYN.AC.potenciaKw}kW de potencia
                   </p>
                 </div>
 
@@ -2145,7 +2160,7 @@ export default function Investors() {
                 </div>
 
                 <ul className="space-y-2">
-                  {PAQUETES.AC.caracteristicas.slice(0, 4).map((item, i) => (
+                  {PAQUETES_DYN.AC.caracteristicas.slice(0, 4).map((item, i) => (
                     <li key={i} className="flex items-center gap-2 text-white/80 text-sm">
                       <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0" />
                       <span>{item}</span>
@@ -2172,22 +2187,22 @@ export default function Investors() {
                   </span>
                   <Zap className="w-8 h-8 text-green-400" />
                 </div>
-                <CardTitle className="text-2xl text-white">{PAQUETES.INDIVIDUAL.nombre}</CardTitle>
-                <p className="text-white/60">{PAQUETES.INDIVIDUAL.descripcion}</p>
+                <CardTitle className="text-2xl text-white">{PAQUETES_DYN.INDIVIDUAL.nombre}</CardTitle>
+                <p className="text-white/60">{PAQUETES_DYN.INDIVIDUAL.descripcion}</p>
               </CardHeader>
               <CardContent className="space-y-6 relative">
                 <div className="text-center py-4 rounded-xl bg-black/30">
                   <p className="text-white/60 text-sm">Inversión Total</p>
-                  <p className="text-4xl font-bold text-white">{formatCOP(PAQUETES.INDIVIDUAL.precio)}</p>
+                  <p className="text-4xl font-bold text-white">{formatCOP(PAQUETES_DYN.INDIVIDUAL.precio)}</p>
                   <p className="text-green-400 text-sm mt-1">
-                    {PAQUETES.INDIVIDUAL.potenciaKw}kW de potencia
+                    {PAQUETES_DYN.INDIVIDUAL.potenciaKw}kW de potencia
                   </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded-lg bg-black/30 text-center">
                     <p className="text-2xl font-bold text-green-400">~{paqueteROIs.INDIVIDUAL.roiAnual}%</p>
-                    <p className="text-xs text-white/60">ROI Anual ({PAQUETES.INDIVIDUAL.horasUsoConservador}h/día)</p>
+                    <p className="text-xs text-white/60">ROI Anual ({PAQUETES_DYN.INDIVIDUAL.horasUsoConservador}h/día)</p>
                   </div>
                   <div className="p-3 rounded-lg bg-black/30 text-center">
                     <p className="text-2xl font-bold text-green-400">~{paqueteROIs.INDIVIDUAL.paybackMeses}</p>
@@ -2196,7 +2211,7 @@ export default function Investors() {
                 </div>
 
                 <ul className="space-y-3">
-                  {PAQUETES.INDIVIDUAL.caracteristicas.map((item, i) => (
+                  {PAQUETES_DYN.INDIVIDUAL.caracteristicas.map((item, i) => (
                     <li key={i} className="flex items-center gap-3 text-white/80">
                       <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" />
                       <span>{item}</span>
@@ -2223,15 +2238,15 @@ export default function Investors() {
                   </span>
                   <Sun className="w-8 h-8 text-amber-400" />
                 </div>
-                <CardTitle className="text-2xl text-white">{PAQUETES.COLECTIVO.nombre}</CardTitle>
-                <p className="text-white/60">{PAQUETES.COLECTIVO.descripcion}</p>
+                <CardTitle className="text-2xl text-white">{PAQUETES_DYN.COLECTIVO.nombre}</CardTitle>
+                <p className="text-white/60">{PAQUETES_DYN.COLECTIVO.descripcion}</p>
               </CardHeader>
               <CardContent className="space-y-6 relative">
                 <div className="text-center py-4 rounded-xl bg-black/30">
                   <p className="text-white/60 text-sm">Valor Total Estación</p>
-                  <p className="text-4xl font-bold text-white">{formatCOP(PAQUETES.COLECTIVO.precio)}</p>
+                  <p className="text-4xl font-bold text-white">{formatCOP(PAQUETES_DYN.COLECTIVO.precio)}</p>
                   <p className="text-amber-400 text-sm mt-1">
-                    Participación mínima: {formatCOP(PAQUETES.COLECTIVO.participacionMinima)}
+                    Participación mínima: {formatCOP(PAQUETES_DYN.COLECTIVO.participacionMinima)}
                   </p>
                 </div>
 
@@ -2247,7 +2262,7 @@ export default function Investors() {
                 </div>
 
                 <ul className="space-y-3">
-                  {PAQUETES.COLECTIVO.caracteristicas.map((item, i) => {
+                  {PAQUETES_DYN.COLECTIVO.caracteristicas.map((item, i) => {
                     // Reemplazar dinámicamente el porcentaje de reducción de energía solar
                     const displayItem = item.includes("Reducción ~70%") 
                       ? `Reducción ~${params.costoEnergiaRed > 0 ? Math.round((1 - params.costoEnergiaSolar / params.costoEnergiaRed) * 100) : 70}% costo de energía`
@@ -2308,19 +2323,19 @@ export default function Investors() {
                       <TabsTrigger value="AC" className="data-[state=active]:bg-blue-500">
                         <div className="text-left">
                           <p className="font-medium text-sm">AC Básico</p>
-                          <p className="text-xs opacity-70">{formatCOP(PAQUETES.AC.precio)}</p>
+                          <p className="text-xs opacity-70">{formatCOP(PAQUETES_DYN.AC.precio)}</p>
                         </div>
                       </TabsTrigger>
                       <TabsTrigger value="INDIVIDUAL" className="data-[state=active]:bg-green-500">
                         <div className="text-left">
                           <p className="font-medium text-sm">DC Individual</p>
-                          <p className="text-xs opacity-70">{formatCOP(PAQUETES.INDIVIDUAL.precio)}</p>
+                          <p className="text-xs opacity-70">{formatCOP(PAQUETES_DYN.INDIVIDUAL.precio)}</p>
                         </div>
                       </TabsTrigger>
                       <TabsTrigger value="COLECTIVO" className="data-[state=active]:bg-amber-500">
                         <div className="text-left">
                           <p className="font-medium text-sm">Colectivo</p>
-                          <p className="text-xs opacity-70">Desde {formatCOP(PAQUETES.COLECTIVO.participacionMinima)}</p>
+                          <p className="text-xs opacity-70">Desde {formatCOP(PAQUETES_DYN.COLECTIVO.participacionMinima)}</p>
                         </div>
                       </TabsTrigger>
                     </TabsList>
@@ -2337,14 +2352,14 @@ export default function Investors() {
                     <Slider
                       value={[participacionColectiva]}
                       onValueChange={(v) => setParticipacionColectiva(v[0])}
-                      min={50000000}
-                      max={500000000}
+                      min={participacionMinima}
+                      max={sliderMax}
                       step={10000000}
                       className="py-2"
                     />
                     <div className="flex justify-between text-xs text-white/40">
-                      <span>{formatCOP(50000000)}</span>
-                      <span>{formatCOP(500000000)}</span>
+                      <span>{formatCOP(participacionMinima)}</span>
+                      <span>{formatCOP(sliderMax)}</span>
                     </div>
                     <p className="text-xs text-amber-400">
                       Participación: {(calculos.porcentajeParticipacion * 100).toFixed(1)}% de la estación
@@ -2719,21 +2734,21 @@ export default function Investors() {
                   const margenDiff = margenIndividual > 0 ? Math.round(((margenColectivo - margenIndividual) / margenIndividual) * 100) : 0;
                   
                   // ROI dinámico (escenario realista, horas base)
-                  const horasInd = PAQUETES.INDIVIDUAL.horasUsoConservador;
-                  const horasCol = PAQUETES.COLECTIVO.horasUsoConservador * params.factorUtilizacionPremium;
-                  const energiaInd = PAQUETES.INDIVIDUAL.potenciaKw * horasInd * params.eficienciaDC;
-                  const energiaCol = (PAQUETES.COLECTIVO as any).potenciaTotal * horasCol * params.eficienciaDC;
+                  const horasInd = PAQUETES_DYN.INDIVIDUAL.horasUsoConservador;
+                  const horasCol = PAQUETES_DYN.COLECTIVO.horasUsoConservador * params.factorUtilizacionPremium;
+                  const energiaInd = PAQUETES_DYN.INDIVIDUAL.potenciaKw * horasInd * params.eficienciaDC;
+                  const energiaCol = (PAQUETES_DYN.COLECTIVO as any).potenciaTotal * horasCol * params.eficienciaDC;
                   const ingresoIndDia = (energiaInd * (precioBase - costoIndividual) * (1 - params.aliadoPct) * (1 - params.costosOpIndividual) * params.inversionistaPct);
                   // Colectivo: sin costos operativos separados (economías de escala)
                   const ingresoColDia = (energiaCol * (precioBase - costoColectivo) * (1 - params.aliadoPct) * params.inversionistaPct);
-                  const roiIndAnual = PAQUETES.INDIVIDUAL.precio > 0 ? ((ingresoIndDia * 365) / PAQUETES.INDIVIDUAL.precio * 100) : 0;
-                  const roiColAnual = PAQUETES.COLECTIVO.participacionMinima > 0 ? ((ingresoColDia * 365 * (PAQUETES.COLECTIVO.participacionMinima / PAQUETES.COLECTIVO.precio)) / PAQUETES.COLECTIVO.participacionMinima * 100) : 0;
-                  const paybackInd = ingresoIndDia > 0 ? (PAQUETES.INDIVIDUAL.precio / (ingresoIndDia * 30)) : 999;
-                  const paybackCol = ingresoColDia > 0 ? (PAQUETES.COLECTIVO.participacionMinima / (ingresoColDia * (PAQUETES.COLECTIVO.participacionMinima / PAQUETES.COLECTIVO.precio) * 30)) : 999;
+                  const roiIndAnual = PAQUETES_DYN.INDIVIDUAL.precio > 0 ? ((ingresoIndDia * 365) / PAQUETES_DYN.INDIVIDUAL.precio * 100) : 0;
+                  const roiColAnual = PAQUETES_DYN.COLECTIVO.participacionMinima > 0 ? ((ingresoColDia * 365 * (PAQUETES_DYN.COLECTIVO.participacionMinima / PAQUETES_DYN.COLECTIVO.precio)) / PAQUETES_DYN.COLECTIVO.participacionMinima * 100) : 0;
+                  const paybackInd = ingresoIndDia > 0 ? (PAQUETES_DYN.INDIVIDUAL.precio / (ingresoIndDia * 30)) : 999;
+                  const paybackCol = ingresoColDia > 0 ? (PAQUETES_DYN.COLECTIVO.participacionMinima / (ingresoColDia * (PAQUETES_DYN.COLECTIVO.participacionMinima / PAQUETES_DYN.COLECTIVO.precio) * 30)) : 999;
 
                   return [
-                    { label: "Inversión Mínima", individual: formatCOP(PAQUETES.INDIVIDUAL.precio), colectivo: formatCOP(PAQUETES.COLECTIVO.participacionMinima), winner: "colectivo" },
-                    { label: "Potencia Total", individual: `${PAQUETES.INDIVIDUAL.potenciaKw} kW`, colectivo: `${(PAQUETES.COLECTIVO as any).potenciaTotal} kW (${PAQUETES.COLECTIVO.cantidadCargadores}×${PAQUETES.COLECTIVO.potenciaKw}kW)`, winner: "colectivo" },
+                    { label: "Inversión Mínima", individual: formatCOP(PAQUETES_DYN.INDIVIDUAL.precio), colectivo: formatCOP(PAQUETES_DYN.COLECTIVO.participacionMinima), winner: "colectivo" },
+                    { label: "Potencia Total", individual: `${PAQUETES_DYN.INDIVIDUAL.potenciaKw} kW`, colectivo: `${(PAQUETES_DYN.COLECTIVO as any).potenciaTotal} kW (${PAQUETES_DYN.COLECTIVO.cantidadCargadores}×${PAQUETES_DYN.COLECTIVO.potenciaKw}kW)`, winner: "colectivo" },
                     { label: "Fuente de Energía", individual: "Red Eléctrica", colectivo: "Solar + Red", winner: "colectivo" },
                     { label: "Costo Energía/kWh", individual: `${formatCOP(costoIndividual)} COP`, colectivo: `${formatCOP(costoColectivo)} COP (${ahorroSolar}% ahorro)`, winner: "colectivo" },
                     { label: "Margen por kWh", individual: `${formatCOP(margenIndividual)} COP`, colectivo: `${formatCOP(margenColectivo)} COP (+${margenDiff}%)`, winner: "colectivo" },

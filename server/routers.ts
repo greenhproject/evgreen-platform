@@ -3691,6 +3691,10 @@ const settingsRouter = router({
       precioVentaMin: settings?.precioVentaMin ?? 1400,
       precioVentaMax: settings?.precioVentaMax ?? 2200,
       hostPercentage: 10, // Default aliado comercial % (per-station config overrides this)
+      // Parámetros del modelo de negocio colectivo (editables desde Admin)
+      capexEstacionPremium: Number(settings?.capexEstacionPremium ?? 1500000000),
+      participacionMinimaColectiva: Number(settings?.participacionMinimaColectiva ?? 50000000),
+      sliderMaxSimulador: Number(settings?.sliderMaxSimulador ?? 1500000000),
     };
   }),
   
@@ -3765,6 +3769,10 @@ const settingsRouter = router({
         // Soporte
         supportEmail: "soporte@greenhproject.com",
         supportPhone: "",
+        // Parámetros del modelo de negocio colectivo
+        capexEstacionPremium: 1500000000,
+        participacionMinimaColectiva: 50000000,
+        sliderMaxSimulador: 1500000000,
       };
     }
     // Ocultar claves secretas parcialmente y retornar todos los campos explícitamente
@@ -3835,6 +3843,10 @@ const settingsRouter = router({
       // Soporte
       supportEmail: settings.supportEmail || "soporte@greenhproject.com",
       supportPhone: settings.supportPhone || "",
+      // Parámetros del modelo de negocio colectivo
+      capexEstacionPremium: Number(settings.capexEstacionPremium ?? 1500000000),
+      participacionMinimaColectiva: Number(settings.participacionMinimaColectiva ?? 50000000),
+      sliderMaxSimulador: Number(settings.sliderMaxSimulador ?? 1500000000),
     };
   }),
   
@@ -3874,6 +3886,10 @@ const settingsRouter = router({
       precioVentaDefault: z.number().min(0).optional(),
       precioVentaMin: z.number().min(0).optional(),
       precioVentaMax: z.number().min(0).optional(),
+      // Parámetros del modelo de negocio colectivo
+      capexEstacionPremium: z.number().min(100000000).max(10000000000).optional(),
+      participacionMinimaColectiva: z.number().min(1000000).max(1000000000).optional(),
+      sliderMaxSimulador: z.number().min(100000000).max(10000000000).optional(),
       // Configuración del evento de lanzamiento
       eventName: z.string().optional(),
       eventDate: z.string().optional(),

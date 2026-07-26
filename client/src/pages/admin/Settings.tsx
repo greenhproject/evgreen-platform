@@ -90,6 +90,10 @@ export default function AdminSettings() {
     precioVentaDefault: 1800,
     precioVentaMin: 1400,
     precioVentaMax: 2200,
+    // Modelo de negocio colectivo
+    capexEstacionPremium: 1500000000,
+    participacionMinimaColectiva: 50000000,
+    sliderMaxSimulador: 1500000000,
   });
 
   const [alegraForm, setAlegraForm] = useState({
@@ -245,6 +249,10 @@ export default function AdminSettings() {
         precioVentaDefault: settings.precioVentaDefault ?? 1800,
         precioVentaMin: settings.precioVentaMin ?? 1400,
         precioVentaMax: settings.precioVentaMax ?? 2200,
+        // Modelo de negocio colectivo
+        capexEstacionPremium: (settings as any).capexEstacionPremium ?? 1500000000,
+        participacionMinimaColectiva: (settings as any).participacionMinimaColectiva ?? 50000000,
+        sliderMaxSimulador: (settings as any).sliderMaxSimulador ?? 1500000000,
       });
 
       setAlegraForm({
@@ -1119,6 +1127,51 @@ export default function AdminSettings() {
                     type="number"
                     min={0}
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* Modelo de Negocio Colectivo */}
+            <div>
+              <h3 className="font-semibold mb-4 flex items-center gap-2">
+                <span className="text-amber-500">&#9889;</span> Modelo de Negocio Colectivo
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Estos valores controlan el precio de la estación premium, la participación mínima y el límite del simulador en la página de inversionistas. Cambiándolos aquí se actualizan automáticamente en la landing y el simulador sin tocar código.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>CAPEX Estación Premium (COP)</Label>
+                  <Input
+                    value={calculatorForm.capexEstacionPremium}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, capexEstacionPremium: parseInt(e.target.value) || 1500000000 })}
+                    type="number"
+                    min={100000000}
+                    step={50000000}
+                  />
+                  <p className="text-xs text-muted-foreground">Precio total de la estación. Ej: 1500000000 = $1,500M COP</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Participación Mínima (COP)</Label>
+                  <Input
+                    value={calculatorForm.participacionMinimaColectiva}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, participacionMinimaColectiva: parseInt(e.target.value) || 50000000 })}
+                    type="number"
+                    min={1000000}
+                    step={5000000}
+                  />
+                  <p className="text-xs text-muted-foreground">Mínimo por inversionista. Ej: 50000000 = $50M COP</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Límite Máximo Simulador (COP)</Label>
+                  <Input
+                    value={calculatorForm.sliderMaxSimulador}
+                    onChange={(e) => setCalculatorForm({ ...calculatorForm, sliderMaxSimulador: parseInt(e.target.value) || 1500000000 })}
+                    type="number"
+                    min={100000000}
+                    step={50000000}
+                  />
+                  <p className="text-xs text-muted-foreground">Máximo del slider del simulador. Ej: 1500000000 = $1,500M COP</p>
                 </div>
               </div>
             </div>
