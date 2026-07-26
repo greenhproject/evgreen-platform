@@ -757,8 +757,8 @@ function SpaceDetailDialog({
     allySharePercent: 10,
     investorSharePercent: 70,
     platformSharePercent: 30,
-    projectedMonthlySessionsYear1: undefined as number | undefined,
-    avgSessionRevenueCop: 8500,
+    installedPowerKw: undefined as number | undefined,
+    tarifaKwhCop: 1800,
   });
   const [publishAmount, setPublishAmount] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
@@ -1367,23 +1367,24 @@ function SpaceDetailDialog({
               <h4 className="text-emerald-400 text-sm font-semibold flex items-center gap-2">
                 <TrendingUp className="w-4 h-4" /> Parámetros de Proyección
               </h4>
+              <p className="text-xs text-gray-400 -mt-1">El modelo calcula 3 escenarios: pesimista (4h/día), realista (6h/día) y optimista (9h/día).</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">Sesiones/mes (Año 1)</Label>
+                  <Label className="text-gray-300 text-xs mb-1 block">Potencia instalada (kW)</Label>
                   <Input
                     type="number" min={1}
-                    placeholder="Auto (estimado)"
-                    value={prospectoConfig.projectedMonthlySessionsYear1 || ""}
-                    onChange={e => setProspectoConfig(c => ({ ...c, projectedMonthlySessionsYear1: parseInt(e.target.value) || undefined }))}
+                    placeholder="Auto (del espacio)"
+                    value={prospectoConfig.installedPowerKw || ""}
+                    onChange={e => setProspectoConfig(c => ({ ...c, installedPowerKw: parseFloat(e.target.value) || undefined }))}
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm placeholder:text-gray-600"
                   />
                 </div>
                 <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">Ingreso prom/sesión (COP)</Label>
+                  <Label className="text-gray-300 text-xs mb-1 block">Tarifa (COP/kWh)</Label>
                   <Input
-                    type="number" min={1000}
-                    value={prospectoConfig.avgSessionRevenueCop}
-                    onChange={e => setProspectoConfig(c => ({ ...c, avgSessionRevenueCop: parseInt(e.target.value) || 8500 }))}
+                    type="number" min={500}
+                    value={prospectoConfig.tarifaKwhCop}
+                    onChange={e => setProspectoConfig(c => ({ ...c, tarifaKwhCop: parseInt(e.target.value) || 1800 }))}
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
                   />
                 </div>
@@ -1402,8 +1403,8 @@ function SpaceDetailDialog({
                     allySharePercent: prospectoConfig.allySharePercent,
                     investorSharePercent: prospectoConfig.investorSharePercent,
                     platformSharePercent: prospectoConfig.platformSharePercent,
-                    projectedMonthlySessionsYear1: prospectoConfig.projectedMonthlySessionsYear1,
-                    avgSessionRevenueCop: prospectoConfig.avgSessionRevenueCop,
+                    installedPowerKw: prospectoConfig.installedPowerKw,
+                    tarifaKwhCop: prospectoConfig.tarifaKwhCop,
                   });
                   if (result.pdfUrl) {
                     // Abrir en nueva pestaña para descarga

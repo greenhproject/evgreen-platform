@@ -1310,8 +1310,8 @@ Responde en formato JSON con la siguiente estructura:`;
       allySharePercent: z.number().min(0).max(50).default(10),
       investorSharePercent: z.number().min(1).max(99).default(70),
       platformSharePercent: z.number().min(1).max(99).default(30),
-      projectedMonthlySessionsYear1: z.number().optional(),
-      avgSessionRevenueCop: z.number().optional(),
+      installedPowerKw: z.number().optional(),
+      tarifaKwhCop: z.number().default(1800),
     }))
     .mutation(async ({ input, ctx }) => {
       // Solo admins pueden generar prospectos
@@ -1356,10 +1356,6 @@ Responde en formato JSON con la siguiente estructura:`;
         country: submission.country,
         latitude: submission.latitude ? parseFloat(submission.latitude as string) : null,
         longitude: submission.longitude ? parseFloat(submission.longitude as string) : null,
-        submitterName: submission.submitterName,
-        submitterEmail: submission.submitterEmail,
-        submitterPhone: submission.submitterPhone,
-        submitterCompany: submission.submitterCompany,
         availableAreaM2: submission.availableAreaM2 ? parseFloat(submission.availableAreaM2 as string) : null,
         parkingSpots: submission.parkingSpots,
         transformerCapacityKva: submission.transformerCapacityKva ? parseFloat(submission.transformerCapacityKva as string) : null,
@@ -1381,8 +1377,8 @@ Responde en formato JSON con la siguiente estructura:`;
         allySharePercent: input.allySharePercent,
         investorSharePercent: input.investorSharePercent,
         platformSharePercent: input.platformSharePercent,
-        projectedMonthlySessionsYear1: input.projectedMonthlySessionsYear1,
-        avgSessionRevenueCop: input.avgSessionRevenueCop,
+        installedPowerKw: input.installedPowerKw,
+        tarifaKwhCop: input.tarifaKwhCop,
         photos: photos.map(p => ({ url: p.photoUrl, caption: p.caption })),
         generatedAt: new Date(),
       });
