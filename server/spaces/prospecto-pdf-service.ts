@@ -8,7 +8,7 @@
  */
 // jsPDF 4.x ESM compatible import for Node.js
 import jsPDFModule from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const jsPDF = ((jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default?.jsPDF ?? (jsPDFModule as any).default ?? jsPDFModule) as typeof import("jspdf").jsPDF;
 import axios from "axios";
@@ -700,7 +700,7 @@ function addProyeccionFinanciera(
     })]] : []),
   ];
 
-  (doc as any).autoTable({
+  autoTable(doc, {
     startY: y,
     head: [tableHeaders],
     body: tableRows,
@@ -716,7 +716,8 @@ function addProyeccionFinanciera(
     },
   });
 
-  y = (doc as any).lastAutoTable.finalY + 8;
+  y = (doc as any).lastAutoTable?.finalY ?? (y + 40);
+  y += 8;
 
   // Nota aclaratoria
   setColor(doc, C.gray500, "text");
