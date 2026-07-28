@@ -937,7 +937,7 @@ export const supportRouterV2 = router({
         workDays: input.workDays || [1, 2, 3, 4, 5],
         maxConcurrentTickets: input.maxConcurrentTickets || 5,
         isAvailable: input.isAvailable ?? true,
-        isOnline: true,
+        isOnline: 1,
       });
       return { id };
     }),

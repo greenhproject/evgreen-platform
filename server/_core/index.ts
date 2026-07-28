@@ -985,7 +985,7 @@ async function handleOCPP16Message(
       let station = await db.getChargingStationByOcppIdentity(ocppIdentity);
       if (station) {
         await db.updateChargingStation(station.id, {
-          isOnline: true,
+          isOnline: 1,
           manufacturer: payload.chargePointVendor,
           model: payload.chargePointModel,
           serialNumber: payload.chargePointSerialNumber || payload.chargeBoxSerialNumber,
@@ -2156,7 +2156,7 @@ async function handleOCPP201Message(
       let station = await db.getChargingStationByOcppIdentity(ocppIdentity);
       if (station) {
         await db.updateChargingStation(station.id, {
-          isOnline: true,
+          isOnline: 1,
           manufacturer: payload.chargingStation?.vendorName,
           model: payload.chargingStation?.model,
           serialNumber: payload.chargingStation?.serialNumber,

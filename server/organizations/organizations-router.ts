@@ -444,7 +444,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           const [activeTariff] = await db!
             .select({ id: tariffs.id })
             .from(tariffs)
-            .where(and(eq(tariffs.stationId, input.stationId), eq(tariffs.isActive, true)))
+            .where(and(eq(tariffs.stationId, input.stationId), eq(tariffs.isActive, 1)))
             .orderBy(desc(tariffs.createdAt))
             .limit(1);
 
@@ -472,7 +472,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
               pricePerSession: (input.pricePerSession || 0).toString(),
               overstayPenaltyPerMinute: (input.overstayPenaltyPerMinute || 0).toString(),
               overstayGracePeriodMinutes: input.overstayGracePeriodMinutes || 10,
-              isActive: true,
+              isActive: 1,
             });
           }
         }
@@ -505,7 +505,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         const [tariff] = await db!
           .select()
           .from(tariffs)
-          .where(and(eq(tariffs.stationId, input.stationId), eq(tariffs.isActive, true)))
+          .where(and(eq(tariffs.stationId, input.stationId), eq(tariffs.isActive, 1)))
           .orderBy(desc(tariffs.createdAt))
           .limit(1);
 
@@ -1482,7 +1482,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           keyHash,
           keyPrefix,
           permissions: input.permissions || ['stations:read', 'transactions:read'],
-          isActive: true,
+          isActive: 1,
           expiresAt: expiresAt || undefined,
         });
         return { apiKey: rawKey, prefix: keyPrefix, name: input.name };
@@ -1495,7 +1495,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         const [key] = await db!.select().from(apiKeys)
           .where(and(eq(apiKeys.id, input.id), eq(apiKeys.userId, ctx.user.id)));
         if (!key) throw new TRPCError({ code: 'NOT_FOUND' });
-        await db!.update(apiKeys).set({ isActive: false }).where(eq(apiKeys.id, input.id));
+        await db!.update(apiKeys).set({ isActive: 0 }).where(eq(apiKeys.id, input.id));
         return { success: true };
       }),
 

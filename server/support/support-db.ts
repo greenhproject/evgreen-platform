@@ -222,8 +222,8 @@ export async function getAvailableAgent(): Promise<{ userId: number; agentId: nu
   const agents = await db.select()
     .from(supportAgents)
     .where(and(
-      eq(supportAgents.isOnline, true),
-      eq(supportAgents.isAvailable, true),
+      eq(supportAgents.isOnline, 1),
+      eq(supportAgents.isAvailable, 1),
     ))
     .orderBy(asc(supportAgents.activeTicketCount), asc(supportAgents.lastAssignedAt));
 
@@ -344,8 +344,8 @@ export async function autoRegisterAllTechnicians(): Promise<void> {
   for (const user of techUsers) {
     await db.insert(supportAgents).values({
       userId: user.id,
-      isOnline: true,
-      isAvailable: true,
+      isOnline: 1,
+      isAvailable: 1,
       scheduleStart: "00:00",
       scheduleEnd: "23:59",
       workDays: [0, 1, 2, 3, 4, 5, 6],
@@ -363,8 +363,8 @@ export async function ensureAgentRegistered(userId: number): Promise<void> {
   if (existing.length === 0) {
     await db.insert(supportAgents).values({
       userId,
-      isOnline: true,
-      isAvailable: true,
+      isOnline: 1,
+      isAvailable: 1,
       scheduleStart: "00:00",
       scheduleEnd: "23:59",
       workDays: [0, 1, 2, 3, 4, 5, 6],
@@ -374,7 +374,7 @@ export async function ensureAgentRegistered(userId: number): Promise<void> {
     console.log(`[Support] Auto-registered user ${userId} as support agent`);
   } else {
     await db.update(supportAgents)
-      .set({ isOnline: true })
+      .set({ isOnline: 1 })
       .where(eq(supportAgents.userId, userId));
   }
 }

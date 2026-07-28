@@ -55,7 +55,7 @@ export async function recalculateAllForecasts(): Promise<void> {
   try {
     const activeStations = await db.select({ id: chargingStations.id })
       .from(chargingStations)
-      .where(eq(chargingStations.isActive, true));
+      .where(eq(chargingStations.isActive, 1));
 
     console.log(`[DemandForecast] Recalculating forecasts for ${activeStations.length} stations...`);
 
@@ -104,7 +104,7 @@ export async function recalculateStationForecast(stationId: number): Promise<voi
   // Obtener total de EVSEs para calcular tasa de ocupación
   const stationEvses = await db.select({ id: evses.id })
     .from(evses)
-    .where(and(eq(evses.stationId, stationId), eq(evses.isActive, true)));
+    .where(and(eq(evses.stationId, stationId), eq(evses.isActive, 1)));
   const totalEvses = Math.max(1, stationEvses.length);
 
   // Agrupar transacciones por (dayOfWeek, hourOfDay) con EWMA

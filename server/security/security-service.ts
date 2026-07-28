@@ -210,7 +210,7 @@ export async function recordLoginSession(
       deviceType,
       browser,
       os,
-      isActive: true,
+      isActive: 1,
       loginAt: new Date(),
       lastActivityAt: new Date(),
     });
@@ -269,7 +269,7 @@ export async function terminateSession(userId: number, sessionId: number): Promi
   if (!database) return false;
   
   await database.update(userLoginSessions).set({
-    isActive: false,
+    isActive: 0,
     logoutAt: new Date(),
   }).where(
     and(
@@ -297,7 +297,7 @@ export async function terminateAllOtherSessions(
     .where(
       and(
         eq(userLoginSessions.userId, userId),
-        eq(userLoginSessions.isActive, true)
+        eq(userLoginSessions.isActive, 1)
       )
     );
   
@@ -305,7 +305,7 @@ export async function terminateAllOtherSessions(
   for (const session of activeSessions) {
     if (session.id !== currentSessionId) {
       await database.update(userLoginSessions).set({
-        isActive: false,
+        isActive: 0,
         logoutAt: new Date(),
       }).where(eq(userLoginSessions.id, session.id));
       terminated++;

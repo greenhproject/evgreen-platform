@@ -88,7 +88,7 @@ export const quotesRouter = router({
       return db
         .select()
         .from(chargersCatalog)
-        .where(eq(chargersCatalog.isActive, true))
+        .where(eq(chargersCatalog.isActive, 1))
         .orderBy(chargersCatalog.sortOrder);
     }),
 
@@ -187,7 +187,7 @@ export const quotesRouter = router({
       .mutation(async ({ input }) => {
         const db = await getDatabase();
         // Soft delete
-        await db.update(chargersCatalog).set({ isActive: false }).where(eq(chargersCatalog.id, input.id));
+        await db.update(chargersCatalog).set({ isActive: 0 }).where(eq(chargersCatalog.id, input.id));
         return { success: true };
       }),
 
@@ -348,7 +348,7 @@ export const quotesRouter = router({
         .where(
           and(
             sql`${chargersCatalog.id} IN (${sql.join(catalogIds.map(id => sql`${id}`), sql`, `)})`,
-            eq(chargersCatalog.isActive, true)
+            eq(chargersCatalog.isActive, 1)
           )
         );
 

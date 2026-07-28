@@ -219,7 +219,7 @@ export async function getActiveTechnicians(): Promise<TechnicianPreferences[]> {
     .where(
       and(
         eq(users.role, "technician"),
-        eq(users.isActive, true)
+        eq(users.isActive, 1)
       )
     );
   

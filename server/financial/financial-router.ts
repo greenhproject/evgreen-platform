@@ -115,7 +115,7 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
           providerName: input.providerName || null,
           contractReference: input.contractReference || null,
           waterfallPriority: input.waterfallPriority,
-          isActive: true,
+          isActive: 1,
           createdBy: ctx.user.id,
           updatedBy: null,
         });
@@ -177,7 +177,7 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
     deleteExpense: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }: { input: { id: number } }) => {
-        await updateFixedExpense(input.id, { isActive: false });
+        await updateFixedExpense(input.id, { isActive: 0 });
         return { message: "Gasto desactivado" };
       }),
 

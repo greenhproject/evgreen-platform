@@ -338,7 +338,7 @@ export class DualCSMS {
         if (station) {
           preResolvedStationId = station.id;
           console.log(`[CSMS-DUAL] Pre-resolved via Drizzle: stationId=${station.id} for ${ocppIdentity}`);
-          await db.updateChargingStation(station.id, { isOnline: true });
+          await db.updateChargingStation(station.id, { isOnline: 1 });
         } else {
           console.warn(`[CSMS-DUAL] Drizzle returned null for ocppIdentity="${ocppIdentity}"`);
         }
@@ -355,7 +355,7 @@ export class DualCSMS {
           console.log(`[CSMS-DUAL] Pre-resolved via direct SQL: stationId=${directResult.id} (${directResult.name}) for ${ocppIdentity}`);
           // Intentar marcar online también
           try {
-            await db.updateChargingStation(directResult.id, { isOnline: true });
+            await db.updateChargingStation(directResult.id, { isOnline: 1 });
           } catch (e) {
             console.warn(`[CSMS-DUAL] Could not mark station online via Drizzle, but stationId is resolved`);
           }
@@ -545,7 +545,7 @@ export class DualCSMS {
           if (station) {
             conn.stationId = station.id;
             console.log(`[CSMS-DUAL] handleCall auto-resolved via Drizzle: stationId=${station.id} for ${conn.ocppIdentity}`);
-            await db.updateChargingStation(station.id, { isOnline: true });
+            await db.updateChargingStation(station.id, { isOnline: 1 });
           } else {
             console.warn(`[CSMS-DUAL] handleCall Drizzle returned null for "${conn.ocppIdentity}"`);
           }
@@ -560,7 +560,7 @@ export class DualCSMS {
           if (directResult) {
             conn.stationId = directResult.id;
             console.log(`[CSMS-DUAL] handleCall auto-resolved via direct SQL: stationId=${directResult.id} for ${conn.ocppIdentity}`);
-            try { await db.updateChargingStation(directResult.id, { isOnline: true }); } catch (e) { /* ignore */ }
+            try { await db.updateChargingStation(directResult.id, { isOnline: 1 }); } catch (e) { /* ignore */ }
           } else {
             console.error(`[CSMS-DUAL] handleCall BOTH methods failed for "${conn.ocppIdentity}" on action=${action}`);
           }
@@ -687,7 +687,7 @@ export class DualCSMS {
 
     if (station) {
       await db.updateChargingStation(station.id, {
-        isOnline: true,
+        isOnline: 1,
         manufacturer: req.chargePointVendor,
         model: req.chargePointModel,
         serialNumber: req.chargePointSerialNumber || req.chargeBoxSerialNumber,
@@ -757,7 +757,7 @@ export class DualCSMS {
         // Si el conector pasa a Preparing, actualizar también isOnline de la estación
         if (req.status === "Preparing" || req.status === "Charging") {
           try {
-            await db.updateChargingStation(stationId, { isOnline: true });
+            await db.updateChargingStation(stationId, { isOnline: 1 });
           } catch (e) {
             // No es crítico
           }
@@ -939,7 +939,7 @@ export class DualCSMS {
         if (station) {
           conn.stationId = station.id;
           console.log(`[CSMS-DUAL] StartTransaction: Auto-resolved stationId=${station.id} for ${conn.ocppIdentity}`);
-          await db.updateChargingStation(station.id, { isOnline: true });
+          await db.updateChargingStation(station.id, { isOnline: 1 });
         } else {
           console.error(`[CSMS-DUAL] StartTransaction: CRITICAL - Station ${conn.ocppIdentity} not found in DB. Cannot process transaction.`);
           return { idTagInfo: { status: "Invalid" }, transactionId: 0 };
@@ -2118,7 +2118,7 @@ export class DualCSMS {
 
     if (station) {
       await db.updateChargingStation(station.id, {
-        isOnline: true,
+        isOnline: 1,
         manufacturer: req.chargingStation.vendorName,
         model: req.chargingStation.model,
         serialNumber: req.chargingStation.serialNumber,

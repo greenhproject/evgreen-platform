@@ -38,7 +38,7 @@ export async function checkStationHealth(): Promise<{
   critical: number;
   alertsGenerated: number;
 }> {
-  const allStations = await db.getAllChargingStations({ isActive: true });
+  const allStations = await db.getAllChargingStations({ isActive: 1 });
   const results: StationHealthStatus[] = [];
   let alertsGenerated = 0;
   let online = 0;
@@ -108,7 +108,7 @@ export async function checkStationHealth(): Promise<{
  * Se llama periódicamente o al abrir el dashboard
  */
 export async function generateOfflineAlerts(): Promise<number> {
-  const allStations = await db.getAllChargingStations({ isActive: true });
+  const allStations = await db.getAllChargingStations({ isActive: 1 });
   let alertsGenerated = 0;
 
   for (const station of allStations) {

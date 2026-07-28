@@ -320,7 +320,7 @@ async function getUserContext(userId: number): Promise<UserContext | null> {
     const vehicleRows = await db
       .select()
       .from(userVehicles)
-      .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, true)))
+      .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, 1)))
       .orderBy(desc(userVehicles.isDefault));
 
     const vehicles: VehicleContext[] = vehicleRows.map(v => ({
@@ -378,7 +378,7 @@ async function getStationsContext(
     const allStations = await db
       .select()
       .from(chargingStations)
-      .where(eq(chargingStations.isOnline, true));
+      .where(eq(chargingStations.isOnline, 1));
 
     const stationsWithContext: StationContext[] = [];
 
@@ -393,7 +393,7 @@ async function getStationsContext(
       const [stationTariff] = await db
         .select()
         .from(tariffs)
-        .where(and(eq(tariffs.stationId, station.id), eq(tariffs.isActive, true)))
+        .where(and(eq(tariffs.stationId, station.id), eq(tariffs.isActive, 1)))
         .limit(1);
 
       const availableConnectors = stationConnectors.filter((c: typeof stationConnectors[0]) => c.connectorStatus === 'AVAILABLE').length;
@@ -488,7 +488,7 @@ async function getPlatformContext(): Promise<PlatformContext> {
     const activeCharges = allConnectors.filter((c: typeof allConnectors[0]) => c.connectorStatus === 'CHARGING').length;
 
     // Precio promedio (obtener de tariffs)
-    const allTariffs = await db.select().from(tariffs).where(eq(tariffs.isActive, true));
+    const allTariffs = await db.select().from(tariffs).where(eq(tariffs.isActive, 1));
     const avgPrice = allTariffs.length > 0 
       ? allTariffs.reduce((sum: number, t: typeof allTariffs[0]) => sum + Number(t.pricePerKwh || 1200), 0) / allTariffs.length
       : 1200;

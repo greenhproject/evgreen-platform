@@ -897,7 +897,7 @@ export async function getAvailableEvses(filters?: { connectorType?: Evse["connec
   const db = await getDb();
   if (!db) return [];
   
-  const conditions = [eq(evses.connectorStatus, "AVAILABLE"), eq(evses.isActive, true)];
+  const conditions = [eq(evses.connectorStatus, "AVAILABLE"), eq(evses.isActive, 1)];
   if (filters?.connectorType) conditions.push(eq(evses.connectorType, filters.connectorType));
   if (filters?.chargeType) conditions.push(eq(evses.chargeType, filters.chargeType));
   
@@ -1353,7 +1353,7 @@ export async function getActiveTariffByStationId(stationId: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(tariffs)
-    .where(and(eq(tariffs.stationId, stationId), eq(tariffs.isActive, true)))
+    .where(and(eq(tariffs.stationId, stationId), eq(tariffs.isActive, 1)))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -2070,7 +2070,7 @@ export async function getStationsNearLocation(lat: number, lng: number, radiusKm
     )`.as("distance"),
   })
   .from(chargingStations)
-  .where(and(eq(chargingStations.isActive, true), eq(chargingStations.isPublic, true)))
+  .where(and(eq(chargingStations.isActive, 1), eq(chargingStations.isPublic, 1)))
   .having(sql`distance <= ${radiusKm}`)
   .orderBy(sql`distance`);
   
@@ -2177,7 +2177,7 @@ export async function resolveUserBannerContext(
         batteryCapacityKwh: userVehicles.batteryCapacityKwh,
         isDefault: userVehicles.isDefault,
       }).from(userVehicles)
-        .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, true))),
+        .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, 1))),
 
       // Billetera
       db.select({ balance: wallets.balance })
@@ -2189,7 +2189,7 @@ export async function resolveUserBannerContext(
         wompiCardToken: subscriptions.wompiCardToken,
         isActive: subscriptions.isActive,
       }).from(subscriptions)
-        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.isActive, true)))
+        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.isActive, 1)))
         .limit(1),
 
       // Transacciones de este mes
@@ -2734,7 +2734,7 @@ export async function getAIConversationsByUserId(userId: number, limit = 20) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(aiConversations)
-    .where(and(eq(aiConversations.userId, userId), eq(aiConversations.isActive, true)))
+    .where(and(eq(aiConversations.userId, userId), eq(aiConversations.isActive, 1)))
     .orderBy(desc(aiConversations.lastMessageAt))
     .limit(limit);
 }
@@ -2748,7 +2748,7 @@ export async function updateAIConversation(id: number, data: Partial<InsertAICon
 export async function deleteAIConversation(id: number) {
   const db = await getDb();
   if (!db) return;
-  await db.update(aiConversations).set({ isActive: false }).where(eq(aiConversations.id, id));
+  await db.update(aiConversations).set({ isActive: 0 }).where(eq(aiConversations.id, id));
 }
 
 // ============================================================================
@@ -2839,7 +2839,7 @@ export async function getNearbyStations(lat: number, lng: number, radiusKm: numb
     )`.as("distance"),
   })
   .from(chargingStations)
-  .where(and(eq(chargingStations.isActive, true), eq(chargingStations.isPublic, true)))
+  .where(and(eq(chargingStations.isActive, 1), eq(chargingStations.isPublic, 1)))
   .having(sql`distance <= ${radiusKm}`)
   .orderBy(sql`distance`)
   .limit(20);
@@ -2863,8 +2863,8 @@ export async function getStationsAlongRoute(
   
   return db.select().from(chargingStations)
     .where(and(
-      eq(chargingStations.isActive, true),
-      eq(chargingStations.isPublic, true),
+      eq(chargingStations.isActive, 1),
+      eq(chargingStations.isPublic, 1),
       gte(chargingStations.latitude, minLat.toString()),
       lte(chargingStations.latitude, maxLat.toString()),
       gte(chargingStations.longitude, minLng.toString()),
@@ -3080,7 +3080,7 @@ export async function cancelUserSubscription(userId: number) {
   if (!db) throw new Error("Database not available");
   
   await db.update(subscriptions).set({
-    isActive: false,
+    isActive: 0,
     cancelledAt: new Date(),
     nextBillingDate: null,
     tier: "FREE" as any,
@@ -3098,7 +3098,7 @@ export async function getActiveSubscriptionsForBilling() {
   return db.select().from(subscriptions)
     .where(
       and(
-        eq(subscriptions.isActive, true),
+        eq(subscriptions.isActive, 1),
         sql`${subscriptions.nextBillingDate} <= ${now}`,
         sql`${subscriptions.tier} != 'FREE'`
       )
@@ -3677,7 +3677,7 @@ export async function getAdminDashboardMetrics() {
   // Estaciones online
   const onlineStations = await db.select({ count: count() })
     .from(chargingStations)
-    .where(eq(chargingStations.isOnline, true));
+    .where(eq(chargingStations.isOnline, 1));
   
   // Total de usuarios
   const totalUsers = await db.select({ count: count() }).from(users);
@@ -3835,7 +3835,7 @@ export async function getInvestorDashboardMetrics(investorId: number) {
     .where(
       and(
         eq(chargingStations.ownerId, investorId),
-        eq(chargingStations.isOnline, true)
+        eq(chargingStations.isOnline, 1)
       )
     );
   
@@ -4043,7 +4043,7 @@ export async function getUsersWithRecentTransactions(
       and(
         eq(transactions.stationId, stationId),
         gte(transactions.startTime, startDate),
-        eq(users.isActive, true)
+        eq(users.isActive, 1)
       )
     );
   
@@ -4081,7 +4081,7 @@ export async function getUsersNearStation(
     .innerJoin(chargingStations, eq(transactions.stationId, chargingStations.id))
     .where(
       and(
-        eq(users.isActive, true),
+        eq(users.isActive, 1),
         gte(chargingStations.latitude, minLat.toString()),
         lte(chargingStations.latitude, maxLat.toString()),
         gte(chargingStations.longitude, minLng.toString()),
@@ -5481,7 +5481,7 @@ export async function getUserVehicles(userId: number): Promise<UserVehicle[]> {
   return db
     .select()
     .from(userVehicles)
-    .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, true)))
+    .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, 1)))
     .orderBy(desc(userVehicles.isDefault), desc(userVehicles.createdAt));
 }
 
@@ -5512,7 +5512,7 @@ export async function createUserVehicle(vehicle: InsertUserVehicle): Promise<num
   const existingCount = await db
     .select({ count: count() })
     .from(userVehicles)
-    .where(and(eq(userVehicles.userId, vehicle.userId), eq(userVehicles.isActive, true)));
+    .where(and(eq(userVehicles.userId, vehicle.userId), eq(userVehicles.isActive, 1)));
 
   if (existingCount[0].count === 0) {
     vehicle.isDefault = true;
@@ -5551,14 +5551,14 @@ export async function deleteUserVehicle(id: number, userId: number): Promise<voi
   // Soft delete
   await db
     .update(userVehicles)
-    .set({ isActive: false, isDefault: false })
+    .set({ isActive: 0, isDefault: false })
     .where(and(eq(userVehicles.id, id), eq(userVehicles.userId, userId)));
 
   // Si el eliminado era el default, asignar default al siguiente vehículo activo
   const remaining = await db
     .select()
     .from(userVehicles)
-    .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, true)))
+    .where(and(eq(userVehicles.userId, userId), eq(userVehicles.isActive, 1)))
     .orderBy(desc(userVehicles.createdAt))
     .limit(1);
 
@@ -5569,7 +5569,7 @@ export async function deleteUserVehicle(id: number, userId: number): Promise<voi
       .where(
         and(
           eq(userVehicles.userId, userId),
-          eq(userVehicles.isActive, true),
+          eq(userVehicles.isActive, 1),
           eq(userVehicles.isDefault, true)
         )
       )
@@ -5608,7 +5608,7 @@ export async function getDefaultVehicle(userId: number): Promise<UserVehicle | u
     .where(
       and(
         eq(userVehicles.userId, userId),
-        eq(userVehicles.isActive, true),
+        eq(userVehicles.isActive, 1),
         eq(userVehicles.isDefault, true)
       )
     )
@@ -6101,7 +6101,7 @@ export async function getAllChargerBrands() {
   
   const result = await db.select()
     .from(chargerBrands)
-    .where(eq(chargerBrands.isActive, true))
+    .where(eq(chargerBrands.isActive, 1))
     .orderBy(chargerBrands.brand, chargerBrands.model);
   
   return result;
@@ -6135,7 +6135,7 @@ export async function getChargerBrandByBrandModel(brand: string, model: string) 
       and(
         eq(chargerBrands.brand, brand),
         eq(chargerBrands.model, model),
-        eq(chargerBrands.isActive, true)
+        eq(chargerBrands.isActive, 1)
       )
     )
     .limit(1);
@@ -7030,7 +7030,7 @@ export async function getActiveFixedExpensesByStation(stationId: number): Promis
   return db.select().from(stationFixedExpenses)
     .where(and(
       eq(stationFixedExpenses.stationId, stationId),
-      eq(stationFixedExpenses.isActive, true),
+      eq(stationFixedExpenses.isActive, 1),
     ))
     .orderBy(asc(stationFixedExpenses.waterfallPriority));
 }

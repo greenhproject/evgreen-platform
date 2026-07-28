@@ -97,7 +97,7 @@ async function getAudienceStats(segmentation: SegmentationConfig): Promise<Audie
   const subsRaw = await db
     .select({ tier: userSubscriptions.tier, count: count(userSubscriptions.id) })
     .from(userSubscriptions)
-    .where(eq(userSubscriptions.isActive, true))
+    .where(eq(userSubscriptions.isActive, 1))
     .groupBy(userSubscriptions.tier);
 
   // Calcular alcance estimado según segmentación
@@ -434,7 +434,7 @@ export const campaignWizardRouter = router({
     const subs = await db
       .select({ tier: userSubscriptions.tier, count: count(userSubscriptions.id) })
       .from(userSubscriptions)
-      .where(eq(userSubscriptions.isActive, true))
+      .where(eq(userSubscriptions.isActive, 1))
       .groupBy(userSubscriptions.tier);
 
     return {

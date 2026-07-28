@@ -501,7 +501,7 @@ export async function getUserAdProfile(
       .from(subscriptions)
       .where(and(
         eq(subscriptions.userId, userId),
-        eq(subscriptions.isActive, true),
+        eq(subscriptions.isActive, 1),
       ))
       .orderBy(desc(subscriptions.createdAt))
       .limit(1);

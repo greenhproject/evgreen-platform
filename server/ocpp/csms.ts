@@ -219,7 +219,7 @@ export class CSMS {
       if (station) {
         // Actualizar información de la estación
         await db.updateChargingStation(station.id, {
-          isOnline: true,
+          isOnline: 1,
           manufacturer: req.chargingStation.vendorName,
           model: req.chargingStation.model,
           serialNumber: req.chargingStation.serialNumber,

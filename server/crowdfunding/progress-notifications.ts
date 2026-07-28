@@ -89,7 +89,7 @@ async function getAllInvestors() {
     })
     .from(users)
     .where(and(
-      eq(users.isActive, true),
+      eq(users.isActive, 1),
       eq(users.role, "investor" as any)
     ));
 }

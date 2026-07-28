@@ -121,7 +121,7 @@ export async function checkProximityAndNotify(
     .where(
       and(
         eq(userVehicles.userId, request.userId),
-        eq(userVehicles.isActive, true)
+        eq(userVehicles.isActive, 1)
       )
     )
     .orderBy(desc(userVehicles.isDefault))
@@ -155,9 +155,9 @@ export async function checkProximityAndNotify(
     .from(chargingStations)
     .where(
       and(
-        eq(chargingStations.isActive, true),
-        eq(chargingStations.isPublic, true),
-        eq(chargingStations.isOnline, true)
+        eq(chargingStations.isActive, 1),
+        eq(chargingStations.isPublic, 1),
+        eq(chargingStations.isOnline, 1)
       )
     )
     .having(sql`distance <= ${radiusKm}`)

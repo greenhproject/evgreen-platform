@@ -120,7 +120,7 @@ async function checkLowPriceAtFavoriteStations(): Promise<void> {
 
         const stationEvses = await db.select()
           .from(evses)
-          .where(and(eq(evses.stationId, station.id), eq(evses.isActive, true)));
+          .where(and(eq(evses.stationId, station.id), eq(evses.isActive, 1)));
 
         const totalEvses = stationEvses.length;
         const availableEvses = stationEvses.filter(e => e.connectorStatus === 'AVAILABLE').length;

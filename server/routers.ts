@@ -448,7 +448,7 @@ const stationsRouter = router({
       if (input?.lat && input?.lng) {
         stations = await db.getStationsNearLocation(input.lat, input.lng, input.radiusKm || 10);
       } else {
-        stations = await db.getAllChargingStations({ isActive: true, isPublic: true });
+        stations = await db.getAllChargingStations({ isActive: 1, isPublic: 1 });
       }
       
       // Agregar tarifa activa y EVSEs a cada estación
@@ -524,7 +524,7 @@ const stationsRouter = router({
         const dbConn = await getDb();
         if (dbConn) {
           const activeTariffs = await dbConn.select().from(tariffsTable)
-            .where(and(inArray(tariffsTable.stationId, stationIds), eq(tariffsTable.isActive, true)));
+            .where(and(inArray(tariffsTable.stationId, stationIds), eq(tariffsTable.isActive, 1)));
           for (const t of activeTariffs) {
             if (!tariffsMap.has(t.stationId)) tariffsMap.set(t.stationId, t);
           }
@@ -958,11 +958,11 @@ const tariffsRouter = router({
       const existingTariffs = await db.getTariffsByStationId(input.stationId);
       for (const tariff of existingTariffs) {
         if (tariff.isActive) {
-          await db.updateTariff(tariff.id, { isActive: false });
+          await db.updateTariff(tariff.id, { isActive: 0 });
         }
       }
       
-      const id = await db.createTariff({ ...input, isActive: true });
+      const id = await db.createTariff({ ...input, isActive: 1 });
       
       // Registrar en log de auditoría
       try {
@@ -1098,7 +1098,7 @@ const tariffsRouter = router({
           pricePerSession: input.connectionFee.toString(),
           autoPricing: input.autoPricing ?? false,
           overstayGracePeriodMinutes: input.overstayGracePeriodMinutes,
-          isActive: true,
+          isActive: 1,
         });
         
         // Registrar creación en log de auditoría
@@ -2902,7 +2902,7 @@ const walletRouter = router({
           autoRechargeThreshold: input.threshold ?? 10000,
           autoRechargeAmount: input.amount ?? 20000,
           startDate: new Date(),
-          isActive: true,
+          isActive: 1,
         });
       }
 
@@ -4442,8 +4442,8 @@ const crowdfundingRouter = router({
         latitude: latitude || '4.6097',
         longitude: longitude || '-74.0817',
         country: 'Colombia',
-        isActive: false, // Inactiva hasta que se instale
-        isPublic: false,
+        isActive: 0, // Inactiva hasta que se instale
+        isPublic: 0,
         // Modelo financiero
         evgreenSharePercent: evgreenSharePercent || '30.00',
         investorSharePercent: investorSharePercent || '70.00',
@@ -6777,7 +6777,7 @@ const adminRemoteStartRouter = router({
    */
   getAvailableStations: adminProcedure
     .query(async () => {
-      const stations = await db.getAllChargingStations({ isActive: true });
+      const stations = await db.getAllChargingStations({ isActive: 1 });
       const enriched = await Promise.all(
         stations.map(async (station: any) => {
           const evsesList = await db.getEvsesByStationId(station.id);

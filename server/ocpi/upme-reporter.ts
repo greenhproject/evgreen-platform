@@ -328,7 +328,7 @@ export class UPMEReporter {
    * Construye el payload de ubicaciones según OCPI 2.2.1
    */
   private async buildLocationsPayload(): Promise<OCPILocation[]> {
-    const stations = await db.getAllChargingStations({ isActive: true, isPublic: true });
+    const stations = await db.getAllChargingStations({ isActive: 1, isPublic: 1 });
     const locations: OCPILocation[] = [];
 
     for (const station of stations) {
@@ -415,7 +415,7 @@ export class UPMEReporter {
    * Construye el payload de tarifas según OCPI 2.2.1
    */
   private async buildTariffsPayload(): Promise<OCPITariff[]> {
-    const stations = await db.getAllChargingStations({ isActive: true, isPublic: true });
+    const stations = await db.getAllChargingStations({ isActive: 1, isPublic: 1 });
     const tariffs: OCPITariff[] = [];
     const processedTariffs = new Set<number>();
 

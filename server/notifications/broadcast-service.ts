@@ -81,7 +81,7 @@ async function getUsersByAudience(audience: TargetAudience) {
         role: users.role,
       })
       .from(users)
-      .where(and(eq(users.isActive, true), inArray(users.role, roles as any)));
+      .where(and(eq(users.isActive, 1), inArray(users.role, roles as any)));
   }
 
   return db
@@ -94,7 +94,7 @@ async function getUsersByAudience(audience: TargetAudience) {
       role: users.role,
     })
     .from(users)
-    .where(eq(users.isActive, true));
+    .where(eq(users.isActive, 1));
 }
 
 /**
@@ -301,7 +301,7 @@ export async function getNotificationStats() {
   const [activeUsersResult] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(users)
-    .where(eq(users.isActive, true));
+    .where(eq(users.isActive, 1));
 
   const [pendingResult] = await db
     .select({ count: sql<number>`COUNT(*)` })
