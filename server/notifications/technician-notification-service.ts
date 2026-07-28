@@ -315,8 +315,8 @@ export async function notifyTechniciansOfAlert(
               referenceType: "ocpp_alert",
               referenceId: alert.stationId || undefined,
               isRead: 0,
-              pushSent: tech.techNotifyByPush !== false && !!tech.fcmToken,
-              pushSentAt: tech.techNotifyByPush !== false && !!tech.fcmToken ? new Date() : undefined,
+              pushSent: (tech.techNotifyByPush !== false && !!tech.fcmToken) ? 1 : 0,
+              pushSentAt: tech.techNotifyByPush !== false && !!tech.fcmToken ? new Date().toISOString() : undefined,
               data: JSON.stringify({
                 alertType: alert.alertType,
                 severity: alert.severity,

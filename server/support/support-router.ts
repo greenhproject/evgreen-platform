@@ -108,7 +108,7 @@ async function notifyTechniciansOfSupportTicket(
           referenceType: "support_ticket",
           referenceId: ticketId,
           isRead: 0,
-          pushSent: !!target.fcmToken && !target.fcmToken?.startsWith("local_"),
+          pushSent: (!!target.fcmToken && !target.fcmToken?.startsWith("local_")) ? 1 : 0,
           pushSentAt: target.fcmToken ? new Date().toISOString().slice(0,19).replace('T',' ') : undefined,
           data: JSON.stringify({ ticketId, type: pushType, userName }),
         }).catch(err => console.error(`[SupportPush] In-app notification error for tech ${target.id}:`, err));
@@ -158,7 +158,7 @@ async function notifyUserOfAgentReply(
         referenceType: "support_ticket",
         referenceId: ticketId,
         isRead: 0,
-        pushSent: !!user.fcmToken && !user.fcmToken.startsWith("local_"),
+        pushSent: (!!user.fcmToken && !user.fcmToken.startsWith("local_")) ? 1 : 0,
         pushSentAt: user.fcmToken ? new Date().toISOString().slice(0,19).replace('T',' ') : undefined,
         data: JSON.stringify({ ticketId, type: "support_agent_reply", agentName }),
       }).catch(err => console.error(`[SupportPush] In-app notification error for user ${userId}:`, err));
@@ -222,7 +222,7 @@ async function notifyUserOfTicketResolved(
         referenceType: "support_ticket",
         referenceId: ticketId,
         isRead: 0,
-        pushSent: !!user.fcmToken && !user.fcmToken.startsWith("local_"),
+        pushSent: (!!user.fcmToken && !user.fcmToken.startsWith("local_")) ? 1 : 0,
         pushSentAt: user.fcmToken ? new Date().toISOString().slice(0,19).replace('T',' ') : undefined,
         data: JSON.stringify({ ticketId, type: "support_ticket_resolved" }),
       }).catch(err => console.error(`[SupportPush] Resolved notification error:`, err));
