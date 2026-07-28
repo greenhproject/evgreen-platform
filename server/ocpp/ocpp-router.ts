@@ -731,7 +731,7 @@ export const ocppRouter = router({
           address: station?.address || null,
           connectors: evses.map(e => ({
             connectorId: e.evseIdLocal,
-            status: e.status,
+            status: e.connectorStatus,
             connectorType: e.connectorType,
             powerKw: e.powerKw,
           })),
@@ -871,8 +871,8 @@ export const ocppRouter = router({
           return {
             id: e.id,
             connectorId: e.evseIdLocal,
-            status: liveStatus || e.status, // OCPP en tiempo real > BD
-            dbStatus: e.status, // Siempre incluir estado de BD para referencia
+            status: liveStatus || e.connectorStatus, // OCPP en tiempo real > BD
+            dbStatus: e.connectorStatus, // Siempre incluir estado de BD para referencia
             connectorType: e.connectorType,
             powerKw: e.powerKw,
           };

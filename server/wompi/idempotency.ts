@@ -42,11 +42,11 @@ export async function claimWompiTransaction(
   const result = await database
     .update(wompiTransactions)
     .set({
-      processedAt: new Date(),
+      processedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
       wompiTransactionId,
-      status: "APPROVED",
+      wompiTxStatus: "APPROVED",
       paymentMethodType,
-      webhookReceivedAt: new Date(),
+      webhookReceivedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
     })
     .where(
       and(
@@ -95,7 +95,7 @@ export async function releaseWompiClaim(reference: string): Promise<void> {
     .update(wompiTransactions)
     .set({
       processedAt: null,
-      status: "PENDING",
+      wompiTxStatus: "PENDING",
     })
     .where(eq(wompiTransactions.reference, reference));
 

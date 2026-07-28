@@ -468,7 +468,7 @@ async function scanForUnmonitoredOverstay() {
     const finishingEvses = await dbInstance.select()
       .from(evses)
       .where(
-        eq(evses.status, "FINISHING")
+        eq(evses.connectorStatus, "FINISHING")
       );
 
     for (const evse of finishingEvses) {
@@ -501,12 +501,12 @@ async function scanForUnmonitoredOverstay() {
       const hoursSinceEnd = (Date.now() - endTime.getTime()) / (1000 * 60 * 60);
       if (hoursSinceEnd > 2) {
         // Transaction ended more than 2 hours ago - likely stale EVSE status, reset it
-        console.log(`[OverstayMonitor] EVSE ${evse.id} in ${evse.status} but last tx ended ${hoursSinceEnd.toFixed(1)}h ago. Resetting to AVAILABLE.`);
+        console.log(`[OverstayMonitor] EVSE ${evse.id} in ${evse.connectorStatus} but last tx ended ${hoursSinceEnd.toFixed(1)}h ago. Resetting to AVAILABLE.`);
         await db.updateEvseStatus(evse.id, "AVAILABLE");
         continue;
       }
 
-      console.log(`[OverstayMonitor] DB Scan: Found unmonitored EVSE ${evse.id} in ${evse.status} with completed tx ${tx.id}. Starting overstay tracking.`);
+      console.log(`[OverstayMonitor] DB Scan: Found unmonitored EVSE ${evse.id} in ${evse.connectorStatus} with completed tx ${tx.id}. Starting overstay tracking.`);
       await onChargingFinished(evse.id, tx.stationId);
     }
   } catch (error) {
@@ -540,7 +540,7 @@ async function processOverstaySessions() {
       // First, verify the EVSE is still in FINISHING state
       // NOTA: Solo FINISHING es válido para overstay. SUSPENDED_EV indica taper (carga aún en curso).
       const evse = await db.getEvseById(evseId);
-      if (!evse || evse.status !== "FINISHING") {
+      if (!evse || evse.connectorStatus !== "FINISHING") {
         // Cable was disconnected, status changed, or car resumed charging - finalize
         console.log(`[OverstayMonitor] EVSE ${evseId} no longer in FINISHING (status=${evse?.status}). Removing session.`);
         await releaseOverstayLock(evseId);

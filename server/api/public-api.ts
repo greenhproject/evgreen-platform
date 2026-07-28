@@ -272,7 +272,7 @@ router.get("/stations/:id", async (req: Request, res: Response) => {
           connectorType: e.connectorType,
           chargeType: e.chargeType,
           powerKw: parseFloat(e.powerKw?.toString() || "0"),
-          status: e.status,
+          status: e.connectorStatus,
           isActive: !!e.isActive,
         })),
         tariff: tariff ? {
@@ -336,7 +336,7 @@ router.get("/stations/:id/status", async (req: Request, res: Response) => {
           connectorId: e.connectorId,
           type: e.connectorType,
           powerKw: parseFloat(e.powerKw?.toString() || "0"),
-          status: e.status,
+          status: e.connectorStatus,
         })),
         activeSessions: activeSessions.map(s => ({
           sessionId: s.id,

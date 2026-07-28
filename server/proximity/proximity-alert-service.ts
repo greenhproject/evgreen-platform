@@ -177,7 +177,7 @@ export async function checkProximityAndNotify(
       .select({
         id: evses.id,
         connectorType: evses.connectorType,
-        status: evses.status,
+        status: evses.connectorStatus,
       })
       .from(evses)
       .where(eq(evses.stationId, station.id));
@@ -194,7 +194,7 @@ export async function checkProximityAndNotify(
     if (vehicleConnectors.length > 0 && compatibleConnectors.length === 0) continue;
 
     // Calcular disponibilidad
-    const availableEvses = stationEvses.filter(e => (e.status as string) === "AVAILABLE" || (e.status as string) === "Available");
+    const availableEvses = stationEvses.filter(e => (e.connectorStatus as string) === "AVAILABLE" || (e.connectorStatus as string) === "Available");
     const availableConnectors = availableEvses.length;
 
     if (availableConnectors === 0) continue;

@@ -123,7 +123,7 @@ async function checkLowPriceAtFavoriteStations(): Promise<void> {
           .where(and(eq(evses.stationId, station.id), eq(evses.isActive, true)));
 
         const totalEvses = stationEvses.length;
-        const availableEvses = stationEvses.filter(e => e.status === 'AVAILABLE').length;
+        const availableEvses = stationEvses.filter(e => e.connectorStatus === 'AVAILABLE').length;
         if (availableEvses === 0) continue;
 
         // Calcular precio dinámico actual

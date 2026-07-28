@@ -107,9 +107,9 @@ async function notifyTechniciansOfSupportTicket(
           type: "SYSTEM",
           referenceType: "support_ticket",
           referenceId: ticketId,
-          isRead: false,
+          isRead: 0,
           pushSent: !!target.fcmToken && !target.fcmToken?.startsWith("local_"),
-          pushSentAt: target.fcmToken ? new Date() : undefined,
+          pushSentAt: target.fcmToken ? new Date().toISOString().slice(0,19).replace('T',' ') : undefined,
           data: JSON.stringify({ ticketId, type: pushType, userName }),
         }).catch(err => console.error(`[SupportPush] In-app notification error for tech ${target.id}:`, err));
       }
@@ -157,9 +157,9 @@ async function notifyUserOfAgentReply(
         type: "SYSTEM",
         referenceType: "support_ticket",
         referenceId: ticketId,
-        isRead: false,
+        isRead: 0,
         pushSent: !!user.fcmToken && !user.fcmToken.startsWith("local_"),
-        pushSentAt: user.fcmToken ? new Date() : undefined,
+        pushSentAt: user.fcmToken ? new Date().toISOString().slice(0,19).replace('T',' ') : undefined,
         data: JSON.stringify({ ticketId, type: "support_agent_reply", agentName }),
       }).catch(err => console.error(`[SupportPush] In-app notification error for user ${userId}:`, err));
     }
@@ -174,7 +174,7 @@ async function notifyUserOfAgentReply(
         type: "SYSTEM",
         referenceType: "support_ticket",
         referenceId: ticketId,
-        isRead: true, // Mark as read since it's a copy
+        isRead: 1, // Mark as read since it's a copy
         data: JSON.stringify({ ticketId, type: "support_agent_reply_copy" }),
       }).catch(err => console.error(`[SupportPush] Copy notification error:`, err));
     }
@@ -221,9 +221,9 @@ async function notifyUserOfTicketResolved(
         type: "SYSTEM",
         referenceType: "support_ticket",
         referenceId: ticketId,
-        isRead: false,
+        isRead: 0,
         pushSent: !!user.fcmToken && !user.fcmToken.startsWith("local_"),
-        pushSentAt: user.fcmToken ? new Date() : undefined,
+        pushSentAt: user.fcmToken ? new Date().toISOString().slice(0,19).replace('T',' ') : undefined,
         data: JSON.stringify({ ticketId, type: "support_ticket_resolved" }),
       }).catch(err => console.error(`[SupportPush] Resolved notification error:`, err));
     }

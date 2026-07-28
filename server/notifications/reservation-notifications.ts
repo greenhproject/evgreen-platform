@@ -172,7 +172,7 @@ export async function processReservationReminders(): Promise<void> {
       .innerJoin(chargingStations, eq(reservations.stationId, chargingStations.id))
       .where(
         and(
-          eq(reservations.status, "ACTIVE"),
+          eq(reservations.reservationStatus, "ACTIVE"),
           gte(reservations.startTime, now),
           lte(reservations.startTime, in30Min),
           isNull(reservations.reminder30MinSent)
@@ -201,7 +201,7 @@ export async function processReservationReminders(): Promise<void> {
       .innerJoin(chargingStations, eq(reservations.stationId, chargingStations.id))
       .where(
         and(
-          eq(reservations.status, "ACTIVE"),
+          eq(reservations.reservationStatus, "ACTIVE"),
           gte(reservations.startTime, now),
           lte(reservations.startTime, in5Min),
           isNull(reservations.reminder5MinSent)
@@ -249,7 +249,7 @@ export async function processNoShows(): Promise<void> {
       .innerJoin(chargingStations, eq(reservations.stationId, chargingStations.id))
       .where(
         and(
-          eq(reservations.status, "ACTIVE"),
+          eq(reservations.reservationStatus, "ACTIVE"),
           lte(reservations.startTime, graceExpired)
         )
       );
@@ -329,7 +329,7 @@ async function processUpcomingReservations(): Promise<void> {
       .from(reservations)
       .where(
         and(
-          eq(reservations.status, "ACTIVE"),
+          eq(reservations.reservationStatus, "ACTIVE"),
           lte(reservations.startTime, in15Min),
           gte(reservations.endTime, now)
         )
@@ -338,11 +338,11 @@ async function processUpcomingReservations(): Promise<void> {
     for (const res of upcomingReservations) {
       // Verificar estado actual del EVSE
       const [evse] = await db
-        .select({ status: evses.status })
+        .select({ status: evses.connectorStatus })
         .from(evses)
         .where(eq(evses.id, res.evseId));
 
-      if (evse && evse.status === "AVAILABLE") {
+      if (evse && evse.connectorStatus === "AVAILABLE") {
         await db
           .update(evses)
           .set({ status: "RESERVED", lastStatusUpdate: now })
@@ -360,19 +360,19 @@ async function processUpcomingReservations(): Promise<void> {
       .from(reservations)
       .where(
         and(
-          eq(reservations.status, "ACTIVE"),
+          eq(reservations.reservationStatus, "ACTIVE"),
           lte(reservations.endTime, now)
         )
       );
 
     for (const res of expiredReservations) {
       const [evse] = await db
-        .select({ status: evses.status })
+        .select({ status: evses.connectorStatus })
         .from(evses)
         .where(eq(evses.id, res.evseId));
 
       // Solo liberar si está RESERVED (no si está CHARGING u otro estado activo)
-      if (evse && evse.status === "RESERVED") {
+      if (evse && evse.connectorStatus === "RESERVED") {
         await db
           .update(evses)
           .set({ status: "AVAILABLE", lastStatusUpdate: now })

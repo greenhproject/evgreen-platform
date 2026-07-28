@@ -743,7 +743,7 @@ export async function getEvsesByStationId(stationId: number) {
     ? await db.select().from(reservations)
         .where(and(
           inArray(reservations.evseId, evseIds),
-          eq(reservations.status, 'ACTIVE')
+          eq(reservations.reservationStatus, 'ACTIVE')
         ))
         .orderBy(reservations.startTime)
     : [];
@@ -757,7 +757,7 @@ export async function getEvsesByStationId(stationId: number) {
   }
   
   const enriched = evseList.map((evse) => {
-    if (evse.status === 'AVAILABLE' || evse.status === 'RESERVED') {
+    if (evse.connectorStatus === 'AVAILABLE' || evse.connectorStatus === 'RESERVED') {
       const activeResList = reservationsByEvse.get(evse.id) || [];
       
       if (activeResList.length > 0) {
@@ -768,7 +768,7 @@ export async function getEvsesByStationId(stationId: number) {
         if (currentOrImminent) {
           return { 
             ...evse, 
-            status: 'RESERVED' as typeof evse.status, 
+            status: 'RESERVED' as typeof evse.connectorStatus, 
             activeReservationId: currentOrImminent.id, 
             activeReservationUserId: currentOrImminent.userId,
             nextReservation: null,
@@ -778,7 +778,7 @@ export async function getEvsesByStationId(stationId: number) {
         const nextRes = activeResList[0];
         return { 
           ...evse, 
-          status: evse.status,
+          status: evse.connectorStatus,
           activeReservationId: null, 
           activeReservationUserId: null,
           nextReservation: {
@@ -814,7 +814,7 @@ export async function getAllEvsesForStations(stationIds: number[]) {
     ? await db.select().from(reservations)
         .where(and(
           inArray(reservations.evseId, evseIds),
-          eq(reservations.status, 'ACTIVE')
+          eq(reservations.reservationStatus, 'ACTIVE')
         ))
         .orderBy(reservations.startTime)
     : [];
@@ -835,7 +835,7 @@ export async function getAllEvsesForStations(stationIds: number[]) {
   for (const evse of allEvses) {
     let enriched: any = { ...evse, activeReservationId: null, activeReservationUserId: null, nextReservation: null };
     
-    if (evse.status === 'AVAILABLE' || evse.status === 'RESERVED') {
+    if (evse.connectorStatus === 'AVAILABLE' || evse.connectorStatus === 'RESERVED') {
       const activeResList = reservationsByEvse.get(evse.id) || [];
       if (activeResList.length > 0) {
         const currentOrImminent = activeResList.find(r => 
@@ -844,7 +844,7 @@ export async function getAllEvsesForStations(stationIds: number[]) {
         if (currentOrImminent) {
           enriched = { 
             ...evse, 
-            status: 'RESERVED' as typeof evse.status, 
+            status: 'RESERVED' as typeof evse.connectorStatus, 
             activeReservationId: currentOrImminent.id, 
             activeReservationUserId: currentOrImminent.userId,
             nextReservation: null,
@@ -853,7 +853,7 @@ export async function getAllEvsesForStations(stationIds: number[]) {
           const nextRes = activeResList[0];
           enriched = { 
             ...evse, 
-            status: evse.status,
+            status: evse.connectorStatus,
             activeReservationId: null, 
             activeReservationUserId: null,
             nextReservation: {
@@ -897,7 +897,7 @@ export async function getAvailableEvses(filters?: { connectorType?: Evse["connec
   const db = await getDb();
   if (!db) return [];
   
-  const conditions = [eq(evses.status, "AVAILABLE"), eq(evses.isActive, true)];
+  const conditions = [eq(evses.connectorStatus, "AVAILABLE"), eq(evses.isActive, true)];
   if (filters?.connectorType) conditions.push(eq(evses.connectorType, filters.connectorType));
   if (filters?.chargeType) conditions.push(eq(evses.chargeType, filters.chargeType));
   
@@ -1147,7 +1147,7 @@ export async function getActiveReservation(evseId: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(reservations)
-    .where(and(eq(reservations.evseId, evseId), eq(reservations.status, "ACTIVE")))
+    .where(and(eq(reservations.evseId, evseId), eq(reservations.reservationStatus, "ACTIVE")))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -1169,7 +1169,7 @@ export async function getExpiredReservations() {
   if (!db) return [];
   const now = new Date();
   return db.select().from(reservations)
-    .where(and(eq(reservations.status, "ACTIVE"), lte(reservations.expiryTime, now)));
+    .where(and(eq(reservations.reservationStatus, "ACTIVE"), lte(reservations.expiryTime, now)));
 }
 
 export async function checkReservationConflict(evseId: number, startTime: Date, endTime: Date, excludeId?: number) {
@@ -1181,7 +1181,7 @@ export async function checkReservationConflict(evseId: number, startTime: Date, 
     .where(
       and(
         eq(reservations.evseId, evseId),
-        eq(reservations.status, "ACTIVE"),
+        eq(reservations.reservationStatus, "ACTIVE"),
         // Verificar superposición de tiempos
         lte(reservations.startTime, endTime),
         gte(reservations.endTime, startTime),
@@ -1248,7 +1248,7 @@ export async function getUpcomingReservations(userId: number, minutesAhead: numb
     .where(
       and(
         eq(reservations.userId, userId),
-        eq(reservations.status, "ACTIVE"),
+        eq(reservations.reservationStatus, "ACTIVE"),
         gte(reservations.startTime, now),
         lte(reservations.startTime, futureTime)
       )
@@ -2028,7 +2028,7 @@ export async function getPlatformStats(startDate?: Date, endDate?: Date) {
   const platformFee = txs.reduce((sum, tx) => sum + parseFloat(tx.platformFee || "0"), 0);
   
   const onlineStations = allStations.filter(s => s.isOnline).length;
-  const availableEvses = allEvses.filter(e => e.status === "AVAILABLE").length;
+  const availableEvses = allEvses.filter(e => e.connectorStatus === "AVAILABLE").length;
   
   return {
     totalStations: allStations.length,
@@ -4601,7 +4601,7 @@ export async function getStationDemandStats(stationId: number): Promise<{
   const totalConnectors = stationEvses.length;
   
   // Contar EVSEs en uso (CHARGING)
-  const chargingEvses = stationEvses.filter(e => e.status === 'CHARGING').length;
+  const chargingEvses = stationEvses.filter(e => e.connectorStatus === 'CHARGING').length;
   
   // Calcular ocupación
   const currentOccupancy = totalConnectors > 0 ? (chargingEvses / totalConnectors) * 100 : 0;

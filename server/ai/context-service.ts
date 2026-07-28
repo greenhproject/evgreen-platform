@@ -396,7 +396,7 @@ async function getStationsContext(
         .where(and(eq(tariffs.stationId, station.id), eq(tariffs.isActive, true)))
         .limit(1);
 
-      const availableConnectors = stationConnectors.filter((c: typeof stationConnectors[0]) => c.status === 'AVAILABLE').length;
+      const availableConnectors = stationConnectors.filter((c: typeof stationConnectors[0]) => c.connectorStatus === 'AVAILABLE').length;
       const connectorTypes = Array.from(new Set(stationConnectors.map((c: typeof stationConnectors[0]) => c.connectorType)));
 
       // Calcular precio dinámico
@@ -449,7 +449,7 @@ async function getStationsContext(
           id: c.id,
           connectorType: c.connectorType,
           powerKw: Number(c.powerKw || 0),
-          status: c.status,
+          status: c.connectorStatus,
         })),
       });
     }
@@ -482,10 +482,10 @@ async function getPlatformContext(): Promise<PlatformContext> {
     // Contar conectores
     const allConnectors = await db.select().from(evses);
     const totalConnectors = allConnectors.length;
-    const availableConnectors = allConnectors.filter((c: typeof allConnectors[0]) => c.status === 'AVAILABLE').length;
+    const availableConnectors = allConnectors.filter((c: typeof allConnectors[0]) => c.connectorStatus === 'AVAILABLE').length;
 
     // Cargas activas
-    const activeCharges = allConnectors.filter((c: typeof allConnectors[0]) => c.status === 'CHARGING').length;
+    const activeCharges = allConnectors.filter((c: typeof allConnectors[0]) => c.connectorStatus === 'CHARGING').length;
 
     // Precio promedio (obtener de tariffs)
     const allTariffs = await db.select().from(tariffs).where(eq(tariffs.isActive, true));
@@ -666,7 +666,7 @@ Usa estas rutas para sugerir estaciones de carga en el camino y planificar parad
       
       // Generar lista de conectores con IDs para reservas
       const evseList = station.evseDetails.map(e => 
-        `    - Conector ID: ${e.id} (${e.connectorType}, ${e.powerKw}kW, ${e.status})`
+        `    - Conector ID: ${e.id} (${e.connectorType}, ${e.powerKw}kW, ${e.connectorStatus})`
       ).join('\n');
       
       systemPrompt += `- **${station.name}** (Station ID: ${station.id})${distanceText}

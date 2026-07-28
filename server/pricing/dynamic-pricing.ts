@@ -102,10 +102,10 @@ export async function getZoneOccupancy(stationId: number): Promise<OccupancyData
   const evses = await db.getEvsesByStationId(stationId);
   
   const totalConnectors = evses.length;
-  let availableConnectors = evses.filter(e => e.status === "AVAILABLE").length;
-  let chargingConnectors = evses.filter(e => e.status === "CHARGING").length;
-  const reservedConnectors = evses.filter(e => e.status === "RESERVED").length;
-  const faultedConnectors = evses.filter(e => e.status === "FAULTED" || e.status === "UNAVAILABLE").length;
+  let availableConnectors = evses.filter(e => e.connectorStatus === "AVAILABLE").length;
+  let chargingConnectors = evses.filter(e => e.connectorStatus === "CHARGING").length;
+  const reservedConnectors = evses.filter(e => e.connectorStatus === "RESERVED").length;
+  const faultedConnectors = evses.filter(e => e.connectorStatus === "FAULTED" || e.connectorStatus === "UNAVAILABLE").length;
   
   // Incluir simulaciones activas en el cálculo de ocupación
   // Cada simulación activa cuenta como un conector ocupado adicional
@@ -151,10 +151,10 @@ export async function getAreaOccupancy(
   for (const station of stations) {
     const evses = await db.getEvsesByStationId(station.station.id);
     totalConnectors += evses.length;
-    availableConnectors += evses.filter(e => e.status === "AVAILABLE").length;
-    chargingConnectors += evses.filter(e => e.status === "CHARGING").length;
-    reservedConnectors += evses.filter(e => e.status === "RESERVED").length;
-    faultedConnectors += evses.filter(e => e.status === "FAULTED" || e.status === "UNAVAILABLE").length;
+    availableConnectors += evses.filter(e => e.connectorStatus === "AVAILABLE").length;
+    chargingConnectors += evses.filter(e => e.connectorStatus === "CHARGING").length;
+    reservedConnectors += evses.filter(e => e.connectorStatus === "RESERVED").length;
+    faultedConnectors += evses.filter(e => e.connectorStatus === "FAULTED" || e.connectorStatus === "UNAVAILABLE").length;
   }
   
   const occupancyRate = totalConnectors > 0 

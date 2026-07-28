@@ -338,7 +338,7 @@ export class UPMEReporter {
       const ocpiEvses: OCPIEVSE[] = evses.map(evse => ({
         uid: `${station.id}-${evse.evseIdLocal}`,
         evse_id: `CO*GEV*E${station.id.toString().padStart(6, "0")}*${evse.evseIdLocal}`,
-        status: this.mapStatusToOCPI(evse.status),
+        status: this.mapStatusToOCPI(evse.connectorStatus),
         capabilities: ["REMOTE_START_STOP_CAPABLE", "RESERVABLE"],
         connectors: [{
           id: evse.connectorId.toString(),

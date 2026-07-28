@@ -757,7 +757,7 @@ export const wompiRouter = router({
   // ========================================================================
   cancelSubscription: protectedProcedure.mutation(async ({ ctx }) => {
     const subscription = await db.getUserSubscription(ctx.user.id);
-    if (!subscription || !subscription.isActive || subscription.tier === "FREE") {
+    if (!subscription || !subscription.isActive || subscription.subscriptionTier === "FREE") {
       throw new TRPCError({
         code: "NOT_FOUND",
         message: "No tienes una suscripción activa",

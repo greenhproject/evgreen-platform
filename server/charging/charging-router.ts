@@ -176,8 +176,8 @@ function startDeferredRemoteStart(
           if (station) {
             const evses = await db.getEvsesByStationId(station.id);
             const targetEvse = evses.find((e: any) => e.evseIdLocal === connectorId);
-            if (targetEvse && (targetEvse.status === "CHARGING" || targetEvse.status === "PREPARING" || targetEvse.status === "SUSPENDED_EV")) {
-              console.log(`[DeferredStart] EVSE ${targetEvse.id} already in ${targetEvse.status} state. Charger received the command. Stopping retry.`);
+            if (targetEvse && (targetEvse.connectorStatus === "CHARGING" || targetEvse.connectorStatus === "PREPARING" || targetEvse.connectorStatus === "SUSPENDED_EV")) {
+              console.log(`[DeferredStart] EVSE ${targetEvse.id} already in ${targetEvse.connectorStatus} state. Charger received the command. Stopping retry.`);
               deferredRetryTimers.delete(sessionId);
               return;
             }
@@ -269,13 +269,13 @@ export const chargingRouter = router({
       // Para estaciones demo, forzar conectores como AVAILABLE PERO respetar RESERVED
       // Para estaciones offline, marcar todos como UNAVAILABLE excepto CHARGING/RESERVED
       const mappedConnectors = connectors.map(c => {
-        let effectiveStatus = c.status;
-        if (isDemo && c.status !== 'RESERVED') {
-          effectiveStatus = 'AVAILABLE' as typeof c.status;
+        let effectiveStatus = c.connectorStatus;
+        if (isDemo && c.connectorStatus !== 'RESERVED') {
+          effectiveStatus = 'AVAILABLE' as typeof c.connectorStatus;
         } else if (!isDemo && !isOnline) {
           // Offline: preservar solo sesiones activas
-          if (c.status !== 'CHARGING' && c.status !== 'RESERVED') {
-            effectiveStatus = 'UNAVAILABLE' as typeof c.status;
+          if (c.connectorStatus !== 'CHARGING' && c.connectorStatus !== 'RESERVED') {
+            effectiveStatus = 'UNAVAILABLE' as typeof c.connectorStatus;
           }
         }
         return {
@@ -325,15 +325,15 @@ export const chargingRouter = router({
 
       // Combinar estado de BD con estado OCPP en tiempo real
       return connectors.map(c => {
-        let realTimeStatus = c.status;
+        let realTimeStatus = c.connectorStatus;
         
         // Para estaciones demo, forzar AVAILABLE PERO respetar RESERVED
         if (isDemo && realTimeStatus !== 'RESERVED') {
-          realTimeStatus = 'AVAILABLE' as typeof c.status;
+          realTimeStatus = 'AVAILABLE' as typeof c.connectorStatus;
         } else if (!isDemo && !stationIsOnline) {
           // Estación offline: marcar como UNAVAILABLE excepto CHARGING/RESERVED
           if (realTimeStatus !== 'CHARGING' && realTimeStatus !== 'RESERVED') {
-            realTimeStatus = 'UNAVAILABLE' as typeof c.status;
+            realTimeStatus = 'UNAVAILABLE' as typeof c.connectorStatus;
           }
         } else if (!isDemo && stationIsOnline) {
           // Está online: el estado de BD es la fuente de verdad (actualizado por StatusNotification OCPP).

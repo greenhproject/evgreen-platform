@@ -1032,7 +1032,7 @@ async function handleOCPP16Message(
           const newStatus = statusMap[payload.status] || "UNAVAILABLE";
           
           // PROTECCIÓN: No sobreescribir RESERVED a menos que sea el cargador reportando RESERVED
-          if (evse.status === "RESERVED" && newStatus !== "RESERVED" && newStatus !== "CHARGING" && newStatus !== "PREPARING") {
+          if (evse.connectorStatus === "RESERVED" && newStatus !== "RESERVED" && newStatus !== "CHARGING" && newStatus !== "PREPARING") {
             console.log(`[OCPP] StatusNotification - Skipping update: EVSE ${evse.id} is RESERVED, ignoring ${newStatus}`);
           } else {
             await db.updateEvseStatus(evse.id, newStatus);
@@ -1382,7 +1382,7 @@ async function handleOCPP16Message(
           try {
             const evses = await db.getEvsesByStationId(cleanupStId);
             for (const e of evses) {
-              if (e.status !== "AVAILABLE") {
+              if (e.connectorStatus !== "AVAILABLE") {
                 await db.updateEvseStatus(e.id, "AVAILABLE");
               }
             }
@@ -2189,7 +2189,7 @@ async function handleOCPP201Message(
           const newStatus = statusMap[payload.connectorStatus] || "UNAVAILABLE";
           
           // PROTECCIÓN: No sobreescribir RESERVED
-          if (evse.status === "RESERVED" && newStatus !== "RESERVED" && newStatus !== "CHARGING") {
+          if (evse.connectorStatus === "RESERVED" && newStatus !== "RESERVED" && newStatus !== "CHARGING") {
             console.log(`[OCPP 2.0.1] StatusNotification - Skipping: EVSE ${evse.id} is RESERVED`);
           } else {
             await db.updateEvseStatus(evse.id, newStatus);

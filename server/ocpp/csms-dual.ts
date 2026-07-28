@@ -740,7 +740,7 @@ export class DualCSMS {
           Faulted: "FAULTED",
         };
         const newStatus = (statusMap[req.status] || "UNAVAILABLE") as "AVAILABLE" | "PREPARING" | "CHARGING" | "SUSPENDED_EVSE" | "SUSPENDED_EV" | "FINISHING" | "RESERVED" | "UNAVAILABLE" | "FAULTED";
-        const oldStatus = evse.status;
+        const oldStatus = evse.connectorStatus;
         
         // NO sobreescribir RESERVED→AVAILABLE si hay una reserva activa para este EVSE
         if (newStatus === "AVAILABLE" && oldStatus === "RESERVED") {
@@ -1300,7 +1300,7 @@ export class DualCSMS {
         try {
           const evseList = await db.getEvsesByStationId(conn.stationId);
           for (const evse of evseList) {
-            if (evse.status !== "AVAILABLE" && evse.status !== "RESERVED") {
+            if (evse.connectorStatus !== "AVAILABLE" && evse.connectorStatus !== "RESERVED") {
               // No resetear EVSEs con reservas activas
               const activeRes = await db.getActiveReservation(evse.id);
               if (!activeRes) {
@@ -2153,7 +2153,7 @@ export class DualCSMS {
         const newStatus = statusMap[req.connectorStatus] || "UNAVAILABLE";
         
         // NO sobreescribir RESERVED→AVAILABLE si hay una reserva activa
-        if (newStatus === "AVAILABLE" && evse.status === "RESERVED") {
+        if (newStatus === "AVAILABLE" && evse.connectorStatus === "RESERVED") {
           const activeRes = await db.getActiveReservation(evse.id);
           if (activeRes) {
             console.log(`[CSMS-DUAL] OCPP 2.0.1 StatusNotification: Ignoring AVAILABLE for EVSE ${evse.id} - has active reservation #${activeRes.id}`);

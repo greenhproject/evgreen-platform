@@ -475,15 +475,15 @@ const stationsRouter = router({
           const effectiveEvses = isDemo
             ? evses.map((e: any) => ({
                 ...e,
-                status: e.status === 'RESERVED' ? 'RESERVED' : 'AVAILABLE',
+                status: e.connectorStatus === 'RESERVED' ? 'RESERVED' : 'AVAILABLE',
               }))
             : realIsOnline
               ? evses  // Online: mostrar estado real de BD
               : evses.map((e: any) => ({
                   ...e,
                   // Offline: solo preservar CHARGING/RESERVED (sesiones activas), el resto UNAVAILABLE
-                  status: (e.status === 'CHARGING' || e.status === 'RESERVED')
-                    ? e.status
+                  status: (e.connectorStatus === 'CHARGING' || e.connectorStatus === 'RESERVED')
+                    ? e.connectorStatus
                     : 'UNAVAILABLE',
                 }));
 
@@ -621,7 +621,7 @@ const stationsRouter = router({
             connectorId: e.connectorId,
             connectorType: e.connectorType,
             powerKw: e.powerKw?.toString() || "22",
-            status: e.status,
+            status: e.connectorStatus,
           })),
         };
       })
@@ -814,7 +814,7 @@ const stationsRouter = router({
       // Offline: marcar todos como UNAVAILABLE excepto CHARGING/RESERVED
       return evses.map((e: any) => ({
         ...e,
-        status: (e.status === 'CHARGING' || e.status === 'RESERVED') ? e.status : 'UNAVAILABLE',
+        status: (e.connectorStatus === 'CHARGING' || e.connectorStatus === 'RESERVED') ? e.connectorStatus : 'UNAVAILABLE',
       }));
     }),
   
@@ -1742,7 +1742,7 @@ const transactionsRouter = router({
       
       // Verificar que el EVSE esté disponible
       const evse = await db.getEvseById(input.evseId);
-      if (!evse || evse.status !== "AVAILABLE") {
+      if (!evse || evse.connectorStatus !== "AVAILABLE") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "El conector no está disponible" });
       }
       
@@ -2608,8 +2608,8 @@ const reservationsRouter = router({
       // Permitir reservas si el conector está AVAILABLE o RESERVED (puede tener reservas futuras sin conflicto)
       // Solo bloquear si está en uso activo, fuera de servicio o con falla
       const blockedStatuses = ["CHARGING", "OCCUPIED", "UNAVAILABLE", "FAULTED", "SUSPENDED_EV", "SUSPENDED_EVSE"];
-      if (blockedStatuses.includes(evse.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `El conector no está disponible (estado: ${evse.status})` });
+      if (blockedStatuses.includes(evse.connectorStatus)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `El conector no está disponible (estado: ${evse.connectorStatus})` });
       }
       
       // Verificar conflictos de horario
@@ -2678,7 +2678,7 @@ const reservationsRouter = router({
       // Solo marcar como RESERVED si la reserva empieza dentro de los próximos 15 minutos
       const now = new Date();
       const minutesUntilStart = (input.startTime.getTime() - now.getTime()) / (1000 * 60);
-      if (minutesUntilStart <= 15 && evse.status === "AVAILABLE") {
+      if (minutesUntilStart <= 15 && evse.connectorStatus === "AVAILABLE") {
         await db.updateEvseStatus(input.evseId, "RESERVED");
       }
             // Para reservas futuras (>15 min), un job periódico se encargará de marcar RESERVED cuando se acerque la hora
@@ -2732,7 +2732,7 @@ const reservationsRouter = router({
       if (reservation.userId !== ctx.user.id && ctx.user.role !== "admin" && ctx.user.role !== "staff") {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para cancelar esta reserva" });
       }
-      if (reservation.status !== "ACTIVE") {
+      if (reservation.reservationStatus !== "ACTIVE") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "La reserva no puede ser cancelada" });
       }
       
@@ -5838,7 +5838,7 @@ const overstayRouter = router({
             .where(
               and(
                 eq(txTable.userId, ctx.user.id),
-                eq(txTable.status, "COMPLETED")
+                eq(txTable.connectorStatus, "COMPLETED")
               )
             )
             .orderBy(desc(txTable.endTime))
@@ -5878,7 +5878,7 @@ const overstayRouter = router({
       const info = getOverstayInfo(evse.id);
       if (!info) {
         // No hay overstay activo en memoria, pero verificar si el EVSE está en Finishing
-        if (evse.status === "FINISHING" || evse.status === "SUSPENDED_EV") {
+        if (evse.connectorStatus === "FINISHING" || evse.connectorStatus === "SUSPENDED_EV") {
           // Obtener tarifa para mostrar info de grace period
           const tariff = transaction.tariffId ? await db.getTariffById(transaction.tariffId) : null;
           const globalPrices = await db.getPriceRanges();
@@ -6792,7 +6792,7 @@ const adminRemoteStartRouter = router({
             connectors: evsesList.map((e: any) => ({
               id: e.id,
               connectorId: e.connectorId || e.evseIdLocal,
-              status: (e.status || "UNKNOWN").toUpperCase(),
+              status: (e.connectorStatus || "UNKNOWN").toUpperCase(),
               connectorType: e.connectorType || "Type2",
               maxPowerKw: (e as any).maxPowerKw || (e as any).powerKw || 0,
             })),
@@ -7460,8 +7460,8 @@ const nocRouter = router({
       const isMemoryOnline = station.ocppIdentity ? connectedIds.has(station.ocppIdentity) : false;
       const isLiveOnline = isMemoryOnline || (station.isOnline === true && station.ocppIdentity != null);
       const chargingEvses = stationEvses.filter(e => activeTxByEvse.has(e.id));
-      const availableEvses = stationEvses.filter(e => e.status === "AVAILABLE" && !activeTxByEvse.has(e.id));
-      const faultedEvses = stationEvses.filter(e => e.status === "FAULTED");
+      const availableEvses = stationEvses.filter(e => e.connectorStatus === "AVAILABLE" && !activeTxByEvse.has(e.id));
+      const faultedEvses = stationEvses.filter(e => e.connectorStatus === "FAULTED");
       // Calcular potencia real usando MeterValues (desde memoria o BD), no la potencia nominal del EVSE
       const totalPowerKw = chargingEvses.reduce((sum, e) => {
         const tx = activeTxByEvse.get(e.id);
@@ -7510,7 +7510,7 @@ const nocRouter = router({
           connectorType: e.connectorType,
           chargeType: e.chargeType,
           powerKw: e.powerKw,
-          status: e.status,
+          status: e.connectorStatus,
           isCharging: activeTxByEvse.has(e.id),
           currentTx: activeTxByEvse.get(e.id) ? (() => {
             const tx = activeTxByEvse.get(e.id)!;
