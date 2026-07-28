@@ -14,7 +14,7 @@ import {
   spacePhotos,
   chargingStations,
   users,
-  stationPayouts,
+  financialSettlements,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, or, isNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
@@ -257,28 +257,28 @@ export const gestorRouter = router({
 
       const stationIds = myStations.map((s) => s.id);
 
-      // Obtener payouts de los últimos 12 meses
+      // Obtener settlements de los últimos 12 meses
       const payouts = await db.select({
-        id: stationPayouts.id,
-        stationId: stationPayouts.stationId,
-        periodLabel: stationPayouts.periodLabel,
-        startDate: stationPayouts.startDate,
-        endDate: stationPayouts.endDate,
-        status: stationPayouts.status,
-        grossRevenue: stationPayouts.grossRevenue,
-        totalEnergyCost: stationPayouts.totalEnergyCost,
-        netRevenue: stationPayouts.netRevenue,
-        hostSharePercent: stationPayouts.hostSharePercent,
-        hostPool: stationPayouts.hostPool,
-        totalKwhSold: stationPayouts.totalKwhSold,
-        totalSessions: stationPayouts.totalSessions,
-        avgPricePerKwh: stationPayouts.avgPricePerKwh,
+        id: financialSettlements.id,
+        stationId: financialSettlements.stationId,
+        periodLabel: sql<string>`DATE_FORMAT(${financialSettlements.periodStart}, '%Y-%m')`,
+        startDate: financialSettlements.periodStart,
+        endDate: financialSettlements.periodEnd,
+        status: financialSettlements.settlementStatus,
+        grossRevenue: financialSettlements.grossRevenue,
+        totalEnergyCost: financialSettlements.totalEnergyCost,
+        netRevenue: financialSettlements.netRevenue,
+        hostSharePercent: financialSettlements.hostSharePercent,
+        hostPool: financialSettlements.hostTotalAmount,
+        totalKwhSold: financialSettlements.totalKwh,
+        totalSessions: financialSettlements.totalSessions,
+        avgPricePerKwh: financialSettlements.energyCostPerKwh,
       })
-        .from(stationPayouts)
+        .from(financialSettlements)
         .where(
-          sql`${stationPayouts.stationId} IN (${sql.join(stationIds.map((id) => sql`${id}`), sql`, `)})`
+          sql`${financialSettlements.stationId} IN (${sql.join(stationIds.map((id) => sql`${id}`), sql`, `)})`
         )
-        .orderBy(desc(stationPayouts.startDate));
+        .orderBy(desc(financialSettlements.periodStart));
 
       // Calcular comisión del gestor por cada payout
       const summary = payouts.map((payout) => {
@@ -356,12 +356,21 @@ export const gestorRouter = router({
       const stationIds = myStations.map((s) => s.id);
       const periodLabel = `${input.year}-${String(input.month).padStart(2, "0")}`;
 
-      const payouts = await db.select()
-        .from(stationPayouts)
+      const payouts = await db.select({
+        id: financialSettlements.id,
+        stationId: financialSettlements.stationId,
+        periodLabel: sql<string>`DATE_FORMAT(${financialSettlements.periodStart}, '%Y-%m')`,
+        status: financialSettlements.settlementStatus,
+        grossRevenue: financialSettlements.grossRevenue,
+        totalEnergyCost: financialSettlements.totalEnergyCost,
+        hostSharePercent: financialSettlements.hostSharePercent,
+        totalKwhSold: financialSettlements.totalKwh,
+      })
+        .from(financialSettlements)
         .where(
           and(
-            sql`${stationPayouts.stationId} IN (${sql.join(stationIds.map((id) => sql`${id}`), sql`, `)})`,
-            sql`${stationPayouts.periodLabel} LIKE ${periodLabel + "%"}`
+            sql`${financialSettlements.stationId} IN (${sql.join(stationIds.map((id) => sql`${id}`), sql`, `)})`,
+            sql`DATE_FORMAT(${financialSettlements.periodStart}, '%Y-%m') = ${periodLabel}`
           )
         );
 
@@ -369,8 +378,8 @@ export const gestorRouter = router({
         const station = myStations.find((s) => s.id === payout.stationId);
         if (!station) return null;
 
-        const grossRevenue = parseFloat(payout.grossRevenue as string);
-        const totalEnergyCost = parseFloat(payout.totalEnergyCost as string);
+        const grossRevenue = Number(payout.grossRevenue);
+        const totalEnergyCost = Number(payout.totalEnergyCost);
         const hostSharePercent = parseFloat(payout.hostSharePercent as string);
         const gestorCommissionPercent = parseFloat(station.gestorCommissionPercent as string);
 
@@ -500,16 +509,25 @@ export const gestorRouter = router({
         .from(users)
         .where(sql`${users.id} IN (${sql.join(gestorIds.map((id) => sql`${id}`), sql`, `)})`);
 
-      // Obtener payouts del mes
+      // Obtener settlements del mes
       const stationIds = stationsWithGestor.map((s) => s.id);
       const periodLabel = `${input.year}-${String(input.month).padStart(2, "0")}`;
 
-      const payouts = await db.select()
-        .from(stationPayouts)
+      const payouts = await db.select({
+        id: financialSettlements.id,
+        stationId: financialSettlements.stationId,
+        periodLabel: sql<string>`DATE_FORMAT(${financialSettlements.periodStart}, '%Y-%m')`,
+        status: financialSettlements.settlementStatus,
+        grossRevenue: financialSettlements.grossRevenue,
+        totalEnergyCost: financialSettlements.totalEnergyCost,
+        hostSharePercent: financialSettlements.hostSharePercent,
+        totalKwhSold: financialSettlements.totalKwh,
+      })
+        .from(financialSettlements)
         .where(
           and(
-            sql`${stationPayouts.stationId} IN (${sql.join(stationIds.map((id) => sql`${id}`), sql`, `)})`,
-            sql`${stationPayouts.periodLabel} LIKE ${periodLabel + "%"}`
+            sql`${financialSettlements.stationId} IN (${sql.join(stationIds.map((id) => sql`${id}`), sql`, `)})`,
+            sql`DATE_FORMAT(${financialSettlements.periodStart}, '%Y-%m') = ${periodLabel}`
           )
         );
 

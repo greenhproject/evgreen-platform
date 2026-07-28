@@ -3,7 +3,7 @@
  * Sidebar con navegación: Dashboard, Mis Espacios, Mis Estaciones, Liquidación
  */
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard,
