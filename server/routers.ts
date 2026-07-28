@@ -382,7 +382,7 @@ const usersRouter = router({
         title: `💰 ${typeLabel} en tu billetera`,
         message: `Se ha realizado un ajuste de ${type === "debit" ? "-" : "+"}$${amountFormatted} COP en tu billetera. Nuevo saldo: $${newBalance.toLocaleString("es-CO")} COP. Motivo: ${reason}`,
         type: "PAYMENT",
-        isRead: false,
+        isRead: 0,
       });
       
       return {
@@ -2151,7 +2151,7 @@ const transactionsRouter = router({
         title: "💰 Reembolso aplicado",
         message: `Se te ha reembolsado $${input.refundAmount.toLocaleString("es-CO")} COP de tu sesión de carga #${input.transactionId}. Motivo: ${input.reason}`,
         type: "PAYMENT",
-        isRead: false,
+        isRead: 0,
       });
 
       // Registrar reembolso en tabla de auditoría
@@ -2292,7 +2292,7 @@ const claimsRouter = router({
           type: "SYSTEM",
           referenceId: claimId,
           referenceType: "CLAIM",
-          isRead: false,
+          isRead: 0,
         });
       }
 
@@ -2445,7 +2445,7 @@ const claimsRouter = router({
         type: "PAYMENT",
         referenceId: input.claimId,
         referenceType: "CLAIM",
-        isRead: false,
+        isRead: 0,
       });
 
       return { success: true, status: input.status, refundId };
@@ -3095,7 +3095,7 @@ const maintenanceRouter = router({
           title: "\ud83d\udcdd Ticket asignado",
           message: `El Ing. ${ctx.user.name || "Jefe"} te asign\u00f3 el ticket #${input.ticketId}: ${ticket?.title || "Sin t\u00edtulo"}`,
           type: "SYSTEM",
-          isRead: false,
+          isRead: 0,
         });
       } catch (e) { console.error("[Ticket] Error notifying technician:", e); }
       return { success: true };
@@ -6058,7 +6058,7 @@ const overstayRouter = router({
         title: "✅ Penalización cancelada",
         message: `Se ha cancelado la penalización de $${originalOverstayCost.toLocaleString("es-CO")} COP de tu última sesión de carga. Se ha reembolsado el monto a tu billetera. Motivo: ${input.reason}`,
         type: "PAYMENT",
-        isRead: false,
+        isRead: 0,
       });
       
       console.log(`[Overstay] Admin ${ctx.user.name} cancelled penalty of $${originalOverstayCost} for tx #${input.transactionId}. Reason: ${input.reason}`);
@@ -6144,7 +6144,7 @@ const overstayRouter = router({
         title: "💰 Penalización ajustada",
         message: `Se ha ajustado la penalización de tu sesión de carga de $${currentOverstayCost.toLocaleString("es-CO")} a $${input.newOverstayCost.toLocaleString("es-CO")} COP. Se reembolsaron $${refundAmount.toLocaleString("es-CO")} COP a tu billetera. Motivo: ${input.reason}`,
         type: "PAYMENT",
-        isRead: false,
+        isRead: 0,
       });
       
       console.log(`[Overstay] Admin ${ctx.user.name} adjusted penalty for tx #${input.transactionId}: $${currentOverstayCost} → $${input.newOverstayCost}. Refund: $${refundAmount}`);
@@ -6275,7 +6275,7 @@ const overstayRouter = router({
               title: "✅ Sesión corregida",
               message: `Se detectó un problema con tu sesión de carga (posible corte de energía). La penalización de $${overstayCost.toLocaleString("es-CO")} COP ha sido cancelada y reembolsada. Motivo: ${input.reason}`,
               type: "PAYMENT",
-              isRead: false,
+              isRead: 0,
             });
             
             results.push(`Penalización de $${overstayCost} cancelada y reembolsada`);
@@ -7073,7 +7073,7 @@ const adminRemoteStartRouter = router({
         title: "\u26a1 Carga iniciada por soporte",
         message: `El equipo de soporte EVGreen ha iniciado una sesión de carga en ${stationName}, conector ${connectorId}. Tarifa: $${formattedPrice} COP/kWh. Motivo: ${reason}`,
         type: "CHARGE_REQUESTED",
-        isRead: false,
+        isRead: 0,
       });
 
       // 13. Enviar push notification al usuario
@@ -7096,7 +7096,7 @@ const adminRemoteStartRouter = router({
         title: "\ud83d\udcdd Carga remota iniciada",
         message: `Iniciaste carga remota para ${targetUser.name || targetUser.email} en ${stationName}, conector ${connectorId}. Motivo: ${reason}. Estado: ${sent ? "Enviado" : "Pendiente de reintento"}`,
         type: "ADMIN_ACTION",
-        isRead: false,
+        isRead: 0,
       });
 
       console.log(`[AdminRemoteStart] Remote charge ${sent ? "sent" : "deferred"} for user ${userId} at ${ocppIdentity}:${connectorId} by admin ${adminName}. Reason: ${reason}`);

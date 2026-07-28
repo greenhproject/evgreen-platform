@@ -133,7 +133,7 @@ export async function sendBroadcastNotification(
         title: input.title,
         message: input.message,
         type: input.type,
-        isRead: false,
+        isRead: 0,
         data: JSON.stringify({
           broadcastType: input.type,
           linkUrl: input.linkUrl || null,
@@ -295,7 +295,7 @@ export async function getNotificationStats() {
     .from(notifications)
     .where(and(
       sql`${notifications.createdAt} >= ${thirtyDaysAgo}`,
-      eq(notifications.isRead, true)
+      eq(notifications.isRead, 1)
     ));
 
   const [activeUsersResult] = await db
@@ -306,7 +306,7 @@ export async function getNotificationStats() {
   const [pendingResult] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(notifications)
-    .where(eq(notifications.isRead, false));
+    .where(eq(notifications.isRead, 0));
 
   const totalSent = totalSentResult?.count || 0;
   const readCount = readResult?.count || 0;
@@ -336,7 +336,7 @@ export async function getBroadcastHistory(limit: number = 20) {
       data: notifications.data,
       createdAt: notifications.createdAt,
       totalSent: sql<number>`COUNT(*)`,
-      readCount: sql<number>`SUM(CASE WHEN ${notifications.isRead} = true THEN 1 ELSE 0 END)`,
+      readCount: sql<number>`SUM(CASE WHEN ${notifications.isRead} = 1 THEN 1 ELSE 0 END)`,
     })
     .from(notifications)
     .where(sql`JSON_EXTRACT(${notifications.data}, '$.broadcastType') IS NOT NULL`)

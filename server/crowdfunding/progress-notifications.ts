@@ -184,7 +184,7 @@ export async function sendProgressNotification(
       title,
       message,
       type: "SUCCESS" as const,
-      isRead: false,
+      isRead: 0,
       data: JSON.stringify({
         type: "crowdfunding_milestone",
         projectId: project.id,

@@ -1504,20 +1504,20 @@ export async function getNotificationsByUserId(userId: number, unreadOnly = fals
   const db = await getDb();
   if (!db) return [];
   const conditions = [eq(notifications.userId, userId)];
-  if (unreadOnly) conditions.push(eq(notifications.isRead, false));
+  if (unreadOnly) conditions.push(eq(notifications.isRead, 0));
   return db.select().from(notifications).where(and(...conditions)).orderBy(desc(notifications.createdAt));
 }
 
 export async function markNotificationAsRead(id: number) {
   const db = await getDb();
   if (!db) return;
-  await db.update(notifications).set({ isRead: true, readAt: new Date() }).where(eq(notifications.id, id));
+  await db.update(notifications).set({ isRead: 1, readAt: new Date().toISOString() }).where(eq(notifications.id, id));
 }
 
 export async function markAllNotificationsAsRead(userId: number) {
   const db = await getDb();
   if (!db) return;
-  await db.update(notifications).set({ isRead: true, readAt: new Date() }).where(eq(notifications.userId, userId));
+  await db.update(notifications).set({ isRead: 1, readAt: new Date().toISOString() }).where(eq(notifications.userId, userId));
 }
 
 export async function getNotificationByKey(userId: number, key: string) {
@@ -5414,19 +5414,18 @@ export async function updateWompiTransactionByReference(
     wompiTransactionId?: string;
     status?: string;
     paymentMethodType?: string;
-    processedAt?: Date;
-    webhookReceivedAt?: Date;
+    processedAt?: Date | string;
+    webhookReceivedAt?: Date | string;
   }
 ): Promise<void> {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
-
   const updateData: Record<string, any> = {};
   if (data.wompiTransactionId) updateData.wompiTransactionId = data.wompiTransactionId;
-  if (data.status) updateData.status = data.status;
+  if (data.status) updateData.wompiTxStatus = data.status; // campo correcto en schema
   if (data.paymentMethodType) updateData.paymentMethodType = data.paymentMethodType;
-  if (data.processedAt) updateData.processedAt = data.processedAt;
-  if (data.webhookReceivedAt) updateData.webhookReceivedAt = data.webhookReceivedAt;
+  if (data.processedAt) updateData.processedAt = data.processedAt instanceof Date ? data.processedAt.toISOString() : data.processedAt;
+  if (data.webhookReceivedAt) updateData.webhookReceivedAt = data.webhookReceivedAt instanceof Date ? data.webhookReceivedAt.toISOString() : data.webhookReceivedAt;
 
   if (Object.keys(updateData).length === 0) return;
 
@@ -5464,7 +5463,7 @@ export async function getPendingWompiTransactions(): Promise<WompiTransaction[]>
   return database
     .select()
     .from(wompiTransactions)
-    .where(eq(wompiTransactions.status, "PENDING"))
+    .where(eq(wompiTransactions.wompiTxStatus, "PENDING"))
     .orderBy(desc(wompiTransactions.createdAt))
     .limit(100);
 }

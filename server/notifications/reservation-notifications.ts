@@ -30,7 +30,7 @@ export async function sendUserNotification(notification: ReservationNotification
       title: notification.title,
       message: notification.message,
       type: "RESERVATION",
-      isRead: false,
+      isRead: 0,
     });
 
     // En producción, aquí se integraría con:

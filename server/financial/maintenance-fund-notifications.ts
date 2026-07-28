@@ -82,7 +82,7 @@ async function createInAppNotification(userId: number, title: string, message: s
       title,
       message,
       type: type as any,
-      isRead: false,
+      isRead: 0,
       data: data ? JSON.stringify(data) : null,
     });
   } catch (err) {

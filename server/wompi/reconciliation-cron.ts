@@ -75,7 +75,7 @@ export async function reconcilePendingTransactions(): Promise<{
             stillPending++;
             continue;
           }
-          wompiStatus = wompiTx.status;
+          wompiStatus = wompiTx.wompiTxStatus;
           resolvedWompiTxId = wompiTx.id;
           // Guardar el ID de Wompi para futuras consultas
           if (resolvedWompiTxId) {

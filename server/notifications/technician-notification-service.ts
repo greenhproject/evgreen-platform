@@ -314,7 +314,7 @@ export async function notifyTechniciansOfAlert(
               type: "MAINTENANCE",
               referenceType: "ocpp_alert",
               referenceId: alert.stationId || undefined,
-              isRead: false,
+              isRead: 0,
               pushSent: tech.techNotifyByPush !== false && !!tech.fcmToken,
               pushSentAt: tech.techNotifyByPush !== false && !!tech.fcmToken ? new Date() : undefined,
               data: JSON.stringify({
@@ -417,7 +417,7 @@ export async function notifyTechniciansOfNewTicket(ticket: {
           type: "MAINTENANCE",
           referenceType: "maintenance_ticket",
           referenceId: ticket.id,
-          isRead: false,
+          isRead: 0,
         });
       }
     }

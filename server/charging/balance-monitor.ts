@@ -293,7 +293,7 @@ async function performAutoRecharge(
     const result = await response.json();
     const tx = result.data;
 
-    console.log(`[BalanceMonitor] Wompi transaction: ${tx.id}, status: ${tx.status}`);
+    console.log(`[BalanceMonitor] Wompi transaction: ${tx.id}, status: ${tx.wompiTxStatus}`);
 
     // Save Wompi transaction
     try {
@@ -309,7 +309,7 @@ async function performAutoRecharge(
       });
       await db.updateWompiTransactionByReference(reference, {
         wompiTransactionId: tx.id,
-        status: tx.status,
+        status: tx.wompiTxStatus,
         paymentMethodType: tx.payment_method_type || "CARD",
         processedAt: new Date(),
       });
@@ -318,8 +318,8 @@ async function performAutoRecharge(
     }
 
     // Wait 2s for PENDING transactions (card payments usually resolve quickly)
-    let finalStatus = tx.status;
-    if (tx.status === "PENDING" && tx.id) {
+    let finalStatus = tx.wompiTxStatus;
+    if (tx.wompiTxStatus === "PENDING" && tx.id) {
       await new Promise(resolve => setTimeout(resolve, 2000));
       try {
         const recheckResult = await getTransactionStatus(tx.id, keys);

@@ -174,7 +174,7 @@ async function chargeWithPaymentSource(
     const result = await response.json();
     const tx = result.data;
 
-    console.log(`[Billing] Transacción creada: ${tx.id} - Estado: ${tx.status}`);
+    console.log(`[Billing] Transacción creada: ${tx.id} - Estado: ${tx.wompiTxStatus}`);
 
     // Guardar transacción en BD
     try {
@@ -191,7 +191,7 @@ async function chargeWithPaymentSource(
       // Actualizar con datos de Wompi
       await db.updateWompiTransactionByReference(reference, {
         wompiTransactionId: tx.id,
-        status: tx.status,
+        status: tx.wompiTxStatus,
         paymentMethodType: tx.payment_method_type || "CARD",
       });
     } catch (dbErr) {
@@ -199,15 +199,15 @@ async function chargeWithPaymentSource(
     }
 
     // Verificar estado
-    if (tx.status === "APPROVED") {
+    if (tx.wompiTxStatus === "APPROVED") {
       await handleSuccessfulPayment(subscription, reference, amount);
       return true;
-    } else if (tx.status === "PENDING") {
+    } else if (tx.wompiTxStatus === "PENDING") {
       // El webhook se encargará de procesar cuando se confirme
       console.log(`[Billing] Transacción pendiente: ${reference} - esperando webhook`);
       return true; // No contar como fallo
     } else {
-      await handleFailedPayment(subscription, reference, `Status: ${tx.status}`);
+      await handleFailedPayment(subscription, reference, `Status: ${tx.wompiTxStatus}`);
       return false;
     }
   } catch (error: any) {
