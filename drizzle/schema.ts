@@ -327,6 +327,8 @@ export const chargingStations = mysqlTable("charging_stations", {
 	parkingRatePerMinute: int().default(0).notNull(),
 	occupancyRatePerMinute: int().default(0).notNull(),
 	organizationId: int("organization_id"),
+	gestorId: int("gestor_id"),
+	gestorCommissionPercent: decimal("gestor_commission_percent", { precision: 5, scale: 2 }).default('3.75').notNull(),
 },
 (table) => [
 	index("charging_stations_ocppIdentity_unique").on(table.ocppIdentity),
@@ -1490,6 +1492,8 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 	signedLetterPdfKey: varchar({ length: 500 }),
 	letterSignerUserAgent: text(),
 	investmentType: mysqlEnum("investment_type", ['individual','colectiva']).default('individual').notNull(),
+	gestorId: int("gestor_id"),
+	gestorCommissionPercent: decimal("gestor_commission_percent", { precision: 5, scale: 2 }).default('3.75').notNull(),
 },
 (table) => [
 	index("space_submissions_code_unique").on(table.code),

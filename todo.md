@@ -3763,3 +3763,13 @@
 - [x] Unificar texto ahorro energético solar a valor consistente
 - [x] Cambiar badge "Mayor Rentabilidad" por "Mayor Ingreso Mensual" en Colectivo
 - [x] Mejorar copy del Colectivo para reflejar ventaja real (margen/kWh, menor riesgo)
+
+## Rol Gestor Comercial
+- [ ] Schema: gestorId + gestorCommissionPercent en spaceSubmissions
+- [ ] Schema: gestorId + gestorCommissionPercent en chargingStations
+- [ ] SQL: migrar columnas nuevas en BD
+- [ ] Backend: tRPC gestor.getMySpaces, gestor.getMyStations, gestor.getMyEarnings
+- [ ] Backend: admin puede asignar gestor a espacio/estación y configurar comisión
+- [ ] Frontend: portal /gestor con tabs (Espacios, Estaciones, Liquidación)
+- [ ] Frontend: Admin puede vincular gestor desde modal de espacio/estación
+- [ ] Lógica: comisión gestor sale del 30% EVGreen (no afecta % inversionista)

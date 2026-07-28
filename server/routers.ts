@@ -41,6 +41,7 @@ import { maintenanceScheduleRouter } from "./maintenance/maintenance-schedule-ro
 import { buildApiKeysRouter } from "./api/api-keys-router";
 import { quotesRouter } from "./quotes/quotes-router";
 import { spacesRouter } from "./spaces/spaces-router";
+import { gestorRouter } from "./gestor/gestor-router";
 import { partnersRouter } from "./partners/partners-router";
 import { profilesRouter } from "./profiles/profiles-router";
 import { buildOrganizationsRouter } from "./organizations/organizations-router";
@@ -7791,6 +7792,7 @@ export const appRouter = router({
   claims: claimsRouter,
   quotes: quotesRouter,
   spaces: spacesRouter,
+  gestor: gestorRouter,
   partners: partnersRouter,
   profiles: profilesRouter,
   organizations: buildOrganizationsRouter(router, adminProcedure),

@@ -767,6 +767,13 @@ function SpaceDetailDialog({
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
+  const [showGestorDialog, setShowGestorDialog] = useState(false);
+  const [gestorForm, setGestorForm] = useState({ gestorId: "", commissionPercent: "3.75" });
+  const { data: gestoresData } = trpc.gestor.listarGestores.useQuery();
+  const asignarGestorMutation = trpc.gestor.asignarGestorAEspacio.useMutation({
+    onSuccess: () => { toast.success("Gestor vinculado correctamente"); setShowGestorDialog(false); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
 
   if (isLoading || !space) {
     return (
@@ -1104,6 +1111,80 @@ function SpaceDetailDialog({
                       ))}
                     </div>
                   </DetailSection>
+                )}
+
+                {/* Gestor Comercial */}
+                <DetailSection title="Gestor Comercial" icon={<span className="text-emerald-400 text-xs font-bold">%</span>}>
+                  {(space as any).gestorId ? (
+                    <div className="space-y-2">
+                      <DetailRow label="Gestor" value={(space as any).gestorName ?? `ID: ${(space as any).gestorId}`} />
+                      <DetailRow label="Comisión" value={`${parseFloat((space as any).gestorCommissionPercent ?? "3.75").toFixed(2)}%`} />
+                      <button
+                        onClick={() => { setGestorForm({ gestorId: String((space as any).gestorId), commissionPercent: String((space as any).gestorCommissionPercent ?? "3.75") }); setShowGestorDialog(true); }}
+                        className="text-xs text-blue-400 hover:text-blue-300 underline mt-1"
+                      >
+                        Cambiar gestor / comisión
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-slate-500 text-sm mb-2">Sin gestor asignado</p>
+                      <button
+                        onClick={() => { setGestorForm({ gestorId: "", commissionPercent: "3.75" }); setShowGestorDialog(true); }}
+                        className="text-xs px-3 py-1.5 bg-emerald-600/20 border border-emerald-500/30 rounded-lg text-emerald-400 hover:bg-emerald-600/30"
+                      >
+                        + Vincular Gestor
+                      </button>
+                    </div>
+                  )}
+                </DetailSection>
+
+                {/* Modal vincular gestor */}
+                {showGestorDialog && (
+                  <Dialog open onOpenChange={() => setShowGestorDialog(false)}>
+                    <DialogContent className="bg-slate-900 border-slate-700 max-w-sm">
+                      <DialogHeader>
+                        <DialogTitle className="text-white">Vincular Gestor Comercial</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-2">
+                        <div>
+                          <label className="text-sm text-slate-300 block mb-1">Gestor</label>
+                          <select
+                            value={gestorForm.gestorId}
+                            onChange={e => setGestorForm(f => ({ ...f, gestorId: e.target.value }))}
+                            className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
+                          >
+                            <option value="">-- Seleccionar gestor --</option>
+                            {gestoresData?.gestores?.map((g: any) => (
+                              <option key={g.id} value={String(g.id)}>{g.name} ({g.email})</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-sm text-slate-300 block mb-1">Comisión del gestor (%)</label>
+                          <input
+                            type="number" step="0.01" min="0" max="100"
+                            value={gestorForm.commissionPercent}
+                            onChange={e => setGestorForm(f => ({ ...f, commissionPercent: e.target.value }))}
+                            className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
+                          />
+                          <p className="text-xs text-slate-500 mt-1">Este % sale del 30% de EVGreen. No afecta al inversionista.</p>
+                        </div>
+                        <div className="flex gap-3 pt-1">
+                          <button onClick={() => setShowGestorDialog(false)} className="flex-1 py-2 border border-slate-600 text-slate-300 rounded-lg text-sm hover:bg-slate-700">
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={() => asignarGestorMutation.mutate({ spaceId: id, gestorId: parseInt(gestorForm.gestorId), commissionPercent: parseFloat(gestorForm.commissionPercent) })}
+                            disabled={!gestorForm.gestorId || asignarGestorMutation.isPending}
+                            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm disabled:opacity-50"
+                          >
+                            {asignarGestorMutation.isPending ? "Guardando..." : "Vincular"}
+                          </button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 )}
 
                 {/* Timeline */}

@@ -21,6 +21,7 @@ import { Capacitor } from "@capacitor/core";
 
 // Páginas públicas (carga inmediata - landing)
 import Landing from "./pages/Landing";
+import { GestorLayout } from "./components/GestorLayout";
 
 // Lazy loading spinner
 function LazySpinner() {
@@ -86,6 +87,12 @@ const InvestorEarnings = lazy(() => import("./pages/investor/Earnings"));
 const InvestorSettlements = lazy(() => import("./pages/investor/Settlements"));
 const InvestorFinancial = lazy(() => import("./pages/investor/Financial"));
 const InvestorOnboarding = lazy(() => import("./pages/investor/InvestorOnboarding"));
+
+// Páginas del gestor comercial
+const GestorDashboard = lazy(() => import("./pages/gestor/Dashboard"));
+const GestorEspacios = lazy(() => import("./pages/gestor/Espacios"));
+const GestorEstaciones = lazy(() => import("./pages/gestor/Estaciones"));
+const GestorLiquidacion = lazy(() => import("./pages/gestor/Liquidacion"));
 
 // Páginas de técnico
 const TechnicianDashboard = lazy(() => import("./pages/technician/Dashboard"));
@@ -203,7 +210,7 @@ function getHomeRouteByRole(role: string | undefined): string {
     case "host":
       return "/host";
     case "comercial":
-      return "/admin/quotes";
+      return "/gestor";
     case "user":
     default:
       return "/map";
@@ -1482,6 +1489,36 @@ function Router() {
             <StaffLayout>
               <StaffEventStats />
             </StaffLayout>
+          </ProtectedRoute>
+        </Route>
+
+        {/* Portal Gestor Comercial */}
+        <Route path="/gestor">
+          <ProtectedRoute allowedRoles={["comercial", "admin", "staff"]}>
+            <GestorLayout>
+              <GestorDashboard />
+            </GestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/gestor/espacios">
+          <ProtectedRoute allowedRoles={["comercial", "admin", "staff"]}>
+            <GestorLayout>
+              <GestorEspacios />
+            </GestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/gestor/estaciones">
+          <ProtectedRoute allowedRoles={["comercial", "admin", "staff"]}>
+            <GestorLayout>
+              <GestorEstaciones />
+            </GestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/gestor/liquidacion">
+          <ProtectedRoute allowedRoles={["comercial", "admin", "staff"]}>
+            <GestorLayout>
+              <GestorLiquidacion />
+            </GestorLayout>
           </ProtectedRoute>
         </Route>
 
