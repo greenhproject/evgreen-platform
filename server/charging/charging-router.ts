@@ -589,7 +589,7 @@ export const chargingRouter = router({
             subscriptionDiscount = discountPct;
             const originalPrice = pricePerKwh;
             pricePerKwh = Math.round(pricePerKwh * (1 - discountPct / 100));
-            console.log(`[Charging] Subscription discount applied: ${discountPct}% off. Price: $${originalPrice} -> $${pricePerKwh}/kWh (Plan: ${userSub.tier})`);
+            console.log(`[Charging] Subscription discount applied: ${discountPct}% off. Price: $${originalPrice} -> $${pricePerKwh}/kWh (Plan: ${userSub.subscriptionTier})`);
           }
         }
       } catch (subErr) {

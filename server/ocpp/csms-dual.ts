@@ -810,10 +810,10 @@ export class DualCSMS {
       console.log(`[CSMS-DUAL] StatusNotification: General station status for ${conn.ocppIdentity}: ${req.status}`);
       if (stationId) {
         try {
-          const isOnline = req.status !== "Unavailable" && req.status !== "Faulted";
-          await db.updateChargingStation(stationId, { isOnline });
+          const isOnlineVal = req.status !== "Unavailable" && req.status !== "Faulted";
+          await db.updateChargingStation(stationId, { isOnline: isOnlineVal ? 1 : 0 });
           // WhatsApp: notificar cargador desconectado al admin si pasa a offline
-          if (!isOnline) {
+          if (!isOnlineVal) {
             try {
               const station = await db.getChargingStationById(stationId);
               const { sendWhatsAppMessage, WaTemplates, getWhatsAppConfig } = await import("../whatsapp/whatsapp-service");

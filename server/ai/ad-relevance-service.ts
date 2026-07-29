@@ -506,7 +506,7 @@ export async function getUserAdProfile(
       .orderBy(desc(subscriptions.createdAt))
       .limit(1);
     if (sub) {
-      currentSubscriptionTier = sub.tier;
+      currentSubscriptionTier = sub.subscriptionTier;
     }
   }
 

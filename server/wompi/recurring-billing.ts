@@ -86,7 +86,7 @@ export async function processRecurringBilling(): Promise<{
         continue;
       }
 
-      const amount = PLAN_PRICES[sub.tier] || PLAN_PRICES.BASIC;
+      const amount = PLAN_PRICES[sub.subscriptionTier] || PLAN_PRICES.BASIC;
 
       // Si tiene payment source tokenizado, cobrar automáticamente
       if (sub.wompiPaymentSourceId) {
@@ -185,7 +185,7 @@ async function chargeWithPaymentSource(
         currency: "COP",
         type: "SUBSCRIPTION",
         customerEmail: subscription.customerEmail || "",
-        description: `Cobro recurrente - Plan ${subscription.tier} - ${formatCOP(amount)}/mes`,
+        description: `Cobro recurrente - Plan ${subscription.subscriptionTier} - ${formatCOP(amount)}/mes`,
         integritySignature: "",
       });
       // Actualizar con datos de Wompi
@@ -241,13 +241,13 @@ async function handleSuccessfulPayment(
   await db.createNotification({
     userId: subscription.userId,
     title: "Cobro de suscripción exitoso",
-    message: `Se ha cobrado ${formatCOP(amount)} por tu plan ${subscription.tier}. Próximo cobro: ${nextBilling.toLocaleDateString("es-CO")}.`,
+    message: `Se ha cobrado ${formatCOP(amount)} por tu plan ${subscription.subscriptionTier}. Próximo cobro: ${nextBilling.toLocaleDateString("es-CO")}.`,
     type: "PAYMENT",
     data: JSON.stringify({
       key: `recurring-${reference}`,
       amount,
       reference,
-      planId: subscription.tier,
+      planId: subscription.subscriptionTier,
       nextBilling: nextBilling.toISOString(),
     }),
   });
@@ -259,7 +259,7 @@ async function handleSuccessfulPayment(
       await sendPushNotification(user.fcmToken, {
         type: "balance_added",
         title: "Cobro de suscripción exitoso",
-        body: `Se cobró ${formatCOP(amount)} por tu plan ${subscription.tier}. Próximo cobro: ${nextBilling.toLocaleDateString("es-CO")}.`,
+        body: `Se cobró ${formatCOP(amount)} por tu plan ${subscription.subscriptionTier}. Próximo cobro: ${nextBilling.toLocaleDateString("es-CO")}.`,
         clickAction: "/wallet",
         data: {
           reference,
@@ -287,8 +287,8 @@ async function handleFailedPayment(
   // Crear notificación in-app
   const remainingAttempts = MAX_FAILED_PAYMENTS - failedCount;
   const message = remainingAttempts > 0
-    ? `No pudimos cobrar tu suscripción ${subscription.tier}. Quedan ${remainingAttempts} intento(s) antes de cancelar. Verifica tu método de pago.`
-    : `No pudimos cobrar tu suscripción ${subscription.tier}. Tu suscripción será cancelada. Puedes reactivarla desde la billetera.`;
+    ? `No pudimos cobrar tu suscripción ${subscription.subscriptionTier}. Quedan ${remainingAttempts} intento(s) antes de cancelar. Verifica tu método de pago.`
+    : `No pudimos cobrar tu suscripción ${subscription.subscriptionTier}. Tu suscripción será cancelada. Puedes reactivarla desde la billetera.`;
 
   await db.createNotification({
     userId: subscription.userId,
@@ -337,12 +337,12 @@ async function cancelSubscriptionForNonPayment(subscription: any): Promise<void>
   await db.createNotification({
     userId: subscription.userId,
     title: "Suscripción cancelada por falta de pago",
-    message: `Tu plan ${subscription.tier} fue cancelado después de ${MAX_FAILED_PAYMENTS} intentos de cobro fallidos. Puedes reactivarlo desde la billetera.`,
+    message: `Tu plan ${subscription.subscriptionTier} fue cancelado después de ${MAX_FAILED_PAYMENTS} intentos de cobro fallidos. Puedes reactivarlo desde la billetera.`,
     type: "PAYMENT",
     data: JSON.stringify({
       key: `sub-cancelled-nonpayment-${Date.now()}`,
       reason: "non_payment",
-      planId: subscription.tier,
+      planId: subscription.subscriptionTier,
     }),
   });
 
@@ -353,7 +353,7 @@ async function cancelSubscriptionForNonPayment(subscription: any): Promise<void>
       await sendPushNotification(user.fcmToken, {
         type: "system_alert",
         title: "Suscripción cancelada",
-        body: `Tu plan ${subscription.tier} fue cancelado por falta de pago. Puedes reactivarlo en cualquier momento.`,
+        body: `Tu plan ${subscription.subscriptionTier} fue cancelado por falta de pago. Puedes reactivarlo en cualquier momento.`,
         clickAction: "/wallet",
       });
     }
@@ -373,11 +373,11 @@ async function notifyManualPaymentRequired(subscription: any, amount: number): P
   await db.createNotification({
     userId: subscription.userId,
     title: "Renovación de suscripción pendiente",
-    message: `Tu plan ${subscription.tier} necesita renovación (${formatCOP(amount)}/mes). Ingresa a la billetera para completar el pago.`,
+    message: `Tu plan ${subscription.subscriptionTier} necesita renovación (${formatCOP(amount)}/mes). Ingresa a la billetera para completar el pago.`,
     type: "PAYMENT",
     data: JSON.stringify({
       key: `sub-renewal-${Date.now()}`,
-      planId: subscription.tier,
+      planId: subscription.subscriptionTier,
       amount,
       action: "renew_subscription",
     }),
@@ -390,11 +390,11 @@ async function notifyManualPaymentRequired(subscription: any, amount: number): P
       await sendPushNotification(user.fcmToken, {
         type: "low_balance",
         title: "Renovación de suscripción pendiente",
-        body: `Tu plan ${subscription.tier} necesita renovación. Ingresa a la billetera para pagar ${formatCOP(amount)}.`,
+        body: `Tu plan ${subscription.subscriptionTier} necesita renovación. Ingresa a la billetera para pagar ${formatCOP(amount)}.`,
         clickAction: "/wallet",
         data: {
           action: "renew_subscription",
-          planId: subscription.tier,
+          planId: subscription.subscriptionTier,
           amount: amount.toString(),
         },
       });

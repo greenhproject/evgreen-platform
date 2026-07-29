@@ -2185,7 +2185,7 @@ export async function resolveUserBannerContext(
 
       // Suscripción activa
       db.select({
-        tier: subscriptions.tier,
+        tier: subscriptions.subscriptionTier,
         wompiCardToken: subscriptions.wompiCardToken,
         isActive: subscriptions.isActive,
       }).from(subscriptions)
@@ -3057,13 +3057,13 @@ export async function updateUserSubscription(userId: number, data: {
     if (data.lastPaymentDate) updateData.lastPaymentDate = data.lastPaymentDate;
     if (data.lastPaymentReference) updateData.lastPaymentReference = data.lastPaymentReference;
     if (data.planId) {
-      updateData.tier = tier;
+      updateData.subscriptionTier = tier;
       updateData.discountPercentage = discountPercentage;
       updateData.freeReservationsPerMonth = freeReservationsPerMonth;
-      updateData.prioritySupport = prioritySupport;
+      updateData.prioritySupport = prioritySupport ? 1 : 0;
     }
     if (data.status) {
-      updateData.isActive = data.status === "active";
+      updateData.isActive = data.status === "active" ? 1 : 0;
       updateData.nextBillingDate = nextBilling;
       if (data.status === "canceled") {
         updateData.cancelledAt = new Date();
@@ -3100,7 +3100,7 @@ export async function getActiveSubscriptionsForBilling() {
       and(
         eq(subscriptions.isActive, 1),
         sql`${subscriptions.nextBillingDate} <= ${now}`,
-        sql`${subscriptions.tier} != 'FREE'`
+        sql`${subscriptions.subscriptionTier} != 'FREE'`
       )
     );
 }

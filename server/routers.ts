@@ -7458,7 +7458,7 @@ const nocRouter = router({
       // isOnline usa BD como fuente de verdad (persiste entre reinicios/instancias)
       // La memoria (connectedIds) enriquece con datos en tiempo real cuando está disponible
       const isMemoryOnline = station.ocppIdentity ? connectedIds.has(station.ocppIdentity) : false;
-      const isLiveOnline = isMemoryOnline || (station.isOnline === true && station.ocppIdentity != null);
+      const isLiveOnline = isMemoryOnline || (!!station.isOnline && station.ocppIdentity != null);
       const chargingEvses = stationEvses.filter(e => activeTxByEvse.has(e.id));
       const availableEvses = stationEvses.filter(e => e.connectorStatus === "AVAILABLE" && !activeTxByEvse.has(e.id));
       const faultedEvses = stationEvses.filter(e => e.connectorStatus === "FAULTED");
