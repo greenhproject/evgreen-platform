@@ -538,8 +538,13 @@ const stationsRouter = router({
       const ocppId = station.ocppIdentity || station.id?.toString();
       const ocppConn = csmsMap.get(ocppId);
       const tariff = tariffsMap.get(station.id);
+      // isOnline: memoria OCPP (tiempo real) OR BD (persiste entre reinicios)
+      const isMemoryOnline = ocppId ? csmsMap.has(ocppId) : false;
+      const isLiveOnline = isMemoryOnline || (!!station.isOnline && !!station.ocppIdentity);
       return {
         ...station,
+        isOnline: isLiveOnline ? 1 : 0,
+        isConnectedOCPP: isMemoryOnline,
         evses: stationEvses,
         lastHeartbeat: ocppConn?.lastHeartbeat
           ? (ocppConn.lastHeartbeat instanceof Date ? ocppConn.lastHeartbeat.toISOString() : String(ocppConn.lastHeartbeat))

@@ -191,6 +191,9 @@ export default function AdminStations() {
   
   // Función para verificar si una estación está conectada por OCPP
   const isStationConnectedOCPP = (station: any) => {
+    // 1. Usar isConnectedOCPP del servidor si está disponible (ya calculado en listAll)
+    if (station.isConnectedOCPP) return true;
+    // 2. Fallback: buscar en ocppConnections en memoria
     if (!ocppConnections) return false;
     const ocppId = station.ocppIdentity || station.id?.toString();
     return ocppConnections.some((conn: any) => 
@@ -631,9 +634,11 @@ export default function AdminStations() {
     if (!station.isActive) return <Badge variant="secondary">Inactiva</Badge>;
     
     const isConnectedOCPP = isStationConnectedOCPP(station);
-    const connInfo = getOCPPConnectionInfo(station);
+    // Usar BD como fallback: si isOnline=1 en BD pero no está en memoria (ej: servidor recién reiniciado)
+    const isOnlineFromDB = !!station.isOnline && !!station.ocppIdentity;
+    const isOnline = isConnectedOCPP || isOnlineFromDB;
     
-    if (isConnectedOCPP) {
+    if (isOnline) {
       return (
         <Badge className="bg-green-500/20 text-green-400 border-green-500/30 flex items-center gap-1">
           <Wifi className="w-3 h-3" />
