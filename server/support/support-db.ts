@@ -14,8 +14,8 @@ import {
   InsertSupportTicket,
   InsertSupportMessage,
   InsertSupportAgent,
-  InsertChargerProblemReport,
 } from "../../drizzle/schema";
+type InsertChargerProblemReport = typeof chargerProblemReports.$inferInsert;
 
 // ============================================================================
 // SUPPORT TICKETS
@@ -170,7 +170,7 @@ export async function markMessagesAsRead(ticketId: number, readerRole: string) {
   // Mark messages from the OTHER side as read
   const oppositeRole = readerRole === "user" ? "agent" : "user";
   await db.update(supportMessages)
-    .set({ readAt: new Date() })
+    .set({ readAt: new Date().toISOString() })
     .where(and(
       eq(supportMessages.ticketId, ticketId),
       eq(supportMessages.senderRole, oppositeRole),
@@ -252,7 +252,7 @@ export async function incrementAgentTicketCount(agentId: number) {
   await db.update(supportAgents)
     .set({
       activeTicketCount: sql`${supportAgents.activeTicketCount} + 1`,
-      lastAssignedAt: new Date(),
+      lastAssignedAt: new Date().toISOString(),
     })
     .where(eq(supportAgents.id, agentId));
 }
@@ -305,7 +305,7 @@ export async function updateAgentStatus(userId: number, isOnline: boolean) {
   const db = await getDb();
   if (!db) return;
   await db.update(supportAgents)
-    .set({ isOnline })
+    .set({ isOnline: isOnline ? 1 : 0 })
     .where(eq(supportAgents.userId, userId));
 }
 

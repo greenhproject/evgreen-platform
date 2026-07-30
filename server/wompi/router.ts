@@ -452,6 +452,74 @@ export const wompiRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Plan inválido" });
       }
 
+      // ====== INTENTO 0: Cobro desde billetera EVGreen (prioridad máxima) ======
+      // Si el usuario tiene saldo suficiente en su billetera, descontamos
+      // directamente sin redirigir a Wompi ni usar tarjeta.
+      const userWallet = await db.getUserWallet(ctx.user.id);
+      const walletBalance = parseFloat(userWallet?.balance?.toString() || "0");
+      if (walletBalance >= amount) {
+        console.log(`[Wallet] Activando plan ${input.planId} con billetera. Saldo: $${walletBalance}, Costo: $${amount}`);
+        const newBalance = walletBalance - amount;
+        const walletRef = generatePaymentReference("SUBWLT");
+        try {
+          // Descontar de la billetera
+          await db.updateWalletBalance(ctx.user.id, newBalance.toFixed(2));
+          // Registrar transacción de billetera
+          if (userWallet) {
+            await db.createWalletTransaction({
+              walletId: userWallet.id,
+              userId: ctx.user.id,
+              amount: (-amount).toString(),
+              balanceBefore: walletBalance.toString(),
+              balanceAfter: newBalance.toFixed(2),
+              type: "DEBIT",
+              description: `Suscripción Plan ${input.planId === "premium" ? "Premium" : "Básico"} - $${new Intl.NumberFormat("es-CO").format(amount)}/mes`,
+              referenceType: "SUBSCRIPTION",
+              paymentStatus: "COMPLETED",
+            });
+          }
+          // Activar la suscripción
+          await db.updateUserSubscription(ctx.user.id, {
+            planId: input.planId,
+            status: "active",
+            monthlyAmountCents: amount * 100,
+            lastPaymentDate: new Date(),
+            lastPaymentReference: walletRef,
+          });
+          // Notificación de éxito
+          try {
+            await db.createNotification({
+              userId: ctx.user.id,
+              title: "¡Plan activado desde tu billetera!",
+              message: `Tu plan ${input.planId === "premium" ? "Premium" : "Básico"} fue activado. Se descontaron $${new Intl.NumberFormat("es-CO").format(amount)} de tu billetera. Saldo restante: $${new Intl.NumberFormat("es-CO").format(newBalance)} COP.`,
+              type: "PAYMENT",
+              data: JSON.stringify({
+                key: `sub-wallet-${walletRef}`,
+                planId: input.planId,
+                reference: walletRef,
+                paymentMethod: "wallet",
+              }),
+            });
+          } catch (notifErr) {
+            console.warn("[Wallet] Error creando notificación de suscripción:", notifErr);
+          }
+          return {
+            directCharge: true,
+            walletCharge: true,
+            success: true,
+            status: "APPROVED",
+            reference: walletRef,
+            planId: input.planId,
+            message: `¡Plan ${input.planId === "premium" ? "Premium" : "Básico"} activado! Se descontaron $${new Intl.NumberFormat("es-CO").format(amount)} de tu billetera.`,
+            checkoutUrl: null,
+            walletBalance: newBalance,
+          };
+        } catch (walletErr) {
+          console.error("[Wallet] Error al cobrar suscripción desde billetera:", walletErr);
+          // Si falla el débito de billetera, continuar con los métodos normales
+        }
+      }
+
       // ====== INTENTO 1: Cobro directo con tarjeta inscrita ======
       const existingSub = await db.getUserSubscription(ctx.user.id);
       if (existingSub?.wompiPaymentSourceId && existingSub.cardLastFour) {

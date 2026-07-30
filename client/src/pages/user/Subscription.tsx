@@ -54,7 +54,11 @@ export default function UserSubscription() {
 
   const createSubscription = trpc.wompi.createSubscriptionPayment.useMutation({
     onSuccess: (data) => {
-      if (data.directCharge && data.success) {
+      if ((data as any).walletCharge && data.success) {
+        // ✅ Cobro directo desde billetera EVGreen (prioridad máxima)
+        toast.success(data.message || "¡Plan activado desde tu billetera!");
+        refetchSubscription();
+      } else if (data.directCharge && data.success) {
         // Cobro directo exitoso con tarjeta inscrita
         toast.success(data.message || "¡Suscripción activada con tu tarjeta!");
         refetchSubscription();
@@ -64,7 +68,7 @@ export default function UserSubscription() {
         // Hacer polling después de unos segundos
         setTimeout(() => refetchSubscription(), 5000);
       } else if (data.checkoutUrl) {
-        // Fallback: abrir pasarela de Wompi
+        // Fallback: abrir pasarela de Wompi (saldo insuficiente en billetera)
         toast.info("Redirigiendo a Wompi para completar el pago...");
         window.open(data.checkoutUrl, "_blank");
       }

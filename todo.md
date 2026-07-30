@@ -3773,3 +3773,4 @@
 - [ ] Frontend: portal /gestor con tabs (Espacios, Estaciones, Liquidación)
 - [ ] Frontend: Admin puede vincular gestor desde modal de espacio/estación
 - [ ] Lógica: comisión gestor sale del 30% EVGreen (no afecta % inversionista)
+- [ ] Flujo wallet-first para activación de planes: primero descontar de billetera si hay saldo suficiente, solo redirigir a Wompi si no hay saldo
