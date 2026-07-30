@@ -309,7 +309,7 @@ export default function UserMap() {
 
   // Obtener estado de disponibilidad
   const getAvailableCount = (station: Station) => {
-    return station.evses?.filter((e) => e.status === "AVAILABLE").length || 0;
+    return station.evses?.filter((e) => e.connectorStatus === "AVAILABLE").length || 0;
   };
 
   const getTotalCount = (station: Station) => {
@@ -416,7 +416,7 @@ export default function UserMap() {
       // Determinar tipo de carga de la estación
       const hasDC = station.evses?.some((e) => e.chargeType === 'DC');
       const hasAC = station.evses?.some((e) => e.chargeType === 'AC');
-      const availableCount = station.evses?.filter((e) => e.status === 'AVAILABLE').length || 0;
+      const availableCount = station.evses?.filter((e) => e.connectorStatus === "AVAILABLE").length || 0;
       const isAvailable = availableCount > 0;
 
       // Colores según tipo: DC=azul eléctrico, AC=ámbar, Mixto=verde

@@ -100,7 +100,7 @@ function StationCard({ s }: { s: any }) {
       {/* connectors */}
       <div className="flex gap-1 flex-wrap">
         {s.evses.map((e: any) => {
-          const ec = e.isCharging ? "#22c55e" : e.status === "AVAILABLE" ? "#3b82f6" : e.status === "FAULTED" ? "#f97316" : "#6b7280";
+          const ec = e.isCharging ? "#22c55e" : e.connectorStatus === "AVAILABLE" ? "#3b82f6" : e.connectorStatus === "FAULTED" ? "#f97316" : "#6b7280";
           return (
             <span key={e.id} className="text-[10px] px-1.5 py-0.5 rounded-full border" style={{ borderColor: `${ec}40`, backgroundColor: `${ec}15`, color: ec }}>
               ⚡ {e.connectorType}{e.isCharging && e.currentTx ? ` · ${parseFloat(e.currentTx.kwhConsumed || "0").toFixed(1)} kWh` : ""}

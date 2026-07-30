@@ -126,7 +126,7 @@ export default function TechnicianDiagnostics() {
         check: () => {
           const evseCount = station?.evses?.length || 0;
           if (evseCount === 0) return { status: "error" as const, value: "0 conectores", details: "No hay conectores configurados" };
-          const availableCount = station?.evses?.filter((e: any) => e.status === "AVAILABLE").length || 0;
+          const availableCount = station?.evses?.filter((e: any) => e.connectorStatus === "AVAILABLE").length || 0;
           if (availableCount === 0) return { status: "warning" as const, value: `0/${evseCount} disponibles`, details: "Ningún conector disponible actualmente" };
           return { status: "ok" as const, value: `${availableCount}/${evseCount} disponibles`, details: `${evseCount} conectores configurados` };
         }

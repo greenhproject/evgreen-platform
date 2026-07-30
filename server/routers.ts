@@ -831,7 +831,7 @@ const stationsRouter = router({
       // Offline: marcar todos como UNAVAILABLE excepto CHARGING/RESERVED
       return evses.map((e: any) => ({
         ...e,
-        status: (e.connectorStatus === 'CHARGING' || e.connectorStatus === 'RESERVED') ? e.connectorStatus : 'UNAVAILABLE',
+        connectorStatus: (e.connectorStatus === 'CHARGING' || e.connectorStatus === 'RESERVED') ? e.connectorStatus : 'UNAVAILABLE',
       }));
     }),
   

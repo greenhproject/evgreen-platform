@@ -379,7 +379,7 @@ export default function StationDetail() {
     );
   }
 
-  const availableCount = evses?.filter((e: any) => e.status === "AVAILABLE").length || 0;
+  const availableCount = evses?.filter((e: any) => e.connectorStatus === "AVAILABLE").length || 0;
 
   return (
     <UserLayout title={station.name} showBack>
@@ -554,7 +554,7 @@ export default function StationDetail() {
             )}
             <div className="space-y-3">
               {evses?.map((evse: any, index: number) => {
-                const statusStyle = getConnectorStatus(evse.status);
+                const statusStyle = getConnectorStatus(evse.connectorStatus);
                 return (
                   <Card key={evse.id} className="p-4 bg-card/50 backdrop-blur border-border/50">
                     <div className="flex items-center justify-between">
@@ -574,7 +574,7 @@ export default function StationDetail() {
                       </Badge>
                     </div>
                     
-                    {evse.status === "AVAILABLE" && (
+                    {evse.connectorStatus === "AVAILABLE" && (
                       <div className="mt-3 space-y-2">
                         {/* Mostrar info de reserva futura si existe */}
                         {(evse as any).nextReservation && (() => {
@@ -672,7 +672,7 @@ export default function StationDetail() {
                     )}
 
                     {/* Mostrar info y acciones cuando el EVSE está RESERVED */}
-                    {evse.status === "RESERVED" && (() => {
+                    {evse.connectorStatus === "RESERVED" && (() => {
                       const isMyReservation = evse.activeReservationUserId && user?.id && String(evse.activeReservationUserId) === String(user.id);
                       const myRes = myReservations?.find((r: any) => r.id === evse.activeReservationId);
                       return (
