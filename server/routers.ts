@@ -446,7 +446,13 @@ const stationsRouter = router({
     .query(async ({ input }) => {
       let stations;
       if (input?.lat && input?.lng) {
-        stations = await db.getStationsNearLocation(input.lat, input.lng, input.radiusKm || 10);
+        // getStationsNearLocation devuelve { station: {...}, distance: number }
+        // Normalizar a estaciones planas con campo distance
+        const rawStations = await db.getStationsNearLocation(input.lat, input.lng, input.radiusKm || 10);
+        stations = rawStations.map((r: any) => ({
+          ...(r.station ?? r),  // soporta ambos formatos por compatibilidad
+          distance: r.distance ?? null,
+        }));
       } else {
         stations = await db.getAllChargingStations({ isActive: 1, isPublic: 1 });
       }
@@ -463,11 +469,17 @@ const stationsRouter = router({
           // Verificar si es estación demo para forzar online y conectores AVAILABLE
           const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
           
-          // Determinar estado online real usando dualCSMS (fuente única de verdad)
-          // isStationOnline verifica: WebSocket OPEN (readyState===1) || grace period activo (5 min tras desconexion)
-          let realIsOnline = station.isOnline;
+          // Determinar estado online real:
+          // Fuente de verdad = BD (isOnline), persiste entre reinicios e instancias serverless
+          // Enriquecimiento = memoria OCPP (isStationOnline), solo disponible en el proceso actual
+          // Si la memoria dice que está online → online (tiempo real)
+          // Si la memoria dice offline pero la BD dice online → online (BD es más confiable en serverless)
+          // Si ambos dicen offline → offline
+          let realIsOnline: boolean | number = !!station.isOnline;
           if (!isDemo && station.ocppIdentity) {
-            realIsOnline = dualCSMS.isStationOnline(station.ocppIdentity);
+            const memoryOnline = dualCSMS.isStationOnline(station.ocppIdentity);
+            // La memoria puede confirmar online, pero no puede negar lo que dice la BD
+            realIsOnline = memoryOnline || !!station.isOnline;
           }
           
           // Si la estación está offline, todos sus EVSEs deben mostrarse como UNAVAILABLE
@@ -646,12 +658,13 @@ const stationsRouter = router({
       if (ctx.user.role === "investor" && station.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes acceso a esta estaci\u00f3n" });
       }
-      // Calcular estado online REAL usando dualCSMS (fuente única de verdad)
+      // Calcular estado online: BD como fuente de verdad + memoria como enriquecimiento
       const { isDemoStation } = await import("./charging/charging-simulator");
       const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
-      let realIsOnline = station.isOnline;
+      let realIsOnline: boolean | number = !!station.isOnline;
       if (!isDemo && station.ocppIdentity) {
-        realIsOnline = dualCSMS.isStationOnline(station.ocppIdentity);
+        const memoryOnline = dualCSMS.isStationOnline(station.ocppIdentity);
+        realIsOnline = memoryOnline || !!station.isOnline;
       }
       return { ...station, isOnline: isDemo ? true : realIsOnline };
     }),
@@ -811,10 +824,9 @@ const stationsRouter = router({
       const { isDemoStation } = await import("./charging/charging-simulator");
       const isDemo = station.ocppIdentity ? isDemoStation(station.ocppIdentity) : false;
       if (isDemo) return evses; // Demo: siempre estado real
-      // Verificar estado online usando dualCSMS (fuente única de verdad)
-      const realIsOnline = station.ocppIdentity
-        ? dualCSMS.isStationOnline(station.ocppIdentity)
-        : station.isOnline;
+      // Verificar estado online: BD como fuente de verdad + memoria como enriquecimiento
+      const memoryOnline2 = station.ocppIdentity ? dualCSMS.isStationOnline(station.ocppIdentity) : false;
+      const realIsOnline = memoryOnline2 || !!station.isOnline;
       if (realIsOnline) return evses; // Online: estado real de BD
       // Offline: marcar todos como UNAVAILABLE excepto CHARGING/RESERVED
       return evses.map((e: any) => ({
