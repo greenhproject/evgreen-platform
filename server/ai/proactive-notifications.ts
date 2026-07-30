@@ -34,9 +34,15 @@ const sentNotifications = new Map<string, number>(); // key: `${userId}-${type}`
 
 const NOTIFICATION_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 horas entre notificaciones del mismo tipo
 
+// Cooldown mínimo entre recordatorios de carga (7 días)
+const CHARGING_REMINDER_COOLDOWN_DAYS = 7;
+// Si el usuario cargó hace menos de N días, no enviar recordatorio
+const POST_CHARGE_SILENCE_DAYS = 5;
+
 /**
  * Verifica en la BD si ya se envió una notificación WhatsApp de este tipo
- * en las últimas 24 horas para este usuario. Persiste entre reinicios.
+ * en las últimas N horas para este usuario. Persiste entre reinicios.
+ * Para charging_reminder usa 7 días; para otros tipos usa 24 horas.
  */
 async function wasRecentlySentInDb(userId: number, eventType: string): Promise<boolean> {
   try {
@@ -44,7 +50,11 @@ async function wasRecentlySentInDb(userId: number, eventType: string): Promise<b
     if (!db) return false;
     const { whatsappNotificationLog } = await import("../../drizzle/schema");
     const { and, eq, gte } = await import("drizzle-orm");
-    const since = new Date(Date.now() - NOTIFICATION_COOLDOWN_MS);
+    // charging_reminder: cooldown de 7 días para no saturar al usuario
+    const cooldownMs = eventType === 'charging_reminder'
+      ? CHARGING_REMINDER_COOLDOWN_DAYS * 24 * 60 * 60 * 1000
+      : NOTIFICATION_COOLDOWN_MS;
+    const since = new Date(Date.now() - cooldownMs);
     const rows = await db.select({ id: whatsappNotificationLog.id })
       .from(whatsappNotificationLog)
       .where(and(
@@ -190,33 +200,21 @@ async function checkLowPriceAtFavoriteStations(): Promise<void> {
 // ============================================================================
 
 /**
- * Verifica en la tabla notifications si ya se envió una notificación
- * de tipo habitual_time HOY para este usuario. Persiste entre reinicios.
+ * Verifica si ya se envió un recordatorio de carga en los últimos N días.
+ * Reemplaza la verificación diaria por una semanal para evitar spam.
  */
-async function wasHabitualNotifSentToday(userId: number): Promise<boolean> {
+async function wasChargingReminderSentRecently(userId: number): Promise<boolean> {
   try {
     const db = await getDb();
     if (!db) return false;
-    // Inicio del día en hora local Colombia (UTC-5)
-    const nowUtc = Date.now();
-    const colombiaOffset = -5 * 60 * 60 * 1000;
-    const nowColombia = new Date(nowUtc + colombiaOffset);
-    const startOfDayColombia = new Date(
-      nowColombia.getUTCFullYear(),
-      nowColombia.getUTCMonth(),
-      nowColombia.getUTCDate(),
-      0, 0, 0, 0
-    );
-    // Convertir de vuelta a UTC para comparar con la BD
-    const startOfDayUtc = new Date(startOfDayColombia.getTime() - colombiaOffset);
-
+    const since = new Date(Date.now() - CHARGING_REMINDER_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
     const rows = await db.select({ id: notifications.id })
       .from(notifications)
       .where(and(
         eq(notifications.userId, userId),
         eq(notifications.type, "CHARGING"),
         sql`${notifications.title} LIKE '%hora habitual%'`,
-        gte(notifications.createdAt, startOfDayUtc),
+        gte(notifications.createdAt, since),
       ))
       .limit(1);
     return rows.length > 0;
@@ -239,8 +237,8 @@ async function checkHabitualChargingTime(): Promise<void> {
   for (const profile of profiles) {
     // Deduplicación 1: cache en memoria (rápido, para el mismo proceso)
     if (wasRecentlySent(profile.userId, 'habitual_time')) continue;
-    // Deduplicación 2: tabla notifications en BD (persiste entre reinicios de Railway)
-    if (await wasHabitualNotifSentToday(profile.userId)) continue;
+    // Deduplicación 2: tabla notifications en BD — cooldown de 7 días (no diario)
+    if (await wasChargingReminderSentRecently(profile.userId)) continue;
     // Deduplicación 3: tabla whatsappNotificationLog (para WhatsApp)
     if (await wasRecentlySentInDb(profile.userId, 'charging_reminder')) continue;
     if (profile.totalSessions < 3) continue; // Necesita al menos 3 sesiones para patrones
@@ -251,19 +249,24 @@ async function checkHabitualChargingTime(): Promise<void> {
 
     // Si la hora actual coincide con una hora preferida del usuario
     if (preferredHours.includes(currentHour)) {
-      // Verificar que no haya cargado hoy
+      // Silencio post-carga: no notificar si cargó hace menos de POST_CHARGE_SILENCE_DAYS días
       if (profile.lastChargeAt) {
-        const lastCharge = new Date(profile.lastChargeAt);
-        const today = new Date();
-        if (lastCharge.toDateString() === today.toDateString()) continue; // Ya cargó hoy
+        const daysSinceLastCharge = (Date.now() - new Date(profile.lastChargeAt).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceLastCharge < POST_CHARGE_SILENCE_DAYS) {
+          console.log(`[ProactiveNotif] Skipping user ${profile.userId} — charged ${daysSinceLastCharge.toFixed(1)} days ago (silence period: ${POST_CHARGE_SILENCE_DAYS} days)`);
+          continue;
+        }
       }
 
-      // Verificar si según la frecuencia, debería necesitar cargar
-      const freqDays = Number(profile.typicalChargeFrequencyDays || 0);
-      if (freqDays > 0 && profile.lastChargeAt) {
+      // Verificar si según la frecuencia típica del usuario, debería necesitar cargar
+      const freqDays = Number(profile.typicalChargeFrequencyDays || 7); // default 7 días si no hay datos
+      if (profile.lastChargeAt) {
         const daysSinceLastCharge = (Date.now() - new Date(profile.lastChargeAt).getTime()) / (1000 * 60 * 60 * 24);
-        // Solo notificar si está cerca o pasó su frecuencia típica
-        if (daysSinceLastCharge < freqDays * 0.7) continue;
+        // Solo notificar si ya pasó al menos el 80% de su frecuencia típica
+        if (daysSinceLastCharge < freqDays * 0.8) {
+          console.log(`[ProactiveNotif] Skipping user ${profile.userId} — ${daysSinceLastCharge.toFixed(1)} days since last charge, freq=${freqDays} days`);
+          continue;
+        }
       }
 
       const topStations = (typeof profile.topStations === 'string'
