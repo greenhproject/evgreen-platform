@@ -318,7 +318,7 @@ export default function PrivacySettings() {
               <Info className="h-5 w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
               <div className="text-xs text-muted-foreground space-y-1">
                 <p>
-                  <strong>Responsable:</strong> EVGreen S.A.S. | NIT: 901.XXX.XXX-X
+                  <strong>Responsable:</strong> Green House Project S.A.S. | NIT: 901.447.678-0
                 </p>
                 <p>
                   <strong>Canal de contacto:</strong> datos@evgreen.lat

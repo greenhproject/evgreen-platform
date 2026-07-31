@@ -105,7 +105,7 @@ export function DataConsentDialog({
           </p>
           <p className="mb-2">
             En cumplimiento de la Ley 1581 de 2012 y el Decreto 1377 de 2013,
-            <strong> EVGreen S.A.S.</strong>, como responsable del tratamiento,
+            <strong> Green House Project S.A.S.</strong>, como responsable del tratamiento,
             solicita tu autorización para analizar tus datos de uso de la
             plataforma con las siguientes finalidades:
           </p>

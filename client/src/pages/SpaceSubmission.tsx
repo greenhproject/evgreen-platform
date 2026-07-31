@@ -1263,7 +1263,7 @@ export default function SpaceSubmission() {
                     className="mt-1 w-4 h-4 rounded border-[#374151] bg-[#111827] text-emerald-500 focus:ring-emerald-500 flex-shrink-0"
                   />
                   <span className="text-xs text-gray-400 leading-relaxed">
-                    Autorizo a EVGreen S.A.S. el tratamiento de mis datos personales conforme a la Ley 1581 de 2012 y su Decreto Reglamentario 1377 de 2013. Mis datos serán utilizados para evaluar la viabilidad del espacio postulado, contactarme con información sobre el programa, y enviar comunicaciones comerciales relacionadas. Puedo ejercer mis derechos de acceso, corrección, supresión y revocatoria escribiendo a <strong className="text-gray-300">datos@evgreen.lat</strong>.
+                    Autorizo a Green House Project S.A.S. el tratamiento de mis datos personales conforme a la Ley 1581 de 2012 y su Decreto Reglamentario 1377 de 2013. Mis datos serán utilizados para evaluar la viabilidad del espacio postulado, contactarme con información sobre el programa, y enviar comunicaciones comerciales relacionadas. Puedo ejercer mis derechos de acceso, corrección, supresión y revocatoria escribiendo a <strong className="text-gray-300">datos@evgreen.lat</strong>.
                   </span>
                 </label>
               </div>
