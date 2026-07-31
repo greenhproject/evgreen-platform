@@ -49,6 +49,7 @@ export default function UserSubscription() {
   const [showComparison, setShowComparison] = useState(false);
   const [location] = useLocation();
 
+  const utils = trpc.useUtils();
   const { data: wompiConfig, isLoading: loadingConfig } = trpc.wompi.isConfigured.useQuery();
   const { data: subscription, refetch: refetchSubscription } = trpc.wompi.getMySubscription.useQuery();
 
@@ -57,16 +58,25 @@ export default function UserSubscription() {
       if ((data as any).walletCharge && data.success) {
         // ✅ Cobro directo desde billetera EVGreen (prioridad máxima)
         toast.success(data.message || "¡Plan activado desde tu billetera!");
-        refetchSubscription();
+        // Invalidar cache y refetch con delay para asegurar que la BD confirmó el write
+        setTimeout(() => {
+          utils.wompi.getMySubscription.invalidate();
+          refetchSubscription();
+        }, 800);
       } else if (data.directCharge && data.success) {
         // Cobro directo exitoso con tarjeta inscrita
         toast.success(data.message || "¡Suscripción activada con tu tarjeta!");
-        refetchSubscription();
+        setTimeout(() => {
+          utils.wompi.getMySubscription.invalidate();
+          refetchSubscription();
+        }, 800);
       } else if (data.directCharge && data.status === "PENDING") {
         // Cobro directo pendiente
         toast.info(data.message || "El cobro está siendo procesado...");
-        // Hacer polling después de unos segundos
-        setTimeout(() => refetchSubscription(), 5000);
+        setTimeout(() => {
+          utils.wompi.getMySubscription.invalidate();
+          refetchSubscription();
+        }, 5000);
       } else if (data.checkoutUrl) {
         // Fallback: abrir pasarela de Wompi (saldo insuficiente en billetera)
         toast.info("Redirigiendo a Wompi para completar el pago...");

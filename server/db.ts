@@ -3044,7 +3044,7 @@ export async function updateUserSubscription(userId: number, data: {
       nextBillingDate: nextBilling,
       lastPaymentDate: data.lastPaymentDate || new Date(),
       lastPaymentReference: data.lastPaymentReference,
-      isActive: data.status ? data.status === "active" : true,
+      isActive: data.status ? (data.status === "active" ? 1 : 0) : 1,
     });
   } else {
     const updateData: any = {};
@@ -3057,7 +3057,7 @@ export async function updateUserSubscription(userId: number, data: {
     if (data.lastPaymentDate) updateData.lastPaymentDate = data.lastPaymentDate;
     if (data.lastPaymentReference) updateData.lastPaymentReference = data.lastPaymentReference;
     if (data.planId) {
-      updateData.subscriptionTier = tier;
+      updateData.tier = tier;
       updateData.discountPercentage = discountPercentage;
       updateData.freeReservationsPerMonth = freeReservationsPerMonth;
       updateData.prioritySupport = prioritySupport ? 1 : 0;
