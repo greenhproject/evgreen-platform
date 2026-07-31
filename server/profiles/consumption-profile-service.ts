@@ -45,7 +45,7 @@ export async function hasActiveConsent(
     .orderBy(desc(userDataConsents.updatedAt))
     .limit(1);
 
-  return consent?.granted === true;
+  return !!consent?.granted;
 }
 
 export async function grantConsent(params: {
@@ -61,9 +61,9 @@ export async function grantConsent(params: {
   await database.insert(userDataConsents).values({
     userId: params.userId,
     consentType: params.consentType,
-    granted: true,
+    granted: 1,
     policyVersion: params.policyVersion,
-    grantedAt: new Date(),
+    grantedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
     ipAddress: params.ipAddress,
     userAgent: params.userAgent,
   });
@@ -82,9 +82,9 @@ export async function revokeConsent(
   await database.insert(userDataConsents).values({
     userId,
     consentType,
-    granted: false,
+    granted: 0,
     policyVersion: "revocation",
-    revokedAt: new Date(),
+    revokedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
   });
 
   // Derecho de supresión: al revocar AI_PROFILING, el perfil se elimina.
