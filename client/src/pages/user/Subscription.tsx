@@ -6,8 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   Crown, Star, Zap, Shield, Clock, CreditCard, CheckCircle, ChevronRight,
-  Loader2, Sparkles, Timer, Percent, Headphones, BadgeCheck, ArrowRight, X, AlertCircle,
+  Loader2, Sparkles, Timer, Percent, Headphones, BadgeCheck, ArrowRight, X,
+  AlertCircle, AlertTriangle, RefreshCw, RotateCcw, CalendarX, Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -47,6 +56,7 @@ export default function UserSubscription() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"basic" | "premium" | null>(null);
   const [showComparison, setShowComparison] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [location] = useLocation();
 
   const utils = trpc.useUtils();
@@ -56,29 +66,24 @@ export default function UserSubscription() {
   const createSubscription = trpc.wompi.createSubscriptionPayment.useMutation({
     onSuccess: (data) => {
       if ((data as any).walletCharge && data.success) {
-        // ✅ Cobro directo desde billetera EVGreen (prioridad máxima)
         toast.success(data.message || "¡Plan activado desde tu billetera!");
-        // Invalidar cache y refetch con delay para asegurar que la BD confirmó el write
         setTimeout(() => {
           utils.wompi.getMySubscription.invalidate();
           refetchSubscription();
         }, 800);
       } else if (data.directCharge && data.success) {
-        // Cobro directo exitoso con tarjeta inscrita
         toast.success(data.message || "¡Suscripción activada con tu tarjeta!");
         setTimeout(() => {
           utils.wompi.getMySubscription.invalidate();
           refetchSubscription();
         }, 800);
       } else if (data.directCharge && data.status === "PENDING") {
-        // Cobro directo pendiente
         toast.info(data.message || "El cobro está siendo procesado...");
         setTimeout(() => {
           utils.wompi.getMySubscription.invalidate();
           refetchSubscription();
         }, 5000);
       } else if (data.checkoutUrl) {
-        // Fallback: abrir pasarela de Wompi (saldo insuficiente en billetera)
         toast.info("Redirigiendo a Wompi para completar el pago...");
         window.open(data.checkoutUrl, "_blank");
       }
@@ -105,12 +110,42 @@ export default function UserSubscription() {
   });
 
   const cancelSub = trpc.wompi.cancelSubscription.useMutation({
-    onSuccess: () => {
-      toast.success("Suscripción cancelada exitosamente");
-      refetchSubscription();
+    onSuccess: (data) => {
+      toast.success(data.message || "Cancelación programada exitosamente");
+      setShowCancelModal(false);
+      setTimeout(() => {
+        utils.wompi.getMySubscription.invalidate();
+        refetchSubscription();
+      }, 500);
     },
     onError: (error) => {
       toast.error(error.message || "Error al cancelar la suscripción");
+    },
+  });
+
+  const reactivateSub = trpc.wompi.reactivateSubscription.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message || "¡Suscripción reactivada!");
+      setTimeout(() => {
+        utils.wompi.getMySubscription.invalidate();
+        refetchSubscription();
+      }, 500);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al reactivar la suscripción");
+    },
+  });
+
+  const retryBilling = trpc.wompi.retryBillingFromWallet.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message || "¡Plan reactivado desde tu billetera!");
+      setTimeout(() => {
+        utils.wompi.getMySubscription.invalidate();
+        refetchSubscription();
+      }, 500);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al reintentar el cobro");
     },
   });
 
@@ -138,19 +173,107 @@ export default function UserSubscription() {
   };
 
   const handleCancel = () => {
-    if (confirm("¿Estás seguro de que deseas cancelar tu suscripción? Perderás todos los beneficios de tu plan.")) {
-      cancelSub.mutate();
-    }
+    setShowCancelModal(true);
+  };
+
+  const confirmCancel = () => {
+    cancelSub.mutate();
   };
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(amount);
 
-  const currentTier = subscription?.tier?.toLowerCase() || "free";
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return "";
+    return new Date(dateStr).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" });
+  };
+
+  const currentTier = (subscription?.subscriptionTier || "FREE").toLowerCase();
+  const subStatus = subscription?.subscriptionStatus || "ACTIVE";
+  const isCancelledPending = subStatus === "CANCELLED_PENDING";
+  const isSuspended = subStatus === "SUSPENDED";
+  const hasActivePlan = currentTier !== "free" && !!subscription?.isActive;
+
+  const effectiveDateStr = subscription?.cancellationEffectiveDate || subscription?.nextBillingDate;
 
   return (
     <UserLayout title="Membresía" showBack>
       <div className="p-4 space-y-6 pb-24">
+
+        {/* ===== BANNER: Plan Suspendido ===== */}
+        <AnimatePresence>
+          {isSuspended && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
+              <Card className="p-4 bg-red-950/40 border-red-700/60">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-red-300">Plan suspendido por falta de pago</p>
+                    <p className="text-xs text-red-400/80 mt-1">
+                      No pudimos procesar el cobro de renovación. Tu plan está suspendido temporalmente.
+                      Recarga tu billetera EVGreen y reactiva tu plan para seguir disfrutando los beneficios.
+                    </p>
+                    <Button
+                      size="sm"
+                      className="mt-3 bg-red-600 hover:bg-red-700 text-white"
+                      onClick={() => retryBilling.mutate()}
+                      disabled={retryBilling.isPending}
+                    >
+                      {retryBilling.isPending ? (
+                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</>
+                      ) : (
+                        <><Wallet className="w-4 h-4 mr-2" /> Pagar desde billetera</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ===== BANNER: Cancelación Pendiente ===== */}
+        <AnimatePresence>
+          {isCancelledPending && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
+              <Card className="p-4 bg-amber-950/40 border-amber-700/60">
+                <div className="flex items-start gap-3">
+                  <CalendarX className="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-amber-300">Cancelación programada</p>
+                    <p className="text-xs text-amber-400/80 mt-1">
+                      Tu plan sigue activo hasta el{" "}
+                      <span className="font-semibold text-amber-300">{formatDate(effectiveDateStr)}</span>.
+                      No se realizarán más cobros automáticos. Puedes reactivarlo antes de esa fecha.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-3 border-amber-600 text-amber-300 hover:bg-amber-900/40"
+                      onClick={() => reactivateSub.mutate()}
+                      disabled={reactivateSub.isPending}
+                    >
+                      {reactivateSub.isPending ? (
+                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Reactivando...</>
+                      ) : (
+                        <><RotateCcw className="w-4 h-4 mr-2" /> Reactivar suscripción</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Header con estado actual */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <div className={`relative overflow-hidden rounded-2xl p-5 bg-gradient-to-br ${
@@ -166,13 +289,34 @@ export default function UserSubscription() {
                 {currentTier === "premium" ? <Crown className="w-8 h-8 text-emerald-400" /> :
                  currentTier === "basic" ? <Star className="w-8 h-8 text-blue-400" /> :
                  <Zap className="w-8 h-8 text-gray-400" />}
-                <div>
-                  <h2 className="text-xl font-bold text-white">
-                    {currentTier === "premium" ? "Plan Premium" :
-                     currentTier === "basic" ? "Plan Básico" : "Sin Plan Activo"}
-                  </h2>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-xl font-bold text-white">
+                      {currentTier === "premium" ? "Plan Premium" :
+                       currentTier === "basic" ? "Plan Básico" : "Sin Plan Activo"}
+                    </h2>
+                    {/* Badge de estado */}
+                    {isCancelledPending && (
+                      <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs">
+                        Cancela el {formatDate(effectiveDateStr)}
+                      </Badge>
+                    )}
+                    {isSuspended && (
+                      <Badge className="bg-red-500/20 text-red-300 border-red-500/40 text-xs">
+                        Suspendido
+                      </Badge>
+                    )}
+                    {!isCancelledPending && !isSuspended && hasActivePlan && (
+                      <Badge className="bg-green-500/20 text-green-300 border-green-500/40 text-xs">
+                        Activo
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-white/60 text-sm">
-                    {currentTier !== "free" ? "Tu membresía está activa" : "Activa un plan y ahorra en cada carga"}
+                    {isCancelledPending ? "Activo hasta el final del período" :
+                     isSuspended ? "Pago pendiente — reactiva desde billetera" :
+                     currentTier !== "free" ? "Tu membresía está activa" :
+                     "Activa un plan y ahorra en cada carga"}
                   </p>
                 </div>
               </div>
@@ -197,19 +341,62 @@ export default function UserSubscription() {
                     </div>
                   )}
 
-                  {subscription.nextBillingDate && (
+                  {subscription.nextBillingDate && !isCancelledPending && !isSuspended && (
                     <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2">
                       <Clock className="w-4 h-4 text-white/70" />
                       <span className="text-white text-sm">
-                        Próximo cobro: {new Date(subscription.nextBillingDate).toLocaleDateString("es-CO", { day: "numeric", month: "long" })}
+                        Próximo cobro: {formatDate(subscription.nextBillingDate)}
                       </span>
                     </div>
                   )}
 
-                  <Button variant="ghost" size="sm" className="text-white/60 hover:text-white hover:bg-white/10 mt-2"
-                    onClick={handleCancel} disabled={cancelSub.isPending}>
-                    {cancelSub.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Cancelando...</> : "Cancelar suscripción"}
-                  </Button>
+                  {/* Botones de acción según estado */}
+                  {!isCancelledPending && !isSuspended && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-white/60 hover:text-white hover:bg-white/10 mt-2"
+                      onClick={handleCancel}
+                      disabled={cancelSub.isPending}
+                    >
+                      {cancelSub.isPending ? (
+                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</>
+                      ) : (
+                        "Cancelar suscripción"
+                      )}
+                    </Button>
+                  )}
+
+                  {isCancelledPending && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-amber-300 hover:text-amber-200 hover:bg-white/10 mt-2"
+                      onClick={() => reactivateSub.mutate()}
+                      disabled={reactivateSub.isPending}
+                    >
+                      {reactivateSub.isPending ? (
+                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Reactivando...</>
+                      ) : (
+                        <><RotateCcw className="w-4 h-4 mr-2" /> Reactivar suscripción</>
+                      )}
+                    </Button>
+                  )}
+
+                  {isSuspended && (
+                    <Button
+                      size="sm"
+                      className="bg-red-600 hover:bg-red-700 text-white mt-2"
+                      onClick={() => retryBilling.mutate()}
+                      disabled={retryBilling.isPending}
+                    >
+                      {retryBilling.isPending ? (
+                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</>
+                      ) : (
+                        <><RefreshCw className="w-4 h-4 mr-2" /> Reintentar cobro</>
+                      )}
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -275,12 +462,19 @@ export default function UserSubscription() {
                       </div>
                     ))}
                   </div>
-                  <Button className="w-full mt-5" variant={currentTier === "basic" ? "outline" : "default"}
+                  <Button
+                    className="w-full mt-5"
+                    variant={currentTier === "basic" ? "outline" : "default"}
                     disabled={isProcessing || currentTier === "basic" || (!wompiConfig?.configured && currentTier !== "basic")}
-                    onClick={() => handleSubscribe("basic")}>
-                    {isProcessing && selectedPlan === "basic" ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</> :
-                     currentTier === "basic" ? <><BadgeCheck className="w-4 h-4 mr-2" /> Plan actual</> :
-                     <><ArrowRight className="w-4 h-4 mr-2" /> Activar Plan Básico</>}
+                    onClick={() => handleSubscribe("basic")}
+                  >
+                    {isProcessing && selectedPlan === "basic" ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</>
+                    ) : currentTier === "basic" ? (
+                      <><BadgeCheck className="w-4 h-4 mr-2" /> Plan actual</>
+                    ) : (
+                      <><ArrowRight className="w-4 h-4 mr-2" /> Activar Plan Básico</>
+                    )}
                   </Button>
                 </Card>
               </motion.div>
@@ -317,13 +511,19 @@ export default function UserSubscription() {
                       </div>
                     ))}
                   </div>
-                  <Button className={`w-full mt-5 ${currentTier !== "premium" ? "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white" : ""}`}
+                  <Button
+                    className={`w-full mt-5 ${currentTier !== "premium" ? "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white" : ""}`}
                     variant={currentTier === "premium" ? "outline" : "default"}
                     disabled={isProcessing || currentTier === "premium" || (!wompiConfig?.configured && currentTier !== "premium")}
-                    onClick={() => handleSubscribe("premium")}>
-                    {isProcessing && selectedPlan === "premium" ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</> :
-                     currentTier === "premium" ? <><BadgeCheck className="w-4 h-4 mr-2" /> Plan actual</> :
-                     <><Crown className="w-4 h-4 mr-2" /> Activar Plan Premium</>}
+                    onClick={() => handleSubscribe("premium")}
+                  >
+                    {isProcessing && selectedPlan === "premium" ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</>
+                    ) : currentTier === "premium" ? (
+                      <><BadgeCheck className="w-4 h-4 mr-2" /> Plan actual</>
+                    ) : (
+                      <><Crown className="w-4 h-4 mr-2" /> Activar Plan Premium</>
+                    )}
                   </Button>
                 </Card>
               </motion.div>
@@ -401,15 +601,19 @@ export default function UserSubscription() {
           <h3 className="text-lg font-semibold">Preguntas frecuentes</h3>
           <Card className="p-4">
             <h4 className="font-medium text-sm mb-1">¿Puedo cancelar en cualquier momento?</h4>
-            <p className="text-sm text-muted-foreground">Sí, puedes cancelar tu suscripción cuando quieras. Tu plan seguirá activo hasta el final del período de facturación.</p>
+            <p className="text-sm text-muted-foreground">Sí, puedes cancelar tu suscripción cuando quieras. Tu plan seguirá activo hasta el final del período de facturación ya pagado. No se realizarán más cobros.</p>
           </Card>
           <Card className="p-4">
             <h4 className="font-medium text-sm mb-1">¿Qué métodos de pago aceptan?</h4>
-            <p className="text-sm text-muted-foreground">Aceptamos tarjetas de crédito/débito (Visa, Mastercard, American Express), PSE, Nequi, Bancolombia QR y Efecty a través de Wompi.</p>
+            <p className="text-sm text-muted-foreground">Aceptamos billetera EVGreen (prioridad), tarjetas de crédito/débito (Visa, Mastercard), PSE, Nequi, Bancolombia QR y Efecty a través de Wompi.</p>
+          </Card>
+          <Card className="p-4">
+            <h4 className="font-medium text-sm mb-1">¿Qué pasa si no hay saldo para renovar?</h4>
+            <p className="text-sm text-muted-foreground">Si no hay saldo en tu billetera ni tarjeta inscrita, recibirás una notificación 3 días antes. Si no se puede cobrar, el plan se suspende temporalmente. Tienes hasta 10 días para pagar antes de la cancelación definitiva.</p>
           </Card>
           <Card className="p-4">
             <h4 className="font-medium text-sm mb-1">¿Cómo funciona el cobro recurrente?</h4>
-            <p className="text-sm text-muted-foreground">Al activar un plan, se realiza el primer cobro. Los siguientes cobros se procesan automáticamente cada mes a través de Wompi.</p>
+            <p className="text-sm text-muted-foreground">Al activar un plan, se realiza el primer cobro desde tu billetera EVGreen (si tiene saldo) o con tu tarjeta inscrita. Los siguientes cobros se procesan automáticamente cada mes.</p>
           </Card>
         </div>
 
@@ -429,6 +633,60 @@ export default function UserSubscription() {
           </Card>
         )}
       </div>
+
+      {/* ===== MODAL DE CANCELACIÓN ===== */}
+      <Dialog open={showCancelModal} onOpenChange={setShowCancelModal}>
+        <DialogContent className="max-w-sm mx-4">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarX className="w-5 h-5 text-amber-400" />
+              Cancelar suscripción
+            </DialogTitle>
+            <DialogDescription className="text-left space-y-3 pt-2">
+              <p className="text-sm text-foreground/90">
+                Al cancelar, tu plan seguirá activo hasta el{" "}
+                <span className="font-semibold text-amber-300">
+                  {formatDate(subscription?.nextBillingDate)}
+                </span>. No se realizarán más cobros automáticos.
+              </p>
+              <div className="bg-amber-950/30 border border-amber-700/40 rounded-lg p-3 space-y-1.5">
+                <p className="text-xs font-semibold text-amber-300">Política de cancelación</p>
+                <ul className="text-xs text-amber-400/80 space-y-1">
+                  <li>• Tu plan permanece activo hasta el final del período pagado</li>
+                  <li>• No se realizan reembolsos por el período restante</li>
+                  <li>• Puedes reactivar tu plan en cualquier momento antes de la fecha de vencimiento</li>
+                  <li>• Perderás los beneficios al vencer el período</li>
+                </ul>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                ¿Estás seguro de que deseas programar la cancelación?
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 mt-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowCancelModal(false)}
+              disabled={cancelSub.isPending}
+            >
+              Mantener plan
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              onClick={confirmCancel}
+              disabled={cancelSub.isPending}
+            >
+              {cancelSub.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</>
+              ) : (
+                "Sí, cancelar"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </UserLayout>
   );
 }

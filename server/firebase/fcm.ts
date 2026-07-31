@@ -67,7 +67,11 @@ export type NotificationType =
   | "support_user_reply"     // Usuario respondió en ticket
   | "support_agent_reply"    // Agente/técnico respondió en ticket
   | "support_ticket_resolved" // Ticket resuelto
-  | "system_alert";          // Alerta del sistema
+  | "system_alert"          // Alerta del sistema
+  | "payment_success"        // Pago/renovación exitosa
+  | "payment_failed"         // Fallo de pago/renovación
+  | "subscription_expiring"  // Suscripción próxima a vencer
+  | "subscription_cancelled"; // Suscripción cancelada
 
 // Interfaz para datos de notificación
 export interface PushNotificationData {
@@ -94,7 +98,11 @@ const notificationStyles: Record<NotificationType, { icon: string; color: string
   support_user_reply: { icon: "💬", color: "#3b82f6" },
   support_agent_reply: { icon: "🛠️", color: "#059669" },
   support_ticket_resolved: { icon: "✅", color: "#22c55e" },
-  system_alert: { icon: "🔔", color: "#64748b" },
+  system_alert: { icon: "\uD83D\uDD14", color: "#64748b" },
+  payment_success: { icon: "\u2705", color: "#22c55e" },
+  payment_failed: { icon: "\u26A0\uFE0F", color: "#ef4444" },
+  subscription_expiring: { icon: "\u23F3", color: "#f59e0b" },
+  subscription_cancelled: { icon: "\uD83D\uDEAB", color: "#64748b" },
 };
 
 /**

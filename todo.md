@@ -3786,3 +3786,21 @@
 - [x] FIX: paymentStatus en lugar de status en walletTransactions (auto-charge.ts)
 - [x] FIX: isAvailable boolean → tinyint en support-router.ts
 
+
+
+## Ciclo de Vida de Suscripciones - 31 Julio 2026 [COMPLETADO]
+
+### Backend - Lógica de Cancelación y Reactivación
+- [x] cancelSubscription: lógica CANCELLED_PENDING (plan activo hasta nextBillingDate, sin cobros futuros)
+- [x] reactivateSubscription: revertir CANCELLED_PENDING → ACTIVE, limpiar campos de cancelación
+- [x] retryBillingFromWallet: pagar renovación pendiente desde billetera cuando plan está SUSPENDED
+- [x] Notificaciones push + in-app para cada evento de ciclo de vida
+- [x] Imports de getDb, subscriptions, eq, sendPushNotification en wompi/router.ts
+
+### Frontend - UI de Estado de Suscripción
+- [x] Banner rojo para plan SUSPENDED con botón "Pagar desde billetera"
+- [x] Banner ámbar para plan CANCELLED_PENDING con fecha efectiva y botón "Reactivar"
+- [x] Modal de cancelación con política explicada y fecha de vencimiento
+- [x] Badge de estado (Activo / Suspendido / Cancela el DD/MM/AAAA) en header del plan
+- [x] Botones contextuales según estado: cancelar / reactivar / reintentar cobro
+- [x] Corrección: subscription.subscriptionTier (no .tier) en Subscription.tsx

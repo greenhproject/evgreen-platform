@@ -1612,6 +1612,14 @@ export const subscriptions = mysqlTable("subscriptions", {
 	autoRechargeAmount: int().default(20000),
 	lastAutoRechargeAt: timestamp({ mode: 'string' }),
 	autoRechargeFailCount: int().default(0),
+	// Subscription lifecycle fields
+	subscriptionStatus: mysqlEnum("subscription_status", ['ACTIVE','SUSPENDED','CANCELLED_PENDING','CANCELLED']).default('ACTIVE').notNull(),
+	suspendedAt: timestamp({ mode: 'string' }),
+	suspendedUntil: timestamp({ mode: 'string' }),
+	cancellationRequestedAt: timestamp({ mode: 'string' }),
+	cancellationEffectiveDate: timestamp({ mode: 'string' }),
+	billingCronTaskUid: varchar({ length: 100 }),
+	renewalReminderSentAt: timestamp({ mode: 'string' }),
 });
 
 export const supportAgents = mysqlTable("support_agents", {

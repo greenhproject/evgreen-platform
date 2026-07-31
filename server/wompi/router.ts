@@ -24,6 +24,10 @@ import {
   getAcceptanceToken,
   processRecurringBilling,
 } from "./recurring-billing";
+import { getDb } from "../db";
+import { subscriptions } from "../../drizzle/schema";
+import { eq } from "drizzle-orm";
+import { sendPushNotification } from "../firebase/fcm";
 
 export const wompiRouter = router({
   // ========================================================================
@@ -831,23 +835,133 @@ export const wompiRouter = router({
         message: "No tienes una suscripción activa",
       });
     }
-
-    await db.cancelUserSubscription(ctx.user.id);
-
-    // Notificación de cancelación
+    // Política: CANCELLED_PENDING → el plan sigue activo hasta nextBillingDate
+    const dbConn = await getDb();
+    if (!dbConn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "BD no disponible" });
+    const effectiveDate = subscription.nextBillingDate || subscription.endDate;
+    await dbConn.update(subscriptions)
+      .set({
+        subscriptionStatus: "CANCELLED_PENDING",
+        cancellationRequestedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+        cancellationEffectiveDate: effectiveDate ?? null,
+      })
+      .where(eq(subscriptions.userId, ctx.user.id));
+    // Notificación push + in-app
     try {
+      const user = await db.getUserById(ctx.user.id);
+      if (user?.fcmToken) {
+        await sendPushNotification(user.fcmToken, {
+          type: "subscription_cancelled",
+          title: "Cancelación programada",
+          body: effectiveDate
+            ? `Tu plan sigue activo hasta el ${new Date(effectiveDate).toLocaleDateString("es-CO", { day: "numeric", month: "long" })}. Puedes reactivarlo antes de esa fecha.`
+            : "Tu plan sigue activo hasta el final del período pagado.",
+          clickAction: "/subscription",
+        });
+      }
       await db.createNotification({
         userId: ctx.user.id,
-        title: "Suscripción cancelada",
-        message: "Tu suscripción ha sido cancelada. Puedes reactivarla en cualquier momento.",
+        title: "Cancelación programada",
+        message: effectiveDate
+          ? `Tu plan sigue activo hasta el ${new Date(effectiveDate).toLocaleDateString("es-CO", { day: "numeric", month: "long" })}. Puedes reactivarlo antes de esa fecha.`
+          : "Tu plan sigue activo hasta el final del período pagado.",
         type: "PAYMENT",
         data: JSON.stringify({ key: `sub-cancel-${Date.now()}` }),
       });
     } catch (notifErr) {
-      console.warn("[Wompi] Error creando notificación de cancelación:", notifErr);
+      console.warn("[Wompi] Error enviando notificación de cancelación:", notifErr);
     }
-
-    return { success: true, message: "Suscripción cancelada exitosamente" };
+    return {
+      success: true,
+      message: effectiveDate
+        ? `Tu plan sigue activo hasta el ${new Date(effectiveDate).toLocaleDateString("es-CO", { day: "numeric", month: "long" })}. No se realizarán más cobros.`
+        : "Tu plan sigue activo hasta el final del período pagado. No se realizarán más cobros.",
+      effectiveDate: effectiveDate ?? null,
+    };
+  }),
+  // ========================================================================
+  // Reactivar suscripción cancelada (mientras sigue activa)
+  // ========================================================================
+  reactivateSubscription: protectedProcedure.mutation(async ({ ctx }) => {
+    const subscription = await db.getUserSubscription(ctx.user.id);
+    if (!subscription || subscription.subscriptionStatus !== "CANCELLED_PENDING") {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "No tienes una cancelación pendiente para reactivar",
+      });
+    }
+    const dbConn = await getDb();
+    if (!dbConn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "BD no disponible" });
+    await dbConn.update(subscriptions)
+      .set({
+        subscriptionStatus: "ACTIVE",
+        cancellationRequestedAt: null,
+        cancellationEffectiveDate: null,
+      })
+      .where(eq(subscriptions.userId, ctx.user.id));
+    try {
+      await db.createNotification({
+        userId: ctx.user.id,
+        title: "¡Suscripción reactivada!",
+        message: "Tu suscripción ha sido reactivada. Seguirá renovándose automáticamente.",
+        type: "PAYMENT",
+        data: JSON.stringify({ key: `sub-reactivate-${Date.now()}` }),
+      });
+    } catch (_e) { /* silencioso */ }
+    return { success: true, message: "¡Tu suscripción ha sido reactivada exitosamente!" };
+  }),
+  // ========================================================================
+  // Reintentar cobro de renovación desde billetera (plan suspendido)
+  // ========================================================================
+  retryBillingFromWallet: protectedProcedure.mutation(async ({ ctx }) => {
+    const subscription = await db.getUserSubscription(ctx.user.id);
+    if (!subscription || subscription.subscriptionStatus !== "SUSPENDED") {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "No tienes una suscripción suspendida",
+      });
+    }
+    const wallet = await db.getUserWallet(ctx.user.id);
+    const tier = subscription.subscriptionTier || "BASIC";
+    const PLAN_PRICES: Record<string, number> = { BASIC: 18900, PREMIUM: 33900, FREE: 0 };
+    const price = PLAN_PRICES[tier] || 18900;
+    const walletBalance = parseFloat((wallet?.balance ?? "0").toString());
+    if (!wallet || walletBalance < price) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `Saldo insuficiente. Necesitas $${price.toLocaleString("es-CO")} y tienes $${walletBalance.toLocaleString("es-CO")}.`,
+      });
+    }
+    // Descontar de billetera
+    const newBalance = (walletBalance - price).toFixed(2);
+    await db.updateWalletBalance(ctx.user.id, newBalance);
+    // Reactivar suscripción
+    const dbConn = await getDb();
+    if (!dbConn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "BD no disponible" });
+    const now = new Date();
+    const nextBilling = new Date(now);
+    nextBilling.setDate(nextBilling.getDate() + 30);
+    await dbConn.update(subscriptions)
+      .set({
+        subscriptionStatus: "ACTIVE",
+        isActive: 1,
+        suspendedAt: null,
+        suspendedUntil: null,
+        failedPaymentCount: 0,
+        lastPaymentDate: now.toISOString().slice(0, 19).replace("T", " "),
+        nextBillingDate: nextBilling.toISOString().slice(0, 19).replace("T", " "),
+      })
+      .where(eq(subscriptions.userId, ctx.user.id));
+    try {
+      await db.createNotification({
+        userId: ctx.user.id,
+        title: "¡Plan reactivado!",
+        message: `Tu plan ${tier} ha sido reactivado. Próxima renovación: ${nextBilling.toLocaleDateString("es-CO", { day: "numeric", month: "long" })}.`,
+        type: "PAYMENT",
+        data: JSON.stringify({ key: `sub-retry-${Date.now()}` }),
+      });
+    } catch (_e) { /* silencioso */ }
+    return { success: true, message: "¡Plan reactivado exitosamente desde tu billetera!" };
   }),
 
   // ========================================================================

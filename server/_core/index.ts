@@ -12,7 +12,8 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { handleWompiWebhook } from "../wompi/webhook";
-import { startBillingCronJob } from "../wompi/recurring-billing";
+import { processRecurringBilling } from "../wompi/recurring-billing";
+import { createHeartbeatJob, listHeartbeatJobs } from "./heartbeat";
 import { startReconciliationCron } from "../wompi/reconciliation-cron";
 import { startTransactionCleanupJob } from "../jobs/transaction-cleanup";
 import { startBalanceMonitor } from "../charging/balance-monitor";
@@ -156,6 +157,23 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Wompi webhook
   app.post("/api/wompi/webhook", express.json(), handleWompiWebhook);
+
+  // ─── Heartbeat: Renovación automática de suscripciones (diario 6am Colombia) ───
+  app.post("/api/scheduled/billing", express.json(), async (req, res) => {
+    const authHeader = req.headers.authorization || "";
+    const expectedToken = process.env.BUILT_IN_FORGE_API_KEY || "";
+    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    console.log("[Heartbeat] /api/scheduled/billing triggered at", new Date().toISOString());
+    try {
+      const result = await processRecurringBilling();
+      return res.json({ ok: true, result });
+    } catch (err: any) {
+      console.error("[Heartbeat] Error en billing:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
 
   // Wompi native redirect relay: Chrome Custom Tab bloquea 302 a custom schemes,
   // pero SÍ permite window.location.href desde JavaScript.
@@ -582,8 +600,27 @@ async function startServer() {
     console.log(`Server running on http://localhost:${port}/`);
     console.log(`OCPP WebSocket endpoint: ws://localhost:${port}/ocpp/{chargePointId}`);
     
-    // Iniciar cron job de cobro recurrente de suscripciones
-    startBillingCronJob();
+    // Registrar Heartbeat job de forma async (no bloquea el listen)
+    (async () => {
+      try {
+        const existing = await listHeartbeatJobs("");
+        const billingJobExists = existing.jobs?.some((j: any) => j.name === "evgreen-subscription-billing");
+        if (!billingJobExists) {
+          const job = await createHeartbeatJob({
+            name: "evgreen-subscription-billing",
+            cron: "0 11 * * *",
+            path: "/api/scheduled/billing",
+            method: "POST",
+            description: "Renovación automática de suscripciones EVGreen: wallet-first, recordatorios D-3, cancelaciones pendientes",
+          }, "");
+          console.log(`[Heartbeat] Job de billing registrado: ${job.taskUid}`);
+        } else {
+          console.log("[Heartbeat] Job de billing ya existe, omitiendo registro.");
+        }
+      } catch (err) {
+        console.warn("[Heartbeat] No se pudo registrar el job de billing (no crítico):", err);
+      }
+    })();
     
     // Iniciar reconciliación automática de transacciones Wompi pendientes (cada 5 min)
     startReconciliationCron();
