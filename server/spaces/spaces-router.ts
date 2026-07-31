@@ -170,18 +170,18 @@ export const spacesRouter = router({
         availableAreaM2: input.availableAreaM2 || null,
         parkingSpots: input.parkingSpots || null,
         transformerCapacityKva: input.transformerCapacityKva || null,
-        hasElectricalPanel: input.hasElectricalPanel || false,
+        hasElectricalPanel: input.hasElectricalPanel ? 1 : 0,
         electricalDistance: input.electricalDistance || null,
-        hasInternet: input.hasInternet || false,
+        hasInternet: input.hasInternet ? 1 : 0,
         operatingHoursStart: input.operatingHoursStart || "06:00",
         operatingHoursEnd: input.operatingHoursEnd || "22:00",
-        is24Hours: input.is24Hours || false,
+        is24Hours: input.is24Hours ? 1 : 0,
         estimatedDailyVehicles: input.estimatedDailyVehicles || null,
         estimatedEvPercent: input.estimatedEvPercent || null,
         nearbyAttractions: input.nearbyAttractions || null,
         socioeconomicStratum: input.socioeconomicStratum || null,
         additionalNotes: input.additionalNotes || null,
-        status: "pending",
+        spaceStatus: "pending",
       });
 
       const submissionId = result.insertId;
@@ -239,7 +239,7 @@ export const spacesRouter = router({
         .select({
           code: spaceSubmissions.code,
           spaceName: spaceSubmissions.spaceName,
-          status: spaceSubmissions.status,
+          status: spaceSubmissions.spaceStatus,
           city: spaceSubmissions.city,
           createdAt: spaceSubmissions.createdAt,
           letterSentAt: spaceSubmissions.letterSentAt,
@@ -282,7 +282,7 @@ export const spacesRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Esta carta de intención ya fue aceptada" });
       }
 
-      if (submission.status !== "letter_sent") {
+      if (submission.spaceStatus !== "letter_sent") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Esta postulación no está en estado de firma de carta" });
       }
 
@@ -331,8 +331,8 @@ export const spacesRouter = router({
       // Actualizar BD con todos los datos de la firma
       await db.update(spaceSubmissions)
         .set({
-          status: "letter_accepted",
-          letterAcceptedAt: signedAt,
+          spaceStatus: "letter_accepted",
+          letterAcceptedAt: signedAt.toISOString().slice(0, 19).replace("T", " "),
           letterSignerName: input.signerName,
           letterSignerDocument: input.signerDocument,
           letterSignerIp: clientIp,
@@ -413,7 +413,7 @@ export const spacesRouter = router({
           estimatedPowerKw: spaceSubmissions.estimatedPowerKw,
           estimatedChargerCount: spaceSubmissions.estimatedChargerCount,
           recommendedChargerType: spaceSubmissions.recommendedChargerType,
-          status: spaceSubmissions.status,
+          spaceStatus: spaceSubmissions.spaceStatus,
           crowdfundingProjectId: spaceSubmissions.crowdfundingProjectId,
           socioeconomicStratum: spaceSubmissions.socioeconomicStratum,
           estimatedDailyVehicles: spaceSubmissions.estimatedDailyVehicles,
@@ -423,7 +423,7 @@ export const spacesRouter = router({
         })
         .from(spaceSubmissions)
         .where(
-          inArray(spaceSubmissions.status, ["published", "funded", "in_construction", "operational"])
+          inArray(spaceSubmissions.spaceStatus, ["published", "funded", "in_construction", "operational"])
         )
         .orderBy(desc(spaceSubmissions.aiScore));
 
@@ -511,7 +511,7 @@ export const spacesRouter = router({
         let conditions: any[] = [];
 
         if (input?.status && input.status !== "all") {
-          conditions.push(eq(spaceSubmissions.status, input.status as any));
+          conditions.push(eq(spaceSubmissions.spaceStatus, input.status as any));
         }
 
         if (input?.search) {
@@ -537,13 +537,13 @@ export const spacesRouter = router({
         }
 
         if (input?.dateFrom) {
-          conditions.push(gte(spaceSubmissions.createdAt, new Date(input.dateFrom)));
+          conditions.push(gte(spaceSubmissions.createdAt, input.dateFrom));
         }
 
         if (input?.dateTo) {
           const endDate = new Date(input.dateTo);
           endDate.setHours(23, 59, 59, 999);
-          conditions.push(lte(spaceSubmissions.createdAt, endDate));
+          conditions.push(lte(spaceSubmissions.createdAt, endDate.toISOString().slice(0, 19).replace('T', ' ')));
         }
 
         if (input?.hasScore === "scored") {
@@ -571,11 +571,11 @@ export const spacesRouter = router({
         // Obtener conteo por estado
         const statusCounts = await db
           .select({
-            status: spaceSubmissions.status,
+            status: spaceSubmissions.spaceStatus,
             count: count(),
           })
           .from(spaceSubmissions)
-          .groupBy(spaceSubmissions.status);
+          .groupBy(spaceSubmissions.spaceStatus);
 
         // Obtener ciudades y tipos únicos para los filtros
         const [cities, types] = await Promise.all([
@@ -649,7 +649,7 @@ export const spacesRouter = router({
         const db = await getDatabase();
 
         const updateData: any = {
-          status: input.status,
+          spaceStatus: input.status,
         };
 
         if (input.rejectionReason) updateData.rejectionReason = input.rejectionReason;
@@ -666,7 +666,7 @@ export const spacesRouter = router({
         // Si se está evaluando, registrar quién y cuándo
         if (["under_review", "approved", "rejected"].includes(input.status)) {
           updateData.evaluatedBy = ctx.user.id;
-          updateData.evaluatedAt = new Date();
+          updateData.evaluatedAt = new Date().toISOString().slice(0, 19).replace("T", " ");
         }
 
         await db.update(spaceSubmissions)
@@ -696,14 +696,14 @@ export const spacesRouter = router({
               chargerPowerKw: submission.estimatedPowerKw && submission.estimatedChargerCount
                 ? Math.round(submission.estimatedPowerKw / submission.estimatedChargerCount)
                 : 60,
-              hasSolarPanels: false,
+                            hasSolarPanels: 0,
+              raisedAmount: 0,
               estimatedRoiPercent: "85.00",
               estimatedPaybackMonths: 14,
               status: "DRAFT",
               spaceSubmissionId: input.id,
               createdById: ctx.user.id,
             });
-
             // Vincular el espacio con el proyecto CF
             await db.update(spaceSubmissions)
               .set({ crowdfundingProjectId: cfResult.insertId })
@@ -721,7 +721,7 @@ export const spacesRouter = router({
 
           if (submission?.crowdfundingProjectId) {
             await db.update(crowdfundingProjects)
-              .set({ status: "OPEN", launchDate: new Date() })
+              .set({ status: "OPEN", launchDate: new Date().toISOString().slice(0, 19).replace("T", " ") })
               .where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId));
           }
         }
@@ -747,7 +747,7 @@ export const spacesRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         }
 
-        if (submission.status !== "approved") {
+        if (submission.spaceStatus !== "approved") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Solo se puede enviar carta a postulaciones aprobadas" });
         }
 
@@ -792,9 +792,9 @@ export const spacesRouter = router({
         // Actualizar estado y token
         await db.update(spaceSubmissions)
           .set({
-            status: "letter_sent",
+            spaceStatus: "letter_sent",
             letterToken,
-            letterSentAt: new Date(),
+            letterSentAt: new Date().toISOString().slice(0, 19).replace("T", " "),
           })
           .where(eq(spaceSubmissions.id, input.id));
 
@@ -904,7 +904,7 @@ Responde en formato JSON con la siguiente estructura:`;
           .set({
             aiScore: Math.min(100, Math.max(0, analysis.score)),
             aiAnalysis: JSON.stringify(analysis),
-            aiScoredAt: new Date(),
+            aiScoredAt: new Date().toISOString().slice(0, 19).replace("T", " "),
             // Auto-llenar datos de inversión estimados si no existen
             ...(submission.estimatedPowerKw ? {} : { estimatedPowerKw: analysis.estimatedPowerKw }),
             ...(submission.estimatedChargerCount ? {} : { estimatedChargerCount: analysis.estimatedChargers }),
@@ -939,7 +939,7 @@ Responde en formato JSON con la siguiente estructura:`;
           throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         }
 
-        if (submission.status !== "letter_accepted" && submission.status !== "approved") {
+        if (submission.spaceStatus !== "letter_accepted" && submission.spaceStatus !== "approved") {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Solo se pueden publicar espacios aprobados o con carta de intenci\u00f3n aceptada",
@@ -957,7 +957,7 @@ Responde en formato JSON con la siguiente estructura:`;
               estimatedRoiPercent: input.estimatedRoiPercent || "85.00",
               estimatedPaybackMonths: input.estimatedPaybackMonths || 14,
               status: "OPEN",
-              launchDate: new Date(),
+              launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
             })
             .where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId));
           crowdfundingProjectId = submission.crowdfundingProjectId;
@@ -976,11 +976,12 @@ Responde en formato JSON con la siguiente estructura:`;
             chargerPowerKw: submission.estimatedPowerKw && submission.estimatedChargerCount
               ? Math.round(submission.estimatedPowerKw / submission.estimatedChargerCount)
               : 60,
-            hasSolarPanels: false,
+            hasSolarPanels: 0,
+            raisedAmount: 0,
             estimatedRoiPercent: input.estimatedRoiPercent || "85.00",
             estimatedPaybackMonths: input.estimatedPaybackMonths || 14,
             status: "OPEN",
-            launchDate: new Date(),
+            launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
             spaceSubmissionId: input.id,
             createdById: ctx.user.id,
           });
@@ -990,7 +991,7 @@ Responde en formato JSON con la siguiente estructura:`;
         // Actualizar postulaci\u00f3n
         await db.update(spaceSubmissions)
           .set({
-            status: "published",
+            spaceStatus: "published",
             crowdfundingProjectId,
             estimatedInvestmentCop: input.targetAmount,
           })
@@ -1142,10 +1143,10 @@ Responde en formato JSON con la siguiente estructura:`;
         const db = await getDatabase();
         const { ids, status } = input;
 
-        const updateData: any = { status };
+        const updateData: any = { spaceStatus: status };
         if (["under_review", "approved", "rejected"].includes(status)) {
           updateData.evaluatedBy = ctx.user.id;
-          updateData.evaluatedAt = new Date();
+          updateData.evaluatedAt = new Date().toISOString().slice(0, 19).replace("T", " ");
         }
 
         await db.update(spaceSubmissions)
@@ -1171,7 +1172,7 @@ Responde en formato JSON con la siguiente estructura:`;
           .set({
             technicalScore,
             evaluatedBy: ctx.user.id,
-            evaluatedAt: new Date(),
+            evaluatedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
           })
           .where(inArray(spaceSubmissions.id, ids));
 
@@ -1198,7 +1199,7 @@ Responde en formato JSON con la siguiente estructura:`;
           conditions.push(eq(investorLeads.spaceId, input.spaceId));
         }
         if (input?.status && input.status !== "all") {
-          conditions.push(eq(investorLeads.status, input.status as any));
+          conditions.push(eq(investorLeads.leadStatus, input.status as any));
         }
 
         const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -1279,12 +1280,12 @@ Responde en formato JSON con la siguiente estructura:`;
       const db = await getDatabase();
 
       const [space] = await db
-        .select({ id: spaceSubmissions.id, spaceName: spaceSubmissions.spaceName, status: spaceSubmissions.status })
+        .select({ id: spaceSubmissions.id, spaceName: spaceSubmissions.spaceName, spaceStatus: spaceSubmissions.spaceStatus })
         .from(spaceSubmissions)
         .where(eq(spaceSubmissions.id, input.spaceId))
         .limit(1);
 
-      if (!space || !["published", "funded", "in_construction", "operational"].includes(space.status)) {
+      if (!space || !["published", "funded", "in_construction", "operational"].includes(space.spaceStatus)) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no encontrado o no disponible" });
       }
 
@@ -1295,7 +1296,7 @@ Responde en formato JSON con la siguiente estructura:`;
         phone: input.phone || null,
         interestedAmount: input.interestedAmount || null,
         message: input.message || null,
-        status: "new",
+        leadStatus: "new",
       });
 
       // Notificar al admin

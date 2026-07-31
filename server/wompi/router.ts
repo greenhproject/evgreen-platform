@@ -273,13 +273,13 @@ export const wompiRouter = router({
 
         return {
           found: true,
-          status: tx.status,
+          status: tx.wompiTxStatus,
           transaction: {
             id: tx.id,
             reference: tx.reference,
             amount: tx.amount_in_cents / 100,
             currency: tx.currency,
-            status: tx.status,
+            status: tx.wompiTxStatus,
             paymentMethod: tx.payment_method_type,
             createdAt: tx.created_at,
             finalizedAt: tx.finalized_at,
@@ -328,16 +328,16 @@ export const wompiRouter = router({
         // Actualizar transacción en nuestra BD
         await db.updateWompiTransactionByReference(input.reference, {
           wompiTransactionId: tx.id,
-          status: tx.status,
+          status: tx.wompiTxStatus,
           paymentMethodType: tx.payment_method_type,
           processedAt: new Date(),
         });
 
-        if (tx.status !== WOMPI_TRANSACTION_STATUS.APPROVED) {
+        if (tx.wompiTxStatus !== WOMPI_TRANSACTION_STATUS.APPROVED) {
           return {
             success: false,
-            status: tx.status,
-            message: `El pago no fue aprobado. Estado: ${tx.status}`,
+            status: tx.wompiTxStatus,
+            message: `El pago no fue aprobado. Estado: ${tx.wompiTxStatus}`,
           };
         }
 
@@ -383,7 +383,7 @@ export const wompiRouter = router({
 
           return {
             success: true,
-            status: tx.status,
+            status: tx.wompiTxStatus,
             message: `Billetera recargada con $${amount.toLocaleString()} COP`,
             amount,
           };
@@ -391,7 +391,7 @@ export const wompiRouter = router({
 
         return {
           success: true,
-          status: tx.status,
+          status: tx.wompiTxStatus,
           message: "Pago verificado exitosamente",
         };
       } catch (error) {
@@ -569,7 +569,7 @@ export const wompiRouter = router({
           if (response.ok) {
             const result = await response.json();
             const tx = result.data;
-            console.log(`[Wompi] Cobro directo suscripción - Transacción: ${tx.id}, Estado: ${tx.status}`);
+            console.log(`[Wompi] Cobro directo suscripción - Transacción: ${tx.id}, Estado: ${tx.wompiTxStatus}`);
 
             // Guardar transacción en BD
             try {
@@ -585,7 +585,7 @@ export const wompiRouter = router({
               });
               await db.updateWompiTransactionByReference(directRef, {
                 wompiTransactionId: tx.id,
-                status: tx.status,
+                status: tx.wompiTxStatus,
                 paymentMethodType: tx.payment_method_type || "CARD",
                 processedAt: new Date(),
               });
@@ -594,8 +594,8 @@ export const wompiRouter = router({
             }
 
             // Polling si está PENDING
-            let finalStatus = tx.status;
-            if (tx.status === "PENDING" && tx.id) {
+            let finalStatus = tx.wompiTxStatus;
+            if (tx.wompiTxStatus === "PENDING" && tx.id) {
               const recheckDelays = [2000, 5000, 10000];
               for (let i = 0; i < recheckDelays.length; i++) {
                 await new Promise(resolve => setTimeout(resolve, recheckDelays[i]));
@@ -758,16 +758,16 @@ export const wompiRouter = router({
         // Actualizar transacción en BD
         await db.updateWompiTransactionByReference(input.reference, {
           wompiTransactionId: tx.id,
-          status: tx.status,
+          status: tx.wompiTxStatus,
           paymentMethodType: tx.payment_method_type,
           processedAt: new Date(),
         });
 
-        if (tx.status !== WOMPI_TRANSACTION_STATUS.APPROVED) {
+        if (tx.wompiTxStatus !== WOMPI_TRANSACTION_STATUS.APPROVED) {
           return {
             success: false,
-            status: tx.status,
-            message: `El pago no fue aprobado. Estado: ${tx.status}`,
+            status: tx.wompiTxStatus,
+            message: `El pago no fue aprobado. Estado: ${tx.wompiTxStatus}`,
           };
         }
 
@@ -806,7 +806,7 @@ export const wompiRouter = router({
 
         return {
           success: true,
-          status: tx.status,
+          status: tx.wompiTxStatus,
           message: `¡Plan ${input.planId === "premium" ? "Premium" : "Básico"} activado exitosamente!`,
           planId: input.planId,
         };
@@ -1064,7 +1064,7 @@ export const wompiRouter = router({
         const result = await response.json();
         const tx = result.data;
 
-        console.log(`[Wompi] Recarga rápida - Transacción: ${tx.id}, Estado: ${tx.status}`);
+        console.log(`[Wompi] Recarga rápida - Transacción: ${tx.id}, Estado: ${tx.wompiTxStatus}`);
 
         // Guardar transacción en BD
         try {
@@ -1080,7 +1080,7 @@ export const wompiRouter = router({
           });
           await db.updateWompiTransactionByReference(reference, {
             wompiTransactionId: tx.id,
-            status: tx.status,
+            status: tx.wompiTxStatus,
             paymentMethodType: tx.payment_method_type || "CARD",
             processedAt: new Date(),
           });
@@ -1090,9 +1090,9 @@ export const wompiRouter = router({
 
         // Si la transacción está PENDING, hacer múltiples reintentos
         // Las transacciones con payment source pueden tardar entre 2-30 segundos
-        let finalStatus = tx.status;
+        let finalStatus = tx.wompiTxStatus;
         let finalTxId = tx.id;
-        if (tx.status === "PENDING" && tx.id) {
+        if (tx.wompiTxStatus === "PENDING" && tx.id) {
           const recheckDelays = [2000, 5000, 10000]; // 2s, 5s, 10s
           for (let i = 0; i < recheckDelays.length; i++) {
             await new Promise(resolve => setTimeout(resolve, recheckDelays[i]));
@@ -1264,12 +1264,12 @@ export const wompiRouter = router({
       }
 
       // Si ya está aprobada en nuestra BD, verificar si ya se acreditó
-      if (localTx.status === "APPROVED") {
+      if (localTx.wompiTxStatus === "APPROVED") {
         return { status: "APPROVED", credited: true };
       }
 
       // Si sigue PENDING, consultar Wompi directamente
-      if (localTx.status === "PENDING") {
+      if (localTx.wompiTxStatus === "PENDING") {
         try {
           const keys = await getWompiKeys();
           if (keys && localTx.wompiTransactionId) {
@@ -1280,7 +1280,7 @@ export const wompiRouter = router({
               // Actualizar en BD
               await db.updateWompiTransactionByReference(input.reference, {
                 status: "APPROVED",
-                processedAt: new Date(),
+                processedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
               });
 
               // Acreditar billetera si aún no se ha hecho
@@ -1329,7 +1329,7 @@ export const wompiRouter = router({
         }
       }
 
-      return { status: localTx.status || "PENDING", credited: false };
+      return { status: localTx.wompiTxStatus || "PENDING", credited: false };
     }),
 
   // ========================================================================
@@ -1380,7 +1380,7 @@ export const wompiRouter = router({
     for (const tx of qrcAtcPending) {
       try {
         if (!tx.wompiTransactionId) {
-          results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: "NO_WOMPI_ID", credited: false, amount: tx.amountInCents / 100 });
+          results.push({ reference: tx.reference, oldStatus: tx.wompiTxStatus || "PENDING", newStatus: "NO_WOMPI_ID", credited: false, amount: tx.amountInCents / 100 });
           continue;
         }
 
@@ -1425,19 +1425,19 @@ export const wompiRouter = router({
               data: JSON.stringify({ key: `reconcile-${tx.reference}`, amount, reference: tx.reference }),
             });
 
-            results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: "APPROVED", credited: true, amount });
+            results.push({ reference: tx.reference, oldStatus: tx.wompiTxStatus || "PENDING", newStatus: "APPROVED", credited: true, amount });
           } else {
-            results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: "APPROVED", credited: false, amount });
+            results.push({ reference: tx.reference, oldStatus: tx.wompiTxStatus || "PENDING", newStatus: "APPROVED", credited: false, amount });
           }
         } else if (wompiStatus === "DECLINED" || wompiStatus === "ERROR" || wompiStatus === "VOIDED") {
           await db.updateWompiTransactionByReference(tx.reference, { status: wompiStatus });
-          results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: wompiStatus, credited: false, amount: tx.amountInCents / 100 });
+          results.push({ reference: tx.reference, oldStatus: tx.wompiTxStatus || "PENDING", newStatus: wompiStatus, credited: false, amount: tx.amountInCents / 100 });
         } else {
-          results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: wompiStatus || "STILL_PENDING", credited: false, amount: tx.amountInCents / 100 });
+          results.push({ reference: tx.reference, oldStatus: tx.wompiTxStatus || "PENDING", newStatus: wompiStatus || "STILL_PENDING", credited: false, amount: tx.amountInCents / 100 });
         }
       } catch (err) {
         console.error(`[Reconcile] Error procesando ${tx.reference}:`, err);
-        results.push({ reference: tx.reference, oldStatus: tx.status || "PENDING", newStatus: "ERROR", credited: false, amount: tx.amountInCents / 100 });
+        results.push({ reference: tx.reference, oldStatus: tx.wompiTxStatus || "PENDING", newStatus: "ERROR", credited: false, amount: tx.amountInCents / 100 });
       }
     }
 

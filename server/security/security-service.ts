@@ -39,7 +39,7 @@ export async function generate2FASecret(userId: number, userEmail: string): Prom
   
   await database.update(users).set({
     twoFactorSecret: secret,
-    twoFactorEnabled: false, // No habilitar hasta verificar
+    twoFactorEnabled: 0, // No habilitar hasta verificar
   }).where(eq(users.id, userId));
   
   return { secret, otpauthUrl };
@@ -73,8 +73,8 @@ export async function verify2FAToken(userId: number, token: string): Promise<boo
   if (isValid && !user.twoFactorEnabled) {
     // Habilitar 2FA al verificar por primera vez
     await database.update(users).set({
-      twoFactorEnabled: true,
-      twoFactorVerifiedAt: new Date(),
+      twoFactorEnabled: 1,
+      twoFactorVerifiedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
     }).where(eq(users.id, userId));
   }
   
@@ -107,7 +107,7 @@ export async function disable2FA(userId: number, token: string): Promise<boolean
   if (!isValid) return false;
   
   await database.update(users).set({
-    twoFactorEnabled: false,
+    twoFactorEnabled: 0,
     twoFactorSecret: null,
     twoFactorVerifiedAt: null,
   }).where(eq(users.id, userId));
@@ -135,8 +135,8 @@ export async function get2FAStatus(userId: number): Promise<{
     .limit(1);
   
   return {
-    enabled: user?.twoFactorEnabled ?? false,
-    verifiedAt: user?.twoFactorVerifiedAt ?? null,
+    enabled: !!(user?.twoFactorEnabled ?? 0),
+    verifiedAt: user?.twoFactorVerifiedAt ? new Date(user.twoFactorVerifiedAt) : null,
   };
 }
 
@@ -211,8 +211,8 @@ export async function recordLoginSession(
       browser,
       os,
       isActive: 1,
-      loginAt: new Date(),
-      lastActivityAt: new Date(),
+      loginAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+      lastActivityAt: new Date().toISOString().slice(0, 19).replace("T", " "),
     });
     
     return (result as any)[0]?.insertId || null;
@@ -232,10 +232,10 @@ export async function getUserSessions(userId: number, limit: number = 20): Promi
   os: string | null;
   ipAddress: string | null;
   location: string | null;
-  isActive: boolean;
-  loginAt: Date;
-  lastActivityAt: Date;
-  logoutAt: Date | null;
+  isActive: number;
+  loginAt: string;
+  lastActivityAt: string;
+  logoutAt: string | null;
 }[]> {
   const database = await getDb();
   if (!database) return [];
@@ -270,7 +270,7 @@ export async function terminateSession(userId: number, sessionId: number): Promi
   
   await database.update(userLoginSessions).set({
     isActive: 0,
-    logoutAt: new Date(),
+    logoutAt: new Date().toISOString().slice(0, 19).replace("T", " "),
   }).where(
     and(
       eq(userLoginSessions.id, sessionId),
@@ -306,7 +306,7 @@ export async function terminateAllOtherSessions(
     if (session.id !== currentSessionId) {
       await database.update(userLoginSessions).set({
         isActive: 0,
-        logoutAt: new Date(),
+        logoutAt: new Date().toISOString().slice(0, 19).replace("T", " "),
       }).where(eq(userLoginSessions.id, session.id));
       terminated++;
     }
@@ -323,6 +323,6 @@ export async function updateSessionActivity(sessionId: number): Promise<void> {
   if (!database) return;
   
   await database.update(userLoginSessions).set({
-    lastActivityAt: new Date(),
+    lastActivityAt: new Date().toISOString().slice(0, 19).replace("T", " "),
   }).where(eq(userLoginSessions.id, sessionId));
 }

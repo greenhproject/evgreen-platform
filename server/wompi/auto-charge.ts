@@ -173,7 +173,7 @@ export async function autoChargeIfNeeded(
         balanceBefore: currentBalance.toString(),
         balanceAfter: newBalance.toString(),
         description: `Auto-recarga con tarjeta ****${subscription.cardLastFour || ""}: ${reference}`,
-        status: "COMPLETED",
+        paymentStatus: "COMPLETED",
       });
 
       // Notificación al usuario

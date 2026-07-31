@@ -3774,3 +3774,15 @@
 - [ ] Frontend: Admin puede vincular gestor desde modal de espacio/estación
 - [ ] Lógica: comisión gestor sale del 30% EVGreen (no afecta % inversionista)
 - [ ] Flujo wallet-first para activación de planes: primero descontar de billetera si hay saldo suficiente, solo redirigir a Wompi si no hay saldo
+
+## Correcciones TypeScript Críticas - 31 Julio 2026
+- [x] Flujo wallet-first para activación de planes: primero descontar de billetera si hay saldo suficiente, solo redirigir a Wompi si no hay saldo
+- [x] FIX: spaceSubmissions.status → spaceSubmissions.spaceStatus (causa de espacios vacíos)
+- [x] FIX: wompiTransactions.type → wompiTxType, wompiTransactions.status → wompiTxStatus
+- [x] FIX: tinyint testMode → boolean con { source /home/ubuntu/.user_env && source /opt/.manus/webdev.sh.env && cd . && cd /home/ubuntu/green-ev-platform && npx tsc --noEmit 2>&1 | grep db.ts | sed 's/.*error TS[0-9]*: //' | sort | uniq -c | sort -rn | head -10; } en wompi/config.ts
+- [x] FIX: Date → string ISO en security-service.ts (logoutAt, loginAt, lastActivityAt, twoFactorVerifiedAt)
+- [x] FIX: boolean → tinyint (0/1) en security-service.ts (twoFactorEnabled, isActive)
+- [x] FIX: hasSolarPanels false → 0, raisedAmount faltante en inserts de crowdfundingProjects
+- [x] FIX: paymentStatus en lugar de status en walletTransactions (auto-charge.ts)
+- [x] FIX: isAvailable boolean → tinyint en support-router.ts
+

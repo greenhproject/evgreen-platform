@@ -46,7 +46,7 @@ export async function getWompiKeys(): Promise<WompiKeys | null> {
     return null;
   }
 
-  const testMode = config.testMode ?? true;
+  const testMode = !!(config.testMode ?? 1);
   const apiUrl = testMode
     ? "https://sandbox.wompi.co/v1"
     : "https://production.wompi.co/v1";

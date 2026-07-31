@@ -936,7 +936,7 @@ export const supportRouterV2 = router({
         scheduleEnd: input.scheduleEnd || "17:00",
         workDays: input.workDays || [1, 2, 3, 4, 5],
         maxConcurrentTickets: input.maxConcurrentTickets || 5,
-        isAvailable: input.isAvailable ?? true,
+        isAvailable: input.isAvailable ? 1 : 0,
         isOnline: 1,
       });
       return { id };

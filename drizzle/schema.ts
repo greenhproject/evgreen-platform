@@ -2094,3 +2094,168 @@ export const wompiTransactions = mysqlTable("wompi_transactions", {
 	index("wompiTransactionId").on(table.wompiTransactionId),
 	index("reference").on(table.reference),
 ]);
+
+// ============================================================================
+// INFERRED TYPES — generated from table definitions via Drizzle $inferInsert / $inferSelect
+// These are the canonical type exports consumed by server/db.ts and routers.
+// ============================================================================
+
+// AI
+export type InsertAIConfig = typeof aiConfig.$inferInsert;
+export type AIConfig = typeof aiConfig.$inferSelect;
+export type InsertAIConversation = typeof aiConversations.$inferInsert;
+export type AIConversation = typeof aiConversations.$inferSelect;
+export type InsertAIMessage = typeof aiMessages.$inferInsert;
+export type AIMessage = typeof aiMessages.$inferSelect;
+export type InsertAIUsage = typeof aiUsage.$inferInsert;
+export type AIUsage = typeof aiUsage.$inferSelect;
+
+// Banners
+export type InsertBanner = typeof banners.$inferInsert;
+export type Banner = typeof banners.$inferSelect;
+export type InsertBannerView = typeof bannerViews.$inferInsert;
+export type BannerView = typeof bannerViews.$inferSelect;
+
+// Charger brands
+export type InsertChargerBrand = typeof chargerBrands.$inferInsert;
+export type ChargerBrand = typeof chargerBrands.$inferSelect;
+
+// Charging stations
+export type InsertChargingStation = typeof chargingStations.$inferInsert;
+export type ChargingStation = typeof chargingStations.$inferSelect;
+
+// Claims
+export type InsertClaim = typeof claims.$inferInsert;
+export type Claim = typeof claims.$inferSelect;
+
+// EVSEs
+export type InsertEvse = typeof evses.$inferInsert;
+export type Evse = typeof evses.$inferSelect;
+
+// Favorite stations
+export type InsertFavoriteStation = typeof favoriteStations.$inferInsert;
+export type FavoriteStation = typeof favoriteStations.$inferSelect;
+
+// Financial settlements
+export type InsertFinancialSettlement = typeof financialSettlements.$inferInsert;
+export type FinancialSettlement = typeof financialSettlements.$inferSelect;
+
+// ID Tags
+export type InsertIdTag = typeof idTags.$inferInsert;
+export type IdTag = typeof idTags.$inferSelect;
+
+// Investor payouts
+export type InsertInvestorPayout = typeof investorPayouts.$inferInsert;
+export type InvestorPayout = typeof investorPayouts.$inferSelect;
+
+// Investor settlement shares
+export type InsertInvestorSettlementShare = typeof investorSettlementShares.$inferInsert;
+export type InvestorSettlementShare = typeof investorSettlementShares.$inferSelect;
+
+// Local auth
+export type InsertLocalAuthEntry = typeof localAuthEntries.$inferInsert;
+export type LocalAuthEntry = typeof localAuthEntries.$inferSelect;
+export type InsertLocalAuthList = typeof localAuthLists.$inferInsert;
+export type LocalAuthList = typeof localAuthLists.$inferSelect;
+
+// Maintenance
+export type InsertMaintenanceFundRecord = typeof maintenanceFundRecords.$inferInsert;
+export type MaintenanceFundRecord = typeof maintenanceFundRecords.$inferSelect;
+export type InsertMaintenanceTicket = typeof maintenanceTickets.$inferInsert;
+export type MaintenanceTicket = typeof maintenanceTickets.$inferSelect;
+
+// Meter values
+export type InsertMeterValue = typeof meterValues.$inferInsert;
+export type MeterValue = typeof meterValues.$inferSelect;
+
+// Notifications
+export type InsertNotification = typeof notifications.$inferInsert;
+export type Notification = typeof notifications.$inferSelect;
+
+// OCPP
+export type InsertOcppAlert = typeof ocppAlerts.$inferInsert;
+export type OcppAlert = typeof ocppAlerts.$inferSelect;
+export type InsertOcppLog = typeof ocppLogs.$inferInsert;
+export type OcppLog = typeof ocppLogs.$inferSelect;
+
+// Offline transactions
+export type InsertOfflineTransaction = typeof offlineTransactions.$inferInsert;
+export type OfflineTransaction = typeof offlineTransactions.$inferSelect;
+
+// Operational metrics
+export type InsertOperationalMetric = typeof operationalMetrics.$inferInsert;
+export type OperationalMetric = typeof operationalMetrics.$inferSelect;
+
+// Platform settings
+export type InsertPlatformSettings = typeof platformSettings.$inferInsert;
+export type PlatformSettings = typeof platformSettings.$inferSelect;
+
+// Price history
+export type InsertPriceHistory = typeof priceHistory.$inferInsert;
+export type PriceHistory = typeof priceHistory.$inferSelect;
+
+// Refunds
+export type InsertRefund = typeof refunds.$inferInsert;
+export type Refund = typeof refunds.$inferSelect;
+
+// Reservations
+export type InsertReservation = typeof reservations.$inferInsert;
+export type Reservation = typeof reservations.$inferSelect;
+
+// Settlement expense items
+export type InsertSettlementExpenseItem = typeof settlementExpenseItems.$inferInsert;
+export type SettlementExpenseItem = typeof settlementExpenseItems.$inferSelect;
+
+// Station fixed expenses
+export type InsertStationFixedExpense = typeof stationFixedExpenses.$inferInsert;
+export type StationFixedExpense = typeof stationFixedExpenses.$inferSelect;
+
+// Station reviews
+export type InsertStationReview = typeof stationReviews.$inferInsert;
+export type StationReview = typeof stationReviews.$inferSelect;
+
+// Support tickets
+export type InsertSupportTicket = typeof supportTickets.$inferInsert;
+export type SupportTicket = typeof supportTickets.$inferSelect;
+
+// Tariffs
+export type InsertTariff = typeof tariffs.$inferInsert;
+export type Tariff = typeof tariffs.$inferSelect;
+export type InsertTariffChangeLog = typeof tariffChangeLogs.$inferInsert;
+export type TariffChangeLog = typeof tariffChangeLogs.$inferSelect;
+
+// Transactions
+export type InsertTransaction = typeof transactions.$inferInsert;
+export type Transaction = typeof transactions.$inferSelect;
+
+// Users
+export type InsertUser = typeof users.$inferInsert;
+export type User = typeof users.$inferSelect;
+
+// User profiles
+export type InsertUserConsumptionProfile = typeof userConsumptionProfile.$inferInsert;
+export type UserConsumptionProfile = typeof userConsumptionProfile.$inferSelect;
+export type InsertUserDebt = typeof userDebts.$inferInsert;
+export type UserDebt = typeof userDebts.$inferSelect;
+export type InsertUserLocationHistory = typeof userLocationHistory.$inferInsert;
+export type UserLocationHistory = typeof userLocationHistory.$inferSelect;
+export type InsertUserRoutePattern = typeof userRoutePatterns.$inferInsert;
+export type UserRoutePattern = typeof userRoutePatterns.$inferSelect;
+export type InsertUserVehicle = typeof userVehicles.$inferInsert;
+export type UserVehicle = typeof userVehicles.$inferSelect;
+
+// Wallets
+export type InsertWallet = typeof wallets.$inferInsert;
+export type Wallet = typeof wallets.$inferSelect;
+export type InsertWalletTransaction = typeof walletTransactions.$inferInsert;
+export type WalletTransaction = typeof walletTransactions.$inferSelect;
+
+// Wompi
+export type InsertWompiTransaction = typeof wompiTransactions.$inferInsert;
+export type WompiTransaction = typeof wompiTransactions.$inferSelect;
+
+// Support (additional)
+export type InsertSupportMessage = typeof supportMessages.$inferInsert;
+export type SupportMessage = typeof supportMessages.$inferSelect;
+export type InsertSupportAgent = typeof supportAgents.$inferInsert;
+export type SupportAgent = typeof supportAgents.$inferSelect;

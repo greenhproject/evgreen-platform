@@ -497,7 +497,7 @@ async function notifyPaymentFailed(reference: string, status: string) {
       OTHER: "pago",
     };
 
-    const typeLabel = typeLabels[localTx.type] || "pago";
+    const typeLabel = typeLabels[localTx.wompiTxType] || "pago";
     const statusLabel = status === "DECLINED" ? "rechazado" : "con error";
 
     await db.createNotification({
@@ -513,7 +513,7 @@ async function notifyPaymentFailed(reference: string, status: string) {
         key: `payment-failed-${reference}`,
         reference,
         status,
-        type: localTx.type,
+        type: localTx.wompiTxType,
       }),
     });
 
