@@ -3028,9 +3028,11 @@ export async function updateUserSubscription(userId: number, data: {
   nextBilling.setDate(nextBilling.getDate() + 30);
   
   if (existing.length === 0) {
+    // Nueva suscripción: INSERT con campos correctos del schema
     await db.insert(subscriptions).values({
       userId,
-      tier: tier as any,
+      subscriptionTier: tier as any,
+      subscriptionStatus: "ACTIVE",
       wompiPaymentSourceId: data.wompiPaymentSourceId,
       wompiCardToken: data.wompiCardToken,
       cardBrand: data.cardBrand,
@@ -3047,6 +3049,7 @@ export async function updateUserSubscription(userId: number, data: {
       isActive: data.status ? (data.status === "active" ? 1 : 0) : 1,
     });
   } else {
+    // Actualizar suscripción existente
     const updateData: any = {};
     if (data.wompiPaymentSourceId !== undefined) updateData.wompiPaymentSourceId = data.wompiPaymentSourceId;
     if (data.wompiCardToken !== undefined) updateData.wompiCardToken = data.wompiCardToken;
@@ -3057,10 +3060,18 @@ export async function updateUserSubscription(userId: number, data: {
     if (data.lastPaymentDate) updateData.lastPaymentDate = data.lastPaymentDate;
     if (data.lastPaymentReference) updateData.lastPaymentReference = data.lastPaymentReference;
     if (data.planId) {
-      updateData.tier = tier;
+      // CORRECCIÓN: usar subscriptionTier (nombre real en el schema Drizzle)
+      updateData.subscriptionTier = tier;
+      updateData.subscriptionStatus = "ACTIVE";
       updateData.discountPercentage = discountPercentage;
       updateData.freeReservationsPerMonth = freeReservationsPerMonth;
       updateData.prioritySupport = prioritySupport ? 1 : 0;
+      // Limpiar campos de cancelación y reiniciar contador de fallos al activar nuevo plan
+      updateData.cancellationRequestedAt = null;
+      updateData.cancellationEffectiveDate = null;
+      updateData.failedPaymentCount = 0;
+      updateData.suspendedAt = null;
+      updateData.suspendedUntil = null;
     }
     if (data.status) {
       updateData.isActive = data.status === "active" ? 1 : 0;
