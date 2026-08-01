@@ -150,17 +150,26 @@ async function acquireOverstayLock(evseId: number, transactionId: number, starte
 /**
  * Update the heartbeat and accumulated cost for our lock
  */
-async function updateOverstayLock(evseId: number, accumulatedCost: number, lastChargeTime: Date): Promise<void> {
+async function updateOverstayLock(
+  evseId: number,
+  accumulatedCost: number,
+  lastChargeTime: Date,
+  flags?: { finishingNotified?: boolean; graceWarningNotified?: boolean }
+): Promise<void> {
   const dbInstance = await db.getDb();
   if (!dbInstance) return;
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateData: Record<string, any> = {
+      lastHeartbeat: new Date(),
+      accumulatedCost: accumulatedCost.toFixed(2),
+      lastChargeTime,
+    };
+    if (flags?.finishingNotified !== undefined) updateData['finishingNotified'] = flags.finishingNotified ? 1 : 0;
+    if (flags?.graceWarningNotified !== undefined) updateData['graceWarningNotified'] = flags.graceWarningNotified ? 1 : 0;
     await dbInstance.update(overstayLocks)
-      .set({
-        lastHeartbeat: new Date(),
-        accumulatedCost: accumulatedCost.toFixed(2),
-        lastChargeTime,
-      })
+      .set(updateData)
       .where(and(
         eq(overstayLocks.evseId, evseId),
         eq(overstayLocks.instanceId, INSTANCE_ID)
@@ -188,7 +197,7 @@ async function releaseOverstayLock(evseId: number): Promise<void> {
 /**
  * Get lock info for recovery (when this instance takes over a stale lock)
  */
-async function getExistingLockInfo(evseId: number): Promise<{ accumulatedCost: number; lastChargeTime: Date; startedAt: Date } | null> {
+async function getExistingLockInfo(evseId: number): Promise<{ accumulatedCost: number; lastChargeTime: Date; startedAt: Date; finishingNotified: boolean; graceWarningNotified: boolean } | null> {
   const dbInstance = await db.getDb();
   if (!dbInstance) return null;
 
@@ -203,6 +212,8 @@ async function getExistingLockInfo(evseId: number): Promise<{ accumulatedCost: n
       accumulatedCost: parseFloat(lock.accumulatedCost?.toString() || "0"),
       lastChargeTime: new Date(lock.lastChargeTime),
       startedAt: new Date(lock.startedAt),
+      finishingNotified: Number(lock.finishingNotified ?? 0) === 1,
+      graceWarningNotified: Number(lock.graceWarningNotified ?? 0) === 1,
     };
   } catch {
     return null;
@@ -358,27 +369,40 @@ export async function onChargingFinished(evseId: number, stationId: number) {
 
     // Check if there's existing lock info (recovery from restart)
     const existingLock = await getExistingLockInfo(evseId);
-    if (existingLock && existingLock.accumulatedCost > 0) {
-      // Recover accumulated cost from previous instance
-      session.accumulatedCost = existingLock.accumulatedCost;
-      session.lastChargeTime = existingLock.lastChargeTime;
-      session.finishingStartTime = existingLock.startedAt;
-      session.chargeCount = Math.round(existingLock.accumulatedCost / penaltyPerMinute);
-      console.log(`[OverstayMonitor] Recovered session for EVSE ${evseId}: accumulated=$${existingLock.accumulatedCost}, lastCharge=${existingLock.lastChargeTime.toISOString()}`);
+    if (existingLock) {
+      // Restore notification flags from DB to prevent duplicate messages on server restart
+      session.finishingNotified = existingLock.finishingNotified;
+      session.graceWarningNotified = existingLock.graceWarningNotified;
+      if (existingLock.accumulatedCost > 0) {
+        // Recover accumulated cost from previous instance
+        session.accumulatedCost = existingLock.accumulatedCost;
+        session.lastChargeTime = existingLock.lastChargeTime;
+        session.finishingStartTime = existingLock.startedAt;
+        session.chargeCount = Math.round(existingLock.accumulatedCost / penaltyPerMinute);
+        // If penalty already started, mark penaltyStartNotified to avoid duplicate
+        if (existingLock.accumulatedCost > 0) session.penaltyStartNotified = true;
+      }
+      console.log(`[OverstayMonitor] Recovered session for EVSE ${evseId}: accumulated=$${existingLock.accumulatedCost}, finishingNotified=${existingLock.finishingNotified}, graceWarningNotified=${existingLock.graceWarningNotified}`);
     }
 
     activeOverstaySessions.set(evseId, session);
     console.log(`[OverstayMonitor] Started tracking EVSE ${evseId}: grace=${gracePeriodMinutes}min, penalty=$${penaltyPerMinute}/min, txId=${transaction.id}`);
 
-    // Send immediate notification that charging is complete
-    await sendOverstayNotification(session.userId, "finishing", {
-      stationName,
-      connectorId,
-      gracePeriodMinutes,
-      penaltyPerMinute,
-    });
-    session.finishingNotified = true;
-    console.log(`[OverstayMonitor] Finishing notification sent to user ${session.userId} for ${stationName} (conector ${connectorId})`);
+    // Send finishing notification ONLY if not already sent (prevents duplicates on server restart)
+    if (!session.finishingNotified) {
+      await sendOverstayNotification(session.userId, "finishing", {
+        stationName,
+        connectorId,
+        gracePeriodMinutes,
+        penaltyPerMinute,
+      });
+      session.finishingNotified = true;
+      // Persist flag to DB so it survives restarts
+      await updateOverstayLock(evseId, session.accumulatedCost, session.lastChargeTime, { finishingNotified: true });
+      console.log(`[OverstayMonitor] Finishing notification sent to user ${session.userId} for ${stationName} (conector ${connectorId})`);
+    } else {
+      console.log(`[OverstayMonitor] Finishing notification already sent for EVSE ${evseId} (recovered from DB), skipping duplicate`);
+    }
 
   } catch (error) {
     console.error(`[OverstayMonitor] Error starting overstay tracking for EVSE ${evseId}:`, error);
@@ -893,7 +917,7 @@ async function sendOverstayNotification(
               templateName: WA_TEMPLATE_NAMES.pago_sesion,
               parameters: [
                 firstName,
-                `${graceMin} min de gracia`,
+                `Tienes ${graceMin} min para liberar el cargador`,
                 data.stationName,
                 `Desconecta antes de que inicie la tarifa de $${data.penaltyPerMinute.toLocaleString("es-CO")}/min`,
               ],

@@ -1013,6 +1013,8 @@ export const overstayLocks = mysqlTable("overstay_locks", {
 	lastChargeTime: timestamp({ mode: 'string' }).notNull(),
 	startedAt: timestamp({ mode: 'string' }).notNull(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	finishingNotified: tinyint().default(0).notNull(),
+	graceWarningNotified: tinyint().default(0).notNull(),
 });
 
 export const partnerApplications = mysqlTable("partner_applications", {
