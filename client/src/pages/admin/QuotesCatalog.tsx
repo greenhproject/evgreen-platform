@@ -130,7 +130,7 @@ export default function QuotesCatalog() {
       description: item.description || "",
       features: item.features || [],
       imageUrl: item.imageUrl || "",
-      includesTransformer: item.includesTransformer || false,
+      includesTransformer: !!item.includesTransformer,
       cableMetersIncluded: item.cableMetersIncluded || 10,
       warrantyYears: item.warrantyYears || 2,
       sortOrder: item.sortOrder || 0,
