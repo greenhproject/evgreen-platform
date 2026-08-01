@@ -53,6 +53,9 @@ export const WA_TEMPLATE_NAMES = {
   tarjeta_eliminada: "evgreen_tarjeta_eliminada_v3",   // params: nombre
   recordatorio_carga: "evgreen_recordatorio_carga_v3", // params: nombre, hora
   pago_sesion: "evgreen_pago_sesion_v3",               // params: nombre, monto, estacion, saldo
+  // ⚠️ PENDIENTE APROBACIÓN META — registrar en Meta Business Manager antes de usar
+  overstay_gracia: "evgreen_overstay_gracia_v1",        // params: nombre, minutos_gracia, estacion, tarifa_por_min
+  overstay_penalizacion: "evgreen_overstay_penalizacion_v1", // params: nombre, estacion, acumulado_cop, tarifa_por_min
 } as const;
 
 // ─── Enviar mensaje con plantilla aprobada (funciona sin ventana de 24h) ─────
