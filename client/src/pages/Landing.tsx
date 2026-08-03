@@ -1159,9 +1159,10 @@ export default function Landing() {
       </section>
 
       {/* Footer */}
-      <footer className="py-12 px-4 border-t border-border">
+      <footer className="py-10 px-4 border-t border-border">
         <div className="container">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex flex-col items-center gap-5 text-center">
+            {/* Logo */}
             <div className="flex items-center gap-2">
               <img 
                 src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/GGDXOuWzwOqcapbY.png" 
@@ -1170,16 +1171,18 @@ export default function Landing() {
               />
               <span className="text-muted-foreground text-sm">by Green House Project</span>
             </div>
-            <div className="flex items-center gap-6 text-sm text-muted-foreground">
-              <Link href="/saas" className="hover:text-green-400 transition-colors font-medium">Empresas</Link>
-              <Link href="/ads" className="hover:text-green-400 transition-colors font-medium">Anunciantes</Link>
-              <Link href="/terms" className="hover:text-foreground transition-colors">Términos</Link>
-              <Link href="/privacy" className="hover:text-foreground transition-colors">Privacidad</Link>
-              <Link href="/contact" className="hover:text-foreground transition-colors">Contacto</Link>
-            </div>
-            <div className="text-sm text-muted-foreground">
+            {/* Links — flex-wrap para que nunca se corten en móvil */}
+            <nav className="flex flex-wrap justify-center gap-x-5 gap-y-3 text-sm text-muted-foreground">
+              <Link href="/saas" className="hover:text-green-400 transition-colors font-medium whitespace-nowrap">Empresas</Link>
+              <Link href="/ads" className="hover:text-green-400 transition-colors font-medium whitespace-nowrap">Anunciantes</Link>
+              <Link href="/terms" className="hover:text-foreground transition-colors whitespace-nowrap">Términos</Link>
+              <Link href="/privacy" className="hover:text-foreground transition-colors whitespace-nowrap">Privacidad</Link>
+              <Link href="/contact" className="hover:text-foreground transition-colors whitespace-nowrap">Contacto</Link>
+            </nav>
+            {/* Copyright */}
+            <p className="text-sm text-muted-foreground">
               © 2026 Green House Project. Todos los derechos reservados.
-            </div>
+            </p>
           </div>
         </div>
       </footer>
