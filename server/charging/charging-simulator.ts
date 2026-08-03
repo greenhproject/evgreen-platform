@@ -262,7 +262,7 @@ export async function startSimulation(params: {
   });
 
   // Actualizar estado del EVSE
-  await db.updateEvseStatus(evseId, "CHARGING");
+  await db.updateEvseStatus(evseId, "CHARGING", { triggeredBy: "SIMULATOR" });
 
   // Crear sesión de simulación
   const session: SimulationSession = {
@@ -498,7 +498,7 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
   });
 
   // Actualizar estado del EVSE
-  await db.updateEvseStatus(session.evseId, "AVAILABLE");
+  await db.updateEvseStatus(session.evseId, "AVAILABLE", { triggeredBy: "SIMULATOR" });
 
   // Descontar del saldo del usuario
   const wallet = await db.getWalletByUserId(session.userId);

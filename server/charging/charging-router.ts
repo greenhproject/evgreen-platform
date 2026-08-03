@@ -2179,7 +2179,7 @@ async function completeTransactionLocally(transactionId: number, transaction: an
     
     // Actualizar estado del EVSE
     try {
-      await db.updateEvseStatus(transaction.evseId, "AVAILABLE");
+      await db.updateEvseStatus(transaction.evseId, "AVAILABLE", { triggeredBy: "SYSTEM" });
     } catch (evseErr) {
       console.error(`[completeTransactionLocally] Error updating EVSE:`, evseErr);
     }

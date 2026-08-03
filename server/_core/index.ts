@@ -1072,7 +1072,7 @@ async function handleOCPP16Message(
           if (evse.connectorStatus === "RESERVED" && newStatus !== "RESERVED" && newStatus !== "CHARGING" && newStatus !== "PREPARING") {
             console.log(`[OCPP] StatusNotification - Skipping update: EVSE ${evse.id} is RESERVED, ignoring ${newStatus}`);
           } else {
-            await db.updateEvseStatus(evse.id, newStatus);
+            await db.updateEvseStatus(evse.id, newStatus, { triggeredBy: "OCPP" });
             console.log(`[OCPP] StatusNotification - Updated EVSE ${evse.id} to ${newStatus} (OCPP: ${payload.status})`);
           }
           
@@ -1122,7 +1122,7 @@ async function handleOCPP16Message(
             for (const evse of allEvses) {
               // No sobreescribir CHARGING/RESERVED con FAULTED (sesión activa tiene prioridad)
               if (evse.connectorStatus !== "CHARGING" && evse.connectorStatus !== "RESERVED") {
-                await db.updateEvseStatus(evse.id, newEvseStatus);
+                await db.updateEvseStatus(evse.id, newEvseStatus, { triggeredBy: "OCPP" });
                 console.log(`[OCPP] connectorId=0 ${payload.status} - Updated EVSE ${evse.id} to ${newEvseStatus}`);
               }
             }
@@ -1303,7 +1303,7 @@ async function handleOCPP16Message(
       console.log(`[OCPP] StartTransaction - Created tx: dbId=${newTxId}, ocppNumericTxId=${transactionIdCounter}, internalId=${internalTransactionId}`);
       
       ocpp16Transactions.set(transactionIdCounter, internalTransactionId);
-      await db.updateEvseStatus(evse.id, "CHARGING");
+      await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
       
       // Enviar notificación al usuario cuando inicia la carga
       if (userId) {
@@ -1439,7 +1439,7 @@ async function handleOCPP16Message(
             const evses = await db.getEvsesByStationId(cleanupStId);
             for (const e of evses) {
               if (e.connectorStatus !== "AVAILABLE") {
-                await db.updateEvseStatus(e.id, "AVAILABLE");
+                await db.updateEvseStatus(e.id, "AVAILABLE", { triggeredBy: "OCPP" });
               }
             }
           } catch (err) { /* ignore */ }
@@ -1507,7 +1507,7 @@ async function handleOCPP16Message(
       
       // Actualizar estado del EVSE a FINISHING (cable aún puede estar conectado)
       // El StatusNotification posterior determinará si pasa a Available o se queda en Finishing
-      await db.updateEvseStatus(transaction.evseId, "FINISHING");
+      await db.updateEvseStatus(transaction.evseId, "FINISHING", { triggeredBy: "OCPP" });
       console.log(`[OCPP] StopTransaction - EVSE ${transaction.evseId} set to FINISHING (pending cable disconnect)`);
       
       // Iniciar tracking de overstay inmediatamente
@@ -2248,7 +2248,7 @@ async function handleOCPP201Message(
           if (evse.connectorStatus === "RESERVED" && newStatus !== "RESERVED" && newStatus !== "CHARGING") {
             console.log(`[OCPP 2.0.1] StatusNotification - Skipping: EVSE ${evse.id} is RESERVED`);
           } else {
-            await db.updateEvseStatus(evse.id, newStatus);
+            await db.updateEvseStatus(evse.id, newStatus, { triggeredBy: "OCPP" });
           }
           
           // OVERSTAY: En OCPP 2.0.1, "Occupied" con connectorStatus puede indicar Finishing

@@ -295,7 +295,7 @@ export class CSMS {
           };
 
           const status = statusMap[req.connectorStatus] || "UNAVAILABLE";
-          await db.updateEvseStatus(evse.id, status);
+          await db.updateEvseStatus(evse.id, status, { triggeredBy: "OCPP" });
         }
       }
 

@@ -135,6 +135,8 @@ import {
   InsertUserVehicle,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { ConnectorStatus, TriggeredBy } from "./charging/connector-state.service";
+
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: mysql.Pool | null = null;
@@ -875,10 +877,35 @@ export async function getAllEvsesForStations(stationIds: number[]) {
   return result;
 }
 
-export async function updateEvseStatus(id: number, status: Evse["status"]) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(evses).set({ status, lastStatusUpdate: new Date() }).where(eq(evses.id, id));
+/**
+ * updateEvseStatus — WRAPPER de fuente única de verdad.
+ * Delega a ConnectorStateService.transition() para garantizar:
+ * - Escritura atómica en BD (evses.connector_status)
+ * - Sincronización en memoria (connection-manager)
+ * - Auditoría en evse_state_log
+ * - Propagación de estado a estación/cargador
+ *
+ * Mantiene la firma original para compatibilidad con todos los callers existentes.
+ */
+export async function updateEvseStatus(
+  id: number,
+  status: ConnectorStatus,
+  options?: {
+    triggeredBy?: TriggeredBy;
+    reason?: string;
+    transactionId?: number;
+    ocppMessageType?: string;
+  }
+) {
+  const { ConnectorStateService } = await import("./charging/connector-state.service");
+  await ConnectorStateService.transition({
+    evseId: id,
+    newStatus: status,
+    triggeredBy: options?.triggeredBy ?? "SYSTEM",
+    reason: options?.reason,
+    transactionId: options?.transactionId,
+    ocppMessageType: options?.ocppMessageType,
+  });
 }
 
 export async function updateEvse(id: number, data: Partial<InsertEvse>) {
@@ -1232,7 +1259,7 @@ export async function applyNoShowPenalty(reservationId: number) {
   }
   
   // Liberar el EVSE
-  await updateEvseStatus(reservation.evseId, "AVAILABLE");
+  await updateEvseStatus(reservation.evseId, "AVAILABLE", { triggeredBy: "SYSTEM" });
   
   return { penaltyApplied: penalty };
 }
@@ -1326,7 +1353,7 @@ export async function cancelReservationWithRefund(reservationId: number, refundP
   }
   
   // Liberar el EVSE
-  await updateEvseStatus(reservation.evseId, "AVAILABLE");
+  await updateEvseStatus(reservation.evseId, "AVAILABLE", { triggeredBy: "SYSTEM" });
   
   return { success: true, refundAmount };
 }

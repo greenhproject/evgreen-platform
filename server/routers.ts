@@ -906,7 +906,7 @@ const evseRouter = router({
       ]),
     }))
     .mutation(async ({ input }) => {
-      await db.updateEvseStatus(input.id, input.status);
+      await db.updateEvseStatus(input.id, input.status, { triggeredBy: "ADMIN" });
       return { success: true };
     }),
   
@@ -1776,7 +1776,7 @@ const transactionsRouter = router({
       });
       
       // Actualizar estado del EVSE
-      await db.updateEvseStatus(input.evseId, "CHARGING");
+      await db.updateEvseStatus(input.evseId, "CHARGING", { triggeredBy: "SYSTEM" });
       
       return {
         transactionId,
@@ -1888,7 +1888,7 @@ const transactionsRouter = router({
       // Actualizar estado del EVSE a FINISHING (cable aún puede estar conectado)
       // El overstay-monitor se encargará de cobrar penalización si el cable sigue conectado
       if (transaction.evseId) {
-        await db.updateEvseStatus(transaction.evseId, "FINISHING");
+        await db.updateEvseStatus(transaction.evseId, "FINISHING", { triggeredBy: "SYSTEM" });
         console.log(`[Charging] stopChargingSession - EVSE ${transaction.evseId} set to FINISHING (pending cable disconnect)`);
         
         // Iniciar tracking de overstay
@@ -2697,7 +2697,7 @@ const reservationsRouter = router({
       const now = new Date();
       const minutesUntilStart = (input.startTime.getTime() - now.getTime()) / (1000 * 60);
       if (minutesUntilStart <= 15 && evse.connectorStatus === "AVAILABLE") {
-        await db.updateEvseStatus(input.evseId, "RESERVED");
+        await db.updateEvseStatus(input.evseId, "RESERVED", { triggeredBy: "SYSTEM" });
       }
             // Para reservas futuras (>15 min), un job periódico se encargará de marcar RESERVED cuando se acerque la hora
 
@@ -6235,7 +6235,7 @@ const overstayRouter = router({
       }
       
       // 4. Actualizar estado del EVSE a AVAILABLE
-      await db.updateEvseStatus(input.evseId, "AVAILABLE");
+      await db.updateEvseStatus(input.evseId, "AVAILABLE", { triggeredBy: "SYSTEM" });
       results.push("EVSE marcado como AVAILABLE");
       
       // 5. Si hay transacción activa, completarla

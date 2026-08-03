@@ -3804,3 +3804,27 @@
 - [x] Badge de estado (Activo / Suspendido / Cancela el DD/MM/AAAA) en header del plan
 - [x] Botones contextuales según estado: cancelar / reactivar / reintentar cobro
 - [x] Corrección: subscription.subscriptionTier (no .tier) en Subscription.tsx
+
+## Arquitectura Single Source of Truth — Agosto 2026 [COMPLETADO]
+### Infraestructura
+- [x] Nueva tabla `chargers` en BD (estación → cargador → EVSE/conector)
+- [x] Nueva tabla `evse_state_log` (auditoría de cada cambio de estado)
+- [x] Columna `charger_id` agregada a tabla `evses`
+- [x] Schema Drizzle actualizado con `chargers`, `evseStateLog`, `evses.chargerId`
+### ConnectorStateService
+- [x] Crear `server/charging/connector-state.service.ts`
+- [x] Método `transition()`: escritura atómica + auditoría + propagación
+- [x] Método `faultAllEvses()`: falla todos los EVSEs de una estación
+- [x] Método `setAllUnavailable()`: marca todos los EVSEs como UNAVAILABLE
+- [x] Método `getHistory()`: historial de estados de un EVSE
+- [x] Propagación automática a `charging_stations.is_online` y `chargers.charger_status`
+### Migración de módulos
+- [x] `server/db.ts`: `updateEvseStatus()` convertido en wrapper de ConnectorStateService
+- [x] `server/ocpp/csms-dual.ts`: 8 llamadas migradas con `triggeredBy: "OCPP"`
+- [x] `server/ocpp/csms.ts`: 1 llamada migrada con `triggeredBy: "OCPP"`
+- [x] `server/ocpp/_core/index.ts`: 6 llamadas migradas con `triggeredBy: "OCPP"`
+- [x] `server/charging/charging-router.ts`: 1 llamada con `triggeredBy: "SYSTEM"`
+- [x] `server/charging/overstay-monitor.ts`: 1 llamada con `triggeredBy: "OVERSTAY"`
+- [x] `server/charging/charging-simulator.ts`: 2 llamadas con `triggeredBy: "SIMULATOR"`
+- [x] `server/routers.ts`: 5 llamadas migradas con `triggeredBy: "ADMIN"/"SYSTEM"`
+- [x] `server/db.ts` (reservaciones): 2 llamadas internas con `triggeredBy: "SYSTEM"`

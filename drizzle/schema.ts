@@ -483,6 +483,7 @@ export const evses = mysqlTable("evses", {
 	lastStatusUpdate: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	currentTransactionId: int(),
 	currentUserId: int(),
+	chargerId: int("charger_id"),
 	isActive: tinyint().default(1).notNull(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
@@ -2106,6 +2107,58 @@ export const wompiTransactions = mysqlTable("wompi_transactions", {
 ]);
 
 // ============================================================================
+// CHARGERS — physical charger units (level between station and connector)
+// Each charger has its own OCPP identity and can have 1 or 2 connectors (evses)
+// ============================================================================
+export const chargers = mysqlTable("chargers", {
+	id: int().autoincrement().notNull(),
+	stationId: int().notNull(),
+	ocppIdentity: varchar({ length: 100 }).notNull(),
+	ocppPassword: varchar({ length: 255 }),
+	brand: varchar({ length: 100 }),
+	model: varchar({ length: 100 }),
+	serialNumber: varchar({ length: 100 }),
+	firmwareVersion: varchar({ length: 50 }),
+	powerKw: decimal({ precision: 8, scale: 2 }),
+	chargerStatus: mysqlEnum("charger_status", ['ONLINE','OFFLINE','FAULTED','UNKNOWN']).default('UNKNOWN').notNull(),
+	isOnline: tinyint().default(0).notNull(),
+	isActive: tinyint().default(1).notNull(),
+	lastHeartbeat: timestamp({ mode: 'string' }),
+	lastBootNotification: timestamp({ mode: 'string' }),
+	manufacturer: varchar({ length: 100 }),
+	notes: text(),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+},
+(table) => [
+	index("idx_chargers_station").on(table.stationId),
+	index("idx_chargers_ocpp_identity").on(table.ocppIdentity),
+]);
+
+// ============================================================================
+// EVSE STATE LOG — audit trail of all connector status transitions
+// Single source of truth audit: every state change is recorded here
+// ============================================================================
+export const evseStateLog = mysqlTable("evse_state_log", {
+	id: int().autoincrement().notNull(),
+	evseId: int().notNull(),
+	stationId: int().notNull(),
+	chargerId: int(),
+	previousStatus: varchar({ length: 30 }),
+	newStatus: varchar({ length: 30 }).notNull(),
+	triggeredBy: mysqlEnum("triggered_by", ['OCPP','SYSTEM','ADMIN','BILLING','OVERSTAY','RESERVATION','SIMULATOR']).notNull(),
+	reason: varchar({ length: 255 }),
+	transactionId: int(),
+	ocppMessageType: varchar({ length: 50 }),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+},
+(table) => [
+	index("idx_evse_state_log_evse").on(table.evseId),
+	index("idx_evse_state_log_station").on(table.stationId),
+	index("idx_evse_state_log_created").on(table.createdAt),
+]);
+
+// ============================================================================
 // INFERRED TYPES — generated from table definitions via Drizzle $inferInsert / $inferSelect
 // These are the canonical type exports consumed by server/db.ts and routers.
 // ============================================================================
@@ -2269,3 +2322,9 @@ export type InsertSupportMessage = typeof supportMessages.$inferInsert;
 export type SupportMessage = typeof supportMessages.$inferSelect;
 export type InsertSupportAgent = typeof supportAgents.$inferInsert;
 export type SupportAgent = typeof supportAgents.$inferSelect;
+// Chargers
+export type InsertCharger = typeof chargers.$inferInsert;
+export type Charger = typeof chargers.$inferSelect;
+// EVSE State Log
+export type InsertEvseStateLog = typeof evseStateLog.$inferInsert;
+export type EvseStateLog = typeof evseStateLog.$inferSelect;

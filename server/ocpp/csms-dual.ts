@@ -751,7 +751,7 @@ export class DualCSMS {
           }
         }
         
-        await db.updateEvseStatus(evse.id, newStatus);
+        await db.updateEvseStatus(evse.id, newStatus, { triggeredBy: "OCPP" });
         console.log(`[CSMS-DUAL] StatusNotification: EVSE ${evse.id} (connector ${req.connectorId}) status changed: ${oldStatus} → ${newStatus}`);
 
         // Si el conector pasa a Preparing, actualizar también isOnline de la estación
@@ -1098,7 +1098,7 @@ export class DualCSMS {
     this.ocpp16Transactions.set(ocpp16TransactionId, internalTransactionId);
 
     // Actualizar estado del EVSE
-    await db.updateEvseStatus(evse.id, "CHARGING");
+    await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
     
     // Siempre crear sesión activa en memoria (para tracking de MeterValues)
     if (pendingSessionData && pendingSessionData.session) {
@@ -1304,7 +1304,7 @@ export class DualCSMS {
               // No resetear EVSEs con reservas activas
               const activeRes = await db.getActiveReservation(evse.id);
               if (!activeRes) {
-                await db.updateEvseStatus(evse.id, "AVAILABLE");
+                await db.updateEvseStatus(evse.id, "AVAILABLE", { triggeredBy: "OCPP" });
                 console.log(`[CSMS-DUAL] StopTransaction: Reset EVSE ${evse.id} to AVAILABLE (orphan cleanup)`);
               } else {
                 console.log(`[CSMS-DUAL] StopTransaction: Skipping EVSE ${evse.id} reset - has active reservation #${activeRes.id}`);
@@ -1388,7 +1388,7 @@ export class DualCSMS {
     });
 
     // Actualizar estado del EVSE
-    await db.updateEvseStatus(transaction.evseId, "AVAILABLE");
+    await db.updateEvseStatus(transaction.evseId, "AVAILABLE", { triggeredBy: "OCPP" });
 
     // Descontar de la billetera del usuario
     try {
@@ -1849,7 +1849,7 @@ export class DualCSMS {
           });
           
           this.ocpp16Transactions.set(ocpp16TxId, internalTxId);
-          await db.updateEvseStatus(evse.id, "CHARGING");
+          await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
           
           setActiveSession(txId, {
             transactionId: txId,
@@ -2161,7 +2161,7 @@ export class DualCSMS {
           }
         }
         
-        await db.updateEvseStatus(evse.id, newStatus);
+        await db.updateEvseStatus(evse.id, newStatus, { triggeredBy: "OCPP" });
       }
     }
 
@@ -2200,7 +2200,7 @@ export class DualCSMS {
           appliedPricePerKwh: String(pricePerKwh201),
         });
 
-        await db.updateEvseStatus(evse.id, "CHARGING");
+        await db.updateEvseStatus(evse.id, "CHARGING", { triggeredBy: "OCPP" });
         break;
       }
 
@@ -2285,7 +2285,7 @@ export class DualCSMS {
             stopReason: req.transactionInfo.stoppedReason,
           });
 
-          await db.updateEvseStatus(evse.id, "AVAILABLE");
+          await db.updateEvseStatus(evse.id, "AVAILABLE", { triggeredBy: "OCPP" });
 
           // Descontar de la billetera del usuario
           try {

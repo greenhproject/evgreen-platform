@@ -526,7 +526,7 @@ async function scanForUnmonitoredOverstay() {
       if (hoursSinceEnd > 2) {
         // Transaction ended more than 2 hours ago - likely stale EVSE status, reset it
         console.log(`[OverstayMonitor] EVSE ${evse.id} in ${evse.connectorStatus} but last tx ended ${hoursSinceEnd.toFixed(1)}h ago. Resetting to AVAILABLE.`);
-        await db.updateEvseStatus(evse.id, "AVAILABLE");
+        await db.updateEvseStatus(evse.id, "AVAILABLE", { triggeredBy: "OVERSTAY" });
         continue;
       }
 
