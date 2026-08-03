@@ -1112,7 +1112,26 @@ async function handleOCPP16Message(
         }
       } else if (payload.connectorId === 0 && resolvedStationId) {
         // connectorId=0 es la estación completa, actualizar isOnline
-        await db.updateStationOnlineStatus(ocppIdentity, payload.status !== "Unavailable" && payload.status !== "Faulted");
+        const stationIsOnline = payload.status !== "Unavailable" && payload.status !== "Faulted";
+        await db.updateStationOnlineStatus(ocppIdentity, stationIsOnline);
+        // Si la estación entra en Faulted o Unavailable, marcar todos sus EVSEs
+        if (payload.status === "Faulted" || payload.status === "Unavailable") {
+          const newEvseStatus = payload.status === "Faulted" ? "FAULTED" : "UNAVAILABLE";
+          try {
+            const allEvses = await db.getEvsesByStationId(resolvedStationId);
+            for (const evse of allEvses) {
+              // No sobreescribir CHARGING/RESERVED con FAULTED (sesión activa tiene prioridad)
+              if (evse.connectorStatus !== "CHARGING" && evse.connectorStatus !== "RESERVED") {
+                await db.updateEvseStatus(evse.id, newEvseStatus);
+                console.log(`[OCPP] connectorId=0 ${payload.status} - Updated EVSE ${evse.id} to ${newEvseStatus}`);
+              }
+            }
+          } catch (err) {
+            console.error(`[OCPP] Error updating EVSEs for station-level ${payload.status}:`, err);
+          }
+        }
+        // Si la estación vuelve a Available desde connectorId=0, los EVSEs individuales
+        // reportarán su propio estado via StatusNotification con connectorId > 0
       }
       return {};
     }

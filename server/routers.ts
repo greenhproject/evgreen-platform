@@ -1959,8 +1959,9 @@ const transactionsRouter = router({
         ? parseFloat(tariff.overstayPenaltyPerMinute.toString())
         : 0;
 
-      const startTime = transaction.startTime;
-      const endTime = transaction.endTime;
+      // endTime y startTime vienen como string desde MySQL (mode: 'string' en Drizzle)
+      const startTime = transaction.startTime ? new Date(transaction.startTime) : new Date();
+      const endTime = transaction.endTime ? new Date(transaction.endTime) : null;
       const overstayCost = parseFloat(transaction.overstayCost?.toString() || "0");
 
       // Calcular overstay start time = endTime + gracePeriodMinutes
