@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Zap, Building2, ArrowRight, CheckCircle, Users, BarChart2, Target } from "lucide-react";
 import { Link } from "wouter";
 
@@ -34,11 +34,11 @@ export default function AdvertiserRegister() {
 
   const registerMutation = trpc.advertiser.register.useMutation({
     onSuccess: () => {
-      toast({ title: "¡Registro exitoso!", description: "Tu perfil está en revisión. Te notificaremos cuando sea aprobado." });
+      toast.success("¡Registro exitoso!: Tu perfil está en revisión. Te notificaremos cuando sea aprobado.");
       navigate("/advertiser/dashboard");
     },
     onError: (err) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast.error("Error: " + String(err.message));
     },
   });
 
@@ -79,7 +79,7 @@ export default function AdvertiserRegister() {
 
   const handleSubmit = () => {
     if (!form.companyName.trim()) {
-      toast({ title: "Error", description: "El nombre de la empresa es requerido.", variant: "destructive" });
+      toast.error("Error: " + String("El nombre de la empresa es requerido."));
       return;
     }
     registerMutation.mutate({
@@ -224,7 +224,7 @@ export default function AdvertiserRegister() {
                     className="w-full bg-green-500 hover:bg-green-600 text-white mt-2"
                     onClick={() => {
                       if (!form.companyName.trim()) {
-                        toast({ title: "Error", description: "El nombre de la empresa es requerido.", variant: "destructive" });
+                        toast.error("Error: " + String("El nombre de la empresa es requerido."));
                         return;
                       }
                       setStep(2);

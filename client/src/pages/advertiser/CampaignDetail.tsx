@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { AdvertiserLayout } from "@/components/AdvertiserLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   ArrowLeft, PlusCircle, Trash2, Eye, MousePointer, TrendingUp,
   CheckCircle, Clock, XCircle, Pause, Send, Image, ExternalLink,
@@ -65,33 +65,33 @@ export default function CampaignDetail({ id }: { id: string }) {
       utils.advertiser.getCampaign.invalidate({ id: campaignId });
       setShowCreativeForm(false);
       setCreativeForm({ format: "PROMOTIONAL", imageUrl: "", title: "", subtitle: "", body: "", ctaText: "Ver más", linkUrl: "" });
-      toast({ title: "Creatividad agregada" });
+      toast.success("Creatividad agregada");
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   const deleteCreativeMutation = trpc.advertiser.deleteCreative.useMutation({
     onSuccess: () => {
       utils.advertiser.getCampaign.invalidate({ id: campaignId });
-      toast({ title: "Creatividad eliminada" });
+      toast.success("Creatividad eliminada");
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   const submitMutation = trpc.advertiser.submitForReview.useMutation({
     onSuccess: () => {
       utils.advertiser.getCampaign.invalidate({ id: campaignId });
-      toast({ title: "Campaña enviada a revisión", description: "Nuestro equipo la revisará en 24-48 horas." });
+      toast.success("Campaña enviada a revisión: Nuestro equipo la revisará en 24-48 horas.");
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   const pauseMutation = trpc.advertiser.pauseCampaign.useMutation({
     onSuccess: () => {
       utils.advertiser.getCampaign.invalidate({ id: campaignId });
-      toast({ title: "Campaña pausada" });
+      toast.success("Campaña pausada");
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   if (isLoading) {
@@ -289,7 +289,7 @@ export default function CampaignDetail({ id }: { id: string }) {
                 className="bg-green-500 hover:bg-green-600 text-white text-xs"
                 onClick={() => {
                   if (!creativeForm.imageUrl || !creativeForm.title) {
-                    toast({ title: "Error", description: "URL de imagen y título son requeridos.", variant: "destructive" });
+                    toast.error("Error: " + String("URL de imagen y título son requeridos."));
                     return;
                   }
                   addCreativeMutation.mutate({

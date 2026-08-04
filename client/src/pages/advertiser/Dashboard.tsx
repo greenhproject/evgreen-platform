@@ -1,6 +1,6 @@
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { AdvertiserLayout } from "@/components/AdvertiserLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   CheckCircle, XCircle, Clock, Building2, Mail, Phone,
   Globe, DollarSign, ChevronDown, ChevronUp, Megaphone,
@@ -32,17 +32,17 @@ function AdvertiserCard({ advertiser }: { advertiser: any }) {
   const approveMutation = trpc.adminAdvertiser.approveAdvertiser.useMutation({
     onSuccess: () => {
       utils.adminAdvertiser.listAdvertisers.invalidate();
-      toast({ title: "Anunciante aprobado" });
+      toast.success("Anunciante aprobado");
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   const rejectMutation = trpc.adminAdvertiser.rejectAdvertiser.useMutation({
     onSuccess: () => {
       utils.adminAdvertiser.listAdvertisers.invalidate();
-      toast({ title: "Anunciante rechazado" });
+      toast.success("Anunciante rechazado");
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   return (
@@ -121,7 +121,7 @@ function AdvertiserCard({ advertiser }: { advertiser: any }) {
                   className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs"
                   onClick={() => {
                     if (!notes.trim()) {
-                      toast({ title: "Error", description: "Debes indicar el motivo del rechazo.", variant: "destructive" });
+                      toast.error("Error: " + String("Debes indicar el motivo del rechazo."));
                       return;
                     }
                     rejectMutation.mutate({ profileId: advertiser.id, notes });
@@ -146,17 +146,17 @@ function CampaignReviewCard({ campaign }: { campaign: any }) {
   const approveMutation = trpc.adminAdvertiser.approveCampaign.useMutation({
     onSuccess: () => {
       utils.adminAdvertiser.listPendingCampaigns.invalidate();
-      toast({ title: "Campaña aprobada y activada" });
+      toast.success("Campaña aprobada y activada");
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   const rejectMutation = trpc.adminAdvertiser.rejectCampaign.useMutation({
     onSuccess: () => {
       utils.adminAdvertiser.listPendingCampaigns.invalidate();
-      toast({ title: "Campaña rechazada" });
+      toast.success("Campaña rechazada");
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   return (
@@ -194,7 +194,7 @@ function CampaignReviewCard({ campaign }: { campaign: any }) {
           className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs"
           onClick={() => {
             if (!notes.trim()) {
-              toast({ title: "Error", description: "Debes indicar el motivo del rechazo.", variant: "destructive" });
+              toast.error("Error: " + String("Debes indicar el motivo del rechazo."));
               return;
             }
             rejectMutation.mutate({ campaignId: campaign.id, notes });

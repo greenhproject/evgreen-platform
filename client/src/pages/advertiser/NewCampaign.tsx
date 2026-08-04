@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { AdvertiserLayout } from "@/components/AdvertiserLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   Sparkles, ArrowRight, ArrowLeft, CheckCircle, Target,
   DollarSign, MapPin, Car, Users, Lightbulb, Loader2,
@@ -85,15 +85,15 @@ export default function NewCampaign() {
         aiCtaText: data.ctaText,
       }));
     },
-    onError: (err) => toast({ title: "Error IA", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error IA: " + String(err.message)),
   });
 
   const createMutation = trpc.advertiser.createCampaign.useMutation({
     onSuccess: (data) => {
-      toast({ title: "¡Campaña creada!", description: "Ahora agrega tus creatividades." });
+      toast.success("¡Campaña creada!: Ahora agrega tus creatividades.");
       navigate(`/advertiser/campaigns/${data.campaignId}`);
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   const toggleItem = (arr: string[], item: string): string[] =>
@@ -101,11 +101,11 @@ export default function NewCampaign() {
 
   const handleCreate = () => {
     if (!form.name.trim()) {
-      toast({ title: "Error", description: "El nombre de la campaña es requerido.", variant: "destructive" });
+      toast.error("Error: " + String("El nombre de la campaña es requerido."));
       return;
     }
     if (!form.budgetTotal || parseInt(form.budgetTotal) < 1) {
-      toast({ title: "Error", description: "El presupuesto debe ser mayor a 0.", variant: "destructive" });
+      toast.error("Error: " + String("El presupuesto debe ser mayor a 0."));
       return;
     }
     createMutation.mutate({
@@ -451,7 +451,7 @@ export default function NewCampaign() {
                 className="bg-green-500 hover:bg-green-600 text-white"
                 onClick={() => {
                   if (!form.budgetTotal || parseInt(form.budgetTotal) < 1) {
-                    toast({ title: "Error", description: "El presupuesto es requerido.", variant: "destructive" });
+                    toast.error("Error: " + String("El presupuesto es requerido."));
                     return;
                   }
                   setStep("review");

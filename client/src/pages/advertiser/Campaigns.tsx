@@ -1,6 +1,6 @@
 import { useLocation, Link } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { AdvertiserLayout } from "@/components/AdvertiserLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import {
   PlusCircle, Clock, CheckCircle, XCircle, Pause,
   Eye, MousePointer, TrendingUp, ChevronRight,
 } from "lucide-react";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
   draft: { label: "Borrador", color: "text-white/50", bg: "bg-white/5" },
@@ -34,17 +34,17 @@ export default function AdvertiserCampaigns() {
   const pauseMutation = trpc.advertiser.pauseCampaign.useMutation({
     onSuccess: () => {
       utils.advertiser.listCampaigns.invalidate();
-      toast({ title: "Campaña pausada" });
+      toast.success("Campaña pausada");
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   const submitMutation = trpc.advertiser.submitForReview.useMutation({
     onSuccess: () => {
       utils.advertiser.listCampaigns.invalidate();
-      toast({ title: "Campaña enviada a revisión" });
+      toast.success("Campaña enviada a revisión");
     },
-    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err) => toast.error("Error: " + String(err.message)),
   });
 
   if (!user) {
