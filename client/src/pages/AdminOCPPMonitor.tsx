@@ -1983,13 +1983,9 @@ function LocalAuthListTab({
                   // @ts-ignore
                   list.localAuthListStatus === "FAILED" ? "destructive" : "outline"
                 }>
-                  // @ts-ignore
                   {list.localAuthListStatus === "SYNCED" && "Sincronizada"}
-                  // @ts-ignore
                   {list.localAuthListStatus === "OUTDATED" && "Desactualizada"}
-                  // @ts-ignore
                   {list.localAuthListStatus === "PENDING" && "Pendiente"}
-                  // @ts-ignore
                   {list.localAuthListStatus === "FAILED" && "Falló"}
                 </Badge>
               )}

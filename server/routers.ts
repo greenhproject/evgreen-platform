@@ -264,8 +264,7 @@ const usersRouter = router({
       }),
     }))
     .mutation(async ({ input }) => {
-      // @ts-ignore
-      await db.updateUser(input.userId, input.data);
+      await db.updateUser(input.userId, input.data as any);
       return { success: true };
     }),
     
@@ -371,8 +370,7 @@ const usersRouter = router({
         amount: adjustAmount.toString(),
         balanceBefore: currentBalance.toString(),
         balanceAfter: newBalance.toString(),
-        // @ts-ignore
-        status: "COMPLETED",
+        paymentStatus: "COMPLETED",
         description: `[Admin: ${ctx.user.name || ctx.user.email}] ${reason}`,
       });
       
@@ -429,8 +427,7 @@ const usersRouter = router({
           message: "No se puede modificar el rol de la cuenta maestra.",
         });
       }
-      // @ts-ignore
-      await db.updateUser(input.userId, input.data);
+      await db.updateUser(input.userId, input.data as any);
       return { success: true };
     }),
 });
@@ -458,8 +455,7 @@ const stationsRouter = router({
           distance: r.distance ?? null,
         }));
       } else {
-        // @ts-ignore
-        stations = await db.getAllChargingStations({ isActive: 1, isPublic: 1 });
+        stations = await db.getAllChargingStations({ isActive: true, isPublic: true });
       }
       
       // Agregar tarifa activa y EVSEs a cada estación
@@ -759,8 +755,7 @@ const stationsRouter = router({
       if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "technician" && ctx.user.role !== "engineer" && station.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para modificar esta estación" });
       }
-      // @ts-ignore
-      await db.updateChargingStation(input.id, input.data);
+      await db.updateChargingStation(input.id, input.data as any);
       return { success: true };
     }),
   
@@ -892,8 +887,7 @@ const evseRouter = router({
       }),
     }))
     .mutation(async ({ input }) => {
-      // @ts-ignore
-      await db.updateEvse(input.id, input.data);
+      await db.updateEvse(input.id, input.data as any);
       return { success: true };
     }),
   
@@ -1044,8 +1038,7 @@ const tariffsRouter = router({
         }
       }
       
-      // @ts-ignore
-      await db.updateTariff(input.id, input.data);
+      await db.updateTariff(input.id, input.data as any);
       return { success: true };
     }),
 
@@ -1088,7 +1081,7 @@ const tariffsRouter = router({
         reservationFee: input.reservationFee.toString(),
         overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
         pricePerSession: input.connectionFee.toString(),
-        autoPricing: input.autoPricing ?? false,
+        autoPricing: (input.autoPricing ?? false) ? 1 : 0,
       };
       if (input.overstayGracePeriodMinutes !== undefined) {
         tariffData.overstayGracePeriodMinutes = input.overstayGracePeriodMinutes;
@@ -1105,7 +1098,7 @@ const tariffsRouter = router({
             changedByRole: ctx.user.role || 'unknown',
             tariffChangeType: 'UPDATE',
             previousValues: { pricePerKwh: tariff.pricePerKwh, reservationFee: tariff.reservationFee, overstayPenaltyPerMinute: tariff.overstayPenaltyPerMinute, autoPricing: tariff.autoPricing },
-            newValues: { pricePerKwh: input.pricePerKwh.toString(), reservationFee: input.reservationFee.toString(), overstayPenaltyPerMinute: input.idleFeePerMin.toString(), autoPricing: input.autoPricing },
+            newValues: { pricePerKwh: input.pricePerKwh.toString(), reservationFee: input.reservationFee.toString(), overstayPenaltyPerMinute: input.idleFeePerMin.toString(), autoPricing: input.autoPricing ? 1 : 0 },
             description: `Tarifa de estación ${station?.name || input.stationId} actualizada: $${tariff.pricePerKwh} → $${input.pricePerKwh} COP/kWh`,
           });
         } catch (e) { console.error('[AuditLog] Error logging tariff updateByStation:', e); }
@@ -1121,8 +1114,7 @@ const tariffsRouter = router({
           reservationFee: input.reservationFee.toString(),
           overstayPenaltyPerMinute: input.idleFeePerMin.toString(),
           pricePerSession: input.connectionFee.toString(),
-          // @ts-ignore
-          autoPricing: input.autoPricing ?? false,
+          autoPricing: (input.autoPricing ?? false) ? 1 : 0,
           overstayGracePeriodMinutes: input.overstayGracePeriodMinutes,
           isActive: 1,
         });
@@ -1416,7 +1408,7 @@ const transactionsRouter = router({
         connectorType: evse?.connectorType || "TYPE_2",
         chargeType: evse?.chargeType || "AC",
         startTime: transaction.startTime,
-        // @ts-ignore
+        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         endTime: transaction.endTime?.toISOString() || null,
         durationMinutes,
         kwhConsumed: transaction.kwhConsumed ? parseFloat(transaction.kwhConsumed).toFixed(2) : "0.00",
@@ -1779,7 +1771,7 @@ const transactionsRouter = router({
         evseId: input.evseId,
         userId: ctx.user.id,
         status: "IN_PROGRESS",
-        // @ts-ignore
+        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         startTime: new Date(),
         chargeMode: "full_charge",
         targetValue: "0",
@@ -1853,7 +1845,7 @@ const transactionsRouter = router({
       
       // Actualizar transacción
       await db.updateTransaction(input.transactionId, {
-        // @ts-ignore
+        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         endTime: new Date(),
         status: "COMPLETED",
         totalCost: totalCost.toString(),
@@ -2074,7 +2066,7 @@ const transactionsRouter = router({
           originalAmount: parseFloat(d.originalAmount?.toString() || "0"),
           remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
           reason: d.reason,
-          status: d.status,
+        debtStatus: (d as any).debtStatus,
           createdAt: d.createdAt?.toISOString() || "",
         })),
 
@@ -2146,8 +2138,7 @@ const transactionsRouter = router({
           balanceAfter: newBalance.toString(),
           referenceId: input.transactionId,
           referenceType: "TRANSACTION",
-          // @ts-ignore
-          status: "COMPLETED",
+          paymentStatus: "COMPLETED",
           description: `[Admin: ${ctx.user.name || ctx.user.email}] Reembolso parcial (${input.refundType}). Motivo: ${input.reason}`,
         });
       }
@@ -2422,8 +2413,7 @@ const claimsRouter = router({
             balanceAfter: newBalance.toString(),
             referenceId: claim.transactionId,
             referenceType: "TRANSACTION",
-            // @ts-ignore
-            status: "COMPLETED",
+            paymentStatus: "COMPLETED",
             description: `[Reclamo #${claim.id}] Reembolso aprobado por ${ctx.user.name || ctx.user.email}. Motivo: ${input.resolution}`,
           });
         }
@@ -2683,7 +2673,7 @@ const reservationsRouter = router({
         stationId: input.stationId,
         startTime: typeof input.startTime === "string" ? input.startTime : (input.startTime as any).toISOString(),
         endTime: typeof input.endTime === "string" ? input.endTime : (input.endTime as any).toISOString(),
-        // @ts-ignore
+        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         expiryTime,
         reservationFee: dynamicPrice.reservationFee.toString(),
         noShowPenalty: dynamicPrice.noShowPenalty.toString(),
@@ -2851,8 +2841,7 @@ const walletRouter = router({
         amount: input.amount.toString(),
         balanceBefore: wallet.balance,
         balanceAfter: newBalance.toString(),
-        // @ts-ignore
-        status: "COMPLETED",
+        paymentStatus: "COMPLETED",
         description: `Recarga de billetera por $${input.amount.toLocaleString()} COP`,
       });
       
@@ -3040,8 +3029,7 @@ const maintenanceRouter = router({
         ...input,
         reportedById: ctx.user.id,
         technicianId: ctx.user.id,
-        // @ts-ignore
-        status: "PENDING",
+        maintenanceStatus: "PENDING",
       });
       // Notify admin if critical priority
       if (input.priority === "CRITICAL") {
@@ -3193,9 +3181,9 @@ const maintenanceRouter = router({
         }
         const entry = technicianMap.get(t.technicianId)!;
         entry.count++;
-        // @ts-ignore
+        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         if (t.status === "COMPLETED") entry.completed++;
-        // @ts-ignore
+        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         if (t.status === "PENDING" || t.status === "IN_PROGRESS") entry.pending++;
       }
     }
@@ -3473,10 +3461,9 @@ const bannersRouter = router({
     .mutation(async ({ ctx, input }) => {
       const id = await db.createBanner({
         ...input,
-        // @ts-ignore
-        status: "DRAFT",
+        bannerStatus: "DRAFT",
         createdById: ctx.user.id,
-      });
+      } as any);
       return { id };
     }),
   
@@ -3544,8 +3531,7 @@ const bannersRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Banner no encontrado" });
       }
       const newStatus = banner.bannerStatus === "ACTIVE" ? "PAUSED" : "ACTIVE";
-      // @ts-ignore
-      await db.updateBanner(input.id, { status: newStatus });
+      await db.updateBanner(input.id, { bannerStatus: newStatus } as any);
       return { success: true, status: newStatus };
     }),
   
@@ -4287,9 +4273,9 @@ const payoutsRouter = router({
       
       const payoutId = await db.createInvestorPayout({
         investorId: ctx.user.id,
-        // @ts-ignore
+        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         periodStart,
-        // @ts-ignore
+        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         periodEnd,
         totalRevenue: totalRevenue.toFixed(2),
         investorShare: input.amount.toFixed(2),
@@ -4301,8 +4287,8 @@ const payoutsRouter = router({
         bankAccount: input.bankAccount,
         accountHolder: input.accountHolder,
         accountType: input.accountType,
-        status: 'REQUESTED',
-        // @ts-ignore
+        payoutStatus: 'REQUESTED',
+        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         requestedAt: now,
         investorNotes: input.notes,
       });
@@ -4510,8 +4496,7 @@ const crowdfundingRouter = router({
             connectorType: 'CCS_2',
             chargeType: 'DC',
             powerKw: String(input.chargerPowerKw || 120),
-            // @ts-ignore
-            status: 'UNAVAILABLE',
+            connectorStatus: 'UNAVAILABLE',
           });
         }
         console.log(`[Crowdfunding] ${input.chargerCount} conectores creados para estación ${stationId}`);
@@ -4913,7 +4898,7 @@ const crowdfundingRouter = router({
       try {
         const investor = await db.getUserById(participation.investorId);
         if (investor && investor.email && !investor.welcomeEmailSent) {
-          // @ts-ignore
+          // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
           const isIndividual = (investor.investorTypes || []).includes('individual');
           await triggerInvestorWelcome(investor.id, {
             investorName: investor.name || 'Inversionista',
@@ -5431,7 +5416,7 @@ const vehiclesRouter = router({
         rangeKm: input.rangeKm ?? null,
         connectorTypes: input.connectorTypes,
         maxChargePowerKw: input.maxChargePowerKw?.toString() ?? null,
-        // @ts-ignore
+        // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
         isDefault: input.isDefault ?? false,
         nickname: input.nickname ?? null,
       });
@@ -5883,7 +5868,7 @@ const overstayRouter = router({
             .where(
               and(
                 eq(txTable.userId, ctx.user.id),
-                // @ts-ignore
+                // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
                 eq(txTable.connectorStatus, "COMPLETED")
               )
             )
@@ -6085,8 +6070,7 @@ const overstayRouter = router({
           balanceAfter: newBalance.toString(),
           referenceId: input.transactionId,
           referenceType: "TRANSACTION",
-          // @ts-ignore
-          status: "COMPLETED",
+          paymentStatus: "COMPLETED",
           description: `[Admin: ${ctx.user.name || ctx.user.email}] Cancelación de penalización por overstay. Motivo: ${input.reason}`,
         });
       }
@@ -6157,8 +6141,7 @@ const overstayRouter = router({
           balanceAfter: newBalance.toString(),
           referenceId: input.transactionId,
           referenceType: "TRANSACTION",
-          // @ts-ignore
-          status: "COMPLETED",
+          paymentStatus: "COMPLETED",
           description: `[Admin: ${ctx.user.name || ctx.user.email}] Ajuste de penalización: $${currentOverstayCost.toLocaleString("es-CO")} → $${input.newOverstayCost.toLocaleString("es-CO")}. Motivo: ${input.reason}`,
         });
       }
@@ -6273,7 +6256,7 @@ const overstayRouter = router({
       if (activeTx) {
         await db.updateTransaction(activeTx.id, {
           status: "COMPLETED",
-          // @ts-ignore
+          // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
           endTime: new Date(),
         });
         results.push(`Transacción #${activeTx.id} completada`);
@@ -6305,8 +6288,7 @@ const overstayRouter = router({
                 balanceAfter: (bal + overstayCost).toString(),
                 referenceId: input.transactionId,
                 referenceType: "TRANSACTION",
-                // @ts-ignore
-                status: "COMPLETED",
+                paymentStatus: "COMPLETED",
                 description: `[Admin: ${ctx.user.name}] Reembolso por sesión fantasma. Motivo: ${input.reason}`,
               });
             }
@@ -6477,9 +6459,9 @@ const investorManagementRouter = router({
       .from(users)
       .where(
         and(
-          // @ts-ignore
+          // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
           eq(users.isFounder, true),
-          // @ts-ignore
+          // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
           eq(users.investorShowInWall, true)
         )
       )
@@ -6580,8 +6562,7 @@ const debtRouter = router({
         remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
         reason: d.reason,
         description: d.description,
-        // @ts-ignore
-        status: d.status,
+        debtStatus: (d as any).debtStatus,
         createdAt: d.createdAt,
       })),
       totalDebt,
@@ -6598,8 +6579,7 @@ const debtRouter = router({
       remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
       reason: d.reason,
       description: d.description,
-      // @ts-ignore
-      status: d.status,
+        debtStatus: (d as any).debtStatus,
       paidAt: d.paidAt,
       createdAt: d.createdAt,
     }));
@@ -6663,8 +6643,7 @@ const debtRouter = router({
         balanceBefore: balance.toFixed(2),
         balanceAfter: newBalance.toFixed(2),
         description: `Pago de deuda #${debt.id} por ocupación`,
-        // @ts-ignore
-        status: "COMPLETED",
+        paymentStatus: "COMPLETED",
       });
 
       // Marcar deuda como pagada
@@ -6690,8 +6669,7 @@ const debtRouter = router({
           remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
           reason: d.reason,
           description: d.description,
-          // @ts-ignore
-          status: d.status,
+        debtStatus: (d as any).debtStatus,
           paidAt: d.paidAt,
           createdAt: d.createdAt,
         })),
@@ -6727,7 +6705,7 @@ const debtRouter = router({
           remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
           reason: d.reason,
           description: d.description,
-          status: d.status,
+        debtStatus: (d as any).debtStatus,
           autoChargeAttempts: d.autoChargeAttempts,
           lastAutoChargeAt: d.lastAutoChargeAt,
           paymentReference: d.paymentReference,
@@ -6797,8 +6775,7 @@ const debtRouter = router({
         balanceBefore: balance.toFixed(2),
         balanceAfter: newBalance.toFixed(2),
         description: `Cobro admin de deuda #${debt.id}`,
-        // @ts-ignore
-        status: "COMPLETED",
+        paymentStatus: "COMPLETED",
       });
 
       await db.payUserDebt(debt.id, remaining, `ADMIN-WALLET-${Date.now()}`);
@@ -6834,8 +6811,7 @@ const adminRemoteStartRouter = router({
    */
   getAvailableStations: adminProcedure
     .query(async () => {
-      // @ts-ignore
-      const stations = await db.getAllChargingStations({ isActive: 1 });
+      const stations = await db.getAllChargingStations({ isActive: true });
       const enriched = await Promise.all(
         stations.map(async (station: any) => {
           const evsesList = await db.getEvsesByStationId(station.id);
@@ -7420,7 +7396,7 @@ const nocRouter = router({
       totalRevenue: sum(transactions.totalCost),
       platformFee: sum(transactions.platformFee),
     }).from(transactions)
-      // @ts-ignore
+      // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
       .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfDay)));
 
     // KPIs del mes
@@ -7429,7 +7405,7 @@ const nocRouter = router({
       totalKwh: sum(transactions.kwhConsumed),
       totalRevenue: sum(transactions.totalCost),
     }).from(transactions)
-      // @ts-ignore
+      // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
       .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfMonth)));
 
     // KPIs de la semana
@@ -7438,7 +7414,7 @@ const nocRouter = router({
       totalKwh: sum(transactions.kwhConsumed),
       totalRevenue: sum(transactions.totalCost),
     }).from(transactions)
-      // @ts-ignore
+      // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
       .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfWeek)));
 
     // Últimas 20 transacciones completadas (para el ticker)
@@ -7472,7 +7448,7 @@ const nocRouter = router({
       kwh: sum(transactions.kwhConsumed),
     }).from(transactions)
       .innerJoin(chargingStations, eqOp(chargingStations.id, transactions.stationId))
-      // @ts-ignore
+      // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
       .where(andOp(eqOp(transactions.status, "COMPLETED"), gte(transactions.startTime, startOfMonth)))
       .groupBy(transactions.stationId, chargingStations.name)
       .orderBy(desc(sum(transactions.totalCost)))

@@ -315,7 +315,7 @@ export default function AdminDebts() {
                 <TableBody>
                   {debts.map((debt) => (
                     <TableRow key={debt.id} className={
-                      debt.status === "PENDING" || debt.status === "PARTIAL"
+                      debt.debtStatus === "PENDING" || debt.debtStatus === "PARTIAL"
                         ? "bg-red-500/5"
                         : ""
                     }>
@@ -353,8 +353,8 @@ export default function AdminDebts() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={STATUS_COLORS[debt.status] || ""}>
-                          {STATUS_LABELS[debt.status] || debt.status}
+                        <Badge variant="outline" className={STATUS_COLORS[debt.debtStatus] || ""}>
+                          {STATUS_LABELS[debt.debtStatus] || debt.debtStatus}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -381,7 +381,7 @@ export default function AdminDebts() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {(debt.status === "PENDING" || debt.status === "PARTIAL") && (
+                        {(debt.debtStatus === "PENDING" || debt.debtStatus === "PARTIAL") && (
                           <div className="flex items-center justify-end gap-1">
                             <Button
                               size="sm"
@@ -432,7 +432,7 @@ export default function AdminDebts() {
                             </Button>
                           </div>
                         )}
-                        {debt.status === "PAID" && debt.paymentReference && (
+                        {debt.debtStatus === "PAID" && debt.paymentReference && (
                           <span className="text-xs text-muted-foreground" title={debt.paymentReference}>
                             Ref: {debt.paymentReference.substring(0, 15)}...
                           </span>

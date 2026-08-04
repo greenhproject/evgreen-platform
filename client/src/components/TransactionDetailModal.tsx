@@ -351,7 +351,7 @@ export function TransactionDetailModal({
                     <div>
                       <span className="text-muted-foreground">{debt.reason}</span>
                       <Badge variant="outline" className="ml-2 text-xs border-red-700 text-red-400">
-                        {debt.status}
+                        {debt.debtStatus}
                       </Badge>
                     </div>
                     <span className="font-mono text-red-400">

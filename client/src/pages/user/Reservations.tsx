@@ -120,7 +120,6 @@ export default function UserReservations() {
         ) : (
           <>
             {/* Reservas activas */}
-            // @ts-ignore
             {reservations && reservations.filter(r => r.reservationStatus === "ACTIVE").length > 0 && (
               <div className="space-y-3">
                 <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
@@ -148,7 +147,6 @@ export default function UserReservations() {
                               </p>
                             </div>
                             <div className="text-right">
-                              // @ts-ignore
                               {getStatusBadge(reservation.reservationStatus)}
                               <div className="text-xs text-primary mt-1 font-medium">
                                 // @ts-ignore
@@ -219,7 +217,6 @@ export default function UserReservations() {
             )}
 
             {/* Historial de reservas */}
-            // @ts-ignore
             {reservations && reservations.filter(r => r.reservationStatus !== "ACTIVE").length > 0 && (
               <div className="space-y-3 mt-6">
                 <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
@@ -251,7 +248,6 @@ export default function UserReservations() {
                               })}
                             </p>
                           </div>
-                          // @ts-ignore
                           {getStatusBadge(reservation.reservationStatus)}
                         </div>
                       </Card>

@@ -197,7 +197,6 @@ export default function PaymentMethods() {
                         // @ts-ignore
                         tx.wompiTxStatus === "PENDING" ? "text-yellow-500" : "text-red-500"
                       }`}>
-                        // @ts-ignore
                         {tx.wompiTxStatus === "APPROVED" ? "Aprobado" :
                          // @ts-ignore
                          tx.wompiTxStatus === "PENDING" ? "Pendiente" :

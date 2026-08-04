@@ -621,7 +621,6 @@ export default function TechnicianTickets() {
                   <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30 text-xs">
                     <Wrench className="w-3 h-3 mr-1" /> Mantenimiento
                   </Badge>
-                  // @ts-ignore
                   {getMaintenanceStatusBadge(ticketDetail.maintenanceStatus)}
                   {getPriorityBadge(ticketDetail.priority || "MEDIUM")}
                 </div>
@@ -677,7 +676,6 @@ export default function TechnicianTickets() {
                       <Camera className="w-4 h-4" />
                       Fotos ({attachments.length})
                     </h4>
-                    // @ts-ignore
                     {ticketDetail.maintenanceStatus !== "COMPLETED" && ticketDetail.maintenanceStatus !== "CANCELLED" && (
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" onClick={() => handlePhotoUpload("before")} disabled={uploadingPhoto}>
@@ -719,7 +717,6 @@ export default function TechnicianTickets() {
                               <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => setLightboxUrl(photo.url)}>
                                 <Eye className="w-4 h-4" />
                               </Button>
-                              // @ts-ignore
                               {ticketDetail.maintenanceStatus !== "COMPLETED" && ticketDetail.maintenanceStatus !== "CANCELLED" && (
                                 <Button variant="ghost" size="sm" className="text-red-400 hover:bg-red-500/20" onClick={() => handleDeletePhoto(photo.fileKey)}>
                                   <Trash2 className="w-4 h-4" />
@@ -737,7 +734,6 @@ export default function TechnicianTickets() {
                     <div className="border border-dashed border-border rounded-lg p-6 text-center text-muted-foreground">
                       <Image className="w-8 h-8 mx-auto mb-2 opacity-50" />
                       <p className="text-sm">No hay fotos adjuntas</p>
-                      // @ts-ignore
                       {ticketDetail.maintenanceStatus !== "COMPLETED" && ticketDetail.maintenanceStatus !== "CANCELLED" && (
                         <p className="text-xs mt-1">Usa los botones de arriba para agregar fotos</p>
                       )}
@@ -810,7 +806,6 @@ export default function TechnicianTickets() {
 
                 {/* Acciones */}
                 <div className="flex gap-3 flex-wrap">
-                  // @ts-ignore
                   {ticketDetail.maintenanceStatus === "PENDING" && (
                     <>
                       <Button onClick={() => handleStartTicket(ticketDetail.id)} disabled={updateMutation.isPending} className="flex-1">
@@ -822,7 +817,6 @@ export default function TechnicianTickets() {
                       </Button>
                     </>
                   )}
-                  // @ts-ignore
                   {ticketDetail.maintenanceStatus === "IN_PROGRESS" && (
                     <>
                       <Button onClick={() => setShowResolveDialog(true)} className="flex-1 bg-green-600 hover:bg-green-700">
@@ -833,7 +827,6 @@ export default function TechnicianTickets() {
                       </Button>
                     </>
                   )}
-                  // @ts-ignore
                   {(ticketDetail.maintenanceStatus === "COMPLETED" || ticketDetail.maintenanceStatus === "CANCELLED") && (
                     <p className="text-sm text-muted-foreground w-full text-center py-2">
                       // @ts-ignore

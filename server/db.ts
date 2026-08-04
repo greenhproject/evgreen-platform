@@ -488,7 +488,7 @@ export async function updateUserRole(userId: number, role: User["role"]) {
 export async function updateUser(userId: number, data: Partial<InsertUser>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(users).set(data).where(eq(users.id, userId));
+  await db.update(users).set(data as any).where(eq(users.id, userId));
 }
 
 // Eliminar un usuario
@@ -692,7 +692,7 @@ export async function getInvestorAllStations(investorId: number) {
 export async function updateChargingStation(id: number, data: Partial<InsertChargingStation>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(chargingStations).set(data).where(eq(chargingStations.id, id));
+  await db.update(chargingStations).set(data as any).where(eq(chargingStations.id, id));
 }
 
 export async function updateStationOnlineStatus(ocppIdentity: string, isOnline: boolean) {
@@ -911,7 +911,7 @@ export async function updateEvseStatus(
 export async function updateEvse(id: number, data: Partial<InsertEvse>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(evses).set(data).where(eq(evses.id, id));
+  await db.update(evses).set(data as any).where(eq(evses.id, id));
 }
 
 export async function deleteEvse(id: number) {
@@ -1105,7 +1105,7 @@ export async function getAllTransactionsByInvestor(investorId: number, filters?:
 export async function updateTransaction(id: number, data: Partial<InsertTransaction>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(transactions).set(data).where(eq(transactions.id, id));
+  await db.update(transactions).set(data as any).where(eq(transactions.id, id));
 }
 
 export async function getActiveTransaction(evseId: number) {
@@ -1188,7 +1188,7 @@ export async function getReservationsByUserId(userId: number) {
 export async function updateReservation(id: number, data: Partial<InsertReservation>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(reservations).set(data).where(eq(reservations.id, id));
+  await db.update(reservations).set(data as any).where(eq(reservations.id, id));
 }
 
 export async function getExpiredReservations() {
@@ -1395,7 +1395,7 @@ export async function getTariffsByStationId(stationId: number) {
 export async function updateTariff(id: number, data: Partial<InsertTariff>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(tariffs).set(data).where(eq(tariffs.id, id));
+  await db.update(tariffs).set(data as any).where(eq(tariffs.id, id));
 }
 
 // ============================================================================
@@ -1514,7 +1514,7 @@ export async function getAllMaintenanceTickets(status?: string) {
 export async function updateMaintenanceTicket(id: number, data: Partial<InsertMaintenanceTicket>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(maintenanceTickets).set(data).where(eq(maintenanceTickets.id, id));
+  await db.update(maintenanceTickets).set(data as any).where(eq(maintenanceTickets.id, id));
 }
 
 // ============================================================================
@@ -1601,7 +1601,7 @@ export async function getAllSupportTickets(status?: string) {
 export async function updateSupportTicket(id: number, data: Partial<InsertSupportTicket>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(supportTickets).set(data).where(eq(supportTickets.id, id));
+  await db.update(supportTickets).set(data as any).where(eq(supportTickets.id, id));
 }
 
 // ============================================================================
@@ -1624,7 +1624,7 @@ export async function getPayoutsByInvestorId(investorId: number) {
 export async function updateInvestorPayout(id: number, data: Partial<InsertInvestorPayout>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(investorPayouts).set(data).where(eq(investorPayouts.id, id));
+  await db.update(investorPayouts).set(data as any).where(eq(investorPayouts.id, id));
 }
 
 export async function getPayoutById(id: number) {
@@ -2462,7 +2462,7 @@ export async function getActiveBanners(
 export async function updateBanner(id: number, data: Partial<InsertBanner>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(banners).set(data).where(eq(banners.id, id));
+  await db.update(banners).set(data as any).where(eq(banners.id, id));
 }
 
 export async function deleteBanner(id: number) {
@@ -2770,7 +2770,7 @@ export async function getAIConversationsByUserId(userId: number, limit = 20) {
 export async function updateAIConversation(id: number, data: Partial<InsertAIConversation>) {
   const db = (await getDb())!;
   if (!db) return;
-  await db.update(aiConversations).set(data).where(eq(aiConversations.id, id));
+  await db.update(aiConversations).set(data as any).where(eq(aiConversations.id, id));
 }
 
 export async function deleteAIConversation(id: number) {
@@ -5564,7 +5564,7 @@ export async function createUserVehicle(vehicle: InsertUserVehicle): Promise<num
 export async function updateUserVehicle(
   id: number,
   userId: number,
-  data: Partial<InsertUserVehicle>
+  data: Record<string, unknown>
 ): Promise<void> {
   const db = (await getDb())!;
   if (!db) return;
@@ -5974,10 +5974,10 @@ export async function createIdTag(data: {
 /**
  * Actualizar un idTag existente
  */
-export async function updateIdTag(id: number, data: Partial<InsertIdTag>): Promise<void> {
+export async function updateIdTag(id: number, data: Record<string, unknown>): Promise<void> {
   const database = await getDb();
   if (!database) return;
-  await database.update(idTags).set(data).where(eq(idTags.id, id));
+  await database.update(idTags).set(data as any).where(eq(idTags.id, id));
 }
 
 /**
@@ -6185,18 +6185,18 @@ export async function getChargerBrandByBrandModel(brand: string, model: string) 
 /**
  * Crear un nuevo perfil de marca de cargador
  */
-export async function createChargerBrand(data: InsertChargerBrand) {
+export async function createChargerBrand(data: Record<string, unknown>) {
   const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
-  const result = await db.insert(chargerBrands).values(data);
+  const result = await db.insert(chargerBrands).values(data as any);
   return result[0].insertId;
 }
 
 /**
  * Actualizar un perfil de marca de cargador
  */
-export async function updateChargerBrand(id: number, data: Partial<InsertChargerBrand>) {
+export async function updateChargerBrand(id: number, data: Record<string, unknown>) {
   const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
@@ -7051,9 +7051,9 @@ export async function updateCrowdfundingParticipationFull(
 
 // --- STATION FIXED EXPENSES (CRUD) ---
 
-export async function createFixedExpense(data: InsertStationFixedExpense): Promise<number> {
+export async function createFixedExpense(data: Record<string, unknown>): Promise<number> {
   const db = (await getDb())!;
-  const result = await db.insert(stationFixedExpenses).values(data);
+  const result = await db.insert(stationFixedExpenses).values(data as any);
   return Number(result[0].insertId);
 }
 
@@ -7074,9 +7074,9 @@ export async function getActiveFixedExpensesByStation(stationId: number): Promis
     .orderBy(asc(stationFixedExpenses.waterfallPriority));
 }
 
-export async function updateFixedExpense(id: number, data: Partial<InsertStationFixedExpense>): Promise<void> {
+export async function updateFixedExpense(id: number, data: Record<string, unknown>): Promise<void> {
   const db = (await getDb())!;
-  await db.update(stationFixedExpenses).set(data).where(eq(stationFixedExpenses.id, id));
+  await db.update(stationFixedExpenses).set(data as any).where(eq(stationFixedExpenses.id, id));
 }
 
 export async function deleteFixedExpense(id: number): Promise<void> {
@@ -7092,9 +7092,9 @@ export async function getFixedExpenseById(id: number): Promise<StationFixedExpen
 
 // --- FINANCIAL SETTLEMENTS ---
 
-export async function createSettlement(data: InsertFinancialSettlement): Promise<number> {
+export async function createSettlement(data: Record<string, unknown>): Promise<number> {
   const db = (await getDb())!;
-  const result = await db.insert(financialSettlements).values(data);
+  const result = await db.insert(financialSettlements).values(data as any);
   return Number(result[0].insertId);
 }
 
@@ -7112,9 +7112,9 @@ export async function getSettlementsByStation(stationId: number, limit = 20): Pr
     .limit(limit);
 }
 
-export async function updateSettlement(id: number, data: Partial<InsertFinancialSettlement>): Promise<void> {
+export async function updateSettlement(id: number, data: Record<string, unknown>): Promise<void> {
   const db = (await getDb())!;
-  await db.update(financialSettlements).set(data).where(eq(financialSettlements.id, id));
+  await db.update(financialSettlements).set(data as any).where(eq(financialSettlements.id, id));
 }
 
 export async function getSettlementWithDetails(id: number) {
@@ -7149,9 +7149,9 @@ export async function getSettlementWithDetails(id: number) {
 
 // --- SETTLEMENT EXPENSE ITEMS ---
 
-export async function createSettlementExpenseItem(data: InsertSettlementExpenseItem): Promise<number> {
+export async function createSettlementExpenseItem(data: Record<string, unknown>): Promise<number> {
   const db = (await getDb())!;
-  const result = await db.insert(settlementExpenseItems).values(data);
+  const result = await db.insert(settlementExpenseItems).values(data as any);
   return Number(result[0].insertId);
 }
 
@@ -7164,9 +7164,9 @@ export async function getSettlementExpenseItems(settlementId: number): Promise<S
 
 // --- INVESTOR SETTLEMENT SHARES ---
 
-export async function createInvestorShare(data: InsertInvestorSettlementShare): Promise<number> {
+export async function createInvestorShare(data: Record<string, unknown>): Promise<number> {
   const db = (await getDb())!;
-  const result = await db.insert(investorSettlementShares).values(data);
+  const result = await db.insert(investorSettlementShares).values(data as any);
   return Number(result[0].insertId);
 }
 
@@ -7199,16 +7199,16 @@ export async function getInvestorSettlementHistory(investorUserId: number, limit
   return enriched;
 }
 
-export async function updateInvestorShare(id: number, data: Partial<InsertInvestorSettlementShare>): Promise<void> {
+export async function updateInvestorShare(id: number, data: Record<string, unknown>): Promise<void> {
   const db = (await getDb())!;
-  await db.update(investorSettlementShares).set(data).where(eq(investorSettlementShares.id, id));
+  await db.update(investorSettlementShares).set(data as any).where(eq(investorSettlementShares.id, id));
 }
 
 // --- OPERATIONAL METRICS ---
 
-export async function createOperationalMetric(data: InsertOperationalMetric): Promise<number> {
+export async function createOperationalMetric(data: Record<string, unknown>): Promise<number> {
   const db = (await getDb())!;
-  const result = await db.insert(operationalMetrics).values(data);
+  const result = await db.insert(operationalMetrics).values(data as any);
   return Number(result[0].insertId);
 }
 
@@ -7229,9 +7229,9 @@ export async function getLatestOperationalMetric(stationId: number): Promise<Ope
   return rows[0];
 }
 
-export async function updateOperationalMetric(id: number, data: Partial<InsertOperationalMetric>): Promise<void> {
+export async function updateOperationalMetric(id: number, data: Record<string, unknown>): Promise<void> {
   const db = (await getDb())!;
-  await db.update(operationalMetrics).set(data).where(eq(operationalMetrics.id, id));
+  await db.update(operationalMetrics).set(data as any).where(eq(operationalMetrics.id, id));
 }
 
 // --- FINANCIAL AGGREGATION HELPERS ---
@@ -7929,10 +7929,10 @@ export async function getEnrichedTransactionsByInvestor(
 // REFUNDS (Historial de reembolsos para auditoría)
 // ============================================================================
 
-export async function createRefund(data: InsertRefund): Promise<number> {
+export async function createRefund(data: Record<string, unknown>): Promise<number> {
   const db = (await getDb())!;
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(refunds).values(data);
+  const result = await db.insert(refunds).values(data as any);
   return Number(result[0].insertId);
 }
 
@@ -7968,10 +7968,10 @@ export async function getRefundById(id: number): Promise<Refund | null> {
 // CLAIMS (Reclamos de cobro incorrecto)
 // ============================================================================
 
-export async function createClaim(data: InsertClaim): Promise<number> {
+export async function createClaim(data: Record<string, unknown>): Promise<number> {
   const db = (await getDb())!;
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(claims).values(data);
+  const result = await db.insert(claims).values(data as any);
   return Number(result[0].insertId);
 }
 
@@ -8002,11 +8002,11 @@ export async function getClaimById(id: number): Promise<Claim | null> {
   return result[0] || null;
 }
 
-export async function updateClaim(id: number, data: Partial<InsertClaim>): Promise<void> {
+export async function updateClaim(id: number, data: Record<string, unknown>): Promise<void> {
   const db = (await getDb())!;
   if (!db) return;
   const { eq } = await import("drizzle-orm");
-  await db.update(claims).set(data).where(eq(claims.id, id));
+  await db.update(claims).set(data as any).where(eq(claims.id, id));
 }
 
 export async function getClaimsByTransactionId(transactionId: number): Promise<Claim[]> {
@@ -8248,10 +8248,10 @@ export async function getAllLocalAuthListsStatus(): Promise<LocalAuthList[]> {
 /**
  * Registrar una transacción offline para reconciliación posterior
  */
-export async function createOfflineTransaction(data: InsertOfflineTransaction): Promise<number> {
+export async function createOfflineTransaction(data: Record<string, unknown>): Promise<number> {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
-  const result = await database.insert(offlineTransactions).values(data);
+  const result = await database.insert(offlineTransactions).values(data as any);
   return Number(result[0].insertId);
 }
 
