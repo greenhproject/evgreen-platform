@@ -210,7 +210,7 @@ export default function Landing() {
                 Ver estaciones
                 <MapPin className="w-5 h-5 ml-2" />
               </Button>
-              {/* Botón App Store — siempre visible */}
+              {/* Botones de descarga — App Store + Google Play */}
               <a
                 href="https://apps.apple.com/co/app/evgreen/id6783473071?l=en-GB"
                 target="_blank"
@@ -225,6 +225,26 @@ export default function Landing() {
                 <div className="text-left">
                   <p className="text-white/50 text-[9px] uppercase tracking-widest leading-none font-medium">Download on the</p>
                   <p className="text-white font-semibold text-base leading-tight">App Store</p>
+                </div>
+                <div className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                </div>
+              </a>
+              {/* Google Play */}
+              <a
+                href="https://play.google.com/store/apps/details?id=com.greenhproject.evgreen"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group inline-flex items-center gap-3 bg-black/80 hover:bg-black border border-white/15 hover:border-white/30 text-white px-6 py-4 rounded-xl transition-all duration-200 hover:scale-[1.03] hover:shadow-xl hover:shadow-green-500/20 backdrop-blur-sm"
+                aria-label="Descargar EVGreen en Google Play"
+              >
+                {/* Google Play logo */}
+                <svg viewBox="0 0 512 512" className="h-7 w-7 flex-shrink-0" aria-hidden="true">
+                  <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l2.7 1.5 246.9-246.9v-5.8L47 0zm425.2 225.6l-58.9-34.1-65.7 65.5 65.7 65.5 60.1-34.1c17.1-9.8 17.1-25.8-.2-35.3l-1 1.5zm-218.5 152l-246.9 247c13 7.3 28.4 7.3 41.4 0l279.1-160.8-73.6-86.2z" fill="white"/>
+                </svg>
+                <div className="text-left">
+                  <p className="text-white/50 text-[9px] uppercase tracking-widest leading-none font-medium">Get it on</p>
+                  <p className="text-white font-semibold text-base leading-tight">Google Play</p>
                 </div>
                 <div className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
@@ -1013,14 +1033,14 @@ export default function Landing() {
               <div className="flex-1 text-center lg:text-left">
                 <div className="inline-flex items-center gap-2 bg-green-500/15 border border-green-500/30 text-green-400 text-xs font-bold px-4 py-2 rounded-full mb-5 uppercase tracking-wider">
                   <Zap className="h-3.5 w-3.5" />
-                  Ya en App Store
+                  Disponible en iOS y Android
                 </div>
                 <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 leading-tight">
                   Lleva EVGreen{" "}
                   <span className="text-gradient">en tu bolsillo</span>
                 </h2>
                 <p className="text-muted-foreground text-lg mb-6 max-w-md mx-auto lg:mx-0">
-                  Descarga la app oficial para iPhone. Encuentra estaciones, inicia cargas, chatea con la IA y paga — todo desde tu celular.
+                  Descarga la app oficial para iPhone y Android. Encuentra estaciones, inicia cargas, chatea con la IA y paga — todo desde tu celular.
                 </p>
                 {/* Rating */}
                 <div className="flex items-center gap-2 justify-center lg:justify-start mb-8">
@@ -1029,38 +1049,62 @@ export default function Landing() {
                       <svg key={i} className="w-4 h-4 text-yellow-400 fill-yellow-400" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
                     ))}
                   </div>
-                  <span className="text-sm text-muted-foreground">App Store · iOS</span>
+                  <span className="text-sm text-muted-foreground">App Store · Google Play</span>
                 </div>
-                {/* Botón principal */}
-                <a
-                  href="https://apps.apple.com/co/app/evgreen/id6783473071?l=en-GB"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group inline-block"
-                  aria-label="Descargar EVGreen en App Store"
-                >
-                  <div className="relative">
-                    <div className="absolute -inset-1.5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl blur-xl opacity-50 group-hover:opacity-80 transition-opacity duration-300" />
-                    <div className="relative bg-black rounded-2xl px-6 py-4 flex items-center gap-4 border border-white/10 group-hover:border-white/25 transition-all duration-300 group-hover:scale-[1.04] group-hover:shadow-2xl group-hover:shadow-green-500/30">
-                      <svg viewBox="0 0 24 24" className="h-10 w-10 flex-shrink-0" fill="white" aria-hidden="true">
-                        <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
-                      </svg>
-                      <div>
-                        <p className="text-white/50 text-[10px] font-semibold uppercase tracking-widest leading-none mb-1">Download on the</p>
-                        <p className="text-white text-2xl font-bold leading-none tracking-tight">App Store</p>
+                {/* Botones de descarga lado a lado */}
+                <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+                  {/* App Store */}
+                  <a
+                    href="https://apps.apple.com/co/app/evgreen/id6783473071?l=en-GB"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group inline-block"
+                    aria-label="Descargar EVGreen en App Store"
+                  >
+                    <div className="relative">
+                      <div className="absolute -inset-1.5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl blur-xl opacity-50 group-hover:opacity-80 transition-opacity duration-300" />
+                      <div className="relative bg-black rounded-2xl px-6 py-4 flex items-center gap-4 border border-white/10 group-hover:border-white/25 transition-all duration-300 group-hover:scale-[1.04] group-hover:shadow-2xl group-hover:shadow-green-500/30">
+                        <svg viewBox="0 0 24 24" className="h-10 w-10 flex-shrink-0" fill="white" aria-hidden="true">
+                          <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
+                        </svg>
+                        <div>
+                          <p className="text-white/50 text-[10px] font-semibold uppercase tracking-widest leading-none mb-1">Download on the</p>
+                          <p className="text-white text-2xl font-bold leading-none tracking-tight">App Store</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </a>
+                  </a>
+                  {/* Google Play */}
+                  <a
+                    href="https://play.google.com/store/apps/details?id=com.greenhproject.evgreen"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group inline-block"
+                    aria-label="Descargar EVGreen en Google Play"
+                  >
+                    <div className="relative">
+                      <div className="absolute -inset-1.5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl blur-xl opacity-50 group-hover:opacity-80 transition-opacity duration-300" />
+                      <div className="relative bg-black rounded-2xl px-6 py-4 flex items-center gap-4 border border-white/10 group-hover:border-white/25 transition-all duration-300 group-hover:scale-[1.04] group-hover:shadow-2xl group-hover:shadow-green-500/30">
+                        <svg viewBox="0 0 512 512" className="h-10 w-10 flex-shrink-0" aria-hidden="true">
+                          <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l2.7 1.5 246.9-246.9v-5.8L47 0zm425.2 225.6l-58.9-34.1-65.7 65.5 65.7 65.5 60.1-34.1c17.1-9.8 17.1-25.8-.2-35.3l-1 1.5zm-218.5 152l-246.9 247c13 7.3 28.4 7.3 41.4 0l279.1-160.8-73.6-86.2z" fill="white"/>
+                        </svg>
+                        <div>
+                          <p className="text-white/50 text-[10px] font-semibold uppercase tracking-widest leading-none mb-1">Get it on</p>
+                          <p className="text-white text-2xl font-bold leading-none tracking-tight">Google Play</p>
+                        </div>
+                      </div>
+                    </div>
+                  </a>
+                </div>
                 {/* Trust badges */}
                 <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 justify-center lg:justify-start text-xs text-muted-foreground">
                   <span className="flex items-center gap-1.5"><Shield className="h-3 w-3 text-green-500" />Gratis</span>
                   <span className="w-px h-3 bg-border" />
-                  <span>iOS 15.0 o superior</span>
+                  <span>iOS &amp; Android</span>
                   <span className="w-px h-3 bg-border" />
                   <span>Colombia 🇨🇴</span>
                   <span className="w-px h-3 bg-border" />
-                  <span className="flex items-center gap-1">Verificada por Apple <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></span>
+                  <span className="flex items-center gap-1">Verificada <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></span>
                 </div>
               </div>
 
