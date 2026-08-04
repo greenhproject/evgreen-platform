@@ -1905,7 +1905,7 @@ export const users = mysqlTable("users", {
 	name: text(),
 	email: varchar({ length: 320 }),
 	loginMethod: varchar({ length: 64 }),
-	role: mysqlEnum(['staff','technician','investor','user','admin','engineer','host','comercial']).default('user').notNull(),
+	role: mysqlEnum(['staff','technician','investor','user','admin','engineer','host','comercial','advertiser']).default('user').notNull(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
 	lastSignedIn: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
@@ -2328,3 +2328,75 @@ export type Charger = typeof chargers.$inferSelect;
 // EVSE State Log
 export type InsertEvseStateLog = typeof evseStateLog.$inferInsert;
 export type EvseStateLog = typeof evseStateLog.$inferSelect;
+
+// ─── Portal de Anunciantes ────────────────────────────────────────────────────
+
+export const advertiserProfiles = mysqlTable("advertiser_profiles", {
+	id: int().autoincrement().notNull(),
+	userId: int().notNull(),
+	companyName: varchar({ length: 255 }).notNull(),
+	taxId: varchar({ length: 50 }),
+	industry: varchar({ length: 100 }),
+	website: varchar({ length: 255 }),
+	contactName: varchar({ length: 255 }),
+	contactPhone: varchar({ length: 30 }),
+	contactEmail: varchar({ length: 320 }),
+	monthlyBudget: int(),
+	status: mysqlEnum("advertiser_status", ['pending','approved','rejected','suspended']).default('pending').notNull(),
+	adminNotes: text(),
+	approvedAt: timestamp({ mode: 'string' }),
+	approvedById: int(),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+});
+
+export const adCampaigns = mysqlTable("ad_campaigns", {
+	id: int().autoincrement().notNull(),
+	advertiserId: int().notNull(),
+	name: varchar({ length: 255 }).notNull(),
+	objective: mysqlEnum("campaign_objective", ['awareness','traffic','conversions','app_install']).default('awareness').notNull(),
+	status: mysqlEnum("campaign_status", ['draft','pending_review','approved','active','paused','completed','rejected']).default('draft').notNull(),
+	budgetTotal: int().notNull(),
+	budgetSpent: int().default(0).notNull(),
+	startDate: timestamp({ mode: 'string' }),
+	endDate: timestamp({ mode: 'string' }),
+	targetCities: json(),
+	targetVehicleBrands: json(),
+	targetSubscriptionTiers: json(),
+	targetMinChargesPerMonth: int(),
+	targetActivitySegments: json(),
+	impressions: int().default(0).notNull(),
+	clicks: int().default(0).notNull(),
+	uniqueViews: int().default(0).notNull(),
+	adminNotes: text(),
+	reviewedById: int(),
+	reviewedAt: timestamp({ mode: 'string' }),
+	aiSuggestions: json(),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+});
+
+export const adCampaignCreatives = mysqlTable("ad_campaign_creatives", {
+	id: int().autoincrement().notNull(),
+	campaignId: int().notNull(),
+	format: mysqlEnum("creative_format", ['SPLASH','CHARGING','MAP','PROMOTIONAL']).default('PROMOTIONAL').notNull(),
+	imageUrl: text().notNull(),
+	imageUrlMobile: text(),
+	title: varchar({ length: 255 }).notNull(),
+	subtitle: varchar({ length: 500 }),
+	body: text(),
+	ctaText: varchar({ length: 100 }),
+	linkUrl: text(),
+	status: mysqlEnum("creative_status", ['draft','pending_review','approved','rejected']).default('draft').notNull(),
+	adminNotes: text(),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+});
+
+// Types — Portal de Anunciantes
+export type InsertAdvertiserProfile = typeof advertiserProfiles.$inferInsert;
+export type AdvertiserProfile = typeof advertiserProfiles.$inferSelect;
+export type InsertAdCampaign = typeof adCampaigns.$inferInsert;
+export type AdCampaign = typeof adCampaigns.$inferSelect;
+export type InsertAdCampaignCreative = typeof adCampaignCreatives.$inferInsert;
+export type AdCampaignCreative = typeof adCampaignCreatives.$inferSelect;

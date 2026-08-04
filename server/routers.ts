@@ -49,6 +49,7 @@ import { contactRouter } from "./contact/contact-router";
 import { saasRouter } from "./saas/saas-router";
 import { campaignWizardRouter } from "./banners/campaign-wizard-router";
 import { buildLoyaltyRouter } from "./loyalty/loyalty-router";
+import { advertiserRouter, adminAdvertiserRouter } from "./routers/advertiser";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -7822,6 +7823,8 @@ export const appRouter = router({
   feedback: feedbackRouter,
   campaignWizard: campaignWizardRouter,
   loyalty: buildLoyaltyRouter(router, publicProcedure, protectedProcedure, adminProcedure),
+  advertiser: advertiserRouter,
+  adminAdvertiser: adminAdvertiserRouter,
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

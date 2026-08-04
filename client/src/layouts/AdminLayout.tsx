@@ -55,7 +55,8 @@ import {
   ParkingSquare,
   MessageCircle,
   MonitorPlay,
-  Star
+  Star,
+  Megaphone
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -80,6 +81,7 @@ const adminMenuItems: { icon: any; label: string; path: string; roles?: string[]
   { icon: Banknote, label: "Deudas", path: "/admin/debts" },
   { icon: BarChart3, label: "Reportes", path: "/admin/reports" },
   { icon: Image, label: "Banners", path: "/admin/banners" },
+  { icon: Megaphone, label: "Anunciantes", path: "/admin/advertisers", roles: ["admin", "staff"] },
   { icon: Bell, label: "Notificaciones", path: "/admin/notifications" },
   { icon: RotateCcw, label: "Reembolsos", path: "/admin/refunds" },
   { icon: AlertCircle, label: "Reclamos", path: "/admin/claims" },

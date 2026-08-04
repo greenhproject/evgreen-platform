@@ -3828,3 +3828,32 @@
 - [x] `server/charging/charging-simulator.ts`: 2 llamadas con `triggeredBy: "SIMULATOR"`
 - [x] `server/routers.ts`: 5 llamadas migradas con `triggeredBy: "ADMIN"/"SYSTEM"`
 - [x] `server/db.ts` (reservaciones): 2 llamadas internas con `triggeredBy: "SYSTEM"`
+
+## Portal de Anunciantes — Opción B [EN PROGRESO]
+### Fase 1: Schema y BD
+- [ ] Agregar rol `advertiser` al enum de roles en tabla `users`
+- [ ] Crear tabla `advertiser_profiles` (empresa, NIT, industria, presupuesto, estado)
+- [ ] Crear tabla `ad_campaigns` (anunciante, nombre, objetivo, segmentación, presupuesto, estado, fechas)
+- [ ] Crear tabla `ad_campaign_creatives` (imagen, copy, CTA, estado revisión)
+- [ ] Migrar schema con `pnpm db:push`
+### Fase 2: Backend
+- [ ] Endpoints `advertiser.register/getProfile/updateProfile`
+- [ ] Endpoints `adCampaigns.create/list/getById/update/delete`
+- [ ] Endpoints `adCampaigns.submitForReview/pause/resume`
+- [ ] Endpoints `adCampaigns.getMetrics`
+- [ ] Endpoint admin `adCampaigns.approve/reject`
+### Fase 3: Frontend
+- [ ] Layout `AdvertiserLayout.tsx` con sidebar
+- [ ] Página `/advertiser/register` — onboarding
+- [ ] Página `/advertiser/dashboard` — métricas
+- [ ] Página `/advertiser/campaigns` — lista
+- [ ] Página `/advertiser/campaigns/new` — AI Wizard
+- [ ] Página `/advertiser/campaigns/:id` — detalle
+- [ ] Página `/advertiser/profile` — perfil empresa
+### Fase 4: AI Campaign Wizard
+- [ ] Wizard paso a paso: objetivo → audiencia → creatividad → presupuesto → revisión
+- [ ] Preview del banner antes de enviar
+### Fase 5: Admin
+- [ ] Sección `/admin/advertisers` — aprobar/rechazar anunciantes y campañas
+### Fase 6: Integración AdsDemo
+- [ ] Botones "Crear campaña" y "Ver plataforma" apuntan al portal de anunciantes

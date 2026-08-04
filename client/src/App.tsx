@@ -50,6 +50,14 @@ const SaaSLanding = lazy(() => import("./pages/SaaSLanding"));
 const AdsDemo = lazy(() => import("./pages/AdsDemo"));
 const AdminOrganizations = lazy(() => import("./pages/admin/Organizations"));
 
+// Portal de Anunciantes
+const AdvertiserRegister = lazy(() => import("./pages/advertiser/Register"));
+const AdvertiserDashboard = lazy(() => import("./pages/advertiser/Dashboard"));
+const AdvertiserCampaigns = lazy(() => import("./pages/advertiser/Campaigns"));
+const AdvertiserNewCampaign = lazy(() => import("./pages/advertiser/NewCampaign"));
+const AdvertiserCampaignDetail = lazy(() => import("./pages/advertiser/CampaignDetail"));
+const AdminAdvertisers = lazy(() => import("./pages/admin/AdminAdvertisers"));
+
 // Páginas de usuario
 const UserMap = lazy(() => import("./pages/user/Map"));
 const UserWallet = lazy(() => import("./pages/user/Wallet"));
@@ -1148,6 +1156,13 @@ function Router() {
             </AdminLayout>
           </ProtectedRoute>
         </Route>
+        <Route path="/admin/advertisers">
+          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+            <AdminLayout>
+              <AdminAdvertisers />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
         <Route path="/admin/notifications">
           <ProtectedRoute allowedRoles={["admin"]}>
             <AdminLayout>
@@ -1521,6 +1536,16 @@ function Router() {
             </GestorLayout>
           </ProtectedRoute>
         </Route>
+
+        {/* Portal de Anunciantes */}
+        <Route path="/advertiser/register" component={AdvertiserRegister} />
+        <Route path="/advertiser/dashboard" component={AdvertiserDashboard} />
+        <Route path="/advertiser/campaigns/new" component={AdvertiserNewCampaign} />
+        <Route path="/advertiser/campaigns/:id">
+          {(params) => <AdvertiserCampaignDetail id={params.id ?? ""} />}
+        </Route>
+        <Route path="/advertiser/campaigns" component={AdvertiserCampaigns} />
+        <Route path="/advertiser" component={AdvertiserDashboard} />
 
         {/* 404 */}
         <Route path="/404" component={NotFound} />

@@ -715,16 +715,16 @@ export default function AdsDemo() {
             ¿Listo para crear tu primera campaña?
           </h2>
           <p className="text-slate-400 mb-7 max-w-xl mx-auto">
-            Accede al panel de administración y usa el AI Campaign Wizard para diseñar
+            Regístrate como anunciante y usa el AI Campaign Wizard para diseñar
             y activar tu campaña en menos de 2 minutos.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <a href="/admin/banners">
+            <a href="/advertiser/campaigns/new">
               <Button size="lg" className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-8">
                 <Sparkles className="w-4 h-4 mr-2" /> Crear campaña con IA
               </Button>
             </a>
-            <a href="/">
+            <a href="/advertiser/dashboard">
               <Button size="lg" variant="outline" className="border-slate-600 text-slate-300 hover:text-white">
                 Ver la plataforma
               </Button>
