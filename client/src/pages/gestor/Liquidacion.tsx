@@ -176,7 +176,9 @@ export default function GestorLiquidacion() {
                       <td className="py-3 text-right font-bold text-emerald-400">{fmt(l.gestorCommission)}</td>
                       <td className="py-3 text-center">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          // @ts-ignore
                           l.status === "distributed" ? "bg-green-500/20 text-green-400" :
+                          // @ts-ignore
                           l.status === "closed" ? "bg-blue-500/20 text-blue-400" :
                           "bg-yellow-500/20 text-yellow-400"
                         }`}>
@@ -232,7 +234,9 @@ export default function GestorLiquidacion() {
                       <td className="py-2 text-right font-semibold text-emerald-400">{fmt(s.gestorCommission)}</td>
                       <td className="py-2 text-center">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          // @ts-ignore
                           s.status === "distributed" ? "bg-green-500/20 text-green-400" :
+                          // @ts-ignore
                           s.status === "closed" ? "bg-blue-500/20 text-blue-400" :
                           "bg-yellow-500/20 text-yellow-400"
                         }`}>

@@ -14,7 +14,7 @@ import { invokeLLM } from "../_core/llm";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function requireAdvertiser(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
   const profile = await db
     .select()
@@ -49,7 +49,7 @@ export const advertiserRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
       const existing = await db
@@ -84,7 +84,7 @@ export const advertiserRouter = router({
     }),
 
   getProfile: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
     const profile = await db
       .select()
@@ -108,7 +108,7 @@ export const advertiserRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const profile = await requireAdvertiser(ctx.user.id);
       await db
@@ -136,7 +136,7 @@ export const advertiserRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const profile = await requireAdvertiser(ctx.user.id);
 
@@ -166,7 +166,7 @@ export const advertiserRouter = router({
     }),
 
   listCampaigns: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
     const profile = await requireAdvertiser(ctx.user.id);
     return db
@@ -179,7 +179,7 @@ export const advertiserRouter = router({
   getCampaign: protectedProcedure
     .input(z.object({ id: z.number().int() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const profile = await requireAdvertiser(ctx.user.id);
 
@@ -216,7 +216,7 @@ export const advertiserRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const profile = await requireAdvertiser(ctx.user.id);
       const { id, ...data } = input;
@@ -239,7 +239,7 @@ export const advertiserRouter = router({
   submitForReview: protectedProcedure
     .input(z.object({ id: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const profile = await requireAdvertiser(ctx.user.id);
 
@@ -275,7 +275,7 @@ export const advertiserRouter = router({
   pauseCampaign: protectedProcedure
     .input(z.object({ id: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const profile = await requireAdvertiser(ctx.user.id);
       await db
@@ -302,7 +302,7 @@ export const advertiserRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const profile = await requireAdvertiser(ctx.user.id);
 
@@ -325,7 +325,7 @@ export const advertiserRouter = router({
   deleteCreative: protectedProcedure
     .input(z.object({ id: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const profile = await requireAdvertiser(ctx.user.id);
 
@@ -435,7 +435,7 @@ Devuelve un JSON con:
   // ── Métricas del dashboard ─────────────────────────────────────────────────
 
   getDashboardMetrics: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
     const profile = await requireAdvertiser(ctx.user.id);
 
@@ -485,7 +485,7 @@ Devuelve un JSON con:
 export const adminAdvertiserRouter = router({
   listAdvertisers: protectedProcedure.query(async ({ ctx }) => {
     if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
     return db
@@ -510,7 +510,7 @@ export const adminAdvertiserRouter = router({
     .input(z.object({ profileId: z.number().int(), notes: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
       const profile = await db
@@ -538,7 +538,7 @@ export const adminAdvertiserRouter = router({
     .input(z.object({ profileId: z.number().int(), notes: z.string() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
       await db
@@ -551,7 +551,7 @@ export const adminAdvertiserRouter = router({
 
   listPendingCampaigns: protectedProcedure.query(async ({ ctx }) => {
     if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
     return db
@@ -575,7 +575,7 @@ export const adminAdvertiserRouter = router({
     .input(z.object({ campaignId: z.number().int(), notes: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
       await db
@@ -600,7 +600,7 @@ export const adminAdvertiserRouter = router({
     .input(z.object({ campaignId: z.number().int(), notes: z.string() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
       await db

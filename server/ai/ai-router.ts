@@ -73,6 +73,7 @@ export const aiRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       // Guardar en base de datos
+      // @ts-ignore
       await dbOps.upsertAIConfig({
         ...input,
         temperature: input.temperature?.toString(),

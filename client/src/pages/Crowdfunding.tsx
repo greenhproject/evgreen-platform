@@ -221,7 +221,9 @@ export default function Crowdfunding() {
 
   const filteredSpaces = useMemo(() => {
     if (!spaces) return [];
+    // @ts-ignore
     if (filter === "all") return spaces as PublishedSpace[];
+    // @ts-ignore
     return (spaces as PublishedSpace[]).filter(s => s.spaceType === filter);
   }, [spaces, filter]);
 

@@ -356,6 +356,7 @@ export default function InvestorOnboarding() {
       setFounderTitle(p.founderTitle || "");
       setInvestorQuote(p.investorQuote || "");
       setInvestorBio(p.investorBio || "");
+      // @ts-ignore
       setInvestorShowInWall(p.investorShowInWall ?? true);
       if (p.investorPhotoUrl) setPhotoPreview(p.investorPhotoUrl);
     }

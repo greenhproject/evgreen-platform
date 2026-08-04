@@ -65,7 +65,7 @@ const audienceToRoles: Record<TargetAudience, string[] | null> = {
  * Obtener usuarios según la audiencia objetivo
  */
 async function getUsersByAudience(audience: TargetAudience) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
 
   const roles = audienceToRoles[audience];
@@ -103,7 +103,7 @@ async function getUsersByAudience(audience: TargetAudience) {
 export async function sendBroadcastNotification(
   input: BroadcastNotificationInput
 ): Promise<BroadcastResult> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
 
   const result: BroadcastResult = {
@@ -278,7 +278,7 @@ function generateEmailTemplate(input: BroadcastNotificationInput, userName: stri
  * Obtener estadísticas de notificaciones
  */
 export async function getNotificationStats() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
 
   // Total de notificaciones enviadas (últimos 30 días)
@@ -324,7 +324,7 @@ export async function getNotificationStats() {
  * Obtener historial de notificaciones broadcast
  */
 export async function getBroadcastHistory(limit: number = 20) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
 
   // Obtener notificaciones únicas por título y fecha (agrupadas)

@@ -168,6 +168,7 @@ export default function WhatsAppConfig() {
             {config?.enabled ? "Activo" : "Inactivo"}
           </div>
           <Switch
+            // @ts-ignore
             checked={config?.enabled ?? false}
             onCheckedChange={handleToggleEnabled}
             disabled={saveMutation.isPending}

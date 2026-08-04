@@ -292,7 +292,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     throw new Error("User openId is required for upsert");
   }
 
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) {
     console.warn("[Database] Cannot upsert user: database not available");
     return;
@@ -335,11 +335,11 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     }
 
     if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
+      values.lastSignedIn = new Date().toISOString();
     }
 
     if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
+      updateSet.lastSignedIn = new Date().toISOString();
     }
     
     // Generar idTag único para nuevos usuarios (formato: EV-XXXXXX)
@@ -372,28 +372,28 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 }
 
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getUserById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getUserByEmail(email: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getAllUsers(role?: User["role"]) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   if (role) {
     return db.select().from(users).where(eq(users.role, role)).orderBy(desc(users.createdAt));
@@ -403,7 +403,7 @@ export async function getAllUsers(role?: User["role"]) {
 
 // Generar idTag único para usuarios (formato: EV-XXXXXX)
 export async function generateUniqueIdTag(): Promise<string> {
-  const db = await getDb();
+  const db = (await getDb())!;
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Sin I, O, 0, 1 para evitar confusión
   let attempts = 0;
   const maxAttempts = 10;
@@ -433,7 +433,7 @@ export async function generateUniqueIdTag(): Promise<string> {
 
 // Obtener usuario por idTag (para autorización OCPP)
 export async function getUserByIdTag(idTag: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.idTag, idTag)).limit(1);
   return result.length > 0 ? result[0] : undefined;
@@ -441,10 +441,10 @@ export async function getUserByIdTag(idTag: string) {
 
 // Regenerar idTag de un usuario
 export async function regenerateUserIdTag(userId: number): Promise<string | null> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const newIdTag = await generateUniqueIdTag();
-  await db.update(users).set({ idTag: newIdTag }).where(eq(users.id, userId));
+  await db.update(users).set({ idTag: newIdTag } as any).where(eq(users.id, userId));
   // Sincronizar con tabla id_tags
   try {
     await syncUserIdTag(userId, newIdTag);
@@ -456,7 +456,7 @@ export async function regenerateUserIdTag(userId: number): Promise<string | null
 
 // Crear un nuevo usuario y retornar su ID
 export async function createUser(userData: InsertUser): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   // Generar idTag único para el nuevo usuario
@@ -465,7 +465,7 @@ export async function createUser(userData: InsertUser): Promise<number> {
   const result = await db.insert(users).values({
     ...userData,
     idTag,
-  });
+  } as any);
   
   const newUserId = Number(result[0].insertId);
   
@@ -480,20 +480,20 @@ export async function createUser(userData: InsertUser): Promise<number> {
 }
 
 export async function updateUserRole(userId: number, role: User["role"]) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
-  await db.update(users).set({ role }).where(eq(users.id, userId));
+  await db.update(users).set({ role } as any).where(eq(users.id, userId));
 }
 
 export async function updateUser(userId: number, data: Partial<InsertUser>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(users).set(data).where(eq(users.id, userId));
 }
 
 // Eliminar un usuario
 export async function deleteUser(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   // Primero eliminar datos relacionados (billetera, notificaciones, etc.)
   await db.delete(wallets).where(eq(wallets.userId, userId));
@@ -505,7 +505,7 @@ export async function deleteUser(userId: number) {
 // Eliminar un inversionista: limpia participaciones, payouts, datos de onboarding y perfil de inversionista
 // Opcionalmente elimina la cuenta de usuario completa
 export async function deleteInvestor(userId: number, deleteUserAccount: boolean = false): Promise<{ deletedParticipations: number; deletedPayouts: number }> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   // 1. Eliminar participaciones de crowdfunding del inversionista
@@ -558,9 +558,9 @@ export async function deleteInvestor(userId: number, deleteUserAccount: boolean 
 
 // Vincular un usuario existente con un nuevo openId de Manus OAuth
 export async function linkUserOpenId(userId: number, newOpenId: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
-  await db.update(users).set({ openId: newOpenId }).where(eq(users.id, userId));
+  await db.update(users).set({ openId: newOpenId } as any).where(eq(users.id, userId));
 }
 
 // ============================================================================
@@ -568,34 +568,34 @@ export async function linkUserOpenId(userId: number, newOpenId: string) {
 // ============================================================================
 
 export async function createChargingStation(station: InsertChargingStation) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(chargingStations).values(station);
   return result[0].insertId;
 }
 
 export async function getChargingStationById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(chargingStations).where(eq(chargingStations.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getChargingStationByOcppIdentity(ocppIdentity: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(chargingStations).where(eq(chargingStations.ocppIdentity, ocppIdentity)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getAllChargingStations(filters?: { ownerId?: number; isActive?: boolean; isPublic?: boolean }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const conditions = [];
   if (filters?.ownerId) conditions.push(eq(chargingStations.ownerId, filters.ownerId));
-  if (filters?.isActive !== undefined) conditions.push(eq(chargingStations.isActive, filters.isActive));
-  if (filters?.isPublic !== undefined) conditions.push(eq(chargingStations.isPublic, filters.isPublic));
+  if (filters?.isActive !== undefined) conditions.push(eq(chargingStations.isActive, filters.isActive ? 1 : 0));
+  if (filters?.isPublic !== undefined) conditions.push(eq(chargingStations.isPublic, filters.isPublic ? 1 : 0));
   
   if (conditions.length > 0) {
     return db.select().from(chargingStations).where(and(...conditions)).orderBy(desc(chargingStations.createdAt));
@@ -610,7 +610,7 @@ export async function getAllChargingStations(filters?: { ownerId?: number; isAct
  * Returns a deduplicated array of station IDs.
  */
 export async function getInvestorAllStationIds(investorId: number): Promise<number[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   // 1. Stations owned directly
@@ -641,7 +641,7 @@ export async function getInvestorAllStationIds(investorId: number): Promise<numb
  * and a `participationPercent` for crowdfunding stations.
  */
 export async function getInvestorAllStations(investorId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   // 1. Stations owned directly
@@ -690,21 +690,21 @@ export async function getInvestorAllStations(investorId: number) {
 }
 
 export async function updateChargingStation(id: number, data: Partial<InsertChargingStation>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(chargingStations).set(data).where(eq(chargingStations.id, id));
 }
 
 export async function updateStationOnlineStatus(ocppIdentity: string, isOnline: boolean) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(chargingStations)
-    .set({ isOnline, lastBootNotification: isOnline ? new Date() : undefined })
+    .set({ isOnline: isOnline ? 1 : 0, lastBootNotification: isOnline ? new Date().toISOString() : undefined } as any)
     .where(eq(chargingStations.ocppIdentity, ocppIdentity));
 }
 
 export async function deleteChargingStation(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   // Primero eliminar los EVSEs asociados
   await db.delete(evses).where(eq(evses.stationId, id));
@@ -717,21 +717,21 @@ export async function deleteChargingStation(id: number) {
 // ============================================================================
 
 export async function createEvse(evse: InsertEvse) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(evses).values(evse);
   return result[0].insertId;
 }
 
 export async function getEvseById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(evses).where(eq(evses.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getEvsesByStationId(stationId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   const evseList = await db.select().from(evses).where(eq(evses.stationId, stationId)).orderBy(evses.evseIdLocal);
   
@@ -764,7 +764,7 @@ export async function getEvsesByStationId(stationId: number) {
       
       if (activeResList.length > 0) {
         const currentOrImminent = activeResList.find(r => 
-          r.startTime <= in15Min && r.endTime > now
+          r.startTime <= in15Min.toISOString() && r.endTime > now.toISOString()
         );
         
         if (currentOrImminent) {
@@ -802,7 +802,7 @@ export async function getEvsesByStationId(stationId: number) {
  * Eliminates N+1 pattern in stations.listAll.
  */
 export async function getAllEvsesForStations(stationIds: number[]) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db || stationIds.length === 0) return new Map<number, any[]>();
   
   // Single query for all EVSEs
@@ -841,7 +841,7 @@ export async function getAllEvsesForStations(stationIds: number[]) {
       const activeResList = reservationsByEvse.get(evse.id) || [];
       if (activeResList.length > 0) {
         const currentOrImminent = activeResList.find(r => 
-          r.startTime <= in15Min && r.endTime > now
+          r.startTime <= in15Min.toISOString() && r.endTime > now.toISOString()
         );
         if (currentOrImminent) {
           enriched = { 
@@ -909,19 +909,19 @@ export async function updateEvseStatus(
 }
 
 export async function updateEvse(id: number, data: Partial<InsertEvse>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(evses).set(data).where(eq(evses.id, id));
 }
 
 export async function deleteEvse(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.delete(evses).where(eq(evses.id, id));
 }
 
 export async function getAvailableEvses(filters?: { connectorType?: Evse["connectorType"]; chargeType?: Evse["chargeType"]; minPowerKw?: number }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const conditions = [eq(evses.connectorStatus, "AVAILABLE"), eq(evses.isActive, 1)];
@@ -936,39 +936,39 @@ export async function getAvailableEvses(filters?: { connectorType?: Evse["connec
 // ============================================================================
 
 export async function createTransaction(transaction: InsertTransaction) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(transactions).values(transaction);
   return result[0].insertId;
 }
 
 export async function getTransactionById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(transactions).where(eq(transactions.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getTransactionByOcppId(ocppTransactionId: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(transactions).where(eq(transactions.ocppTransactionId, ocppTransactionId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getTransactionsByUserId(userId: number, limit = 50) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(transactions).where(eq(transactions.userId, userId)).orderBy(desc(transactions.startTime)).limit(limit);
 }
 
 export async function getAllTransactions(filters?: { startDate?: Date; endDate?: Date; limit?: number; offset?: number; status?: string }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { data: [], total: 0 };
   
   const conditions: any[] = [];
-  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
-  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, typeof filters.startDate === "string" ? filters.startDate : filters.startDate!.toISOString()));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, typeof filters.endDate === "string" ? filters.endDate : filters.endDate!.toISOString()));
   if (filters?.status) conditions.push(eq(transactions.status, filters.status as any));
   
   // Count total
@@ -1014,14 +1014,14 @@ export async function getOverstayTransactions(filters?: {
   endDate?: Date;
   limit?: number;
 }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
 
   const conditions = [gt(transactions.overstayCost, "0")];
   if (filters?.stationId) conditions.push(eq(transactions.stationId, filters.stationId));
   if (filters?.userId) conditions.push(eq(transactions.userId, filters.userId));
-  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
-  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, typeof filters.startDate === "string" ? filters.startDate : filters.startDate!.toISOString()));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, typeof filters.endDate === "string" ? filters.endDate : filters.endDate!.toISOString()));
 
   return db
     .select({
@@ -1048,18 +1048,18 @@ export async function getOverstayTransactions(filters?: {
 }
 
 export async function getTransactionsByStationId(stationId: number, filters?: { startDate?: Date; endDate?: Date }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const conditions = [eq(transactions.stationId, stationId)];
-  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
-  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, typeof filters.startDate === "string" ? filters.startDate : filters.startDate!.toISOString()));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, typeof filters.endDate === "string" ? filters.endDate : filters.endDate!.toISOString()));
   
   return db.select().from(transactions).where(and(...conditions)).orderBy(desc(transactions.startTime));
 }
 
 export async function getTransactionsByInvestor(investorId: number, filters?: { startDate?: Date; endDate?: Date; limit?: number; offset?: number; status?: string }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { data: [], total: 0 };
   
   // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
@@ -1068,8 +1068,8 @@ export async function getTransactionsByInvestor(investorId: number, filters?: { 
   if (stationIds.length === 0) return { data: [], total: 0 };
   
   const conditions: any[] = [inArray(transactions.stationId, stationIds)];
-  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
-  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, typeof filters.startDate === "string" ? filters.startDate : filters.startDate!.toISOString()));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, typeof filters.endDate === "string" ? filters.endDate : filters.endDate!.toISOString()));
   if (filters?.status) conditions.push(eq(transactions.status, filters.status as any));
   
   const whereClause = and(...conditions);
@@ -1087,7 +1087,7 @@ export async function getTransactionsByInvestor(investorId: number, filters?: { 
 
 // Versión sin paginación para exportar todas las transacciones del inversionista
 export async function getAllTransactionsByInvestor(investorId: number, filters?: { startDate?: Date; endDate?: Date }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
@@ -1096,20 +1096,20 @@ export async function getAllTransactionsByInvestor(investorId: number, filters?:
   if (stationIds.length === 0) return [];
   
   const conditions: any[] = [inArray(transactions.stationId, stationIds)];
-  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
-  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, typeof filters.startDate === "string" ? filters.startDate : filters.startDate!.toISOString()));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, typeof filters.endDate === "string" ? filters.endDate : filters.endDate!.toISOString()));
   
   return db.select().from(transactions).where(and(...conditions)).orderBy(desc(transactions.startTime));
 }
 
 export async function updateTransaction(id: number, data: Partial<InsertTransaction>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(transactions).set(data).where(eq(transactions.id, id));
 }
 
 export async function getActiveTransaction(evseId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   // IMPORTANTE: La BD tiene dos columnas de estado: 'status' (legacy, siempre PENDING) y
   // 'transaction_status' (activa, actualizada por el servidor OCPP).
@@ -1131,19 +1131,19 @@ export async function getActiveTransaction(evseId: number) {
 // ============================================================================
 
 export async function createMeterValue(meterValue: InsertMeterValue) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   await db.insert(meterValues).values(meterValue);
 }
 
 export async function getMeterValuesByTransactionId(transactionId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(meterValues).where(eq(meterValues.transactionId, transactionId)).orderBy(meterValues.timestamp);
 }
 
 export async function getLatestMeterValue(transactionId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(meterValues)
     .where(eq(meterValues.transactionId, transactionId))
@@ -1157,21 +1157,21 @@ export async function getLatestMeterValue(transactionId: number) {
 // ============================================================================
 
 export async function createReservation(reservation: InsertReservation) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(reservations).values(reservation);
   return result[0].insertId;
 }
 
 export async function getReservationById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(reservations).where(eq(reservations.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getActiveReservation(evseId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(reservations)
     .where(and(eq(reservations.evseId, evseId), eq(reservations.reservationStatus, "ACTIVE")))
@@ -1180,27 +1180,27 @@ export async function getActiveReservation(evseId: number) {
 }
 
 export async function getReservationsByUserId(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(reservations).where(eq(reservations.userId, userId)).orderBy(desc(reservations.startTime));
 }
 
 export async function updateReservation(id: number, data: Partial<InsertReservation>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(reservations).set(data).where(eq(reservations.id, id));
 }
 
 export async function getExpiredReservations() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   const now = new Date();
   return db.select().from(reservations)
-    .where(and(eq(reservations.reservationStatus, "ACTIVE"), lte(reservations.expiryTime, now)));
+    .where(and(eq(reservations.reservationStatus, "ACTIVE"), lte(reservations.expiryTime, now.toISOString())));
 }
 
 export async function checkReservationConflict(evseId: number, startTime: Date, endTime: Date, excludeId?: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return false;
   
   // Buscar reservas activas que se superpongan con el rango de tiempo solicitado
@@ -1210,8 +1210,9 @@ export async function checkReservationConflict(evseId: number, startTime: Date, 
         eq(reservations.evseId, evseId),
         eq(reservations.reservationStatus, "ACTIVE"),
         // Verificar superposición de tiempos
+        // @ts-ignore
         lte(reservations.startTime, endTime),
-        gte(reservations.endTime, startTime),
+        gte(reservations.endTime, typeof startTime === "string" ? startTime : (startTime as Date).toISOString()),
         excludeId ? ne(reservations.id, excludeId) : undefined
       )
     );
@@ -1220,7 +1221,7 @@ export async function checkReservationConflict(evseId: number, startTime: Date, 
 }
 
 export async function applyNoShowPenalty(reservationId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   
   const reservation = await getReservationById(reservationId);
@@ -1229,9 +1230,9 @@ export async function applyNoShowPenalty(reservationId: number) {
   // Marcar la reserva como NO_SHOW y aplicar penalización
   await db.update(reservations)
     .set({ 
-      status: "NO_SHOW", 
-      isPenaltyApplied: true 
-    })
+      reservationStatus: "NO_SHOW", 
+      isPenaltyApplied: 1 
+    } as any)
     .where(eq(reservations.id, reservationId));
   
   // Descontar de la billetera del usuario
@@ -1265,7 +1266,7 @@ export async function applyNoShowPenalty(reservationId: number) {
 }
 
 export async function getUpcomingReservations(userId: number, minutesAhead: number = 30) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const now = new Date();
@@ -1276,26 +1277,26 @@ export async function getUpcomingReservations(userId: number, minutesAhead: numb
       and(
         eq(reservations.userId, userId),
         eq(reservations.reservationStatus, "ACTIVE"),
-        gte(reservations.startTime, now),
-        lte(reservations.startTime, futureTime)
+        gte(reservations.startTime, now.toISOString()),
+        lte(reservations.startTime, futureTime.toISOString())
       )
     );
 }
 
 export async function fulfillReservation(reservationId: number, transactionId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   
   await db.update(reservations)
     .set({ 
-      status: "FULFILLED",
+      reservationStatus: "FULFILLED",
       transactionId 
-    })
+    } as any)
     .where(eq(reservations.id, reservationId));
 }
 
 export async function getReservationsForStation(stationId: number, date?: Date) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const startOfDay = date ? new Date(date.setHours(0, 0, 0, 0)) : new Date(new Date().setHours(0, 0, 0, 0));
@@ -1305,25 +1306,25 @@ export async function getReservationsForStation(stationId: number, date?: Date) 
     .where(
       and(
         eq(reservations.stationId, stationId),
-        gte(reservations.startTime, startOfDay),
-        lte(reservations.startTime, endOfDay)
+        gte(reservations.startTime, startOfDay.toISOString()),
+        lte(reservations.startTime, endOfDay.toISOString())
       )
     )
     .orderBy(reservations.startTime);
 }
 
 export async function cancelReservationWithRefund(reservationId: number, refundPercent: number = 100) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { success: false };
   
   const reservation = await getReservationById(reservationId);
-  if (!reservation || reservation.status !== "ACTIVE") {
+  if (!reservation || reservation.reservationStatus !== "ACTIVE") {
     return { success: false, error: "Reserva no válida para cancelación" };
   }
   
   // Actualizar estado de la reserva
   await db.update(reservations)
-    .set({ status: "CANCELLED" })
+    .set({ reservationStatus: "CANCELLED" } as any)
     .where(eq(reservations.id, reservationId));
   
   // Calcular y aplicar reembolso
@@ -1363,21 +1364,21 @@ export async function cancelReservationWithRefund(reservationId: number, refundP
 // ============================================================================
 
 export async function createTariff(tariff: InsertTariff) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(tariffs).values(tariff);
   return result[0].insertId;
 }
 
 export async function getTariffById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(tariffs).where(eq(tariffs.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getActiveTariffByStationId(stationId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(tariffs)
     .where(and(eq(tariffs.stationId, stationId), eq(tariffs.isActive, 1)))
@@ -1386,13 +1387,13 @@ export async function getActiveTariffByStationId(stationId: number) {
 }
 
 export async function getTariffsByStationId(stationId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(tariffs).where(eq(tariffs.stationId, stationId)).orderBy(desc(tariffs.createdAt));
 }
 
 export async function updateTariff(id: number, data: Partial<InsertTariff>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(tariffs).set(data).where(eq(tariffs.id, id));
 }
@@ -1402,34 +1403,34 @@ export async function updateTariff(id: number, data: Partial<InsertTariff>) {
 // ============================================================================
 
 export async function createWallet(wallet: InsertWallet) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(wallets).values(wallet);
   return result[0].insertId;
 }
 
 export async function getWalletByUserId(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateWalletBalance(userId: number, newBalance: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
-  await db.update(wallets).set({ balance: newBalance }).where(eq(wallets.userId, userId));
+  await db.update(wallets).set({ balance: newBalance } as any).where(eq(wallets.userId, userId));
 }
 
 export async function createWalletTransaction(walletTx: InsertWalletTransaction) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(walletTransactions).values(walletTx);
   return result[0].insertId;
 }
 
 export async function getWalletTransactionsByUserId(userId: number, limit = 50) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(walletTransactions).where(eq(walletTransactions.userId, userId)).orderBy(desc(walletTransactions.createdAt)).limit(limit);
 }
@@ -1439,14 +1440,14 @@ export async function getWalletTransactionsByUserId(userId: number, limit = 50) 
 // ============================================================================
 
 export async function createMaintenanceTicket(ticket: InsertMaintenanceTicket) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(maintenanceTickets).values(ticket);
   return result[0].insertId;
 }
 
 export async function getMaintenanceTicketById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db.select({
     id: maintenanceTickets.id,
@@ -1458,7 +1459,7 @@ export async function getMaintenanceTicketById(id: number) {
     description: maintenanceTickets.description,
     priority: maintenanceTickets.priority,
     category: maintenanceTickets.category,
-    status: maintenanceTickets.status,
+    maintenanceStatus: maintenanceTickets.maintenanceStatus,
     scheduledDate: maintenanceTickets.scheduledDate,
     startedAt: maintenanceTickets.startedAt,
     completedAt: maintenanceTickets.completedAt,
@@ -1484,7 +1485,7 @@ export async function getMaintenanceTicketById(id: number) {
 }
 
 export async function getMaintenanceTicketsByTechnician(technicianId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   // Show tickets assigned to this technician OR reported by them
   return db.select().from(maintenanceTickets).where(
@@ -1496,22 +1497,22 @@ export async function getMaintenanceTicketsByTechnician(technicianId: number) {
 }
 
 export async function getMaintenanceTicketsByStation(stationId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(maintenanceTickets).where(eq(maintenanceTickets.stationId, stationId)).orderBy(desc(maintenanceTickets.createdAt));
 }
 
 export async function getAllMaintenanceTickets(status?: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   if (status) {
-    return db.select().from(maintenanceTickets).where(eq(maintenanceTickets.status, status as any)).orderBy(desc(maintenanceTickets.createdAt));
+    return db.select().from(maintenanceTickets).where(eq(maintenanceTickets.maintenanceStatus, status as any)).orderBy(desc(maintenanceTickets.createdAt));
   }
   return db.select().from(maintenanceTickets).orderBy(desc(maintenanceTickets.createdAt));
 }
 
 export async function updateMaintenanceTicket(id: number, data: Partial<InsertMaintenanceTicket>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(maintenanceTickets).set(data).where(eq(maintenanceTickets.id, id));
 }
@@ -1521,14 +1522,14 @@ export async function updateMaintenanceTicket(id: number, data: Partial<InsertMa
 // ============================================================================
 
 export async function createNotification(notification: InsertNotification) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(notifications).values(notification);
   return result[0].insertId;
 }
 
 export async function getNotificationsByUserId(userId: number, unreadOnly = false) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   const conditions = [eq(notifications.userId, userId)];
   if (unreadOnly) conditions.push(eq(notifications.isRead, 0));
@@ -1536,19 +1537,19 @@ export async function getNotificationsByUserId(userId: number, unreadOnly = fals
 }
 
 export async function markNotificationAsRead(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
-  await db.update(notifications).set({ isRead: 1, readAt: new Date().toISOString() }).where(eq(notifications.id, id));
+  await db.update(notifications).set({ isRead: 1, readAt: new Date().toISOString() } as any).where(eq(notifications.id, id));
 }
 
 export async function markAllNotificationsAsRead(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
-  await db.update(notifications).set({ isRead: 1, readAt: new Date().toISOString() }).where(eq(notifications.userId, userId));
+  await db.update(notifications).set({ isRead: 1, readAt: new Date().toISOString() } as any).where(eq(notifications.userId, userId));
 }
 
 export async function getNotificationByKey(userId: number, key: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const results = await db.select().from(notifications)
     .where(and(
@@ -1560,7 +1561,7 @@ export async function getNotificationByKey(userId: number, key: string) {
 }
 
 export async function deleteNotification(id: number, userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   // Solo eliminar si pertenece al usuario
   await db.delete(notifications).where(
@@ -1576,20 +1577,20 @@ export async function deleteNotification(id: number, userId: number) {
 // ============================================================================
 
 export async function createSupportTicket(ticket: InsertSupportTicket) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(supportTickets).values(ticket);
   return result[0].insertId;
 }
 
 export async function getSupportTicketsByUserId(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(supportTickets).where(eq(supportTickets.userId, userId)).orderBy(desc(supportTickets.createdAt));
 }
 
 export async function getAllSupportTickets(status?: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   if (status) {
     return db.select().from(supportTickets).where(eq(supportTickets.status, status)).orderBy(desc(supportTickets.createdAt));
@@ -1598,7 +1599,7 @@ export async function getAllSupportTickets(status?: string) {
 }
 
 export async function updateSupportTicket(id: number, data: Partial<InsertSupportTicket>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(supportTickets).set(data).where(eq(supportTickets.id, id));
 }
@@ -1608,33 +1609,33 @@ export async function updateSupportTicket(id: number, data: Partial<InsertSuppor
 // ============================================================================
 
 export async function createInvestorPayout(payout: InsertInvestorPayout) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(investorPayouts).values(payout);
   return result[0].insertId;
 }
 
 export async function getPayoutsByInvestorId(investorId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(investorPayouts).where(eq(investorPayouts.investorId, investorId)).orderBy(desc(investorPayouts.periodEnd));
 }
 
 export async function updateInvestorPayout(id: number, data: Partial<InsertInvestorPayout>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(investorPayouts).set(data).where(eq(investorPayouts.id, id));
 }
 
 export async function getPayoutById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const result = await db.select().from(investorPayouts).where(eq(investorPayouts.id, id));
   return result[0] || null;
 }
 
 export async function getAllPendingPayouts() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select({
     payout: investorPayouts,
@@ -1647,7 +1648,7 @@ export async function getAllPendingPayouts() {
 }
 
 export async function getAllPayoutsForAdmin(status?: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   if (status && status !== 'ALL') {
@@ -1671,7 +1672,7 @@ export async function getAllPayoutsForAdmin(status?: string) {
 }
 
 export async function getInvestorPendingBalance(investorId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { pendingBalance: 0, totalPaid: 0, lastPayout: null };
   
   // Obtener estaciones del inversionista
@@ -1745,13 +1746,13 @@ export async function getInvestorPendingBalance(investorId: number) {
 // ============================================================================
 
 export async function createOcppLog(log: InsertOcppLog) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.insert(ocppLogs).values(log);
 }
 
 export async function getOcppLogsByStation(stationId: number, limit = 100) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(ocppLogs).where(eq(ocppLogs.stationId, stationId)).orderBy(desc(ocppLogs.createdAt)).limit(limit);
 }
@@ -1764,7 +1765,7 @@ export async function getOcppLogs(filters: {
   limit?: number;
   offset?: number;
 }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { logs: [], total: 0 };
   
   const conditions = [];
@@ -1803,7 +1804,7 @@ export async function getOcppLogs(filters: {
 }
 
 export async function getOcppChargePointIds() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const result = await db.selectDistinct({ ocppIdentity: ocppLogs.ocppIdentity })
@@ -1814,7 +1815,7 @@ export async function getOcppChargePointIds() {
 }
 
 export async function getOcppMessageTypes() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const result = await db.selectDistinct({ messageType: ocppLogs.messageType })
@@ -1833,7 +1834,7 @@ export async function getOcppMessageTypes() {
  * Usa queries batch en lugar de N+1 para rendimiento con 1M+ logs.
  */
 export async function getActiveConnectionsFromLogs() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
@@ -1847,7 +1848,7 @@ export async function getActiveConnectionsFromLogs() {
     .where(
       and(
         not(isNull(ocppLogs.ocppIdentity)),
-        gte(ocppLogs.createdAt, fiveMinutesAgo),
+        gte(ocppLogs.createdAt, fiveMinutesAgo.toISOString()),
         inArray(ocppLogs.messageType, ['Heartbeat', 'StatusNotification', 'BootNotification', 'CONNECTION'])
       )
     );
@@ -1867,13 +1868,13 @@ export async function getActiveConnectionsFromLogs() {
       and(
         inArray(ocppLogs.ocppIdentity, identities),
         eq(ocppLogs.messageType, 'DISCONNECTION'),
-        gte(ocppLogs.createdAt, fiveMinutesAgo)
+        gte(ocppLogs.createdAt, fiveMinutesAgo.toISOString())
       )
     )
     .orderBy(desc(ocppLogs.createdAt));
   
   // Agrupar: última desconexión por identity
-  const lastDisconnectionMap = new Map<string, Date>();
+  const lastDisconnectionMap = new Map<string, string>();
   for (const d of recentDisconnections) {
     if (d.ocppIdentity && !lastDisconnectionMap.has(d.ocppIdentity)) {
       lastDisconnectionMap.set(d.ocppIdentity, d.createdAt);
@@ -1895,7 +1896,7 @@ export async function getActiveConnectionsFromLogs() {
     .orderBy(desc(ocppLogs.createdAt))
     .limit(identities.length * 2); // Suficiente para obtener al menos 1 por identity
   
-  const lastActivityMap = new Map<string, Date>();
+  const lastActivityMap = new Map<string, string>();
   for (const a of lastActivities) {
     if (a.ocppIdentity && !lastActivityMap.has(a.ocppIdentity)) {
       lastActivityMap.set(a.ocppIdentity, a.createdAt);
@@ -1969,9 +1970,9 @@ export async function getActiveConnectionsFromLogs() {
       ocppIdentity: identity,
       ocppVersion,
       stationId: activity.stationId,
-      connectedAt: connectionLog?.createdAt?.toISOString() || lastActivityTime.toISOString(),
-      lastHeartbeat: heartbeatLog?.createdAt?.toISOString() || lastActivityTime.toISOString(),
-      lastMessage: lastActivityTime.toISOString(),
+      connectedAt: connectionLog?.createdAt || lastActivityTime,
+      lastHeartbeat: heartbeatLog?.createdAt || lastActivityTime,
+      lastMessage: lastActivityTime,
       connectorStatuses: connectorStatusMap,
       bootInfo: bootPayload ? {
         vendor: bootPayload.chargePointVendor || bootPayload.chargingStation?.vendorName || 'Unknown',
@@ -1991,7 +1992,7 @@ export async function getActiveConnectionsFromLogs() {
 // ============================================================================
 
 export async function getInvestorStats(investorId: number, startDate?: Date, endDate?: Date) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
@@ -2015,8 +2016,8 @@ export async function getInvestorStats(investorId: number, startDate?: Date, end
   
   // Obtener transacciones
   const conditions = [inArray(transactions.stationId, stationIds), eq(transactions.status, "COMPLETED")];
-  if (startDate) conditions.push(gte(transactions.startTime, startDate));
-  if (endDate) conditions.push(lte(transactions.startTime, endDate));
+  if (startDate) conditions.push(gte(transactions.startTime, typeof startDate === "string" ? startDate : startDate!.toISOString()));
+  if (endDate) conditions.push(lte(transactions.startTime, typeof endDate === "string" ? endDate : endDate!.toISOString()));
   
   const txs = await db.select().from(transactions).where(and(...conditions));
   
@@ -2037,7 +2038,7 @@ export async function getInvestorStats(investorId: number, startDate?: Date, end
 }
 
 export async function getPlatformStats(startDate?: Date, endDate?: Date) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const allStations = await db.select().from(chargingStations);
@@ -2045,8 +2046,8 @@ export async function getPlatformStats(startDate?: Date, endDate?: Date) {
   const allUsers = await db.select().from(users);
   
   const conditions = [eq(transactions.status, "COMPLETED")];
-  if (startDate) conditions.push(gte(transactions.startTime, startDate));
-  if (endDate) conditions.push(lte(transactions.startTime, endDate));
+  if (startDate) conditions.push(gte(transactions.startTime, typeof startDate === "string" ? startDate : startDate!.toISOString()));
+  if (endDate) conditions.push(lte(transactions.startTime, typeof endDate === "string" ? endDate : endDate!.toISOString()));
   
   const txs = await db.select().from(transactions).where(and(...conditions));
   
@@ -2081,7 +2082,7 @@ export async function getPlatformStats(startDate?: Date, endDate?: Date) {
 // ============================================================================
 
 export async function getStationsNearLocation(lat: number, lng: number, radiusKm: number = 10) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   // Fórmula de Haversine simplificada para MySQL
@@ -2110,24 +2111,24 @@ export async function getStationsNearLocation(lat: number, lng: number, radiusKm
 // ============================================================================
 
 export async function createBanner(banner: InsertBanner) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(banners).values(banner);
   return result[0].insertId;
 }
 
 export async function getBannerById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const result = await db.select().from(banners).where(eq(banners.id, id)).limit(1);
   return result[0] || null;
 }
 
 export async function getAllBanners(status?: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   if (status) {
-    return db.select().from(banners).where(eq(banners.status, status as any)).orderBy(desc(banners.priority), desc(banners.createdAt));
+    return db.select().from(banners).where(eq(banners.bannerStatus, status as any)).orderBy(desc(banners.priority), desc(banners.createdAt));
   }
   return db.select().from(banners).orderBy(desc(banners.priority), desc(banners.createdAt));
 }
@@ -2175,7 +2176,7 @@ export async function resolveUserBannerContext(
   userId: number,
   baseContext?: Partial<BannerUserContext>
 ): Promise<BannerUserContext> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return baseContext || {};
 
   const now = new Date();
@@ -2228,7 +2229,7 @@ export async function resolveUserBannerContext(
         .where(and(
           eq(transactions.userId, userId),
           eq(transactions.status, "COMPLETED"),
-          gte(transactions.startTime, startOfMonth)
+          gte(transactions.startTime, startOfMonth.toISOString())
         )),
 
       // Todas las transacciones (para RFM)
@@ -2245,7 +2246,7 @@ export async function resolveUserBannerContext(
     .where(and(
       eq(walletTransactions.userId, userId),
       eq(walletTransactions.type, "RECHARGE"),
-      eq(walletTransactions.status, "COMPLETED")
+      eq(walletTransactions.paymentStatus, "COMPLETED")
     ))
     .limit(20);
 
@@ -2435,17 +2436,17 @@ export async function getActiveBanners(
   location?: string,
   userContext?: BannerUserContext
 ) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
 
   const conditions = [
-    eq(banners.status, "ACTIVE"),
-    or(isNull(banners.startDate), lte(banners.startDate, new Date())),
-    or(isNull(banners.endDate), gte(banners.endDate, new Date())),
+    eq(banners.bannerStatus, "ACTIVE"),
+    or(isNull(banners.startDate), lte(banners.startDate, new Date().toISOString())),
+    or(isNull(banners.endDate), gte(banners.endDate, new Date().toISOString())),
   ];
 
   if (type) {
-    conditions.push(eq(banners.type, type as any));
+    conditions.push(eq(banners.bannerType, type as any));
   }
 
   // Fetch all active banners, then apply JS-side segmentation engine
@@ -2459,13 +2460,13 @@ export async function getActiveBanners(
 }
 
 export async function updateBanner(id: number, data: Partial<InsertBanner>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(banners).set(data).where(eq(banners.id, id));
 }
 
 export async function deleteBanner(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.delete(banners).where(eq(banners.id, id));
 }
@@ -2476,7 +2477,7 @@ export async function recordBannerImpression(
   context?: string,
   extra?: { city?: string; vehicleType?: string; deviceType?: string; stationId?: number }
 ) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   
   const hourOfDay = new Date().getHours();
@@ -2506,7 +2507,7 @@ export async function recordBannerImpression(
       city: extra?.city,
       vehicleType: extra?.vehicleType,
       hourOfDay,
-    });
+    } as any);
     
     // Actualizar vistas únicas
     const existingViews = await db.select({ id: bannerViews.id }).from(bannerViews)
@@ -2530,7 +2531,7 @@ export async function recordBannerImpression(
 }
 
 export async function recordBannerDwellTime(bannerId: number, userId: number, durationSeconds: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   
   // Actualizar la última vista del usuario para este banner con el dwell time
@@ -2554,7 +2555,7 @@ export async function recordBannerDwellTime(bannerId: number, userId: number, du
 }
 
 export async function recordBannerClick(bannerId: number, userId?: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   
   // Incrementar contador de clics
@@ -2575,18 +2576,18 @@ export async function recordBannerClick(bannerId: number, userId?: number) {
   // Actualizar registro de vista si hay usuario
   if (userId) {
     await db.update(bannerViews).set({
-      clicked: true,
-      clickedAt: new Date(),
-    }).where(and(
+      clicked: 1,
+      clickedAt: new Date().toISOString(),
+    } as any).where(and(
       eq(bannerViews.bannerId, bannerId),
       eq(bannerViews.userId, userId),
-      eq(bannerViews.clicked, false),
+      eq(bannerViews.clicked, 0),
     ));
   }
 }
 
 export async function getBannerCampaignAnalytics(bannerId: number, startDate?: Date, endDate?: Date) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const banner = await db.select().from(banners).where(eq(banners.id, bannerId)).limit(1);
@@ -2594,8 +2595,8 @@ export async function getBannerCampaignAnalytics(bannerId: number, startDate?: D
   
   // Filtro de fechas para banner_views
   const dateConditions: any[] = [eq(bannerViews.bannerId, bannerId)];
-  if (startDate) dateConditions.push(gte(bannerViews.viewedAt, startDate));
-  if (endDate) dateConditions.push(lte(bannerViews.viewedAt, endDate));
+  if (startDate) dateConditions.push(gte(bannerViews.viewedAt, typeof startDate === "string" ? startDate : startDate!.toISOString()));
+  if (endDate) dateConditions.push(lte(bannerViews.viewedAt, typeof endDate === "string" ? endDate : endDate!.toISOString()));
   
   // Métricas agregadas
   const [metrics] = await db.select({
@@ -2628,7 +2629,7 @@ export async function getBannerCampaignAnalytics(bannerId: number, startDate?: D
 }
 
 export async function getBannerDailyStats(bannerId: number, daysBack: number = 30) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const since = new Date();
@@ -2653,7 +2654,7 @@ export async function getBannerDailyStats(bannerId: number, daysBack: number = 3
 }
 
 export async function getBannerAudienceProfile(bannerId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   // Distribución por hora del día
@@ -2719,14 +2720,14 @@ import {
 } from "../drizzle/schema";
 
 export async function getAIConfig() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const result = await db.select().from(aiConfig).limit(1);
   return result[0] || null;
 }
 
 export async function upsertAIConfig(config: Partial<InsertAIConfig>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   const existing = await getAIConfig();
@@ -2744,21 +2745,21 @@ export async function upsertAIConfig(config: Partial<InsertAIConfig>) {
 // ============================================================================
 
 export async function createAIConversation(conversation: InsertAIConversation) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(aiConversations).values(conversation);
   return result[0].insertId;
 }
 
 export async function getAIConversationById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const result = await db.select().from(aiConversations).where(eq(aiConversations.id, id)).limit(1);
   return result[0] || null;
 }
 
 export async function getAIConversationsByUserId(userId: number, limit = 20) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(aiConversations)
     .where(and(eq(aiConversations.userId, userId), eq(aiConversations.isActive, 1)))
@@ -2767,15 +2768,15 @@ export async function getAIConversationsByUserId(userId: number, limit = 20) {
 }
 
 export async function updateAIConversation(id: number, data: Partial<InsertAIConversation>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(aiConversations).set(data).where(eq(aiConversations.id, id));
 }
 
 export async function deleteAIConversation(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
-  await db.update(aiConversations).set({ isActive: 0 }).where(eq(aiConversations.id, id));
+  await db.update(aiConversations).set({ isActive: 0 } as any).where(eq(aiConversations.id, id));
 }
 
 // ============================================================================
@@ -2783,21 +2784,21 @@ export async function deleteAIConversation(id: number) {
 // ============================================================================
 
 export async function createAIMessage(message: InsertAIMessage) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(aiMessages).values(message);
   
   // Actualizar contador de mensajes en la conversación
   await db.update(aiConversations).set({
     messageCount: sql`${aiConversations.messageCount} + 1`,
-    lastMessageAt: new Date(),
+    lastMessageAt: new Date().toISOString(),
   }).where(eq(aiConversations.id, message.conversationId));
   
   return result[0].insertId;
 }
 
 export async function getAIMessagesByConversationId(conversationId: number, limit = 50) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(aiMessages)
     .where(eq(aiMessages.conversationId, conversationId))
@@ -2810,13 +2811,13 @@ export async function getAIMessagesByConversationId(conversationId: number, limi
 // ============================================================================
 
 export async function createAIUsage(usage: InsertAIUsage) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.insert(aiUsage).values(usage);
 }
 
 export async function getAIUsageStats(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { userUsageToday: 0, totalUsageToday: 0 };
   
   const today = new Date();
@@ -2827,13 +2828,13 @@ export async function getAIUsageStats(userId: number) {
     .from(aiUsage)
     .where(and(
       eq(aiUsage.userId, userId),
-      gte(aiUsage.createdAt, today)
+      gte(aiUsage.createdAt, today.toISOString())
     ));
   
   // Uso total hoy
   const totalUsage = await db.select({ count: sql<number>`COUNT(*)` })
     .from(aiUsage)
-    .where(gte(aiUsage.createdAt, today));
+    .where(gte(aiUsage.createdAt, today.toISOString()));
   
   return {
     userUsageToday: userUsage[0]?.count || 0,
@@ -2846,7 +2847,7 @@ export async function getAIUsageStats(userId: number) {
 // ============================================================================
 
 export async function getNearbyStations(lat: number, lng: number, radiusKm: number = 20) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const stations = await db.select({
@@ -2880,7 +2881,7 @@ export async function getStationsAlongRoute(
   bufferKm: number = 50
 ) {
   // Simplificación: obtener estaciones en un rectángulo que contiene la ruta
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const minLat = Math.min(origin.latitude, destination.latitude) - (bufferKm / 111);
@@ -2905,7 +2906,7 @@ export async function getInvestorAnalytics(
   stationIds?: number[],
   period: "day" | "week" | "month" | "quarter" | "year" = "month"
 ) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   // Calcular fecha de inicio según el período
@@ -2946,7 +2947,7 @@ export async function getInvestorAnalytics(
     .where(and(
       inArray(transactions.stationId, ids),
       eq(transactions.status, "COMPLETED"),
-      gte(transactions.startTime, startDate)
+      gte(transactions.startTime, typeof startDate === "string" ? startDate : startDate!.toISOString())
     ));
   
   const totalRevenue = txs.reduce((sum, tx) => sum + parseFloat(tx.investorShare || "0"), 0);
@@ -2992,7 +2993,7 @@ export const db = {
 // ============================================================================
 
 export async function addUserWalletBalance(userId: number, amount: number, description = "Recarga de saldo") {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
 
   // Obtener o crear wallet del usuario
@@ -3003,7 +3004,7 @@ export async function addUserWalletBalance(userId: number, amount: number, descr
       userId,
       balance: amount.toString(),
       currency: "COP",
-    });
+    } as any);
   } else {
     await db.update(wallets).set({
       balance: sql`${wallets.balance} + ${amount}`,
@@ -3022,7 +3023,7 @@ export async function addUserWalletBalance(userId: number, amount: number, descr
       balanceBefore: balanceBefore.toString(),
       balanceAfter: currentWallet[0].balance,
       description,
-    });
+    } as any);
   }
 }
 
@@ -3040,7 +3041,7 @@ export async function updateUserSubscription(userId: number, data: {
   lastPaymentDate?: Date;
   lastPaymentReference?: string;
 }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
@@ -3068,13 +3069,13 @@ export async function updateUserSubscription(userId: number, data: {
       monthlyAmountCents: data.monthlyAmountCents || 0,
       discountPercentage,
       freeReservationsPerMonth,
-      prioritySupport,
-      startDate: new Date(),
-      nextBillingDate: nextBilling,
-      lastPaymentDate: data.lastPaymentDate || new Date(),
+      prioritySupport: prioritySupport ? 1 : 0,
+      startDate: new Date().toISOString(),
+      nextBillingDate: nextBilling.toISOString(),
+      lastPaymentDate: data.lastPaymentDate || new Date().toISOString(),
       lastPaymentReference: data.lastPaymentReference,
       isActive: data.status ? (data.status === "active" ? 1 : 0) : 1,
-    });
+    } as any);
   } else {
     // Actualizar suscripción existente
     const updateData: any = {};
@@ -3114,22 +3115,22 @@ export async function updateUserSubscription(userId: number, data: {
 }
 
 export async function cancelUserSubscription(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   await db.update(subscriptions).set({
     isActive: 0,
-    cancelledAt: new Date(),
+    cancelledAt: new Date().toISOString(),
     nextBillingDate: null,
-    tier: "FREE" as any,
+    
     discountPercentage: "0",
     freeReservationsPerMonth: 0,
-    prioritySupport: false,
-  }).where(eq(subscriptions.userId, userId));
+    prioritySupport: 0,
+  } as any).where(eq(subscriptions.userId, userId));
 }
 
 export async function getActiveSubscriptionsForBilling() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const now = new Date();
@@ -3149,19 +3150,19 @@ export async function updateSubscriptionBilling(subscriptionId: number, data: {
   nextBillingDate: Date;
   failedPaymentCount?: number;
 }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   await db.update(subscriptions).set({
-    lastPaymentDate: data.lastPaymentDate,
+    lastPaymentDate: data.lastPaymentDate instanceof Date ? data.lastPaymentDate.toISOString() : data.lastPaymentDate,
     lastPaymentReference: data.lastPaymentReference,
-    nextBillingDate: data.nextBillingDate,
+    nextBillingDate: data.nextBillingDate instanceof Date ? data.nextBillingDate.toISOString() : data.nextBillingDate,
     failedPaymentCount: data.failedPaymentCount ?? 0,
-  }).where(eq(subscriptions.id, subscriptionId));
+  } as any).where(eq(subscriptions.id, subscriptionId));
 }
 
 export async function incrementSubscriptionFailedPayments(subscriptionId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   await db.update(subscriptions).set({
@@ -3172,7 +3173,7 @@ export async function incrementSubscriptionFailedPayments(subscriptionId: number
 // updateTransactionPaymentStatus eliminado - era exclusivo de Stripe, ahora se usa Wompi
 
 export async function getUserWallet(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
@@ -3180,7 +3181,7 @@ export async function getUserWallet(userId: number) {
 }
 
 export async function getUserSubscription(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const sub = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
@@ -3188,7 +3189,7 @@ export async function getUserSubscription(userId: number) {
 }
 
 export async function getWalletTransactions(userId: number, limit = 20) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const wallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
@@ -3206,14 +3207,14 @@ export async function getWalletTransactions(userId: number, limit = 20) {
 // ============================================================================
 
 export async function getPlatformSettings(): Promise<PlatformSettings | null> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const result = await db.select().from(platformSettings).limit(1);
   return result[0] || null;
 }
 
 export async function upsertPlatformSettings(settings: Partial<InsertPlatformSettings>): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   const existing = await getPlatformSettings();
@@ -3256,7 +3257,7 @@ export interface OcppAlertInput {
 }
 
 export async function createOcppAlert(alert: OcppAlertInput): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   // Prevenir alertas duplicadas: verificar si ya existe una alerta activa del mismo tipo para el mismo cargador
@@ -3265,8 +3266,8 @@ export async function createOcppAlert(alert: OcppAlertInput): Promise<number> {
     .where(
       and(
         eq(ocppAlerts.ocppIdentity, alert.ocppIdentity),
-        eq(ocppAlerts.alertType, alert.alertType),
-        eq(ocppAlerts.acknowledged, false),
+        eq(ocppAlerts.ocppAlertType, alert.alertType),
+        eq(ocppAlerts.acknowledged, 0),
         isNull(ocppAlerts.resolvedAt)
       )
     )
@@ -3280,13 +3281,13 @@ export async function createOcppAlert(alert: OcppAlertInput): Promise<number> {
   const result = await db.insert(ocppAlerts).values({
     ocppIdentity: alert.ocppIdentity,
     stationId: alert.stationId,
-    alertType: alert.alertType,
-    severity: alert.severity,
+    ocppAlertType: alert.alertType,
+    ocppAlertSeverity: alert.severity,
     title: alert.title,
     message: alert.message,
     payload: alert.payload,
-    acknowledged: alert.acknowledged || false,
-  });
+    acknowledged: alert.acknowledged ? 1 : 0,
+  } as any);
   
   return result[0].insertId;
 }
@@ -3300,13 +3301,13 @@ export async function getOcppAlerts(options: {
   severity?: string;
   alertType?: string;
 }): Promise<OcppAlert[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const conditions = [];
   
   if (!options.includeAcknowledged) {
-    conditions.push(eq(ocppAlerts.acknowledged, false));
+    conditions.push(eq(ocppAlerts.acknowledged, 0));
   }
   
   // Por defecto excluir alertas resueltas automáticamente de la lista activa
@@ -3319,7 +3320,7 @@ export async function getOcppAlerts(options: {
   }
   
   if (options.severity) {
-    conditions.push(eq(ocppAlerts.severity, options.severity as any));
+    conditions.push(eq(ocppAlerts.ocppAlertSeverity, options.severity as any));
   }
   
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -3342,7 +3343,7 @@ export async function getAlertHistory(options: {
   offset?: number;
   ocppIdentity?: string;
 }): Promise<OcppAlert[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const conditions = [];
@@ -3351,7 +3352,7 @@ export async function getAlertHistory(options: {
   conditions.push(
     or(
       not(isNull(ocppAlerts.resolvedAt)),
-      eq(ocppAlerts.acknowledged, true)
+      eq(ocppAlerts.acknowledged, 1)
     )!
   );
   
@@ -3372,15 +3373,15 @@ export async function getAlertHistory(options: {
 }
 
 export async function acknowledgeOcppAlert(alertId: number, userId?: number): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   await db.update(ocppAlerts)
     .set({
-      acknowledged: true,
-      acknowledgedAt: new Date(),
+      acknowledged: 1,
+      acknowledgedAt: new Date().toISOString(),
       acknowledgedBy: userId,
-    })
+    } as any)
     .where(eq(ocppAlerts.id, alertId));
 }
 
@@ -3388,22 +3389,22 @@ export async function acknowledgeOcppAlert(alertId: number, userId?: number): Pr
  * Auto-resuelve alertas de desconexión activas cuando un cargador se reconecta
  */
 export async function autoResolveDisconnectionAlerts(ocppIdentity: string): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return 0;
   
   const result = await db.update(ocppAlerts)
     .set({
-      resolvedAt: new Date(),
-      autoResolved: true,
+      resolvedAt: new Date().toISOString(),
+      autoResolved: 1,
       resolvedReason: "Cargador reconectado automáticamente",
-      acknowledged: true,
-      acknowledgedAt: new Date(),
-    })
+      acknowledged: 1,
+      acknowledgedAt: new Date().toISOString(),
+    } as any)
     .where(
       and(
         eq(ocppAlerts.ocppIdentity, ocppIdentity),
-        eq(ocppAlerts.alertType, "DISCONNECTION"),
-        eq(ocppAlerts.acknowledged, false),
+        eq(ocppAlerts.ocppAlertType, "DISCONNECTION"),
+        eq(ocppAlerts.acknowledged, 0),
         isNull(ocppAlerts.resolvedAt)
       )
     );
@@ -3418,7 +3419,7 @@ export async function getOcppAlertStats(): Promise<{
   byType: Record<string, number>;
   autoResolved: number;
 }> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) {
     return {
       total: 0,
@@ -3436,17 +3437,17 @@ export async function getOcppAlertStats(): Promise<{
   // Alertas no reconocidas (activas)
   const unackResult = await db.select({ count: count() })
     .from(ocppAlerts)
-    .where(and(eq(ocppAlerts.acknowledged, false), isNull(ocppAlerts.resolvedAt)));
+    .where(and(eq(ocppAlerts.acknowledged, 0), isNull(ocppAlerts.resolvedAt)));
   const unacknowledged = unackResult[0]?.count || 0;
   
   // Por severidad - solo alertas activas (no resueltas automáticamente)
   const bySeverityResult = await db.select({
-    severity: ocppAlerts.severity,
+    severity: ocppAlerts.ocppAlertSeverity,
     count: count(),
   })
     .from(ocppAlerts)
-    .where(and(eq(ocppAlerts.acknowledged, false), isNull(ocppAlerts.resolvedAt)))
-    .groupBy(ocppAlerts.severity);
+    .where(and(eq(ocppAlerts.acknowledged, 0), isNull(ocppAlerts.resolvedAt)))
+    .groupBy(ocppAlerts.ocppAlertSeverity);
   
   const bySeverity: Record<string, number> = {};
   for (const row of bySeverityResult) {
@@ -3457,12 +3458,12 @@ export async function getOcppAlertStats(): Promise<{
   
   // Por tipo
   const byTypeResult = await db.select({
-    alertType: ocppAlerts.alertType,
+    alertType: ocppAlerts.ocppAlertType,
     count: count(),
   })
     .from(ocppAlerts)
-    .where(and(eq(ocppAlerts.acknowledged, false), isNull(ocppAlerts.resolvedAt)))
-    .groupBy(ocppAlerts.alertType);
+    .where(and(eq(ocppAlerts.acknowledged, 0), isNull(ocppAlerts.resolvedAt)))
+    .groupBy(ocppAlerts.ocppAlertType);
   
   const byType: Record<string, number> = {};
   for (const row of byTypeResult) {
@@ -3474,7 +3475,7 @@ export async function getOcppAlertStats(): Promise<{
   // Auto-resueltas
   const autoResolvedResult = await db.select({ count: count() })
     .from(ocppAlerts)
-    .where(eq(ocppAlerts.autoResolved, true));
+    .where(eq(ocppAlerts.autoResolved, 1));
   const autoResolved = autoResolvedResult[0]?.count || 0;
   
   return {
@@ -3495,7 +3496,7 @@ export async function getOcppConnectionMetrics(
   endDate: Date,
   granularity: "hour" | "day" = "hour"
 ): Promise<Array<{ timestamp: string; connections: number; disconnections: number }>> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const dateFormat = granularity === "hour" 
@@ -3510,8 +3511,8 @@ export async function getOcppConnectionMetrics(
     .from(ocppLogs)
     .where(
       and(
-        gte(ocppLogs.createdAt, startDate),
-        lte(ocppLogs.createdAt, endDate),
+        gte(ocppLogs.createdAt, typeof startDate === "string" ? startDate : startDate!.toISOString()),
+        lte(ocppLogs.createdAt, typeof endDate === "string" ? endDate : endDate!.toISOString()),
         inArray(ocppLogs.messageType, ['CONNECTION', 'DISCONNECTION'])
       )
     )
@@ -3545,7 +3546,7 @@ export async function getOcppMessageMetrics(
   endDate: Date,
   granularity: "hour" | "day" = "hour"
 ): Promise<Array<{ timestamp: string; messageType: string; count: number }>> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const dateFormat = granularity === "hour" 
@@ -3560,8 +3561,8 @@ export async function getOcppMessageMetrics(
     .from(ocppLogs)
     .where(
       and(
-        gte(ocppLogs.createdAt, startDate),
-        lte(ocppLogs.createdAt, endDate)
+        gte(ocppLogs.createdAt, typeof startDate === "string" ? startDate : startDate!.toISOString()),
+        lte(ocppLogs.createdAt, typeof endDate === "string" ? endDate : endDate!.toISOString())
       )
     )
     .groupBy(dateFormat, ocppLogs.messageType)
@@ -3579,7 +3580,7 @@ export async function getTransactionMetrics(
   endDate: Date,
   granularity: "hour" | "day" = "day"
 ): Promise<Array<{ timestamp: string; count: number; totalEnergy: number; totalRevenue: number }>> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const dateFormat = granularity === "hour" 
@@ -3595,8 +3596,8 @@ export async function getTransactionMetrics(
     .from(transactions)
     .where(
       and(
-        gte(transactions.startTime, startDate),
-        lte(transactions.startTime, endDate)
+        gte(transactions.startTime, typeof startDate === "string" ? startDate : startDate!.toISOString()),
+        lte(transactions.startTime, typeof endDate === "string" ? endDate : endDate!.toISOString())
       )
     )
     .groupBy(dateFormat)
@@ -3620,7 +3621,7 @@ export async function addInvestorEarnings(
   amount: number,
   transactionId: number
 ): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   // Obtener o crear wallet del inversor
@@ -3631,7 +3632,7 @@ export async function addInvestorEarnings(
       userId: investorId,
       balance: amount.toString(),
       currency: "COP",
-    });
+    } as any);
     wallet = await db.select().from(wallets).where(eq(wallets.userId, investorId)).limit(1);
   } else {
     await db.update(wallets).set({
@@ -3663,7 +3664,7 @@ export async function addInvestorEarnings(
 // ============================================================================
 
 export async function getAdminDashboardMetrics() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const now = new Date();
@@ -3686,7 +3687,7 @@ export async function getAdminDashboardMetrics() {
     .where(
       and(
         eq(transactions.status, "COMPLETED"),
-        gte(transactions.startTime, startOfMonth)
+        gte(transactions.startTime, startOfMonth.toISOString())
       )
     );
   
@@ -3700,7 +3701,7 @@ export async function getAdminDashboardMetrics() {
     .where(
       and(
         eq(transactions.status, "COMPLETED"),
-        gte(transactions.startTime, startOfDay)
+        gte(transactions.startTime, startOfDay.toISOString())
       )
     );
   
@@ -3732,7 +3733,7 @@ export async function getAdminDashboardMetrics() {
     .where(
       and(
         eq(transactions.status, "COMPLETED"),
-        gte(transactions.startTime, sixMonthsAgo)
+        gte(transactions.startTime, sixMonthsAgo.toISOString())
       )
     )
     .groupBy(sql`YEAR(startTime)`, sql`MONTH(startTime)`)
@@ -3749,7 +3750,7 @@ export async function getAdminDashboardMetrics() {
     .where(
       and(
         eq(transactions.status, "COMPLETED"),
-        gte(transactions.startTime, fourWeeksAgo)
+        gte(transactions.startTime, fourWeeksAgo.toISOString())
       )
     )
     .groupBy(sql`DAYOFWEEK(startTime)`)
@@ -3785,7 +3786,7 @@ export async function getAdminDashboardMetrics() {
     count: count(),
   })
     .from(users)
-    .where(gte(users.createdAt, sixMonthsAgo))
+    .where(gte(users.createdAt, sixMonthsAgo.toISOString()))
     .groupBy(sql`YEAR(createdAt)`, sql`MONTH(createdAt)`)
     .orderBy(sql`YEAR(createdAt)`, sql`MONTH(createdAt)`);
   
@@ -3845,7 +3846,7 @@ export async function getAdminDashboardMetrics() {
 }
 
 export async function getInvestorDashboardMetrics(investorId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const now = new Date();
@@ -3899,7 +3900,7 @@ export async function getInvestorDashboardMetrics(investorId: number) {
       and(
         eq(transactions.status, "COMPLETED"),
         inArray(transactions.stationId, stationIds),
-        gte(transactions.startTime, startOfMonth)
+        gte(transactions.startTime, startOfMonth.toISOString())
       )
     );
   
@@ -3919,7 +3920,7 @@ export async function getInvestorDashboardMetrics(investorId: number) {
 }
 
 export async function getUserActiveTransaction(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const result = await db.select({
@@ -3942,7 +3943,7 @@ export async function getUserActiveTransaction(userId: number) {
 }
 
 export async function getUserTransactionHistory(userId: number, limit = 20) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   return db.select({
@@ -3957,7 +3958,7 @@ export async function getUserTransactionHistory(userId: number, limit = 20) {
 }
 
 export async function getUserMonthlyStats(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const now = new Date();
@@ -3973,7 +3974,7 @@ export async function getUserMonthlyStats(userId: number) {
       and(
         eq(transactions.userId, userId),
         eq(transactions.status, "COMPLETED"),
-        gte(transactions.startTime, startOfMonth)
+        gte(transactions.startTime, startOfMonth.toISOString())
       )
     );
   
@@ -3994,7 +3995,7 @@ export async function getTopStationsByRevenue(
   endDate: Date,
   limit: number = 10
 ) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const result = await db.select({
@@ -4010,8 +4011,8 @@ export async function getTopStationsByRevenue(
     .where(
       and(
         eq(transactions.status, "COMPLETED"),
-        gte(transactions.startTime, startDate),
-        lte(transactions.startTime, endDate)
+        gte(transactions.startTime, typeof startDate === "string" ? startDate : startDate!.toISOString()),
+        lte(transactions.startTime, typeof endDate === "string" ? endDate : endDate!.toISOString())
       )
     )
     .groupBy(transactions.stationId, chargingStations.name, chargingStations.city)
@@ -4029,7 +4030,7 @@ export async function getTopStationsByRevenue(
 }
 
 export async function getRecentTransactions(limit: number = 20) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const result = await db.select({
@@ -4063,7 +4064,7 @@ export async function getUsersWithRecentTransactions(
   stationId: number,
   daysBack: number = 30
 ): Promise<Array<{ id: number; name: string | null; email: string | null }>> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const startDate = new Date();
@@ -4080,7 +4081,7 @@ export async function getUsersWithRecentTransactions(
     .where(
       and(
         eq(transactions.stationId, stationId),
-        gte(transactions.startTime, startDate),
+        gte(transactions.startTime, typeof startDate === "string" ? startDate : startDate!.toISOString()),
         eq(users.isActive, 1)
       )
     );
@@ -4096,7 +4097,7 @@ export async function getUsersNearStation(
   longitude: number,
   radiusKm: number = 10
 ): Promise<Array<{ id: number; name: string | null; email: string | null }>> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   // Calcular bounding box aproximado
@@ -4139,7 +4140,7 @@ export async function getUsersNearStation(
  * Obtener estación por ocppIdentity
  */
 export async function getStationByOcppIdentity(ocppIdentity: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const result = await db.select()
@@ -4154,7 +4155,7 @@ export async function getStationByOcppIdentity(ocppIdentity: string) {
  * Obtener transacción activa de un usuario
  */
 export async function getActiveTransactionByUserId(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const result = await db.select()
@@ -4181,7 +4182,7 @@ export async function getActiveTransactionByUserId(userId: number) {
  * @returns Número de transacciones limpiadas
  */
 export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return 0;
   
   const cutoffTime = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
@@ -4192,7 +4193,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
     .where(
       and(
         eq(transactions.status, "IN_PROGRESS"),
-        lte(transactions.updatedAt, cutoffTime)
+        lte(transactions.updatedAt, cutoffTime.toISOString())
       )
     );
   
@@ -4209,7 +4210,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
       await db.update(transactions)
         .set({
           status: "COMPLETED",
-          endTime: new Date(),
+          endTime: new Date().toISOString(),
           stopReason: `AUTO_COMPLETE: Sesión finalizada automáticamente (sin actividad por ${maxAgeMinutes} min)`,
         })
         .where(eq(transactions.id, t.id));
@@ -4238,7 +4239,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
             
             const newBalance = Math.max(0, finalBalance - totalCost);
             await db.update(wallets)
-              .set({ balance: newBalance.toString() })
+              .set({ balance: newBalance.toString() } as any)
               .where(eq(wallets.userId, t.userId));
             
             await db.insert(walletTransactions).values({
@@ -4250,7 +4251,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
               balanceAfter: newBalance.toString(),
               referenceId: t.id,
               referenceType: "TRANSACTION",
-              status: "COMPLETED",
+              paymentStatus: "COMPLETED",
               description: `Pago por carga de ${kwhConsumed.toFixed(2)} kWh (auto-completada)`,
             });
             
@@ -4293,7 +4294,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
       await db.update(transactions)
         .set({
           status: "CANCELLED",
-          endTime: new Date(),
+          endTime: new Date().toISOString(),
           stopReason: `AUTO_CLEANUP: Sin actividad por más de ${maxAgeMinutes} minutos`,
         })
         .where(eq(transactions.id, t.id));
@@ -4312,7 +4313,7 @@ export async function cleanupOrphanedTransactions(maxAgeMinutes: number = 60): P
  * @returns Número de transacciones limpiadas
  */
 export async function cleanupCorruptedTransactions(): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return 0;
   
   // Encontrar transacciones IN_PROGRESS con kWh negativo o costo negativo
@@ -4335,11 +4336,11 @@ export async function cleanupCorruptedTransactions(): Promise<number> {
   await db.update(transactions)
     .set({
       status: "CANCELLED",
-      endTime: new Date(),
+      endTime: new Date().toISOString(),
       kwhConsumed: "0",
       totalCost: "0",
       stopReason: "AUTO_CLEANUP: Datos corruptos (valores negativos)",
-    })
+    } as any)
     .where(inArray(transactions.id, corruptedIds));
   
   for (const t of corrupted) {
@@ -4353,7 +4354,7 @@ export async function cleanupCorruptedTransactions(): Promise<number> {
  * Obtener la última transacción completada de un usuario (para mostrar resumen)
  */
 export async function getLastCompletedTransactionByUserId(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const result = await db.select()
@@ -4374,7 +4375,7 @@ export async function getLastCompletedTransactionByUserId(userId: number) {
  * Obtener último valor de medición de una transacción
  */
 export async function getLastMeterValue(transactionId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const result = await db.select()
@@ -4390,7 +4391,7 @@ export async function getLastMeterValue(transactionId: number) {
  * Obtener transacciones de un usuario con paginación
  */
 export async function getUserTransactions(userId: number, limit = 20, offset = 0) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const result = await db.select({
@@ -4419,7 +4420,7 @@ export async function getUserTransactions(userId: number, limit = 20, offset = 0
  * Descontar saldo de la billetera del usuario
  */
 export async function deductWalletBalance(userId: number, amount: number, transactionId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   // Obtener wallet actual
@@ -4439,7 +4440,7 @@ export async function deductWalletBalance(userId: number, amount: number, transa
   // Actualizar balance
   await db.update(wallets).set({
     balance: newBalance.toString(),
-  }).where(eq(wallets.userId, userId));
+  } as any).where(eq(wallets.userId, userId));
   
   // Registrar transacción de wallet
   await db.insert(walletTransactions).values({
@@ -4463,7 +4464,7 @@ export async function deductWalletBalance(userId: number, amount: number, transa
 // ============================================================================
 
 export async function createPriceHistoryRecord(record: InsertPriceHistory) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(priceHistory).values(record);
   return result[0].insertId;
@@ -4474,7 +4475,7 @@ export async function getPriceHistoryByStation(
   daysBack: number = 7,
   limit: number = 500
 ): Promise<PriceHistory[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const startDate = new Date();
@@ -4485,7 +4486,7 @@ export async function getPriceHistoryByStation(
     .where(
       and(
         eq(priceHistory.stationId, stationId),
-        gte(priceHistory.recordedAt, startDate)
+        gte(priceHistory.recordedAt, typeof startDate === "string" ? startDate : startDate!.toISOString())
       )
     )
     .orderBy(desc(priceHistory.recordedAt))
@@ -4497,7 +4498,7 @@ export async function getPriceHistoryAggregated(
   daysBack: number = 7,
   granularity: "hour" | "day" = "hour"
 ): Promise<Array<{ timestamp: string; avgPrice: number; minPrice: number; maxPrice: number; demandLevel: string }>> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const startDate = new Date();
@@ -4518,7 +4519,7 @@ export async function getPriceHistoryAggregated(
     .where(
       and(
         eq(priceHistory.stationId, stationId),
-        gte(priceHistory.recordedAt, startDate)
+        gte(priceHistory.recordedAt, typeof startDate === "string" ? startDate : startDate!.toISOString())
       )
     )
     .groupBy(dateFormat)
@@ -4547,24 +4548,24 @@ export async function getPriceRanges(): Promise<{
   defaultOverstayGracePeriodMinutes: number;
   whatsappPenaltyNotifIntervalMinutes: number;
   defaultConnectionFee: number;
-  defaultPricePerKwhAC: number;
-  defaultPricePerKwhDC: number;
+  defaultPricePerKwhAc: number;
+  defaultPricePerKwhDc: number;
   enableDifferentiatedPricing: boolean;
 }> {
   const settings = await getPlatformSettings();
   return {
     minPrice: parseFloat(settings?.minPricePerKwh?.toString() || "400"),
     maxPrice: parseFloat(settings?.maxPricePerKwh?.toString() || "2500"),
-    enableDynamicPricing: settings?.enableDynamicPricing ?? true,
+    enableDynamicPricing: !!(settings?.enableDynamicPricing ?? 1),
     defaultBasePricePerKwh: parseFloat(settings?.defaultBasePricePerKwh?.toString() || "1200"),
     defaultReservationFee: parseFloat(settings?.defaultReservationFee?.toString() || "5000"),
     defaultOverstayPenaltyPerMin: parseFloat(settings?.defaultOverstayPenaltyPerMin?.toString() || "500"),
     defaultOverstayGracePeriodMinutes: settings?.defaultOverstayGracePeriodMinutes ?? 10,
     whatsappPenaltyNotifIntervalMinutes: settings?.whatsappPenaltyNotifIntervalMinutes ?? 5,
     defaultConnectionFee: parseFloat(settings?.defaultConnectionFee?.toString() || "2000"),
-    defaultPricePerKwhAC: parseFloat(settings?.defaultPricePerKwhAC?.toString() || "800"),
-    defaultPricePerKwhDC: parseFloat(settings?.defaultPricePerKwhDC?.toString() || "1200"),
-    enableDifferentiatedPricing: settings?.enableDifferentiatedPricing ?? true,
+    defaultPricePerKwhAc: parseFloat(settings?.defaultPricePerKwhAc?.toString() || "800"),
+    defaultPricePerKwhDc: parseFloat(settings?.defaultPricePerKwhDc?.toString() || "1200"),
+    enableDifferentiatedPricing: !!(settings?.enableDifferentiatedPricing ?? 1),
   };
 }
 
@@ -4576,8 +4577,8 @@ export async function updatePriceRanges(
   defaultReservationFee?: number,
   defaultOverstayPenaltyPerMin?: number,
   defaultConnectionFee?: number,
-  defaultPricePerKwhAC?: number,
-  defaultPricePerKwhDC?: number,
+  defaultPricePerKwhAc?: number,
+  defaultPricePerKwhDc?: number,
   enableDifferentiatedPricing?: boolean,
   defaultBasePricePerKwh?: number,
   defaultOverstayGracePeriodMinutes?: number,
@@ -4602,11 +4603,11 @@ export async function updatePriceRanges(
   if (defaultConnectionFee !== undefined) {
     updateData.defaultConnectionFee = defaultConnectionFee.toString();
   }
-  if (defaultPricePerKwhAC !== undefined) {
-    updateData.defaultPricePerKwhAC = defaultPricePerKwhAC.toString();
+  if (defaultPricePerKwhAc !== undefined) {
+    updateData.defaultPricePerKwhAc = defaultPricePerKwhAc.toString();
   }
-  if (defaultPricePerKwhDC !== undefined) {
-    updateData.defaultPricePerKwhDC = defaultPricePerKwhDC.toString();
+  if (defaultPricePerKwhDc !== undefined) {
+    updateData.defaultPricePerKwhDc = defaultPricePerKwhDc.toString();
   }
   if (enableDifferentiatedPricing !== undefined) {
     updateData.enableDifferentiatedPricing = enableDifferentiatedPricing;
@@ -4631,7 +4632,7 @@ export async function getStationDemandStats(stationId: number): Promise<{
   activeCharges: number;
   demandLevel: string;
 }> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { currentOccupancy: 0, totalConnectors: 0, activeCharges: 0, demandLevel: 'LOW' };
   
   // Obtener EVSEs de la estación
@@ -4666,7 +4667,7 @@ export async function getInvestorStationsDemand(investorId: number): Promise<Arr
   activeCharges: number;
   demandLevel: string;
 }>> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   // Obtener TODAS las estaciones del inversionista (propias + crowdfunding)
@@ -4725,7 +4726,7 @@ export async function getEffectiveStationPrice(stationId: number): Promise<{
       overstayPenaltyPerMin: parseFloat(tariff.overstayPenaltyPerMinute?.toString() || "500"),
       connectionFee: parseFloat(tariff.pricePerSession?.toString() || "2000"),
       tariffId: tariff.id,
-      autoPricing: tariff.autoPricing || false,
+      autoPricing: Boolean(tariff.autoPricing),
       source: 'station',
     };
   }
@@ -4780,8 +4781,8 @@ export async function getPriceByConnectorType(
   
   // Determinar precio según tipo de carga (AC o DC) - solo para tarifa global
   const price = evse.chargeType === "DC" 
-    ? priceRanges.defaultPricePerKwhDC 
-    : priceRanges.defaultPricePerKwhAC;
+    ? priceRanges.defaultPricePerKwhDc 
+    : priceRanges.defaultPricePerKwhAc;
   
   return {
     price,
@@ -4850,7 +4851,7 @@ export async function getCrowdfundingProjects(options?: {
   status?: string;
   includePrivate?: boolean;
 }): Promise<CrowdfundingProject[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   try {
@@ -4894,7 +4895,7 @@ export async function getCrowdfundingProjects(options?: {
 
 // Obtener un proyecto por ID
 export async function getCrowdfundingProjectById(projectId: number): Promise<CrowdfundingProject | null> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   try {
@@ -4938,7 +4939,7 @@ export async function createCrowdfundingProject(data: {
   priority?: number;
   createdById?: number;
 }): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   const result = await db.execute(sql`
@@ -4998,7 +4999,7 @@ export async function updateCrowdfundingProject(
     stationId: number;
   }>
 ): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   
@@ -5041,7 +5042,7 @@ export async function updateCrowdfundingProject(
 
 // Obtener participaciones de un proyecto
 export async function getCrowdfundingParticipations(projectId: number): Promise<CrowdfundingParticipation[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   try {
@@ -5065,7 +5066,7 @@ export async function getCrowdfundingParticipations(projectId: number): Promise<
 
 // Obtener participaciones de un inversionista
 export async function getInvestorParticipations(investorId: number): Promise<any[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   try {
@@ -5191,7 +5192,7 @@ export async function createCrowdfundingParticipation(data: {
   paymentDate?: Date;
   paymentReference?: string;
 }): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   const result = await db.execute(sql`
@@ -5213,7 +5214,7 @@ export async function createCrowdfundingParticipation(data: {
 
 // Actualizar el monto recaudado de un proyecto
 export async function updateProjectRaisedAmount(projectId: number): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   // Calcular el total de participaciones completadas
@@ -5252,7 +5253,7 @@ export async function updateCrowdfundingParticipation(
     contractUrl: string;
   }>
 ): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   
@@ -5296,7 +5297,7 @@ export async function updateCrowdfundingParticipation(
 
 // Actualizar monto recaudado por participación
 export async function updateProjectRaisedAmountByParticipation(participationId: number): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   try {
@@ -5317,7 +5318,7 @@ export async function updateProjectRaisedAmountByParticipation(participationId: 
 
 // Obtener una participación por ID
 export async function getCrowdfundingParticipationById(participationId: number): Promise<CrowdfundingParticipation | null> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   try {
@@ -5375,7 +5376,7 @@ export async function addFavoriteStation(userId: number, stationId: number) {
   const database = await getDb();
   if (!database) throw new Error('Database not available');
   try {
-    await database.insert(favoriteStations).values({ userId, stationId }).onDuplicateKeyUpdate({ set: { userId } });
+    await database.insert(favoriteStations).values({ userId, stationId } as any).onDuplicateKeyUpdate({ set: { userId } });
     return true;
   } catch (error) {
     console.error('[DB] Error adding favorite station:', error);
@@ -5423,12 +5424,12 @@ export async function createWompiTransaction(data: {
     reference: data.reference,
     amountInCents: data.amountInCents,
     currency: data.currency || "COP",
-    type: data.type as any,
+    wompiTxType: data.type as any,
     customerEmail: data.customerEmail,
     description: data.description,
     integritySignature: data.integritySignature,
-    status: "PENDING",
-  });
+    wompiTxStatus: "PENDING",
+  } as any);
 
   return (result as any)[0].insertId;
 }
@@ -5462,7 +5463,7 @@ export async function updateWompiTransactionByReference(
   if (data.wompiTransactionId) updateData.wompiTransactionId = data.wompiTransactionId;
   if (data.status) updateData.wompiTxStatus = data.status; // campo correcto en schema
   if (data.paymentMethodType) updateData.paymentMethodType = data.paymentMethodType;
-  if (data.processedAt) updateData.processedAt = data.processedAt instanceof Date ? data.processedAt.toISOString() : data.processedAt;
+  if (data.processedAt) updateData.processedAt = data.processedAt instanceof Date ? data.processedAt : data.processedAt;
   if (data.webhookReceivedAt) updateData.webhookReceivedAt = data.webhookReceivedAt instanceof Date ? data.webhookReceivedAt.toISOString() : data.webhookReceivedAt;
 
   if (Object.keys(updateData).length === 0) return;
@@ -5514,7 +5515,7 @@ export async function getPendingWompiTransactions(): Promise<WompiTransaction[]>
 // userVehicles, UserVehicle, InsertUserVehicle already imported at top of file
 
 export async function getUserVehicles(userId: number): Promise<UserVehicle[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db
     .select()
@@ -5524,7 +5525,7 @@ export async function getUserVehicles(userId: number): Promise<UserVehicle[]> {
 }
 
 export async function getUserVehicleById(id: number, userId: number): Promise<UserVehicle | undefined> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db
     .select()
@@ -5535,14 +5536,14 @@ export async function getUserVehicleById(id: number, userId: number): Promise<Us
 }
 
 export async function createUserVehicle(vehicle: InsertUserVehicle): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
 
   // Si es el primer vehículo del usuario o se marca como default, asegurar que solo uno sea default
   if (vehicle.isDefault) {
     await db
       .update(userVehicles)
-      .set({ isDefault: false })
+      .set({ isDefault: 0 } as any)
       .where(eq(userVehicles.userId, vehicle.userId));
   }
 
@@ -5553,7 +5554,7 @@ export async function createUserVehicle(vehicle: InsertUserVehicle): Promise<num
     .where(and(eq(userVehicles.userId, vehicle.userId), eq(userVehicles.isActive, 1)));
 
   if (existingCount[0].count === 0) {
-    vehicle.isDefault = true;
+    vehicle.isDefault = 1;
   }
 
   const result = await db.insert(userVehicles).values(vehicle);
@@ -5565,14 +5566,14 @@ export async function updateUserVehicle(
   userId: number,
   data: Partial<InsertUserVehicle>
 ): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
 
   // Si se marca como default, quitar default de los demás
   if (data.isDefault) {
     await db
       .update(userVehicles)
-      .set({ isDefault: false })
+      .set({ isDefault: 0 } as any)
       .where(and(eq(userVehicles.userId, userId), ne(userVehicles.id, id)));
   }
 
@@ -5583,13 +5584,13 @@ export async function updateUserVehicle(
 }
 
 export async function deleteUserVehicle(id: number, userId: number): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
 
   // Soft delete
   await db
     .update(userVehicles)
-    .set({ isActive: 0, isDefault: false })
+    .set({ isActive: 0, isDefault: 0 } as any)
     .where(and(eq(userVehicles.id, id), eq(userVehicles.userId, userId)));
 
   // Si el eliminado era el default, asignar default al siguiente vehículo activo
@@ -5608,7 +5609,7 @@ export async function deleteUserVehicle(id: number, userId: number): Promise<voi
         and(
           eq(userVehicles.userId, userId),
           eq(userVehicles.isActive, 1),
-          eq(userVehicles.isDefault, true)
+          eq(userVehicles.isDefault, 1)
         )
       )
       .limit(1);
@@ -5616,29 +5617,29 @@ export async function deleteUserVehicle(id: number, userId: number): Promise<voi
     if (hasDefault.length === 0) {
       await db
         .update(userVehicles)
-        .set({ isDefault: true })
+        .set({ isDefault: 1 } as any)
         .where(eq(userVehicles.id, remaining[0].id));
     }
   }
 }
 
 export async function setDefaultVehicle(id: number, userId: number): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   // Quitar default de todos
   await db
     .update(userVehicles)
-    .set({ isDefault: false })
+    .set({ isDefault: 0 } as any)
     .where(eq(userVehicles.userId, userId));
   // Marcar el seleccionado como default
   await db
     .update(userVehicles)
-    .set({ isDefault: true })
+    .set({ isDefault: 1 } as any)
     .where(and(eq(userVehicles.id, id), eq(userVehicles.userId, userId)));
 }
 
 export async function getDefaultVehicle(userId: number): Promise<UserVehicle | undefined> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const result = await db
     .select()
@@ -5647,7 +5648,7 @@ export async function getDefaultVehicle(userId: number): Promise<UserVehicle | u
       and(
         eq(userVehicles.userId, userId),
         eq(userVehicles.isActive, 1),
-        eq(userVehicles.isDefault, true)
+        eq(userVehicles.isDefault, 1)
       )
     )
     .limit(1);
@@ -5659,14 +5660,14 @@ export async function updateVehicleBatteryLevel(
   userId: number,
   batteryLevel: number
 ): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db
     .update(userVehicles)
     .set({
       batteryLevel,
-      lastBatteryUpdate: new Date(),
-    })
+      lastBatteryUpdate: new Date().toISOString(),
+    } as any)
     .where(
       and(
         eq(userVehicles.id, vehicleId),
@@ -5690,7 +5691,7 @@ export async function createFirmwareUpdate(params: {
   initiatedBy?: number;
   notes?: string;
 }): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(firmwareUpdates).values({
     stationId: params.stationId,
@@ -5703,7 +5704,7 @@ export async function createFirmwareUpdate(params: {
     notes: params.notes || null,
     status: "PENDING",
     progress: 0,
-  });
+  } as any);
   return result[0].insertId;
 }
 
@@ -5713,7 +5714,7 @@ export async function updateFirmwareStatus(
   progress: number,
   errorMessage?: string
 ): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   const updates: any = { status, progress, updatedAt: new Date() };
   if (errorMessage) updates.errorMessage = errorMessage;
@@ -5732,7 +5733,7 @@ export async function updateFirmwareStatusByIdentity(
   progress: number,
   errorMessage?: string
 ): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   // Update the latest active firmware update for this charger
   const active = await db
@@ -5753,7 +5754,7 @@ export async function updateFirmwareStatusByIdentity(
 }
 
 export async function getFirmwareUpdatesByStation(stationId: number, limit = 20) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db
     .select()
@@ -5764,7 +5765,7 @@ export async function getFirmwareUpdatesByStation(stationId: number, limit = 20)
 }
 
 export async function getAllFirmwareUpdates(limit = 50) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db
     .select()
@@ -5774,7 +5775,7 @@ export async function getAllFirmwareUpdates(limit = 50) {
 }
 
 export async function getActiveFirmwareUpdates() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db
     .select()
@@ -5840,7 +5841,7 @@ export async function createStationReview(data: {
     userId: data.userId,
     rating: data.rating,
     comment: data.comment || null,
-  });
+  } as any);
   return Number(result[0].insertId);
 }
 
@@ -5899,7 +5900,7 @@ export async function getUserByIdTagFromTable(idTag: string): Promise<User | und
   if (!database) return undefined;
   
   const tag = await database.select().from(idTags)
-    .where(and(eq(idTags.idTag, idTag), eq(idTags.status, "ACTIVE")))
+    .where(and(eq(idTags.idTag, idTag), eq(idTags.idTagStatus, "ACTIVE")))
     .limit(1);
   
   if (tag.length === 0 || !tag[0].userId) return undefined;
@@ -5958,14 +5959,14 @@ export async function createIdTag(data: {
   const result = await database.insert(idTags).values({
     idTag: data.idTag,
     userId: data.userId,
-    type: data.type,
-    status: data.status || "ACTIVE",
+    idTagType: data.type,
+    idTagStatus: data.status || "ACTIVE",
     label: data.label,
     serialNumber: data.serialNumber,
-    expiresAt: data.expiresAt,
+    expiresAt: data.expiresAt instanceof Date ? data.expiresAt : data.expiresAt,
     parentIdTag: data.parentIdTag,
     maxActiveTransactions: data.maxActiveTransactions || 1,
-  });
+  } as any);
   
   return result[0].insertId;
 }
@@ -5986,7 +5987,7 @@ export async function recordIdTagUsage(idTag: string, stationId: number): Promis
   const database = await getDb();
   if (!database) return;
   await database.update(idTags)
-    .set({ lastUsedAt: new Date(), lastUsedStationId: stationId })
+    .set({ lastUsedAt: new Date().toISOString(), lastUsedStationId: stationId } as any)
     .where(eq(idTags.idTag, idTag));
 }
 
@@ -6007,8 +6008,8 @@ export async function getAllIdTags(filters?: { type?: string; status?: string })
   if (!database) return [];
   
   const conditions = [];
-  if (filters?.type) conditions.push(eq(idTags.type, filters.type as any));
-  if (filters?.status) conditions.push(eq(idTags.status, filters.status as any));
+  if (filters?.type) conditions.push(eq(idTags.idTagType, filters.type as any));
+  if (filters?.status) conditions.push(eq(idTags.idTagStatus, filters.status as any));
   
   if (conditions.length > 0) {
     return database.select().from(idTags).where(and(...conditions));
@@ -6022,7 +6023,7 @@ export async function getAllIdTags(filters?: { type?: string; status?: string })
 export async function blockIdTag(idTag: string): Promise<void> {
   const database = await getDb();
   if (!database) return;
-  await database.update(idTags).set({ status: "BLOCKED" }).where(eq(idTags.idTag, idTag));
+  await database.update(idTags).set({ idTagStatus: "BLOCKED" } as any).where(eq(idTags.idTag, idTag));
 }
 
 /**
@@ -6044,21 +6045,21 @@ export async function validateIdTag(idTag: string): Promise<{
     return { valid: false, reason: "TAG_NOT_FOUND" };
   }
   
-  if (tag.status === "BLOCKED") {
+  if (tag.idTagStatus === "BLOCKED") {
     return { valid: false, reason: "TAG_BLOCKED" };
   }
   
-  if (tag.status === "EXPIRED") {
+  if (tag.idTagStatus === "EXPIRED") {
     return { valid: false, reason: "TAG_EXPIRED" };
   }
   
-  if (tag.status === "LOST") {
+  if (tag.idTagStatus === "LOST") {
     return { valid: false, reason: "TAG_LOST" };
   }
   
   if (tag.expiresAt && new Date(tag.expiresAt) < new Date()) {
     // Marcar como expirado
-    await updateIdTag(tag.id, { status: "EXPIRED" });
+    await updateIdTag(tag.id, { idTagStatus: "EXPIRED" });
     return { valid: false, reason: "TAG_EXPIRED" };
   }
   
@@ -6070,7 +6071,7 @@ export async function validateIdTag(idTag: string): Promise<{
     valid: true,
     reason: "OK",
     userId: tag.userId,
-    tagType: tag.type,
+    tagType: tag.idTagType,
   };
 }
 
@@ -6105,7 +6106,7 @@ export async function syncUserIdTag(userId: number, idTag: string): Promise<void
  * Obtener transacciones activas (IN_PROGRESS) de una estación
  */
 export async function getActiveTransactionsByStationId(stationId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const result = await db.select()
@@ -6134,7 +6135,7 @@ export async function getActiveTransactionsByStationId(stationId: number) {
  * Obtener todos los perfiles de marca de cargador activos
  */
 export async function getAllChargerBrands() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const result = await db.select()
@@ -6149,7 +6150,7 @@ export async function getAllChargerBrands() {
  * Obtener un perfil de marca de cargador por ID
  */
 export async function getChargerBrandById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const result = await db.select()
@@ -6164,7 +6165,7 @@ export async function getChargerBrandById(id: number) {
  * Obtener perfil de marca por nombre de marca y modelo
  */
 export async function getChargerBrandByBrandModel(brand: string, model: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const result = await db.select()
@@ -6185,7 +6186,7 @@ export async function getChargerBrandByBrandModel(brand: string, model: string) 
  * Crear un nuevo perfil de marca de cargador
  */
 export async function createChargerBrand(data: InsertChargerBrand) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   const result = await db.insert(chargerBrands).values(data);
@@ -6196,7 +6197,7 @@ export async function createChargerBrand(data: InsertChargerBrand) {
  * Actualizar un perfil de marca de cargador
  */
 export async function updateChargerBrand(id: number, data: Partial<InsertChargerBrand>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   await db.update(chargerBrands)
@@ -6208,7 +6209,7 @@ export async function updateChargerBrand(id: number, data: Partial<InsertCharger
  * Obtener el perfil de marca asociado a una estación
  */
 export async function getChargerBrandForStation(stationId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   
   const station = await db.select({
@@ -6229,7 +6230,7 @@ export async function getChargerBrandForStation(stationId: number) {
 // ============================================================================
 
 export async function createTariffChangeLog(log: InsertTariffChangeLog): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   const result = await db.insert(tariffChangeLogs).values(log);
   return result[0].insertId;
@@ -6243,7 +6244,7 @@ export async function getTariffChangeLogs(filters?: {
   limit?: number;
   offset?: number;
 }): Promise<TariffChangeLog[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const conditions = [];
@@ -6268,7 +6269,7 @@ export async function getTariffChangeLogs(filters?: {
 }
 
 export async function getTariffChangeLogsByStation(stationId: number, limit = 50): Promise<TariffChangeLog[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(tariffChangeLogs)
     .where(eq(tariffChangeLogs.stationId, stationId))
@@ -6284,7 +6285,7 @@ export async function getInvestorsWithActiveStations(): Promise<Array<{
   fcmToken: string | null;
   stationCount: number;
 }>> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   const results = await db.execute(sql`
@@ -6324,7 +6325,7 @@ export async function saveUserLocation(data: {
   address?: string;
   city?: string;
 }): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return 0;
   const result = await db.insert(userLocationHistory).values({
     userId: data.userId,
@@ -6334,12 +6335,12 @@ export async function saveUserLocation(data: {
     source: data.source || "chat",
     address: data.address,
     city: data.city,
-  });
+  } as any);
   return (result as any)[0]?.insertId || 0;
 }
 
 export async function getRecentUserLocations(userId: number, limit = 20): Promise<UserLocationHistory[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(userLocationHistory)
     .where(eq(userLocationHistory.userId, userId))
@@ -6348,7 +6349,7 @@ export async function getRecentUserLocations(userId: number, limit = 20): Promis
 }
 
 export async function getLastUserLocation(userId: number): Promise<UserLocationHistory | undefined> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return undefined;
   const results = await db.select().from(userLocationHistory)
     .where(eq(userLocationHistory.userId, userId))
@@ -6362,7 +6363,7 @@ export async function getLastUserLocation(userId: number): Promise<UserLocationH
 // ============================================================================
 
 export async function getUserRoutePatterns(userId: number, limit = 10): Promise<UserRoutePattern[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(userRoutePatterns)
     .where(eq(userRoutePatterns.userId, userId))
@@ -6381,7 +6382,7 @@ export async function upsertRoutePattern(data: {
   estimatedDistanceKm?: number;
   departureHour?: number;
 }): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
 
   // Buscar ruta similar existente (dentro de ~1km de radio)
@@ -6402,8 +6403,8 @@ export async function upsertRoutePattern(data: {
     await db.update(userRoutePatterns)
       .set({
         frequency: match.frequency + 1,
-        lastUsed: new Date(),
-        updatedAt: new Date(),
+        lastUsed: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         ...(data.originName ? { originName: data.originName } : {}),
         ...(data.destinationName ? { destinationName: data.destinationName } : {}),
         ...(data.departureHour !== undefined ? { typicalDepartureHour: data.departureHour } : {}),
@@ -6422,7 +6423,7 @@ export async function upsertRoutePattern(data: {
       frequency: 1,
       estimatedDistanceKm: data.estimatedDistanceKm?.toString(),
       typicalDepartureHour: data.departureHour,
-    });
+    } as any);
   }
 }
 
@@ -6437,7 +6438,7 @@ export async function getUserFrequentLocations(userId: number): Promise<Array<{
   label: string;
   typicalHours: string;
 }>> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
 
   const locations = await db.select().from(userLocationHistory)
@@ -6461,7 +6462,7 @@ export async function getUserFrequentLocations(userId: number): Promise<Array<{
   for (const loc of locations) {
     const lat = Number(loc.latitude);
     const lng = Number(loc.longitude);
-    const hour = loc.createdAt.getHours();
+    const hour = new Date(loc.createdAt).getHours();
     
     const existing = clusters.find(c => 
       Math.abs(c.lat - lat) < CLUSTER_RADIUS && Math.abs(c.lng - lng) < CLUSTER_RADIUS
@@ -6528,9 +6529,9 @@ export async function createUserDebt(data: {
     remainingAmount: data.originalAmount.toFixed(2),
     reason: data.reason,
     description: data.description || null,
-    status: "PENDING",
+    debtStatus: "PENDING",
     autoChargeAttempts: 0,
-  });
+  } as any);
 
   console.log(`[Debt] Created debt #${result.insertId} for user ${data.userId}: $${data.originalAmount} COP (${data.reason})`);
   return result.insertId;
@@ -6548,8 +6549,8 @@ export async function getUserPendingDebts(userId: number): Promise<UserDebt[]> {
     .where(and(
       eq(userDebts.userId, userId),
       or(
-        eq(userDebts.status, "PENDING"),
-        eq(userDebts.status, "PARTIAL")
+        eq(userDebts.debtStatus, "PENDING"),
+        eq(userDebts.debtStatus, "PARTIAL")
       )
     ))
     .orderBy(userDebts.createdAt);
@@ -6589,11 +6590,11 @@ export async function payUserDebt(debtId: number, amountPaid: number, paymentRef
   await dbInstance.update(userDebts)
     .set({
       remainingAmount: newRemaining.toFixed(2),
-      status: newRemaining <= 0 ? "PAID" : "PARTIAL",
+      debtStatus: newRemaining <= 0 ? "PAID" : "PARTIAL",
       paymentReference: paymentReference || debt.paymentReference,
-      paidAt: newRemaining <= 0 ? new Date() : null,
-      updatedAt: new Date(),
-    })
+      paidAt: newRemaining <= 0 ? new Date().toISOString() : null,
+      updatedAt: new Date().toISOString(),
+    } as any)
     .where(eq(userDebts.id, debtId));
 
   console.log(`[Debt] Debt #${debtId}: paid $${amountPaid}, remaining $${newRemaining} (${newRemaining <= 0 ? "PAID" : "PARTIAL"})`);
@@ -6612,9 +6613,9 @@ export async function incrementDebtAutoChargeAttempts(debtId: number): Promise<v
   await dbInstance.update(userDebts)
     .set({
       autoChargeAttempts: (debt.autoChargeAttempts || 0) + 1,
-      lastAutoChargeAt: new Date(),
-      updatedAt: new Date(),
-    })
+      lastAutoChargeAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as any)
     .where(eq(userDebts.id, debtId));
 }
 
@@ -6640,10 +6641,10 @@ export async function waiveUserDebt(debtId: number): Promise<void> {
 
   await dbInstance.update(userDebts)
     .set({
-      status: "WAIVED",
+      debtStatus: "WAIVED",
       remainingAmount: "0.00",
-      updatedAt: new Date(),
-    })
+      updatedAt: new Date().toISOString(),
+    } as any)
     .where(eq(userDebts.id, debtId));
 
   console.log(`[Debt] Debt #${debtId} waived by admin`);
@@ -6693,7 +6694,7 @@ export async function payAllDebtsFromWallet(userId: number): Promise<{ totalPaid
       balanceBefore: (balance + totalPaid).toFixed(2),
       balanceAfter: balance.toFixed(2),
       description: `Pago de deuda pendiente por ocupación (${debtsCleared} deuda${debtsCleared > 1 ? 's' : ''})`,
-      status: "COMPLETED",
+      paymentStatus: "COMPLETED",
     });
   }
 
@@ -6717,18 +6718,18 @@ export async function createSocAccuracyLog(data: {
   estimatedErrorKwh?: number | null;
   estimatedErrorSocPct?: number | null;
 }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const { socAccuracyLog } = await import("../drizzle/schema");
   await db.insert(socAccuracyLog).values({
     ...data,
-    batteryFullDetected: data.batteryFullDetected ?? false,
-  });
+    batteryFullDetected: data.batteryFullDetected ? 1 : 0,
+  } as any);
   return true;
 }
 
 export async function getSocAccuracyByUser(userId: number, limit = 20) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   const { socAccuracyLog } = await import("../drizzle/schema");
   return db.select().from(socAccuracyLog)
@@ -6742,7 +6743,7 @@ export async function getSocAccuracySuggestion(userId: number): Promise<{
   avgErrorKwh: number | null;
   sampleCount: number;
 } | null> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const { socAccuracyLog } = await import("../drizzle/schema");
   const logs = await db.select().from(socAccuracyLog)
@@ -6788,7 +6789,7 @@ export async function getAllDebtsAdmin(filters?: {
   const conditions: any[] = [];
   
   if (filters?.status && filters.status !== "ALL") {
-    conditions.push(eq(userDebts.status, filters.status as any));
+    conditions.push(eq(userDebts.debtStatus, filters.status as any));
   }
   if (filters?.reason && filters.reason !== "ALL") {
     conditions.push(eq(userDebts.reason, filters.reason));
@@ -6815,7 +6816,7 @@ export async function getAllDebtsAdmin(filters?: {
       remainingAmount: userDebts.remainingAmount,
       reason: userDebts.reason,
       description: userDebts.description,
-      status: userDebts.status,
+      status: userDebts.debtStatus,
       autoChargeAttempts: userDebts.autoChargeAttempts,
       lastAutoChargeAt: userDebts.lastAutoChargeAt,
       paymentReference: userDebts.paymentReference,
@@ -6879,7 +6880,7 @@ export async function getDebtStats(): Promise<{
     const remaining = parseFloat(d.remainingAmount?.toString() || "0");
     totalAmount += original;
 
-    switch (d.status) {
+    switch (d.debtStatus) {
       case "PENDING":
         totalPending += remaining;
         countPending++;
@@ -6924,11 +6925,11 @@ export async function adminManualPayDebt(debtId: number, paymentReference: strin
   await dbInstance.update(userDebts)
     .set({
       remainingAmount: "0.00",
-      status: "PAID",
+      debtStatus: "PAID",
       paymentReference,
-      paidAt: new Date(),
-      updatedAt: new Date(),
-    })
+      paidAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as any)
     .where(eq(userDebts.id, debtId));
 
   console.log(`[Debt] Admin manual payment for debt #${debtId}: $${debt.originalAmount} COP (ref: ${paymentReference})`);
@@ -6941,7 +6942,7 @@ export async function adminManualPayDebt(debtId: number, paymentReference: strin
 
 // Buscar usuarios por nombre o email (para vincular inversionistas)
 export async function searchUsers(query: string, limit: number = 10): Promise<any[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   
   try {
@@ -6966,7 +6967,7 @@ export async function searchUsers(query: string, limit: number = 10): Promise<an
 
 // Eliminar participación de crowdfunding
 export async function deleteCrowdfundingParticipation(participationId: number): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   await db.execute(sql`
@@ -6976,7 +6977,7 @@ export async function deleteCrowdfundingParticipation(participationId: number): 
 
 // Eliminar todas las participaciones de un proyecto de crowdfunding
 export async function deleteCrowdfundingProjectParticipations(projectId: number): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   await db.execute(sql`
@@ -6986,7 +6987,7 @@ export async function deleteCrowdfundingProjectParticipations(projectId: number)
 
 // Eliminar un proyecto de crowdfunding
 export async function deleteCrowdfundingProject(projectId: number): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   await db.execute(sql`
@@ -7006,7 +7007,7 @@ export async function updateCrowdfundingParticipationFull(
     investorId?: number;
   }
 ): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
   
   const setClauses: string[] = [];
@@ -7241,8 +7242,10 @@ export async function updateOperationalMetric(id: number, data: Partial<InsertOp
  */
 export async function getStationRevenueForPeriod(stationId: number, startDate: Date, endDate: Date) {
   const db = (await getDb())!;
-  const startStr = startDate.toISOString().slice(0, 19).replace('T', ' ');
-  const endStr = endDate.toISOString().slice(0, 19).replace('T', ' ');
+  // @ts-ignore
+  const startStr = startDate.slice(0, 19).replace('T', ' ');
+  // @ts-ignore
+  const endStr = endDate.slice(0, 19).replace('T', ' ');
 
   // 1. Transaction revenue (energy sales + overstay penalties)
   const txResults = await db.execute(sql.raw(`
@@ -7318,7 +7321,7 @@ export function prorateExpense(expense: StationFixedExpense, periodStartDate: Da
   
   if (expStart > periodEndDate || expEnd < periodStartDate) return 0;
   
-  switch (expense.periodicity) {
+  switch (expense.expensePeriodicity) {
     case 'MONTHLY': return amount; // Already monthly
     case 'BIMONTHLY': return amount / 2; // Half per month
     case 'QUARTERLY': return amount / 3;
@@ -7387,11 +7390,11 @@ export async function getInvestorAllSettlements(investorUserId: number, limit = 
       ...share,
       periodStart: settlement[0].periodStart,
       periodEnd: settlement[0].periodEnd,
-      periodType: settlement[0].periodType,
+      periodType: settlement[0].settlementPeriodType,
       grossRevenue: settlement[0].grossRevenue,
       totalFixedExpenses: settlement[0].totalFixedExpenses,
       netRevenue: settlement[0].netRevenue,
-      settlementStatus: settlement[0].status,
+      settlementStatus: settlement[0].settlementStatus,
       stationId: settlement[0].stationId,
       stationName: station[0]?.name || 'Desconocida',
     };
@@ -7573,7 +7576,7 @@ export async function createMaintenanceFundRecord(data: {
   const db = (await getDb())!;
   const result = await db.insert(maintenanceFundRecords).values({
     stationId: data.stationId,
-    type: data.type,
+    maintenanceFundType: data.type as any,
     amount: data.amount,
     description: data.description,
     maintenanceType: data.maintenanceType || null,
@@ -7583,7 +7586,7 @@ export async function createMaintenanceFundRecord(data: {
     settlementId: data.settlementId || null,
     balanceAfter: data.balanceAfter,
     createdBy: data.createdBy || null,
-  });
+  } as any);
   return Number(result[0].insertId);
 }
 
@@ -7749,7 +7752,7 @@ export interface InvestorStationInfo {
  * For collective stations: participationPercent = their crowdfunding participation %
  */
 export async function getInvestorStationInfoMap(investorId: number): Promise<Map<number, InvestorStationInfo>> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return new Map();
   
   const stationMap = new Map<number, InvestorStationInfo>();
@@ -7815,7 +7818,7 @@ export async function getEnrichedTransactionsByInvestor(
   investorId: number,
   filters?: { startDate?: Date; endDate?: Date; status?: string; stationId?: number; limit?: number; offset?: number }
 ) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { data: [], total: 0, stations: [] as InvestorStationInfo[] };
   
   const stationMap = await getInvestorStationInfoMap(investorId);
@@ -7828,8 +7831,8 @@ export async function getEnrichedTransactionsByInvestor(
   if (targetIds.length === 0) return { data: [], total: 0, stations: Array.from(stationMap.values()) };
   
   const conditions: any[] = [inArray(transactions.stationId, targetIds)];
-  if (filters?.startDate) conditions.push(gte(transactions.startTime, filters.startDate));
-  if (filters?.endDate) conditions.push(lte(transactions.startTime, filters.endDate));
+  if (filters?.startDate) conditions.push(gte(transactions.startTime, typeof filters.startDate === "string" ? filters.startDate : filters.startDate!.toISOString()));
+  if (filters?.endDate) conditions.push(lte(transactions.startTime, typeof filters.endDate === "string" ? filters.endDate : filters.endDate!.toISOString()));
   if (filters?.status) conditions.push(eq(transactions.status, filters.status as any));
   
   const whereClause = and(...conditions);
@@ -7927,14 +7930,14 @@ export async function getEnrichedTransactionsByInvestor(
 // ============================================================================
 
 export async function createRefund(data: InsertRefund): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("DB not available");
   const result = await db.insert(refunds).values(data);
   return Number(result[0].insertId);
 }
 
 export async function getRefunds(opts: { limit?: number; offset?: number; adminId?: number; userId?: number; transactionId?: number }): Promise<{ data: Refund[]; total: number }> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { data: [], total: 0 };
   const { eq, and, desc, sql, count } = await import("drizzle-orm");
   
@@ -7954,7 +7957,7 @@ export async function getRefunds(opts: { limit?: number; offset?: number; adminI
 }
 
 export async function getRefundById(id: number): Promise<Refund | null> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const { eq } = await import("drizzle-orm");
   const result = await db.select().from(refunds).where(eq(refunds.id, id));
@@ -7966,14 +7969,14 @@ export async function getRefundById(id: number): Promise<Refund | null> {
 // ============================================================================
 
 export async function createClaim(data: InsertClaim): Promise<number> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("DB not available");
   const result = await db.insert(claims).values(data);
   return Number(result[0].insertId);
 }
 
 export async function getClaims(opts: { limit?: number; offset?: number; status?: string; userId?: number }): Promise<{ data: Claim[]; total: number }> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { data: [], total: 0 };
   const { eq, and, desc, count } = await import("drizzle-orm");
   
@@ -7992,7 +7995,7 @@ export async function getClaims(opts: { limit?: number; offset?: number; status?
 }
 
 export async function getClaimById(id: number): Promise<Claim | null> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const { eq } = await import("drizzle-orm");
   const result = await db.select().from(claims).where(eq(claims.id, id));
@@ -8000,14 +8003,14 @@ export async function getClaimById(id: number): Promise<Claim | null> {
 }
 
 export async function updateClaim(id: number, data: Partial<InsertClaim>): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   const { eq } = await import("drizzle-orm");
   await db.update(claims).set(data).where(eq(claims.id, id));
 }
 
 export async function getClaimsByTransactionId(transactionId: number): Promise<Claim[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   const { eq, desc } = await import("drizzle-orm");
   return db.select().from(claims).where(eq(claims.transactionId, transactionId)).orderBy(desc(claims.createdAt));
@@ -8031,7 +8034,7 @@ export async function savePendingChargeSession(data: {
   estimatedCost: number;
   pricePerKwh: number;
 }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutos
   await db.insert(pendingChargeSessions).values({
@@ -8044,18 +8047,18 @@ export async function savePendingChargeSession(data: {
     targetValue: String(data.targetValue),
     estimatedCost: String(data.estimatedCost),
     pricePerKwh: String(data.pricePerKwh),
-    expiresAt,
-  });
+    expiresAt: expiresAt,
+  } as any);
 }
 
 export async function findPendingChargeSessionByOcppIdentity(ocppIdentity: string, connectorId?: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const now = new Date();
   let conditions = [
     eq(pendingChargeSessions.ocppIdentity, ocppIdentity),
-    eq(pendingChargeSessions.consumed, false),
-    gt(pendingChargeSessions.expiresAt, now),
+    eq(pendingChargeSessions.consumed, 0),
+    gt(pendingChargeSessions.expiresAt, now.toISOString()),
   ];
   if (connectorId !== undefined) {
     conditions.push(eq(pendingChargeSessions.connectorId, connectorId));
@@ -8070,23 +8073,23 @@ export async function findPendingChargeSessionByOcppIdentity(ocppIdentity: strin
 }
 
 export async function consumePendingChargeSession(sessionId: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db
     .update(pendingChargeSessions)
-    .set({ consumed: true })
+    .set({ consumed: 1 } as any)
     .where(eq(pendingChargeSessions.sessionId, sessionId));
 }
 
 export async function cleanExpiredPendingSessions() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   const now = new Date();
   await db
     .delete(pendingChargeSessions)
     .where(and(
-      lt(pendingChargeSessions.expiresAt, now),
-      eq(pendingChargeSessions.consumed, false)
+      lt(pendingChargeSessions.expiresAt, now.toISOString()),
+      eq(pendingChargeSessions.consumed, 0)
     ));
 }
 
@@ -8111,9 +8114,9 @@ export async function getOrCreateLocalAuthList(stationId: number): Promise<Local
   const result = await database.insert(localAuthLists).values({
     stationId,
     listVersion: 0,
-    status: "PENDING",
+    localAuthListStatus: "PENDING",
     entryCount: 0,
-  });
+  } as any);
   
   const newList = await database.select().from(localAuthLists)
     .where(eq(localAuthLists.id, Number(result[0].insertId))).limit(1);
@@ -8172,19 +8175,19 @@ export async function addLocalAuthEntry(data: {
     stationId: data.stationId,
     idTag: data.idTag,
     idTagRefId: idTagRef?.id || null,
-    isMasterCard: data.isMasterCard || false,
+    isMasterCard: data.isMasterCard ? 1 : 0,
     label: data.label || null,
-    expiryDate: data.expiryDate || null,
+    expiryDate: data.expiryDate instanceof Date ? data.expiryDate.toISOString() : (data.expiryDate || null),
     addedBy: data.addedBy || null,
     authStatus: "Accepted",
-  });
+  } as any);
   
   // Actualizar conteo y marcar como desactualizada
   await database.update(localAuthLists).set({
     entryCount: list.entryCount + 1,
     listVersion: list.listVersion + 1,
-    status: "OUTDATED",
-  }).where(eq(localAuthLists.id, list.id));
+    localAuthListStatus: "OUTDATED",
+  } as any).where(eq(localAuthLists.id, list.id));
   
   const newEntry = await database.select().from(localAuthEntries)
     .where(eq(localAuthEntries.id, Number(result[0].insertId))).limit(1);
@@ -8213,8 +8216,8 @@ export async function removeLocalAuthEntry(entryId: number, stationId: number): 
   await database.update(localAuthLists).set({
     entryCount: Math.max(0, list.entryCount - 1),
     listVersion: list.listVersion + 1,
-    status: "OUTDATED",
-  }).where(eq(localAuthLists.id, list.id));
+    localAuthListStatus: "OUTDATED",
+  } as any).where(eq(localAuthLists.id, list.id));
 }
 
 /**
@@ -8226,11 +8229,11 @@ export async function markLocalAuthListSynced(stationId: number, result: string)
   
   const list = await getOrCreateLocalAuthList(stationId);
   await database.update(localAuthLists).set({
-    status: result === "Accepted" ? "SYNCED" : "FAILED",
-    lastSyncAt: new Date(),
+    localAuthListStatus: result === "Accepted" ? "SYNCED" : "FAILED",
+    lastSyncAt: new Date().toISOString(),
     lastSyncResult: result,
     chargerListVersion: result === "Accepted" ? list.listVersion : list.chargerListVersion,
-  }).where(eq(localAuthLists.id, list.id));
+  } as any).where(eq(localAuthLists.id, list.id));
 }
 
 /**
@@ -8263,11 +8266,11 @@ export async function getPendingOfflineTransactions(stationId?: number): Promise
     return database.select().from(offlineTransactions)
       .where(and(
         eq(offlineTransactions.stationId, stationId),
-        eq(offlineTransactions.reconciled, false)
+        eq(offlineTransactions.reconciled, 0)
       ));
   }
   return database.select().from(offlineTransactions)
-    .where(eq(offlineTransactions.reconciled, false));
+    .where(eq(offlineTransactions.reconciled, 0));
 }
 
 /**
@@ -8281,11 +8284,11 @@ export async function reconcileOfflineTransaction(
   const database = await getDb();
   if (!database) return;
   await database.update(offlineTransactions).set({
-    reconciled: true,
-    reconciledAt: new Date(),
+    reconciled: 1,
+    reconciledAt: new Date().toISOString(),
     reconciledTransactionId: transactionId || null,
     notes: notes || null,
-  }).where(eq(offlineTransactions.id, offlineTxId));
+  } as any).where(eq(offlineTransactions.id, offlineTxId));
 }
 
 /**
@@ -8299,7 +8302,7 @@ export async function getMasterCards(stationId: number): Promise<LocalAuthEntry[
   return database.select().from(localAuthEntries)
     .where(and(
       eq(localAuthEntries.listId, list.id),
-      eq(localAuthEntries.isMasterCard, true)
+      eq(localAuthEntries.isMasterCard, 1)
     ));
 }
 
@@ -8316,19 +8319,19 @@ export async function updateOfflinePolicy(
   const list = await getOrCreateLocalAuthList(stationId);
   await database.update(localAuthLists).set({
     offlinePolicy: policy,
-  }).where(eq(localAuthLists.id, list.id));
+  } as any).where(eq(localAuthLists.id, list.id));
 }
 
 // ============================================================
 // OCCUPANCY LIQUIDATIONS - Liquidaciones de tarifa de ocupación para aliados
 // ============================================================
-import { occupancyLiquidations, InsertOccupancyLiquidation, OccupancyLiquidation } from "../drizzle/schema";
+import { occupancyLiquidations } from "../drizzle/schema";
 
 /**
  * Crear un registro de liquidación de ocupación.
  * Se llama desde overstay-monitor cada vez que se cobra al usuario.
  */
-export async function createOccupancyLiquidation(data: InsertOccupancyLiquidation): Promise<number | null> {
+export async function createOccupancyLiquidation(data: typeof occupancyLiquidations.$inferInsert): Promise<number | null> {
   const database = await getDb();
   if (!database) return null;
   const now = new Date();
@@ -8336,7 +8339,7 @@ export async function createOccupancyLiquidation(data: InsertOccupancyLiquidatio
     ...data,
     periodYear: data.periodYear ?? now.getFullYear(),
     periodMonth: data.periodMonth ?? (now.getMonth() + 1),
-  });
+  } as any);
   return (result[0] as any).insertId ?? null;
 }
 
@@ -8348,7 +8351,7 @@ export async function getOccupancyLiquidationsByHost(
   hostUserId: number,
   year?: number,
   month?: number
-): Promise<OccupancyLiquidation[]> {
+): Promise<typeof occupancyLiquidations.$inferSelect[]> {
   const database = await getDb();
   if (!database) return [];
   const conditions = [eq(occupancyLiquidations.hostUserId, hostUserId)];
@@ -8367,7 +8370,7 @@ export async function getOccupancyLiquidationsByStation(
   stationId: number,
   year?: number,
   month?: number
-): Promise<OccupancyLiquidation[]> {
+): Promise<typeof occupancyLiquidations.$inferSelect[]> {
   const database = await getDb();
   if (!database) return [];
   const conditions = [eq(occupancyLiquidations.stationId, stationId)];
@@ -8461,7 +8464,7 @@ export async function markOccupancyLiquidationsPaid(
   const database = await getDb();
   if (!database) return;
   await database.update(occupancyLiquidations)
-    .set({ allyPaidAt: new Date() })
+    .set({ allyPaidAt: new Date().toISOString() } as any)
     .where(and(
       eq(occupancyLiquidations.hostUserId, hostUserId),
       eq(occupancyLiquidations.periodYear, year),
@@ -8472,7 +8475,7 @@ export async function markOccupancyLiquidationsPaid(
 
 
 // ─── Alertas de Disponibilidad de Estaciones ──────────────────────────────────
-import { stationAvailabilityAlerts, StationAvailabilityAlert } from "../drizzle/schema";
+import { stationAvailabilityAlerts } from "../drizzle/schema";
 
 /**
  * Crea una alerta de disponibilidad para una estación.
@@ -8487,7 +8490,7 @@ export async function createAvailabilityAlert(data: {
   userName?: string;
   sendPush?: boolean;
   sendWhatsapp?: boolean;
-}): Promise<StationAvailabilityAlert | null> {
+}): Promise<typeof stationAvailabilityAlerts.$inferSelect | null> {
   const database = await getDb();
   if (!database) return null;
 
@@ -8496,7 +8499,7 @@ export async function createAvailabilityAlert(data: {
     .where(and(
       eq(stationAvailabilityAlerts.userId, data.userId),
       eq(stationAvailabilityAlerts.stationId, data.stationId),
-      eq(stationAvailabilityAlerts.status, "PENDING"),
+      eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
     ))
     .limit(1);
 
@@ -8512,11 +8515,11 @@ export async function createAvailabilityAlert(data: {
     stationName: data.stationName,
     userPhone: data.userPhone,
     userName: data.userName,
-    sendPush: data.sendPush !== false,
-    sendWhatsapp: data.sendWhatsapp !== false,
-    status: "PENDING",
-    expiresAt,
-  });
+    sendPush: data.sendPush !== false ? 1 : 0,
+    sendWhatsapp: data.sendWhatsapp !== false ? 1 : 0,
+    alertReqStatus: "PENDING",
+    expiresAt: expiresAt,
+  } as any);
 
   const insertId = (result as any).insertId;
   if (!insertId) return null;
@@ -8530,14 +8533,14 @@ export async function createAvailabilityAlert(data: {
  * Obtiene todas las alertas PENDING para una estación específica.
  * Se usa cuando OCPP reporta que un conector quedó AVAILABLE.
  */
-export async function getPendingAlertsByStation(stationId: number): Promise<StationAvailabilityAlert[]> {
+export async function getPendingAlertsByStation(stationId: number): Promise<typeof stationAvailabilityAlerts.$inferSelect[]> {
   const database = await getDb();
   if (!database) return [];
 
   return database.select().from(stationAvailabilityAlerts)
     .where(and(
       eq(stationAvailabilityAlerts.stationId, stationId),
-      eq(stationAvailabilityAlerts.status, "PENDING"),
+      eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
     ))
     .orderBy(asc(stationAvailabilityAlerts.createdAt));
 }
@@ -8550,7 +8553,7 @@ export async function markAlertSent(alertId: number): Promise<void> {
   if (!database) return;
 
   await database.update(stationAvailabilityAlerts)
-    .set({ status: "SENT", sentAt: new Date() })
+    .set({ alertReqStatus: "SENT", sentAt: new Date().toISOString() } as any)
     .where(eq(stationAvailabilityAlerts.id, alertId));
 }
 
@@ -8562,11 +8565,11 @@ export async function cancelAvailabilityAlert(alertId: number, userId: number): 
   if (!database) return false;
 
   await database.update(stationAvailabilityAlerts)
-    .set({ status: "CANCELLED" })
+    .set({ alertReqStatus: "CANCELLED" } as any)
     .where(and(
       eq(stationAvailabilityAlerts.id, alertId),
       eq(stationAvailabilityAlerts.userId, userId),
-      eq(stationAvailabilityAlerts.status, "PENDING"),
+      eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
     ));
   return true;
 }
@@ -8574,14 +8577,14 @@ export async function cancelAvailabilityAlert(alertId: number, userId: number): 
 /**
  * Obtiene todas las alertas activas (PENDING) de un usuario.
  */
-export async function getMyAvailabilityAlerts(userId: number): Promise<StationAvailabilityAlert[]> {
+export async function getMyAvailabilityAlerts(userId: number): Promise<typeof stationAvailabilityAlerts.$inferSelect[]> {
   const database = await getDb();
   if (!database) return [];
 
   return database.select().from(stationAvailabilityAlerts)
     .where(and(
       eq(stationAvailabilityAlerts.userId, userId),
-      eq(stationAvailabilityAlerts.status, "PENDING"),
+      eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
     ))
     .orderBy(desc(stationAvailabilityAlerts.createdAt));
 }
@@ -8594,10 +8597,10 @@ export async function expireOldAvailabilityAlerts(): Promise<number> {
   if (!database) return 0;
 
   const [result] = await database.update(stationAvailabilityAlerts)
-    .set({ status: "EXPIRED" })
+    .set({ alertReqStatus: "EXPIRED" } as any)
     .where(and(
-      eq(stationAvailabilityAlerts.status, "PENDING"),
-      lt(stationAvailabilityAlerts.expiresAt, new Date()),
+      eq(stationAvailabilityAlerts.alertReqStatus, "PENDING"),
+      lt(stationAvailabilityAlerts.expiresAt, new Date().toISOString()),
     ));
   return (result as any).affectedRows || 0;
 }

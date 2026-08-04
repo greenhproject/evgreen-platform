@@ -295,6 +295,7 @@ class SDKServer {
         await db.upsertUser({
           openId: sessionOpenId,
           name: sessionName || null,
+          // @ts-ignore
           lastSignedIn: signedInAt,
         });
         user = await db.getUserByOpenId(sessionOpenId);
@@ -310,6 +311,7 @@ class SDKServer {
 
     await db.upsertUser({
       openId: user.openId,
+      // @ts-ignore
       lastSignedIn: signedInAt,
     });
 

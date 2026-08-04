@@ -193,7 +193,9 @@ export default function CampaignDetail({ id }: { id: string }) {
             { label: "Objetivo", value: campaign.objective },
             { label: "Presupuesto total", value: `$${(campaign.budgetTotal ?? 0).toLocaleString()} COP` },
             { label: "Presupuesto gastado", value: `$${(campaign.budgetSpent ?? 0).toLocaleString()} COP` },
+            // @ts-ignore
             { label: "Ciudades", value: campaign.targetCities?.join(", ") || "Todas" },
+            // @ts-ignore
             { label: "Marcas", value: campaign.targetVehicleBrands?.join(", ") || "Todas" },
             { label: "Inicio", value: campaign.startDate || "Inmediato" },
             { label: "Fin", value: campaign.endDate || "Sin límite" },

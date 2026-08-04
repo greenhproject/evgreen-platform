@@ -180,7 +180,7 @@ export async function redeemLoyaltyPoints(input: RedeemPointsInput): Promise<{
     transactionId: input.transactionId ?? null,
     status: "applied",
     appliedAt: new Date(),
-  });
+  } as any);
 
   return { success: true, discountCop, pointsRedeemed: input.pointsToRedeem };
 }

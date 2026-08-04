@@ -37,7 +37,7 @@ export interface SendWhatsAppOptions {
 // ─── Obtener configuración activa ─────────────────────────────────────────────
 
 export async function getWhatsAppConfig() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const rows = await db.select().from(whatsappConfig).where(eq(whatsappConfig.id, 1)).limit(1);
   return rows[0] ?? null;
@@ -102,7 +102,7 @@ export async function sendWhatsAppTemplate(opts: SendWhatsAppTemplateOptions): P
     const userPrefKey = eventTypeToUserPrefKey(opts.eventType);
     if (userPrefKey) {
       try {
-        const db = await getDb();
+        const db = (await getDb())!;
         if (db) {
           const userRows = await db.select().from(users).where(eq(users.id, opts.userId)).limit(1);
           const user = userRows[0];

@@ -75,7 +75,7 @@ function formatCOP(amount: number): string {
  */
 async function createInAppNotification(userId: number, title: string, message: string, type: string, data?: Record<string, any>) {
   try {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) return;
     await db.insert(notifications).values({
       userId,
@@ -350,7 +350,7 @@ export async function notifyLowBalance(input: LowBalanceAlertInput): Promise<voi
 
   try {
     // Get all admins
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) return;
 
     const { users: usersTable } = await import("../../drizzle/schema");

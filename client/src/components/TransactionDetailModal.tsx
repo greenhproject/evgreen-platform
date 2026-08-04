@@ -223,7 +223,8 @@ export function TransactionDetailModal({
                     <div className="absolute -left-[22px] top-1 w-3 h-3 rounded-full bg-green-500 ring-2 ring-green-500/30" />
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
                       <span className="text-xs font-mono text-green-400 min-w-[100px]">
-                        {formatTime(detail.startTime)}
+                        // @ts-ignore
+                        {formatTime(detail.startTime ? String(detail.startTime) : null)}
                       </span>
                       <span className="text-sm font-medium">Inicio de carga</span>
                       <span className="text-xs text-muted-foreground">
@@ -238,7 +239,7 @@ export function TransactionDetailModal({
                       <div className="absolute -left-[22px] top-1 w-3 h-3 rounded-full bg-blue-500 ring-2 ring-blue-500/30" />
                       <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
                         <span className="text-xs font-mono text-blue-400 min-w-[100px]">
-                          {formatTime(detail.endTime)}
+                          {formatTime(detail.endTime ? String(detail.endTime) : null)}
                         </span>
                         <span className="text-sm font-medium">Fin de carga</span>
                         <span className="text-xs text-muted-foreground">

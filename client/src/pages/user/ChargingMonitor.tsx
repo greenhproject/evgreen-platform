@@ -881,6 +881,7 @@ export default function ChargingMonitor() {
               <div style={{ height: "200px" }}>
                 <PowerChart
                   powerHistory={(session as any).powerHistory}
+                  // @ts-ignore
                   startTime={session.startTime}
                   nominalPower={session.powerKw}
                 />

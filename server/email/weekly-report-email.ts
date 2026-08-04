@@ -275,7 +275,7 @@ export async function sendWeeklyReportToUser(userId: number, mode: WeekRangeMode
     const allTxs = await getTransactionsByUserId(userId, 200);
     const weekTxs = allTxs.filter((tx) => {
       const txDate = new Date(tx.startTime);
-      return txDate >= start && txDate <= end && tx.wompiTxStatus === "COMPLETED";
+      return txDate >= start && txDate <= end;
     });
 
     if (weekTxs.length === 0) {

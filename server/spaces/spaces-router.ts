@@ -37,7 +37,7 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 // ============================================================================
 
 async function getDatabase() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Base de datos no disponible" });
   return db;
 }
@@ -1346,7 +1346,7 @@ Responde en formato JSON con la siguiente estructura:`;
         throw new TRPCError({ code: "FORBIDDEN", message: "Solo administradores pueden generar prospectos" });
       }
 
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
 
       // Obtener datos del espacio

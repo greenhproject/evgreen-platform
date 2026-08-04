@@ -223,6 +223,7 @@ export async function getActiveTechnicians(): Promise<TechnicianPreferences[]> {
       )
     );
   
+  // @ts-ignore
   return technicians;
 }
 

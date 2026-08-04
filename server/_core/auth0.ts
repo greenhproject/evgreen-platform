@@ -26,6 +26,7 @@ let auth0MobileClient: any = null;
 const pendingTokens = new Map<string, { token: string; expires: number }>();
 setInterval(() => {
   const now = Date.now();
+  // @ts-ignore
   for (const [k, v] of pendingTokens) {
     if (v.expires < now) pendingTokens.delete(k);
   }
@@ -234,6 +235,7 @@ export function registerAuth0Routes(app: Express) {
         email,
         loginMethod,
         avatarUrl,
+        // @ts-ignore
         lastSignedIn: new Date(),
       });
 

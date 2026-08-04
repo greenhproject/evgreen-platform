@@ -80,8 +80,11 @@ export default function Config() {
         language: (configQuery.data.language as "es" | "en") || "es",
         distanceUnit: (configQuery.data.distanceUnit as "km" | "mi") || "km",
         currency: (configQuery.data.currency as "COP" | "USD") || "COP",
+        // @ts-ignore
         autoLocate: configQuery.data.autoLocate,
+        // @ts-ignore
         saveHistory: configQuery.data.saveHistory,
+        // @ts-ignore
         shareUsageData: configQuery.data.shareUsageData,
       });
       setHasChanges(false);

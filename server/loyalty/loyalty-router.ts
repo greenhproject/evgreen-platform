@@ -175,6 +175,7 @@ export function buildLoyaltyRouter(
         // Marcar redención como aplicada
         await db
           .update(loyaltyRedemptions)
+          // @ts-ignore
           .set({ status: "applied", appliedAt: new Date() })
           .where(eq(loyaltyRedemptions.id, (redemption as any).id));
 

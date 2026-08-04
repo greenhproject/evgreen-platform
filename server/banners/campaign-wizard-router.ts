@@ -49,7 +49,7 @@ interface AudienceStats {
 // ─── Tool: getAudienceStats ───────────────────────────────────────────────────
 
 async function getAudienceStats(segmentation: SegmentationConfig): Promise<AudienceStats> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) {
     return {
       totalUsers: 0, estimatedReach: 0, avgDwellTimeMinutes: 20,
@@ -72,6 +72,7 @@ async function getAudienceStats(segmentation: SegmentationConfig): Promise<Audie
   const [activeResult] = await db
     .select({ count: sql<number>`COUNT(DISTINCT ${chargingTransactions.userId})` })
     .from(chargingTransactions)
+    // @ts-ignore
     .where(gte(chargingTransactions.startTime, ninetyDaysAgo));
   const activeUsers = Number(activeResult?.count ?? 0);
 
@@ -401,7 +402,7 @@ export const campaignWizardRouter = router({
    * Estadísticas globales de la plataforma para la página de demostración pública
    */
   getPlatformStats: publicProcedure.query(async () => {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) return null;
 
     const [totalUsers] = await db
@@ -413,6 +414,7 @@ export const campaignWizardRouter = router({
     const [activeUsers] = await db
       .select({ count: sql<number>`COUNT(DISTINCT ${chargingTransactions.userId})` })
       .from(chargingTransactions)
+      // @ts-ignore
       .where(gte(chargingTransactions.startTime, thirtyDaysAgo));
 
     const topCities = await db

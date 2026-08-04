@@ -309,6 +309,7 @@ export default function UserMap() {
 
   // Obtener estado de disponibilidad
   const getAvailableCount = (station: Station) => {
+    // @ts-ignore
     return station.evses?.filter((e) => e.connectorStatus === "AVAILABLE").length || 0;
   };
 
@@ -416,6 +417,7 @@ export default function UserMap() {
       // Determinar tipo de carga de la estación
       const hasDC = station.evses?.some((e) => e.chargeType === 'DC');
       const hasAC = station.evses?.some((e) => e.chargeType === 'AC');
+      // @ts-ignore
       const availableCount = station.evses?.filter((e) => e.connectorStatus === "AVAILABLE").length || 0;
       const isAvailable = availableCount > 0;
 

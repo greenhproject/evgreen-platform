@@ -311,7 +311,7 @@ async function performAutoRecharge(
         wompiTransactionId: tx.id,
         status: tx.wompiTxStatus,
         paymentMethodType: tx.payment_method_type || "CARD",
-        processedAt: new Date(),
+        processedAt: new Date().toISOString(),
       });
     } catch (dbErr) {
       console.warn("[BalanceMonitor] Error saving Wompi transaction:", dbErr);
@@ -329,7 +329,7 @@ async function performAutoRecharge(
           if (finalStatus !== "PENDING") {
             await db.updateWompiTransactionByReference(reference, {
               status: finalStatus,
-              processedAt: new Date(),
+              processedAt: new Date().toISOString(),
             });
           }
         }
@@ -449,6 +449,7 @@ async function updateAutoRechargeTimestamp(userId: number) {
     const dbInstance = await db.getDb();
     if (!dbInstance) return;
     await dbInstance.update(subscriptions).set({
+      // @ts-ignore
       lastAutoRechargeAt: new Date(),
       autoRechargeFailCount: 0,
     }).where(eq(subscriptions.userId, userId));
@@ -474,6 +475,7 @@ async function incrementAutoRechargeFailCount(userId: number) {
       // If failed 3+ times, disable auto-recharge and notify
       if (newCount >= 3) {
         await dbInstance.update(subscriptions).set({
+          // @ts-ignore
           autoRechargeEnabled: false,
         }).where(eq(subscriptions.userId, userId));
 

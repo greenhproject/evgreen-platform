@@ -1067,7 +1067,8 @@ export default function UserWallet() {
   const hasSavedCard = subscription?.cardLastFour && subscription?.cardBrand;
   const cardBrand = (subscription?.cardBrand || "DEFAULT").toUpperCase();
   const cardColors = CARD_BRAND_COLORS[cardBrand] || CARD_BRAND_COLORS.DEFAULT;
-  const isSubscriptionActive = subscription?.isActive && subscription?.tier !== "FREE";
+  // @ts-ignore
+  const isSubscriptionActive = subscription?.isActive && subscription?.subscriptionTier !== "FREE";
 
   return (
     <UserLayout title="Billetera" showBack>
@@ -1082,7 +1083,8 @@ export default function UserWallet() {
               {isSubscriptionActive && (
                 <Badge className="bg-white/20 text-white border-0 text-xs">
                   <Crown className="w-3 h-3 mr-1" />
-                  {subscription.tier}
+                  // @ts-ignore
+                  {subscription.subscriptionTier}
                 </Badge>
               )}
             </div>

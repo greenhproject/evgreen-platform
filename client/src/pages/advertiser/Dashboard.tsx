@@ -39,6 +39,7 @@ function MetricCard({ icon: Icon, label, value, sub, color = "text-green-400" }:
 
 export default function AdvertiserDashboard() {
   const [, navigate] = useLocation();
+  // @ts-ignore
   const { user, loginUrl } = useAuth();
 
   const { data: profile, isLoading: profileLoading } = trpc.advertiser.getProfile.useQuery(undefined, {

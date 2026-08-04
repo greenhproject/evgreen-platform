@@ -89,7 +89,7 @@ export const ConnectorStateService = {
   async transition(options: TransitionOptions): Promise<boolean> {
     const { evseId, newStatus, triggeredBy, reason, transactionId, ocppMessageType, force } = options;
 
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) {
       console.error(`[ConnectorState] DB no disponible para evseId=${evseId}`);
       return false;
@@ -184,7 +184,7 @@ export const ConnectorStateService = {
    * Usado cuando el cargador reporta InternalError en connectorId=0.
    */
   async faultAllEvses(stationId: number, triggeredBy: TriggeredBy, reason?: string): Promise<void> {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) return;
 
     const stationEvses = await db
@@ -214,7 +214,7 @@ export const ConnectorStateService = {
    * Marca todos los EVSEs de una estación como UNAVAILABLE (ej: estación offline).
    */
   async setAllUnavailable(stationId: number, triggeredBy: TriggeredBy, reason?: string): Promise<void> {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) return;
 
     const stationEvses = await db
@@ -238,7 +238,7 @@ export const ConnectorStateService = {
    * Obtiene el historial de estados de un EVSE (últimas N entradas).
    */
   async getHistory(evseId: number, limit = 20) {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) return [];
     return db
       .select()

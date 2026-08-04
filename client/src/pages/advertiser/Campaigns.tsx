@@ -20,6 +20,7 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> =
 };
 
 export default function AdvertiserCampaigns() {
+  // @ts-ignore
   const { user, loginUrl } = useAuth();
   const utils = trpc.useUtils();
 

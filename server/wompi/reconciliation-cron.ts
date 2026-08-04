@@ -89,7 +89,7 @@ export async function reconcilePendingTransactions(): Promise<{
           // Actualizar estado en BD
           await db.updateWompiTransactionByReference(tx.reference, {
             status: "APPROVED",
-            processedAt: new Date(),
+            processedAt: new Date().toISOString(),
           });
 
           // Verificar si ya fue acreditada (evitar doble acreditación)

@@ -51,7 +51,7 @@ export interface ProgressNotificationResult {
  * Obtener inversionistas de un proyecto específico
  */
 async function getProjectInvestors(projectId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
 
   const result = await db.execute(sql`
@@ -76,7 +76,7 @@ async function getProjectInvestors(projectId: number) {
  * Obtener todos los inversionistas (para notificaciones de proyectos nuevos o completados)
  */
 async function getAllInvestors() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
 
   return db
@@ -151,7 +151,7 @@ export async function sendProgressNotification(
   milestone: ProgressMilestone,
   notifyAllInvestors: boolean = false
 ): Promise<ProgressNotificationResult> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("Database not available");
 
   const result: ProgressNotificationResult = {

@@ -119,7 +119,8 @@ export async function exportCampaignExcel(
 
   const infoRows = [
     ["Nombre del banner", banner.title],
-    ["Tipo", banner.type],
+    // @ts-ignore
+    ["Tipo", banner.bannerType],
     ["Estado", banner.status],
     ["Anunciante", banner.advertiserName || "—"],
     ["Contacto", banner.advertiserContact || "—"],
@@ -293,7 +294,8 @@ export function exportCampaignPdf(
     head: [],
     body: [
       ["Banner", banner.title],
-      ["Tipo", banner.type],
+      // @ts-ignore
+      ["Tipo", banner.bannerType],
       ["Estado", banner.status],
       ["Anunciante", banner.advertiserName || "—"],
       ["Contacto", banner.advertiserContact || "—"],

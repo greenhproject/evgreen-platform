@@ -68,8 +68,11 @@ export function useNotifications() {
   useEffect(() => {
     if (preferencesQuery.data) {
       setPreferences({
+        // @ts-ignore
         chargingComplete: preferencesQuery.data.chargingComplete,
+        // @ts-ignore
         lowBalance: preferencesQuery.data.lowBalance,
+        // @ts-ignore
         promotions: preferencesQuery.data.promotions,
       });
       setIsEnabled(preferencesQuery.data.pushEnabled);

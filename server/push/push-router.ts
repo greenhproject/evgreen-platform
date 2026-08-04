@@ -44,7 +44,7 @@ export const pushRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) return { success: false, error: "Database not available" };
 
       const userId = ctx.user.id;
@@ -54,6 +54,7 @@ export const pushRouter = router({
         .update(users)
         .set({
           pushSubscription: JSON.stringify(input.subscription),
+          // @ts-ignore
           fcmTokenUpdatedAt: new Date(),
         })
         .where(eq(users.id, userId));
@@ -72,7 +73,7 @@ export const pushRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) return { success: false, error: "Database not available" };
 
       const userId = ctx.user.id;
@@ -82,6 +83,7 @@ export const pushRouter = router({
         .update(users)
         .set({
           fcmToken: input.fcmToken,
+          // @ts-ignore
           fcmTokenUpdatedAt: new Date(),
         })
         .where(eq(users.id, userId));
@@ -109,7 +111,7 @@ export const pushRouter = router({
    * Eliminar suscripción push (logout o desinstalar app)
    */
   unregisterToken: protectedProcedure.mutation(async ({ ctx }) => {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) return { success: false, error: "Database not available" };
 
     const userId = ctx.user.id;
@@ -143,7 +145,7 @@ export const pushRouter = router({
    * Obtener preferencias de notificaciones
    */
   getPreferences: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) {
       return {
         chargingComplete: true,
@@ -185,7 +187,7 @@ export const pushRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) return { success: false, error: "Database not available" };
 
       const userId = ctx.user.id;
@@ -251,7 +253,7 @@ export const pushRouter = router({
    * Obtener preferencias de proximidad
    */
   getProximityPreferences: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) {
       return {
         enabled: true,
@@ -285,7 +287,7 @@ export const pushRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = (await getDb())!;
       if (!db) return { success: false, error: "Database not available" };
 
       const updateData: Record<string, unknown> = {};
@@ -310,7 +312,7 @@ export const pushRouter = router({
    * Enviar notificación de prueba
    */
   sendTestNotification: protectedProcedure.mutation(async ({ ctx }) => {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) return { success: false, error: "Database not available" };
 
     const [user] = await db

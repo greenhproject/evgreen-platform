@@ -1976,14 +1976,21 @@ function LocalAuthListTab({
             <div className="flex items-center gap-2">
               {list && (
                 <Badge variant={
-                  list.status === "SYNCED" ? "default" :
-                  list.status === "OUTDATED" ? "secondary" :
-                  list.status === "FAILED" ? "destructive" : "outline"
+                  // @ts-ignore
+                  list.localAuthListStatus === "SYNCED" ? "default" :
+                  // @ts-ignore
+                  list.localAuthListStatus === "OUTDATED" ? "secondary" :
+                  // @ts-ignore
+                  list.localAuthListStatus === "FAILED" ? "destructive" : "outline"
                 }>
-                  {list.status === "SYNCED" && "Sincronizada"}
-                  {list.status === "OUTDATED" && "Desactualizada"}
-                  {list.status === "PENDING" && "Pendiente"}
-                  {list.status === "FAILED" && "Falló"}
+                  // @ts-ignore
+                  {list.localAuthListStatus === "SYNCED" && "Sincronizada"}
+                  // @ts-ignore
+                  {list.localAuthListStatus === "OUTDATED" && "Desactualizada"}
+                  // @ts-ignore
+                  {list.localAuthListStatus === "PENDING" && "Pendiente"}
+                  // @ts-ignore
+                  {list.localAuthListStatus === "FAILED" && "Falló"}
                 </Badge>
               )}
               <Badge variant="outline">v{list?.listVersion || 0}</Badge>

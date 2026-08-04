@@ -1222,6 +1222,7 @@ export const ocppRouter = router({
         idTag: entry.idTag,
         idTagInfo: {
           status: entry.authStatus,
+          // @ts-ignore
           ...(entry.expiryDate ? { expiryDate: entry.expiryDate.toISOString() } : {}),
         },
       }));

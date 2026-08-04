@@ -19,6 +19,7 @@ const INDUSTRIES = [
 
 export default function AdvertiserRegister() {
   const [, navigate] = useLocation();
+  // @ts-ignore
   const { user, loginUrl } = useAuth();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({

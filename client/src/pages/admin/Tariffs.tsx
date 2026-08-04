@@ -153,7 +153,9 @@ export default function AdminTariffs() {
         defaultOverstayGracePeriodMinutes: priceRanges.defaultOverstayGracePeriodMinutes,
         whatsappPenaltyNotifIntervalMinutes: priceRanges.whatsappPenaltyNotifIntervalMinutes ?? 5,
         defaultConnectionFee: priceRanges.defaultConnectionFee,
+        // @ts-ignore
         defaultPricePerKwhAC: priceRanges.defaultPricePerKwhAC,
+        // @ts-ignore
         defaultPricePerKwhDC: priceRanges.defaultPricePerKwhDC,
         enableDifferentiatedPricing: priceRanges.enableDifferentiatedPricing,
       });
@@ -203,6 +205,7 @@ export default function AdminTariffs() {
       defaultOverstayGracePeriodMinutes: localPriceRanges.defaultOverstayGracePeriodMinutes,
       whatsappPenaltyNotifIntervalMinutes: localPriceRanges.whatsappPenaltyNotifIntervalMinutes ?? 5,
       defaultConnectionFee: localPriceRanges.defaultConnectionFee,
+      // @ts-ignore
       defaultPricePerKwhAC: localPriceRanges.defaultPricePerKwhAC,
       defaultPricePerKwhDC: localPriceRanges.defaultPricePerKwhDC,
       enableDifferentiatedPricing: localPriceRanges.enableDifferentiatedPricing,

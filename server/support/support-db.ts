@@ -22,21 +22,21 @@ type InsertChargerProblemReport = typeof chargerProblemReports.$inferInsert;
 // ============================================================================
 
 export async function createTicket(ticket: InsertSupportTicket) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("DB not available");
   const result = await db.insert(supportTickets).values(ticket);
   return result[0].insertId;
 }
 
 export async function getTicketById(id: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const rows = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
   return rows[0] || null;
 }
 
 export async function getTicketsByUserId(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select().from(supportTickets)
     .where(eq(supportTickets.userId, userId))
@@ -44,7 +44,7 @@ export async function getTicketsByUserId(userId: number) {
 }
 
 export async function getAllTickets(filters?: { status?: string; category?: string; assignedToId?: number; excludeAiHandling?: boolean }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   const conditions = [];
   if (filters?.status) conditions.push(eq(supportTickets.status, filters.status));
@@ -85,13 +85,13 @@ export async function getAllTickets(filters?: { status?: string; category?: stri
 }
 
 export async function updateTicket(id: number, data: Partial<InsertSupportTicket>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("DB not available");
   await db.update(supportTickets).set(data).where(eq(supportTickets.id, id));
 }
 
 export async function getTicketWithMessages(ticketId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const ticket = await db.select().from(supportTickets).where(eq(supportTickets.id, ticketId));
   if (!ticket[0]) return null;
@@ -138,14 +138,14 @@ export async function getTicketWithMessages(ticketId: number) {
 // ============================================================================
 
 export async function createMessage(msg: InsertSupportMessage) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("DB not available");
   const result = await db.insert(supportMessages).values(msg);
   return result[0].insertId;
 }
 
 export async function getMessagesByTicketId(ticketId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select({
     id: supportMessages.id,
@@ -165,7 +165,7 @@ export async function getMessagesByTicketId(ticketId: number) {
 }
 
 export async function markMessagesAsRead(ticketId: number, readerRole: string) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   // Mark messages from the OTHER side as read
   const oppositeRole = readerRole === "user" ? "agent" : "user";
@@ -179,7 +179,7 @@ export async function markMessagesAsRead(ticketId: number, readerRole: string) {
 }
 
 export async function getUnreadCountForUser(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return 0;
   // Get all tickets for this user that have unread agent messages
   const result = await db.select({ cnt: count() })
@@ -194,7 +194,7 @@ export async function getUnreadCountForUser(userId: number) {
 }
 
 export async function getUnreadCountForAdmin() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return 0;
   // Count ALL unread user messages (tech now sees all tickets including AI_HANDLING)
   const result = await db.select({ cnt: count() })
@@ -211,7 +211,7 @@ export async function getUnreadCountForAdmin() {
 // ============================================================================
 
 export async function getAvailableAgent(): Promise<{ userId: number; agentId: number } | null> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
 
   const now = new Date();
@@ -247,7 +247,7 @@ export async function getAvailableAgent(): Promise<{ userId: number; agentId: nu
 }
 
 export async function incrementAgentTicketCount(agentId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(supportAgents)
     .set({
@@ -258,7 +258,7 @@ export async function incrementAgentTicketCount(agentId: number) {
 }
 
 export async function decrementAgentTicketCount(agentId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(supportAgents)
     .set({
@@ -268,7 +268,7 @@ export async function decrementAgentTicketCount(agentId: number) {
 }
 
 export async function getAllAgents() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   return db.select({
     id: supportAgents.id,
@@ -289,7 +289,7 @@ export async function getAllAgents() {
 }
 
 export async function upsertAgent(data: InsertSupportAgent) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("DB not available");
   // Check if agent exists for this user
   const existing = await db.select().from(supportAgents).where(eq(supportAgents.userId, data.userId));
@@ -302,7 +302,7 @@ export async function upsertAgent(data: InsertSupportAgent) {
 }
 
 export async function updateAgentStatus(userId: number, isOnline: boolean) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   await db.update(supportAgents)
     .set({ isOnline: isOnline ? 1 : 0 })
@@ -310,7 +310,7 @@ export async function updateAgentStatus(userId: number, isOnline: boolean) {
 }
 
 export async function getAgentByUserId(userId: number) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
   const rows = await db.select().from(supportAgents).where(eq(supportAgents.userId, userId));
   return rows[0] || null;
@@ -325,7 +325,7 @@ export async function getAgentByUserId(userId: number) {
  * Called during escalation to ensure there's always an agent available.
  */
 export async function autoRegisterAllTechnicians(): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   const existingAgents = await db.select().from(supportAgents);
   if (existingAgents.length > 0) return; // Already have agents
@@ -357,7 +357,7 @@ export async function autoRegisterAllTechnicians(): Promise<void> {
 }
 
 export async function ensureAgentRegistered(userId: number): Promise<void> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return;
   const existing = await db.select().from(supportAgents).where(eq(supportAgents.userId, userId));
   if (existing.length === 0) {
@@ -384,14 +384,14 @@ export async function ensureAgentRegistered(userId: number): Promise<void> {
 // ============================================================================
 
 export async function createProblemReport(report: InsertChargerProblemReport) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("DB not available");
   const result = await db.insert(chargerProblemReports).values(report);
   return result[0].insertId;
 }
 
 export async function getProblemReports(filters?: { status?: string; stationId?: number }) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
   const conditions = [];
   if (filters?.status) conditions.push(eq(chargerProblemReports.status, filters.status));
@@ -406,7 +406,7 @@ export async function getProblemReports(filters?: { status?: string; stationId?:
 }
 
 export async function updateProblemReport(id: number, data: Partial<InsertChargerProblemReport>) {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) throw new Error("DB not available");
   await db.update(chargerProblemReports).set(data).where(eq(chargerProblemReports.id, id));
 }
@@ -416,7 +416,7 @@ export async function updateProblemReport(id: number, data: Partial<InsertCharge
 // ============================================================================
 
 export async function getSupportSettings() {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return { supportEmail: "soporte@greenhproject.com", supportPhone: "+573001234567", supportAutoAssign: true };
   const { platformSettings: ps } = await import("../../drizzle/schema");
   const rows = await db.select({

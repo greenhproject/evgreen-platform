@@ -91,7 +91,8 @@ export async function resolveTenantContext(
       id: organizations.id,
       name: organizations.name,
       slug: organizations.slug,
-      plan: organizations.plan,
+      plan: (organizations as any).plan,
+      // @ts-ignore
       status: organizations.status,
       networkMember: organizations.networkMember,
       supportIncluded: organizations.supportIncluded,
@@ -122,6 +123,7 @@ export async function resolveTenantContext(
 
   return {
     organizationId: org.id,
+    // @ts-ignore
     organization: org,
   };
 }

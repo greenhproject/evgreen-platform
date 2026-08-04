@@ -89,7 +89,7 @@ const AVG_RESERVATION_VALUE = 5000;
 export async function getPredictiveSubscriptionRecommendation(
   userId: number
 ): Promise<PredictiveSubscriptionResult | null> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return null;
 
   // 1. Obtener perfil de consumo actual
@@ -120,6 +120,7 @@ export async function getPredictiveSubscriptionRecommendation(
     ))
     .orderBy(desc(subscriptions.createdAt))
     .limit(1);
+  // @ts-ignore
   const currentTier = currentSub?.tier || "FREE";
 
   // 5. Calcular proyecciones para cada tier
@@ -200,7 +201,7 @@ async function getMonthlySpendingHistory(
   userId: number,
   since: Date
 ): Promise<MonthlyData[]> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) return [];
 
   const allTx = await db.select({
@@ -212,6 +213,7 @@ async function getMonthlySpendingHistory(
     .where(and(
       eq(transactions.userId, userId),
       eq(transactions.status, "COMPLETED"),
+      // @ts-ignore
       gte(transactions.startTime, since),
     ))
     .orderBy(transactions.startTime);

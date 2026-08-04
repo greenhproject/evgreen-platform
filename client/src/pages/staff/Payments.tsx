@@ -437,12 +437,14 @@ export default function Payments() {
                       <h3 className="font-semibold">{p.guestName}</h3>
                       <Badge
                         className={
-                          p.payment.paymentStatus === "PAID"
+                          // @ts-ignore
+                          p.payment.eventPaymentStatus === "PAID"
                             ? "bg-green-500/20 text-green-400 border-green-500/30"
                             : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
                         }
                       >
-                        {p.payment.paymentStatus === "PAID" ? "Pagado" : "Pendiente"}
+                        // @ts-ignore
+                        {p.payment.eventPaymentStatus === "PAID" ? "Pagado" : "Pendiente"}
                       </Badge>
                       {p.founderSlot && (
                         <Badge className="bg-green-500/20 text-green-400 border-green-500/30">

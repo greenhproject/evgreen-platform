@@ -153,7 +153,7 @@ export async function autoChargeIfNeeded(
         wompiTransactionId: tx.id,
         status: tx.wompiTxStatus,
         paymentMethodType: tx.payment_method_type || "CARD",
-        processedAt: new Date(),
+        processedAt: new Date().toISOString(),
       });
     } catch (dbErr) {
       console.warn("[AutoCharge] Error guardando transacción:", dbErr);

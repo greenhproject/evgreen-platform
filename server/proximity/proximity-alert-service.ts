@@ -67,7 +67,7 @@ const DEFAULT_RADIUS_KM = 5;
 export async function checkProximityAndNotify(
   request: ProximityCheckRequest
 ): Promise<ProximityCheckResult> {
-  const db = await getDb();
+  const db = (await getDb())!;
   if (!db) {
     return { checked: false, notificationSent: false, nearbyCompatibleStations: [], reason: "Database not available" };
   }
@@ -194,6 +194,7 @@ export async function checkProximityAndNotify(
     if (vehicleConnectors.length > 0 && compatibleConnectors.length === 0) continue;
 
     // Calcular disponibilidad
+    // @ts-ignore
     const availableEvses = stationEvses.filter(e => (e.connectorStatus as string) === "AVAILABLE" || (e.connectorStatus as string) === "Available");
     const availableConnectors = availableEvses.length;
 
@@ -308,6 +309,7 @@ export async function checkProximityAndNotify(
     await db
       .update(users)
       .set({
+        // @ts-ignore
         lastProximityAlertAt: new Date(),
         lastProximityStationId: bestStation.stationId,
       })

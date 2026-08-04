@@ -30,7 +30,7 @@ interface TicketEmailParams {
 
 async function getAdminEmails(): Promise<string[]> {
   try {
-    const db = await getDb();
+    const db = (await getDb())!;
     if (!db) return [];
     const admins = await db.select({ email: users.email })
       .from(users)

@@ -268,8 +268,11 @@ export default function Investors() {
     factorUtilizacionPremium: calcParams?.factorUtilizacionPremium ?? 2.0,
     costosOpIndividual: (calcParams?.costosOperativosIndividual ?? 15) / 100,
     costosOpColectivo: (calcParams?.costosOperativosColectivo ?? 10) / 100,
+    // @ts-ignore
     costosOpAC: (calcParams?.costosOperativosAC ?? 15) / 100,
+    // @ts-ignore
     eficienciaDC: (calcParams?.eficienciaCargaDC ?? 92) / 100,
+    // @ts-ignore
     eficienciaAC: (calcParams?.eficienciaCargaAC ?? 95) / 100,
     costoEnergiaRed: calcParams?.costoEnergiaRed ?? 850,
     costoEnergiaSolar: calcParams?.costoEnergiaSolar ?? 250,

@@ -334,7 +334,7 @@ export const wompiRouter = router({
           wompiTransactionId: tx.id,
           status: tx.wompiTxStatus,
           paymentMethodType: tx.payment_method_type,
-          processedAt: new Date(),
+          processedAt: new Date().toISOString(),
         });
 
         if (tx.wompiTxStatus !== WOMPI_TRANSACTION_STATUS.APPROVED) {
@@ -591,7 +591,7 @@ export const wompiRouter = router({
                 wompiTransactionId: tx.id,
                 status: tx.wompiTxStatus,
                 paymentMethodType: tx.payment_method_type || "CARD",
-                processedAt: new Date(),
+                processedAt: new Date().toISOString(),
               });
             } catch (dbErr) {
               console.warn("[Wompi] Error guardando transacción de suscripción directa:", dbErr);
@@ -611,7 +611,7 @@ export const wompiRouter = router({
                     if (finalStatus !== "PENDING") {
                       await db.updateWompiTransactionByReference(directRef, {
                         status: finalStatus,
-                        processedAt: new Date(),
+                        processedAt: new Date().toISOString(),
                       });
                       break;
                     }
@@ -764,7 +764,7 @@ export const wompiRouter = router({
           wompiTransactionId: tx.id,
           status: tx.wompiTxStatus,
           paymentMethodType: tx.payment_method_type,
-          processedAt: new Date(),
+          processedAt: new Date().toISOString(),
         });
 
         if (tx.wompiTxStatus !== WOMPI_TRANSACTION_STATUS.APPROVED) {
@@ -844,7 +844,7 @@ export const wompiRouter = router({
         subscriptionStatus: "CANCELLED_PENDING",
         cancellationRequestedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
         cancellationEffectiveDate: effectiveDate ?? null,
-      })
+      } as any)
       .where(eq(subscriptions.userId, ctx.user.id));
     // Notificación push + in-app
     try {
@@ -897,7 +897,7 @@ export const wompiRouter = router({
         subscriptionStatus: "ACTIVE",
         cancellationRequestedAt: null,
         cancellationEffectiveDate: null,
-      })
+      } as any)
       .where(eq(subscriptions.userId, ctx.user.id));
     try {
       await db.createNotification({
@@ -950,7 +950,7 @@ export const wompiRouter = router({
         failedPaymentCount: 0,
         lastPaymentDate: now.toISOString().slice(0, 19).replace("T", " "),
         nextBillingDate: nextBilling.toISOString().slice(0, 19).replace("T", " "),
-      })
+      } as any)
       .where(eq(subscriptions.userId, ctx.user.id));
     try {
       await db.createNotification({
@@ -1196,7 +1196,7 @@ export const wompiRouter = router({
             wompiTransactionId: tx.id,
             status: tx.wompiTxStatus,
             paymentMethodType: tx.payment_method_type || "CARD",
-            processedAt: new Date(),
+            processedAt: new Date().toISOString(),
           });
         } catch (dbErr) {
           console.warn("[Wompi] Error guardando transacción de recarga rápida:", dbErr);
@@ -1218,7 +1218,7 @@ export const wompiRouter = router({
                 if (finalStatus !== "PENDING") {
                   await db.updateWompiTransactionByReference(reference, {
                     status: finalStatus,
-                    processedAt: new Date(),
+                    processedAt: new Date().toISOString(),
                   });
                   break; // Salir del loop si ya no está PENDING
                 }
@@ -1505,7 +1505,7 @@ export const wompiRouter = router({
           // Actualizar estado en BD
           await db.updateWompiTransactionByReference(tx.reference, {
             status: "APPROVED",
-            processedAt: new Date(),
+            processedAt: new Date().toISOString(),
           });
 
           // Verificar si ya fue acreditada
