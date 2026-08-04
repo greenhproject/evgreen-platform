@@ -219,6 +219,8 @@ function getHomeRouteByRole(role: string | undefined): string {
       return "/host";
     case "comercial":
       return "/gestor";
+    case "advertiser":
+      return "/advertiser/dashboard";
     case "user":
     default:
       return "/map";
@@ -1537,15 +1539,40 @@ function Router() {
           </ProtectedRoute>
         </Route>
 
-        {/* Portal de Anunciantes */}
-        <Route path="/advertiser/register" component={AdvertiserRegister} />
-        <Route path="/advertiser/dashboard" component={AdvertiserDashboard} />
-        <Route path="/advertiser/campaigns/new" component={AdvertiserNewCampaign} />
-        <Route path="/advertiser/campaigns/:id">
-          {(params) => <AdvertiserCampaignDetail id={params.id ?? ""} />}
+        {/* Portal de Anunciantes — /register accesible para cualquier usuario autenticado */}
+        <Route path="/advertiser/register">
+          <ProtectedRoute allowedRoles={["user", "advertiser", "admin", "staff", "investor", "technician", "engineer", "host", "comercial"]}>
+            <AdvertiserRegister />
+          </ProtectedRoute>
         </Route>
-        <Route path="/advertiser/campaigns" component={AdvertiserCampaigns} />
-        <Route path="/advertiser" component={AdvertiserDashboard} />
+        {/* Rutas protegidas: solo rol advertiser (o admin para testing) */}
+        <Route path="/advertiser/dashboard">
+          <ProtectedRoute allowedRoles={["advertiser", "admin"]}>
+            <AdvertiserDashboard />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/advertiser/campaigns/new">
+          <ProtectedRoute allowedRoles={["advertiser", "admin"]}>
+            <AdvertiserNewCampaign />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/advertiser/campaigns/:id">
+          {(params) => (
+            <ProtectedRoute allowedRoles={["advertiser", "admin"]}>
+              <AdvertiserCampaignDetail id={params.id ?? ""} />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/advertiser/campaigns">
+          <ProtectedRoute allowedRoles={["advertiser", "admin"]}>
+            <AdvertiserCampaigns />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/advertiser">
+          <ProtectedRoute allowedRoles={["advertiser", "admin"]}>
+            <AdvertiserDashboard />
+          </ProtectedRoute>
+        </Route>
 
         {/* 404 */}
         <Route path="/404" component={NotFound} />

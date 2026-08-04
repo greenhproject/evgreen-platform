@@ -135,7 +135,7 @@ export default function AdvertiserRegister() {
       </div>
 
       {/* Right panel — form */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
         <div className="w-full max-w-md">
           {/* Steps indicator */}
           <div className="flex items-center gap-2 mb-8">

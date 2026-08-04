@@ -422,7 +422,7 @@ export default function NewCampaign() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
               <div>
                 <Label className="text-white/70 text-sm">Fecha de inicio</Label>
                 <Input
