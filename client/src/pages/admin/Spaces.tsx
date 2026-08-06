@@ -21,7 +21,7 @@ import {
   ChevronRight, Building2, Phone, Mail, Camera, BarChart3,
   TrendingUp, DollarSign, ArrowUpRight, ExternalLink, RefreshCw,
   ChevronDown, X, Pencil, Trash2, AlertTriangle, Users, Download,
-  CheckSquare, Square, Minus, SlidersHorizontal, Calendar, FileDown, Settings2,
+  CheckSquare, Square, Minus, SlidersHorizontal, Calendar, FileDown, Settings2, Plus,
 } from "lucide-react";
 
 // ============================================================================
@@ -78,6 +78,16 @@ export default function AdminSpaces() {
   const [cityFilter, setCityFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
+
+  // Create manual space dialog
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    spaceName: "", spaceType: "parking", address: "", city: "", department: "",
+    submitterName: "", submitterEmail: "", submitterPhone: "",
+    submitterCompany: "", latitude: "", longitude: "",
+    transformerCapacityKva: "", parkingSpots: "", availableAreaM2: "",
+    estimatedDailyVehicles: "", socioeconomicStratum: "",
+  });
   const [dateTo, setDateTo] = useState("");
   const [scoreFilter, setScoreFilter] = useState<"all" | "scored" | "unscored">("all");
 
@@ -128,6 +138,22 @@ export default function AdminSpaces() {
       toast.success(`Score asignado a ${res.updatedCount} espacios`);
       setSelectedIds(new Set());
       setShowBulkScoreDialog(false);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const createSpaceMutation = trpc.spaces.submit.useMutation({
+    onSuccess: (res) => {
+      toast.success(`Espacio creado: ${res.code}`);
+      setShowCreateDialog(false);
+      setCreateForm({
+        spaceName: "", spaceType: "parking", address: "", city: "", department: "",
+        submitterName: "", submitterEmail: "", submitterPhone: "",
+        submitterCompany: "", latitude: "", longitude: "",
+        transformerCapacityKva: "", parkingSpots: "", availableAreaM2: "",
+        estimatedDailyVehicles: "", socioeconomicStratum: "",
+      });
       refetch();
     },
     onError: (err) => toast.error(err.message),
@@ -185,13 +211,21 @@ export default function AdminSpaces() {
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <Button
+            onClick={() => setShowCreateDialog(true)}
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+          >
+            <Plus className="w-4 h-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">Crear</span>
+          </Button>
+          <Button
             onClick={() => setShowFilters(!showFilters)}
             variant="outline"
             size="sm"
             className={`border-[#374151] text-gray-300 ${showFilters ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : ""}`}
           >
-            <SlidersHorizontal className="w-4 h-4 mr-1.5" />
-            Filtros
+            <SlidersHorizontal className="w-4 h-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">Filtros</span>
             {activeFiltersCount > 0 && (
               <span className="ml-1.5 bg-emerald-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
                 {activeFiltersCount}
@@ -199,8 +233,8 @@ export default function AdminSpaces() {
             )}
           </Button>
           <Button onClick={() => refetch()} variant="outline" size="sm" className="border-[#374151] text-gray-300">
-            <RefreshCw className="w-4 h-4 mr-1.5" />
-            Actualizar
+            <RefreshCw className="w-4 h-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">Actualizar</span>
           </Button>
         </div>
       </div>
@@ -722,6 +756,149 @@ export default function AdminSpaces() {
             >
               {bulkAssignScoreMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Star className="w-4 h-4 mr-1" />}
               Asignar Score
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== DIALOG CREAR ESPACIO MANUAL ===== */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Plus className="w-5 h-5 text-emerald-400" />
+              Crear Espacio Manualmente
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Datos del espacio */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
+              <p className="text-emerald-400 text-xs font-semibold mb-2 uppercase tracking-wide">Datos del Espacio</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="sm:col-span-2">
+                  <Label className="text-gray-300 text-xs mb-1 block">Nombre del espacio *</Label>
+                  <Input value={createForm.spaceName} onChange={e => setCreateForm(p => ({ ...p, spaceName: e.target.value }))} placeholder="Ej: Centro Comercial Unicentro" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Tipo *</Label>
+                  <Select value={createForm.spaceType} onValueChange={v => setCreateForm(p => ({ ...p, spaceType: v }))}>
+                    <SelectTrigger className="bg-[#111827] border-[#374151] text-white text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1f2937] border-[#374151]">
+                      {Object.entries(SPACE_TYPE_LABELS).map(([k, v]) => (
+                        <SelectItem key={k} value={k} className="text-white">{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Ciudad *</Label>
+                  <Input value={createForm.city} onChange={e => setCreateForm(p => ({ ...p, city: e.target.value }))} placeholder="Ej: Bogotá" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label className="text-gray-300 text-xs mb-1 block">Dirección *</Label>
+                  <Input value={createForm.address} onChange={e => setCreateForm(p => ({ ...p, address: e.target.value }))} placeholder="Ej: Cra 15 #124-30" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Departamento</Label>
+                  <Input value={createForm.department} onChange={e => setCreateForm(p => ({ ...p, department: e.target.value }))} placeholder="Ej: Cundinamarca" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Estrato</Label>
+                  <Input type="number" min={1} max={6} value={createForm.socioeconomicStratum} onChange={e => setCreateForm(p => ({ ...p, socioeconomicStratum: e.target.value }))} placeholder="1-6" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+              </div>
+            </div>
+
+            {/* Datos técnicos */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
+              <p className="text-yellow-400 text-xs font-semibold mb-2 uppercase tracking-wide">Datos Técnicos</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Transformador (kVA)</Label>
+                  <Input value={createForm.transformerCapacityKva} onChange={e => setCreateForm(p => ({ ...p, transformerCapacityKva: e.target.value }))} placeholder="Ej: 112.5" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Parqueos</Label>
+                  <Input type="number" value={createForm.parkingSpots} onChange={e => setCreateForm(p => ({ ...p, parkingSpots: e.target.value }))} placeholder="Ej: 4" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Área (m²)</Label>
+                  <Input value={createForm.availableAreaM2} onChange={e => setCreateForm(p => ({ ...p, availableAreaM2: e.target.value }))} placeholder="Ej: 50" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Vehículos/día</Label>
+                  <Input type="number" value={createForm.estimatedDailyVehicles} onChange={e => setCreateForm(p => ({ ...p, estimatedDailyVehicles: e.target.value }))} placeholder="Ej: 500" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Latitud</Label>
+                  <Input value={createForm.latitude} onChange={e => setCreateForm(p => ({ ...p, latitude: e.target.value }))} placeholder="Ej: 4.7110" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Longitud</Label>
+                  <Input value={createForm.longitude} onChange={e => setCreateForm(p => ({ ...p, longitude: e.target.value }))} placeholder="Ej: -74.0721" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+              </div>
+            </div>
+
+            {/* Datos del postulante */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
+              <p className="text-gray-400 text-xs font-semibold mb-2 uppercase tracking-wide">Contacto / Postulante</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Nombre *</Label>
+                  <Input value={createForm.submitterName} onChange={e => setCreateForm(p => ({ ...p, submitterName: e.target.value }))} placeholder="Nombre del contacto" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Email *</Label>
+                  <Input type="email" value={createForm.submitterEmail} onChange={e => setCreateForm(p => ({ ...p, submitterEmail: e.target.value }))} placeholder="email@ejemplo.com" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Teléfono *</Label>
+                  <Input value={createForm.submitterPhone} onChange={e => setCreateForm(p => ({ ...p, submitterPhone: e.target.value }))} placeholder="+57 305 412 4009" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Empresa</Label>
+                  <Input value={createForm.submitterCompany} onChange={e => setCreateForm(p => ({ ...p, submitterCompany: e.target.value }))} placeholder="Nombre de la empresa" className="bg-[#111827] border-[#374151] text-white text-sm" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (!createForm.spaceName || !createForm.address || !createForm.city || !createForm.submitterName || !createForm.submitterEmail || !createForm.submitterPhone) {
+                  toast.error("Completa los campos obligatorios (*)");
+                  return;
+                }
+                createSpaceMutation.mutate({
+                  spaceName: createForm.spaceName,
+                  spaceType: createForm.spaceType as any,
+                  address: createForm.address,
+                  city: createForm.city,
+                  department: createForm.department || undefined,
+                  submitterName: createForm.submitterName,
+                  submitterEmail: createForm.submitterEmail,
+                  submitterPhone: createForm.submitterPhone,
+                  submitterCompany: createForm.submitterCompany || undefined,
+                  latitude: createForm.latitude || undefined,
+                  longitude: createForm.longitude || undefined,
+                  transformerCapacityKva: createForm.transformerCapacityKva || undefined,
+                  availableAreaM2: createForm.availableAreaM2 || undefined,
+                  parkingSpots: createForm.parkingSpots ? parseInt(createForm.parkingSpots) : undefined,
+                  estimatedDailyVehicles: createForm.estimatedDailyVehicles ? parseInt(createForm.estimatedDailyVehicles) : undefined,
+                  socioeconomicStratum: createForm.socioeconomicStratum ? parseInt(createForm.socioeconomicStratum) : undefined,
+                });
+              }}
+              disabled={createSpaceMutation.isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto"
+            >
+              {createSpaceMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Plus className="w-4 h-4 mr-1.5" />}
+              Crear Espacio
             </Button>
           </DialogFooter>
         </DialogContent>

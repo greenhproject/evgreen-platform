@@ -3864,3 +3864,5 @@
 ### Fase 6: Integración AdsDemo
 - [ ] Botones "Crear campaña" y "Ver plataforma" apuntan al portal de anunciantes
 - [x] Fix: PDF de prospecto pesaba 74MB+ por imágenes sin comprimir — ahora usa sharp para comprimir a JPEG 60% quality max 800px
+- [x] Responsive: botones superiores (Filtros, Actualizar) en admin/spaces se cortan en móvil
+- [x] Feature: botón "Crear espacio" manual desde admin sin depender del formulario público
