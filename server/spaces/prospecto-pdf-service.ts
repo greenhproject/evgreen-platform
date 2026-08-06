@@ -124,10 +124,15 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; forma
       responseType: "arraybuffer", timeout: 10000,
       headers: { "User-Agent": "EVGreen-PDF-Generator/2.0" },
     });
-    const contentType = response.headers["content-type"] || "image/jpeg";
-    const format = contentType.includes("png") ? "PNG" : "JPEG";
-    const base64 = Buffer.from(response.data).toString("base64");
-    return { data: `data:${contentType};base64,${base64}`, format };
+    // Compress and resize images to keep PDF under 5MB
+    const sharp = (await import("sharp")).default;
+    const imgBuffer = Buffer.from(response.data);
+    const compressed = await sharp(imgBuffer)
+      .resize({ width: 800, height: 600, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 60, mozjpeg: true })
+      .toBuffer();
+    const base64 = compressed.toString("base64");
+    return { data: `data:image/jpeg;base64,${base64}`, format: "JPEG" };
   } catch { return null; }
 }
 
