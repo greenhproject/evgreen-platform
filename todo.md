@@ -1,5 +1,11 @@
 # Green EV Platform - TODO
 
+## Bugs Reportados — Módulo de Espacios (2026-08-06)
+- [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
+- [x] Fix: error al generar Prospecto PDF (posible fallo en jsPDF GState/setGState en Node.js)
+- [x] Fix: @ts-ignore dentro de JSX en línea 1183 del gestor comercial
+- [x] Fix: @ts-ignore renderizado como texto en BannerAnalytics.tsx (badge de estado)
+
 ## Panel de Administración (Staff)
 - [x] Dashboard principal con métricas
 - [x] Gestión de estaciones de carga

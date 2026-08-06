@@ -787,8 +787,7 @@ function SpaceDetailDialog({
     );
   }
 
-  // @ts-ignore
-  const statusInfo = STATUS_LABELS[space.spaceStatus] || STATUS_LABELS.pending;
+  const statusInfo = STATUS_LABELS[space.spaceStatus as string] || STATUS_LABELS.pending;
   const StatusIcon = statusInfo.icon;
   const aiAnalysis = space.aiAnalysis ? JSON.parse(space.aiAnalysis) : null;
 
@@ -873,13 +872,11 @@ function SpaceDetailDialog({
             <div className="flex flex-col gap-2">
             {/* Row 1: Status-specific actions */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-              // @ts-ignore
               {space.spaceStatus === "pending" && (
                 <Button size="sm" onClick={() => handleStatusUpdate("under_review")} className="bg-blue-600 hover:bg-blue-700 text-white flex-shrink-0 text-xs">
                   <Eye className="w-3.5 h-3.5 mr-1" /> Revisar
                 </Button>
               )}
-              // @ts-ignore
               {(space.spaceStatus === "pending" || space.spaceStatus === "under_review") && (
                 <>
                   <Button size="sm" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0 text-xs">
@@ -894,14 +891,12 @@ function SpaceDetailDialog({
                   </Button>
                 </>
               )}
-              // @ts-ignore
               {space.spaceStatus === "approved" && (
                 <Button size="sm" onClick={handleSendLetter} disabled={sendLetterMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0 text-xs">
                   {sendLetterMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
                   Enviar carta
                 </Button>
               )}
-              // @ts-ignore
               {space.spaceStatus === "letter_accepted" && (
                 <Button size="sm" onClick={() => setShowPublishDialog(true)} className="bg-green-600 hover:bg-green-700 text-white flex-shrink-0 text-xs">
                   <Globe className="w-3.5 h-3.5 mr-1" /> Publicar
@@ -1180,8 +1175,7 @@ function SpaceDetailDialog({
                             Cancelar
                           </button>
                           <button
-                            // @ts-ignore
-                            onClick={() => asignarGestorMutation.mutate({ spaceId: id, gestorId: parseInt(gestorForm.gestorId), commissionPercent: parseFloat(gestorForm.commissionPercent) })}
+                            onClick={() => asignarGestorMutation.mutate({ spaceId: id, gestorId: parseInt(gestorForm.gestorId), commissionPercent: parseFloat(gestorForm.commissionPercent) } as any)}
                             disabled={!gestorForm.gestorId || asignarGestorMutation.isPending}
                             className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm disabled:opacity-50"
                           >

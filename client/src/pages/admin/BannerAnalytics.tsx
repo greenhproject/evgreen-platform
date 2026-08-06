@@ -291,14 +291,12 @@ export default function BannerAnalytics() {
               <Badge
                 variant="outline"
                 className={`text-xs ${
-                  // @ts-ignore
-                  banner.bannerStatus === "ACTIVE"
+                  (banner as any).bannerStatus === "ACTIVE"
                     ? "border-emerald-500 text-emerald-400"
                     : "border-gray-600 text-gray-400"
                 }`}
               >
-                // @ts-ignore
-                {banner.bannerStatus}
+                {(banner as any).bannerStatus}
               </Badge>
             )}
           </div>

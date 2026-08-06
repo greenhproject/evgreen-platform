@@ -250,15 +250,15 @@ function addPortada(
 
   // Overlay oscuro en la parte superior (para logo)
   setColor(doc, C.navy, "fill");
-  doc.setGState(new (doc as any).GState({ opacity: 0.78 }));
+  try { doc.setGState(new (doc as any).GState({ opacity: 0.78 })); } catch { /* GState not supported in this env */ }
   doc.rect(0, 0, PW, 42, "F");
-  doc.setGState(new (doc as any).GState({ opacity: 1 }));
+  try { doc.setGState(new (doc as any).GState({ opacity: 1 })); } catch { /* skip */ }
 
   // Overlay oscuro en la parte inferior (para texto)
   setColor(doc, C.navy, "fill");
-  doc.setGState(new (doc as any).GState({ opacity: 0.85 }));
+  try { doc.setGState(new (doc as any).GState({ opacity: 0.85 })); } catch { /* skip */ }
   doc.rect(0, PH - 138, PW, 138, "F");
-  doc.setGState(new (doc as any).GState({ opacity: 1 }));
+  try { doc.setGState(new (doc as any).GState({ opacity: 1 })); } catch { /* skip */ }
 
   // Logo EVGreen
   if (logoImg) {
@@ -300,9 +300,9 @@ function addPortada(
 
   // Separador
   setColor(doc, C.green, "fill");
-  doc.setGState(new (doc as any).GState({ opacity: 0.35 }));
+  try { doc.setGState(new (doc as any).GState({ opacity: 0.35 })); } catch { /* skip */ }
   doc.rect(M, textY + 35, CW, 0.5, "F");
-  doc.setGState(new (doc as any).GState({ opacity: 1 }));
+  try { doc.setGState(new (doc as any).GState({ opacity: 1 })); } catch { /* skip */ }
 
   // Métricas clave en 3 columnas
   const metricsY = textY + 46;
