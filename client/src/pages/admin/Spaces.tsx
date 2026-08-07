@@ -88,6 +88,7 @@ export default function AdminSpaces() {
     transformerCapacityKva: "", parkingSpots: "", availableAreaM2: "",
     estimatedDailyVehicles: "", socioeconomicStratum: "",
   });
+  const [createPhotos, setCreatePhotos] = useState<Array<{ file: File; preview: string; photoType: string }>>([]);
   const [dateTo, setDateTo] = useState("");
   const [scoreFilter, setScoreFilter] = useState<"all" | "scored" | "unscored">("all");
 
@@ -154,6 +155,8 @@ export default function AdminSpaces() {
         transformerCapacityKva: "", parkingSpots: "", availableAreaM2: "",
         estimatedDailyVehicles: "", socioeconomicStratum: "",
       });
+      createPhotos.forEach(p => URL.revokeObjectURL(p.preview));
+      setCreatePhotos([]);
       refetch();
     },
     onError: (err) => toast.error(err.message),
@@ -864,6 +867,74 @@ export default function AdminSpaces() {
                 </div>
               </div>
             </div>
+
+            {/* Registro fotográfico (opcional) */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
+              <p className="text-blue-400 text-xs font-semibold mb-2 uppercase tracking-wide">Registro Fotográfico (Opcional)</p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer flex items-center gap-2 bg-[#111827] border border-dashed border-[#374151] hover:border-emerald-500/50 rounded-lg px-3 py-2 text-xs text-gray-300 transition-colors">
+                    <Camera className="w-4 h-4 text-emerald-400" />
+                    Agregar fotos
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        const newPhotos = files.map(file => ({
+                          file,
+                          preview: URL.createObjectURL(file),
+                          photoType: "general",
+                        }));
+                        setCreatePhotos(prev => [...prev, ...newPhotos]);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {createPhotos.length > 0 && (
+                    <span className="text-xs text-gray-400">{createPhotos.length} foto{createPhotos.length > 1 ? "s" : ""}</span>
+                  )}
+                </div>
+                {createPhotos.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {createPhotos.map((photo, idx) => (
+                      <div key={idx} className="relative group">
+                        <img src={photo.preview} alt={`Foto ${idx + 1}`} className="w-full h-16 sm:h-20 object-cover rounded-md border border-[#374151]" />
+                        <select
+                          value={photo.photoType}
+                          onChange={(e) => {
+                            const updated = [...createPhotos];
+                            updated[idx] = { ...updated[idx], photoType: e.target.value };
+                            setCreatePhotos(updated);
+                          }}
+                          className="absolute bottom-0 left-0 right-0 bg-black/70 text-[9px] text-white border-0 rounded-b-md px-1 py-0.5"
+                        >
+                          <option value="general">General</option>
+                          <option value="electrical_panel">Tablero</option>
+                          <option value="transformer">Transformador</option>
+                          <option value="parking_area">Parqueo</option>
+                          <option value="access_road">Acceso</option>
+                          <option value="surroundings">Alrededores</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            URL.revokeObjectURL(photo.preview);
+                            setCreatePhotos(prev => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] text-gray-500">Máx. 10MB por foto. Tipos: general, tablero eléctrico, transformador, parqueo, acceso, alrededores.</p>
+              </div>
+            </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setShowCreateDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">
@@ -875,25 +946,44 @@ export default function AdminSpaces() {
                   toast.error("Completa los campos obligatorios (*)");
                   return;
                 }
-                createSpaceMutation.mutate({
-                  spaceName: createForm.spaceName,
-                  spaceType: createForm.spaceType as any,
-                  address: createForm.address,
-                  city: createForm.city,
-                  department: createForm.department || undefined,
-                  submitterName: createForm.submitterName,
-                  submitterEmail: createForm.submitterEmail,
-                  submitterPhone: createForm.submitterPhone,
-                  submitterCompany: createForm.submitterCompany || undefined,
-                  latitude: createForm.latitude || undefined,
-                  longitude: createForm.longitude || undefined,
-                  transformerCapacityKva: createForm.transformerCapacityKva || undefined,
-                  availableAreaM2: createForm.availableAreaM2 || undefined,
-                  parkingSpots: createForm.parkingSpots ? parseInt(createForm.parkingSpots) : undefined,
-                  estimatedDailyVehicles: createForm.estimatedDailyVehicles ? parseInt(createForm.estimatedDailyVehicles) : undefined,
-                  socioeconomicStratum: createForm.socioeconomicStratum ? parseInt(createForm.socioeconomicStratum) : undefined,
-                });
-              }}
+                // Convert photos to base64 before sending
+                const convertPhotos = async () => {
+                  const photosData = await Promise.all(
+                    createPhotos.map(async (photo) => {
+                      const arrayBuffer = await photo.file.arrayBuffer();
+                      const base64 = btoa(
+                        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+                      );
+                      return {
+                        base64,
+                        fileName: photo.file.name,
+                        contentType: photo.file.type || "image/jpeg",
+                        photoType: photo.photoType as any,
+                      };
+                    })
+                  );
+                  createSpaceMutation.mutate({
+                    spaceName: createForm.spaceName,
+                    spaceType: createForm.spaceType as any,
+                    address: createForm.address,
+                    city: createForm.city,
+                    department: createForm.department || undefined,
+                    submitterName: createForm.submitterName,
+                    submitterEmail: createForm.submitterEmail,
+                    submitterPhone: createForm.submitterPhone,
+                    submitterCompany: createForm.submitterCompany || undefined,
+                    latitude: createForm.latitude || undefined,
+                    longitude: createForm.longitude || undefined,
+                    transformerCapacityKva: createForm.transformerCapacityKva || undefined,
+                    availableAreaM2: createForm.availableAreaM2 || undefined,
+                    parkingSpots: createForm.parkingSpots ? parseInt(createForm.parkingSpots) : undefined,
+                    estimatedDailyVehicles: createForm.estimatedDailyVehicles ? parseInt(createForm.estimatedDailyVehicles) : undefined,
+                    socioeconomicStratum: createForm.socioeconomicStratum ? parseInt(createForm.socioeconomicStratum) : undefined,
+                    photos: photosData.length > 0 ? photosData : undefined,
+                  });
+                };
+                convertPhotos();
+             }}
               disabled={createSpaceMutation.isPending}
               className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto"
             >
