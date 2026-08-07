@@ -17,7 +17,7 @@ import axios from "axios";
 // ============================================================
 // ASSETS ESTÁTICOS (CDN público — disponible en el servidor)
 // ============================================================
-const LOGO_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/XXADhbJOsjLOaeVi.png";
+const LOGO_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/FYcGXNchDiULWNfV.png";
 const COVER_BG_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663169336317/WYwUkpexDtndNYrd.jpg";
 
 // ============================================================
@@ -127,12 +127,25 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; forma
     // Compress and resize images to keep PDF under 5MB
     const sharp = (await import("sharp")).default;
     const imgBuffer = Buffer.from(response.data);
-    const compressed = await sharp(imgBuffer)
-      .resize({ width: 800, height: 600, fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 60, mozjpeg: true })
-      .toBuffer();
-    const base64 = compressed.toString("base64");
-    return { data: `data:image/jpeg;base64,${base64}`, format: "JPEG" };
+    const contentType = response.headers["content-type"] || "";
+    const isPng = contentType.includes("png") || url.toLowerCase().endsWith(".png");
+    if (isPng) {
+      // Preserve PNG transparency (for logos), just resize
+      const compressed = await sharp(imgBuffer)
+        .resize({ width: 600, height: 400, fit: "inside", withoutEnlargement: true })
+        .png({ quality: 70, compressionLevel: 9 })
+        .toBuffer();
+      const base64 = compressed.toString("base64");
+      return { data: `data:image/png;base64,${base64}`, format: "PNG" };
+    } else {
+      // Convert to JPEG for photos (smaller size)
+      const compressed = await sharp(imgBuffer)
+        .resize({ width: 800, height: 600, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 60, mozjpeg: true })
+        .toBuffer();
+      const base64 = compressed.toString("base64");
+      return { data: `data:image/jpeg;base64,${base64}`, format: "JPEG" };
+    }
   } catch { return null; }
 }
 
