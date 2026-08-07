@@ -1034,7 +1034,9 @@ function SpaceDetailDialog({
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
+  const [editPhotos, setEditPhotos] = useState<Array<{ file: File; preview: string; photoType: string }>>([]);
   const [showGestorDialog, setShowGestorDialog] = useState(false);
+  const addPhotosMutation = trpc.spaces.admin.addPhotos.useMutation();
   const [gestorForm, setGestorForm] = useState({ gestorId: "", commissionPercent: "3.75" });
   const { data: gestoresData } = trpc.gestor.listarGestores.useQuery();
   const asignarGestorMutation = trpc.gestor.asignarGestorAEspacio.useMutation({
@@ -1783,6 +1785,85 @@ function SpaceDetailDialog({
               <Label className="text-gray-300 text-xs mb-1 block">Puntos de interés cercanos</Label>
               <Textarea value={editForm.nearbyAttractions || ""} onChange={e => setEditForm(p => ({ ...p, nearbyAttractions: e.target.value }))} rows={2} className="bg-[#0a0f1a] border-[#374151] text-white text-sm resize-none" />
             </div>
+
+            {/* Registro fotográfico (opcional) */}
+            <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3 mt-3">
+              <p className="text-blue-400 text-xs font-semibold mb-2 uppercase tracking-wide">Agregar Fotos (Opcional)</p>
+              <div className="space-y-3">
+                {/* Fotos existentes */}
+                {space.photos && space.photos.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-gray-500 mb-1">Fotos actuales ({space.photos.length})</p>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {space.photos.map((photo: any, i: number) => (
+                        <img key={i} src={photo.photoUrl} alt={photo.caption || `Foto ${i + 1}`} className="w-full h-14 object-cover rounded border border-[#374151]" />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Agregar nuevas fotos */}
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer flex items-center gap-2 bg-[#111827] border border-dashed border-[#374151] hover:border-emerald-500/50 rounded-lg px-3 py-2 text-xs text-gray-300 transition-colors">
+                    <Camera className="w-4 h-4 text-emerald-400" />
+                    Agregar nuevas fotos
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        const newPhotos = files.map(file => ({
+                          file,
+                          preview: URL.createObjectURL(file),
+                          photoType: "general",
+                        }));
+                        setEditPhotos(prev => [...prev, ...newPhotos]);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {editPhotos.length > 0 && (
+                    <span className="text-xs text-gray-400">{editPhotos.length} nueva{editPhotos.length > 1 ? "s" : ""}</span>
+                  )}
+                </div>
+                {editPhotos.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {editPhotos.map((photo, idx) => (
+                      <div key={idx} className="relative group">
+                        <img src={photo.preview} alt={`Nueva ${idx + 1}`} className="w-full h-14 sm:h-16 object-cover rounded-md border border-emerald-500/30" />
+                        <select
+                          value={photo.photoType}
+                          onChange={(e) => {
+                            const updated = [...editPhotos];
+                            updated[idx] = { ...updated[idx], photoType: e.target.value };
+                            setEditPhotos(updated);
+                          }}
+                          className="absolute bottom-0 left-0 right-0 bg-black/70 text-[9px] text-white border-0 rounded-b-md px-1 py-0.5"
+                        >
+                          <option value="general">General</option>
+                          <option value="electrical_panel">Tablero</option>
+                          <option value="transformer">Transformador</option>
+                          <option value="parking_area">Parqueo</option>
+                          <option value="access_road">Acceso</option>
+                          <option value="surroundings">Alrededores</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            URL.revokeObjectURL(photo.preview);
+                            setEditPhotos(prev => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2 mt-2">
@@ -1848,8 +1929,33 @@ function SpaceDetailDialog({
                   payload.aiAnalysis = JSON.stringify(updatedAi);
                 }
                 await updateSpaceMutation.mutateAsync(payload as any);
+                // Upload new photos if any
+                if (editPhotos.length > 0) {
+                  const photosData = await Promise.all(
+                    editPhotos.map(async (photo) => {
+                      const arrayBuffer = await photo.file.arrayBuffer();
+                      const base64 = btoa(
+                        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+                      );
+                      return {
+                        base64,
+                        fileName: photo.file.name,
+                        contentType: photo.file.type || "image/jpeg",
+                        photoType: photo.photoType as any,
+                      };
+                    })
+                  );
+                  try {
+                    await addPhotosMutation.mutateAsync({ id, photos: photosData });
+                  } catch (photoErr: any) {
+                    console.error("Error uploading photos:", photoErr);
+                    toast.error("Error al subir algunas fotos");
+                  }
+                }
                 toast.success("Espacio actualizado correctamente");
                 setShowEditDialog(false);
+                editPhotos.forEach(p => URL.revokeObjectURL(p.preview));
+                setEditPhotos([]);
                 refetch();
                 onRefresh();
               } catch (err: any) {

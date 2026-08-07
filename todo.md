@@ -3867,3 +3867,4 @@
 - [x] Responsive: botones superiores (Filtros, Actualizar) en admin/spaces se cortan en móvil
 - [x] Feature: botón "Crear espacio" manual desde admin sin depender del formulario público
 - [x] Feature: sección opcional de fotos en el formulario de creación manual de espacios
+- [x] Feature: sección de fotos en el formulario de edición de espacios existentes (addPhotos endpoint)

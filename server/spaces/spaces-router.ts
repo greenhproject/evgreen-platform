@@ -1111,6 +1111,55 @@ Responde en formato JSON con la siguiente estructura:`;
       }),
 
     // ========================================================================
+    // ADMIN: Agregar fotos a un espacio existente
+    // ========================================================================
+    addPhotos: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        photos: z.array(z.object({
+          base64: z.string(),
+          fileName: z.string(),
+          contentType: z.string(),
+          photoType: z.enum(["general", "electrical_panel", "transformer", "parking_area", "access_road", "surroundings", "other"]).optional(),
+          caption: z.string().optional(),
+        })).min(1).max(20),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDatabase();
+        const [submission] = await db
+          .select({ id: spaceSubmissions.id, code: spaceSubmissions.code })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+        if (!submission) throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no encontrado" });
+
+        let uploadedCount = 0;
+        for (let i = 0; i < input.photos.length; i++) {
+          const photo = input.photos[i];
+          try {
+            const buffer = Buffer.from(photo.base64, "base64");
+            if (buffer.length > 10 * 1024 * 1024) continue;
+            const randomSuffix = Math.random().toString(36).substring(2, 8);
+            const ext = photo.fileName.split(".").pop() || "jpg";
+            const fileKey = `spaces/${submission.code}/${Date.now()}-${randomSuffix}.${ext}`;
+            const { url } = await storagePut(fileKey, buffer, photo.contentType || "image/jpeg");
+            await db.insert(spacePhotos).values({
+              submissionId: input.id,
+              photoUrl: url,
+              photoKey: fileKey,
+              caption: photo.caption || null,
+              photoType: photo.photoType || "general",
+              sortOrder: i,
+            });
+            uploadedCount++;
+          } catch (err) {
+            console.error(`[Spaces] Error uploading photo ${i}:`, err);
+          }
+        }
+        return { success: true, uploadedCount };
+      }),
+
+    // ========================================================================
     // ADMIN: Eliminar múltiples espacios en masa
     // ========================================================================
     bulkDelete: adminProcedure
