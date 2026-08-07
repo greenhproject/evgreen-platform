@@ -104,8 +104,8 @@ describe("AnthropicProvider", () => {
     expect(provider.supportedModels).toContain("claude-3-5-haiku-20241022");
   });
 
-  it("debe tener modelo por defecto claude-3-5-sonnet", () => {
-    expect(provider.defaultModel).toBe("claude-3-5-sonnet-20241022");
+  it("debe tener modelo por defecto claude-sonnet-4-5", () => {
+    expect(provider.defaultModel).toBe("claude-sonnet-4-5");
   });
 
   it("debe configurarse correctamente con API key", () => {

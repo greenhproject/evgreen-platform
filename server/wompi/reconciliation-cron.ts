@@ -75,7 +75,7 @@ export async function reconcilePendingTransactions(): Promise<{
             stillPending++;
             continue;
           }
-          wompiStatus = wompiTx.wompiTxStatus;
+          wompiStatus = wompiTx.status;
           resolvedWompiTxId = wompiTx.id;
           // Guardar el ID de Wompi para futuras consultas
           if (resolvedWompiTxId) {
@@ -89,7 +89,7 @@ export async function reconcilePendingTransactions(): Promise<{
           // Actualizar estado en BD
           await db.updateWompiTransactionByReference(tx.reference, {
             status: "APPROVED",
-            processedAt: new Date().toISOString(),
+            processedAt: new Date(),
           });
 
           // Verificar si ya fue acreditada (evitar doble acreditación)

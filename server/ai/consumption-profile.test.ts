@@ -416,7 +416,7 @@ describe("Context service consumption profile integration", () => {
   it("should have consumptionProfileText field in AIContext interface", async () => {
     // Read the context-service to verify the interface includes the field
     const fs = await import("fs");
-    const contextServicePath = "/home/ubuntu/green-ev-platform/server/ai/context-service.ts";
+    const contextServicePath = `${process.cwd()}/server/ai/context-service.ts`;
     const content = fs.readFileSync(contextServicePath, "utf-8");
     
     expect(content).toContain("consumptionProfileText");
@@ -426,7 +426,7 @@ describe("Context service consumption profile integration", () => {
 
   it("should inject consumption profile into system prompt", async () => {
     const fs = await import("fs");
-    const contextServicePath = "/home/ubuntu/green-ev-platform/server/ai/context-service.ts";
+    const contextServicePath = `${process.cwd()}/server/ai/context-service.ts`;
     const content = fs.readFileSync(contextServicePath, "utf-8");
     
     // Verify the system prompt generator includes consumption profile
@@ -436,7 +436,7 @@ describe("Context service consumption profile integration", () => {
 
   it("should have OCPP hooks for consumption profile update", async () => {
     const fs = await import("fs");
-    const csmsPath = "/home/ubuntu/green-ev-platform/server/ocpp/csms-dual.ts";
+    const csmsPath = `${process.cwd()}/server/ocpp/csms-dual.ts`;
     const content = fs.readFileSync(csmsPath, "utf-8");
     
     // Verify both OCPP 1.6 and 2.0.1 hooks exist
@@ -455,7 +455,7 @@ describe("Context service consumption profile integration", () => {
 describe("Proactive notifications service", () => {
   it("should export startProactiveNotifications function", async () => {
     const fs = await import("fs");
-    const path = "/home/ubuntu/green-ev-platform/server/ai/proactive-notifications.ts";
+    const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
     
     expect(content).toContain("export function startProactiveNotifications");
@@ -464,7 +464,7 @@ describe("Proactive notifications service", () => {
 
   it("should be registered in server startup", async () => {
     const fs = await import("fs");
-    const indexPath = "/home/ubuntu/green-ev-platform/server/_core/index.ts";
+    const indexPath = `${process.cwd()}/server/_core/index.ts`;
     const content = fs.readFileSync(indexPath, "utf-8");
     
     expect(content).toContain("startProactiveNotifications");
@@ -473,7 +473,7 @@ describe("Proactive notifications service", () => {
 
   it("should check low price at favorite stations", async () => {
     const fs = await import("fs");
-    const path = "/home/ubuntu/green-ev-platform/server/ai/proactive-notifications.ts";
+    const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
     
     expect(content).toContain("checkLowPriceAtFavoriteStations");
@@ -482,7 +482,7 @@ describe("Proactive notifications service", () => {
 
   it("should check habitual charging time", async () => {
     const fs = await import("fs");
-    const path = "/home/ubuntu/green-ev-platform/server/ai/proactive-notifications.ts";
+    const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
     
     expect(content).toContain("checkHabitualChargingTime");
@@ -491,25 +491,25 @@ describe("Proactive notifications service", () => {
 
   it("should check charge prediction", async () => {
     const fs = await import("fs");
-    const path = "/home/ubuntu/green-ev-platform/server/ai/proactive-notifications.ts";
+    const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
     
     expect(content).toContain("checkChargePrediction");
     expect(content).toContain("nextPredictedChargeAt");
   });
 
-  it("should have 12-hour cooldown between same notification types", async () => {
+  it("should have 24-hour cooldown between same notification types", async () => {
     const fs = await import("fs");
-    const path = "/home/ubuntu/green-ev-platform/server/ai/proactive-notifications.ts";
+    const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
     
     expect(content).toContain("NOTIFICATION_COOLDOWN_MS");
-    expect(content).toContain("12 * 60 * 60 * 1000");
+    expect(content).toContain("24 * 60 * 60 * 1000");
   });
 
   it("should have memory leak prevention via cache cleanup", async () => {
     const fs = await import("fs");
-    const path = "/home/ubuntu/green-ev-platform/server/ai/proactive-notifications.ts";
+    const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
     
     expect(content).toContain("cleanupCache");
@@ -518,7 +518,7 @@ describe("Proactive notifications service", () => {
 
   it("should use FCM push notifications from firebase/fcm module", async () => {
     const fs = await import("fs");
-    const path = "/home/ubuntu/green-ev-platform/server/ai/proactive-notifications.ts";
+    const path = `${process.cwd()}/server/ai/proactive-notifications.ts`;
     const content = fs.readFileSync(path, "utf-8");
     
     // El servicio puede usar firebase/fcm directamente O el módulo unificado unified-push
