@@ -16,6 +16,10 @@
   <em>Impulsando la movilidad eléctrica en Colombia</em>
 </p>
 
+> **Antes de contribuir:** este repo tiene política de gobernanza y ramas
+> obligatoria — ver [`GOBERNANZA.md`](GOBERNANZA.md) (roles, protección de
+> `main`) y [`CONTRIBUTING.md`](CONTRIBUTING.md) (flujo día a día).
+
 ---
 
 ## Descripción General

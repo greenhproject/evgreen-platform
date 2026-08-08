@@ -5,6 +5,10 @@ desarrollo manual como a agentes (Manus, Claude, etc.) que hagan commits aquí.
 Ver también la nota de mobile al inicio de `todo.md` antes de tocar `ios/`,
 `android/` o `capacitor.config.ts`.
 
+Este documento cubre el flujo de trabajo día a día. Para roles, protección de
+`main` y quién aprueba qué, ver [`GOBERNANZA.md`](GOBERNANZA.md) — es política
+obligatoria, no opcional.
+
 ## Ramas
 
 - **`main`** es la única rama de larga duración. Siempre debe compilar y
