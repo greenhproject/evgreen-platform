@@ -737,8 +737,8 @@ export default function UserMap() {
         <Sheet>
           <SheetTrigger asChild>
             <Button
-              variant="outline"
-              className="absolute bottom-36 left-1/2 -translate-x-1/2 h-10 px-5 rounded-full bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60 text-white hover:bg-gray-800/95 text-sm font-medium"
+              variant="ghost"
+              className="absolute bottom-36 left-1/2 -translate-x-1/2 h-10 px-5 rounded-full bg-gray-900/70 backdrop-blur-xl backdrop-saturate-150 border border-white/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15),0_8px_24px_-4px_rgba(0,0,0,0.4)] text-white hover:bg-gray-900/80 text-sm font-medium transition-colors"
             >
               {filteredStations.length} estaciones cerca
               <ChevronRight className="w-4 h-4 ml-1 rotate-90" />

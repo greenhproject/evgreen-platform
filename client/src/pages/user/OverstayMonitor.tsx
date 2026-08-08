@@ -136,7 +136,7 @@ export default function OverstayMonitor() {
             : "bg-gradient-to-b from-amber-950 via-amber-900/80 to-background"
         }`}>
           {/* Botón atrás */}
-          <div className="absolute top-4 left-4 z-10">
+          <div className="absolute top-[max(1rem,env(safe-area-inset-top))] left-4 z-10">
             <Button
               variant="ghost"
               size="icon"
