@@ -14,11 +14,27 @@ obligatoria, no opcional.
 - **`main`** es la única rama de larga duración. Siempre debe compilar y
   pasar `tsc --noEmit`. Railway despliega automáticamente en cada push a
   `main` — un push roto aquí es un despliegue roto.
-- Todo lo demás vive en ramas **cortas y desechables**:
-  - `feature/<slug>` — funcionalidad nueva
-  - `fix/<slug>` — corrección de bug
-  - `chore/<slug>` — versionado, dependencias, limpieza
-- Esas ramas se crean desde el último `main`, se fusionan de vuelta, y **se
+- Todo lo demás vive en ramas **cortas y desechables**, con este formato
+  exacto: `<tipo>/<slug-en-minusculas-con-guiones>` — nunca camelCase, nunca
+  `snake_case`, nunca espacios. El slug describe la tarea en 2-5 palabras.
+
+  | Tipo | Cuándo se usa | Ejemplo |
+  |---|---|---|
+  | `feature/<slug>` | Funcionalidad nueva | `feature/wallet-recharge-yape` |
+  | `fix/<slug>` | Corrección de bug (no crítico, no ya publicado) | `fix/login-state-mismatch-android` |
+  | `hotfix/<slug>` | Bug crítico en una versión **ya enviada a una tienda** — se corta desde el tag de esa tienda, no desde `main` (ver `GOBERNANZA.md` §2 y §5) | `hotfix/wompi-double-charge` |
+  | `chore/<slug>` | Versionado, dependencias, config, limpieza | `chore/bump-version-1-4-0` |
+  | `docs/<slug>` | Solo documentación, sin tocar código | `docs/gobernanza-modo-incidente` |
+  | `refactor/<slug>` | Reestructurar código sin cambiar comportamiento | `refactor/map-marker-cleanup` |
+  | `test/<slug>` | Agregar o corregir tests, sin tocar lógica de producción | `test/auth0-callback-state` |
+  | `revert/<slug>` | Deshacer un cambio previo que resultó riesgoso o incorrecto | `revert/mobile-login-state-tolerance` |
+
+  Esta lista es completa — no se inventan tipos nuevos sobre la marcha. Si una
+  tarea no encaja claramente en ninguno, es señal de que hay que partirla en
+  tareas más chicas.
+- Esas ramas se crean desde el último `main`, se fusionan **vía Pull Request**
+  (no `git merge` + push directo, aunque todavía no esté activo el aprobador
+  obligatorio de `GOBERNANZA.md` §3 — se adopta el hábito desde ya), y **se
   borran inmediatamente después de fusionar** (`git push origin --delete
   <rama>`). Una rama que sigue existiendo una semana después de fusionada es
   basura acumulándose — este repo llegó a tener 12 ramas remotas así antes de
