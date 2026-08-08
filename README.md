@@ -273,7 +273,11 @@ pnpm dev
 
 ## App Móvil
 
-Repositorio separado: `greenhproject/evgreen-mobile` (React Native + Expo SDK 54, 13 pantallas)
+**Ya publicada en App Store y Google Play** (próximamente Huawei AppGallery), empaquetada desde **este mismo repositorio** vía [Capacitor](https://capacitorjs.com/) — no un repo aparte. La app nativa es la misma app web (React) corriendo dentro de un WebView, con las carpetas `ios/` y `android/` en la raíz como proyectos nativos generados (`appId: com.greenhproject.evgreen`).
+
+> Hubo un intento previo de app 100% nativa con React Native + Expo (ver `todo.md`, entradas de febrero 2026); quedó pausado. La migración de Capacitor a React Native sigue siendo el plan a futuro, pero **no está vigente hoy** — no asumir que ya ocurrió ni iniciarla sin coordinar.
+
+**Antes de tocar `ios/`, `android/`, `capacitor.config.ts`, o cualquier ajuste de safe-area/viewport mobile-específico**: esos cambios afectan builds ya publicados en tiendas. Coordinar con el encargado de la parte mobile antes de modificarlos o revertirlos. Si una mejora aplica tanto a web como a mobile, avisar para probarla también en Capacitor antes de la siguiente publicación.
 
 ---
 

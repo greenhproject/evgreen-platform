@@ -1,5 +1,12 @@
 # Green EV Platform - TODO
 
+## 📱 Léeme antes de tocar mobile (ios/, android/, capacitor.config.ts) — 2026-08-08
+
+- La app **ya está publicada en App Store y Google Play** (próximamente Huawei AppGallery), construida desde este mismo repo con **Capacitor** — no hay un repo `evgreen-mobile` separado en uso (esa era una app 100% nativa con React Native/Expo de un intento anterior en febrero 2026, ver más abajo en este archivo; quedó pausada). El README ya estaba desactualizado en esto y se corrigió.
+- Estrategia vigente: la misma app web (React) empaquetada como nativa vía WebView (`ios/`, `android/`, `capacitor.config.ts`, appId `com.greenhproject.evgreen`). La migración a React Native puro sigue siendo el plan a futuro, pero **no está en progreso** — no iniciarla ni asumir que ya se hizo sin coordinar primero.
+- Leonardo es quien está trabajando la parte mobile (safe-areas de Android 16, versionado nativo iOS/Android, etc.). **No revertir ni sobreescribir cambios en `ios/`, `android/`, `capacitor.config.ts`, o ajustes de safe-area/viewport mobile-específicos** sin avisar primero — afectan builds ya en tiendas.
+- Si construyes una mejora o feature que aplica tanto a web como a mobile (comparten el mismo código React/tRPC), avísalo para probarla también en Capacitor antes de la siguiente publicación — así entra en el mismo release en vez de quedar solo en web.
+
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
 - [x] Fix: error al generar Prospecto PDF (posible fallo en jsPDF GState/setGState en Node.js)
