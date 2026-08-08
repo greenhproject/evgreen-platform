@@ -232,7 +232,6 @@ export default function PrivacySettings() {
                   <Eye className="h-5 w-5 text-primary" />
                   <h2 className="font-semibold text-base">Tu perfil de consumo</h2>
                 </div>
-                // @ts-ignore
                 {(profile as any)?.confidence && (
                   <Badge
                     variant="outline"
@@ -246,7 +245,6 @@ export default function PrivacySettings() {
                         : "border-gray-400 text-gray-400"
                     }
                   >
-                    // @ts-ignore
                     Confianza: {(profile as any).confidence}
                   </Badge>
                 )}

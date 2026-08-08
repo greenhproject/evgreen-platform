@@ -829,7 +829,6 @@ export default function TechnicianTickets() {
                   )}
                   {(ticketDetail.maintenanceStatus === "COMPLETED" || ticketDetail.maintenanceStatus === "CANCELLED") && (
                     <p className="text-sm text-muted-foreground w-full text-center py-2">
-                      // @ts-ignore
                       Este ticket está {ticketDetail.maintenanceStatus === "COMPLETED" ? "completado" : "cancelado"} y no se puede modificar.
                     </p>
                   )}
