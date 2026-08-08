@@ -1083,8 +1083,7 @@ export default function UserWallet() {
               {isSubscriptionActive && (
                 <Badge className="bg-white/20 text-white border-0 text-xs">
                   <Crown className="w-3 h-3 mr-1" />
-                  // @ts-ignore
-                  {subscription.subscriptionTier}
+                  {subscription?.subscriptionTier}
                 </Badge>
               )}
             </div>

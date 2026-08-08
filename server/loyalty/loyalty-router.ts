@@ -91,15 +91,27 @@ export function buildLoyaltyRouter(
 
     /** Saldo de puntos del usuario autenticado */
     getBalance: protectedProcedure.query(async ({ ctx }: { ctx: { user: { id: number } } }) => {
+      const db = (await getDb())!;
       const balance = await getUserLoyaltyBalance(ctx.user.id);
       const cfg = await getLoyaltyConfig();
       const pointValueCop = cfg ? parseFloat(cfg.pointValueCop) : 75;
       const minPoints = cfg?.minRedemptionPoints ?? 100;
+
+      const [totals] = await db
+        .select({
+          totalEarned: sql<string>`COALESCE(SUM(CASE WHEN ${loyaltyPoints.points} > 0 THEN ${loyaltyPoints.points} ELSE 0 END), 0)`,
+          totalRedeemed: sql<string>`COALESCE(SUM(CASE WHEN ${loyaltyPoints.points} < 0 THEN -${loyaltyPoints.points} ELSE 0 END), 0)`,
+        })
+        .from(loyaltyPoints)
+        .where(eq(loyaltyPoints.userId, ctx.user.id));
+
       return {
         balance,
         estimatedValueCop: parseFloat((balance * pointValueCop).toFixed(0)),
         canRedeem: balance >= minPoints,
         minRedemptionPoints: minPoints,
+        totalEarned: parseFloat(totals?.totalEarned ?? "0"),
+        totalRedeemed: parseFloat(totals?.totalRedeemed ?? "0"),
       };
     }),
 
@@ -147,16 +159,14 @@ export function buildLoyaltyRouter(
         const newBalance = parseFloat((balance - input.points).toFixed(2));
 
         // Registrar redención
-        const [redemption] = await db
-          .insert(loyaltyRedemptions)
-          .values({
-            userId: ctx.user.id,
-            pointsUsed: input.points.toString(),
-            discountAmountCop: discountCop.toString(),
-            redemptionType: "charge_discount",
-            status: "pending",
-          })
-          .$returningId();
+        const [insertResult] = await db.insert(loyaltyRedemptions).values({
+          userId: ctx.user.id,
+          pointsUsed: input.points.toString(),
+          discountAmountCop: discountCop.toString(),
+          redemptionType: "charge_discount",
+          status: "pending",
+        });
+        const redemptionId = insertResult.insertId;
 
         // Registrar movimiento negativo
         await db.insert(loyaltyPoints).values({
@@ -177,7 +187,7 @@ export function buildLoyaltyRouter(
           .update(loyaltyRedemptions)
           // @ts-ignore
           .set({ status: "applied", appliedAt: new Date() })
-          .where(eq(loyaltyRedemptions.id, (redemption as any).id));
+          .where(eq(loyaltyRedemptions.id, redemptionId));
 
         return {
           success: true,

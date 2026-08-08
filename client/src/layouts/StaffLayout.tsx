@@ -88,7 +88,7 @@ export default function StaffLayout({
         setSidebarWidth={setSidebarWidth}
       />
       <SidebarInset className="flex flex-col min-h-screen bg-background">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/40 px-4">
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/40 px-4 safe-area-inset-top">
           <SidebarTrigger className="-ml-1">
             <PanelLeft className="h-5 w-5" />
           </SidebarTrigger>

@@ -11,6 +11,10 @@ import { defineConfig } from "vite";
 // y resultando en pantalla negra en producción.
 const isProduction = process.env.NODE_ENV === "production";
 
+// package.json es la única fuente de verdad para la versión de la app —
+// se propaga a Android/iOS/web con `pnpm version:bump` (ver scripts/bump-version.mjs)
+const pkg = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "package.json"), "utf-8"));
+
 // Intentar cargar manus-runtime solo si NO es producción
 let manusPlugin: any = null;
 if (!isProduction) {
@@ -35,6 +39,9 @@ export default defineConfig(({ command }) => {
 
   return {
     plugins,
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
     resolve: {
       alias: {
         "@": path.resolve(import.meta.dirname, "client", "src"),

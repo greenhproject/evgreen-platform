@@ -259,7 +259,7 @@ export default function ScanPage() {
     <UserLayout showHeader={false} showBottomNav={false}>
       <div className="min-h-screen bg-gradient-to-b from-primary/10 to-background flex flex-col">
         {/* Header */}
-        <div className="p-4 flex items-center gap-4">
+        <div className="px-4 pb-4 flex items-center gap-4 safe-area-inset-top">
           <Button
             variant="ghost"
             size="icon"

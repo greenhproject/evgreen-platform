@@ -14,8 +14,8 @@ android {
         applicationId "com.greenhproject.evgreen"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 25
-        versionName "1.3.0"
+        versionCode 26
+        versionName "1.3.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         
         // Cargar valores desde local.properties para evitar hardcoding
