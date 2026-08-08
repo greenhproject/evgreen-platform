@@ -482,18 +482,22 @@ export default function UserMap() {
         "></div>
       `;
 
-      const marker = new google.maps.marker.AdvancedMarkerElement({
-        map: mapInstance,
-        position: { lat, lng },
-        title: station.name,
-        content: markerContent,
-      });
+      try {
+        const marker = new google.maps.marker.AdvancedMarkerElement({
+          map: mapInstance,
+          position: { lat, lng },
+          title: station.name,
+          content: markerContent,
+        });
 
-      marker.addListener('click', () => {
-        handleStationSelect(station);
-      });
+        marker.addListener('click', () => {
+          handleStationSelect(station);
+        });
 
-      markers.push(marker);
+        markers.push(marker);
+      } catch (err) {
+        console.warn('[Map] Station marker failed for', station.name, err);
+      }
     });
 
     // Si hay estaciones y no hay ubicación del usuario, centrar en la primera

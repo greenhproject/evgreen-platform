@@ -333,10 +333,34 @@ function RoleBasedRedirect() {
     }
   }, [isAuthenticated]);
 
-  // Show manual retry button after 2 seconds if stuck (not during token pending)
+  // Show manual retry button after 2 seconds if stuck (not during token pending).
+  // If a browser view is supposedly still open (loginBrowserOpened), don't show it blindly —
+  // confirm via appStateChange first (same 1.5s debounce as the browserFinished handler below).
+  // Otherwise a user tapping "Iniciar sesión" while the original CCT/SFSafariViewController is
+  // still genuinely open triggers a second /api/auth/login, overwriting the auth0_state cookie
+  // mid-flow and causing the first (legitimate) callback to fail with a state mismatch.
   useEffect(() => {
     if (loading || isAuthenticated || tokenPending || !isRunningNatively()) return;
-    const timer = setTimeout(() => setShowRetryButton(true), 2000);
+    const timer = setTimeout(async () => {
+      if (!loginBrowserOpened.current) {
+        setShowRetryButton(true);
+        return;
+      }
+      let appPausedAgain = false;
+      let stateHandle: { remove: () => Promise<void> } | null = null;
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        stateHandle = await CapApp.addListener('appStateChange', (state) => {
+          if (!state.isActive) appPausedAgain = true;
+        });
+      } catch {}
+      setTimeout(async () => {
+        try { await stateHandle?.remove(); } catch {}
+        if (!appPausedAgain && !isAuthenticatedRef.current) {
+          setShowRetryButton(true);
+        }
+      }, 1500);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [loading, isAuthenticated, tokenPending]);
 

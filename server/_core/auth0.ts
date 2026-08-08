@@ -183,8 +183,18 @@ export function registerAuth0Routes(app: Express) {
 
       // Use mobile client for mobile callbacks so the client_id matches the one used in login
       const callbackClient = isMobile ? await getAuth0Client(true) : client;
+
+      // For mobile: trust the state Auth0 returned verbatim (incomingState) instead of the
+      // stored cookie. A second SFSafariViewController/Custom Tab open (e.g. user taps retry
+      // while the first is still closing) overwrites the auth0_state cookie before the first
+      // flow's callback arrives, causing a spurious state-mismatch failure even though the
+      // login itself is legitimate. Native flows don't rely on this state for CSRF protection —
+      // the token is only ever delivered via the app-specific custom URL scheme
+      // (com.greenhproject.evgreen://) or the single-use /api/auth/claim token, which only the
+      // registered native app can receive. For web, keep storedState — that's the real CSRF check.
+      const expectedState = isMobile ? incomingState : storedState;
       const tokenSet = await callbackClient.callback(redirectUri, params, {
-        state: storedState,
+        state: expectedState,
       });
 
       // Clear state and legacy mobile cookies
