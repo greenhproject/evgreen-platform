@@ -42,8 +42,9 @@ hacer estas cosas, y por eso son sus responsabilidades:
   aprobar. No hace falta que lea línea por línea el código si no es su
   perfil — el checklist está diseñado para poder aplicarse sin ser
   desarrollador.
-- Nunca saltarse (bypass) la protección de `main`, ni en emergencias, sin
-  dejarlo por escrito en el propio Pull Request explicando por qué.
+- Nunca usar su posición de Admin para saltarse la protección de `main`
+  directamente — el único bypass autorizado es el del Desarrollador Líder,
+  reservado a incidentes críticos y con reporte obligatorio (sección 5).
 
 ### Desarrollador Líder (Leonardo)
 
@@ -56,7 +57,7 @@ Dueño técnico del código y la arquitectura. Responsabilidades:
   por pantalla en cambios de UI).
 - Dejar evidencia en el Pull Request: qué se probó, en qué dispositivos, con
   qué resultado.
-- Etiquetar (`git tag`) cada versión que se envía a una tienda (sección 5).
+- Etiquetar (`git tag`) cada versión que se envía a una tienda (sección 6).
 - Mantener este documento y `CONTRIBUTING.md` actualizados a medida que el
   proyecto cambia — por ejemplo, cuando arranque la migración a React Native.
 
@@ -124,9 +125,12 @@ Esto se configura en GitHub: **Settings → Branches → Branch protection rules
 - [ ] **Require approvals** — mínimo 1.
 - [ ] **Dismiss stale pull request approvals when new commits are pushed** —
       si se aprobó y después se sube un cambio nuevo, se debe re-aprobar.
-- [ ] **Do not allow bypassing the above settings** — incluye a los propios
-      administradores. Esto es lo que evita que un cambio accidental (de
-      cualquiera, incluido el Administrador) llegue directo a producción.
+- [ ] **Do not allow bypassing the above settings** — con **una excepción
+      explícita**: agregar al Desarrollador Líder a la lista de bypass
+      ("Allow specified actors to bypass required pull requests"), reservada
+      *exclusivamente* para incidentes críticos según el protocolo de la
+      sección 5. Fuera de esos casos, el bypass no se usa — se sigue el
+      proceso normal aunque tarde unos minutos más.
 - [ ] **Restrict deletions** — nadie puede borrar `main`, ni con permisos de
       admin.
 - [ ] **Block force pushes**.
@@ -155,7 +159,43 @@ Pensado para poder aplicarse sin necesidad de leer el código en detalle:
 - [ ] La rama es corta y de un solo propósito — se borra automáticamente al
       fusionar.
 
-## 5. Tags de versión por tienda
+## 5. Modo incidente — vía rápida para emergencias reales
+
+La protección estricta de la sección 3 es correcta para el caso normal, pero
+tiene un riesgo real: si el Administrador no está disponible, un incidente en
+producción se queda sin poder arreglarse mientras se espera una aprobación
+que no llega. La regla que te protege de un error accidental no puede ser la
+misma que te bloquea en la emergencia real. Por eso existe esta vía rápida —
+angosta, con lista explícita de cuándo aplica, y con responsabilidad después.
+
+**Cuenta como incidente crítico** (habilita el bypass):
+
+- Producción caída o inaccesible para los usuarios.
+- Cobros duplicados, incorrectos, o falla del flujo de pago (Wompi).
+- Falla de seguridad (credenciales expuestas, acceso no autorizado).
+- Crash o bug que impide usar la app a una porción significativa de usuarios
+  (ej. nadie puede iniciar sesión, el mapa no carga para nadie).
+
+**No cuenta como incidente** (va por el proceso normal, sin excepción):
+bugs cosméticos, mejoras, features nuevas, o cualquier bug que afecte a pocos
+usuarios o que tenga un workaround razonable.
+
+**Cómo funciona:**
+
+1. Diagnosticar y confirmar que el caso está en la lista de arriba.
+2. Si el Administrador está disponible: proceso normal (PR + aprobación),
+   aunque sea en minutos. La vía rápida es el último recurso, no el default.
+3. Si el Administrador no está disponible y es un caso de la lista: el
+   Desarrollador Líder fusiona el fix directo a `main` usando el acceso de
+   bypass configurado en la sección 3.
+4. **Dentro de las 24 horas siguientes**, sin excepción: se abre un issue (o
+   comentario en el PR ya fusionado) documentando qué pasó, por qué no se
+   esperó aprobación, y qué se cambió. El Administrador lo revisa igual que
+   revisaría un PR normal, solo que después del hecho.
+5. Si la vía rápida se usa para algo que no era realmente un incidente de la
+   lista, se retira el acceso de bypass y se revisa el protocolo.
+
+## 6. Tags de versión por tienda
 
 Cada vez que se envía una versión a una tienda, se etiqueta el commit exacto
 con un tag específico de esa tienda — no un tag genérico — porque cada tienda
@@ -169,7 +209,7 @@ git tag appgallery-v1.4.0   # cuando aplique, a partir del Mes 5
 git push origin android-v1.4.0 ios-v1.4.0
 ```
 
-## 6. Migración a React Native — cómo afecta esta política
+## 7. Migración a React Native — cómo afecta esta política
 
 Esta política está diseñada para no depender de si el código es Capacitor o
 React Native — se basa en ramas cortas, tags y protección de `main`, no en la
@@ -185,7 +225,7 @@ arquitectura mobile. Cuando arranque la definición de la arquitectura nativa:
   con el mismo Administrador y las mismas reglas de protección — no se parte
   de cero.
 
-## 7. Cuándo entra en vigor
+## 8. Cuándo entra en vigor
 
 Desde ya. No se espera a tener "muchos usuarios" para activar la protección
 de `main` — el riesgo de un push accidental que rompa producción (Railway
