@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { APP_VERSION } from "@/lib/app-version";
 
 export default function Config() {
   const [, setLocation] = useLocation();
@@ -324,7 +325,7 @@ export default function Config() {
 
             {/* Versión */}
             <p className="text-center text-sm text-muted-foreground">
-              EVGreen v1.0.0
+              EVGreen v{APP_VERSION}
             </p>
           </div>
         )}
