@@ -66,6 +66,36 @@ function formatDateShort(date: Date | string | null): string {
 // MAIN COMPONENT
 // ============================================================================
 
+// Compress image file using Canvas to reduce size before upload
+async function compressImageFile(file: File, maxDim: number, quality: number): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else { w = Math.round(w * maxDim / h); h = maxDim; }
+      }
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      resolve(dataUrl.split(",")[1]);
+    };
+    img.onerror = () => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        resolve(result.split(",")[1]);
+      };
+      reader.readAsDataURL(file);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 export default function AdminSpaces() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -950,14 +980,12 @@ export default function AdminSpaces() {
                 const convertPhotos = async () => {
                   const photosData = await Promise.all(
                     createPhotos.map(async (photo) => {
-                      const arrayBuffer = await photo.file.arrayBuffer();
-                      const base64 = btoa(
-                        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-                      );
+                      // Compress image using Canvas before sending
+                      const base64 = await compressImageFile(photo.file, 1200, 0.7);
                       return {
                         base64,
                         fileName: photo.file.name,
-                        contentType: photo.file.type || "image/jpeg",
+                        contentType: "image/jpeg",
                         photoType: photo.photoType as any,
                       };
                     })
@@ -1933,14 +1961,11 @@ function SpaceDetailDialog({
                 if (editPhotos.length > 0) {
                   const photosData = await Promise.all(
                     editPhotos.map(async (photo) => {
-                      const arrayBuffer = await photo.file.arrayBuffer();
-                      const base64 = btoa(
-                        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-                      );
+                      const base64 = await compressImageFile(photo.file, 1200, 0.7);
                       return {
                         base64,
                         fileName: photo.file.name,
-                        contentType: photo.file.type || "image/jpeg",
+                        contentType: "image/jpeg",
                         photoType: photo.photoType as any,
                       };
                     })
