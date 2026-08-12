@@ -277,13 +277,13 @@ export const wompiRouter = router({
 
         return {
           found: true,
-          status: tx.wompiTxStatus,
+          status: tx.status,
           transaction: {
             id: tx.id,
             reference: tx.reference,
             amount: tx.amount_in_cents / 100,
             currency: tx.currency,
-            status: tx.wompiTxStatus,
+            status: tx.status,
             paymentMethod: tx.payment_method_type,
             createdAt: tx.created_at,
             finalizedAt: tx.finalized_at,
@@ -332,16 +332,16 @@ export const wompiRouter = router({
         // Actualizar transacción en nuestra BD
         await db.updateWompiTransactionByReference(input.reference, {
           wompiTransactionId: tx.id,
-          status: tx.wompiTxStatus,
+          status: tx.status,
           paymentMethodType: tx.payment_method_type,
           processedAt: new Date().toISOString(),
         });
 
-        if (tx.wompiTxStatus !== WOMPI_TRANSACTION_STATUS.APPROVED) {
+        if (tx.status !== WOMPI_TRANSACTION_STATUS.APPROVED) {
           return {
             success: false,
-            status: tx.wompiTxStatus,
-            message: `El pago no fue aprobado. Estado: ${tx.wompiTxStatus}`,
+            status: tx.status,
+            message: `El pago no fue aprobado. Estado: ${tx.status}`,
           };
         }
 
@@ -387,7 +387,7 @@ export const wompiRouter = router({
 
           return {
             success: true,
-            status: tx.wompiTxStatus,
+            status: tx.status,
             message: `Billetera recargada con $${amount.toLocaleString()} COP`,
             amount,
           };
@@ -395,7 +395,7 @@ export const wompiRouter = router({
 
         return {
           success: true,
-          status: tx.wompiTxStatus,
+          status: tx.status,
           message: "Pago verificado exitosamente",
         };
       } catch (error) {
@@ -573,7 +573,7 @@ export const wompiRouter = router({
           if (response.ok) {
             const result = await response.json();
             const tx = result.data;
-            console.log(`[Wompi] Cobro directo suscripción - Transacción: ${tx.id}, Estado: ${tx.wompiTxStatus}`);
+            console.log(`[Wompi] Cobro directo suscripción - Transacción: ${tx.id}, Estado: ${tx.status}`);
 
             // Guardar transacción en BD
             try {
@@ -589,7 +589,7 @@ export const wompiRouter = router({
               });
               await db.updateWompiTransactionByReference(directRef, {
                 wompiTransactionId: tx.id,
-                status: tx.wompiTxStatus,
+                status: tx.status,
                 paymentMethodType: tx.payment_method_type || "CARD",
                 processedAt: new Date().toISOString(),
               });
@@ -598,8 +598,8 @@ export const wompiRouter = router({
             }
 
             // Polling si está PENDING
-            let finalStatus = tx.wompiTxStatus;
-            if (tx.wompiTxStatus === "PENDING" && tx.id) {
+            let finalStatus = tx.status;
+            if (tx.status === "PENDING" && tx.id) {
               const recheckDelays = [2000, 5000, 10000];
               for (let i = 0; i < recheckDelays.length; i++) {
                 await new Promise(resolve => setTimeout(resolve, recheckDelays[i]));
@@ -762,16 +762,16 @@ export const wompiRouter = router({
         // Actualizar transacción en BD
         await db.updateWompiTransactionByReference(input.reference, {
           wompiTransactionId: tx.id,
-          status: tx.wompiTxStatus,
+          status: tx.status,
           paymentMethodType: tx.payment_method_type,
           processedAt: new Date().toISOString(),
         });
 
-        if (tx.wompiTxStatus !== WOMPI_TRANSACTION_STATUS.APPROVED) {
+        if (tx.status !== WOMPI_TRANSACTION_STATUS.APPROVED) {
           return {
             success: false,
-            status: tx.wompiTxStatus,
-            message: `El pago no fue aprobado. Estado: ${tx.wompiTxStatus}`,
+            status: tx.status,
+            message: `El pago no fue aprobado. Estado: ${tx.status}`,
           };
         }
 
@@ -810,7 +810,7 @@ export const wompiRouter = router({
 
         return {
           success: true,
-          status: tx.wompiTxStatus,
+          status: tx.status,
           message: `¡Plan ${input.planId === "premium" ? "Premium" : "Básico"} activado exitosamente!`,
           planId: input.planId,
         };
@@ -1178,7 +1178,7 @@ export const wompiRouter = router({
         const result = await response.json();
         const tx = result.data;
 
-        console.log(`[Wompi] Recarga rápida - Transacción: ${tx.id}, Estado: ${tx.wompiTxStatus}`);
+        console.log(`[Wompi] Recarga rápida - Transacción: ${tx.id}, Estado: ${tx.status}`);
 
         // Guardar transacción en BD
         try {
@@ -1194,7 +1194,7 @@ export const wompiRouter = router({
           });
           await db.updateWompiTransactionByReference(reference, {
             wompiTransactionId: tx.id,
-            status: tx.wompiTxStatus,
+            status: tx.status,
             paymentMethodType: tx.payment_method_type || "CARD",
             processedAt: new Date().toISOString(),
           });
@@ -1204,9 +1204,9 @@ export const wompiRouter = router({
 
         // Si la transacción está PENDING, hacer múltiples reintentos
         // Las transacciones con payment source pueden tardar entre 2-30 segundos
-        let finalStatus = tx.wompiTxStatus;
+        let finalStatus = tx.status;
         let finalTxId = tx.id;
-        if (tx.wompiTxStatus === "PENDING" && tx.id) {
+        if (tx.status === "PENDING" && tx.id) {
           const recheckDelays = [2000, 5000, 10000]; // 2s, 5s, 10s
           for (let i = 0; i < recheckDelays.length; i++) {
             await new Promise(resolve => setTimeout(resolve, recheckDelays[i]));
