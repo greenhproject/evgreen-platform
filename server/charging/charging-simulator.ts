@@ -477,8 +477,8 @@ async function completeSimulation(session: SimulationSession): Promise<void> {
   // Usar realTargetKwh para los cálculos finales (no el targetKwh limitado de la simulación)
   // Esto asegura que el costo final coincida con lo que el usuario pidió
   const kwhConsumed = session.realTargetKwh;
-  const totalCost = session.chargeMode === "fixed_amount" 
-    ? session.targetValue  // Si el usuario pidió un monto fijo, cobrar exactamente ese monto
+  const totalCost = session.chargeMode === "fixed_amount"
+    ? Math.min(kwhConsumed * session.pricePerKwh, session.targetValue) // Cobrar por energía real entregada, con tope en el monto pedido
     : kwhConsumed * session.pricePerKwh; // Para porcentaje y carga completa, calcular por kWh
   
   // Ajustar el medidor para que refleje los kWh reales

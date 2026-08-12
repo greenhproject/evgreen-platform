@@ -190,7 +190,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
       {/* Botón de saltar */}
       <motion.button
-        className="absolute top-6 right-6 text-muted-foreground hover:text-foreground transition-colors z-10"
+        className="absolute top-[max(1.5rem,env(safe-area-inset-top))] right-6 text-muted-foreground hover:text-foreground transition-colors z-10"
         onClick={handleSkip}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

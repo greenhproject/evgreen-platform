@@ -482,18 +482,22 @@ export default function UserMap() {
         "></div>
       `;
 
-      const marker = new google.maps.marker.AdvancedMarkerElement({
-        map: mapInstance,
-        position: { lat, lng },
-        title: station.name,
-        content: markerContent,
-      });
+      try {
+        const marker = new google.maps.marker.AdvancedMarkerElement({
+          map: mapInstance,
+          position: { lat, lng },
+          title: station.name,
+          content: markerContent,
+        });
 
-      marker.addListener('click', () => {
-        handleStationSelect(station);
-      });
+        marker.addListener('click', () => {
+          handleStationSelect(station);
+        });
 
-      markers.push(marker);
+        markers.push(marker);
+      } catch (err) {
+        console.warn('[Map] Station marker failed for', station.name, err);
+      }
     });
 
     // Si hay estaciones y no hay ubicación del usuario, centrar en la primera
@@ -737,11 +741,11 @@ export default function UserMap() {
         <Sheet>
           <SheetTrigger asChild>
             <Button
-              variant="outline"
-              className="absolute bottom-36 left-1/2 -translate-x-1/2 h-10 px-5 rounded-full bg-gray-900/90 backdrop-blur-md shadow-xl border border-gray-700/60 text-white hover:bg-gray-800/95 text-sm font-medium"
+              variant="ghost"
+              className="absolute bottom-36 left-1/2 -translate-x-1/2 h-10 px-5 rounded-full bg-black/10 backdrop-blur-md backdrop-saturate-150 border border-white/20 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.3),inset_0_-1px_0_0_rgba(255,255,255,0.04),0_8px_20px_-8px_rgba(0,0,0,0.4)] text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.7)] hover:bg-black/20 text-sm font-medium transition-colors"
             >
               {filteredStations.length} estaciones cerca
-              <ChevronRight className="w-4 h-4 ml-1 rotate-90" />
+              <ChevronRight className="w-4 h-4 ml-1 rotate-90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]" />
             </Button>
           </SheetTrigger>
           <SheetContent side="bottom" className="h-[60vh] rounded-t-3xl p-0">

@@ -36,7 +36,7 @@ export default function QRScanner() {
     <UserLayout showHeader={false} showBottomNav={false}>
       <div className="min-h-screen bg-black relative">
         {/* Header */}
-        <div className="absolute top-0 left-0 right-0 z-10 p-4 flex items-center justify-between">
+        <div className="absolute top-0 left-0 right-0 z-10 px-4 pb-4 flex items-center justify-between safe-area-inset-top">
           <Button
             variant="ghost"
             size="icon"

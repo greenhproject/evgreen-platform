@@ -3,6 +3,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import UserLayout from "@/layouts/UserLayout";
+import { APP_VERSION } from "@/lib/app-version";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -456,7 +457,7 @@ export default function UserProfile() {
 
         {/* Versión de la app */}
         <div className="text-center text-xs text-muted-foreground">
-          EVGreen v1.0.0
+          EVGreen v{APP_VERSION}
         </div>
       </div>
 
