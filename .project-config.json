@@ -10,13 +10,15 @@
     "DATABASE_URL": "mysql://3kTaiYRMPpnS3sR.17f9e41a6e58:804AB9cRWIAjX4WgRqI7@gateway02.us-east-1.prod.aws.tidbcloud.com:4000/UcUrociZeo4QVAHHN9vAuZ?ssl={\"rejectUnauthorized\":true}",
     "DRIZZLE_DATABASE_URL": "mysql://3kTaiYRMPpnS3sR.17f9e41a6e58:804AB9cRWIAjX4WgRqI7@gateway02.us-east-1.prod.aws.tidbcloud.com:4000/UcUrociZeo4QVAHHN9vAuZ?ssl={\"rejectUnauthorized\":true}"
   },
-  "experiments": null,
+  "experiments": [
+    "no_db_push"
+  ],
   "git_remote": {
     "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663169336317/UcUrociZeo4QVAHHN9vAuZ",
-    "access_key_id": "ASIAZV3A2ECZCBZI3AW7",
-    "secret_access_key": "kTBod3kezVOYP1VRwWYVjI8GrZJt+XKy/qtw8WNs",
-    "session_token": "IQoJb3JpZ2luX2VjEFAaCXVzLWVhc3QtMSJHMEUCIGlDTj+oxmlstG7KQbb/smWuEXMPLiIIpOBuOwfZnlspAiEAuiGP8dl7Uz0z55H2I7WlTcfSJ5/ooq3/nj1Ehj//QQIq9QMIGRAEGgw2NjUzODYwOTg4NjYiDA5IbrFFs78ZVfG5jSrSA14CC/thqDFcZy1kKHi/1APL9qcgIer5wQKCUsh5W80pdrEX9AE5Rd7PeNplb7dXjuWypmuHMQsIUDBVmnOXWUsLaC0vQjrfOv17PcHAaMssk2/8LnW93Ajg5jMnUdQfq19njI8RsuOinIRDFVi2GG/lhBKQCYOoqMlOphZR7GDZqjrYvBtm2gv9mRNzDKOfcrWxiE7CXs3FnWUr8E89KvjJ66RINJE5CdrA2wtNXSW+LeW4j4+CGjnvI9u56XILD2GS8ZDrbUD3yIWVGZAPnHSetLVMNaMR/TRYrh3cGgSF/Xe41w8uc1wSf3Fx62r+PorPaMJdalJz0p6No167Zo9vmaSQoyAVlDx1Q8erHb1GL98NlXnX9tOw+W2wpyPHPT/+cQU6p+JR4aUhQqPBDrCvUvVe+c5djSMF8KHRA1HQq+gy+v9NUWZHSlMMwV6GJQkpwUnHPtei8s6j8ucnYJ7JW2HJmwpZKWsRM1pEb+XiAef9dTALzYKG79ynGve3gKtq/RVc+zVuzJ9h6cVuDK3UWE5XDnSYEcKKB7dOEwqrLE1+3eLi9FHqch17TBtbHzt+TQzf94MbEd9+e8WHlJTYpQEwKMC9s9W3aeE/25Xf+fcw2OnJ0wY6nQGUwqLIeosXI4tnI/U2rdzbZieYKtY0plYiSAqN+FyyHMXHWNn3w5jGT4DRecRmCab77J5NgWd+4UbVKynD13ihBP2KxzXSjNxfcSYMiMT9t5XoA5IKelrIzJNqDFl6VKTg8UyjmnXfQ592sR4IY/KyQUK0VqZjKbEfDd+w+YwR22N7hQrfsiSziJZ/3ScqQU+rOfJd536yXF2Wf1Mz",
-    "expiration": "2026-08-05T11:25:12.000Z",
+    "access_key_id": "ASIAZV3A2ECZG2ZP54ON",
+    "secret_access_key": "MxlVaQVMU22gp25WlxfCOJ5KF0M+RGSLb02ZyjC4",
+    "session_token": "IQoJb3JpZ2luX2VjEAgaCXVzLWVhc3QtMSJHMEUCIGVxiFOE12AU3IG7YOTSXtPJn1I0XpGICb+wfycKpjXvAiEA7XYgnQ6HG/tFqBuGkyQ3MTSIspVhWC31mgUdKoJyxbUq/gMI0f//////////ARAEGgw2NjUzODYwOTg4NjYiDHupZbJAHMXKgQXtYSrSA++09DcIk8rV2HibllEu6t6tBQ2VDKVG777PbwaE8bcw7cO2uQec3W1Dd9Okn+NB8HFXGY3JjsIbbHss/4dLy7/Agz33SEvCuxiPDU5ZnEnmSPuCQnSs/Mga8RpCyb6V24jW5U7lgb8sYsEse0SWphRSZHp+XtkwAPCIsr33Jw3ZQamAz8IFQLz3v6v97V5WMt+AceZbRlmYD+5FFfjHFxIDRcU41mbZA0TI0q/Xy9s5+eRoK17vtfxb3YzXT9oMvVEAGt1J55qxZzcsHSuUVkwy0VwKddMNDT5O+MKwD+c2RJFYS5CGFaVSVuYaBBoXE0sqGCLOwCWmSlsjrj/UVWK7AcXSpHC/wcUJIrtYnxLHWTEPEUbSZnky9pYRF+9K8pABvDOfhazP5j2YuX1HigEQ/8kmnLu7N68Wifjeiral/anqsXnPjj1fyWbod6C2HlhY+VSLVXCRbVdx2sVzf4tEox3p5C/ON0/IJCk9W5FleXgxzxwBZ6Akr1zk4iVv/z0wU5iecTs65psdTIoz+kp8F3GEbDMkJzuwV40nIit/caDEDXvVYwFZyZQKA8nod814uO7aQzhHlyQoiruxbPxcA2GYqZbrVignozWVdW30yjkwkany0wY6nQE0QTbNl14qAAVVC5qe3+xbTu2QWJF62uVuvs3HYyf220yDtOegJMOXoiezWlRssW3UgNsg1JZ/MaPidHLhcUa1XtXkfmAz5cdD6I/eO4c/Qqgy27Iwxti8NUbR4PHE8/de6wbMBhZMYDezXPYSSydRMkRrHdezaIvU8p39MxGMAbg47IewSoOQx5ehKeiVPFBFzUzqMhN/tJJJdiG+",
+    "expiration": "2026-08-13T03:43:13.000Z",
     "backend": "GIT_BACKEND_S3"
   },
   "name": "green-ev-platform",

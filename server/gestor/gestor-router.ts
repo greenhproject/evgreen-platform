@@ -15,9 +15,17 @@ import {
   chargingStations,
   users,
   financialSettlements,
+  transactions,
+  stationFixedExpenses,
 } from "../../drizzle/schema";
-import { eq, desc, and, sql, or, isNull } from "drizzle-orm";
+import { eq, desc, and, sql, or, isNull, inArray, gte, lt, lte } from "drizzle-orm";
 import { randomBytes } from "crypto";
+import {
+  calculateGestorWaterfall,
+  calculateGestorWaterfallFromAggregate,
+  getColombiaDayBounds,
+  getColombiaMonthBounds,
+} from "./gestor-calculations";
 
 // ============================================================================
 // ROLE GUARDS
@@ -43,6 +51,49 @@ function generateSpaceCode(): string {
   const year = new Date().getFullYear();
   const rand = randomBytes(3).toString("hex").toUpperCase();
   return `SPE-${year}-${rand}`;
+}
+
+function toNumber(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getBogotaDateKey(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function fixedExpenseForPeriod(
+  expense: { amountCop: number; expensePeriodicity: string; startDate?: string | Date | null },
+  periodKind: "DAY" | "MONTH",
+  dayKey?: string,
+): number {
+  const amount = toNumber(expense.amountCop);
+  const periodKey = dayKey ?? getBogotaDateKey();
+  if (expense.expensePeriodicity === "ONE_TIME") {
+    const expenseStart = expense.startDate ? new Date(expense.startDate).toISOString().slice(0, 10) : "";
+    return periodKind === "DAY"
+      ? (expenseStart === periodKey ? amount : 0)
+      : (expenseStart.slice(0, 7) === periodKey.slice(0, 7) ? amount : 0);
+  }
+  const monthlyEquivalent: Record<string, number> = {
+    MONTHLY: amount,
+    BIMONTHLY: amount / 2,
+    QUARTERLY: amount / 3,
+    SEMIANNUAL: amount / 6,
+    ANNUAL: amount / 12,
+  };
+  const monthlyAmount = monthlyEquivalent[expense.expensePeriodicity] ?? amount;
+  if (periodKind === "MONTH") return monthlyAmount;
+  const [year, month] = periodKey.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return monthlyAmount / daysInMonth;
 }
 
 /**
@@ -220,6 +271,344 @@ export const gestorRouter = router({
         .orderBy(desc(chargingStations.id));
 
       return { stations };
+    }),
+
+  // --------------------------------------------------------------------------
+  // CARTERA COMERCIAL UNIFICADA: espacios en gestión + estaciones operativas
+  // --------------------------------------------------------------------------
+  getCartera: gestorProcedure
+    .query(async ({ ctx }) => {
+      const db = (await getDb())!;
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      const spaceFilter = isAdmin ? undefined : eq(spaceSubmissions.gestorId, ctx.user.id);
+      const stationFilter = isAdmin ? undefined : eq(chargingStations.gestorId, ctx.user.id);
+      const today = getBogotaDateKey();
+      const month = today.slice(0, 7);
+      const { start: monthStart, end: monthEnd } = getColombiaMonthBounds(
+        Number(month.slice(0, 4)),
+        Number(month.slice(5, 7)),
+      );
+
+      const [spaces, stations] = await Promise.all([
+        db.select({
+          id: spaceSubmissions.id,
+          code: spaceSubmissions.code,
+          name: spaceSubmissions.spaceName,
+          city: spaceSubmissions.city,
+          department: spaceSubmissions.department,
+          address: spaceSubmissions.address,
+          status: spaceSubmissions.spaceStatus,
+          aiScore: spaceSubmissions.aiScore,
+          gestorCommissionPercent: spaceSubmissions.gestorCommissionPercent,
+          createdAt: spaceSubmissions.createdAt,
+        }).from(spaceSubmissions).where(spaceFilter).orderBy(desc(spaceSubmissions.createdAt)),
+        db.select({
+          id: chargingStations.id,
+          name: chargingStations.name,
+          city: chargingStations.city,
+          department: chargingStations.department,
+          address: chargingStations.address,
+          isOnline: chargingStations.isOnline,
+          isActive: chargingStations.isActive,
+          gestorCommissionPercent: chargingStations.gestorCommissionPercent,
+          hostSharePercent: chargingStations.hostSharePercent,
+          investorSharePercent: chargingStations.investorSharePercent,
+          evgreenSharePercent: chargingStations.evgreenSharePercent,
+          energyPurchaseCostPerKwh: chargingStations.energyPurchaseCostPerKwh,
+          imageUrl: chargingStations.imageUrl,
+        }).from(chargingStations).where(stationFilter).orderBy(desc(chargingStations.id)),
+      ]);
+
+      if (stations.length === 0) {
+        return { month, spaces, stations: [], summary: { activeStations: 0, monthRevenue: 0, monthCommissionAccrued: 0 } };
+      }
+
+      const stationIds = stations.map((station) => station.id);
+      const [transactionRows, expenseRows] = await Promise.all([
+        db.select({
+          stationId: transactions.stationId,
+          grossRevenue: sql<number>`COALESCE(SUM(${transactions.totalCost}), 0)`,
+          totalKwh: sql<number>`COALESCE(SUM(${transactions.kwhConsumed}), 0)`,
+          totalSessions: sql<number>`COUNT(*)`,
+        }).from(transactions).where(and(
+          inArray(transactions.stationId, stationIds),
+          eq(transactions.status, "COMPLETED"),
+          gte(transactions.startTime, monthStart),
+          lt(transactions.startTime, monthEnd),
+        )).groupBy(transactions.stationId),
+        db.select({
+          stationId: stationFixedExpenses.stationId,
+          amountCop: stationFixedExpenses.amountCop,
+          expensePeriodicity: stationFixedExpenses.expensePeriodicity,
+          startDate: stationFixedExpenses.startDate,
+        }).from(stationFixedExpenses).where(and(
+          inArray(stationFixedExpenses.stationId, stationIds),
+          eq(stationFixedExpenses.isActive, 1),
+          lte(stationFixedExpenses.startDate, monthEnd),
+          or(isNull(stationFixedExpenses.endDate), gte(stationFixedExpenses.endDate, monthStart)),
+        )),
+      ]);
+
+      const transactionMap = new Map(transactionRows.map((row) => [row.stationId, row]));
+      const expenseMap = new Map<number, number>();
+      for (const expense of expenseRows) {
+        expenseMap.set(
+          expense.stationId,
+          (expenseMap.get(expense.stationId) ?? 0) + fixedExpenseForPeriod(expense, "MONTH"),
+        );
+      }
+
+      const portfolioStations = stations.map((station) => {
+        const totals = transactionMap.get(station.id);
+        const waterfall = calculateGestorWaterfall({
+          grossRevenue: toNumber(totals?.grossRevenue),
+          kwhConsumed: toNumber(totals?.totalKwh),
+          energyPurchaseCostPerKwh: toNumber(station.energyPurchaseCostPerKwh),
+          hostSharePercent: toNumber(station.hostSharePercent),
+          investorSharePercent: toNumber(station.investorSharePercent),
+          evgreenSharePercent: toNumber(station.evgreenSharePercent),
+          gestorCommissionPercent: toNumber(station.gestorCommissionPercent),
+        });
+        const fixedExpenses = expenseMap.get(station.id) ?? 0;
+        const netWaterfall = calculateGestorWaterfallFromAggregate({
+          ...waterfall,
+          energyCost: waterfall.energyCost,
+          fixedExpenses,
+          hostSharePercent: toNumber(station.hostSharePercent),
+          investorSharePercent: toNumber(station.investorSharePercent),
+          evgreenSharePercent: toNumber(station.evgreenSharePercent),
+          gestorCommissionPercent: toNumber(station.gestorCommissionPercent),
+        });
+        return {
+          ...station,
+          status: station.isActive ? (station.isOnline ? "ONLINE" : "OFFLINE") : "INACTIVE",
+          month: {
+            totalSessions: toNumber(totals?.totalSessions),
+            totalKwh: toNumber(totals?.totalKwh),
+            grossRevenue: netWaterfall.grossRevenue,
+            netDistributableMargin: netWaterfall.netDistributableMargin,
+            commissionAccrued: netWaterfall.gestorCommission,
+          },
+        };
+      });
+
+      return {
+        month,
+        spaces,
+        stations: portfolioStations,
+        summary: {
+          activeStations: portfolioStations.filter((station) => station.isActive).length,
+          monthRevenue: portfolioStations.reduce((sum, station) => sum + station.month.grossRevenue, 0),
+          monthCommissionAccrued: portfolioStations.reduce((sum, station) => sum + station.month.commissionAccrued, 0),
+        },
+      };
+    }),
+
+  // --------------------------------------------------------------------------
+  // LIQUIDACIÓN AUDITABLE: transacciones reales + margen + comisión acumulada
+  // --------------------------------------------------------------------------
+  getLiquidacionAuditable: gestorProcedure
+    .input(z.object({
+      period: z.enum(["DAY", "MONTH"]).default("MONTH"),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      month: z.number().int().min(1).max(12).optional(),
+      year: z.number().int().min(2024).max(2035).optional(),
+      stationId: z.number().int().optional(),
+      limit: z.number().int().min(1).max(250).default(100),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = (await getDb())!;
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      const stationFilter = isAdmin ? undefined : eq(chargingStations.gestorId, ctx.user.id);
+      const stations = await db.select({
+        id: chargingStations.id,
+        name: chargingStations.name,
+        city: chargingStations.city,
+        gestorCommissionPercent: chargingStations.gestorCommissionPercent,
+        hostSharePercent: chargingStations.hostSharePercent,
+        investorSharePercent: chargingStations.investorSharePercent,
+        evgreenSharePercent: chargingStations.evgreenSharePercent,
+        energyPurchaseCostPerKwh: chargingStations.energyPurchaseCostPerKwh,
+      }).from(chargingStations).where(stationFilter);
+
+      const targetStations = input.stationId ? stations.filter((station) => station.id === input.stationId) : stations;
+      if (targetStations.length === 0) {
+        return {
+          period: input.period,
+          periodLabel: input.period === "DAY" ? (input.date ?? getBogotaDateKey()) : "",
+          officialStatus: null,
+          stations: [],
+          transactions: [],
+          totals: { grossRevenue: 0, totalKwh: 0, totalSessions: 0, energyCost: 0, fixedExpenses: 0, netDistributableMargin: 0, investorPool: 0, evgreenPool: 0, gestorCommission: 0, evgreenRetained: 0 },
+        };
+      }
+
+      const nowKey = getBogotaDateKey();
+      const requestedDate = input.date ?? nowKey;
+      const requestedYear = input.year ?? Number(nowKey.slice(0, 4));
+      const requestedMonth = input.month ?? Number(nowKey.slice(5, 7));
+      const bounds = input.period === "DAY"
+        ? getColombiaDayBounds(requestedDate)
+        : getColombiaMonthBounds(requestedYear, requestedMonth);
+      const periodLabel = input.period === "DAY" ? requestedDate : `${requestedYear}-${String(requestedMonth).padStart(2, "0")}`;
+      const stationIds = targetStations.map((station) => station.id);
+
+      const [transactionRows, expenseRows, settlementRows] = await Promise.all([
+        db.select({
+          id: transactions.id,
+          stationId: transactions.stationId,
+          startTime: transactions.startTime,
+          endTime: transactions.endTime,
+          kwhConsumed: transactions.kwhConsumed,
+          totalCost: transactions.totalCost,
+          energySaleRevenue: transactions.energyCost,
+          timeCost: transactions.timeCost,
+          sessionCost: transactions.sessionCost,
+          overstayCost: transactions.overstayCost,
+          appliedPricePerKwh: transactions.appliedPricePerKwh,
+        }).from(transactions).where(and(
+          inArray(transactions.stationId, stationIds),
+          eq(transactions.status, "COMPLETED"),
+          gte(transactions.startTime, bounds.start),
+          lt(transactions.startTime, bounds.end),
+        )).orderBy(desc(transactions.startTime)).limit(input.limit),
+        db.select({
+          stationId: stationFixedExpenses.stationId,
+          amountCop: stationFixedExpenses.amountCop,
+          expensePeriodicity: stationFixedExpenses.expensePeriodicity,
+          startDate: stationFixedExpenses.startDate,
+        }).from(stationFixedExpenses).where(and(
+          inArray(stationFixedExpenses.stationId, stationIds),
+          eq(stationFixedExpenses.isActive, 1),
+          lte(stationFixedExpenses.startDate, bounds.end),
+          or(isNull(stationFixedExpenses.endDate), gte(stationFixedExpenses.endDate, bounds.start)),
+        )),
+        input.period === "MONTH"
+          ? db.select({
+            stationId: financialSettlements.stationId,
+            status: financialSettlements.settlementStatus,
+            grossRevenue: financialSettlements.grossRevenue,
+            totalEnergyCost: financialSettlements.totalEnergyCost,
+            totalFixedExpenses: financialSettlements.totalFixedExpenses,
+            hostSharePercent: financialSettlements.hostSharePercent,
+            investorSharePercent: financialSettlements.investorSharePercent,
+            platformSharePercent: financialSettlements.platformSharePercent,
+          }).from(financialSettlements).where(and(
+            inArray(financialSettlements.stationId, stationIds),
+            sql`DATE_FORMAT(${financialSettlements.periodStart}, '%Y-%m') = ${periodLabel}`,
+          ))
+          : Promise.resolve([]),
+      ]);
+
+      const fixedExpenseMap = new Map<number, number>();
+      for (const expense of expenseRows) {
+        fixedExpenseMap.set(
+          expense.stationId,
+          (fixedExpenseMap.get(expense.stationId) ?? 0) + fixedExpenseForPeriod(expense, input.period, requestedDate),
+        );
+      }
+
+      const stationMap = new Map(targetStations.map((station) => [station.id, station]));
+      const aggregateMap = new Map<number, { grossRevenue: number; totalKwh: number; totalSessions: number }>();
+      for (const transaction of transactionRows) {
+        const aggregate = aggregateMap.get(transaction.stationId) ?? { grossRevenue: 0, totalKwh: 0, totalSessions: 0 };
+        aggregate.grossRevenue += toNumber(transaction.totalCost);
+        aggregate.totalKwh += toNumber(transaction.kwhConsumed);
+        aggregate.totalSessions += 1;
+        aggregateMap.set(transaction.stationId, aggregate);
+      }
+
+      const stationLines = targetStations.map((station) => {
+        const aggregate = aggregateMap.get(station.id) ?? { grossRevenue: 0, totalKwh: 0, totalSessions: 0 };
+        const official = settlementRows.find((settlement) => settlement.stationId === station.id);
+        const waterfall = official
+          ? calculateGestorWaterfallFromAggregate({
+              grossRevenue: toNumber(official.grossRevenue),
+              energyCost: toNumber(official.totalEnergyCost),
+              fixedExpenses: toNumber(official.totalFixedExpenses),
+              hostSharePercent: toNumber(official.hostSharePercent),
+              investorSharePercent: toNumber(official.investorSharePercent),
+              evgreenSharePercent: toNumber(official.platformSharePercent),
+              gestorCommissionPercent: toNumber(station.gestorCommissionPercent),
+            })
+          : calculateGestorWaterfall({
+              grossRevenue: aggregate.grossRevenue,
+              kwhConsumed: aggregate.totalKwh,
+              energyPurchaseCostPerKwh: toNumber(station.energyPurchaseCostPerKwh),
+              hostSharePercent: toNumber(station.hostSharePercent),
+              investorSharePercent: toNumber(station.investorSharePercent),
+              evgreenSharePercent: toNumber(station.evgreenSharePercent),
+              gestorCommissionPercent: toNumber(station.gestorCommissionPercent),
+            });
+        const estimatedWaterfall = official ? waterfall : calculateGestorWaterfallFromAggregate({
+          ...waterfall,
+          energyCost: waterfall.energyCost,
+          fixedExpenses: fixedExpenseMap.get(station.id) ?? 0,
+          hostSharePercent: toNumber(station.hostSharePercent),
+          investorSharePercent: toNumber(station.investorSharePercent),
+          evgreenSharePercent: toNumber(station.evgreenSharePercent),
+          gestorCommissionPercent: toNumber(station.gestorCommissionPercent),
+        });
+
+        return {
+          stationId: station.id,
+          stationName: station.name,
+          stationCity: station.city,
+          commissionPercent: toNumber(station.gestorCommissionPercent),
+          isOfficial: Boolean(official),
+          officialStatus: official?.status ?? "PRELIMINARY",
+          totalSessions: aggregate.totalSessions,
+          totalKwh: aggregate.totalKwh,
+          ...estimatedWaterfall,
+        };
+      });
+
+      const transactionsForAudit = transactionRows.map((transaction) => {
+        const station = stationMap.get(transaction.stationId)!;
+        const energyCost = toNumber(transaction.kwhConsumed) * toNumber(station.energyPurchaseCostPerKwh);
+        return {
+          id: transaction.id,
+          stationId: transaction.stationId,
+          stationName: station.name,
+          startedAt: transaction.startTime,
+          endedAt: transaction.endTime,
+          totalKwh: toNumber(transaction.kwhConsumed),
+          grossRevenue: toNumber(transaction.totalCost),
+          energyCost,
+          contributionMargin: Math.max(0, toNumber(transaction.totalCost) - energyCost),
+          energySaleRevenue: toNumber(transaction.energySaleRevenue),
+          timeCost: toNumber(transaction.timeCost),
+          sessionCost: toNumber(transaction.sessionCost),
+          overstayCost: toNumber(transaction.overstayCost),
+          appliedPricePerKwh: toNumber(transaction.appliedPricePerKwh),
+        };
+      });
+
+      const totals = stationLines.reduce((total, line) => ({
+        grossRevenue: total.grossRevenue + line.grossRevenue,
+        totalKwh: total.totalKwh + line.totalKwh,
+        totalSessions: total.totalSessions + line.totalSessions,
+        energyCost: total.energyCost + line.energyCost,
+        fixedExpenses: total.fixedExpenses + line.fixedExpenses,
+        netDistributableMargin: total.netDistributableMargin + line.netDistributableMargin,
+        investorPool: total.investorPool + line.investorPool,
+        evgreenPool: total.evgreenPool + line.evgreenPool,
+        gestorCommission: total.gestorCommission + line.gestorCommission,
+        evgreenRetained: total.evgreenRetained + line.evgreenRetained,
+      }), { grossRevenue: 0, totalKwh: 0, totalSessions: 0, energyCost: 0, fixedExpenses: 0, netDistributableMargin: 0, investorPool: 0, evgreenPool: 0, gestorCommission: 0, evgreenRetained: 0 });
+
+      return {
+        period: input.period,
+        periodLabel,
+        officialStatus: stationLines.every((line) => line.isOfficial)
+          ? "OFFICIAL"
+          : stationLines.some((line) => line.isOfficial)
+            ? "MIXED"
+            : "PRELIMINARY",
+        stations: stationLines,
+        transactions: transactionsForAudit,
+        totals,
+      };
     }),
 
   // --------------------------------------------------------------------------

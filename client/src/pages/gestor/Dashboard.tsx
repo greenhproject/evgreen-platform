@@ -1,247 +1,72 @@
-/**
- * Portal del Gestor Comercial — Dashboard principal
- * Muestra métricas clave: espacios postulados, estaciones activas y comisiones acumuladas.
- */
-import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+/** Dashboard principal del Portal Comercial EVGreen. */
 import { Link } from "wouter";
+import { trpc } from "@/lib/trpc";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  MapPin,
-  Zap,
-  TrendingUp,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
   ArrowRight,
+  Building2,
+  CircleDollarSign,
+  FileCheck2,
+  MapPin,
+  RefreshCw,
+  TrendingUp,
+  Wifi,
+  WifiOff,
+  Zap,
 } from "lucide-react";
 
-function fmt(n: number) {
-  return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
-}
-
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  pending:    { label: "Pendiente",   color: "bg-yellow-500/20 text-yellow-400" },
-  reviewing:  { label: "En revisión", color: "bg-blue-500/20 text-blue-400" },
-  approved:   { label: "Aprobado",    color: "bg-green-500/20 text-green-400" },
-  rejected:   { label: "Rechazado",   color: "bg-red-500/20 text-red-400" },
-  active:     { label: "Activo",      color: "bg-emerald-500/20 text-emerald-400" },
-  contracted: { label: "Contratado",  color: "bg-purple-500/20 text-purple-400" },
-};
+const formatCop = (value: number) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
 
 export default function GestorDashboard() {
-  const { user } = useAuth();
   const now = new Date();
-
-  const { data: espaciosData } = trpc.gestor.getMisEspacios.useQuery({ page: 1, limit: 5 });
-  const { data: estacionesData } = trpc.gestor.getMisEstaciones.useQuery();
-  const { data: gananciasData } = trpc.gestor.getMisGanancias.useQuery({ year: now.getFullYear() });
-  const { data: liquidacionData } = trpc.gestor.getLiquidacionMensual.useQuery({
+  const { data: cartera, isLoading: carteraLoading } = trpc.gestor.getCartera.useQuery();
+  const { data: settlement, isLoading: settlementLoading } = trpc.gestor.getLiquidacionAuditable.useQuery({
+    period: "MONTH",
     month: now.getMonth() + 1,
     year: now.getFullYear(),
   });
+  const loading = carteraLoading || settlementLoading;
+  const totals = settlement?.totals;
 
-  const totalEspacios = espaciosData?.total ?? 0;
-  const totalEstaciones = estacionesData?.stations.length ?? 0;
-  const totalComision = gananciasData?.totalCommission ?? 0;
-  const comisionMes = liquidacionData?.totalCommission ?? 0;
+  if (loading) {
+    return <div className="flex min-h-80 items-center justify-center"><RefreshCw className="h-7 w-7 animate-spin text-emerald-400" /></div>;
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white">
-          Bienvenido, {user?.name?.split(" ")[0]} 👋
-        </h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Panel de Gestor Comercial — EVGreen
-        </p>
+    <div className="space-y-5 pb-6">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-emerald-400 text-xs font-semibold uppercase tracking-[0.16em]">Portal Comercial</p>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Resumen de cartera</h1>
+          <p className="mt-1 text-sm text-slate-400">Oportunidades, activos operativos y comisión trazable en un solo lugar.</p>
+        </div>
+        <Link href="/gestor/cotizaciones" className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">Crear cotización <ArrowRight className="ml-1.5 h-4 w-4" /></Link>
+      </header>
+
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Metric icon={MapPin} value={String(cartera?.spaces.length ?? 0)} label="Oportunidades" color="text-sky-300" bg="bg-sky-500/10" />
+        <Metric icon={Zap} value={String(cartera?.summary.activeStations ?? 0)} label="Activos operativos" color="text-emerald-300" bg="bg-emerald-500/10" />
+        <Metric icon={TrendingUp} value={formatCop(totals?.grossRevenue ?? 0)} label="Facturación mensual" color="text-violet-300" bg="bg-violet-500/10" compact />
+        <Metric icon={CircleDollarSign} value={formatCop(totals?.gestorCommission ?? 0)} label="Comisión devengada" color="text-amber-300" bg="bg-amber-500/10" compact />
+      </section>
+
+      <Card className="border-emerald-500/20 bg-emerald-500/[0.05]">
+        <CardContent className="flex gap-3 p-4"><FileCheck2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" /><div><p className="font-medium text-white">Comisión transparente y auditable</p><p className="mt-1 text-xs leading-relaxed text-slate-400">La comisión se calcula sobre el margen distribuible de las transacciones completadas, después de energía, gastos operativos y aliado comercial. Se descuenta de la bolsa EVGreen, sin modificar la participación del inversionista.</p><Link href="/gestor/liquidacion" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-300 hover:text-emerald-200">Ver waterfall y auditoría <ArrowRight className="h-3.5 w-3.5" /></Link></div></CardContent>
+      </Card>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card className="border-slate-800 bg-slate-900/70"><CardContent className="p-4"><div className="mb-4 flex items-center justify-between"><div><p className="font-semibold text-white">Oportunidades recientes</p><p className="mt-0.5 text-xs text-slate-500">Espacios vinculados a tu gestión.</p></div><Link href="/gestor/cartera" className="text-xs font-medium text-emerald-300 hover:text-emerald-200">Ver cartera</Link></div>{cartera?.spaces.length ? <div className="space-y-2">{cartera.spaces.slice(0, 4).map((space) => <div key={space.id} className="flex items-center gap-3 rounded-lg bg-slate-950/60 p-3"><div className="rounded-lg bg-sky-500/10 p-2"><MapPin className="h-4 w-4 text-sky-300" /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-white">{space.name}</p><p className="truncate text-xs text-slate-500">{space.city} · {space.code}</p></div><p className="text-xs font-medium text-emerald-300">{Number(space.gestorCommissionPercent).toFixed(2)}%</p></div>)}</div> : <Empty icon={Building2} text="Aún no hay oportunidades vinculadas." />}</CardContent></Card>
+
+        <Card className="border-slate-800 bg-slate-900/70"><CardContent className="p-4"><div className="mb-4 flex items-center justify-between"><div><p className="font-semibold text-white">Activos operativos</p><p className="mt-0.5 text-xs text-slate-500">Corte del mes en curso.</p></div><Link href="/gestor/liquidacion" className="text-xs font-medium text-emerald-300 hover:text-emerald-200">Auditar</Link></div>{cartera?.stations.length ? <div className="space-y-2">{cartera.stations.slice(0, 4).map((station) => <div key={station.id} className="flex items-center gap-3 rounded-lg bg-slate-950/60 p-3"><div className="rounded-lg bg-emerald-500/10 p-2"><Zap className="h-4 w-4 text-emerald-300" /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-white">{station.name}</p><p className="text-xs text-slate-500">{station.month.totalSessions} sesiones · {formatCop(station.month.grossRevenue)}</p></div><div className="text-right"><p className="flex items-center justify-end text-[10px] text-slate-500">{station.isOnline ? <Wifi className="mr-1 h-3 w-3 text-emerald-300" /> : <WifiOff className="mr-1 h-3 w-3" />}{station.isOnline ? "En línea" : "Sin conexión"}</p><p className="mt-0.5 text-xs font-semibold text-emerald-300">{formatCop(station.month.commissionAccrued)}</p></div></div>)}</div> : <Empty icon={Zap} text="Aún no hay estaciones vinculadas a este gestor." />}</CardContent></Card>
       </div>
-
-      {/* Métricas */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="bg-slate-800/60 border-slate-700">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-500/20">
-                <MapPin className="h-5 w-5 text-blue-400" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-white">{totalEspacios}</p>
-                <p className="text-xs text-slate-400">Espacios postulados</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-800/60 border-slate-700">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-green-500/20">
-                <Zap className="h-5 w-5 text-green-400" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-white">{totalEstaciones}</p>
-                <p className="text-xs text-slate-400">Estaciones activas</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-800/60 border-slate-700">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-500/20">
-                <TrendingUp className="h-5 w-5 text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-lg font-bold text-white">{fmt(comisionMes)}</p>
-                <p className="text-xs text-slate-400">Comisión este mes</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-800/60 border-slate-700">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-purple-500/20">
-                <Clock className="h-5 w-5 text-purple-400" />
-              </div>
-              <div>
-                <p className="text-lg font-bold text-white">{fmt(totalComision)}</p>
-                <p className="text-xs text-slate-400">Comisión acumulada</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Últimos espacios */}
-        <Card className="bg-slate-800/60 border-slate-700">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base text-white">Mis Espacios Recientes</CardTitle>
-              <Link href="/gestor/espacios" className="text-xs text-green-400 hover:text-green-300 flex items-center gap-1">
-                Ver todos <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {!espaciosData?.spaces.length ? (
-              <p className="text-slate-500 text-sm text-center py-4">
-                No has postulado espacios aún.{" "}
-                <Link href="/gestor/postular" className="text-green-400 hover:underline">
-                  Postula uno ahora
-                </Link>
-              </p>
-            ) : (
-              espaciosData.spaces.map((s) => {
-                const st = STATUS_LABELS[s.spaceStatus ?? "pending"] ?? STATUS_LABELS.pending;
-                return (
-                  <div key={s.id} className="flex items-center justify-between py-2 border-b border-slate-700/50 last:border-0">
-                    <div>
-                      <p className="text-sm font-medium text-white">{s.spaceName}</p>
-                      <p className="text-xs text-slate-400">{s.city}{s.department ? `, ${s.department}` : ""}</p>
-                    </div>
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${st.color}`}>
-                      {st.label}
-                    </span>
-                  </div>
-                );
-              })
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Estaciones activas */}
-        <Card className="bg-slate-800/60 border-slate-700">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base text-white">Mis Estaciones</CardTitle>
-              <Link href="/gestor/estaciones" className="text-xs text-green-400 hover:text-green-300 flex items-center gap-1">
-                Ver todas <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {!estacionesData?.stations.length ? (
-              <p className="text-slate-500 text-sm text-center py-4">
-                Aún no tienes estaciones activas vinculadas.
-              </p>
-            ) : (
-              estacionesData.stations.map((s) => (
-                <div key={s.id} className="flex items-center justify-between py-2 border-b border-slate-700/50 last:border-0">
-                  <div className="flex items-center gap-2">
-                    {s.isOnline ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" />
-                    ) : (
-                      <AlertCircle className="h-4 w-4 text-slate-500 shrink-0" />
-                    )}
-                    <div>
-                      <p className="text-sm font-medium text-white">{s.name}</p>
-                      <p className="text-xs text-slate-400">{s.city}</p>
-                    </div>
-                  </div>
-                  <span className="text-xs text-emerald-400 font-medium">
-                    {parseFloat(s.gestorCommissionPercent as string).toFixed(2)}%
-                  </span>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Liquidación del mes */}
-      {(liquidacionData?.lines?.length ?? 0) > 0 && (
-        <Card className="bg-slate-800/60 border-slate-700">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base text-white">
-                Liquidación — {now.toLocaleString("es-CO", { month: "long", year: "numeric" })}
-              </CardTitle>
-              <Link href="/gestor/liquidacion" className="text-xs text-green-400 hover:text-green-300 flex items-center gap-1">
-                Ver detalle <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-slate-400 text-xs border-b border-slate-700">
-                    <th className="text-left pb-2">Estación</th>
-                    <th className="text-right pb-2">kWh</th>
-                    <th className="text-right pb-2">Margen Neto</th>
-                    <th className="text-right pb-2">Tu Comisión</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {liquidacionData?.lines?.map((l, i) => l && (
-                    <tr key={i} className="border-b border-slate-700/40 last:border-0">
-                      <td className="py-2 text-white">{l.stationName}</td>
-                      <td className="py-2 text-right text-slate-300">{l.totalKwhSold.toFixed(1)}</td>
-                      <td className="py-2 text-right text-slate-300">{fmt(l.netMargin)}</td>
-                      <td className="py-2 text-right font-semibold text-emerald-400">{fmt(l.gestorCommission)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-slate-600">
-                    <td colSpan={3} className="pt-2 text-slate-400 font-medium">Total a liquidar</td>
-                    <td className="pt-2 text-right font-bold text-emerald-400 text-base">
-                      {fmt(liquidacionData?.totalCommission ?? 0)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
+}
+
+function Metric({ icon: Icon, value, label, color, bg, compact = false }: { icon: typeof Zap; value: string; label: string; color: string; bg: string; compact?: boolean }) {
+  return <Card className="border-slate-800 bg-slate-900/70"><CardContent className="p-3 sm:p-4"><div className="flex gap-2.5"><div className={`rounded-lg p-2 ${bg}`}><Icon className={`h-4 w-4 ${color}`} /></div><div className="min-w-0"><p className={`truncate font-bold text-white ${compact ? "text-base sm:text-lg" : "text-xl"}`}>{value}</p><p className="mt-0.5 text-[11px] text-slate-400">{label}</p></div></div></CardContent></Card>;
+}
+
+function Empty({ icon: Icon, text }: { icon: typeof Zap; text: string }) {
+  return <div className="flex min-h-36 flex-col items-center justify-center text-center"><Icon className="mb-2 h-7 w-7 text-slate-600" /><p className="text-sm text-slate-500">{text}</p></div>;
 }

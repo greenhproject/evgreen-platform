@@ -3868,3 +3868,5 @@
 - [x] Feature: botón "Crear espacio" manual desde admin sin depender del formulario público
 - [x] Feature: sección opcional de fotos en el formulario de creación manual de espacios
 - [x] Feature: sección de fotos en el formulario de edición de espacios existentes (addPhotos endpoint)
+- [x] Feature: portal comercial mobile-first con espacios vinculados, métricas operativas y liquidación auditable de comisión sobre margen neto
+- [x] Feature: consolidar "Mis Espacios" y "Mis Estaciones" en una cartera comercial única e incorporar Cotizaciones al sidebar del gestor
