@@ -230,6 +230,12 @@ function getHomeRouteByRole(role: string | undefined): string {
 
 // Detectar si la app se ejecuta como PWA instalada (standalone)
 function isPWAInstalled(): boolean {
+  // La app nativa de Capacitor nunca es una PWA instalada — son mutuamente excluyentes.
+  // navigator.standalone es un flag de WebKit que también puede reportar true dentro de
+  // cualquier WKWebView sin cromo de Safari (como el que usa Capacitor en iOS), no solo
+  // en una PWA agregada a la pantalla de inicio — sin esta guarda, la app nativa de iOS
+  // se auto-detecta como PWA y cae en PWALoginScreen en vez del flujo nativo con sk.
+  if (isCapacitorNative()) return false;
   // Android Chrome / Edge / Samsung Internet
   if (window.matchMedia('(display-mode: standalone)').matches) return true;
   // iOS Safari

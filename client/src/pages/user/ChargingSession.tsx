@@ -144,7 +144,7 @@ export default function ChargingSession() {
     <UserLayout showHeader={false} showBottomNav={false}>
       <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background p-4">
         {/* Botón volver al mapa */}
-        <div className="flex items-center pt-2 mb-2">
+        <div className="flex items-center mb-2 safe-area-inset-top">
           <Button
             variant="ghost"
             size="sm"

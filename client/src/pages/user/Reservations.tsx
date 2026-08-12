@@ -149,7 +149,6 @@ export default function UserReservations() {
                             <div className="text-right">
                               {getStatusBadge(reservation.reservationStatus)}
                               <div className="text-xs text-primary mt-1 font-medium">
-                                // @ts-ignore
                                 {getTimeUntilReservation(new Date(reservation.startTime))}
                               </div>
                             </div>
@@ -159,7 +158,6 @@ export default function UserReservations() {
                             <div className="flex items-center gap-2">
                               <Calendar className="w-4 h-4 text-muted-foreground" />
                               <span>
-                                // @ts-ignore
                                 {new Date(reservation.startTime).toLocaleDateString("es-CO", {
                                   day: "numeric",
                                   month: "short",
@@ -169,7 +167,6 @@ export default function UserReservations() {
                             <div className="flex items-center gap-2">
                               <Clock className="w-4 h-4 text-muted-foreground" />
                               <span>
-                                // @ts-ignore
                                 {new Date(reservation.startTime).toLocaleTimeString("es-CO", {
                                   hour: "2-digit",
                                   minute: "2-digit",
@@ -240,7 +237,6 @@ export default function UserReservations() {
                             </h4>
                             <p className="text-sm text-muted-foreground/70 flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              // @ts-ignore
                               {new Date(reservation.startTime).toLocaleDateString("es-CO", {
                                 day: "numeric",
                                 month: "short",

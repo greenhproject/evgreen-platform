@@ -443,7 +443,6 @@ export default function Payments() {
                             : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
                         }
                       >
-                        // @ts-ignore
                         {p.payment.eventPaymentStatus === "PAID" ? "Pagado" : "Pendiente"}
                       </Badge>
                       {p.founderSlot && (

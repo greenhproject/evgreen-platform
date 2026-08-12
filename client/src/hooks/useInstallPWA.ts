@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { isCapacitorNative } from "@/const";
 
 /**
  * Hook para manejar la instalación de la PWA en Android/Desktop.
@@ -36,6 +37,13 @@ export function useInstallPWA(): UseInstallPWAReturn {
 
   // Verificar si ya está instalada (modo standalone)
   useEffect(() => {
+    // La app nativa de Capacitor nunca debe ofrecerse a sí misma para "instalar" —
+    // navigator.standalone/display-mode:standalone no son confiables dentro de su
+    // WKWebView sin cromo (mismo problema ya resuelto en isPWAInstalled(), App.tsx).
+    if (isCapacitorNative()) {
+      setIsInstalled(true);
+      return;
+    }
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as any).standalone === true;

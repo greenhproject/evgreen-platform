@@ -97,7 +97,7 @@ export default function UserNotifications() {
     <UserLayout showHeader={false} showBottomNav={false}>
       <div className="min-h-screen bg-background">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border/50">
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border/50 safe-area-inset-top">
           <div className="flex items-center gap-4 p-4">
             <Button
               variant="ghost"

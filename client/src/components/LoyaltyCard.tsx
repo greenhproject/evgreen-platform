@@ -56,8 +56,8 @@ export function LoyaltyCard() {
   }) ?? { mutate: () => {}, isPending: false };
 
   const points = summary?.balance ?? 0;
-  const totalEarned = 0; // Se calcula desde historial si se necesita
-  const totalRedeemed = 0;
+  const totalEarned = summary?.totalEarned ?? 0;
+  const totalRedeemed = summary?.totalRedeemed ?? 0;
   const { level, index: levelIndex } = getLevel(points);
   const nextLevel = getNextLevel(levelIndex);
   const progressToNext = nextLevel
