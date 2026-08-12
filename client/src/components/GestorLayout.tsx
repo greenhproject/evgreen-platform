@@ -7,11 +7,12 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard,
-  MapPin,
-  Zap,
+  BriefcaseBusiness,
+  FileText,
   DollarSign,
   LogOut,
   Menu,
+  Zap,
   X,
   ChevronRight,
 } from "lucide-react";
@@ -19,8 +20,8 @@ import { useState } from "react";
 
 const NAV_ITEMS = [
   { href: "/gestor", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/gestor/espacios", label: "Mis Espacios", icon: MapPin },
-  { href: "/gestor/estaciones", label: "Mis Estaciones", icon: Zap },
+  { href: "/gestor/cartera", label: "Mi cartera", icon: BriefcaseBusiness },
+  { href: "/gestor/cotizaciones", label: "Cotizaciones", icon: FileText },
   { href: "/gestor/liquidacion", label: "Liquidación", icon: DollarSign },
 ];
 
@@ -44,7 +45,7 @@ export function GestorLayout({ children }: { children: React.ReactNode }) {
           </div>
           <div>
             <p className="font-bold text-white text-sm">EVGreen</p>
-            <p className="text-xs text-slate-400">Portal Gestor</p>
+            <p className="text-xs text-slate-400">Portal Comercial</p>
           </div>
         </div>
       </div>
@@ -122,7 +123,7 @@ export function GestorLayout({ children }: { children: React.ReactNode }) {
           </Button>
           <div className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-green-400" />
-            <span className="font-bold text-white text-sm">Portal Gestor</span>
+            <span className="font-bold text-white text-sm">Portal Comercial</span>
           </div>
         </header>
 

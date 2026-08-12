@@ -100,6 +100,7 @@ const InvestorOnboarding = lazy(() => import("./pages/investor/InvestorOnboardin
 const GestorDashboard = lazy(() => import("./pages/gestor/Dashboard"));
 const GestorEspacios = lazy(() => import("./pages/gestor/Espacios"));
 const GestorEstaciones = lazy(() => import("./pages/gestor/Estaciones"));
+const GestorCartera = lazy(() => import("./pages/gestor/Cartera"));
 const GestorLiquidacion = lazy(() => import("./pages/gestor/Liquidacion"));
 
 // Páginas de técnico
@@ -1527,6 +1528,20 @@ function Router() {
           <ProtectedRoute allowedRoles={["comercial", "admin", "staff"]}>
             <GestorLayout>
               <GestorEspacios />
+            </GestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/gestor/cartera">
+          <ProtectedRoute allowedRoles={["comercial", "admin", "staff"]}>
+            <GestorLayout>
+              <GestorCartera />
+            </GestorLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/gestor/cotizaciones">
+          <ProtectedRoute allowedRoles={["comercial", "admin", "staff"]}>
+            <GestorLayout>
+              <AdminQuotes />
             </GestorLayout>
           </ProtectedRoute>
         </Route>

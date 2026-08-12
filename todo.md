@@ -3985,3 +3985,10 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [ ] Evaluar CDN para assets estáticos del build web (hoy servidos directo desde el mismo proceso Express)
 - [ ] Definir criterio de éxito antes de migrar nada: qué SLA/latencia/capacidad debe cumplir la plataforma bajo la carga esperada
 - [ ] Con datos reales de load testing, decidir si hace falta migrar de infraestructura (Railway → algo con auto-scaling nativo) o si con ajustes de configuración alcanza — no asumir que hace falta una migración grande sin medir primero
+
+## Portal Comercial — Cartera y Liquidación Auditable
+
+- [x] Consolidar la navegación comercial en Dashboard, Mi cartera, Cotizaciones y Liquidación.
+- [x] Unificar oportunidades y estaciones vinculadas en una cartera mobile-first con métricas mensuales.
+- [x] Implementar liquidación auditable por día/mes sobre transacciones completadas, energía, gastos prorrateados y margen distribuible.
+- [x] Limitar la comisión comercial a la bolsa EVGreen para no afectar la participación del inversionista.
