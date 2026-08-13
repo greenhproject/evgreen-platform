@@ -7,6 +7,11 @@
 - Leonardo es quien está trabajando la parte mobile (safe-areas de Android 16, versionado nativo iOS/Android, etc.). **No revertir ni sobreescribir cambios en `ios/`, `android/`, `capacitor.config.ts`, o ajustes de safe-area/viewport mobile-específicos** sin avisar primero — afectan builds ya en tiendas.
 - Si construyes una mejora o feature que aplica tanto a web como a mobile (comparten el mismo código React/tRPC), avísalo para probarla también en Capacitor antes de la siguiente publicación — así entra en el mismo release en vez de quedar solo en web.
 
+## Bug crítico — Sobretiempo después de desconexión (2026-08-13)
+- [x] Fix: cancelar el monitor, los mensajes y las penalidades de ocupación cuando OCPP confirme `Available` o `StopTransaction.reason=EVDisconnected`
+- [x] Test: simular la carrera StopTransaction/Available y verificar cero cobros, deudas o notificaciones posteriores
+- [x] Test: validar la liberación de locks y sesiones para Available por conector y Available de estación (connectorId=0)
+
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
 - [x] Fix: error al generar Prospecto PDF (posible fallo en jsPDF GState/setGState en Node.js)
