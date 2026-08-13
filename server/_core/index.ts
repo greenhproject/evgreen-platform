@@ -19,7 +19,9 @@ import { startTransactionCleanupJob } from "../jobs/transaction-cleanup";
 import { startBalanceMonitor } from "../charging/balance-monitor";
 import { startProactiveNotifications } from "../ai/proactive-notifications";
 import { startDemandForecastJob } from "../ai/demand-forecast-service";
-import { startOverstayMonitor, onChargingFinished, onCableDisconnected } from "../charging/overstay-monitor";
+import { startOverstayMonitor, onChargingFinished, onCableDisconnected, onStationReportedAvailable } from "../charging/overstay-monitor";
+import { getOverstayStatusAction, shouldStartOverstayFromStopTransaction } from "../charging/overstay-guards";
+import { reconcileOverstayAfterStopTransaction } from "../charging/overstay-stop-reconciliation";
 import { reservationJobs } from "../notifications/reservation-notifications";
 import cron from "node-cron";
 import { runWeeklyReportJob } from "../email/weekly-report-email";
@@ -1051,6 +1053,11 @@ async function handleOCPP16Message(
           console.error(`[OCPP] StatusNotification auto-resolve error:`, err);
         }
       }
+      if (resolvedStationId && payload.connectorId === 0 && getOverstayStatusAction(payload.status) === "CANCEL") {
+        // OCPP 1.6 connectorId=0 reports the whole charge point. Clear any stale lock
+        // so a cable that was physically removed can never keep accruing penalties.
+        await onStationReportedAvailable(resolvedStationId);
+      }
       if (resolvedStationId && payload.connectorId > 0) {
         const evses = await db.getEvsesByStationId(resolvedStationId);
         const evse = evses.find((e: any) => e.evseIdLocal === payload.connectorId);
@@ -1080,7 +1087,7 @@ async function handleOCPP16Message(
           // IMPORTANTE: Solo "Finishing" indica carga completada. "SuspendedEV" significa que el
           // BMS del vehículo redujo/pausó la corriente temporalmente (fase taper en AC, ~80-90% SoC)
           // y NO debe disparar overstay porque el carro puede seguir cargando.
-          if (payload.status === "Finishing") {
+          if (getOverstayStatusAction(payload.status) === "START") {
             console.log(`[OCPP] StatusNotification - EVSE ${evse.id} entered Finishing, starting overstay tracking`);
             onChargingFinished(evse.id, resolvedStationId).catch(err => 
               console.error(`[OCPP] Error starting overstay tracking:`, err)
@@ -1088,7 +1095,7 @@ async function handleOCPP16Message(
           }
           
           // OVERSTAY: Detectar cable desconectado (Available)
-          if (payload.status === "Available") {
+          if (getOverstayStatusAction(payload.status) === "CANCEL") {
             console.log(`[OCPP] StatusNotification - EVSE ${evse.id} now Available, finalizing overstay if active`);
             onCableDisconnected(evse.id).catch(err => 
               console.error(`[OCPP] Error finalizing overstay:`, err)
@@ -1505,15 +1512,21 @@ async function handleOCPP16Message(
         ...(manualSocEndValue !== null ? { manualSocEnd: manualSocEndValue } : {}),
       });
       
-      // Actualizar estado del EVSE a FINISHING (cable aún puede estar conectado)
-      // El StatusNotification posterior determinará si pasa a Available o se queda en Finishing
-      await db.updateEvseStatus(transaction.evseId, "FINISHING", { triggeredBy: "OCPP" });
-      console.log(`[OCPP] StopTransaction - EVSE ${transaction.evseId} set to FINISHING (pending cable disconnect)`);
-      
-      // Iniciar tracking de overstay inmediatamente
-      onChargingFinished(transaction.evseId, transaction.stationId).catch(err => 
-        console.error(`[OCPP] Error starting overstay tracking after StopTransaction:`, err)
-      );
+      // StopTransaction cierra el cobro de energía, pero no prueba que el cable continúe conectado.
+      // Solo EVDisconnected es una confirmación física que cancela de inmediato todo sobretiempo.
+      if (await reconcileOverstayAfterStopTransaction({
+        stopReason: payload.reason,
+        evseId: transaction.evseId,
+        markEvseAvailable: (evseId) => db.updateEvseStatus(evseId, "AVAILABLE", { triggeredBy: "OCPP" }),
+        cancelOverstay: onCableDisconnected,
+      })) {
+        console.log(`[OCPP] StopTransaction ${transaction.id} confirmed EVDisconnected; overstay cancelled.`);
+      }
+      if (shouldStartOverstayFromStopTransaction()) {
+        onChargingFinished(transaction.evseId, transaction.stationId).catch(err =>
+          console.error(`[OCPP] Error starting overstay after StopTransaction:`, err)
+        );
+      }
       
       // Descontar saldo del usuario
       if (totalCost > 0 && transaction.userId) {
@@ -2253,7 +2266,7 @@ async function handleOCPP201Message(
           
           // OVERSTAY: En OCPP 2.0.1, "Occupied" con connectorStatus puede indicar Finishing
           // También manejar Available para finalizar overstay
-          if (payload.connectorStatus === "Available") {
+          if (getOverstayStatusAction(payload.connectorStatus) === "CANCEL") {
             onCableDisconnected(evse.id).catch(err => 
               console.error(`[OCPP 2.0.1] Error finalizing overstay:`, err)
             );

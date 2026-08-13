@@ -23,6 +23,7 @@ import { eq, and, desc, lt, or } from "drizzle-orm";
 import { sendUserPush } from "../push/unified-push";
 import { sendWhatsAppTemplate, WA_TEMPLATE_NAMES } from "../whatsapp/whatsapp-service";
 import { autoChargeIfNeeded } from "../wompi/auto-charge";
+import { createOverstayLifecycle } from "./overstay-lifecycle";
 import crypto from "crypto";
 
 // Unique instance ID for this server process (survives restarts with different ID)
@@ -74,6 +75,7 @@ interface OverstaySession {
 
 // In-memory map of active overstay sessions: evseId → OverstaySession
 const activeOverstaySessions = new Map<number, OverstaySession>();
+const overstayLifecycle = createOverstayLifecycle();
 
 let monitorInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -268,6 +270,17 @@ export async function onChargingFinished(evseId: number, stationId: number) {
     const dbInstance = await db.getDb();
     if (!dbInstance) return;
 
+    // Nunca inferir que el cable sigue conectado: el estado físico OCPP es la autoridad.
+    // Esto evita crear un monitor rezagado cuando el StopTransaction llegó después de Available.
+    const observedEvse = await db.getEvseById(evseId);
+    if (observedEvse?.connectorStatus !== "FINISHING") {
+      console.log(`[OverstayMonitor] EVSE ${evseId} is ${observedEvse?.connectorStatus ?? "missing"}; not starting overstay without confirmed FINISHING.`);
+      await releaseOverstayLock(evseId);
+      return;
+    }
+    // Un FINISHING nuevo vuelve a habilitar el seguimiento del mismo EVSE.
+    overstayLifecycle.markFinishing(evseId);
+
     // GUARD: Si hay una transacción activa (IN_PROGRESS), NO iniciar overstay.
     // Esto significa que la carga aún está en curso (el cargador reportó Finishing
     // pero la transacción no se ha completado aún en nuestro sistema).
@@ -415,19 +428,34 @@ export async function onChargingFinished(evseId: number, stationId: number) {
  * Finalizes any active overstay session.
  */
 export async function onCableDisconnected(evseId: number) {
+  // Se registra primero para cerrar la carrera con cualquier ciclo de cobro en curso.
+  overstayLifecycle.markDisconnected(evseId);
   const session = activeOverstaySessions.get(evseId);
-  if (!session) return;
+  if (session) {
+    console.log(`[OverstayMonitor] Cable disconnected on EVSE ${evseId}. Cancelling overstay immediately. Already charged: $${session.accumulatedCost.toFixed(0)} COP`);
+  } else {
+    console.log(`[OverstayMonitor] Cable disconnected on EVSE ${evseId}. Clearing any stale overstay lock.`);
+  }
 
-  console.log(`[OverstayMonitor] Cable disconnected on EVSE ${evseId}. Finalizing overstay. Total charged: $${session.accumulatedCost.toFixed(0)} COP`);
-
-  // Do one final charge calculation for any remaining time
-  await chargeOverstayForSession(session, true);
-
-  // Release the DB lock
-  await releaseOverstayLock(evseId);
-
-  // Remove the session
+  // A physical disconnection is terminal. Do not calculate a final estimated charge:
+  // timer/order races must never create a charge after the connector is available.
   activeOverstaySessions.delete(evseId);
+  await releaseOverstayLock(evseId);
+}
+
+/** Handles OCPP 1.6 connectorId=0, which represents the whole charge point. */
+export async function onStationReportedAvailable(stationId: number): Promise<void> {
+  const stationEvses = await db.getEvsesByStationId(stationId);
+  const affectedEvseIds = Array.from(new Set([
+    ...stationEvses.map((evse) => evse.id),
+    ...Array.from(activeOverstaySessions.values())
+      .filter((session) => session.stationId === stationId)
+      .map((session) => session.evseId),
+  ]));
+
+  overstayLifecycle.markStationDisconnected(affectedEvseIds);
+
+  await Promise.all(affectedEvseIds.map((evseId) => onCableDisconnected(evseId)));
 }
 
 /**
@@ -467,6 +495,20 @@ export function getAllOverstaySessions() {
   });
   return sessions;
 }
+
+/** @internal Solo para pruebas de regresión del ciclo de desconexión. */
+export const __overstayTestHooks = {
+  reset() {
+    activeOverstaySessions.clear();
+    overstayLifecycle.reset();
+  },
+  seedSession(session: Pick<OverstaySession, "evseId" | "stationId" | "accumulatedCost">) {
+    activeOverstaySessions.set(session.evseId, session as OverstaySession);
+  },
+  activeSessionCount() {
+    return activeOverstaySessions.size;
+  },
+};
 
 // ============================================================================
 // INTERNAL: DB SCAN for unmonitored overstay
@@ -562,6 +604,12 @@ async function processOverstaySessions() {
   const entries = Array.from(activeOverstaySessions.entries());
   for (const [evseId, session] of entries) {
     try {
+      if (overstayLifecycle.isCancelled(evseId)) {
+        await releaseOverstayLock(evseId);
+        activeOverstaySessions.delete(evseId);
+        continue;
+      }
+
       // First, verify the EVSE is still in FINISHING state
       // NOTA: Solo FINISHING es válido para overstay. SUSPENDED_EV indica taper (carga aún en curso).
       const evse = await db.getEvseById(evseId);
@@ -593,6 +641,15 @@ async function processOverstaySessions() {
  * Calculate and charge overstay for a single session
  */
 async function chargeOverstayForSession(session: OverstaySession, isFinal: boolean) {
+  // Releer el estado justo antes de cobrar elimina la carrera entre el cron y
+  // StatusNotification Available. La desconexión siempre prevalece.
+  const liveEvse = await db.getEvseById(session.evseId);
+  if (overstayLifecycle.getChargeDecision(session.evseId, liveEvse?.connectorStatus) === "CANCEL") {
+    console.log(`[OverstayMonitor] EVSE ${session.evseId} is no longer FINISHING before charge. Cancelling session.`);
+    await onCableDisconnected(session.evseId);
+    return;
+  }
+
   const now = new Date();
   const elapsedMinutes = (now.getTime() - session.finishingStartTime.getTime()) / (1000 * 60);
 
