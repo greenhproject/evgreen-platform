@@ -157,10 +157,10 @@ export default function UserLayout({
 
       {/* Header con gradiente verde estético */}
       {showHeader && (
-        <header className="sticky top-0 z-50 safe-area-inset-top">
+        <header className="sticky top-0 z-50">
           {/* Fondo con gradiente verde oscuro elegante */}
-          <div className="bg-gradient-to-r from-emerald-900 via-green-800 to-emerald-900 border-b border-emerald-700/50 shadow-lg shadow-emerald-900/20">
-            <div className="flex items-center justify-between h-14 px-4">
+          <div className="bg-gradient-to-r from-emerald-900 via-green-800 to-emerald-900 border-b border-emerald-700/50 shadow-lg shadow-emerald-900/20 safe-area-inset-top pb-1.5">
+            <div className="grid grid-cols-[auto_1fr_auto] items-center h-12 px-4">
               {showBack ? (
                 <Button
                   variant="ghost"
@@ -232,10 +232,10 @@ export default function UserLayout({
 
               {/* Logo EVGreen centrado y visible */}
               {title ? (
-                <h1 className="font-semibold text-lg text-white">{title}</h1>
+                <h1 className="font-semibold text-lg text-white text-center truncate">{title}</h1>
               ) : (
                 <Link href="/map">
-                  <a className="flex items-center gap-2 hover:opacity-90 transition-opacity">
+                  <a className="flex items-center gap-2 justify-center hover:opacity-90 transition-opacity">
                     {/* Icono del logo con rayo */}
                     <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
                       <Zap className="w-5 h-5 text-white" fill="currentColor" />

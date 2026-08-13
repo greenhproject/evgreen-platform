@@ -136,6 +136,7 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ConnectorStatus, TriggeredBy } from "./charging/connector-state.service";
+import { toUtcIso } from "./utils/dates";
 
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1432,7 +1433,8 @@ export async function createWalletTransaction(walletTx: InsertWalletTransaction)
 export async function getWalletTransactionsByUserId(userId: number, limit = 50) {
   const db = (await getDb())!;
   if (!db) return [];
-  return db.select().from(walletTransactions).where(eq(walletTransactions.userId, userId)).orderBy(desc(walletTransactions.createdAt)).limit(limit);
+  const rows = await db.select().from(walletTransactions).where(eq(walletTransactions.userId, userId)).orderBy(desc(walletTransactions.createdAt)).limit(limit);
+  return rows.map((row) => ({ ...row, createdAt: toUtcIso(row.createdAt) as string }));
 }
 
 // ============================================================================
@@ -3945,8 +3947,8 @@ export async function getUserActiveTransaction(userId: number) {
 export async function getUserTransactionHistory(userId: number, limit = 20) {
   const db = (await getDb())!;
   if (!db) return [];
-  
-  return db.select({
+
+  const rows = await db.select({
     transaction: transactions,
     station: chargingStations,
   })
@@ -3955,6 +3957,11 @@ export async function getUserTransactionHistory(userId: number, limit = 20) {
     .where(eq(transactions.userId, userId))
     .orderBy(desc(transactions.startTime))
     .limit(limit);
+
+  return rows.map((row) => ({
+    ...row,
+    transaction: { ...row.transaction, createdAt: toUtcIso(row.transaction.createdAt) as string },
+  }));
 }
 
 export async function getUserMonthlyStats(userId: number) {
