@@ -20,6 +20,7 @@ import { randomBytes } from "crypto";
 import { storagePut } from "../storage";
 import { invokeLLM } from "../_core/llm";
 import { buildEmailParams } from "../utils/email-helper";
+import { optionalFormInteger, optionalFormNumber } from "./space-input-normalization";
 
 // ============================================================================
 // ROLE GUARDS
@@ -584,7 +585,11 @@ export const spacesRouter = router({
         ]);
 
         return {
-          submissions,
+          // Alias de compatibilidad: UI y clientes previos consumían `status`.
+          submissions: submissions.map((submission) => ({
+            ...submission,
+            status: submission.spaceStatus,
+          })),
           total: totalResult?.count || 0,
           statusCounts: Object.fromEntries(statusCounts.map(s => [s.status, s.count])),
           filterOptions: {
@@ -618,7 +623,7 @@ export const spacesRouter = router({
           .where(eq(spacePhotos.submissionId, input.id))
           .orderBy(spacePhotos.sortOrder);
 
-        return { ...submission, photos };
+        return { ...submission, status: submission.spaceStatus, photos };
       }),
 
     // ========================================================================
@@ -1014,50 +1019,54 @@ Responde en formato JSON con la siguiente estructura:`;
         latitude: z.string().optional(),
         longitude: z.string().optional(),
         availableAreaM2: z.string().optional(),
-        parkingSpots: z.number().int().optional(),
+        parkingSpots: optionalFormInteger(),
         transformerCapacityKva: z.string().optional(),
         hasElectricalPanel: z.boolean().optional(),
-        electricalDistance: z.number().int().optional(),
+        electricalDistance: optionalFormInteger(),
+        electricalDistanceM: optionalFormInteger(),
         hasInternet: z.boolean().optional(),
         operatingHoursStart: z.string().optional(),
         operatingHoursEnd: z.string().optional(),
         is24Hours: z.boolean().optional(),
-        estimatedDailyVehicles: z.number().int().optional(),
-        estimatedEvPercent: z.number().int().optional(),
+        estimatedDailyVehicles: optionalFormInteger(),
+        estimatedEvPercent: optionalFormInteger(),
         nearbyAttractions: z.string().optional(),
-        socioeconomicStratum: z.number().int().optional(),
+        socioeconomicStratum: optionalFormInteger(),
         additionalNotes: z.string().optional(),
         submitterName: z.string().optional(),
         submitterEmail: z.string().optional(),
         submitterPhone: z.string().optional(),
         submitterCompany: z.string().optional(),
-        estimatedInvestmentCop: z.number().optional(),
-        estimatedPowerKw: z.number().int().optional(),
-        estimatedChargerCount: z.number().int().optional(),
+        estimatedInvestmentCop: optionalFormNumber(),
+        estimatedPowerKw: optionalFormInteger(),
+        estimatedChargerCount: optionalFormInteger(),
         recommendedChargerType: z.string().optional(),
         investmentType: z.enum(["individual", "colectiva"]).optional(),
         // Campos de evaluación manual
-        technicalScore: z.number().int().min(0).max(100).optional(),
+        technicalScore: optionalFormInteger().refine((value) => value === undefined || (value >= 0 && value <= 100)),
         technicalNotes: z.string().optional(),
         electricalViability: z.enum(["viable", "requires_upgrade", "not_viable"]).optional(),
-        accessibilityScore: z.number().int().min(0).max(10).optional(),
-        trafficPotentialScore: z.number().int().min(0).max(10).optional(),
+        accessibilityScore: optionalFormInteger().refine((value) => value === undefined || (value >= 0 && value <= 10)),
+        trafficPotentialScore: optionalFormInteger().refine((value) => value === undefined || (value >= 0 && value <= 10)),
         // Campos de IA editables manualmente
-        aiScore: z.number().int().min(0).max(100).optional(),
+        aiScore: optionalFormInteger().refine((value) => value === undefined || (value >= 0 && value <= 100)),
         aiAnalysis: z.string().optional(), // JSON string
         // Transformador nuevo
         requiresNewTransformer: z.boolean().optional(), // Se guarda en technicalNotes como JSON
-        proposedTransformerKva: z.number().optional(), // kVA del transformador propuesto
+        proposedTransformerKva: optionalFormNumber(), // kVA del transformador propuesto
       }))
       .mutation(async ({ input }) => {
         const db = await getDatabase();
-        const { id, requiresNewTransformer, proposedTransformerKva, ...updateFields } = input;
+        const { id, requiresNewTransformer, proposedTransformerKva, electricalDistanceM, ...updateFields } = input;
 
         const cleanFields: Record<string, any> = {};
         for (const [key, value] of Object.entries(updateFields)) {
           if (value !== undefined) {
             cleanFields[key] = value;
           }
+        }
+        if (cleanFields.electricalDistance === undefined && electricalDistanceM !== undefined) {
+          cleanFields.electricalDistance = electricalDistanceM;
         }
 
         // Manejar transformador nuevo: merge en technicalNotes como JSON

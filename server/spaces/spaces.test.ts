@@ -301,6 +301,33 @@ describe("spaces.admin.getById", () => {
   });
 });
 
+describe("spaces.admin.updateSpace", () => {
+  it("acepta números en texto del formulario y persiste el alias electricalDistanceM", async () => {
+    const publicCaller = appRouter.createCaller(createPublicContext());
+    const adminCaller = appRouter.createCaller(createAdminContext());
+    const submission = await publicCaller.spaces.submit({
+      submitterName: "Edición numérica Vitest",
+      submitterEmail: "edicion-numerica@example.com",
+      submitterPhone: "3000000123",
+      spaceName: "Espacio de edición numérica",
+      spaceType: "parking",
+      address: "Calle de prueba 123",
+      city: "Bogotá",
+    });
+
+    const result = await adminCaller.spaces.admin.updateSpace({
+      id: submission.submissionId,
+      electricalDistanceM: "1600" as any,
+      estimatedEvPercent: "3" as any,
+    });
+    const detail = await adminCaller.spaces.admin.getById({ id: submission.submissionId });
+
+    expect(result.success).toBe(true);
+    expect(detail.electricalDistance).toBe(1600);
+    expect(detail.estimatedEvPercent).toBe(3);
+  });
+});
+
 describe("spaces.admin.updateStatus", () => {
   it("actualiza el estado de una postulación", async () => {
     // Crear postulación
