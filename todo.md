@@ -12,6 +12,11 @@
 - [x] Test: simular la carrera StopTransaction/Available y verificar cero cobros, deudas o notificaciones posteriores
 - [x] Test: validar la liberación de locks y sesiones para Available por conector y Available de estación (connectorId=0)
 
+## Bug — Edición de solicitudes de espacio (2026-08-14)
+- [x] Fix: convertir campos numéricos del formulario administrativo antes de enviarlos al esquema Zod
+- [x] Test: validar que `electricalDistanceM` y `estimatedEvPercent` se acepten al provenir de inputs de texto
+- [x] Test: ejecutar `spaces.admin.updateSpace` con texto y comprobar persistencia numérica y compatibilidad con el alias histórico
+
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
 - [x] Fix: error al generar Prospecto PDF (posible fallo en jsPDF GState/setGState en Node.js)

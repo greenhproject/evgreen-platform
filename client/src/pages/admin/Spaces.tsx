@@ -62,6 +62,12 @@ function formatDateShort(date: Date | string | null): string {
   return new Date(date).toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
 }
 
+function toOptionalInteger(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const numberValue = typeof value === "number" ? value : Number(String(value).trim());
+  return Number.isInteger(numberValue) ? numberValue : undefined;
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -1227,12 +1233,12 @@ function SpaceDetailDialog({
                       nearbyAttractions: (space as any).nearbyAttractions || "",
                       investmentType: (space as any).investmentType || "individual",
                       transformerCapacityKva: space.transformerCapacityKva ? String(space.transformerCapacityKva) : "",
-                      electricalDistance: (space as any).electricalDistance || "",
+                      electricalDistance: (space as any).electricalDistance ?? (space as any).electricalDistanceM ?? "",
                       availableAreaM2: space.availableAreaM2 ? String(space.availableAreaM2) : "",
-                      parkingSpots: (space as any).parkingSpots || "",
-                      estimatedDailyVehicles: (space as any).estimatedDailyVehicles || "",
-                      estimatedEvPercent: (space as any).estimatedEvPercent || "",
-                      socioeconomicStratum: (space as any).socioeconomicStratum || "",
+                      parkingSpots: (space as any).parkingSpots ?? "",
+                      estimatedDailyVehicles: (space as any).estimatedDailyVehicles ?? "",
+                      estimatedEvPercent: (space as any).estimatedEvPercent ?? "",
+                      socioeconomicStratum: (space as any).socioeconomicStratum ?? "",
                       operatingHoursStart: (space as any).operatingHoursStart || "06:00",
                       operatingHoursEnd: (space as any).operatingHoursEnd || "22:00",
                       hasElectricalPanel: !!space.hasElectricalPanel,
@@ -1633,7 +1639,7 @@ function SpaceDetailDialog({
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Distancia tablero (m)</Label>
-                  <Input type="number" value={editForm.electricalDistance || ""} onChange={e => setEditForm(p => ({ ...p, electricalDistance: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input type="number" value={editForm.electricalDistance ?? ""} onChange={e => setEditForm(p => ({ ...p, electricalDistance: toOptionalInteger(e.target.value) }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Área disponible (m²)</Label>
@@ -1641,19 +1647,19 @@ function SpaceDetailDialog({
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Puestos de parqueo</Label>
-                  <Input type="number" value={editForm.parkingSpots || ""} onChange={e => setEditForm(p => ({ ...p, parkingSpots: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input type="number" value={editForm.parkingSpots ?? ""} onChange={e => setEditForm(p => ({ ...p, parkingSpots: toOptionalInteger(e.target.value) }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Vehículos/día</Label>
-                  <Input type="number" value={editForm.estimatedDailyVehicles || ""} onChange={e => setEditForm(p => ({ ...p, estimatedDailyVehicles: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input type="number" value={editForm.estimatedDailyVehicles ?? ""} onChange={e => setEditForm(p => ({ ...p, estimatedDailyVehicles: toOptionalInteger(e.target.value) }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">% EV estimado</Label>
-                  <Input type="number" min={0} max={100} value={editForm.estimatedEvPercent || ""} onChange={e => setEditForm(p => ({ ...p, estimatedEvPercent: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input type="number" min={0} max={100} value={editForm.estimatedEvPercent ?? ""} onChange={e => setEditForm(p => ({ ...p, estimatedEvPercent: toOptionalInteger(e.target.value) }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Estrato</Label>
-                  <Input type="number" min={1} max={6} value={editForm.socioeconomicStratum || ""} onChange={e => setEditForm(p => ({ ...p, socioeconomicStratum: parseInt(e.target.value) || undefined }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+                  <Input type="number" min={1} max={6} value={editForm.socioeconomicStratum ?? ""} onChange={e => setEditForm(p => ({ ...p, socioeconomicStratum: toOptionalInteger(e.target.value) }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
                 </div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Horario inicio</Label>
@@ -1918,12 +1924,17 @@ function SpaceDetailDialog({
                 if (editForm.longitude) payload.longitude = editForm.longitude;
                 // Técnicos
                 if (editForm.transformerCapacityKva) payload.transformerCapacityKva = editForm.transformerCapacityKva;
-                if (editForm.electricalDistance !== undefined) payload.electricalDistance = editForm.electricalDistance;
+                const electricalDistance = toOptionalInteger(editForm.electricalDistance);
+                if (electricalDistance !== undefined) payload.electricalDistance = electricalDistance;
                 if (editForm.availableAreaM2) payload.availableAreaM2 = editForm.availableAreaM2;
-                if (editForm.parkingSpots !== undefined) payload.parkingSpots = editForm.parkingSpots;
-                if (editForm.estimatedDailyVehicles !== undefined) payload.estimatedDailyVehicles = editForm.estimatedDailyVehicles;
-                if (editForm.estimatedEvPercent !== undefined) payload.estimatedEvPercent = editForm.estimatedEvPercent;
-                if (editForm.socioeconomicStratum !== undefined) payload.socioeconomicStratum = editForm.socioeconomicStratum;
+                const parkingSpots = toOptionalInteger(editForm.parkingSpots);
+                if (parkingSpots !== undefined) payload.parkingSpots = parkingSpots;
+                const estimatedDailyVehicles = toOptionalInteger(editForm.estimatedDailyVehicles);
+                if (estimatedDailyVehicles !== undefined) payload.estimatedDailyVehicles = estimatedDailyVehicles;
+                const estimatedEvPercent = toOptionalInteger(editForm.estimatedEvPercent);
+                if (estimatedEvPercent !== undefined) payload.estimatedEvPercent = estimatedEvPercent;
+                const socioeconomicStratum = toOptionalInteger(editForm.socioeconomicStratum);
+                if (socioeconomicStratum !== undefined) payload.socioeconomicStratum = socioeconomicStratum;
                 if (editForm.operatingHoursStart) payload.operatingHoursStart = editForm.operatingHoursStart;
                 if (editForm.operatingHoursEnd) payload.operatingHoursEnd = editForm.operatingHoursEnd;
                 if (editForm.hasElectricalPanel !== undefined) payload.hasElectricalPanel = editForm.hasElectricalPanel;
