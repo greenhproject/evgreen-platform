@@ -164,8 +164,7 @@ export async function generateOfflineAlerts(): Promise<number> {
         message,
         payload: {
           stationName: station.name,
-          // @ts-ignore
-          lastBootNotification: station.lastBootNotification?.toISOString() || null,
+          lastBootNotification: station.lastBootNotification ? new Date(station.lastBootNotification).toISOString() : null,
           isOnline: station.isOnline,
         },
         acknowledged: false,
