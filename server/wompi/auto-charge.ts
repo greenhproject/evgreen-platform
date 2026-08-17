@@ -134,8 +134,9 @@ export async function autoChargeIfNeeded(
 
     const result = await response.json();
     const tx = result.data;
+    const txStatus = tx.wompiTxStatus || tx.status;
 
-    console.log(`[AutoCharge] Transacción Wompi: ${tx.id} - Estado: ${tx.wompiTxStatus}`);
+    console.log(`[AutoCharge] Transacción Wompi: ${tx.id} - Estado: ${txStatus}`);
 
     // Guardar transacción en BD
     try {
@@ -151,7 +152,7 @@ export async function autoChargeIfNeeded(
       });
       await db.updateWompiTransactionByReference(reference, {
         wompiTransactionId: tx.id,
-        status: tx.wompiTxStatus,
+        status: txStatus,
         paymentMethodType: tx.payment_method_type || "CARD",
         processedAt: new Date().toISOString(),
       });
@@ -160,7 +161,7 @@ export async function autoChargeIfNeeded(
     }
 
     // Si fue aprobada, acreditar la billetera
-    if (tx.wompiTxStatus === "APPROVED") {
+    if (txStatus === "APPROVED") {
       const newBalance = currentBalance + chargeAmount;
       await db.updateWalletBalance(userId, newBalance.toString());
 
@@ -202,7 +203,7 @@ export async function autoChargeIfNeeded(
         newBalance,
         reference,
       };
-    } else if (tx.wompiTxStatus === "PENDING") {
+    } else if (txStatus === "PENDING") {
       // Transacción pendiente - el webhook se encargará
       console.log(`[AutoCharge] Transacción pendiente: ${reference}`);
       return {
@@ -214,13 +215,13 @@ export async function autoChargeIfNeeded(
       };
     } else {
       // Rechazada
-      console.log(`[AutoCharge] Transacción rechazada: ${tx.wompiTxStatus}`);
+      console.log(`[AutoCharge] Transacción rechazada: ${txStatus}`);
       return {
         success: false,
         amountCharged: 0,
         newBalance: currentBalance,
         reference,
-        error: `Cobro rechazado: ${tx.wompiTxStatus}`,
+        error: `Cobro rechazado: ${txStatus || "sin estado"}`,
       };
     }
   } catch (error: any) {

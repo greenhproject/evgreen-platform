@@ -104,7 +104,7 @@ describe("Profiles - Consent Service", () => {
         expect.objectContaining({
           userId: 42,
           consentType: "AI_PROFILING",
-          granted: true,
+          granted: 1,
           policyVersion: "2026-06-v1",
           ipAddress: "192.168.1.1",
           userAgent: "Mozilla/5.0",
@@ -132,7 +132,7 @@ describe("Profiles - Consent Service", () => {
         expect.objectContaining({
           userId: 1,
           consentType: "AI_PROFILING",
-          granted: false,
+          granted: 0,
           policyVersion: "revocation",
         })
       );

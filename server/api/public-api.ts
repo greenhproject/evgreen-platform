@@ -17,6 +17,7 @@ import * as ocppManager from "../ocpp/connection-manager";
 import { dualCSMS } from "../ocpp/csms-dual";
 import { sql } from "drizzle-orm";
 import crypto from "crypto";
+import { canApiKeyAccessOrganizationResource } from "./tenant-api-policy";
 
 const router = Router();
 
@@ -30,6 +31,7 @@ interface ApiKeyUser {
   email: string;
   role: string;
   keyName: string;
+  organizationId: number | null;
 }
 
 async function authenticateApiKey(req: Request, res: Response, next: NextFunction) {
@@ -51,7 +53,7 @@ async function authenticateApiKey(req: Request, res: Response, next: NextFunctio
 
     // Buscar API key en la tabla
     const keysResult = await database.execute(sql`
-      SELECT ak.*, u.name as userName, u.email as userEmail, u.role as userRole
+      SELECT ak.*, ak.organization_id as organizationId, u.name as userName, u.email as userEmail, u.role as userRole
       FROM api_keys ak
       JOIN users u ON ak.userId = u.id
       WHERE ak.keyHash = ${hashApiKey(apiKey)}
@@ -101,6 +103,9 @@ async function authenticateApiKey(req: Request, res: Response, next: NextFunctio
       email: keyData.userEmail,
       role: keyData.userRole,
       keyName: keyData.name,
+      organizationId: keyData.organizationId === null || keyData.organizationId === undefined
+        ? null
+        : Number(keyData.organizationId),
     } as ApiKeyUser;
 
     next();
@@ -140,6 +145,7 @@ router.use(authenticateApiKey);
  */
 router.get("/stations", async (req: Request, res: Response) => {
   try {
+    const user = (req as any).apiUser as ApiKeyUser;
     const { city, active, page = "1", limit = "20" } = req.query;
     const pageNum = Math.max(1, parseInt(page as string) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
@@ -168,6 +174,9 @@ router.get("/stations", async (req: Request, res: Response) => {
     }
     if (active === "true") {
       query += ` AND cs.isActive = 1`;
+    }
+    if (user.organizationId) {
+      query += ` AND cs.organization_id = ${Number(user.organizationId)}`;
     }
 
     query += ` ORDER BY cs.createdAt DESC LIMIT ${limitNum} OFFSET ${offset}`;
@@ -225,6 +234,7 @@ router.get("/stations", async (req: Request, res: Response) => {
  */
 router.get("/stations/:id", async (req: Request, res: Response) => {
   try {
+    const user = (req as any).apiUser as ApiKeyUser;
     const stationId = parseInt(req.params.id);
     if (isNaN(stationId)) {
       return res.status(400).json({ error: "INVALID_PARAM", message: "ID de estación inválido" });
@@ -232,6 +242,9 @@ router.get("/stations/:id", async (req: Request, res: Response) => {
 
     const station = await db.getEvgreenNetworkStationById(stationId);
     if (!station) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
+    }
+    if (!canApiKeyAccessOrganizationResource(user.organizationId, station.organizationId)) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
     }
 
@@ -302,6 +315,7 @@ router.get("/stations/:id", async (req: Request, res: Response) => {
  */
 router.get("/stations/:id/status", async (req: Request, res: Response) => {
   try {
+    const user = (req as any).apiUser as ApiKeyUser;
     const stationId = parseInt(req.params.id);
     if (isNaN(stationId)) {
       return res.status(400).json({ error: "INVALID_PARAM", message: "ID de estación inválido" });
@@ -309,6 +323,9 @@ router.get("/stations/:id/status", async (req: Request, res: Response) => {
 
     const station = await db.getEvgreenNetworkStationById(stationId);
     if (!station) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
+    }
+    if (!canApiKeyAccessOrganizationResource(user.organizationId, station.organizationId)) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
     }
 
@@ -387,6 +404,10 @@ router.get("/transactions", async (req: Request, res: Response) => {
       whereClause += ` AND cs.ownerId = ?`;
       params.push(user.id);
     }
+    if (user.organizationId) {
+      whereClause += ` AND cs.organization_id = ?`;
+      params.push(user.organizationId);
+    }
 
     if (stationId) {
       whereClause += ` AND ct.stationId = ?`;
@@ -456,6 +477,7 @@ router.get("/transactions", async (req: Request, res: Response) => {
  */
 router.get("/transactions/:id", async (req: Request, res: Response) => {
   try {
+    const user = (req as any).apiUser as ApiKeyUser;
     const txId = parseInt(req.params.id);
     if (isNaN(txId)) {
       return res.status(400).json({ error: "INVALID_PARAM", message: "ID de transacción inválido" });
@@ -465,7 +487,7 @@ router.get("/transactions/:id", async (req: Request, res: Response) => {
     if (!database) return res.status(503).json({ error: "SERVICE_UNAVAILABLE" });
 
     const txResult = await database.execute(sql`
-      SELECT ct.*, cs.name as stationName, u.name as userName, u.email as userEmail
+      SELECT ct.*, cs.name as stationName, cs.organization_id as organizationId, u.name as userName, u.email as userEmail
       FROM charging_transactions ct
       LEFT JOIN charging_stations cs ON ct.stationId = cs.id
       LEFT JOIN users u ON ct.userId = u.id
@@ -478,6 +500,9 @@ router.get("/transactions/:id", async (req: Request, res: Response) => {
     }
 
     const t = txRows[0];
+    if (!canApiKeyAccessOrganizationResource(user.organizationId, t.organizationId)) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Transacción no encontrada" });
+    }
     res.json({
       success: true,
       data: {
@@ -545,6 +570,10 @@ router.post("/stations/:id/start", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "NO_OCPP", message: "Estación sin identidad OCPP configurada" });
     }
 
+    if (!canApiKeyAccessOrganizationResource(user.organizationId, station.organizationId)) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
+    }
+
     // Enviar comando RemoteStartTransaction via OCPP
     const result = await dualCSMS.sendGenericCommand(ocppIdentity, "RemoteStartTransaction", {
       connectorId: parseInt(connectorId),
@@ -595,7 +624,14 @@ router.post("/stations/:id/stop", async (req: Request, res: Response) => {
 
     const ocppIdentity = station.ocppIdentity;
     if (!ocppIdentity) {
+      if (!canApiKeyAccessOrganizationResource(user.organizationId, station.organizationId)) {
+        return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
+      }
       return res.status(400).json({ error: "NO_OCPP", message: "Estación sin identidad OCPP configurada" });
+    }
+
+    if (!canApiKeyAccessOrganizationResource(user.organizationId, station.organizationId)) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
     }
 
     const result = await dualCSMS.sendGenericCommand(ocppIdentity, "RemoteStopTransaction", {
@@ -638,6 +674,11 @@ router.get("/stats/overview", async (req: Request, res: Response) => {
       stationFilter = "WHERE cs.ownerId = ?";
       params.push(user.id);
     }
+    if (user.organizationId) {
+      stationFilter = stationFilter
+        ? `${stationFilter} AND cs.organization_id = ${Number(user.organizationId)}`
+        : `WHERE cs.organization_id = ${Number(user.organizationId)}`;
+    }
 
     // Total estaciones
     const stationResult = await database.execute(
@@ -645,13 +686,18 @@ router.get("/stats/overview", async (req: Request, res: Response) => {
     );
 
     // Total energía entregada (últimos 30 días)
+    const energyOrganizationFilter = user.organizationId
+      ? sql` AND cs.organization_id = ${user.organizationId}`
+      : sql``;
     const energyResult = await database.execute(sql`
       SELECT COALESCE(SUM(energyDeliveredKwh), 0) as totalKwh,
              COALESCE(SUM(totalCost), 0) as totalRevenue,
              COUNT(*) as totalSessions
-      FROM charging_transactions
-      WHERE status = 'COMPLETED'
-        AND startTime >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      FROM charging_transactions ct
+      INNER JOIN charging_stations cs ON ct.stationId = cs.id
+      WHERE ct.status = 'COMPLETED'
+        AND ct.startTime >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        ${energyOrganizationFilter}
     `);
 
     // Estaciones online
@@ -687,6 +733,7 @@ router.get("/stats/overview", async (req: Request, res: Response) => {
  */
 router.get("/stats/energy", async (req: Request, res: Response) => {
   try {
+    const user = (req as any).apiUser as ApiKeyUser;
     const { period = "daily", days = "30", stationId } = req.query;
     const daysNum = Math.min(365, Math.max(1, parseInt(days as string) || 30));
     
@@ -700,6 +747,9 @@ router.get("/stats/energy", async (req: Request, res: Response) => {
 
     let stationFilter = "";
     if (stationId) stationFilter = `AND stationId = ${parseInt(stationId as string)}`;
+    const tenantFilter = user.organizationId
+      ? `AND EXISTS (SELECT 1 FROM charging_stations cs WHERE cs.id = charging_transactions.stationId AND cs.organization_id = ${Number(user.organizationId)})`
+      : "";
 
     const energyRows = await database.execute(sql.raw(`
       SELECT ${groupBy} as period,
@@ -711,6 +761,7 @@ router.get("/stats/energy", async (req: Request, res: Response) => {
       WHERE status = 'COMPLETED'
         AND startTime >= DATE_SUB(NOW(), INTERVAL ${daysNum} DAY)
         ${stationFilter}
+        ${tenantFilter}
       GROUP BY ${groupBy}
       ORDER BY period ASC
     `));
@@ -754,14 +805,19 @@ router.get("/users", async (req: Request, res: Response) => {
     const database = await getDb();
     if (!database) return res.status(503).json({ error: "SERVICE_UNAVAILABLE" });
 
+    const tenantUserJoin = user.organizationId
+      ? "INNER JOIN org_users ou ON ou.user_id = u.id"
+      : "";
     let whereClause = "WHERE 1=1";
-    if (role) whereClause += ` AND role = '${role}'`;
+    if (user.organizationId) whereClause += ` AND ou.organization_id = ${Number(user.organizationId)}`;
+    if (role) whereClause += ` AND u.role = '${String(role).replace(/'/g, "''")}'`;
 
     const result = await database.execute(sql.raw(`
-      SELECT id, name, email, phone, role, isActive, city, createdAt
-      FROM users
+      SELECT u.id, u.name, u.email, u.phone, u.role, u.isActive, u.city, u.createdAt
+      FROM users u
+      ${tenantUserJoin}
       ${whereClause}
-      ORDER BY createdAt DESC
+      ORDER BY u.createdAt DESC
       LIMIT ${limitNum} OFFSET ${(pageNum - 1) * limitNum}
     `));
     const rows = (result as any)[0] as any[];

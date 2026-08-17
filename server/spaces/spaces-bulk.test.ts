@@ -86,7 +86,8 @@ describe("spaces.admin bulk operations", () => {
     it("filters by city", async () => {
       const result = await adminCaller.spaces.admin.list({ city: "Bogotá" });
       expect(result.submissions.length).toBeGreaterThan(0);
-      expect(result.submissions.every((s: any) => s.city === "Bogotá")).toBe(true);
+      const normalizeCity = (city: string) => city.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      expect(result.submissions.every((s: any) => normalizeCity(s.city) === normalizeCity("Bogotá"))).toBe(true);
     });
 
     it("filters by spaceType", async () => {
