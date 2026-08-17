@@ -9,6 +9,8 @@ vi.mock("./db", async (importOriginal) => {
     ...actual,
     getDb: vi.fn().mockResolvedValue(null),
     getAllChargingStations: vi.fn().mockResolvedValue([]),
+    getEvgreenNetworkStations: vi.fn().mockResolvedValue([]),
+    getEvgreenNetworkStationsNearLocation: vi.fn().mockResolvedValue([]),
     getChargingStationById: vi.fn().mockResolvedValue(null),
     getNearbyStations: vi.fn().mockResolvedValue([]),
     getUserTransactions: vi.fn().mockResolvedValue([]),

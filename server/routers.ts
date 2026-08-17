@@ -449,13 +449,13 @@ const stationsRouter = router({
       if (input?.lat && input?.lng) {
         // getStationsNearLocation devuelve { station: {...}, distance: number }
         // Normalizar a estaciones planas con campo distance
-        const rawStations = await db.getStationsNearLocation(input.lat, input.lng, input.radiusKm || 10);
+        const rawStations = await db.getEvgreenNetworkStationsNearLocation(input.lat, input.lng, input.radiusKm || 10);
         stations = rawStations.map((r: any) => ({
           ...(r.station ?? r),  // soporta ambos formatos por compatibilidad
           distance: r.distance ?? null,
         }));
       } else {
-        stations = await db.getAllChargingStations({ isActive: true, isPublic: true });
+        stations = await db.getEvgreenNetworkStations();
       }
       
       // Agregar tarifa activa y EVSEs a cada estación
@@ -1727,6 +1727,17 @@ const transactionsRouter = router({
       targetKwh: z.number().optional(), // Si no se especifica, carga hasta que el usuario detenga
     }))
     .mutation(async ({ ctx, input }) => {
+      // La app pública solo puede iniciar sesiones en estaciones publicadas en
+      // la red EVGreen; una estación privada de otro tenant nunca es suficiente
+      // con conocer su ID.
+      const networkStation = await db.getEvgreenNetworkStationById(input.stationId);
+      if (!networkStation) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "La estación no está disponible en la red EVGreen.",
+        });
+      }
+
       // Obtener precio dinámico actual
       const pricing = await dynamicPricing.calculateDynamicKwhPrice(
         input.stationId,
@@ -1761,7 +1772,7 @@ const transactionsRouter = router({
       
       // Verificar que el EVSE esté disponible
       const evse = await db.getEvseById(input.evseId);
-      if (!evse || evse.connectorStatus !== "AVAILABLE") {
+      if (!evse || evse.stationId !== input.stationId || evse.connectorStatus !== "AVAILABLE") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "El conector no está disponible" });
       }
       

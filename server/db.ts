@@ -18,9 +18,10 @@ import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
 import {
   InsertUser,
-  users,
-  chargingStations,
-  evses,
+	users,
+	chargingStations,
+	organizations,
+	evses,
   transactions,
   meterValues,
   reservations,
@@ -602,6 +603,75 @@ export async function getAllChargingStations(filters?: { ownerId?: number; isAct
     return db.select().from(chargingStations).where(and(...conditions)).orderBy(desc(chargingStations.createdAt));
   }
   return db.select().from(chargingStations).orderBy(desc(chargingStations.createdAt));
+}
+
+/** Estados que una app pública EVGreen puede descubrir y utilizar. */
+export const EVGREEN_PUBLIC_NETWORK_MODES = ["EVGREEN_NETWORK", "ROAMING"] as const;
+
+/**
+ * Regla única de presencia en la red EVGreen. Una estación de tenant solo
+ * aparece si su empresa conserva membresía de red activa o en prueba.
+ */
+function publicNetworkVisibilityConditions() {
+  return and(
+    eq(chargingStations.isActive, 1),
+    eq(chargingStations.isPublic, 1),
+    inArray(chargingStations.networkAccessMode, [...EVGREEN_PUBLIC_NETWORK_MODES]),
+    or(
+      isNull(chargingStations.organizationId),
+      and(
+        eq(organizations.networkMember, 1),
+        inArray(organizations.orgStatus, ["active", "trial"]),
+      ),
+    ),
+  );
+}
+
+/** Lista usada por mapa, app y API pública; nunca devuelve estaciones privadas. */
+export async function getEvgreenNetworkStations() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ station: chargingStations })
+    .from(chargingStations)
+    .leftJoin(organizations, eq(chargingStations.organizationId, organizations.id))
+    .where(publicNetworkVisibilityConditions())
+    .orderBy(desc(chargingStations.createdAt));
+  return rows.map(row => row.station);
+}
+
+/** Verifica exposición de red antes de iniciar cargas o revelar detalles públicos. */
+export async function getEvgreenNetworkStationById(stationId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db
+    .select({ station: chargingStations })
+    .from(chargingStations)
+    .leftJoin(organizations, eq(chargingStations.organizationId, organizations.id))
+    .where(and(eq(chargingStations.id, stationId), publicNetworkVisibilityConditions()))
+    .limit(1);
+  return row?.station ?? null;
+}
+
+/** Búsqueda por radio que aplica la política de presencia en red EVGreen. */
+export async function getEvgreenNetworkStationsNearLocation(lat: number, lng: number, radiusKm: number = 10) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    station: chargingStations,
+    distance: sql<number>`(
+      6371 * acos(
+        cos(radians(${lat})) * cos(radians(${chargingStations.latitude})) *
+        cos(radians(${chargingStations.longitude}) - radians(${lng})) +
+        sin(radians(${lat})) * sin(radians(${chargingStations.latitude}))
+      )
+    )`.as("distance"),
+  })
+    .from(chargingStations)
+    .leftJoin(organizations, eq(chargingStations.organizationId, organizations.id))
+    .where(publicNetworkVisibilityConditions())
+    .having(sql`distance <= ${radiusKm}`)
+    .orderBy(sql`distance`);
 }
 
 /**

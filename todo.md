@@ -17,6 +17,17 @@
 - [x] Test: validar que `electricalDistanceM` y `estimatedEvPercent` se acepten al provenir de inputs de texto
 - [x] Test: ejecutar `spaces.admin.updateSpace` con texto y comprobar persistencia numérica y compatibilidad con el alias histórico
 
+## Auditoría SaaS, tenants y presencia en red (2026-08-14)
+- [x] Audit: verificar aislamiento de datos, permisos y rutas para cada empresa/tenant
+- [x] Feature: controlar si una estación participa en la red EVGreen o se opera como red privada/roaming
+- [x] Test: cubrir cruces de tenant y visibilidad de estaciones en consultas públicas y administrativas
+- [x] Audit: documentar criterios y brechas de salida a producción
+- [ ] Test: validar con dos tenants que listados, detalle por ID y endpoints públicos no filtren datos entre organizaciones
+- [ ] Audit: migrar o justificar todos los procedimientos restantes sensibles a tenant con tenantProcedure o checks explícitos por organizationId
+- [x] Documentación: crear checklist trazable de readiness SaaS, visibilidad de red, ROAMING/OCPI y bloqueantes globales
+- [ ] QA de producción: resolver los fallos preexistentes de la suite completa antes de declarar release general completamente listo
+- [ ] Feature: conectar el modo ROAMING con socios OCPI aprobados antes de habilitar interoperabilidad externa real
+
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
 - [x] Fix: error al generar Prospecto PDF (posible fallo en jsPDF GState/setGState en Node.js)
