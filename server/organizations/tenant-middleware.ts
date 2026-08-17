@@ -14,8 +14,8 @@
 
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { organizations } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { organizations, orgUsers } from "../../drizzle/schema";
+import { and, eq } from "drizzle-orm";
 
 export interface TenantContext {
   organizationId: number | null;
@@ -58,16 +58,40 @@ export async function resolveTenantContext(
     return { organizationId: null, organization: null };
   }
 
-  const db = (await getDb())!;
+  const db = await getDb();
+  if (!db) return { organizationId: null, organization: null };
   let orgId: number | null = null;
+  const requestedOrgId = headerOrgId ? Number.parseInt(headerOrgId, 10) : null;
+  const isPlatformOperator = userRole === "admin" || userRole === "staff";
 
-  // 1. Header override (solo para admins/staff)
-  if (headerOrgId && (userRole === "admin" || userRole === "staff")) {
-    orgId = parseInt(headerOrgId, 10);
-    if (isNaN(orgId)) orgId = null;
+  // 1. La plataforma puede inspeccionar cualquier tenant. Un miembro solo puede
+  // seleccionar explícitamente una organización a la que pertenece.
+  if (requestedOrgId && isPlatformOperator) {
+    orgId = requestedOrgId;
+  } else if (requestedOrgId) {
+    const [membership] = await db
+      .select({ organizationId: orgUsers.organizationId })
+      .from(orgUsers)
+      .where(and(eq(orgUsers.userId, userId), eq(orgUsers.organizationId, requestedOrgId)))
+      .limit(1);
+    if (!membership) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "No perteneces a la organización solicitada" });
+    }
+    orgId = membership.organizationId;
   }
 
-  // 2. Lookup por ownerId en organizations (el dueño de la org)
+  // 2. Membresía explícita. Esto permite que administradores y viewers operen
+  // su tenant sin depender de que sean el propietario técnico de la organización.
+  if (!orgId) {
+    const [membership] = await db
+      .select({ organizationId: orgUsers.organizationId })
+      .from(orgUsers)
+      .where(eq(orgUsers.userId, userId))
+      .limit(1);
+    if (membership) orgId = membership.organizationId;
+  }
+
+  // 3. Compatibilidad con organizaciones creadas antes de org_users.
   if (!orgId) {
     const [org] = await db
       .select({ id: organizations.id })
@@ -91,9 +115,8 @@ export async function resolveTenantContext(
       id: organizations.id,
       name: organizations.name,
       slug: organizations.slug,
-      plan: (organizations as any).plan,
-      // @ts-ignore
-      status: organizations.status,
+      plan: organizations.orgPlan,
+      status: organizations.orgStatus,
       networkMember: organizations.networkMember,
       supportIncluded: organizations.supportIncluded,
       transactionFeePercent: organizations.transactionFeePercent,
@@ -114,7 +137,7 @@ export async function resolveTenantContext(
   }
 
   // Verificar que la organización esté activa
-  if (org.status === "suspended") {
+  if (org.status === "suspended" || org.status === "cancelled") {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "La organización está suspendida. Contacte a soporte.",

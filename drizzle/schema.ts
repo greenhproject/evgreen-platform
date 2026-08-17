@@ -297,6 +297,9 @@ export const chargingStations = mysqlTable("charging_stations", {
 	ocppPassword: varchar({ length: 255 }),
 	isOnline: tinyint().default(0).notNull(),
 	isPublic: tinyint().default(1).notNull(),
+	// PRIVATE: solo operación interna del tenant; EVGREEN_NETWORK: visible en la app EVGreen;
+	// ROAMING: visible en EVGreen y preparado para interoperabilidad OCPI autorizada.
+	networkAccessMode: mysqlEnum("network_access_mode", ['PRIVATE','EVGREEN_NETWORK','ROAMING']).default('EVGREEN_NETWORK').notNull(),
 	isActive: tinyint().default(1).notNull(),
 	operatingHours: json(),
 	amenities: json(),
@@ -332,6 +335,8 @@ export const chargingStations = mysqlTable("charging_stations", {
 },
 (table) => [
 	index("charging_stations_ocppIdentity_unique").on(table.ocppIdentity),
+	index("idx_station_network_visibility").on(table.networkAccessMode, table.isActive, table.isPublic),
+	index("idx_station_organization").on(table.organizationId),
 ]);
 
 export const claims = mysqlTable("claims", {

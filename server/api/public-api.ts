@@ -154,7 +154,11 @@ router.get("/stations", async (req: Request, res: Response) => {
              cs.manufacturer, cs.model, cs.imageUrl, cs.thumbnailUrl,
              cs.operatingHours, cs.amenities, cs.createdAt
       FROM charging_stations cs
+      LEFT JOIN organizations o ON o.id = cs.organization_id
       WHERE cs.isPublic = 1
+        AND cs.isActive = 1
+        AND cs.network_access_mode IN ('EVGREEN_NETWORK', 'ROAMING')
+        AND (cs.organization_id IS NULL OR (o.network_member = 1 AND o.org_status IN ('active', 'trial')))
     `;
     const params: any[] = [];
 
@@ -226,7 +230,7 @@ router.get("/stations/:id", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "INVALID_PARAM", message: "ID de estación inválido" });
     }
 
-    const station = await db.getChargingStationById(stationId);
+    const station = await db.getEvgreenNetworkStationById(stationId);
     if (!station) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
     }
@@ -303,7 +307,7 @@ router.get("/stations/:id/status", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "INVALID_PARAM", message: "ID de estación inválido" });
     }
 
-    const station = await db.getChargingStationById(stationId);
+    const station = await db.getEvgreenNetworkStationById(stationId);
     if (!station) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
     }

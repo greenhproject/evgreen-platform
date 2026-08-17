@@ -27,6 +27,19 @@ const requireUser = t.middleware(async opts => {
 
 export const protectedProcedure = t.procedure.use(requireUser);
 
+/**
+ * Procedimiento para el portal SaaS. Garantiza que cada operación se ejecute
+ * en una organización resuelta y autorizada por el contexto de la solicitud.
+ */
+export const tenantProcedure = protectedProcedure.use(
+  t.middleware(async ({ ctx, next }) => {
+    if (!ctx.tenant?.organizationId || !ctx.tenant.organization) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "No perteneces a una organización activa" });
+    }
+    return next({ ctx: { ...ctx, tenant: ctx.tenant } });
+  }),
+);
+
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;

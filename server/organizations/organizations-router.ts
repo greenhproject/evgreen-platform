@@ -20,8 +20,9 @@ import {
   apiKeys,
 } from "../../drizzle/schema";
 import { eq, desc, sql, and, like, or, isNull } from "drizzle-orm";
-import { protectedProcedure, publicProcedure } from "../_core/trpc";
+import { protectedProcedure, publicProcedure, tenantProcedure } from "../_core/trpc";
 import { generateOrgReportHtml, generateOrgReportCsv } from "../reports/org-report-pdf";
+import { canConfigureNetworkMode, normalizeNetworkAccessMode } from "./network-policy";
 
 // Helper: default modules per plan
 function getDefaultModules(plan: string): string[] {
@@ -59,11 +60,10 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           );
         }
         if (input?.plan) {
-          conditions.push(eq((organizations as any).plan, input.plan));
+          conditions.push(eq(organizations.orgPlan, input.plan));
         }
         if (input?.status) {
-          // @ts-ignore
-          conditions.push(eq(organizations.status, input.status));
+          conditions.push(eq(organizations.orgStatus, input.status));
         }
 
         if (conditions.length > 0) {
@@ -121,7 +121,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         const [result] = await db!.insert(organizations).values({
           name: input.name,
           slug: input.slug,
-          plan: input.plan,
+          orgPlan: input.plan,
           orgStatus: "trial",
           contactName: input.contactName,
           contactEmail: input.contactEmail,
@@ -172,7 +172,10 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
 
         const updateData: any = {};
         Object.entries(data).forEach(([key, value]) => {
-          if (value !== undefined) updateData[key] = value;
+          if (value !== undefined) {
+            const schemaKey = key === "plan" ? "orgPlan" : key === "status" ? "orgStatus" : key;
+            updateData[schemaKey] = value;
+          }
         });
 
         if (Object.keys(updateData).length === 0) {
@@ -190,7 +193,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         const db = (await getDb())!;
         await db!
           .update(organizations)
-          .set({ status: "cancelled" } as any)
+          .set({ orgStatus: "cancelled" } as any)
           .where(eq(organizations.id, input.id));
         return { success: true, message: "Organización desactivada" };
       }),
@@ -330,7 +333,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     // ==========================================
 
     // El cliente obtiene su propia organización
-    getMyOrg: protectedProcedure.query(async ({ ctx }: any) => {
+    getMyOrg: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
       // Usar SQL directo para evitar problemas de mismatch de schema en producción
       const [rows] = await db!.execute(sql`
@@ -349,7 +352,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
                ou.role as myRole
         FROM organizations o
         JOIN org_users ou ON ou.organization_id = o.id
-        WHERE ou.user_id = ${ctx.user.id}
+        WHERE ou.user_id = ${ctx.user.id} AND o.id = ${ctx.tenant.organizationId}
         LIMIT 1
       `) as any;
       const org = Array.isArray(rows) ? rows[0] : null;
@@ -362,12 +365,12 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     }),
 
     // El cliente ve sus estaciones
-    getMyStations: protectedProcedure.query(async ({ ctx }: any) => {
+    getMyStations: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
       const [membership] = await db!
         .select({ organizationId: orgUsers.organizationId })
         .from(orgUsers)
-        .where(eq(orgUsers.userId, ctx.user.id));
+        .where(and(eq(orgUsers.userId, ctx.user.id), eq(orgUsers.organizationId, ctx.tenant.organizationId)));
 
       if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "No perteneces a ninguna organización" });
 
@@ -378,13 +381,14 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     }),
 
     // El admin de la org actualiza la configuración de una estación (precio, nombre, estado)
-    updateMyStation: protectedProcedure
+    updateMyStation: tenantProcedure
       .input(z.object({
         stationId: z.number(),
         name: z.string().min(3).max(255).optional(),
         description: z.string().max(1000).optional().nullable(),
         isActive: z.boolean().optional(),
         isPublic: z.boolean().optional(),
+        networkAccessMode: z.enum(["PRIVATE", "EVGREEN_NETWORK", "ROAMING"]).optional(),
         contactPhone: z.string().max(20).optional().nullable(),
         operatingHours: z.any().optional(), // JSON: { monday: { open: '06:00', close: '22:00', enabled: true }, ... }
         // Tarifa activa de la estación
@@ -406,10 +410,19 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         const [membership] = await db!
           .select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
           .from(orgUsers)
-          .where(eq(orgUsers.userId, ctx.user.id));
+          .where(and(eq(orgUsers.userId, ctx.user.id), eq(orgUsers.organizationId, ctx.tenant.organizationId)));
 
         if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "No perteneces a ninguna organización" });
         if (membership.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Solo el admin puede configurar estaciones" });
+
+        const [organization] = await db!
+          .select({ networkMember: organizations.networkMember, orgStatus: organizations.orgStatus })
+          .from(organizations)
+          .where(eq(organizations.id, membership.organizationId))
+          .limit(1);
+        if (!organization || !["active", "trial"].includes(organization.orgStatus)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "La organización no está habilitada para operar estaciones" });
+        }
 
         const [station] = await db!
           .select({ id: chargingStations.id })
@@ -423,10 +436,20 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
 
         // Actualizar campos de la estación
         const stationUpdate: Record<string, any> = {};
+        const requestedNetworkMode = normalizeNetworkAccessMode(input.networkAccessMode, input.isPublic);
+        if (requestedNetworkMode && !canConfigureNetworkMode(organization, requestedNetworkMode)) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Tu organización no tiene habilitada la participación en la red EVGreen.",
+          });
+        }
         if (input.name !== undefined) stationUpdate.name = input.name;
         if (input.description !== undefined) stationUpdate.description = input.description;
         if (input.isActive !== undefined) stationUpdate.isActive = input.isActive;
-        if (input.isPublic !== undefined) stationUpdate.isPublic = input.isPublic;
+        if (requestedNetworkMode) {
+          stationUpdate.networkAccessMode = requestedNetworkMode;
+          stationUpdate.isPublic = requestedNetworkMode === "PRIVATE" ? 0 : 1;
+        }
         if (input.contactPhone !== undefined) stationUpdate.contactPhone = input.contactPhone;
         if (input.operatingHours !== undefined) stationUpdate.operatingHours = input.operatingHours;
 
@@ -482,7 +505,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // Obtener tarifa activa de una estación de la org
-    getMyStationTariff: protectedProcedure
+    getMyStationTariff: tenantProcedure
       .input(z.object({ stationId: z.number() }))
       .query(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
@@ -980,7 +1003,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         const since = new Date(Date.now() - input.periodDays * 24 * 60 * 60 * 1000);
         const [org] = await db!.select({
           transactionFeePercent: organizations.transactionFeePercent,
-          plan: (organizations as any).plan,
+          plan: organizations.orgPlan,
         }).from(organizations).where(eq(organizations.id, input.organizationId));
         let feePercent = parseFloat(org?.transactionFeePercent || "0");
         if (!feePercent && org?.plan) {
@@ -1015,8 +1038,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
       if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
       const [org] = await db!.select({
-        // @ts-ignore
-        id: organizations.id, plan: (organizations as any).plan, status: organizations.status,
+        id: organizations.id, plan: organizations.orgPlan, status: organizations.orgStatus,
         nextBillingDate: organizations.nextBillingDate, trialEndsAt: organizations.trialEndsAt,
         transactionFeePercent: organizations.transactionFeePercent, maxChargers: organizations.maxChargers,
       }).from(organizations).where(eq(organizations.id, membership.organizationId));
@@ -1062,7 +1084,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
         if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
         if (membership.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Solo el admin puede solicitar cambio de plan" });
-        const [org] = await db!.select({ plan: (organizations as any).plan, name: organizations.name })
+        const [org] = await db!.select({ plan: organizations.orgPlan, name: organizations.name })
           .from(organizations).where(eq(organizations.id, membership.organizationId));
         // @ts-ignore
         await db!.insert(orgBillingRecords).values({
@@ -1105,7 +1127,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       let orgPlan = 'starter';
       let saved: string[] | null = null;
       try {
-        const [org] = await db!.select({ plan: (organizations as any).plan, enabledModules: sql<string>`enabled_modules` })
+        const [org] = await db!.select({ plan: organizations.orgPlan, enabledModules: sql<string>`enabled_modules` })
           .from(organizations).where(eq(organizations.id, membership.organizationId));
         if (!org) return { modules: getDefaultModules('professional') };
         orgPlan = (org as any).plan || 'starter';
@@ -1118,7 +1140,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       } catch {
         // Column may not exist in production yet - use plan-based defaults
         try {
-          const [orgBasic] = await db!.select({ plan: (organizations as any).plan })
+          const [orgBasic] = await db!.select({ plan: organizations.orgPlan })
             .from(organizations).where(eq(organizations.id, membership.organizationId));
           if (orgBasic) orgPlan = orgBasic.plan || 'starter';
         } catch {}
@@ -1266,8 +1288,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           primaryColor: organizations.primaryColor,
           secondaryColor: organizations.secondaryColor,
           appName: organizations.appName,
-          // @ts-ignore
-          status: organizations.status,
+          status: organizations.orgStatus,
         }).from(organizations).where(eq(organizations.slug, input.slug));
         if (!org) return null;
         return org;
@@ -1391,7 +1412,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         const [result] = await db!.insert(organizations).values({
           name: input.orgName,
           slug: input.orgSlug,
-          plan: input.plan,
+          orgPlan: input.plan,
           orgStatus: "active",
           contactName: input.contactName,
           contactEmail: input.contactEmail,

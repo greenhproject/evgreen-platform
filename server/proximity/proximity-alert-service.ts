@@ -4,7 +4,7 @@
  * y envía notificaciones push cuando hay precios bajos.
  */
 
-import { getDb, getEffectiveStationPrice } from "../db";
+import { getDb, getEffectiveStationPrice, getEvgreenNetworkStationsNearLocation } from "../db";
 import { users, chargingStations, evses, userVehicles, tariffs } from "../../drizzle/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 // sendPushNotification reemplazado por sendUserPush (ver línea de uso)
@@ -135,34 +135,14 @@ export async function checkProximityAndNotify(
   // 6. Buscar estaciones cercanas
   const radiusKm = user.proximityRadiusKm || DEFAULT_RADIUS_KM;
 
-  const nearbyStations = await db
-    .select({
-      id: chargingStations.id,
-      name: chargingStations.name,
-      address: chargingStations.address,
-      city: chargingStations.city,
-      latitude: chargingStations.latitude,
-      longitude: chargingStations.longitude,
-      isOnline: chargingStations.isOnline,
-      distance: sql<number>`(
-        6371 * acos(
-          cos(radians(${request.latitude})) * cos(radians(${chargingStations.latitude})) *
-          cos(radians(${chargingStations.longitude}) - radians(${request.longitude})) +
-          sin(radians(${request.latitude})) * sin(radians(${chargingStations.latitude}))
-        )
-      )`.as("distance"),
-    })
-    .from(chargingStations)
-    .where(
-      and(
-        eq(chargingStations.isActive, 1),
-        eq(chargingStations.isPublic, 1),
-        eq(chargingStations.isOnline, 1)
-      )
-    )
-    .having(sql`distance <= ${radiusKm}`)
-    .orderBy(sql`distance`)
-    .limit(10);
+  const nearbyStations = (await getEvgreenNetworkStationsNearLocation(
+    request.latitude,
+    request.longitude,
+    radiusKm,
+  ))
+    .filter((entry: any) => !!entry.station.isOnline)
+    .slice(0, 10)
+    .map((entry: any) => ({ ...entry.station, distance: entry.distance }));
 
   if (nearbyStations.length === 0) {
     return { checked: true, notificationSent: false, nearbyCompatibleStations: [], reason: "No nearby stations" };
