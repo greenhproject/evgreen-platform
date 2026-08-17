@@ -62,7 +62,6 @@ describe("tenantProcedure", () => {
     const caller = securedRouter.createCaller(createContext(7));
     await expect(caller.currentOrganization()).resolves.toBe(7);
   });
-
   it("no permite que el tenant A consulte por ID una estación del tenant B", async () => {
     const tenantA = securedRouter.createCaller(createContext(10));
     const tenantB = securedRouter.createCaller(createContext(20));
