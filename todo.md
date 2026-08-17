@@ -40,6 +40,10 @@
 - [x] Feature: acción manual `LOCATION_PUBLISH` con dry-run seguro hasta contar con credenciales oficiales
 - [x] Test: asegurar que `previewCatalog` y publicación manual no generan tráfico externo sin activación OCPI
 - [x] Test: ejecutar `getCatalog`, `previewCatalog` y `publishCatalog` con fetch espiado y verificar bitácora sin solicitudes externas
+- [x] Feature: almacenamiento de ubicaciones remotas OCPI por socio para consumo de red CargaME
+- [x] Feature: endpoints OCPI autenticados para recibir Locations del socio y consultar catálogo remoto desde Admin
+- [x] Test: validar aislamiento por socio, idempotencia de actualización y rechazo de credenciales ausentes
+- [x] Test: cubrir aislamiento por socio en OCPI inbound con el mismo Location ID para partners distintos
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

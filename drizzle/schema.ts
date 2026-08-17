@@ -512,10 +512,30 @@ export const ocpiSyncRuns = mysqlTable("ocpi_sync_runs", {
 	createdBy: int(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	completedAt: timestamp({ mode: 'string' }),
-},
-(table) => [
-	index("idx_ocpi_sync_runs_station_created").on(table.stationId, table.createdAt),
-	index("idx_ocpi_sync_runs_status_created").on(table.status, table.createdAt),
+}, (table) => [
+  index("idx_ocpi_sync_runs_station_created").on(table.stationId, table.createdAt),
+  index("idx_ocpi_sync_runs_status_created").on(table.status, table.createdAt),
+]);
+
+export const ocpiRemoteLocations = mysqlTable("ocpi_remote_locations", {
+  id: int().autoincrement().notNull(),
+  provider: varchar({ length: 32 }).default("CARGAME").notNull(),
+  countryCode: varchar("country_code", { length: 2 }).notNull(),
+  partyId: varchar("party_id", { length: 3 }).notNull(),
+  locationId: varchar("location_id", { length: 64 }).notNull(),
+  name: varchar({ length: 255 }),
+  address: varchar({ length: 255 }),
+  city: varchar({ length: 120 }),
+  latitude: varchar({ length: 32 }),
+  longitude: varchar({ length: 32 }),
+  status: varchar({ length: 32 }).default("ACTIVE").notNull(),
+  lastUpdated: datetime("last_updated", { mode: "string" }),
+  rawLocation: json("raw_location").notNull(),
+  createdAt: timestamp("created_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+  updatedAt: timestamp("updated_at", { mode: "string" }).defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_ocpi_remote_location_partner").on(table.provider, table.countryCode, table.partyId, table.locationId),
+  index("idx_ocpi_remote_locations_updated").on(table.provider, table.updatedAt),
 ]);
 
 export const favoriteStations = mysqlTable("favorite_stations", {
@@ -1207,6 +1227,7 @@ export const platformSettings = mysqlTable("platform_settings", {
 	ocpiPartyId: varchar("ocpi_party_id", { length: 3 }),
 	ocpiModules: json("ocpi_modules"),
 	ocpiTokenEncrypted: text("ocpi_token_encrypted"),
+	ocpiInboundTokenEncrypted: text("ocpi_inbound_token_encrypted"),
 	ocpiMtlsCertEncrypted: text("ocpi_mtls_cert_encrypted"),
 	ocpiMtlsKeyEncrypted: text("ocpi_mtls_key_encrypted"),
 	ocpiLastTestAt: timestamp("ocpi_last_test_at", { mode: 'string' }),

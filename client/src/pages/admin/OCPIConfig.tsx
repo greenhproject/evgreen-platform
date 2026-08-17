@@ -18,18 +18,19 @@ export default function AdminOCPIConfig() {
   const { data, isLoading, refetch } = ocpiApi.getConfig.useQuery();
   const { data: catalog, refetch: refetchCatalog } = ocpiApi.getCatalog.useQuery();
   const { data: syncRuns, refetch: refetchSyncRuns } = ocpiApi.listSyncRuns.useQuery();
+  const { data: remoteLocations } = ocpiApi.listRemoteLocations.useQuery();
   const [showToken, setShowToken] = useState(false);
   const [showCert, setShowCert] = useState(false);
   const [showKey, setShowKey] = useState(false);
-  const [form, setForm] = useState({ environment: "SANDBOX" as "SANDBOX" | "PRODUCTION", enabled: false, autoSync: false, versionsUrl: "", countryCode: "CO", partyId: "", modules: ["LOCATIONS", "TARIFFS"] as ModuleName[], token: "", mtlsCertificate: "", mtlsPrivateKey: "" });
+  const [form, setForm] = useState({ environment: "SANDBOX" as "SANDBOX" | "PRODUCTION", enabled: false, autoSync: false, versionsUrl: "", countryCode: "CO", partyId: "", modules: ["LOCATIONS", "TARIFFS"] as ModuleName[], token: "", inboundToken: "", mtlsCertificate: "", mtlsPrivateKey: "" });
 
   useEffect(() => {
     if (!data) return;
-    setForm({ environment: data.environment, enabled: data.enabled, autoSync: data.autoSync, versionsUrl: data.versionsUrl, countryCode: data.countryCode, partyId: data.partyId, modules: data.modules as ModuleName[], token: "", mtlsCertificate: "", mtlsPrivateKey: "" });
+    setForm({ environment: data.environment, enabled: data.enabled, autoSync: data.autoSync, versionsUrl: data.versionsUrl, countryCode: data.countryCode, partyId: data.partyId, modules: data.modules as ModuleName[], token: "", inboundToken: "", mtlsCertificate: "", mtlsPrivateKey: "" });
   }, [data]);
 
   const save = ocpiApi.saveConfig.useMutation({
-    onSuccess: () => { toast.success("Configuración OCPI guardada"); refetch(); setForm(current => ({ ...current, token: "", mtlsCertificate: "", mtlsPrivateKey: "" })); },
+    onSuccess: () => { toast.success("Configuración OCPI guardada"); refetch(); setForm(current => ({ ...current, token: "", inboundToken: "", mtlsCertificate: "", mtlsPrivateKey: "" })); },
     onError: (error: any) => toast.error(error.message),
   });
   const test = ocpiApi.testConnection.useMutation({
@@ -74,11 +75,16 @@ export default function AdminOCPIConfig() {
       </CardContent></Card>
     </div>
 
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary" />Credenciales y mTLS</CardTitle><CardDescription>Deje un campo vacío para conservar el secreto existente. Las llaves no vuelven a mostrarse desde el servidor.</CardDescription></CardHeader><CardContent className="grid gap-5 lg:grid-cols-3">
+    <Card><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary" />Credenciales y mTLS</CardTitle><CardDescription>Deje un campo vacío para conservar el secreto existente. Las llaves no vuelven a mostrarse desde el servidor.</CardDescription></CardHeader><CardContent className="grid gap-5 lg:grid-cols-2">
       <SecretInput label="Token OCPI" value={form.token} placeholder={secretPlaceholder(Boolean(data?.hasToken), "token")} visible={showToken} onVisibleChange={setShowToken} onChange={token => setForm({ ...form, token })} />
+      <SecretInput label="Token entrante (Locations CargaME)" value={form.inboundToken} placeholder={secretPlaceholder(Boolean(data?.hasInboundToken), "token entrante")} visible={showToken} onVisibleChange={setShowToken} onChange={inboundToken => setForm({ ...form, inboundToken })} />
       <SecretInput label="Certificado cliente mTLS (opcional)" value={form.mtlsCertificate} placeholder={secretPlaceholder(Boolean(data?.hasMtlsCertificate), "certificado")} visible={showCert} onVisibleChange={setShowCert} onChange={mtlsCertificate => setForm({ ...form, mtlsCertificate })} multiline />
       <SecretInput label="Llave privada mTLS (opcional)" value={form.mtlsPrivateKey} placeholder={secretPlaceholder(Boolean(data?.hasMtlsPrivateKey), "llave privada")} visible={showKey} onVisibleChange={setShowKey} onChange={mtlsPrivateKey => setForm({ ...form, mtlsPrivateKey })} multiline />
     </CardContent></Card>
+
+    <Card><CardHeader><CardTitle>Endpoint entrante · Locations OCPI</CardTitle><CardDescription>Comparta esta URL con CargaME/UPME al habilitar el intercambio bidireccional. Requiere el token entrante configurado arriba.</CardDescription></CardHeader><CardContent><Label>PUT Location</Label><Input readOnly value="https://app.evgreen.lat/ocpi/2.2.1/locations/{country_code}/{party_id}/{location_id}" className="mt-2 font-mono text-xs" /></CardContent></Card>
+
+    <Card><CardHeader><CardTitle>Ubicaciones recibidas</CardTitle><CardDescription>Últimas 50 Locations entregadas por socios OCPI. Se guardan como registro independiente, sin alterar las estaciones propias.</CardDescription></CardHeader><CardContent className="space-y-2">{remoteLocations?.length ? remoteLocations.map((location: any) => <div key={location.id} className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{location.name || `Location ${location.locationId}`}</p><p className="text-xs text-muted-foreground">{location.provider} · {location.countryCode}/{location.partyId} · {location.address || location.city || "Dirección no informada"}</p></div><div className="flex items-center gap-2"><Badge variant={location.status === "ACTIVE" ? "default" : "secondary"}>{location.status}</Badge><span className="text-[11px] text-muted-foreground">{location.updatedAt ? new Date(location.updatedAt).toLocaleString() : ""}</span></div></div>) : <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">Aún no se han recibido Locations. El endpoint queda protegido y no acepta información sin el token entrante.</p>}</CardContent></Card>
 
     <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><Database className="h-5 w-5 text-primary" />Catálogo de estaciones roaming</CardTitle><CardDescription>Solo se incluyen estaciones activas, públicas y marcadas como ROAMING. Esta previsualización no envía información a CargaME.</CardDescription></CardHeader><CardContent className="space-y-4">

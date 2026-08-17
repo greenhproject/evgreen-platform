@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { chargingStations, evses, ocpiSyncRuns, organizations } from "../../drizzle/schema";
+import { chargingStations, evses, ocpiRemoteLocations, ocpiSyncRuns, organizations } from "../../drizzle/schema";
 import { getDb, getPlatformSettings, upsertPlatformSettings } from "../db";
 import { getOcpiEligibility, mapStationToOcpiLocation } from "./ocpi-catalog";
 import { decryptOcpiSecret, encryptOcpiSecret, isSafeOcpiVersionsUrl, maskOcpiSecret } from "./ocpi-secrets";
@@ -16,6 +16,7 @@ const configSchema = z.object({
   partyId: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{3}$/).optional(),
   modules: modulesSchema,
   token: z.string().optional(),
+  inboundToken: z.string().optional(),
   mtlsCertificate: z.string().optional(),
   mtlsPrivateKey: z.string().optional(),
 });
@@ -53,6 +54,7 @@ export function buildOcpiRouter(router: any, adminProcedure: any) {
         modules: Array.isArray(settings?.ocpiModules) ? settings.ocpiModules : ["LOCATIONS", "TARIFFS"],
         token: maskOcpiSecret(settings?.ocpiTokenEncrypted),
         hasToken: Boolean(settings?.ocpiTokenEncrypted),
+        hasInboundToken: Boolean(settings?.ocpiInboundTokenEncrypted),
         hasMtlsCertificate: Boolean(settings?.ocpiMtlsCertEncrypted),
         hasMtlsPrivateKey: Boolean(settings?.ocpiMtlsKeyEncrypted),
         lastTestAt: settings?.ocpiLastTestAt ?? null,
@@ -70,6 +72,7 @@ export function buildOcpiRouter(router: any, adminProcedure: any) {
         ocpiCountryCode: input.countryCode, ocpiPartyId: input.partyId || null, ocpiModules: input.modules,
       };
       if (input.token?.trim()) update.ocpiTokenEncrypted = encryptOcpiSecret(input.token.trim());
+      if (input.inboundToken?.trim()) update.ocpiInboundTokenEncrypted = encryptOcpiSecret(input.inboundToken.trim());
       if (input.mtlsCertificate?.trim()) update.ocpiMtlsCertEncrypted = encryptOcpiSecret(input.mtlsCertificate.trim());
       if (input.mtlsPrivateKey?.trim()) update.ocpiMtlsKeyEncrypted = encryptOcpiSecret(input.mtlsPrivateKey.trim());
       await upsertPlatformSettings(update);
@@ -144,6 +147,16 @@ export function buildOcpiRouter(router: any, adminProcedure: any) {
       const db = await getDb();
       if (!db) return [];
       return db.select().from(ocpiSyncRuns).orderBy(desc(ocpiSyncRuns.createdAt)).limit(20);
+    }),
+    listRemoteLocations: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        id: ocpiRemoteLocations.id, provider: ocpiRemoteLocations.provider, countryCode: ocpiRemoteLocations.countryCode,
+        partyId: ocpiRemoteLocations.partyId, locationId: ocpiRemoteLocations.locationId, name: ocpiRemoteLocations.name,
+        address: ocpiRemoteLocations.address, city: ocpiRemoteLocations.city, status: ocpiRemoteLocations.status,
+        lastUpdated: ocpiRemoteLocations.lastUpdated, updatedAt: ocpiRemoteLocations.updatedAt,
+      }).from(ocpiRemoteLocations).orderBy(desc(ocpiRemoteLocations.updatedAt)).limit(50);
     }),
   });
 }

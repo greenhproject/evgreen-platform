@@ -214,6 +214,9 @@ async function startServer() {
   // API Pública REST v1 para integración externa
   const { default: publicApiRouter } = await import("../api/public-api");
   app.use("/api/v1", express.json(), publicApiRouter);
+  // OCPI inbound: Locations recibidas de CargaME/SIEM con token configurado por Admin.
+  const { default: ocpiInboundRouter } = await import("../ocpi/ocpi-inbound-router");
+  app.use("/ocpi/2.2.1", express.json({ limit: "1mb" }), ocpiInboundRouter);
 
   // Página de documentación de API
   app.get("/api-docs", (_req, res) => {

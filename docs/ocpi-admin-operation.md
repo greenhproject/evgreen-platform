@@ -10,6 +10,7 @@ El centro administrativo se encuentra en **Admin → OCPI / CargaME** (`/admin/o
 | Versions URL | Punto de descubrimiento OCPI del socio. | Solo HTTPS público; se bloquean localhost y rangos privados. |
 | Country Code / Party ID | Identidad OCPI asignada a EVGreen. | Usar exclusivamente los valores emitidos por UPME. |
 | Token OCPI | Autenticación de Credentials/Versions. | Se cifra con AES-256-GCM y nunca vuelve a la UI. |
+| Token entrante | Valida las `Locations` enviadas por CargaME/SIEM hacia EVGreen. | Se cifra con AES-256-GCM y solo se comparte con el socio por canal seguro. |
 | Certificado / llave mTLS | Autenticación de transporte, si UPME la exige. | Se cifran y permanecen enmascarados. |
 | Módulos | Alcance habilitado del intercambio. | Empezar por `LOCATIONS` y `TARIFFS`. |
 
@@ -31,6 +32,12 @@ El mismo centro administrativo incluye un catálogo de estaciones candidatas. Un
 
 Este mecanismo permite revisar con el administrador qué estaciones serían publicadas antes de una certificación. El botón de previsualización no equivale a una publicación productiva: la transmisión a CargaME seguirá desactivada hasta recibir el onboarding y las credenciales oficiales.
 
+## Locations recibidas desde CargaME
+
+Cuando CargaME/UPME habilite el intercambio bilateral, se le debe entregar por canal seguro la URL `PUT https://app.evgreen.lat/ocpi/2.2.1/locations/{country_code}/{party_id}/{location_id}` y el **token entrante** configurado en Admin. El endpoint exige el encabezado `Authorization: Token <token>`; mientras no exista token, devuelve `503`, y con un token inválido devuelve `401` sin consultar la base de datos.
+
+Cada `Location` válida se registra en `ocpi_remote_locations` con la identidad del socio (`provider`, `country_code`, `party_id`, `location_id`), coordenadas, estado, fecha de actualización y el payload original para auditoría. La recepción es idempotente: una actualización para la misma combinación de socio y ubicación reemplaza el registro remoto, sin crear una estación propia ni modificar el inventario EVGreen. La sección **Ubicaciones recibidas** en Admin permite comprobar este flujo antes de proyectarlo a la app pública.
+
 ## Controles aplicados
 
-La pantalla está protegida por rol administrador. Las pruebas cubren cifrado/descifrado, enmascaramiento, rechazo de URLs inseguras y el paquete mínimo requerido antes de activar OCPI. Las configuraciones futuras de publicación deben mantener el filtro de estaciones `ROAMING` y el aislamiento por tenant documentado en la auditoría SaaS.
+La pantalla está protegida por rol administrador. Las pruebas cubren cifrado/descifrado, enmascaramiento, rechazo de URLs inseguras y el paquete mínimo requerido antes de activar OCPI. La suite del canal entrante también cubre token ausente, token inválido, inserción de Location y actualización idempotente. Las configuraciones futuras de publicación deben mantener el filtro de estaciones `ROAMING` y el aislamiento por tenant documentado en la auditoría SaaS.
