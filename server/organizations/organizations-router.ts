@@ -504,27 +504,21 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         return { success: true, message: "Estación actualizada correctamente" };
       }),
 
-    // Obtener tarifa activa de una estación de la org
+    // Obtener tarifa activa de una estación de la organización activa.
     getMyStationTariff: tenantProcedure
       .input(z.object({ stationId: z.number() }))
       .query(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
-        const [membership] = await db!
-          .select({ organizationId: orgUsers.organizationId })
-          .from(orgUsers)
-          .where(eq(orgUsers.userId, ctx.user.id));
-
-        if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
-
         const [station] = await db!
           .select({ id: chargingStations.id })
           .from(chargingStations)
           .where(and(
             eq(chargingStations.id, input.stationId),
-            eq(chargingStations.organizationId, membership.organizationId)
-          ));
+            eq(chargingStations.organizationId, ctx.tenant.organizationId),
+          ))
+          .limit(1);
 
-        if (!station) throw new TRPCError({ code: "NOT_FOUND" });
+        if (!station) throw new TRPCError({ code: "NOT_FOUND", message: "Estación no encontrada" });
 
         const [tariff] = await db!
           .select()
@@ -537,7 +531,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // El cliente crea un ticket de soporte
-    createMyTicket: protectedProcedure
+    createMyTicket: tenantProcedure
       .input(z.object({
         subject: z.string().min(5),
         description: z.string().min(10),
@@ -547,16 +541,11 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }))
       .mutation(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
-        const [membership] = await db!
-          .select({ organizationId: orgUsers.organizationId })
-          .from(orgUsers)
-          .where(eq(orgUsers.userId, ctx.user.id));
-
-        if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "No perteneces a ninguna organización" });
+        const organizationId = ctx.tenant.organizationId;
 
         const [result] = await db!.insert(supportTickets).values({
           userId: ctx.user.id,
-          organizationId: membership.organizationId,
+          organizationId,
           subject: input.subject,
           description: input.description,
           category: input.category,
@@ -569,7 +558,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // El cliente ve sus tickets
-    getMyTickets: protectedProcedure
+    getMyTickets: tenantProcedure
       .input(z.object({ status: z.string().optional() }).optional())
       .query(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
@@ -591,7 +580,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // Obtener detalle de un ticket con mensajes
-    getMyTicketDetail: protectedProcedure
+    getMyTicketDetail: tenantProcedure
       .input(z.object({ ticketId: z.number() }))
       .query(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
@@ -642,7 +631,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // Agregar mensaje a un ticket
-    addTicketMessage: protectedProcedure
+    addTicketMessage: tenantProcedure
       .input(z.object({
         ticketId: z.number(),
         message: z.string().min(1).max(2000),
@@ -687,7 +676,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // Cerrar un ticket
-    closeMyTicket: protectedProcedure
+    closeMyTicket: tenantProcedure
       .input(z.object({ ticketId: z.number() }))
       .mutation(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
@@ -714,7 +703,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // El admin de la org actualiza el branding (logo, colores, nombre)
-    updateMyBranding: protectedProcedure
+    updateMyBranding: tenantProcedure
       .input(
         z.object({
           logoUrl: z.string().url().nullable().optional(),
@@ -742,7 +731,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // El admin sube el logo directamente (base64 → S3)
-    uploadOrgLogo: protectedProcedure
+    uploadOrgLogo: tenantProcedure
       .input(z.object({
         fileBase64: z.string(),
         mimeType: z.enum(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"]),
@@ -778,7 +767,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // El admin de la org configura su dominio personalizado
-    updateMyDomain: protectedProcedure
+    updateMyDomain: tenantProcedure
       .input(z.object({ customDomain: z.string().max(253).nullable() }))
       .mutation(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
@@ -795,7 +784,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // Estadísticas de la organización: sesiones, kWh, ingresos
-    getMyOrgStats: protectedProcedure
+    getMyOrgStats: tenantProcedure
       .input(z.object({ period: z.enum(["7d", "30d", "90d", "all"]).default("30d") }).optional())
       .query(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
@@ -1031,7 +1020,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }),
 
     // CLIENTE: ver billing y solicitar cambio de plan
-    getMyBilling: protectedProcedure.query(async ({ ctx }: any) => {
+    getMyBilling: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
       const [membership] = await db!
         .select({ organizationId: orgUsers.organizationId })
@@ -1072,7 +1061,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       };
     }),
 
-    requestPlanChange: protectedProcedure
+    requestPlanChange: tenantProcedure
       .input(z.object({
         newPlan: z.enum(["starter", "professional", "enterprise"]),
         notes: z.string().optional(),
@@ -1118,7 +1107,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         return { success: true };
       }),
 
-    getMyModules: protectedProcedure.query(async ({ ctx }: any) => {
+    getMyModules: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
       const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
         .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
@@ -1153,7 +1142,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     // ==========================================
     // CONFIG DE SOPORTE
     // ==========================================
-    updateSupportConfig: protectedProcedure
+    updateSupportConfig: tenantProcedure
       .input(z.object({
         supportPhone: z.string().max(50).optional(),
         supportEmail: z.string().email().max(200).optional(),
@@ -1183,7 +1172,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         return { success: true, message: 'Configuración de soporte actualizada' };
       }),
 
-    getMySupportConfig: protectedProcedure.query(async ({ ctx }: any) => {
+    getMySupportConfig: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
       const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
         .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
@@ -1204,7 +1193,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     // ==========================================
     // USUARIOS DE LA ORG
     // ==========================================
-    getOrgUsers: protectedProcedure.query(async ({ ctx }: any) => {
+    getOrgUsers: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
       const [membership] = await db!.select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
         .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
@@ -1226,7 +1215,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     // ==========================================
     // TRANSACCIONES DE LA ORG
     // ==========================================
-    getOrgTransactions: protectedProcedure
+    getOrgTransactions: tenantProcedure
       .input(z.object({
         page: z.number().default(1),
         limit: z.number().default(20),
@@ -1298,7 +1287,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     // REPORTE EJECUTIVO COMPLETO (ORG PORTAL)
     // ==========================================
 
-    generateFullReport: protectedProcedure
+    generateFullReport: tenantProcedure
       .input(z.object({
         period: z.enum(["7d", "30d", "90d", "all"]).default("30d"),
         format: z.enum(["html", "csv"]).default("html"),
@@ -1480,7 +1469,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     // ==========================================
     // ORG API KEYS (cliente)
     // ==========================================
-    getMyApiKeys: protectedProcedure.query(async ({ ctx }: any) => {
+    getMyApiKeys: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
       const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
         .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
@@ -1490,7 +1479,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         .orderBy(desc(apiKeys.createdAt));
     }),
 
-    createMyApiKey: protectedProcedure
+    createMyApiKey: tenantProcedure
       .input(z.object({
         name: z.string().min(1).max(100),
         permissions: z.array(z.string()).optional(),
@@ -1523,7 +1512,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         return { apiKey: rawKey, prefix: keyPrefix, name: input.name };
       }),
 
-    revokeMyApiKey: protectedProcedure
+    revokeMyApiKey: tenantProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
