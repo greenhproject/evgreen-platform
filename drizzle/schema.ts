@@ -86,6 +86,7 @@ export const apiKeys = mysqlTable("api_keys", {
 export const apiWebhooks = mysqlTable("api_webhooks", {
 	id: int().autoincrement().notNull(),
 	userId: int().notNull(),
+	organizationId: int("organization_id"),
 	url: varchar({ length: 500 }).notNull(),
 	events: json().notNull(),
 	secret: varchar({ length: 64 }),
@@ -93,7 +94,9 @@ export const apiWebhooks = mysqlTable("api_webhooks", {
 	lastTriggeredAt: timestamp({ mode: 'string' }),
 	failCount: int().default(0).notNull(),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
-});
+}, (table) => [
+	index("idx_api_webhooks_organization_id").on(table.organizationId),
+]);
 
 export const backupLogs = mysqlTable("backup_logs", {
 	id: int().autoincrement().notNull(),
@@ -506,7 +509,8 @@ export const favoriteStations = mysqlTable("favorite_stations", {
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 },
 (table) => [
-	index("unique_user_station").on(table.userId, table.stationId),
+	index("favorite_stations_userId_idx").on(table.userId),
+	index("favorite_stations_stationId_idx").on(table.stationId),
 ]);
 
 export const financialReports = mysqlTable("financial_reports", {

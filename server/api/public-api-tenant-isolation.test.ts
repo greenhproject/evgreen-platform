@@ -182,4 +182,43 @@ describe("REST API remote commands tenant isolation", () => {
     const generatedQueries = execute.mock.calls.slice(1).map(([query]) => JSON.stringify(query)).join(" ");
     expect(generatedQueries).not.toContain("organization_id = 10");
   });
+
+  it("scopes webhook listing and creation to the organization of the API key", async () => {
+    const listExecute = vi.fn()
+      .mockResolvedValueOnce([[tenantAKey]])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([[]]);
+    mockGetDb.mockResolvedValue({ execute: listExecute });
+
+    const listResponse = await fetch(`${baseUrl}/webhooks`, {
+      headers: { "x-api-key": "tenant-a-webhook-key" },
+    });
+    expect(listResponse.status).toBe(200);
+    expect(JSON.stringify(listExecute.mock.calls[2][0])).toContain("organization_id");
+
+    const createExecute = vi.fn()
+      .mockResolvedValueOnce([[tenantAKey]])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    mockGetDb.mockResolvedValue({ execute: createExecute });
+
+    const createResponse = await post("/webhooks", {
+      url: "https://tenant-a.test/hooks/charging",
+      events: ["charging.completed"],
+    });
+    expect(createResponse.status).toBe(201);
+    const insertQuery = JSON.stringify(createExecute.mock.calls[2][0]);
+    expect(insertQuery).toContain("organization_id");
+    expect(insertQuery).toContain("10");
+  });
+
+  it("rejects a webhook URL that targets an internal or plaintext endpoint", async () => {
+    const response = await post("/webhooks", {
+      url: "http://127.0.0.1:3000/internal",
+      events: ["charging.completed"],
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: "UNSAFE_WEBHOOK_URL" });
+  });
 });

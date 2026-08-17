@@ -18,6 +18,7 @@ import { dualCSMS } from "../ocpp/csms-dual";
 import { sql } from "drizzle-orm";
 import crypto from "crypto";
 import { canApiKeyAccessOrganizationResource, getApiKeyScopedResource } from "./tenant-api-policy";
+import { isSafeWebhookUrl, WEBHOOK_EVENT_TYPES } from "./webhook-dispatcher";
 
 const router = Router();
 
@@ -845,10 +846,13 @@ router.get("/webhooks", async (req: Request, res: Response) => {
     const database = await getDb();
     if (!database) return res.status(503).json({ error: "SERVICE_UNAVAILABLE" });
 
+    const organizationFilter = user.organizationId
+      ? sql` AND organization_id = ${user.organizationId}`
+      : sql` AND organization_id IS NULL`;
     const result = await database.execute(sql`
       SELECT id, url, events, isActive, createdAt, lastTriggeredAt, failCount
       FROM api_webhooks
-      WHERE userId = ${user.id} AND isActive = 1
+      WHERE userId = ${user.id} AND isActive = 1 ${organizationFilter}
     `);
     const rows = (result as any)[0] as any[];
 
@@ -882,14 +886,20 @@ router.post("/webhooks", async (req: Request, res: Response) => {
       return res.status(400).json({
         error: "MISSING_PARAMS",
         message: "Se requiere 'url' (string) y 'events' (array de strings)",
-        validEvents: [
-          "charging.started",
-          "charging.completed",
-          "charging.failed",
-          "station.online",
-          "station.offline",
-          "alert.created",
-        ],
+        validEvents: WEBHOOK_EVENT_TYPES,
+      });
+    }
+    if (typeof url !== "string" || !isSafeWebhookUrl(url)) {
+      return res.status(400).json({
+        error: "UNSAFE_WEBHOOK_URL",
+        message: "La URL del webhook debe usar HTTPS público y no puede apuntar a redes internas.",
+      });
+    }
+    if (events.some((event: unknown) => !WEBHOOK_EVENT_TYPES.includes(event as any))) {
+      return res.status(400).json({
+        error: "UNSUPPORTED_WEBHOOK_EVENT",
+        message: "El único evento webhook disponible actualmente es charging.completed.",
+        validEvents: WEBHOOK_EVENT_TYPES,
       });
     }
 
@@ -897,8 +907,8 @@ router.post("/webhooks", async (req: Request, res: Response) => {
     if (!database) return res.status(503).json({ error: "SERVICE_UNAVAILABLE" });
 
     await database.execute(sql`
-      INSERT INTO api_webhooks (userId, url, events, isActive, createdAt)
-      VALUES (${user.id}, ${url}, ${JSON.stringify(events)}, 1, NOW())
+      INSERT INTO api_webhooks (userId, organization_id, url, events, isActive, createdAt)
+      VALUES (${user.id}, ${user.organizationId ?? null}, ${url}, ${JSON.stringify(events)}, 1, NOW())
     `);
 
     res.status(201).json({

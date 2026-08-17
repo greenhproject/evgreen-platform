@@ -997,21 +997,19 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     // CLIENTE: ver billing y solicitar cambio de plan
     getMyBilling: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
-      const [membership] = await db!
-        .select({ organizationId: orgUsers.organizationId })
-        .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
-      if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
+      const organizationId = ctx.tenant.organizationId;
+      if (!organizationId) throw new TRPCError({ code: "FORBIDDEN" });
       const [org] = await db!.select({
         id: organizations.id, plan: organizations.orgPlan, status: organizations.orgStatus,
         nextBillingDate: organizations.nextBillingDate, trialEndsAt: organizations.trialEndsAt,
         transactionFeePercent: organizations.transactionFeePercent, maxChargers: organizations.maxChargers,
-      }).from(organizations).where(eq(organizations.id, membership.organizationId));
+      }).from(organizations).where(eq(organizations.id, organizationId));
       if (!org) throw new TRPCError({ code: "NOT_FOUND" });
       const [planDefaults] = await db!.select().from(platformPricingDefaults)
         // @ts-ignore
         .where(eq(platformPricingDefaults.plan, (org as any).plan));
       const billingHistory = await db!.select().from(orgBillingRecords)
-        .where(eq(orgBillingRecords.organizationId, membership.organizationId))
+        .where(eq(orgBillingRecords.organizationId, organizationId))
         .orderBy(desc(orgBillingRecords.createdAt)).limit(20);
       const feePercent = parseFloat(org.transactionFeePercent || planDefaults?.transactionFeePercent || "5");
       const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -1021,7 +1019,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           COALESCE(SUM(t.totalCost * ${feePercent} / 100), 0) as fee_accrued
         FROM transactions t
         INNER JOIN charging_stations cs ON t.stationId = cs.id
-        WHERE cs.organization_id = ${membership.organizationId}
+        WHERE cs.organization_id = ${organizationId}
           AND t.transaction_status = 'COMPLETED' AND t.createdAt >= ${since30d}
       `) as any;
       const feeRow = Array.isArray(feeResult) ? feeResult[0] : feeResult;
@@ -1045,7 +1043,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         const db = (await getDb())!;
         const [membership] = await db!
           .select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
-          .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+          .from(orgUsers).where(and(eq(orgUsers.userId, ctx.user.id), eq(orgUsers.organizationId, ctx.tenant.organizationId)));
         if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
         if (membership.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Solo el admin puede solicitar cambio de plan" });
         const [org] = await db!.select({ plan: organizations.orgPlan, name: organizations.name })
@@ -1084,15 +1082,14 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
 
     getMyModules: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
-      const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
-        .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
-      if (!membership) return { modules: getDefaultModules('professional') };
+      const organizationId = ctx.tenant.organizationId;
+      if (!organizationId) return { modules: getDefaultModules('professional') };
       // Fetch org with enabled_modules - handle missing column gracefully
       let orgPlan = 'starter';
       let saved: string[] | null = null;
       try {
         const [org] = await db!.select({ plan: organizations.orgPlan, enabledModules: sql<string>`enabled_modules` })
-          .from(organizations).where(eq(organizations.id, membership.organizationId));
+          .from(organizations).where(eq(organizations.id, organizationId));
         if (!org) return { modules: getDefaultModules('professional') };
         orgPlan = (org as any).plan || 'starter';
         if (org.enabledModules) {
@@ -1105,7 +1102,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         // Column may not exist in production yet - use plan-based defaults
         try {
           const [orgBasic] = await db!.select({ plan: organizations.orgPlan })
-            .from(organizations).where(eq(organizations.id, membership.organizationId));
+            .from(organizations).where(eq(organizations.id, organizationId));
           if (orgBasic) orgPlan = orgBasic.plan || 'starter';
         } catch {}
       }
@@ -1128,7 +1125,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       .mutation(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
         const [membership] = await db!.select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
-          .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+          .from(orgUsers).where(and(eq(orgUsers.userId, ctx.user.id), eq(orgUsers.organizationId, ctx.tenant.organizationId)));
         if (!membership || membership.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN' });
         const update: any = {};
         if (input.supportPhone !== undefined) update.supportPhone = input.supportPhone;
@@ -1150,7 +1147,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     getMySupportConfig: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
       const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
-        .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+        .from(orgUsers).where(and(eq(orgUsers.userId, ctx.user.id), eq(orgUsers.organizationId, ctx.tenant.organizationId)));
       if (!membership) throw new TRPCError({ code: 'NOT_FOUND' });
       const [row] = await db!.execute(
         sql`SELECT support_phone, support_email, support_whatsapp, support_mode, support_chat_embed FROM organizations WHERE id = ${membership.organizationId}`
@@ -1171,7 +1168,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     getOrgUsers: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
       const [membership] = await db!.select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
-        .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+        .from(orgUsers).where(and(eq(orgUsers.userId, ctx.user.id), eq(orgUsers.organizationId, ctx.tenant.organizationId)));
       if (!membership || membership.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN' });
       const members = await db!.select({
         userId: orgUsers.userId,
@@ -1200,7 +1197,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       .query(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
         const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
-          .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+          .from(orgUsers).where(and(eq(orgUsers.userId, ctx.user.id), eq(orgUsers.organizationId, ctx.tenant.organizationId)));
         if (!membership) throw new TRPCError({ code: 'FORBIDDEN' });
         const cutoff = input.period === 'all' ? null :
           new Date(Date.now() - parseInt(input.period) * 24 * 60 * 60 * 1000);
@@ -1272,7 +1269,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
 
         // Obtener membresía
         const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
-          .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+          .from(orgUsers).where(and(eq(orgUsers.userId, ctx.user.id), eq(orgUsers.organizationId, ctx.tenant.organizationId)));
         if (!membership) throw new TRPCError({ code: 'FORBIDDEN', message: 'No perteneces a ninguna organización' });
 
         // Obtener datos de la organización
