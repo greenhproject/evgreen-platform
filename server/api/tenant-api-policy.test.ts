@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canApiKeyAccessOrganizationResource } from "./tenant-api-policy";
+import { canApiKeyAccessOrganizationResource, getApiKeyScopedResource } from "./tenant-api-policy";
 
 describe("API key tenant policy", () => {
   it("permite a una API key de plataforma acceder a recursos operativos", () => {
@@ -15,5 +15,11 @@ describe("API key tenant policy", () => {
     expect(canApiKeyAccessOrganizationResource(10, 20)).toBe(false);
     expect(canApiKeyAccessOrganizationResource(20, 10)).toBe(false);
     expect(canApiKeyAccessOrganizationResource(10, null)).toBe(false);
+  });
+
+  it("oculta una estación ajena antes de consultar su configuración OCPP", () => {
+    const foreignStation = { id: 202, organizationId: 20, ocppIdentity: null };
+    expect(getApiKeyScopedResource(10, foreignStation)).toBeNull();
+    expect(getApiKeyScopedResource(20, foreignStation)).toEqual(foreignStation);
   });
 });

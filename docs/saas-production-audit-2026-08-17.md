@@ -5,7 +5,7 @@
 
 ## Dictamen
 
-El núcleo SaaS quedó **funcional y protegido para la operación multiempresa**. La plataforma resuelve un tenant activo por solicitud, exige membresía para el portal organizacional y restringe por organización las operaciones sensibles verificadas durante la auditoría. La suite completa está en verde: **124 archivos y 1.940 pruebas**; TypeScript no reporta errores.
+El núcleo SaaS quedó **funcional y protegido para la operación multiempresa**. La plataforma resuelve un tenant activo por solicitud, exige membresía para el portal organizacional y restringe por organización las operaciones sensibles verificadas durante la auditoría. La suite completa está en verde: **125 archivos y 1.952 pruebas**; TypeScript no reporta errores.
 
 Esto no sustituye una prueba de penetración externa, la revisión de secretos de producción ni la aprobación contractual de un socio de roaming. Esas actividades siguen siendo controles operativos previos a habilitar integraciones de terceros, no defectos de aislamiento interno detectados en el código.
 
@@ -40,8 +40,8 @@ La auditoría agregó o reforzó pruebas de política de red, contexto de tenant
 | Verificación | Resultado |
 |---|---|
 | Compilación TypeScript | 0 errores |
-| Suite Vitest | 124 archivos aprobados |
-| Pruebas Vitest | 1.940 aprobadas |
+| Suite Vitest | 125 archivos aprobados |
+| Pruebas Vitest | 1.952 aprobadas |
 | Aislamiento de tenant y política de red | Aprobado |
 | Pagos recurrentes y auto-cobro Wompi | Aprobado |
 
@@ -52,3 +52,5 @@ Las API keys creadas antes de este cambio no se asociaron automáticamente porqu
 El modo `ROAMING` no representa aún una integración OCPI activa. Antes de anunciar interoperabilidad se requiere definir el socio, autenticar los endpoints, establecer tarifas de intercambio, acordar conciliación y probar el flujo completo de tokens, sesiones, CDR y liquidación.
 
 Antes de la salida general se recomienda realizar una prueba controlada con dos organizaciones reales —cada una con estación y API key propias— y confirmar desde producción que no pueden enumerar ni operar recursos ajenos. También deben revisarse secretos, alertas de errores, respaldos, monitoreo de pagos y procedimiento de reversión.
+
+Las pruebas de integración REST verifican que el listado, detalle, estado, estadísticas y comandos `start` y `stop` se ejecutan en el tenant de la API key. Los comandos devuelven `404` para estaciones de otro tenant, tanto si poseen identidad OCPP como si no. Para una estación propia sin OCPP se conserva el `400 NO_OCPP`, confirmando que el endurecimiento no rompe el flujo legítimo.

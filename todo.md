@@ -22,14 +22,15 @@
 - [x] Feature: controlar si una estación participa en la red EVGreen o se opera como red privada/roaming
 - [x] Test: cubrir cruces de tenant y visibilidad de estaciones en consultas públicas y administrativas
 - [x] Audit: documentar criterios y brechas de salida a producción
-- [ ] Test: validar con dos tenants que listados, detalle por ID y endpoints públicos no filtren datos entre organizaciones
+- [x] Test: validar con dos tenants que listados, detalle por ID y endpoints públicos no filtren datos entre organizaciones
 - [ ] Audit: migrar o justificar todos los procedimientos tenant-sensibles del proyecto con tenantProcedure o checks explícitos por organizationId
 - [ ] Fix: alinear las búsquedas internas de membresía con ctx.tenant.organizationId en tarifas, tickets, branding, dominio, billing y API keys
-- [ ] Feature: vincular API keys de tenant a su organización y filtrar transacciones, comandos y estadísticas REST por esa organización
-- [ ] Test: impedir que una API key de tenant consulte estadísticas agregadas de otra empresa o de toda la plataforma
+- [x] Feature: vincular API keys de tenant a su organización y filtrar transacciones, comandos y estadísticas REST por esa organización
+- [x] Test: impedir que una API key de tenant consulte estadísticas agregadas de otra empresa o de toda la plataforma
+- [x] Test: validar `/stats/energy` por tenant y preservar el alcance global de una API key de plataforma en `/stats/*`
 - [ ] Audit: revisar los endpoints REST autenticados restantes para exigir el alcance organizationId donde aplique
-- [ ] Fix: validar organizationId antes de exponer el estado OCPP en comandos remotos de inicio y detención
-- [ ] Test: asegurar 404 uniforme para estaciones de otro tenant en comandos remotos, sin filtrar su configuración OCPP
+- [x] Fix: validar organizationId antes de exponer el estado OCPP en comandos remotos de inicio y detención
+- [x] Test: asegurar 404 uniforme para estaciones de otro tenant en comandos remotos, sin filtrar su configuración OCPP
 - [x] Documentación: crear checklist trazable de readiness SaaS, visibilidad de red, ROAMING/OCPI y bloqueantes globales
 - [x] QA de producción: resolver los fallos preexistentes de la suite completa antes de declarar release general completamente listo
 - [x] Fix: corregir contrato de tabla de deudas y lista de autorización local OCPP cubiertos por pruebas
