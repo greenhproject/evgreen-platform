@@ -28,6 +28,7 @@ import { runWeeklyReportJob } from "../email/weekly-report-email";
 import * as ocppManager from "../ocpp/connection-manager";
 import * as alertsService from "../ocpp/alerts-service";
 import { dualCSMS } from "../ocpp/csms-dual";
+import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 
 // Grace period para desconexiones temporales del legacy CSMS
 // Evita notificaciones por reconexiones intermitentes (WiFi inestable, reinicios breves)
@@ -1739,6 +1740,24 @@ async function handleOCPP16Message(
         } catch (notifErr) {
           console.error(`[OCPP] Error sending charge complete notification:`, notifErr);
         }
+      }
+
+      // Evento externo no bloqueante: la organización de la estación es el único alcance permitido.
+      try {
+        const stationForWebhook = await db.getChargingStationById(transaction.stationId);
+        void dispatchOrganizationWebhookEvent(stationForWebhook?.organizationId, "charging.completed", {
+          eventId: `charging.completed:${transaction.id}`,
+          transactionId: transaction.id,
+          stationId: transaction.stationId,
+          stationName: stationForWebhook?.name ?? stationName,
+          energyKwh: Number(energyDelivered.toFixed(4)),
+          totalCostCop: Math.round(totalCost),
+          durationMinutes: Math.round(durationMinutes),
+          completedAt: endTime.toISOString(),
+          stopReason: payload.reason || "Remote",
+        });
+      } catch (webhookErr) {
+        console.error(`[OCPP] Error preparing tenant webhook:`, webhookErr);
       }
       // ============================================================
       // ACUMULACIÓN DE PUNTOS DE FIDELIZACIÓN (1 pt por kWh)

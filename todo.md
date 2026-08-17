@@ -23,12 +23,20 @@
 - [x] Test: cubrir cruces de tenant y visibilidad de estaciones en consultas públicas y administrativas
 - [x] Audit: documentar criterios y brechas de salida a producción
 - [x] Test: validar con dos tenants que listados, detalle por ID y endpoints públicos no filtren datos entre organizaciones
-- [ ] Audit: migrar o justificar todos los procedimientos tenant-sensibles del proyecto con tenantProcedure o checks explícitos por organizationId
-- [ ] Fix: alinear las búsquedas internas de membresía con ctx.tenant.organizationId en tarifas, tickets, branding, dominio, billing y API keys
+- [x] Audit: migrar o justificar todos los procedimientos tenant-sensibles del proyecto con tenantProcedure o checks explícitos por organizationId
+- [x] Fix: alinear las búsquedas internas de membresía con ctx.tenant.organizationId en tarifas, tickets, branding, dominio, billing y API keys
 - [x] Feature: vincular API keys de tenant a su organización y filtrar transacciones, comandos y estadísticas REST por esa organización
 - [x] Test: impedir que una API key de tenant consulte estadísticas agregadas de otra empresa o de toda la plataforma
 - [x] Test: validar `/stats/energy` por tenant y preservar el alcance global de una API key de plataforma en `/stats/*`
-- [ ] Audit: revisar los endpoints REST autenticados restantes para exigir el alcance organizationId donde aplique
+- [x] Audit: revisar los endpoints REST autenticados restantes para exigir el alcance organizationId donde aplique
+- [x] Feature: asociar los webhooks API al tenant de la API key y limitar su consulta y entrega a esa organización
+- [x] Feature: implementar un despachador de webhooks con filtro de organización y conectarlo a eventos de carga verificables
+- [x] Test: confirmar que el despachador solo entrega eventos a webhooks del tenant propietario
+- [x] Audit: inventariar y justificar todos los procedimientos organization-sensitive restantes
+- [x] Documentación: añadir una tabla de cobertura por procedimiento/superficie, guarda aplicada y evidencia de prueba
+- [x] Audit: generar el inventario individual completo de procedimientos/rutas tenant-sensitive y su justificación de alcance
+- [x] Feature: emitir de forma segura todos los eventos webhook soportados o restringir la API a los eventos implementados
+- [x] Test: cubrir dispatchOrganizationWebhookEvent de extremo a extremo y denegar entrega a otro tenant
 - [x] Fix: validar organizationId antes de exponer el estado OCPP en comandos remotos de inicio y detención
 - [x] Test: asegurar 404 uniforme para estaciones de otro tenant en comandos remotos, sin filtrar su configuración OCPP
 - [x] Documentación: crear checklist trazable de readiness SaaS, visibilidad de red, ROAMING/OCPI y bloqueantes globales

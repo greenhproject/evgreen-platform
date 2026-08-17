@@ -17,6 +17,7 @@ import { dualCSMS } from "../ocpp/csms-dual";
 import { v4 as uuidv4 } from "uuid";
 import * as simulator from "./charging-simulator";
 import { sendUserPush } from "../push/unified-push";
+import { dispatchOrganizationWebhookEvent } from "../api/webhook-dispatcher";
 
 // Helper: buscar conexión por stationId en dualCSMS primero, luego fallback a legacy
 // Si ocppIdentity se provee, también busca en dualCSMS por identidad cuando stationId=null
@@ -2306,6 +2307,24 @@ async function completeTransactionLocally(transactionId: number, transaction: an
 
     // Limpiar sesión activa de memoria
     activeChargeSessions.delete(transactionId);
+
+    // Evento externo no bloqueante: solo se entrega a webhooks de la empresa propietaria.
+    try {
+      const stationForWebhook = await db.getChargingStationById(transaction.stationId);
+      void dispatchOrganizationWebhookEvent(stationForWebhook?.organizationId, "charging.completed", {
+        eventId: `charging.completed:${transactionId}`,
+        transactionId,
+        stationId: transaction.stationId,
+        stationName: stationForWebhook?.name ?? "Estación",
+        energyKwh: Number(energyDelivered.toFixed(4)),
+        totalCostCop: Math.round(totalCost),
+        durationMinutes: Math.round(durationMinutes),
+        completedAt: endTime.toISOString(),
+        stopReason: "Local",
+      });
+    } catch (webhookErr) {
+      console.error(`[completeTransactionLocally] Error preparing tenant webhook:`, webhookErr);
+    }
     
     console.log(`[completeTransactionLocally] Transaction ${transactionId} completed: ${energyDelivered.toFixed(4)} kWh, $${totalCost.toFixed(0)} COP`);
   } catch (err) {
