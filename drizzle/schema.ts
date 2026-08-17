@@ -67,6 +67,7 @@ export const aiUsage = mysqlTable("ai_usage", {
 export const apiKeys = mysqlTable("api_keys", {
 	id: int().autoincrement().notNull(),
 	userId: int().notNull(),
+	organizationId: int("organization_id"),
 	name: varchar({ length: 100 }).notNull(),
 	keyHash: varchar({ length: 64 }).notNull(),
 	keyPrefix: varchar({ length: 12 }).notNull(),
@@ -79,6 +80,7 @@ export const apiKeys = mysqlTable("api_keys", {
 },
 (table) => [
 	index("api_keys_keyHash_unique").on(table.keyHash),
+	index("idx_api_keys_organization_id").on(table.organizationId),
 ]);
 
 export const apiWebhooks = mysqlTable("api_webhooks", {

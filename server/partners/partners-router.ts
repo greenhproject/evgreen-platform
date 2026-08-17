@@ -66,8 +66,7 @@ export const partnersRouter = router({
         const conditions: any[] = [];
 
         if (input.status && input.status !== "all") {
-          // @ts-ignore
-          conditions.push(eq(partnerApplications.status, input.status));
+          conditions.push(eq(partnerApplications.partnerAppStatus, input.status));
         }
 
         if (input.search) {
@@ -88,7 +87,12 @@ export const partnersRouter = router({
               .orderBy(desc(partnerApplications.createdAt))
           : await query.orderBy(desc(partnerApplications.createdAt));
 
-        return results;
+        return results.map((application) => ({
+          ...application,
+          // Alias de compatibilidad para clientes existentes; la columna física
+          // y el campo Drizzle correcto siguen siendo partnerAppStatus.
+          status: application.partnerAppStatus,
+        }));
       }),
 
     updateStatus: protectedProcedure
@@ -102,7 +106,7 @@ export const partnersRouter = router({
         }
         const db = (await getDb())!;
         await db!.update(partnerApplications)
-          .set({ status: input.status, updatedAt: Date.now() } as any)
+          .set({ partnerAppStatus: input.status, updatedAt: Date.now() } as any)
           .where(eq(partnerApplications.id, input.id));
         return { success: true };
       }),

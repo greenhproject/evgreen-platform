@@ -14,6 +14,7 @@ La plataforma dispone ahora de un **modelo explícito de presencia en red** y de
 | Recursos por identificador | Reforzado | Los flujos sensibles deben filtrar por `organizationId`; una guarda reusable responde `NOT_FOUND` ante recursos externos. |
 | Mapa, API pública y proximidad | Reforzado | Aplican una regla central de visibilidad de red y no deben descubrir estaciones privadas. |
 | Inicio de carga | Reforzado | La app pública exige que la estación pertenezca a la red EVGreen antes de abrir una sesión. |
+| API keys REST | Reforzado | Las nuevas API keys del tenant guardan `organization_id`; estaciones, transacciones, comandos, usuarios y estadísticas se filtran por esa organización. |
 | Roaming externo | Preparado, no activado | El modo existe, pero requiere un socio y conexión OCPI aprobados antes de interoperar externamente. |
 
 ## Modelo de presencia en red
@@ -44,3 +45,7 @@ Se validaron compilación TypeScript y pruebas específicas de organización, po
 ## Criterio de aprobación final
 
 La salida SaaS se considera apta cuando las pruebas específicas y la suite general estén en verde, la prueba controlada de dos tenants esté aprobada, y el modo de red de cada estación haya sido revisado por un administrador de la organización.
+
+## API keys existentes
+
+Las API keys previas a esta migración quedan con `organization_id = NULL` y conservan alcance de plataforma. No se asociaron automáticamente porque las cuatro claves existentes no pertenecen a ningún registro de `org_users`; una asignación forzada habría cambiado privilegios sin evidencia de la empresa propietaria. Las keys creadas desde el portal SaaS quedan ligadas a la organización activa desde su creación.

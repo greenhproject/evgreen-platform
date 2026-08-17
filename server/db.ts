@@ -8181,6 +8181,12 @@ export async function cleanExpiredPendingSessions() {
 export async function getOrCreateLocalAuthList(stationId: number): Promise<LocalAuthList> {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
+
+  const station = await database.select({ id: chargingStations.id }).from(chargingStations)
+    .where(eq(chargingStations.id, stationId)).limit(1);
+  if (station.length === 0) {
+    throw new Error("Station not found");
+  }
   
   const existing = await database.select().from(localAuthLists)
     .where(eq(localAuthLists.stationId, stationId)).limit(1);

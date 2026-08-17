@@ -562,14 +562,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       .input(z.object({ status: z.string().optional() }).optional())
       .query(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
-        const [membership] = await db!
-          .select({ organizationId: orgUsers.organizationId })
-          .from(orgUsers)
-          .where(eq(orgUsers.userId, ctx.user.id));
-
-        if (!membership) return [];
-
-        const conditions: any[] = [eq(supportTickets.organizationId, membership.organizationId)];
+        const conditions: any[] = [eq(supportTickets.organizationId, ctx.tenant.organizationId)];
         if (input?.status) conditions.push(eq(supportTickets.status, input.status));
 
         return await db!
@@ -584,18 +577,12 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       .input(z.object({ ticketId: z.number() }))
       .query(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
-        const [membership] = await db!
-          .select({ organizationId: orgUsers.organizationId })
-          .from(orgUsers)
-          .where(eq(orgUsers.userId, ctx.user.id));
-        if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
-
         const [ticket] = await db!
           .select()
           .from(supportTickets)
           .where(and(
             eq(supportTickets.id, input.ticketId),
-            eq(supportTickets.organizationId, membership.organizationId)
+            eq(supportTickets.organizationId, ctx.tenant.organizationId)
           ));
         if (!ticket) throw new TRPCError({ code: "NOT_FOUND", message: "Ticket no encontrado" });
 
@@ -639,18 +626,12 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }))
       .mutation(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
-        const [membership] = await db!
-          .select({ organizationId: orgUsers.organizationId })
-          .from(orgUsers)
-          .where(eq(orgUsers.userId, ctx.user.id));
-        if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
-
         const [ticket] = await db!
           .select({ id: supportTickets.id, status: supportTickets.status })
           .from(supportTickets)
           .where(and(
             eq(supportTickets.id, input.ticketId),
-            eq(supportTickets.organizationId, membership.organizationId)
+            eq(supportTickets.organizationId, ctx.tenant.organizationId)
           ));
         if (!ticket) throw new TRPCError({ code: "NOT_FOUND" });
         // @ts-ignore
@@ -680,18 +661,12 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       .input(z.object({ ticketId: z.number() }))
       .mutation(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
-        const [membership] = await db!
-          .select({ organizationId: orgUsers.organizationId })
-          .from(orgUsers)
-          .where(eq(orgUsers.userId, ctx.user.id));
-        if (!membership) throw new TRPCError({ code: "FORBIDDEN" });
-
         const [ticket] = await db!
           .select({ id: supportTickets.id })
           .from(supportTickets)
           .where(and(
             eq(supportTickets.id, input.ticketId),
-            eq(supportTickets.organizationId, membership.organizationId)
+            eq(supportTickets.organizationId, ctx.tenant.organizationId)
           ));
         if (!ticket) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -1471,11 +1446,8 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
     // ==========================================
     getMyApiKeys: tenantProcedure.query(async ({ ctx }: any) => {
       const db = (await getDb())!;
-      const [membership] = await db!.select({ organizationId: orgUsers.organizationId })
-        .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
-      if (!membership) return [];
       return db!.select().from(apiKeys)
-        .where(eq(apiKeys.userId, ctx.user.id))
+        .where(and(eq(apiKeys.userId, ctx.user.id), eq(apiKeys.organizationId, ctx.tenant.organizationId)))
         .orderBy(desc(apiKeys.createdAt));
     }),
 
@@ -1488,7 +1460,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       .mutation(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
         const [membership] = await db!.select({ organizationId: orgUsers.organizationId, role: orgUsers.role })
-          .from(orgUsers).where(eq(orgUsers.userId, ctx.user.id));
+          .from(orgUsers).where(and(eq(orgUsers.userId, ctx.user.id), eq(orgUsers.organizationId, ctx.tenant.organizationId)));
         if (!membership) throw new TRPCError({ code: 'FORBIDDEN', message: 'No perteneces a ninguna organización' });
         if (membership.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo el admin puede crear API Keys' });
         const rawKey = 'evg_' + Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b => b.toString(16).padStart(2,'0')).join('');
@@ -1502,6 +1474,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
           : null;
         await db!.insert(apiKeys).values({
           userId: ctx.user.id,
+          organizationId: ctx.tenant.organizationId,
           name: input.name,
           keyHash,
           keyPrefix,
@@ -1517,7 +1490,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       .mutation(async ({ ctx, input }: any) => {
         const db = (await getDb())!;
         const [key] = await db!.select().from(apiKeys)
-          .where(and(eq(apiKeys.id, input.id), eq(apiKeys.userId, ctx.user.id)));
+          .where(and(eq(apiKeys.id, input.id), eq(apiKeys.userId, ctx.user.id), eq(apiKeys.organizationId, ctx.tenant.organizationId)));
         if (!key) throw new TRPCError({ code: 'NOT_FOUND' });
         await db!.update(apiKeys).set({ isActive: 0 } as any).where(eq(apiKeys.id, input.id));
         return { success: true };

@@ -40,6 +40,7 @@ import { getAcceptanceToken } from "./recurring-billing";
 describe("autoChargeIfNeeded", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetch.mockReset();
     // Reset default mock for getAcceptanceToken
     vi.mocked(getAcceptanceToken).mockResolvedValue({
       acceptanceToken: "test-acceptance-token",
