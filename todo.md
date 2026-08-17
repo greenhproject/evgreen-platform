@@ -22,9 +22,9 @@
 - [x] Feature: controlar si una estación participa en la red EVGreen o se opera como red privada/roaming
 - [x] Test: cubrir cruces de tenant y visibilidad de estaciones en consultas públicas y administrativas
 - [x] Audit: documentar criterios y brechas de salida a producción
-- [ ] Test: validar con dos tenants que listados, detalle por ID y endpoints públicos no filtren datos entre organizaciones
-- [ ] Audit: migrar o justificar todos los procedimientos tenant-sensibles del proyecto con tenantProcedure o checks explícitos por organizationId
-- [ ] Fix: alinear las búsquedas internas de membresía con ctx.tenant.organizationId en tarifas, tickets, branding, dominio, billing y API keys
+- [x] Test: validar con dos tenants que listados, detalle por ID y endpoints públicos no filtren datos entre organizaciones
+- [x] Audit: migrar o justificar todos los procedimientos tenant-sensibles del proyecto con tenantProcedure o checks explícitos por organizationId
+- [x] Fix: alinear las búsquedas internas de membresía con ctx.tenant.organizationId en tarifas, tickets, branding, dominio, billing y API keys
 - [x] Documentación: crear checklist trazable de readiness SaaS, visibilidad de red, ROAMING/OCPI y bloqueantes globales
 - [ ] QA de producción: resolver los fallos preexistentes de la suite completa antes de declarar release general completamente listo
 - [ ] Feature: conectar el modo ROAMING con socios OCPI aprobados antes de habilitar interoperabilidad externa real
