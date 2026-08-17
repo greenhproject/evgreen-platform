@@ -1,6 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { getPlatformSettings, upsertPlatformSettings } from "../db";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { chargingStations, evses, ocpiSyncRuns, organizations } from "../../drizzle/schema";
+import { getDb, getPlatformSettings, upsertPlatformSettings } from "../db";
+import { getOcpiEligibility, mapStationToOcpiLocation } from "./ocpi-catalog";
 import { decryptOcpiSecret, encryptOcpiSecret, isSafeOcpiVersionsUrl, maskOcpiSecret } from "./ocpi-secrets";
 
 const modulesSchema = z.array(z.enum(["LOCATIONS", "TARIFFS", "SESSIONS", "CDRS"])).min(1).max(4);
@@ -26,6 +29,13 @@ export function getOcpiActivationError(input: { enabled: boolean; versionsUrl?: 
     return "Para activar OCPI se requiere Versions URL, Party ID y token oficial de CargaME.";
   }
   return null;
+}
+
+export function getOcpiManualPublishDecision(config: { enabled?: boolean; versionsUrl?: string; tokenEncrypted?: string }): { status: "SKIPPED" | "PENDING"; externalRequest: false; message: string } {
+  if (!config.enabled || !config.versionsUrl || !config.tokenEncrypted) {
+    return { status: "SKIPPED", externalRequest: false, message: "OCPI no está activado o faltan credenciales. No se envió tráfico externo." };
+  }
+  return { status: "PENDING", externalRequest: false, message: "Catálogo validado en modo dry-run. La publicación externa se habilitará tras la certificación oficial de CargaME." };
 }
 
 export function buildOcpiRouter(router: any, adminProcedure: any) {
@@ -83,6 +93,57 @@ export function buildOcpiRouter(router: any, adminProcedure: any) {
         await upsertPlatformSettings({ ocpiLastTestAt: now, ocpiLastTestStatus: "FAILED", ocpiLastTestMessage: message } as any);
         return { success: false, message };
       }
+    }),
+    getCatalog: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Base de datos no disponible." });
+      const settings: any = await getPlatformSettings();
+      const stations = await db.select({
+        id: chargingStations.id, name: chargingStations.name, address: chargingStations.address, city: chargingStations.city,
+        country: chargingStations.country, latitude: chargingStations.latitude, longitude: chargingStations.longitude, timezone: chargingStations.timezone,
+        isActive: chargingStations.isActive, isPublic: chargingStations.isPublic, networkAccessMode: chargingStations.networkAccessMode,
+        organizationId: chargingStations.organizationId, organizationStatus: organizations.orgStatus, networkMember: organizations.networkMember,
+      }).from(chargingStations).leftJoin(organizations, eq(chargingStations.organizationId, organizations.id)).where(eq(chargingStations.networkAccessMode, "ROAMING"));
+      const ids = stations.map(station => station.id);
+      const connectors = ids.length ? await db.select().from(evses).where(and(inArray(evses.stationId, ids), eq(evses.isActive, 1))) : [];
+      const identity = { countryCode: settings?.ocpiCountryCode || "CO", partyId: settings?.ocpiPartyId || "EVG" };
+      const entries = stations.map(station => {
+        const eligibility = getOcpiEligibility(station as any);
+        const stationEvses = connectors.filter(connector => connector.stationId === station.id);
+        return {
+          stationId: station.id, stationName: station.name, city: station.city, evseCount: stationEvses.length,
+          eligibility, location: eligibility.eligible ? mapStationToOcpiLocation(station as any, stationEvses as any, identity) : null,
+        };
+      });
+      return { identity, entries, eligibleCount: entries.filter(entry => entry.eligibility.eligible).length };
+    }),
+    previewCatalog: adminProcedure.mutation(async ({ ctx }: any) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Base de datos no disponible." });
+      const stations = await db.select({
+        id: chargingStations.id, name: chargingStations.name, address: chargingStations.address, city: chargingStations.city,
+        country: chargingStations.country, latitude: chargingStations.latitude, longitude: chargingStations.longitude, timezone: chargingStations.timezone,
+        isActive: chargingStations.isActive, isPublic: chargingStations.isPublic, networkAccessMode: chargingStations.networkAccessMode,
+        organizationId: chargingStations.organizationId, organizationStatus: organizations.orgStatus, networkMember: organizations.networkMember,
+      }).from(chargingStations).leftJoin(organizations, eq(chargingStations.organizationId, organizations.id)).where(eq(chargingStations.networkAccessMode, "ROAMING"));
+      const eligible = stations.filter(station => getOcpiEligibility(station as any).eligible);
+      const runStatus = eligible.length ? "SUCCESS" as const : "SKIPPED" as const;
+      const message = eligible.length ? `Catálogo generado localmente con ${eligible.length} estación(es) elegible(s). No se envió tráfico externo.` : "No hay estaciones ROAMING elegibles para publicar.";
+      const [result]: any = await db.insert(ocpiSyncRuns).values({ operation: "CATALOG_PREVIEW", status: runStatus, message, details: { eligibleStationIds: eligible.map(station => station.id), roamingStationCount: stations.length }, createdBy: ctx.user?.id, completedAt: new Date().toISOString() } as any);
+      return { success: true, runId: result?.insertId, eligibleCount: eligible.length, message };
+    }),
+    publishCatalog: adminProcedure.mutation(async ({ ctx }: any) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Base de datos no disponible." });
+      const settings: any = await getPlatformSettings();
+      const decision = getOcpiManualPublishDecision({ enabled: Boolean(settings?.ocpiEnabled), versionsUrl: settings?.ocpiVersionsUrl, tokenEncrypted: settings?.ocpiTokenEncrypted });
+      const [result]: any = await db.insert(ocpiSyncRuns).values({ operation: "LOCATION_PUBLISH", status: decision.status, message: decision.message, details: { dryRun: true, externalRequest: false }, createdBy: ctx.user?.id, completedAt: decision.status === "SKIPPED" ? new Date().toISOString() : null } as any);
+      return { success: true, runId: result?.insertId, dryRun: true, externalRequest: false, message: decision.message };
+    }),
+    listSyncRuns: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(ocpiSyncRuns).orderBy(desc(ocpiSyncRuns.createdAt)).limit(20);
     }),
   });
 }

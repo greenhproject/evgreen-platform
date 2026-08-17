@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, ExternalLink, Eye, EyeOff, Loader2, Network, Save, ShieldCheck, TestTube2, TriangleAlert } from "lucide-react";
+import { CheckCircle2, Database, ExternalLink, Eye, EyeOff, Loader2, Network, RefreshCw, Save, ShieldCheck, TestTube2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,8 @@ type ModuleName = (typeof AVAILABLE_MODULES)[number];
 export default function AdminOCPIConfig() {
   const ocpiApi = trpc.ocpiAdmin as any;
   const { data, isLoading, refetch } = ocpiApi.getConfig.useQuery();
+  const { data: catalog, refetch: refetchCatalog } = ocpiApi.getCatalog.useQuery();
+  const { data: syncRuns, refetch: refetchSyncRuns } = ocpiApi.listSyncRuns.useQuery();
   const [showToken, setShowToken] = useState(false);
   const [showCert, setShowCert] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -32,6 +34,14 @@ export default function AdminOCPIConfig() {
   });
   const test = ocpiApi.testConnection.useMutation({
     onSuccess: (result: any) => { result.success ? toast.success(result.message) : toast.error(result.message); refetch(); },
+    onError: (error: any) => toast.error(error.message),
+  });
+  const previewCatalog = ocpiApi.previewCatalog.useMutation({
+    onSuccess: (result: any) => { toast.success(result.message); refetchCatalog(); refetchSyncRuns(); },
+    onError: (error: any) => toast.error(error.message),
+  });
+  const publishCatalog = ocpiApi.publishCatalog.useMutation({
+    onSuccess: (result: any) => { toast.message(result.message); refetchSyncRuns(); },
     onError: (error: any) => toast.error(error.message),
   });
 
@@ -69,6 +79,14 @@ export default function AdminOCPIConfig() {
       <SecretInput label="Certificado cliente mTLS (opcional)" value={form.mtlsCertificate} placeholder={secretPlaceholder(Boolean(data?.hasMtlsCertificate), "certificado")} visible={showCert} onVisibleChange={setShowCert} onChange={mtlsCertificate => setForm({ ...form, mtlsCertificate })} multiline />
       <SecretInput label="Llave privada mTLS (opcional)" value={form.mtlsPrivateKey} placeholder={secretPlaceholder(Boolean(data?.hasMtlsPrivateKey), "llave privada")} visible={showKey} onVisibleChange={setShowKey} onChange={mtlsPrivateKey => setForm({ ...form, mtlsPrivateKey })} multiline />
     </CardContent></Card>
+
+    <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
+      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Database className="h-5 w-5 text-primary" />Catálogo de estaciones roaming</CardTitle><CardDescription>Solo se incluyen estaciones activas, públicas y marcadas como ROAMING. Esta previsualización no envía información a CargaME.</CardDescription></CardHeader><CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-4"><div><p className="font-medium">{catalog?.eligibleCount ?? 0} estación(es) elegible(s)</p><p className="text-xs text-muted-foreground">Identidad OCPI: {catalog?.identity?.countryCode || "CO"} · {catalog?.identity?.partyId || "Party ID pendiente"}</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => previewCatalog.mutate()} disabled={previewCatalog.isPending}>{previewCatalog.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Generar previsualización</Button><Button onClick={() => publishCatalog.mutate()} disabled={publishCatalog.isPending}>{publishCatalog.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Network className="mr-2 h-4 w-4" />}Publicar · dry-run</Button></div></div>
+        <div className="space-y-2">{catalog?.entries?.length ? catalog.entries.map((entry: any) => <div key={entry.stationId} className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{entry.stationName}</p><p className="text-xs text-muted-foreground">{entry.city} · {entry.evseCount} EVSE(s)</p></div><Badge variant={entry.eligibility?.eligible ? "default" : "secondary"}>{entry.eligibility?.eligible ? "Elegible" : entry.eligibility?.reason}</Badge></div>) : <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">No hay estaciones marcadas como ROAMING. Active el modo desde la estación cuando el acuerdo OCPI esté aprobado.</p>}</div>
+      </CardContent></Card>
+      <Card><CardHeader><CardTitle>Bitácora OCPI</CardTitle><CardDescription>Auditoría de catálogos generados y futuros envíos.</CardDescription></CardHeader><CardContent className="space-y-3">{syncRuns?.length ? syncRuns.slice(0, 5).map((run: any) => <div key={run.id} className="rounded-lg border border-border p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold">{run.operation}</span><Badge variant={run.status === "SUCCESS" ? "default" : "secondary"}>{run.status}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{run.message}</p><p className="mt-2 text-[11px] text-muted-foreground">{run.createdAt ? new Date(run.createdAt).toLocaleString() : ""}</p></div>) : <p className="text-sm text-muted-foreground">Aún no hay ejecuciones registradas.</p>}</CardContent></Card>
+    </div>
     <section className="flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between"><a className="inline-flex items-center gap-2 text-sm text-primary hover:underline" href="https://www.upme.gov.co/simec/siem/" target="_blank" rel="noreferrer">Portal SIEM / CargaME <ExternalLink className="h-3.5 w-3.5" /></a><Button onClick={() => save.mutate(form)} disabled={save.isPending || form.modules.length === 0} className="w-full sm:w-auto">{save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Guardar configuración OCPI</Button></section>
   </main>;
 }

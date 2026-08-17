@@ -498,8 +498,24 @@ export const evses = mysqlTable("evses", {
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
 },
+	(table) => [
+		index("idx_evses_station").on(table.stationId),
+	]);
+
+export const ocpiSyncRuns = mysqlTable("ocpi_sync_runs", {
+	id: int().autoincrement().notNull(),
+	stationId: int(),
+	operation: mysqlEnum("ocpi_sync_operation", ['CATALOG_PREVIEW','LOCATION_PUBLISH']).notNull(),
+	status: mysqlEnum("ocpi_sync_status", ['PENDING','SKIPPED','SUCCESS','FAILED']).notNull(),
+	message: text(),
+	details: json(),
+	createdBy: int(),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	completedAt: timestamp({ mode: 'string' }),
+},
 (table) => [
-	index("idx_evses_station").on(table.stationId),
+	index("idx_ocpi_sync_runs_station_created").on(table.stationId, table.createdAt),
+	index("idx_ocpi_sync_runs_status_created").on(table.status, table.createdAt),
 ]);
 
 export const favoriteStations = mysqlTable("favorite_stations", {

@@ -34,6 +34,12 @@
 - [x] Security: almacenar y devolver secretos OCPI de forma enmascarada, solo para administradores autorizados
 - [x] Test: cubrir permisos, validación de configuración y ocultamiento de secretos OCPI
 - [x] Documentación: operación del centro OCPI y secuencia de activación con CargaME
+- [x] Feature: catálogo OCPI de estaciones elegibles para roaming con mapeo Locations/EVSEs/Connectors
+- [x] Feature: bitácora auditable de sincronización OCPI y controles de publicación manual desde Admin
+- [x] Test: cubrir elegibilidad de estaciones, aislamiento de red y ausencia de tráfico externo sin configuración activa
+- [x] Feature: acción manual `LOCATION_PUBLISH` con dry-run seguro hasta contar con credenciales oficiales
+- [x] Test: asegurar que `previewCatalog` y publicación manual no generan tráfico externo sin activación OCPI
+- [x] Test: ejecutar `getCatalog`, `previewCatalog` y `publishCatalog` con fetch espiado y verificar bitácora sin solicitudes externas
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initTRPC, TRPCError } from "@trpc/server";
-import { getOcpiActivationError } from "./ocpi-router";
+import { getOcpiActivationError, getOcpiManualPublishDecision } from "./ocpi-router";
 import { buildOcpiRouter } from "./ocpi-router";
 
 describe("activación administrativa de OCPI", () => {
@@ -27,5 +27,13 @@ describe("activación administrativa de OCPI", () => {
     });
     const caller = buildOcpiRouter(t.router, adminProcedure).createCaller({ role: "user" });
     await expect(caller.getConfig()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("mantiene la publicación manual en modo seguro sin tráfico externo si OCPI no está activo", () => {
+    expect(getOcpiManualPublishDecision({ enabled: false })).toEqual({
+      status: "SKIPPED", externalRequest: false,
+      message: "OCPI no está activado o faltan credenciales. No se envió tráfico externo.",
+    });
+    expect(getOcpiManualPublishDecision({ enabled: true, versionsUrl: "https://sandbox.example/versions", tokenEncrypted: "ciphertext" })).toMatchObject({ status: "PENDING", externalRequest: false });
   });
 });
