@@ -8,6 +8,8 @@ import { useState, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { isPushSupported } from "@/lib/firebase";
+import { isCapacitorNative } from "@/const";
+import { initNativePush, unregisterNativePush } from "@/lib/native-push";
 import {
   requestNotificationPermission,
   onForegroundMessage,
@@ -49,6 +51,13 @@ export function useNotifications() {
   // Inicializar estado
   useEffect(() => {
     const init = async () => {
+      if (isCapacitorNative()) {
+        // En nativo el soporte y el permiso se resuelven al activar (enableNotifications),
+        // ya que Capacitor no expone el estado sin antes chequear/pedir permisos.
+        setIsSupported(true);
+        return;
+      }
+
       const supported = isPushSupported();
       setIsSupported(supported);
 
@@ -99,7 +108,40 @@ export function useNotifications() {
     setError(null);
     try {
       console.log("[Push] Iniciando activación de notificaciones...");
-      
+
+      if (!isAuthenticated) {
+        toast.error("Debes iniciar sesión para activar notificaciones");
+        return;
+      }
+
+      // Rama nativa (Capacitor: iOS/Android) — usa el plugin de push nativo en vez de las APIs web
+      if (isCapacitorNative()) {
+        const nativeRegistered = await initNativePush({
+          onToken: async (token) => {
+            await registerTokenMutation.mutateAsync({ fcmToken: token });
+            console.log("[Push] Token nativo registrado en el servidor");
+          },
+          onForegroundNotification: (title, body) => {
+            toast.info(title, { description: body, duration: 5000 });
+          },
+          onNotificationTap: (path) => {
+            window.location.href = path;
+          },
+        });
+
+        setPermissionStatus(nativeRegistered ? "granted" : "denied");
+
+        if (nativeRegistered) {
+          setIsEnabled(true);
+          toast.success("Notificaciones push activadas correctamente");
+          preferencesQuery.refetch();
+        } else {
+          toast.error("Permiso de notificaciones denegado. Revisa la configuración de tu dispositivo.");
+          setError("Permiso denegado");
+        }
+        return;
+      }
+
       const granted = await requestNotificationPermission();
       setPermissionStatus(getNotificationPermission());
 
@@ -109,12 +151,7 @@ export function useNotifications() {
         return;
       }
 
-      console.log("[Push] Permiso concedido, verificando autenticación...");
-
-      if (!isAuthenticated) {
-        toast.error("Debes iniciar sesión para activar notificaciones");
-        return;
-      }
+      console.log("[Push] Permiso concedido...");
 
       let registered = false;
 
@@ -190,6 +227,7 @@ export function useNotifications() {
       if (isAuthenticated) {
         await unregisterTokenMutation.mutateAsync();
       }
+      await unregisterNativePush();
       setIsEnabled(false);
       toast.success("Notificaciones desactivadas");
       preferencesQuery.refetch();
