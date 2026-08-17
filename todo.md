@@ -27,7 +27,13 @@
 - [x] Fix: alinear las búsquedas internas de membresía con ctx.tenant.organizationId en tarifas, tickets, branding, dominio, billing y API keys
 - [x] Documentación: crear checklist trazable de readiness SaaS, visibilidad de red, ROAMING/OCPI y bloqueantes globales
 - [ ] QA de producción: resolver los fallos preexistentes de la suite completa antes de declarar release general completamente listo
-- [ ] Feature: conectar el modo ROAMING con socios OCPI aprobados antes de habilitar interoperabilidad externa real
+- [ ] Feature: conectar el modo ROAMING con Cargame mediante OCPI antes de habilitar interoperabilidad externa real
+- [ ] Research: confirmar el programa de interoperabilidad, la versión OCPI, los endpoints y las credenciales sandbox de Cargame
+- [ ] Feature: implementar publicación y consumo OCPI bidireccional con Cargame, condicionado a acuerdo y credenciales oficiales
+- [x] Feature: centro administrativo para configurar URL, Party ID, credenciales, mTLS, módulos y activación OCPI sin editar código
+- [x] Security: almacenar y devolver secretos OCPI de forma enmascarada, solo para administradores autorizados
+- [x] Test: cubrir permisos, validación de configuración y ocultamiento de secretos OCPI
+- [x] Documentación: operación del centro OCPI y secuencia de activación con CargaME
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

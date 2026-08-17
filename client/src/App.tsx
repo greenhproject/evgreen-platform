@@ -159,6 +159,7 @@ const Crowdfunding = lazy(() => import("./pages/Crowdfunding"));
 const AdminSpaces = lazy(() => import("./pages/admin/Spaces"));
 const AdminOccupancyLiquidations = lazy(() => import("./pages/admin/OccupancyLiquidations"));
 const AdminFeedback = lazy(() => import("./pages/admin/Feedback"));
+const AdminOCPIConfig = lazy(() => import("./pages/admin/OCPIConfig"));
 
 // Páginas de Aliado Comercial (Host)
 const HostDashboard = lazy(() => import("./pages/host/Dashboard"));
@@ -1129,6 +1130,13 @@ function Router() {
           <ProtectedRoute allowedRoles={["admin"]}>
             <AdminLayout>
               <AdminSettings />
+            </AdminLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/ocpi">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminLayout>
+              <AdminOCPIConfig />
             </AdminLayout>
           </ProtectedRoute>
         </Route>

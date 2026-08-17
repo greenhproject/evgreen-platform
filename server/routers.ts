@@ -50,6 +50,7 @@ import { saasRouter } from "./saas/saas-router";
 import { campaignWizardRouter } from "./banners/campaign-wizard-router";
 import { buildLoyaltyRouter } from "./loyalty/loyalty-router";
 import { advertiserRouter, adminAdvertiserRouter } from "./routers/advertiser";
+import { buildOcpiRouter } from "./ocpi/ocpi-router";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -7854,7 +7855,8 @@ export const appRouter = router({
   campaignWizard: campaignWizardRouter,
   loyalty: buildLoyaltyRouter(router, publicProcedure, protectedProcedure, adminProcedure),
   advertiser: advertiserRouter,
-  adminAdvertiser: adminAdvertiserRouter,
+	adminAdvertiser: adminAdvertiserRouter,
+	ocpiAdmin: buildOcpiRouter(router, adminProcedure),
 });
 
 // Iniciar sistema de backup automático al cargar el módulo

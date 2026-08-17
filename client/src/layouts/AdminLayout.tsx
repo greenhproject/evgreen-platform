@@ -56,7 +56,8 @@ import {
   MessageCircle,
   MonitorPlay,
   Star,
-  Megaphone
+	Megaphone
+	,Network
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -75,7 +76,8 @@ const adminMenuItems: { icon: any; label: string; path: string; roles?: string[]
   { icon: UserCheck, label: "Onboarding", path: "/admin/onboarding" },
   { icon: Server, label: "Backup & Recovery", path: "/admin/backup" },
   { icon: Building2, label: "Crowdfunding", path: "/admin/crowdfunding" },
-  { icon: Terminal, label: "Monitor OCPP", path: "/admin/ocpp-monitor" },
+	{ icon: Terminal, label: "Monitor OCPP", path: "/admin/ocpp-monitor" },
+	{ icon: Network, label: "OCPI / CargaME", path: "/admin/ocpi" },
   { icon: Timer, label: "Penalizaciones", path: "/admin/overstay" },
   { icon: ParkingSquare, label: "Ocupación Parqueadero", path: "/admin/occupancy-liquidations" },
   { icon: Banknote, label: "Deudas", path: "/admin/debts" },

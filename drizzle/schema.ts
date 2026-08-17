@@ -1181,6 +1181,21 @@ export const platformSettings = mysqlTable("platform_settings", {
 	resendApiKey: text(),
 	emailFrom: varchar({ length: 255 }).default('noreply@evgreen.lat'),
 	whatsappPenaltyNotifIntervalMinutes: int().default(5).notNull(),
+	// OCPI / CargaME-SIEM: secretos cifrados y configuración administrable.
+	ocpiProvider: mysqlEnum("ocpi_provider", ['CARGAME']).default('CARGAME').notNull(),
+	ocpiEnvironment: mysqlEnum("ocpi_environment", ['SANDBOX','PRODUCTION']).default('SANDBOX').notNull(),
+	ocpiEnabled: tinyint("ocpi_enabled").default(0).notNull(),
+	ocpiAutoSync: tinyint("ocpi_auto_sync").default(0).notNull(),
+	ocpiVersionsUrl: text("ocpi_versions_url"),
+	ocpiCountryCode: varchar("ocpi_country_code", { length: 2 }).default('CO'),
+	ocpiPartyId: varchar("ocpi_party_id", { length: 3 }),
+	ocpiModules: json("ocpi_modules"),
+	ocpiTokenEncrypted: text("ocpi_token_encrypted"),
+	ocpiMtlsCertEncrypted: text("ocpi_mtls_cert_encrypted"),
+	ocpiMtlsKeyEncrypted: text("ocpi_mtls_key_encrypted"),
+	ocpiLastTestAt: timestamp("ocpi_last_test_at", { mode: 'string' }),
+	ocpiLastTestStatus: mysqlEnum("ocpi_last_test_status", ['NEVER','SUCCESS','FAILED']).default('NEVER').notNull(),
+	ocpiLastTestMessage: text("ocpi_last_test_message"),
 });
 
 export const priceHistory = mysqlTable("price_history", {
