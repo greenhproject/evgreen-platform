@@ -25,16 +25,8 @@
 - [x] Test: validar con dos tenants que listados, detalle por ID y endpoints públicos no filtren datos entre organizaciones
 - [x] Audit: migrar o justificar todos los procedimientos tenant-sensibles del proyecto con tenantProcedure o checks explícitos por organizationId
 - [x] Fix: alinear las búsquedas internas de membresía con ctx.tenant.organizationId en tarifas, tickets, branding, dominio, billing y API keys
-- [x] Feature: vincular API keys de tenant a su organización y filtrar transacciones, comandos y estadísticas REST por esa organización
-- [x] Test: impedir que una API key de tenant consulte estadísticas agregadas de otra empresa o de toda la plataforma
-- [x] Audit: revisar los endpoints REST autenticados restantes para exigir el alcance organizationId donde aplique
-- [x] Fix: validar organizationId antes de exponer el estado OCPP en comandos remotos de inicio y detención
-- [x] Test: asegurar 404 uniforme para estaciones de otro tenant en comandos remotos, sin filtrar su configuración OCPP
 - [x] Documentación: crear checklist trazable de readiness SaaS, visibilidad de red, ROAMING/OCPI y bloqueantes globales
-- [x] QA de producción: resolver los fallos preexistentes de la suite completa antes de declarar release general completamente listo
-- [x] Fix: corregir contrato de tabla de deudas y lista de autorización local OCPP cubiertos por pruebas
-- [x] Fix: reparar filtros y actualización administrativa de postulaciones de aliados
-- [x] Fix: alinear las pruebas de consentimiento con persistencia tinyint y verificar el filtro de ciudad en operaciones masivas de espacios
+- [ ] QA de producción: resolver los fallos preexistentes de la suite completa antes de declarar release general completamente listo
 - [ ] Feature: conectar el modo ROAMING con socios OCPI aprobados antes de habilitar interoperabilidad externa real
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
