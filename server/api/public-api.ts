@@ -17,7 +17,7 @@ import * as ocppManager from "../ocpp/connection-manager";
 import { dualCSMS } from "../ocpp/csms-dual";
 import { sql } from "drizzle-orm";
 import crypto from "crypto";
-import { canApiKeyAccessOrganizationResource } from "./tenant-api-policy";
+import { canApiKeyAccessOrganizationResource, getApiKeyScopedResource } from "./tenant-api-policy";
 
 const router = Router();
 
@@ -560,7 +560,7 @@ router.post("/stations/:id/start", async (req: Request, res: Response) => {
       });
     }
 
-    const station = await db.getChargingStationById(stationId);
+    const station = getApiKeyScopedResource(user.organizationId, await db.getChargingStationById(stationId));
     if (!station) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
     }
@@ -568,10 +568,6 @@ router.post("/stations/:id/start", async (req: Request, res: Response) => {
     const ocppIdentity = station.ocppIdentity;
     if (!ocppIdentity) {
       return res.status(400).json({ error: "NO_OCPP", message: "Estación sin identidad OCPP configurada" });
-    }
-
-    if (!canApiKeyAccessOrganizationResource(user.organizationId, station.organizationId)) {
-      return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
     }
 
     // Enviar comando RemoteStartTransaction via OCPP
@@ -617,21 +613,14 @@ router.post("/stations/:id/stop", async (req: Request, res: Response) => {
       });
     }
 
-    const station = await db.getChargingStationById(stationId);
+    const station = getApiKeyScopedResource(user.organizationId, await db.getChargingStationById(stationId));
     if (!station) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
     }
 
     const ocppIdentity = station.ocppIdentity;
     if (!ocppIdentity) {
-      if (!canApiKeyAccessOrganizationResource(user.organizationId, station.organizationId)) {
-        return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
-      }
       return res.status(400).json({ error: "NO_OCPP", message: "Estación sin identidad OCPP configurada" });
-    }
-
-    if (!canApiKeyAccessOrganizationResource(user.organizationId, station.organizationId)) {
-      return res.status(404).json({ error: "NOT_FOUND", message: "Estación no encontrada" });
     }
 
     const result = await dualCSMS.sendGenericCommand(ocppIdentity, "RemoteStopTransaction", {
