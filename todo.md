@@ -49,6 +49,9 @@
 - [x] Test: cubrir payloads OCPI inválidos, inconsistencias de identidad y trazabilidad de recepciones
 - [x] Test: verificar que una Location válida genere el evento auditable LOCATION_RECEIVED con la identidad correcta
 - [x] Test: verificar que la auditoría de recepción válida no persista secretos ni encabezados sensibles
+- [x] Research: confirmar fuentes oficiales de CargaME/SIEM/UPME, onboarding y ruta para solicitar sandbox
+- [x] Audit: contrastar el contrato OCPI implementado con los requisitos públicos publicados por el ecosistema colombiano
+- [x] Documentación: ampliar la matriz de activación OCPI con evidencias, responsables y bloqueantes de credenciales
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

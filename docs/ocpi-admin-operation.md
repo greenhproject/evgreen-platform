@@ -18,13 +18,21 @@ El centro administrativo se encuentra en **Admin → OCPI / CargaME** (`/admin/o
 
 ## Secuencia de activación recomendada
 
-Primero se ingresan los datos oficiales en `SANDBOX` y se usa **Probar conexión Versions**. Solo cuando el endpoint responda exitosamente, UPME confirme la certificación y las ubicaciones hayan sido verificadas, se cambia el entorno a `PRODUCTION` y se habilita el enlace.
+El proceso oficial inicia con el registro legal de las estaciones públicas en **CárgaME**. Después, UPME habilita el onboarding técnico CPO en el **SIEM**, con los identificadores, credenciales, scopes y certificados que correspondan. Solo entonces se ingresan los datos oficiales en `SANDBOX` y se usa **Probar conexión Versions**. Cuando el endpoint responda exitosamente, UPME confirme la certificación y las ubicaciones hayan sido verificadas, se cambia el entorno a `PRODUCTION` y se habilita el enlace.
 
-La activación exige al menos Versions URL, Party ID y token. La opción de sincronización automática queda separada del interruptor principal para que el administrador pueda completar las pruebas sin iniciar publicación automática.
+La activación exige al menos Versions URL, Party ID y token. La opción de sincronización automática queda separada del interruptor principal para que el administrador pueda completar las pruebas sin iniciar publicación automática. La interfaz no crea tráfico externo por sí sola: mientras no existan las credenciales y la certificación oficial, las acciones de catálogo continúan en **dry-run**.
+
+| Requisito de activación | Responsable | Estado actual EVGreen |
+|---|---|---|
+| Registro de estación pública en CárgaME | EVGreen | Debe verificarse por estación y conservar su identificador CárgaME. |
+| Onboarding de CPO ante SIEM | UPME + EVGreen | Pendiente de alta, Party ID y scopes oficiales. |
+| URL sandbox/producción, API Key/JWT y cadena mTLS | UPME | La interfaz ya permite guardarlos cifrados; faltan los valores oficiales. |
+| Certificación de `Locations`, `Tariffs` y `Sessions` | UPME + EVGreen | Pendiente. El catálogo Location está preparado; los envíos reales siguen desactivados. |
+| Outbox, reintentos e idempotencia de publicaciones | EVGreen | Bloqueante pendiente antes de activar la publicación regulatoria por eventos. |
 
 ## Alcance actual
 
-La base administrativa prepara la publicación CPO de `LOCATIONS`, `TARIFFS`, `SESSIONS` y `CDRS` contra un socio OCPI. La operación pública inicial de CargaME/SIEM debe confirmarse mediante sus credenciales y certificación oficial; no se habilitan comandos remotos ni liquidación bilateral externa por el simple hecho de activar el formulario. Véase la investigación técnica en [cargame-ocpi-research-2026-08-17.md](./cargame-ocpi-research-2026-08-17.md).
+La base administrativa prepara la publicación CPO de `LOCATIONS`, `TARIFFS`, `SESSIONS` y `CDRS` contra un socio OCPI. La operación pública inicial de CargaME/SIEM debe confirmarse mediante sus credenciales y certificación oficial; no se habilitan comandos remotos ni liquidación bilateral externa por el simple hecho de activar el formulario. La guía oficial confirma el flujo inicial CPO → SIEM; el endpoint entrante de Locations de EVGreen queda disponible únicamente para escenarios OCPI bilaterales futuros autorizados. Véase la investigación técnica en [cargame-ocpi-research-2026-08-17.md](./cargame-ocpi-research-2026-08-17.md).
 
 ## Catálogo roaming y bitácora
 
