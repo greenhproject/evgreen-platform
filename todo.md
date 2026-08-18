@@ -52,6 +52,12 @@
 - [x] Research: confirmar fuentes oficiales de CargaME/SIEM/UPME, onboarding y ruta para solicitar sandbox
 - [x] Audit: contrastar el contrato OCPI implementado con los requisitos públicos publicados por el ecosistema colombiano
 - [x] Documentación: ampliar la matriz de activación OCPI con evidencias, responsables y bloqueantes de credenciales
+- [x] Feature: separar la elegibilidad de reporte regulatorio SIEM del modo comercial ROAMING por estación
+- [x] Feature: configurar desde Admin qué estaciones públicas están habilitadas para el catálogo SIEM sin iniciar tráfico externo
+- [x] Test: cubrir estaciones públicas SIEM, exclusión de privadas e independencia frente al modo ROAMING
+- [x] Security: restringir la habilitación SIEM por estación a los roles administrativos autorizados
+- [x] Test: verificar que el propietario no administrativo no puede habilitar SIEM y que Admin sí puede hacerlo
+- [x] UI: alinear el texto del catálogo OCPI en Admin con la elegibilidad regulatoria SIEM independiente de ROAMING
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

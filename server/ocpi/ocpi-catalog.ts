@@ -1,7 +1,8 @@
 export type OcpiStationInput = {
   id: number; name: string; address: string; city: string; country: string; latitude: string | number;
-  longitude: string | number; timezone?: string | null; isActive: number | boolean; isPublic: number | boolean;
-  networkAccessMode: "PRIVATE" | "EVGREEN_NETWORK" | "ROAMING"; organizationStatus?: string | null; networkMember?: number | boolean | null;
+	longitude: string | number; timezone?: string | null; isActive: number | boolean; isPublic: number | boolean;
+	networkAccessMode: "PRIVATE" | "EVGREEN_NETWORK" | "ROAMING"; siemReportingEnabled?: number | boolean | null;
+	organizationStatus?: string | null; networkMember?: number | boolean | null;
 };
 export type OcpiEvseInput = { id: number; evseIdLocal: number; connectorId: number; connectorType: string; chargeType: "AC" | "DC"; powerKw: string | number; maxVoltage?: number | null; maxAmperage?: number | null; connectorStatus: string; isActive: number | boolean; updatedAt?: string | null; };
 
@@ -13,11 +14,18 @@ export function getOcpiEligibility(station: OcpiStationInput): { eligible: boole
   if (!station.isActive || !station.isPublic) return { eligible: false, reason: "La estación debe estar activa y pública." };
   if (station.organizationStatus && !["ACTIVE", "TRIAL", "active", "trial"].includes(station.organizationStatus)) return { eligible: false, reason: "La organización propietaria no está activa." };
   if (station.organizationStatus && !station.networkMember) return { eligible: false, reason: "La organización no pertenece a la red EVGreen." };
-  return { eligible: true };
+	return { eligible: true };
 }
 
-export function mapStationToOcpiLocation(station: OcpiStationInput, evses: OcpiEvseInput[], identity: { countryCode: string; partyId: string }) {
-  const eligibility = getOcpiEligibility(station);
+export function getSiemEligibility(station: OcpiStationInput): { eligible: boolean; reason?: string } {
+	if (!station.siemReportingEnabled) return { eligible: false, reason: "El reporte SIEM no está habilitado para esta estación." };
+	if (!station.isActive || !station.isPublic) return { eligible: false, reason: "La estación debe estar activa y pública para reportar al SIEM." };
+	if (station.organizationStatus && !["ACTIVE", "TRIAL", "active", "trial"].includes(station.organizationStatus)) return { eligible: false, reason: "La organización propietaria no está activa." };
+	return { eligible: true };
+}
+
+export function mapStationToOcpiLocation(station: OcpiStationInput, evses: OcpiEvseInput[], identity: { countryCode: string; partyId: string }, scope: "ROAMING" | "SIEM" = "ROAMING") {
+	const eligibility = scope === "SIEM" ? getSiemEligibility(station) : getOcpiEligibility(station);
   if (!eligibility.eligible) throw new Error(eligibility.reason);
   const activeEvses = evses.filter(evse => Boolean(evse.isActive));
   return {

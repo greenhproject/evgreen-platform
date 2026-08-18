@@ -305,6 +305,8 @@ export const chargingStations = mysqlTable("charging_stations", {
 	// PRIVATE: solo operación interna del tenant; EVGREEN_NETWORK: visible en la app EVGreen;
 	// ROAMING: visible en EVGreen y preparado para interoperabilidad OCPI autorizada.
 	networkAccessMode: mysqlEnum("network_access_mode", ['PRIVATE','EVGREEN_NETWORK','ROAMING']).default('EVGREEN_NETWORK').notNull(),
+	// Obligación regulatoria SIEM independiente de la participación comercial en ROAMING.
+	siemReportingEnabled: tinyint("siem_reporting_enabled").default(0).notNull(),
 	isActive: tinyint().default(1).notNull(),
 	operatingHours: json(),
 	amenities: json(),
@@ -341,6 +343,7 @@ export const chargingStations = mysqlTable("charging_stations", {
 (table) => [
 	index("charging_stations_ocppIdentity_unique").on(table.ocppIdentity),
 	index("idx_station_network_visibility").on(table.networkAccessMode, table.isActive, table.isPublic),
+	index("idx_station_siem_reporting").on(table.siemReportingEnabled, table.isActive, table.isPublic),
 	index("idx_station_organization").on(table.organizationId),
 ]);
 

@@ -50,7 +50,7 @@ La cola debe ser persistente e idempotente. Un evento de disponibilidad no puede
 | CPO → SIEM con OCPI 2.2.1, `Versions`, `Locations`, `Tariffs` y `Sessions`. | Admin configura `Versions URL`, Party ID, token, mTLS y catálogo Location local. | Falta cliente de `Credentials/Versions`, publicación real, Tariffs, Sessions y reintentos persistentes. |
 | API Key, JWT de corta vida y mTLS gestionados por UPME. | Secretos se cifran AES-256-GCM; existe espacio UI para token y certificados. | Falta flujo OAuth/client-credentials, renovación JWT y administración de CA oficial. |
 | Idempotencia con `X-Request-ID` y reintentos con backoff. | El receptor de Locations es idempotente por identidad de socio y conserva auditoría. | Falta outbox de emisiones, UUID por evento, reintentos y reconciliación. |
-| Reporte de todas las estaciones de acceso público dentro del alcance regulatorio. | El catálogo OCPI actual filtra `ROAMING`. | Separar la participación comercial roaming de la obligación regulatoria de reporte SIEM; no se debe asumir que una estación `EVGREEN_NETWORK` pública queda exenta. |
+| Reporte de todas las estaciones de acceso público dentro del alcance regulatorio. | El catálogo SIEM usa una habilitación administrativa explícita, independiente de `ROAMING`, y exige estación activa/pública. | Antes de producción, Administración debe habilitar únicamente estaciones registradas en CárgaME y aprobadas para certificación. |
 
 ### Hallazgo de código legado
 

@@ -34,11 +34,11 @@ La activación exige al menos Versions URL, Party ID y token. La opción de sinc
 
 La base administrativa prepara la publicación CPO de `LOCATIONS`, `TARIFFS`, `SESSIONS` y `CDRS` contra un socio OCPI. La operación pública inicial de CargaME/SIEM debe confirmarse mediante sus credenciales y certificación oficial; no se habilitan comandos remotos ni liquidación bilateral externa por el simple hecho de activar el formulario. La guía oficial confirma el flujo inicial CPO → SIEM; el endpoint entrante de Locations de EVGreen queda disponible únicamente para escenarios OCPI bilaterales futuros autorizados. Véase la investigación técnica en [cargame-ocpi-research-2026-08-17.md](./cargame-ocpi-research-2026-08-17.md).
 
-## Catálogo roaming y bitácora
+## Catálogo SIEM y bitácora
 
-El mismo centro administrativo incluye un catálogo de estaciones candidatas. Una estación solo resulta **elegible** cuando está activa, es pública y usa `ROAMING`; si pertenece a una empresa, la empresa también debe estar activa y ser miembro de la red EVGreen. La previsualización genera el mapeo local `Location → EVSE → Connector` de OCPI y registra el resultado en la bitácora `ocpi_sync_runs`; no realiza solicitudes de red ni expone datos al socio.
+El mismo centro administrativo incluye un catálogo de estaciones candidatas para **reporte regulatorio SIEM**. Esta política es independiente del modo comercial `PRIVATE`, `EVGREEN_NETWORK` o `ROAMING`: una estación resulta elegible cuando está activa, es pública, pertenece a una organización activa —si aplica— y el administrador habilitó explícitamente **Reporte regulatorio SIEM** en la edición de la estación. El interruptor se desactiva de forma automática cuando una estación deja de ser pública y los propietarios no administrativos no pueden modificarlo.
 
-Este mecanismo permite revisar con el administrador qué estaciones serían publicadas antes de una certificación. El botón de previsualización no equivale a una publicación productiva: la transmisión a CargaME seguirá desactivada hasta recibir el onboarding y las credenciales oficiales.
+La previsualización genera el mapeo local `Location → EVSE → Connector` de OCPI y registra el resultado en la bitácora `ocpi_sync_runs`; no realiza solicitudes de red ni expone datos al socio. Este mecanismo permite revisar con el administrador qué estaciones serían publicadas antes de una certificación. El botón de previsualización no equivale a una publicación productiva: la transmisión a CargaME seguirá desactivada hasta recibir el onboarding y las credenciales oficiales.
 
 ## Locations recibidas desde CargaME
 
@@ -52,4 +52,4 @@ Las recepciones correctas y los rechazos de contrato quedan en `ocpi_sync_runs` 
 
 ## Controles aplicados
 
-La pantalla está protegida por rol administrador. Las pruebas cubren cifrado/descifrado, enmascaramiento, rechazo de URLs inseguras y el paquete mínimo requerido antes de activar OCPI. La suite del canal entrante también cubre token ausente, token inválido, inserción, rechazo por identidad inconsistente, validación de payload, aislamiento por socio, actualización idempotente y trazabilidad sin secretos. Las configuraciones futuras de publicación deben mantener el filtro de estaciones `ROAMING` y el aislamiento por tenant documentado en la auditoría SaaS.
+La pantalla está protegida por rol administrador. Las pruebas cubren cifrado/descifrado, enmascaramiento, rechazo de URLs inseguras y el paquete mínimo requerido antes de activar OCPI. La suite del canal entrante también cubre token ausente, token inválido, inserción, rechazo por identidad inconsistente, validación de payload, aislamiento por socio, actualización idempotente y trazabilidad sin secretos. El catálogo regulatorio exige una habilitación SIEM explícita por estación pública y conserva el aislamiento por tenant documentado en la auditoría SaaS.

@@ -16,11 +16,11 @@ vi.mock("../db", () => ({
 import { buildOcpiRouter } from "./ocpi-router";
 
 const eligibleStation = {
-  id: 41, name: "Roaming Norte", address: "Calle 100 # 10-10", city: "Bogotá", country: "Colombia",
-  latitude: "4.70", longitude: "-74.05", timezone: "America/Bogota", isActive: 1, isPublic: 1,
-  networkAccessMode: "ROAMING", organizationId: 8, organizationStatus: "ACTIVE", networkMember: 1,
+	id: 41, name: "Red EVGreen Norte", address: "Calle 100 # 10-10", city: "Bogotá", country: "Colombia",
+	latitude: "4.70", longitude: "-74.05", timezone: "America/Bogota", isActive: 1, isPublic: 1, siemReportingEnabled: 1,
+	networkAccessMode: "EVGREEN_NETWORK", organizationId: 8, organizationStatus: "ACTIVE", networkMember: 0,
 };
-const privateStation = { ...eligibleStation, id: 42, name: "Privada", networkAccessMode: "PRIVATE" };
+const privateStation = { ...eligibleStation, id: 42, name: "Privada", networkAccessMode: "PRIVATE", isPublic: 0 };
 const evseRows = [{ id: 1, stationId: 41, evseIdLocal: 1, connectorId: 1, connectorType: "CCS_2", chargeType: "DC", powerKw: "60", maxVoltage: 400, maxAmperage: 150, connectorStatus: "AVAILABLE", isActive: 1 }];
 
 function setupDb() {

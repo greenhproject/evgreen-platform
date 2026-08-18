@@ -3,7 +3,7 @@ import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { chargingStations, evses, ocpiRemoteLocations, ocpiSyncRuns, organizations } from "../../drizzle/schema";
 import { getDb, getPlatformSettings, upsertPlatformSettings } from "../db";
-import { getOcpiEligibility, mapStationToOcpiLocation } from "./ocpi-catalog";
+import { getSiemEligibility, mapStationToOcpiLocation } from "./ocpi-catalog";
 import { decryptOcpiSecret, encryptOcpiSecret, isSafeOcpiVersionsUrl, maskOcpiSecret } from "./ocpi-secrets";
 
 const modulesSchema = z.array(z.enum(["LOCATIONS", "TARIFFS", "SESSIONS", "CDRS"])).min(1).max(4);
@@ -104,18 +104,18 @@ export function buildOcpiRouter(router: any, adminProcedure: any) {
       const stations = await db.select({
         id: chargingStations.id, name: chargingStations.name, address: chargingStations.address, city: chargingStations.city,
         country: chargingStations.country, latitude: chargingStations.latitude, longitude: chargingStations.longitude, timezone: chargingStations.timezone,
-        isActive: chargingStations.isActive, isPublic: chargingStations.isPublic, networkAccessMode: chargingStations.networkAccessMode,
+        isActive: chargingStations.isActive, isPublic: chargingStations.isPublic, networkAccessMode: chargingStations.networkAccessMode, siemReportingEnabled: chargingStations.siemReportingEnabled,
         organizationId: chargingStations.organizationId, organizationStatus: organizations.orgStatus, networkMember: organizations.networkMember,
-      }).from(chargingStations).leftJoin(organizations, eq(chargingStations.organizationId, organizations.id)).where(eq(chargingStations.networkAccessMode, "ROAMING"));
+      }).from(chargingStations).leftJoin(organizations, eq(chargingStations.organizationId, organizations.id)).where(eq(chargingStations.siemReportingEnabled, 1));
       const ids = stations.map(station => station.id);
       const connectors = ids.length ? await db.select().from(evses).where(and(inArray(evses.stationId, ids), eq(evses.isActive, 1))) : [];
       const identity = { countryCode: settings?.ocpiCountryCode || "CO", partyId: settings?.ocpiPartyId || "EVG" };
       const entries = stations.map(station => {
-        const eligibility = getOcpiEligibility(station as any);
+        const eligibility = getSiemEligibility(station as any);
         const stationEvses = connectors.filter(connector => connector.stationId === station.id);
         return {
           stationId: station.id, stationName: station.name, city: station.city, evseCount: stationEvses.length,
-          eligibility, location: eligibility.eligible ? mapStationToOcpiLocation(station as any, stationEvses as any, identity) : null,
+          eligibility, location: eligibility.eligible ? mapStationToOcpiLocation(station as any, stationEvses as any, identity, "SIEM") : null,
         };
       });
       return { identity, entries, eligibleCount: entries.filter(entry => entry.eligibility.eligible).length };
@@ -126,13 +126,13 @@ export function buildOcpiRouter(router: any, adminProcedure: any) {
       const stations = await db.select({
         id: chargingStations.id, name: chargingStations.name, address: chargingStations.address, city: chargingStations.city,
         country: chargingStations.country, latitude: chargingStations.latitude, longitude: chargingStations.longitude, timezone: chargingStations.timezone,
-        isActive: chargingStations.isActive, isPublic: chargingStations.isPublic, networkAccessMode: chargingStations.networkAccessMode,
+        isActive: chargingStations.isActive, isPublic: chargingStations.isPublic, networkAccessMode: chargingStations.networkAccessMode, siemReportingEnabled: chargingStations.siemReportingEnabled,
         organizationId: chargingStations.organizationId, organizationStatus: organizations.orgStatus, networkMember: organizations.networkMember,
-      }).from(chargingStations).leftJoin(organizations, eq(chargingStations.organizationId, organizations.id)).where(eq(chargingStations.networkAccessMode, "ROAMING"));
-      const eligible = stations.filter(station => getOcpiEligibility(station as any).eligible);
+      }).from(chargingStations).leftJoin(organizations, eq(chargingStations.organizationId, organizations.id)).where(eq(chargingStations.siemReportingEnabled, 1));
+      const eligible = stations.filter(station => getSiemEligibility(station as any).eligible);
       const runStatus = eligible.length ? "SUCCESS" as const : "SKIPPED" as const;
-      const message = eligible.length ? `Catálogo generado localmente con ${eligible.length} estación(es) elegible(s). No se envió tráfico externo.` : "No hay estaciones ROAMING elegibles para publicar.";
-      const [result]: any = await db.insert(ocpiSyncRuns).values({ operation: "CATALOG_PREVIEW", status: runStatus, message, details: { eligibleStationIds: eligible.map(station => station.id), roamingStationCount: stations.length }, createdBy: ctx.user?.id, completedAt: new Date().toISOString() } as any);
+      const message = eligible.length ? `Catálogo SIEM generado localmente con ${eligible.length} estación(es) elegible(s). No se envió tráfico externo.` : "No hay estaciones habilitadas y elegibles para el reporte SIEM.";
+      const [result]: any = await db.insert(ocpiSyncRuns).values({ operation: "CATALOG_PREVIEW", status: runStatus, message, details: { eligibleStationIds: eligible.map(station => station.id), siemReportingStationCount: stations.length }, createdBy: ctx.user?.id, completedAt: new Date().toISOString() } as any);
       return { success: true, runId: result?.insertId, eligibleCount: eligible.length, message };
     }),
     publishCatalog: adminProcedure.mutation(async ({ ctx }: any) => {

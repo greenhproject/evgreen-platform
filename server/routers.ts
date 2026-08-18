@@ -731,9 +731,10 @@ const stationsRouter = router({
         longitude: z.string().optional(),
         operatingHours: z.any().optional(),
         amenities: z.array(z.string()).optional(),
-        isActive: z.boolean().optional(),
-        isPublic: z.boolean().optional(),
-        imageUrl: z.string().nullable().optional(),
+		isActive: z.boolean().optional(),
+		isPublic: z.boolean().optional(),
+		siemReportingEnabled: z.boolean().optional(),
+		imageUrl: z.string().nullable().optional(),
         // Modelo financiero configurable
         evgreenSharePercent: z.string().optional(),
         investorSharePercent: z.string().optional(),
@@ -756,7 +757,16 @@ const stationsRouter = router({
       if (ctx.user.role !== "admin" && ctx.user.role !== "staff" && ctx.user.role !== "technician" && ctx.user.role !== "engineer" && station.ownerId !== ctx.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para modificar esta estación" });
       }
-      await db.updateChargingStation(input.id, input.data as any);
+      if (input.data.siemReportingEnabled !== undefined && ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Solo administración puede habilitar el reporte regulatorio SIEM." });
+      }
+      const stationData: Record<string, unknown> = { ...input.data };
+      const willBePublic = input.data.isPublic ?? Boolean(station.isPublic);
+      if (!willBePublic) stationData.siemReportingEnabled = false;
+      if (stationData.siemReportingEnabled && !willBePublic) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Una estación privada no puede habilitarse para reporte SIEM." });
+      }
+      await db.updateChargingStation(input.id, stationData as any);
       return { success: true };
     }),
   
