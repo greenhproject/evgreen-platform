@@ -1,9 +1,9 @@
 import type { Request, Response } from "express";
-import { getResendClient } from "./resend-client";
+import { getResendClient, getResendWebhookSecret } from "./resend-client";
 import { recordLetterDeliveryEvent } from "./letter-delivery-events";
 
 export async function handleResendWebhook(req: Request, res: Response) {
-  const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+  const webhookSecret = await getResendWebhookSecret();
   if (!webhookSecret) return res.status(503).json({ error: "Webhook de correo no configurado" });
   const rawPayload = typeof req.body === "string" ? req.body : "";
   const svixId = req.header("svix-id") ?? "";

@@ -20,6 +20,10 @@ Selecciona los eventos: `email.sent`, `email.delivered`, `email.delivery_delayed
 
 El receptor valida la firma Svix sobre el cuerpo crudo, procesa cada `svix-id` una sola vez y ordena el estado por la fecha del evento para que una entrega atrasada no reemplace un estado más reciente. Los eventos que no correspondan al identificador de una carta se ignoran sin crear registros.
 
+### Incidencia de activación observada
+
+La prueba real de la carta `SPE-2026-0103` generó en Resend los eventos `email.sent` y `email.delivered`, pero el proveedor registró una respuesta **HTTP 503 Service Unavailable** al llamar al endpoint. Esto confirma que la suscripción está activa y que el bloqueo se limita a la disponibilidad de una clave de firma válida en la instancia publicada. La corrección en curso traslada esa clave a una configuración de plataforma cifrada y administrable desde Admin, evitando depender de una variable configurada por código.
+
 ## Seguimiento operativo
 
 En **Admin → Espacios**, abre una postulación en estado **Carta enviada**. El bloque de enlace alterno ahora informa el último estado del correo y muestra hasta cuatro eventos recientes, sin exponer identificadores internos ni payloads del proveedor.

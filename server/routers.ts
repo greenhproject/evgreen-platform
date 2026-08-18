@@ -3820,6 +3820,7 @@ const settingsRouter = router({
         // Email (Resend)
         resendApiKey: "",
         emailFrom: "noreply@evgreen.lat",
+        resendWebhookSecretConfigured: false,
         // Soporte
         supportEmail: "soporte@greenhproject.com",
         supportPhone: "",
@@ -3894,6 +3895,7 @@ const settingsRouter = router({
       // Email (Resend) - mask key for security
       resendApiKey: settings.resendApiKey ? "re_****" + settings.resendApiKey.slice(-4) : "",
       emailFrom: settings.emailFrom || "noreply@evgreen.lat",
+      resendWebhookSecretConfigured: !!(settings as any).resendWebhookSecretEncrypted,
       // Soporte
       supportEmail: settings.supportEmail || "soporte@greenhproject.com",
       supportPhone: settings.supportPhone || "",
@@ -3973,6 +3975,7 @@ const settingsRouter = router({
       // Email (Resend)
       resendApiKey: z.string().optional(),
       emailFrom: z.string().optional(),
+      resendWebhookSecret: z.string().min(16).max(1000).optional(),
       // Soporte
       supportEmail: z.string().optional(),
       supportPhone: z.string().optional(),
@@ -3988,15 +3991,32 @@ const settingsRouter = router({
       if (data.upmeToken?.startsWith("****")) delete data.upmeToken;
       if (data.alegraToken?.startsWith("****")) delete data.alegraToken;
       if (data.resendApiKey?.startsWith("re_****")) delete data.resendApiKey;
+      if (data.resendWebhookSecret) {
+        const { encryptResendWebhookSecret } = await import("./email/resend-webhook-secret");
+        data.resendWebhookSecretEncrypted = encryptResendWebhookSecret(data.resendWebhookSecret);
+        data.resendWebhookConfiguredAt = new Date().toISOString();
+      }
+      delete data.resendWebhookSecret;
       
       await db.upsertPlatformSettings(data);
       // Invalidar caché de Resend si se actualizó la key
-      if (data.resendApiKey || data.emailFrom) {
+      if (data.resendApiKey || data.emailFrom || data.resendWebhookSecretEncrypted) {
         const { invalidateResendCache } = await import("./email/resend-client");
         invalidateResendCache();
       }
       return { success: true };
     }),
+
+  clearResendWebhookSecret: adminProcedure.mutation(async ({ ctx }) => {
+    await db.upsertPlatformSettings({
+      resendWebhookSecretEncrypted: null,
+      resendWebhookConfiguredAt: null,
+      updatedBy: ctx.user.id,
+    } as any);
+    const { invalidateResendCache } = await import("./email/resend-client");
+    invalidateResendCache();
+    return { success: true };
+  }),
 
   // Alegra: Test connection
   alegraTestConnection: adminProcedure

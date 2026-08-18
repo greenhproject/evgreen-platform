@@ -62,6 +62,7 @@ export default function AdminSettings() {
   const [emailConfigForm, setEmailConfigForm] = useState({
     resendApiKey: "",
     emailFrom: "noreply@evgreen.lat",
+    resendWebhookSecret: "",
   });
 
   const [notificationsForm, setNotificationsForm] = useState({
@@ -123,6 +124,19 @@ export default function AdminSettings() {
   const [resendConnectionStatus, setResendConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [resendKeyTouched, setResendKeyTouched] = useState(false);
   const [resendKeySaved, setResendKeySaved] = useState(false);
+  const [resendWebhookSecretTouched, setResendWebhookSecretTouched] = useState(false);
+  const [resendWebhookSecretSaved, setResendWebhookSecretSaved] = useState(false);
+
+  const clearResendWebhookSecretMutation = trpc.settings.clearResendWebhookSecret.useMutation({
+    onSuccess: () => {
+      setEmailConfigForm((current) => ({ ...current, resendWebhookSecret: "" }));
+      setResendWebhookSecretTouched(false);
+      setResendWebhookSecretSaved(false);
+      toast.success("Clave de firma del webhook eliminada");
+      refetch();
+    },
+    onError: (error) => toast.error(`No se pudo eliminar la clave: ${error.message}`),
+  });
 
   const resendTestMutation = trpc.settings.testResendConnection.useMutation({
     onSuccess: (data) => {
@@ -231,9 +245,12 @@ export default function AdminSettings() {
       const maskedKey = (settings as any).resendApiKey || "";
       setResendKeySaved(maskedKey.startsWith("re_****"));
       setResendKeyTouched(false);
+      setResendWebhookSecretSaved(!!(settings as any).resendWebhookSecretConfigured);
+      setResendWebhookSecretTouched(false);
       setEmailConfigForm({
         resendApiKey: maskedKey.startsWith("re_****") ? "" : maskedKey,
         emailFrom: (settings as any).emailFrom || "noreply@evgreen.lat",
+        resendWebhookSecret: "",
       });
 
       setIntegrationsForm({
@@ -342,9 +359,13 @@ export default function AdminSettings() {
     if (resendKeyTouched && emailConfigForm.resendApiKey) {
       payload.resendApiKey = emailConfigForm.resendApiKey;
     }
+    if (resendWebhookSecretTouched && emailConfigForm.resendWebhookSecret) {
+      payload.resendWebhookSecret = emailConfigForm.resendWebhookSecret;
+    }
     updateMutation.mutate(payload, {
       onSuccess: () => {
         setResendKeyTouched(false);
+        setResendWebhookSecretTouched(false);
         setResendConnectionStatus("idle");
       },
     });
@@ -863,6 +884,52 @@ export default function AdminSettings() {
                   <p className="text-xs text-muted-foreground">
                     Dirección desde la que se enviarán los correos. Debe estar verificada en Resend.
                   </p>
+                </div>
+
+                <div className="rounded-lg border border-violet-500/30 bg-violet-500/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <Label>Clave de firma del webhook</Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Se cifra en la base de datos y valida los eventos de entrega de Resend. Nunca vuelve a mostrarse.
+                      </p>
+                    </div>
+                    {resendWebhookSecretSaved && !resendWebhookSecretTouched && (
+                      <span className="text-xs text-green-500 flex items-center gap-1 shrink-0">
+                        <CheckCircle className="w-3 h-3" /> Guardada
+                      </span>
+                    )}
+                  </div>
+                  <Input
+                    type="password"
+                    value={emailConfigForm.resendWebhookSecret}
+                    onChange={(e) => {
+                      setEmailConfigForm({ ...emailConfigForm, resendWebhookSecret: e.target.value });
+                      setResendWebhookSecretTouched(true);
+                    }}
+                    placeholder={resendWebhookSecretSaved && !resendWebhookSecretTouched ? "•••••••• clave guardada — escribe para reemplazar" : "whsec_..."}
+                  />
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-muted-foreground">
+                      Endpoint: <code className="font-mono">{window.location.origin}/api/resend/webhook</code>
+                    </p>
+                    {resendWebhookSecretSaved && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        disabled={clearResendWebhookSecretMutation.isPending}
+                        onClick={() => {
+                          if (window.confirm("¿Eliminar la clave? El webhook dejará de aceptar eventos hasta configurar una nueva.")) {
+                            clearResendWebhookSecretMutation.mutate();
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" /> Eliminar clave
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Prueba de conexión */}

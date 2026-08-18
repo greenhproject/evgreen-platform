@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { verifyWebhook, recordEvent } = vi.hoisted(() => ({ verifyWebhook: vi.fn(), recordEvent: vi.fn() }));
-vi.mock("./resend-client", () => ({ getResendClient: async () => ({ webhooks: { verify: verifyWebhook } }) }));
+const { verifyWebhook, recordEvent, getWebhookSecret } = vi.hoisted(() => ({ verifyWebhook: vi.fn(), recordEvent: vi.fn(), getWebhookSecret: vi.fn() }));
+vi.mock("./resend-client", () => ({
+  getResendClient: async () => ({ webhooks: { verify: verifyWebhook } }),
+  getResendWebhookSecret: getWebhookSecret,
+}));
 vi.mock("./letter-delivery-events", () => ({ recordLetterDeliveryEvent: recordEvent }));
 
 import { handleResendWebhook } from "./resend-webhook-router";
@@ -22,15 +25,14 @@ function request(overrides: Partial<any> = {}) {
 }
 
 describe("webhook de entrega Resend", () => {
-  const originalSecret = process.env.RESEND_WEBHOOK_SECRET;
   afterEach(() => {
-    process.env.RESEND_WEBHOOK_SECRET = originalSecret;
     verifyWebhook.mockReset();
     recordEvent.mockReset();
+    getWebhookSecret.mockReset();
   });
 
-  it("usa el secreto configurado y registra solo un payload cuya firma fue verificada", async () => {
-    process.env.RESEND_WEBHOOK_SECRET = "whsec_prueba_configurada";
+  it("usa la clave obtenida de configuración cifrada y registra solo un payload cuya firma fue verificada", async () => {
+    getWebhookSecret.mockResolvedValue("whsec_prueba_configurada");
     verifyWebhook.mockReturnValue({ type: "email.delivered", created_at: "2026-08-18T10:00:00.000Z", data: { email_id: "email-test" } });
     recordEvent.mockResolvedValue({ recorded: true, status: "DELIVERED" });
     const res = response();
@@ -47,11 +49,20 @@ describe("webhook de entrega Resend", () => {
   });
 
   it("rechaza la solicitud antes de procesarla cuando faltan cabeceras firmadas", async () => {
-    process.env.RESEND_WEBHOOK_SECRET = "whsec_prueba_configurada";
+    getWebhookSecret.mockResolvedValue("whsec_prueba_configurada");
     const res = response();
     await handleResendWebhook(request({ header: () => "" }), res);
     expect(verifyWebhook).not.toHaveBeenCalled();
     expect(recordEvent).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(400);
+  });
+
+  it("informa configuración pendiente sin verificar ni procesar eventos", async () => {
+    getWebhookSecret.mockResolvedValue("");
+    const res = response();
+    await handleResendWebhook(request(), res);
+    expect(verifyWebhook).not.toHaveBeenCalled();
+    expect(recordEvent).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(503);
   });
 });

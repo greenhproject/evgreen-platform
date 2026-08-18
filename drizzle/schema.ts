@@ -1241,6 +1241,8 @@ export const platformSettings = mysqlTable("platform_settings", {
 	supportAutoAssign: tinyint().default(1).notNull(),
 	resendApiKey: text(),
 	emailFrom: varchar({ length: 255 }).default('noreply@evgreen.lat'),
+	resendWebhookSecretEncrypted: text("resend_webhook_secret_encrypted"),
+	resendWebhookConfiguredAt: timestamp("resend_webhook_configured_at", { mode: 'string' }),
 	whatsappPenaltyNotifIntervalMinutes: int().default(5).notNull(),
 	// OCPI / CargaME-SIEM: secretos cifrados y configuración administrable.
 	ocpiProvider: mysqlEnum("ocpi_provider", ['CARGAME']).default('CARGAME').notNull(),

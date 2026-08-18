@@ -115,6 +115,14 @@
 - [x] Activación: registrar en Resend el endpoint público de eventos y seleccionar los tipos de correo de cartas
 - [x] Documentación: describir la activación de webhooks de entrega y la lectura del historial de cartas en Admin
 - [ ] QA operativo: verificar en Resend y Admin el primer evento firmado generado por una nueva carta real enviada después de la publicación
+- [ ] QA operativo: reenviar SPE-2026-0103 autorizada y verificar evento firmado más historial administrativo
+- [ ] Fix: restaurar RESEND_WEBHOOK_SECRET en producción para que el receptor no responda 503
+- [ ] QA operativo: confirmar que los reintentos de email.sent y email.delivered obtienen respuesta 2xx y aparecen en Admin
+- [ ] Test: firmar un evento SVIX con RESEND_WEBHOOK_SECRET y verificar que el receptor local lo acepta
+- [ ] Feature: guardar la clave de firma de Resend cifrada en configuración de plataforma administrable desde UI
+- [ ] Feature: permitir a Admin consultar estado, actualizar y borrar la configuración del webhook sin exponer la clave
+- [ ] Security: usar la clave cifrada de base de datos para verificar webhooks y no depender de variables de entorno
+- [ ] Test: cubrir permisos Admin, enmascaramiento, cifrado y verificación de firma con la clave persistida
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
