@@ -9,6 +9,9 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getDb } from "../db";
+import { getResendClient } from "../email/resend-client";
+import { buildEmailParams } from "../utils/email-helper";
+import { generateLetterEmailHTML, generateLetterToken, getLetterShareLinkData, getRotatedLetterShareLinkData, getSpaceTypeLabel } from "../spaces/spaces-router";
 import {
   spaceSubmissions,
   spacePhotos,
@@ -241,6 +244,108 @@ export const gestorRouter = router({
     }),
 
   // --------------------------------------------------------------------------
+  // SEGUIMIENTO COMERCIAL DE CARTAS (solo espacios vinculados al gestor)
+  // --------------------------------------------------------------------------
+  getCartaSeguimiento: gestorProcedure
+    .input(z.object({ spaceId: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = (await getDb())!;
+      const [submission] = await db.select({
+        id: spaceSubmissions.id,
+        gestorId: spaceSubmissions.gestorId,
+        spaceStatus: spaceSubmissions.spaceStatus,
+        letterToken: spaceSubmissions.letterToken,
+        submitterName: spaceSubmissions.submitterName,
+        spaceName: spaceSubmissions.spaceName,
+      }).from(spaceSubmissions).where(eq(spaceSubmissions.id, input.spaceId)).limit(1);
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      if (!submission || (!isAdmin && submission.gestorId !== ctx.user.id)) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no disponible para tu seguimiento comercial." });
+      }
+      return getLetterShareLinkData(submission);
+    }),
+
+  reenviarCartaSeguimiento: gestorProcedure
+    .input(z.object({ spaceId: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = (await getDb())!;
+      const [submission] = await db.select({
+        id: spaceSubmissions.id,
+        gestorId: spaceSubmissions.gestorId,
+        spaceStatus: spaceSubmissions.spaceStatus,
+        letterToken: spaceSubmissions.letterToken,
+        submitterName: spaceSubmissions.submitterName,
+        submitterEmail: spaceSubmissions.submitterEmail,
+        spaceName: spaceSubmissions.spaceName,
+        spaceType: spaceSubmissions.spaceType,
+        city: spaceSubmissions.city,
+        address: spaceSubmissions.address,
+        code: spaceSubmissions.code,
+      }).from(spaceSubmissions).where(eq(spaceSubmissions.id, input.spaceId)).limit(1);
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      if (!submission || (!isAdmin && submission.gestorId !== ctx.user.id)) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no disponible para tu seguimiento comercial." });
+      }
+      getLetterShareLinkData(submission);
+
+      const nextToken = generateLetterToken();
+      const rotated = getRotatedLetterShareLinkData(submission, nextToken);
+      const emailHTML = generateLetterEmailHTML({
+        submitterName: submission.submitterName,
+        spaceName: submission.spaceName,
+        city: submission.city,
+        address: submission.address,
+        spaceType: getSpaceTypeLabel(submission.spaceType),
+        acceptUrl: rotated.acceptUrl,
+        code: submission.code,
+      });
+      const resend = await getResendClient();
+      const result = await resend.emails.send({
+        ...buildEmailParams({
+          from: "EVGreen <admin@evgreen.lat>",
+          to: submission.submitterEmail,
+          subject: `Recordatorio: Carta de Intención - Espacio ${submission.spaceName} | EVGreen`,
+          html: emailHTML,
+          replyTo: "gerencia@greenhproject.com",
+        }),
+        cc: "gerencia@greenhproject.com",
+      });
+      if (result.error) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `No fue posible reenviar la carta: ${result.error.message}` });
+      }
+      await db.update(spaceSubmissions).set({
+        letterToken: nextToken,
+        letterSentAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+      }).where(eq(spaceSubmissions.id, submission.id));
+      return { ...rotated, emailId: result.data?.id };
+    }),
+
+  rotarCartaSeguimiento: gestorProcedure
+    .input(z.object({ spaceId: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = (await getDb())!;
+      const [submission] = await db.select({
+        id: spaceSubmissions.id,
+        gestorId: spaceSubmissions.gestorId,
+        spaceStatus: spaceSubmissions.spaceStatus,
+        letterToken: spaceSubmissions.letterToken,
+        submitterName: spaceSubmissions.submitterName,
+        spaceName: spaceSubmissions.spaceName,
+      }).from(spaceSubmissions).where(eq(spaceSubmissions.id, input.spaceId)).limit(1);
+      const isAdmin = ctx.user.role === "admin" || ctx.user.role === "staff";
+      if (!submission || (!isAdmin && submission.gestorId !== ctx.user.id)) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Espacio no disponible para tu seguimiento comercial." });
+      }
+      const nextToken = generateLetterToken();
+      const rotated = getRotatedLetterShareLinkData(submission, nextToken);
+      await db.update(spaceSubmissions).set({
+        letterToken: nextToken,
+        letterSentAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+      }).where(eq(spaceSubmissions.id, submission.id));
+      return rotated;
+    }),
+
+  // --------------------------------------------------------------------------
   // MIS ESTACIONES OPERATIVAS (vinculadas al gestor)
   // --------------------------------------------------------------------------
   getMisEstaciones: gestorProcedure
@@ -301,6 +406,7 @@ export const gestorRouter = router({
           aiScore: spaceSubmissions.aiScore,
           gestorCommissionPercent: spaceSubmissions.gestorCommissionPercent,
           createdAt: spaceSubmissions.createdAt,
+          submitterName: spaceSubmissions.submitterName,
         }).from(spaceSubmissions).where(spaceFilter).orderBy(desc(spaceSubmissions.createdAt)),
         db.select({
           id: chargingStations.id,

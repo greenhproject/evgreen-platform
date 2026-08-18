@@ -87,7 +87,7 @@ export async function insertSubmissionWithCodeRetry(db: any, buildValues: (code:
   throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo asignar un código de postulación." });
 }
 
-function generateLetterToken(): string {
+export function generateLetterToken(): string {
   return randomBytes(32).toString("hex");
 }
 
@@ -110,6 +110,10 @@ const SPACE_TYPE_LABELS: Record<string, string> = {
   highway_rest: "Parador en carretera",
   other: "Otro",
 };
+
+export function getSpaceTypeLabel(spaceType: string | null | undefined) {
+  return SPACE_TYPE_LABELS[spaceType ?? ""] ?? spaceType ?? "Espacio";
+}
 
 const LETTER_ACCEPTANCE_BASE_URL = "https://app.evgreen.lat";
 

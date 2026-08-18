@@ -95,6 +95,14 @@
 - [x] Test: rotar una carta pendiente en base de datos y verificar que acceptLetter rechace el token anterior
 - [x] Test: verificar que, tras rotar la carta, el nuevo token quede persistido y sea el único enlace aceptado
 - [x] Documentación: explicar cuándo rotar un enlace de firma y cómo compartir el nuevo vínculo de forma segura
+- [x] Feature: reenviar por correo una carta pendiente desde un flujo rápido de seguimiento, rotando su enlace de firma
+- [x] Feature: exponer al rol comercial las acciones permitidas de carta para sus espacios vinculados
+- [x] Security: impedir que Comercial apruebe, edite datos estructurales, elimine espacios o gestione cartas ajenas
+- [x] Test: cubrir permisos comerciales, alcance por espacio vinculado y reenvío con revocación del token anterior
+- [x] Test: verificar que un comercial no puede ejecutar reenviarCartaSeguimiento sobre un espacio asignado a otro gestor
+- [x] Test: verificar explícitamente que usuarios con rol comercial no pueden usar rutas admin de aprobar, editar o eliminar espacios
+- [x] Documentación/QA: registrar de forma trazable qué acciones de carta sí puede ejecutar Comercial y cuáles permanecen exclusivas de Admin/Staff
+- [ ] Audit: identificar qué estados de entrega de cartas están disponibles hoy y qué trazabilidad falta en Admin
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

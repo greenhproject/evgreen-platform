@@ -9,12 +9,17 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { toast } from "sonner";
 import {
   ArrowRight,
   Building2,
   CircleDollarSign,
+  Copy,
   FileText,
+  Link2,
+  Mail,
   MapPin,
+  MessageCircle,
   Plus,
   RefreshCw,
   TrendingUp,
@@ -161,6 +166,7 @@ export default function GestorCartera() {
                             {space.aiScore !== null && <span>Viabilidad IA: <strong className="text-sky-300">{space.aiScore}/100</strong></span>}
                             <span>Comisión: <strong className="text-emerald-300">{Number(space.gestorCommissionPercent).toFixed(2)}%</strong></span>
                           </div>
+                          {space.status === "letter_sent" && <LetterFollowUpActions spaceId={space.id} submitterName={space.submitterName ?? ""} spaceName={space.name} onChanged={refetch} />}
                         </div>
                       </CardContent>
                     </Card>
@@ -209,4 +215,50 @@ function SectionTitle({ icon: Icon, title, subtitle }: { icon: typeof Zap; title
 
 function SmallValue({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return <div className="min-w-0"><p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p><p className={`mt-0.5 truncate text-xs font-semibold ${accent ? "text-emerald-300" : "text-slate-200"}`}>{value}</p></div>;
+}
+
+function LetterFollowUpActions({ spaceId, submitterName, spaceName, onChanged }: { spaceId: number; submitterName: string; spaceName: string; onChanged: () => void }) {
+  const [link, setLink] = useState<string | null>(null);
+  const getLinkMutation = trpc.gestor.getCartaSeguimiento.useMutation();
+  const resendMutation = trpc.gestor.reenviarCartaSeguimiento.useMutation();
+  const rotateMutation = trpc.gestor.rotarCartaSeguimiento.useMutation();
+
+  const getLink = async () => {
+    try {
+      const result = await getLinkMutation.mutateAsync({ spaceId });
+      setLink(result.acceptUrl);
+      toast.success("Enlace de firma listo para seguimiento.");
+    } catch (error: any) { toast.error(error.message || "No fue posible obtener el enlace"); }
+  };
+  const copyLink = async () => {
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); toast.success("Enlace de firma copiado."); }
+    catch { toast.error("No se pudo copiar el enlace automáticamente."); }
+  };
+  const openWhatsApp = () => {
+    if (!link) return;
+    const text = `Hola${submitterName ? ` ${submitterName}` : ""}, te compartimos la Carta de Intención para ${spaceName}. Puedes revisarla y firmarla de forma segura aquí: ${link}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+  };
+  const resend = async () => {
+    try {
+      const result = await resendMutation.mutateAsync({ spaceId });
+      setLink(result.acceptUrl);
+      onChanged();
+      toast.success("Carta reenviada por correo. El enlace anterior fue revocado.");
+    } catch (error: any) { toast.error(error.message || "No fue posible reenviar la carta"); }
+  };
+  const rotate = async () => {
+    try {
+      const result = await rotateMutation.mutateAsync({ spaceId });
+      setLink(result.acceptUrl);
+      onChanged();
+      toast.success("Enlace rotado. El vínculo anterior ya no es válido.");
+    } catch (error: any) { toast.error(error.message || "No fue posible rotar el enlace"); }
+  };
+
+  return <div className="mt-4 border-t border-violet-500/20 pt-3">
+    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-medium text-violet-200">Seguimiento de carta</p>{!link && <Button size="sm" variant="outline" onClick={getLink} disabled={getLinkMutation.isPending} className="h-8 border-violet-500/35 text-violet-200 hover:bg-violet-500/10"><Link2 className="mr-1 h-3.5 w-3.5" />Obtener enlace</Button>}</div>
+    {link && <div className="mt-2 space-y-2"><p className="break-all rounded-md bg-slate-950/60 px-2 py-1.5 text-[11px] text-violet-200">{link}</p><div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><Button size="sm" variant="outline" onClick={copyLink} className="h-8 border-slate-700 text-slate-200 hover:bg-slate-800"><Copy className="mr-1 h-3.5 w-3.5" />Copiar</Button><Button size="sm" onClick={openWhatsApp} className="h-8 bg-emerald-600 text-white hover:bg-emerald-500"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</Button><Button size="sm" variant="outline" onClick={resend} disabled={resendMutation.isPending} className="h-8 border-sky-500/35 text-sky-200 hover:bg-sky-500/10"><Mail className="mr-1 h-3.5 w-3.5" />Reenviar</Button><Button size="sm" variant="outline" onClick={rotate} disabled={rotateMutation.isPending} className="h-8 border-amber-500/35 text-amber-200 hover:bg-amber-500/10"><RefreshCw className={`mr-1 h-3.5 w-3.5 ${rotateMutation.isPending ? "animate-spin" : ""}`} />Rotar</Button></div></div>}
+  </div>;
 }
