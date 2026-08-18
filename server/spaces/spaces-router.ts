@@ -14,6 +14,7 @@ import {
   spacePhotos,
   crowdfundingProjects,
   investorLeads,
+  letterEmailEvents,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, like, or, inArray, count, gte, lte, isNull, isNotNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
@@ -70,8 +71,12 @@ export async function generateSubmissionCode(db: any): Promise<string> {
 }
 
 function isSubmissionCodeCollision(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("space_submissions_code_unique") || message.includes("Duplicate entry");
+  let current: any = error;
+  for (let depth = 0; current && depth < 3; depth++, current = current.cause) {
+    const message = current instanceof Error ? current.message : String(current);
+    if (message.includes("space_submissions_code_unique") || message.includes("Duplicate entry") || current?.code === "ER_DUP_ENTRY") return true;
+  }
+  return false;
 }
 
 export async function insertSubmissionWithCodeRetry(db: any, buildValues: (code: string) => Record<string, unknown>, maxAttempts = 3) {
@@ -138,6 +143,18 @@ export function getRotatedLetterShareLinkData(submission: { spaceStatus: string;
     throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo rotar el enlace de firma." });
   }
   return { acceptUrl: getLetterAcceptanceUrl(nextToken), revokedPreviousLink: true };
+}
+
+export function buildLetterDispatchUpdate(letterToken: string, providerEmailId: string | null | undefined, now = new Date()) {
+  const timestamp = now.toISOString().slice(0, 19).replace("T", " ");
+  return {
+    spaceStatus: "letter_sent" as const,
+    letterToken,
+    letterSentAt: timestamp,
+    letterEmailId: providerEmailId ?? null,
+    letterDeliveryStatus: "SENT" as const,
+    letterDeliveryUpdatedAt: timestamp,
+  };
 }
 
 // ============================================================================
@@ -801,8 +818,8 @@ export const spacesRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         }
 
-        if (submission.spaceStatus !== "approved") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Solo se puede enviar carta a postulaciones aprobadas" });
+        if (submission.spaceStatus !== "approved" && submission.spaceStatus !== "letter_sent") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Solo se puede enviar o reenviar carta a postulaciones aprobadas con firma pendiente" });
         }
 
         const letterToken = generateLetterToken();
@@ -825,7 +842,7 @@ export const spacesRouter = router({
         const emailParams = buildEmailParams({
           from: "EVGreen <admin@evgreen.lat>",
           to: submission.submitterEmail,
-          subject: `Carta de Intención - Espacio ${submission.spaceName} | EVGreen`,
+          subject: `${submission.spaceStatus === "letter_sent" ? "Recordatorio: " : ""}Carta de Intención - Espacio ${submission.spaceName} | EVGreen`,
           html: emailHTML,
           replyTo: "gerencia@greenhproject.com",
         });
@@ -844,11 +861,7 @@ export const spacesRouter = router({
 
         // Actualizar estado y token
         await db.update(spaceSubmissions)
-          .set({
-            spaceStatus: "letter_sent",
-            letterToken,
-            letterSentAt: new Date().toISOString().slice(0, 19).replace("T", " "),
-          })
+          .set(buildLetterDispatchUpdate(letterToken, result.data?.id) as any)
           .where(eq(spaceSubmissions.id, input.id));
 
         return { success: true, emailId: result.data?.id, acceptUrl };
@@ -869,6 +882,25 @@ export const spacesRouter = router({
 
         if (!submission) throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         return getLetterShareLinkData(submission);
+      }),
+
+    // ========================================================================
+    // ADMIN: Historial seguro de entrega de la carta (sin payload del proveedor)
+    // ========================================================================
+    getLetterDeliveryHistory: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDatabase();
+        return db.select({
+          eventType: letterEmailEvents.eventType,
+          deliveryStatus: letterEmailEvents.deliveryStatus,
+          recipientEmail: letterEmailEvents.recipientEmail,
+          occurredAt: letterEmailEvents.occurredAt,
+          receivedAt: letterEmailEvents.receivedAt,
+        }).from(letterEmailEvents)
+          .where(eq(letterEmailEvents.submissionId, input.id))
+          .orderBy(desc(letterEmailEvents.occurredAt))
+          .limit(10);
       }),
 
     // ========================================================================

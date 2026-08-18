@@ -1568,6 +1568,9 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 	letterSentAt: timestamp({ mode: 'string' }),
 	letterAcceptedAt: timestamp({ mode: 'string' }),
 	letterToken: varchar({ length: 100 }),
+	letterEmailId: varchar({ length: 120 }),
+	letterDeliveryStatus: mysqlEnum("letter_delivery_status", ['SENT','DELIVERED','DELAYED','BOUNCED','FAILED','OPENED','CLICKED','COMPLAINED','SUPPRESSED']).default('SENT'),
+	letterDeliveryUpdatedAt: timestamp({ mode: 'string' }),
 	letterSignerName: varchar({ length: 255 }),
 	letterSignerDocument: varchar({ length: 50 }),
 	letterSignerIp: varchar({ length: 50 }),
@@ -1588,6 +1591,23 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 },
 (table) => [
 	index("space_submissions_code_unique").on(table.code),
+	index("idx_space_letter_email_id").on(table.letterEmailId),
+]);
+
+export const letterEmailEvents = mysqlTable("letter_email_events", {
+	id: int().autoincrement().notNull(),
+	submissionId: int().notNull(),
+	providerEventId: varchar({ length: 120 }).notNull(),
+	providerEmailId: varchar({ length: 120 }).notNull(),
+	eventType: varchar({ length: 60 }).notNull(),
+	deliveryStatus: mysqlEnum("letter_email_delivery_status", ['SENT','DELIVERED','DELAYED','BOUNCED','FAILED','OPENED','CLICKED','COMPLAINED','SUPPRESSED']).notNull(),
+	recipientEmail: varchar({ length: 320 }),
+	occurredAt: timestamp({ mode: 'string' }).notNull(),
+	receivedAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+}, (table) => [
+	uniqueIndex("letter_email_events_provider_event_unique").on(table.providerEventId),
+	index("idx_letter_email_events_submission").on(table.submissionId, table.occurredAt),
+	index("idx_letter_email_events_email").on(table.providerEmailId),
 ]);
 
 export const stationAvailabilityAlerts = mysqlTable("station_availability_alerts", {

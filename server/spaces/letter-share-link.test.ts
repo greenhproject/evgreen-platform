@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getLetterShareLinkData, getRotatedLetterShareLinkData } from "./spaces-router";
+import { buildLetterDispatchUpdate, getLetterShareLinkData, getRotatedLetterShareLinkData } from "./spaces-router";
 
 describe("enlace alterno de firma de cartas", () => {
   it("devuelve el enlace canónico de firma solo para una carta enviada pendiente", () => {
@@ -40,5 +40,16 @@ describe("enlace alterno de firma de cartas", () => {
   it("no permite una rotación sin un token nuevo", () => {
     expect(() => getRotatedLetterShareLinkData({ spaceStatus: "letter_sent", letterToken: "token", submitterName: "Persona", spaceName: "Espacio" }, "token"))
       .toThrow("No se pudo rotar el enlace de firma.");
+  });
+
+  it("reinicia la trazabilidad de entrega al reenviar una carta pendiente", () => {
+    expect(buildLetterDispatchUpdate("token-nuevo", "email-resend-001", new Date("2026-08-18T13:30:00.000Z"))).toMatchObject({
+      spaceStatus: "letter_sent",
+      letterToken: "token-nuevo",
+      letterEmailId: "email-resend-001",
+      letterDeliveryStatus: "SENT",
+      letterSentAt: "2026-08-18 13:30:00",
+      letterDeliveryUpdatedAt: "2026-08-18 13:30:00",
+    });
   });
 });

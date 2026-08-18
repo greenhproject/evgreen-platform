@@ -316,6 +316,9 @@ export const gestorRouter = router({
       await db.update(spaceSubmissions).set({
         letterToken: nextToken,
         letterSentAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+        letterEmailId: result.data?.id ?? null,
+        letterDeliveryStatus: "SENT",
+        letterDeliveryUpdatedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
       }).where(eq(spaceSubmissions.id, submission.id));
       return { ...rotated, emailId: result.data?.id };
     }),

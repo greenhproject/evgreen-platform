@@ -102,7 +102,19 @@
 - [x] Test: verificar que un comercial no puede ejecutar reenviarCartaSeguimiento sobre un espacio asignado a otro gestor
 - [x] Test: verificar explícitamente que usuarios con rol comercial no pueden usar rutas admin de aprobar, editar o eliminar espacios
 - [x] Documentación/QA: registrar de forma trazable qué acciones de carta sí puede ejecutar Comercial y cuáles permanecen exclusivas de Admin/Staff
-- [ ] Audit: identificar qué estados de entrega de cartas están disponibles hoy y qué trazabilidad falta en Admin
+- [x] Audit: identificar qué estados de entrega de cartas están disponibles hoy y qué trazabilidad falta en Admin
+- [x] Feature: almacenar eventos verificados de entrega, apertura, retraso y rebote de cartas de intención
+- [x] Feature: mostrar en Admin el último estado de entrega y el historial seguro de cada carta
+- [x] Security: verificar la firma de webhooks de correo e impedir eventos duplicados o no asociados a una carta
+- [x] Test: cubrir firmas inválidas, idempotencia y proyección de estados de correo en cartas
+- [x] Feature: permitir a Admin reenviar una carta pendiente desde el panel de enlace alterno, rotando su vínculo de firma
+- [x] Test: verificar que Admin puede reenviar una carta pendiente y que el nuevo correo reinicia su estado de entrega
+- [x] Test: ejecutar spaces.admin.sendLetter como Admin sobre una carta letter_sent y verificar que reenvía correctamente
+- [x] Test: comprobar en BD que el reenvío administrativo rota token y reinicia identificador, estado y fecha de entrega
+- [x] Test: verificar que el reenvío administrativo falla en estados no elegibles sin alterar la trazabilidad previa
+- [x] Activación: registrar en Resend el endpoint público de eventos y seleccionar los tipos de correo de cartas
+- [x] Documentación: describir la activación de webhooks de entrega y la lectura del historial de cartas en Admin
+- [ ] QA operativo: verificar en Resend y Admin el primer evento firmado generado por una nueva carta real enviada después de la publicación
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
