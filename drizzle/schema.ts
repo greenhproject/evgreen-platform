@@ -1,4 +1,4 @@
-import { mysqlTable, mysqlSchema, AnyMySqlColumn, int, mysqlEnum, text, varchar, decimal, timestamp, json, bigint, index, date, tinyint, datetime, foreignKey, float } from "drizzle-orm/mysql-core"
+import { mysqlTable, mysqlSchema, AnyMySqlColumn, int, mysqlEnum, text, varchar, decimal, timestamp, json, bigint, index, uniqueIndex, date, tinyint, datetime, foreignKey, float } from "drizzle-orm/mysql-core"
 import { sql } from "drizzle-orm"
 
 export const aiConfig = mysqlTable("ai_config", {
@@ -538,7 +538,29 @@ export const ocpiRemoteLocations = mysqlTable("ocpi_remote_locations", {
   updatedAt: timestamp("updated_at", { mode: "string" }).defaultNow().onUpdateNow().notNull(),
 }, (table) => [
   index("idx_ocpi_remote_location_partner").on(table.provider, table.countryCode, table.partyId, table.locationId),
-  index("idx_ocpi_remote_locations_updated").on(table.provider, table.updatedAt),
+	index("idx_ocpi_remote_locations_updated").on(table.provider, table.updatedAt),
+]);
+
+export const ocpiOutboxEvents = mysqlTable("ocpi_outbox_events", {
+  id: int().autoincrement().notNull(),
+  scope: mysqlEnum("ocpi_outbox_scope", ["SIEM", "ROAMING"]).default("SIEM").notNull(),
+  eventType: mysqlEnum("ocpi_outbox_event_type", ["LOCATION_UPSERT", "TARIFF_UPSERT", "SESSION_UPSERT", "EVSE_STATUS"]).notNull(),
+  organizationId: int("organization_id"),
+  stationId: int("station_id"),
+  dedupeKey: varchar("dedupe_key", { length: 191 }).notNull(),
+  payload: json().notNull(),
+  status: mysqlEnum("ocpi_outbox_status", ["PENDING", "SENT", "FAILED", "DEAD"]).default("PENDING").notNull(),
+  attemptCount: int("attempt_count").default(0).notNull(),
+  nextAttemptAt: timestamp("next_attempt_at", { mode: "string" }),
+  lastError: varchar("last_error", { length: 500 }),
+  sentAt: timestamp("sent_at", { mode: "string" }),
+  createdAt: timestamp("created_at", { mode: "string" }).default("CURRENT_TIMESTAMP").notNull(),
+  updatedAt: timestamp("updated_at", { mode: "string" }).defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ocpi_outbox_dedupe").on(table.dedupeKey),
+  index("idx_ocpi_outbox_status_created").on(table.status, table.createdAt),
+  index("idx_ocpi_outbox_station").on(table.stationId, table.createdAt),
+  index("idx_ocpi_outbox_organization").on(table.organizationId, table.createdAt),
 ]);
 
 export const favoriteStations = mysqlTable("favorite_stations", {

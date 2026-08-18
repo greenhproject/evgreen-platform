@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS `ocpi_outbox_events` (
+  `id` int AUTO_INCREMENT NOT NULL,
+  `scope` enum('SIEM','ROAMING') NOT NULL DEFAULT 'SIEM',
+  `event_type` enum('LOCATION_UPSERT','TARIFF_UPSERT','SESSION_UPSERT','EVSE_STATUS') NOT NULL,
+  `organization_id` int,
+  `station_id` int,
+  `dedupe_key` varchar(191) NOT NULL,
+  `payload` json NOT NULL,
+  `status` enum('PENDING','SENT','FAILED','DEAD') NOT NULL DEFAULT 'PENDING',
+  `attempt_count` int NOT NULL DEFAULT 0,
+  `next_attempt_at` timestamp NULL,
+  `last_error` varchar(500),
+  `sent_at` timestamp NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `uq_ocpi_outbox_dedupe` UNIQUE (`dedupe_key`),
+  INDEX `idx_ocpi_outbox_status_created` (`status`, `created_at`),
+  INDEX `idx_ocpi_outbox_station` (`station_id`, `created_at`),
+  INDEX `idx_ocpi_outbox_organization` (`organization_id`, `created_at`)
+);

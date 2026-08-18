@@ -58,6 +58,17 @@
 - [x] Security: restringir la habilitación SIEM por estación a los roles administrativos autorizados
 - [x] Test: verificar que el propietario no administrativo no puede habilitar SIEM y que Admin sí puede hacerlo
 - [x] UI: alinear el texto del catálogo OCPI en Admin con la elegibilidad regulatoria SIEM independiente de ROAMING
+- [x] Feature: cola persistente e idempotente de eventos OCPI por estación para la futura publicación SIEM
+- [x] Feature: bitácora administrativa de eventos OCPI pendientes, enviados y fallidos sin exponer payloads sensibles
+- [x] Test: cubrir deduplicación, aislamiento y garantía de cero tráfico externo mientras no existan credenciales oficiales
+- [x] Feature: implementar transición auditable de la cola OCPI a estados SENT/FAILED/DEAD con actualización de intentos y errores, manteniendo cero tráfico externo hasta contar con credenciales oficiales
+- [x] Test: cubrir cambios de estado de la cola OCPI (PENDING→SENT/FAILED/DEAD), contador de intentos y exposición segura de errores sin payload sensible
+- [x] Feature: integrar la transición de la cola OCPI en un flujo administrativo dry-run sin tráfico externo
+- [x] Test: cubrir el flujo integrado que actualiza la cola y expone estados seguros en Admin
+- [x] Feature: integrar acciones administrativas dry-run para registrar resultados FAILED y DEAD sin tráfico externo
+- [x] Test: cubrir transiciones integradas PENDING→FAILED/DEAD y confirmar que el listado no expone payloads ni secretos
+- [x] Test: verificar directamente que listOutboxEvents no selecciona payload ni dedupeKey sensible
+- [x] Documentación: describir la cola SIEM, sus estados dry-run y las condiciones para habilitar un despachador certificado
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

@@ -1,9 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { chargingStations, evses, ocpiRemoteLocations, ocpiSyncRuns, organizations } from "../../drizzle/schema";
+import { chargingStations, evses, ocpiOutboxEvents, ocpiRemoteLocations, ocpiSyncRuns, organizations } from "../../drizzle/schema";
 import { getDb, getPlatformSettings, upsertPlatformSettings } from "../db";
 import { getSiemEligibility, mapStationToOcpiLocation } from "./ocpi-catalog";
+import { getLocationDedupeKey, recordOcpiOutboxAttempt, stageOcpiEvent } from "./ocpi-outbox";
 import { decryptOcpiSecret, encryptOcpiSecret, isSafeOcpiVersionsUrl, maskOcpiSecret } from "./ocpi-secrets";
 
 const modulesSchema = z.array(z.enum(["LOCATIONS", "TARIFFS", "SESSIONS", "CDRS"])).min(1).max(4);
@@ -37,6 +38,27 @@ export function getOcpiManualPublishDecision(config: { enabled?: boolean; versio
     return { status: "SKIPPED", externalRequest: false, message: "OCPI no está activado o faltan credenciales. No se envió tráfico externo." };
   }
   return { status: "PENDING", externalRequest: false, message: "Catálogo validado en modo dry-run. La publicación externa se habilitará tras la certificación oficial de CargaME." };
+}
+
+async function loadSiemCatalog(db: any, settings: any) {
+  const stations = await db.select({
+    id: chargingStations.id, name: chargingStations.name, address: chargingStations.address, city: chargingStations.city,
+    country: chargingStations.country, latitude: chargingStations.latitude, longitude: chargingStations.longitude, timezone: chargingStations.timezone,
+    isActive: chargingStations.isActive, isPublic: chargingStations.isPublic, networkAccessMode: chargingStations.networkAccessMode, siemReportingEnabled: chargingStations.siemReportingEnabled,
+    organizationId: chargingStations.organizationId, organizationStatus: organizations.orgStatus, networkMember: organizations.networkMember,
+  }).from(chargingStations).leftJoin(organizations, eq(chargingStations.organizationId, organizations.id)).where(eq(chargingStations.siemReportingEnabled, 1));
+  const ids = stations.map((station: any) => station.id);
+  const connectors = ids.length ? await db.select().from(evses).where(and(inArray(evses.stationId, ids), eq(evses.isActive, 1))) : [];
+  const identity = { countryCode: settings?.ocpiCountryCode || "CO", partyId: settings?.ocpiPartyId || "EVG" };
+  const entries = stations.map((station: any) => {
+    const eligibility = getSiemEligibility(station);
+    const stationEvses = connectors.filter((connector: any) => connector.stationId === station.id);
+    return {
+      stationId: station.id, organizationId: station.organizationId, stationName: station.name, city: station.city, evseCount: stationEvses.length,
+      eligibility, location: eligibility.eligible ? mapStationToOcpiLocation(station, stationEvses as any, identity, "SIEM") : null,
+    };
+  });
+  return { identity, entries, eligibleCount: entries.filter((entry: any) => entry.eligibility.eligible).length };
 }
 
 export function buildOcpiRouter(router: any, adminProcedure: any) {
@@ -101,39 +123,33 @@ export function buildOcpiRouter(router: any, adminProcedure: any) {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Base de datos no disponible." });
       const settings: any = await getPlatformSettings();
-      const stations = await db.select({
-        id: chargingStations.id, name: chargingStations.name, address: chargingStations.address, city: chargingStations.city,
-        country: chargingStations.country, latitude: chargingStations.latitude, longitude: chargingStations.longitude, timezone: chargingStations.timezone,
-        isActive: chargingStations.isActive, isPublic: chargingStations.isPublic, networkAccessMode: chargingStations.networkAccessMode, siemReportingEnabled: chargingStations.siemReportingEnabled,
-        organizationId: chargingStations.organizationId, organizationStatus: organizations.orgStatus, networkMember: organizations.networkMember,
-      }).from(chargingStations).leftJoin(organizations, eq(chargingStations.organizationId, organizations.id)).where(eq(chargingStations.siemReportingEnabled, 1));
-      const ids = stations.map(station => station.id);
-      const connectors = ids.length ? await db.select().from(evses).where(and(inArray(evses.stationId, ids), eq(evses.isActive, 1))) : [];
-      const identity = { countryCode: settings?.ocpiCountryCode || "CO", partyId: settings?.ocpiPartyId || "EVG" };
-      const entries = stations.map(station => {
-        const eligibility = getSiemEligibility(station as any);
-        const stationEvses = connectors.filter(connector => connector.stationId === station.id);
-        return {
-          stationId: station.id, stationName: station.name, city: station.city, evseCount: stationEvses.length,
-          eligibility, location: eligibility.eligible ? mapStationToOcpiLocation(station as any, stationEvses as any, identity, "SIEM") : null,
-        };
-      });
-      return { identity, entries, eligibleCount: entries.filter(entry => entry.eligibility.eligible).length };
+      return loadSiemCatalog(db, settings);
     }),
     previewCatalog: adminProcedure.mutation(async ({ ctx }: any) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Base de datos no disponible." });
-      const stations = await db.select({
-        id: chargingStations.id, name: chargingStations.name, address: chargingStations.address, city: chargingStations.city,
-        country: chargingStations.country, latitude: chargingStations.latitude, longitude: chargingStations.longitude, timezone: chargingStations.timezone,
-        isActive: chargingStations.isActive, isPublic: chargingStations.isPublic, networkAccessMode: chargingStations.networkAccessMode, siemReportingEnabled: chargingStations.siemReportingEnabled,
-        organizationId: chargingStations.organizationId, organizationStatus: organizations.orgStatus, networkMember: organizations.networkMember,
-      }).from(chargingStations).leftJoin(organizations, eq(chargingStations.organizationId, organizations.id)).where(eq(chargingStations.siemReportingEnabled, 1));
-      const eligible = stations.filter(station => getSiemEligibility(station as any).eligible);
+      const catalog = await loadSiemCatalog(db, await getPlatformSettings());
+      const eligible = catalog.entries.filter((entry: any) => entry.eligibility.eligible);
       const runStatus = eligible.length ? "SUCCESS" as const : "SKIPPED" as const;
       const message = eligible.length ? `Catálogo SIEM generado localmente con ${eligible.length} estación(es) elegible(s). No se envió tráfico externo.` : "No hay estaciones habilitadas y elegibles para el reporte SIEM.";
-      const [result]: any = await db.insert(ocpiSyncRuns).values({ operation: "CATALOG_PREVIEW", status: runStatus, message, details: { eligibleStationIds: eligible.map(station => station.id), siemReportingStationCount: stations.length }, createdBy: ctx.user?.id, completedAt: new Date().toISOString() } as any);
+      const [result]: any = await db.insert(ocpiSyncRuns).values({ operation: "CATALOG_PREVIEW", status: runStatus, message, details: { eligibleStationIds: eligible.map((entry: any) => entry.stationId), siemReportingStationCount: catalog.entries.length }, createdBy: ctx.user?.id, completedAt: new Date().toISOString() } as any);
       return { success: true, runId: result?.insertId, eligibleCount: eligible.length, message };
+    }),
+    stageCatalog: adminProcedure.mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Base de datos no disponible." });
+      const catalog = await loadSiemCatalog(db, await getPlatformSettings());
+      const eligible = catalog.entries.filter((entry: any) => entry.eligibility.eligible && entry.location);
+      for (const entry of eligible) {
+        await stageOcpiEvent(db, {
+          eventType: "LOCATION_UPSERT",
+          organizationId: entry.organizationId,
+          stationId: entry.stationId,
+          dedupeKey: getLocationDedupeKey(entry.stationId),
+          payload: entry.location,
+        });
+      }
+      return { success: true, stagedCount: eligible.length, externalRequest: false, message: eligible.length ? `${eligible.length} Location(s) SIEM quedaron preparadas en la cola. No se envió tráfico externo.` : "No hay Locations elegibles para preparar." };
     }),
     publishCatalog: adminProcedure.mutation(async ({ ctx }: any) => {
       const db = await getDb();
@@ -157,6 +173,26 @@ export function buildOcpiRouter(router: any, adminProcedure: any) {
         address: ocpiRemoteLocations.address, city: ocpiRemoteLocations.city, status: ocpiRemoteLocations.status,
         lastUpdated: ocpiRemoteLocations.lastUpdated, updatedAt: ocpiRemoteLocations.updatedAt,
       }).from(ocpiRemoteLocations).orderBy(desc(ocpiRemoteLocations.updatedAt)).limit(50);
+    }),
+    validateOutboxDryRun: adminProcedure.input(z.object({ eventId: z.number().int().positive(), outcome: z.enum(["SENT", "FAILED", "DEAD"]) })).mutation(async ({ input }: any) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Base de datos no disponible." });
+      const result = await recordOcpiOutboxAttempt(db, {
+        id: input.eventId,
+        success: input.outcome === "SENT",
+        terminal: input.outcome === "DEAD",
+        error: input.outcome === "SENT" ? undefined : "Validación local OCPI sin solicitud externa.",
+      });
+      return { success: true, ...result, message: `Evento marcado localmente como ${result.status}. No se realizó ninguna solicitud externa.` };
+    }),
+    listOutboxEvents: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        id: ocpiOutboxEvents.id, eventType: ocpiOutboxEvents.eventType, stationId: ocpiOutboxEvents.stationId,
+        status: ocpiOutboxEvents.status, attemptCount: ocpiOutboxEvents.attemptCount, lastError: ocpiOutboxEvents.lastError,
+        createdAt: ocpiOutboxEvents.createdAt, updatedAt: ocpiOutboxEvents.updatedAt, sentAt: ocpiOutboxEvents.sentAt,
+      }).from(ocpiOutboxEvents).orderBy(desc(ocpiOutboxEvents.updatedAt)).limit(50);
     }),
   });
 }

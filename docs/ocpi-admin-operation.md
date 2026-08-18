@@ -40,6 +40,12 @@ El mismo centro administrativo incluye un catálogo de estaciones candidatas par
 
 La previsualización genera el mapeo local `Location → EVSE → Connector` de OCPI y registra el resultado en la bitácora `ocpi_sync_runs`; no realiza solicitudes de red ni expone datos al socio. Este mecanismo permite revisar con el administrador qué estaciones serían publicadas antes de una certificación. El botón de previsualización no equivale a una publicación productiva: la transmisión a CargaME seguirá desactivada hasta recibir el onboarding y las credenciales oficiales.
 
+### Cola persistente de eventos SIEM
+
+El botón **Preparar cola** guarda el snapshot vigente de cada `Location` elegible en `ocpi_outbox_events`. La clave de deduplicación es estable por estación, de modo que una nueva preparación reemplaza el snapshot pendiente en vez de duplicar mensajes. Cada fila conserva únicamente el tipo de evento, la estación, la organización, el estado, el contador de intentos, las fechas y un error depurado; la interfaz administrativa no expone el payload OCPI ni claves de deduplicación.
+
+La cola permanece en **dry-run**. Las acciones locales permiten comprobar de forma auditable los estados `PENDING`, `SENT`, `FAILED` y `DEAD`, pero no llaman endpoints externos. `SENT` en este modo significa únicamente **validado localmente**, no entregado a CargaME. Antes de conectar un despachador real se requiere completar el onboarding UPME, confirmar los módulos autorizados, instalar la cadena mTLS, implementar el flujo oficial de credenciales/JWT y aprobar una prueba de certificación. Solo ese adaptador certificado podrá leer la cola, ejecutar el envío y registrar el resultado real.
+
 ## Locations recibidas desde CargaME
 
 Cuando CargaME/UPME habilite el intercambio bilateral, se le debe entregar por canal seguro la URL `PUT https://app.evgreen.lat/ocpi/2.2.1/locations/{country_code}/{party_id}/{location_id}` y el **token entrante** configurado en Admin. El endpoint exige el encabezado `Authorization: Token <token>`; mientras no exista token, devuelve `503`, y con un token inválido devuelve `401` sin consultar la base de datos.
@@ -52,4 +58,4 @@ Las recepciones correctas y los rechazos de contrato quedan en `ocpi_sync_runs` 
 
 ## Controles aplicados
 
-La pantalla está protegida por rol administrador. Las pruebas cubren cifrado/descifrado, enmascaramiento, rechazo de URLs inseguras y el paquete mínimo requerido antes de activar OCPI. La suite del canal entrante también cubre token ausente, token inválido, inserción, rechazo por identidad inconsistente, validación de payload, aislamiento por socio, actualización idempotente y trazabilidad sin secretos. El catálogo regulatorio exige una habilitación SIEM explícita por estación pública y conserva el aislamiento por tenant documentado en la auditoría SaaS.
+La pantalla está protegida por rol administrador. Las pruebas cubren cifrado/descifrado, enmascaramiento, rechazo de URLs inseguras y el paquete mínimo requerido antes de activar OCPI. La suite del canal entrante también cubre token ausente, token inválido, inserción, rechazo por identidad inconsistente, validación de payload, aislamiento por socio, actualización idempotente y trazabilidad sin secretos. La cola añade cobertura de deduplicación, aislamiento de organización, transiciones dry-run y proyección segura de metadatos. El catálogo regulatorio exige una habilitación SIEM explícita por estación pública y conserva el aislamiento por tenant documentado en la auditoría SaaS.
