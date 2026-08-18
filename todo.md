@@ -84,6 +84,12 @@
 - [x] Test: simular ER_DUP_ENTRY y verificar que spaces.submit regenere el código y cree la postulación
 - [x] Test: confirmar que códigos heredados inválidos o fuera de cuatro dígitos no rompen el consecutivo oficial
 - [x] Documentación: registrar la corrección de consecutivos de espacios y el resultado de la suite completa
+- [x] Feature: permitir a Admin copiar y compartir por WhatsApp el enlace único de firma de una carta de intención
+- [x] UI: corregir la plantilla móvil de la carta de intención para evitar desbordamiento horizontal del botón y enlace
+- [x] Fix: asegurar que el pie legal de la carta use Green House Project SAS y NIT 901.447.678-0
+- [x] Test: cubrir la obtención administrativa segura de un enlace activo de firma y la exclusión de cartas no elegibles
+- [x] Test: verificar que la plantilla de carta preserve el CTA móvil, enlace visible y razón social legal correcta
+- [x] Documentación: describir el uso seguro de copiar y compartir por WhatsApp el enlace de firma desde Admin
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

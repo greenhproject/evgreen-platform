@@ -21,7 +21,7 @@ import {
   ChevronRight, Building2, Phone, Mail, Camera, BarChart3,
   TrendingUp, DollarSign, ArrowUpRight, ExternalLink, RefreshCw,
   ChevronDown, X, Pencil, Trash2, AlertTriangle, Users, Download,
-  CheckSquare, Square, Minus, SlidersHorizontal, Calendar, FileDown, Settings2, Plus,
+  CheckSquare, Square, Minus, SlidersHorizontal, Calendar, FileDown, Settings2, Plus, Copy, Link2, MessageCircle,
 } from "lucide-react";
 
 // ============================================================================
@@ -1047,6 +1047,7 @@ function SpaceDetailDialog({
   const { data: space, isLoading, refetch } = trpc.spaces.admin.getById.useQuery({ id });
   const updateStatusMutation = trpc.spaces.admin.updateStatus.useMutation();
   const sendLetterMutation = trpc.spaces.admin.sendLetter.useMutation();
+  const getLetterShareLinkMutation = trpc.spaces.admin.getLetterShareLink.useMutation();
   const generateAIMutation = trpc.spaces.admin.generateAIScore.useMutation();
   const publishMutation = trpc.spaces.admin.publishToCrowdfunding.useMutation();
   const updateSpaceMutation = trpc.spaces.admin.updateSpace.useMutation();
@@ -1070,6 +1071,7 @@ function SpaceDetailDialog({
   const [editForm, setEditForm] = useState<Record<string, any>>({});
   const [editPhotos, setEditPhotos] = useState<Array<{ file: File; preview: string; photoType: string }>>([]);
   const [showGestorDialog, setShowGestorDialog] = useState(false);
+  const [letterShareLink, setLetterShareLink] = useState<string | null>(null);
   const addPhotosMutation = trpc.spaces.admin.addPhotos.useMutation();
   const [gestorForm, setGestorForm] = useState({ gestorId: "", commissionPercent: "3.75" });
   const { data: gestoresData } = trpc.gestor.listarGestores.useQuery();
@@ -1119,13 +1121,40 @@ function SpaceDetailDialog({
 
   const handleSendLetter = async () => {
     try {
-      await sendLetterMutation.mutateAsync({ id });
-      toast.success("Carta de intención enviada por email");
+      const result = await sendLetterMutation.mutateAsync({ id });
+      setLetterShareLink(result.acceptUrl);
+      toast.success("Carta enviada por email. El enlace alterno ya está listo para compartir.");
       refetch();
       onRefresh();
     } catch (err: any) {
       toast.error(err.message || "Error al enviar carta");
     }
+  };
+
+  const handleGetLetterShareLink = async () => {
+    try {
+      const result = await getLetterShareLinkMutation.mutateAsync({ id });
+      setLetterShareLink(result.acceptUrl);
+      toast.success("Enlace de firma listo para compartir.");
+    } catch (err: any) {
+      toast.error(err.message || "No fue posible obtener el enlace de firma");
+    }
+  };
+
+  const handleCopyLetterLink = async () => {
+    if (!letterShareLink) return;
+    try {
+      await navigator.clipboard.writeText(letterShareLink);
+      toast.success("Enlace de firma copiado. Compártelo solo con el responsable del espacio.");
+    } catch {
+      toast.error("No se pudo copiar automáticamente. Inténtalo de nuevo desde un navegador con permisos.");
+    }
+  };
+
+  const handleWhatsAppShare = () => {
+    if (!letterShareLink) return;
+    const message = `Hola${space.submitterName ? ` ${space.submitterName}` : ""}, te compartimos la Carta de Intención para el espacio “${space.spaceName}”. Puedes revisarla y firmarla de forma segura aquí: ${letterShareLink}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   };
 
   const handleGenerateAI = async () => {
@@ -1206,6 +1235,15 @@ function SpaceDetailDialog({
                 </Button>
               )}
             </div>
+            {space.spaceStatus === "letter_sent" && (
+              <div className="rounded-lg border border-purple-500/30 bg-purple-500/10 p-3 text-sm">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div><p className="font-medium text-purple-100">Enlace alterno de firma</p><p className="text-xs text-purple-200/80">Úsalo si el correo no llega. El enlace es único y solo funciona mientras la carta esté pendiente de firma.</p></div>
+                  {!letterShareLink && <Button size="sm" variant="outline" onClick={handleGetLetterShareLink} disabled={getLetterShareLinkMutation.isPending} className="border-purple-400/50 text-purple-100 hover:bg-purple-500/20">{getLetterShareLinkMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-1 h-3.5 w-3.5" />}Obtener enlace</Button>}
+                </div>
+                {letterShareLink && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input value={letterShareLink} readOnly className="h-9 border-purple-400/30 bg-slate-950/40 text-xs text-purple-100" /><Button size="sm" variant="outline" onClick={handleCopyLetterLink} className="border-purple-400/50 text-purple-100 hover:bg-purple-500/20"><Copy className="mr-1 h-3.5 w-3.5" />Copiar</Button><Button size="sm" onClick={handleWhatsAppShare} className="bg-emerald-600 text-white hover:bg-emerald-700"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</Button></div>}
+              </div>
+            )}
               {/* Row 2: Permanent actions - always visible 2x2 grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Button size="sm" onClick={() => setShowProspectoDialog(true)} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs w-full">

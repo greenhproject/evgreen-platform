@@ -111,6 +111,23 @@ const SPACE_TYPE_LABELS: Record<string, string> = {
   other: "Otro",
 };
 
+const LETTER_ACCEPTANCE_BASE_URL = "https://app.evgreen.lat";
+
+function getLetterAcceptanceUrl(letterToken: string) {
+  return `${LETTER_ACCEPTANCE_BASE_URL}/carta-intencion/${letterToken}`;
+}
+
+export function getLetterShareLinkData(submission: { spaceStatus: string; letterToken: string | null; submitterName: string; spaceName: string }) {
+  if (submission.spaceStatus !== "letter_sent" || !submission.letterToken) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "El enlace alterno solo está disponible para cartas enviadas y pendientes de firma." });
+  }
+  return {
+    acceptUrl: getLetterAcceptanceUrl(submission.letterToken),
+    recipientName: submission.submitterName,
+    spaceName: submission.spaceName,
+  };
+}
+
 // ============================================================================
 // SPACES ROUTER
 // ============================================================================
@@ -777,8 +794,7 @@ export const spacesRouter = router({
         }
 
         const letterToken = generateLetterToken();
-        const baseUrl = ctx.req.headers.origin || ctx.req.headers.referer?.replace(/\/$/, "") || "https://evgreen.lat";
-        const acceptUrl = `${baseUrl}/carta-intencion/${letterToken}`;
+        const acceptUrl = getLetterAcceptanceUrl(letterToken);
 
         // Generar HTML del email de carta de intención
         const emailHTML = generateLetterEmailHTML({
@@ -823,7 +839,24 @@ export const spacesRouter = router({
           })
           .where(eq(spaceSubmissions.id, input.id));
 
-        return { success: true, emailId: result.data?.id };
+        return { success: true, emailId: result.data?.id, acceptUrl };
+      }),
+
+    // ========================================================================
+    // ADMIN: Obtener enlace alterno de firma para compartir manualmente
+    // ========================================================================
+    getLetterShareLink: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDatabase();
+        const [submission] = await db
+          .select({ id: spaceSubmissions.id, spaceStatus: spaceSubmissions.spaceStatus, letterToken: spaceSubmissions.letterToken, submitterName: spaceSubmissions.submitterName, spaceName: spaceSubmissions.spaceName })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+
+        if (!submission) throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
+        return getLetterShareLinkData(submission);
       }),
 
     // ========================================================================
@@ -1502,7 +1535,7 @@ Responde en formato JSON con la siguiente estructura:`;
 // EMAIL TEMPLATES
 // ============================================================================
 
-function generateLetterEmailHTML(params: {
+export function generateLetterEmailHTML(params: {
   submitterName: string;
   spaceName: string;
   city: string;
@@ -1517,15 +1550,28 @@ function generateLetterEmailHTML(params: {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Carta de Intención - EVGreen</title>
+  <style>
+    @media only screen and (max-width: 620px) {
+      .email-background { padding: 16px 0 !important; }
+      .email-shell { width: 100% !important; max-width: 100% !important; border-radius: 0 !important; }
+      .email-header { padding: 24px 20px !important; }
+      .email-content { padding: 28px 20px !important; }
+      .email-footer { padding: 20px !important; }
+      .email-title { font-size: 24px !important; }
+      .detail-label { width: 36% !important; }
+      .cta-link { display: block !important; padding: 15px 14px !important; font-size: 15px !important; }
+      .acceptance-url { display: inline-block !important; max-width: 280px !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background-color:#0a0f1a;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0f1a;padding:40px 20px;">
+  <table width="100%" cellpadding="0" cellspacing="0" class="email-background" style="background-color:#0a0f1a;padding:40px 20px;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color:#111827;border-radius:16px;overflow:hidden;border:1px solid #1f2937;">
+        <table width="600" cellpadding="0" cellspacing="0" class="email-shell" style="width:100%;max-width:600px;background-color:#111827;border-radius:16px;overflow:hidden;border:1px solid #1f2937;">
           <!-- Header -->
           <tr>
-            <td style="background:linear-gradient(135deg,#065f46,#047857,#10b981);padding:32px 40px;text-align:center;">
+            <td class="email-header" style="background:linear-gradient(135deg,#065f46,#047857,#10b981);padding:32px 40px;text-align:center;">
               <h1 style="color:#ffffff;margin:0;font-size:28px;font-weight:700;letter-spacing:-0.5px;">
                 ⚡ EVGreen
               </h1>
@@ -1537,8 +1583,8 @@ function generateLetterEmailHTML(params: {
 
           <!-- Content -->
           <tr>
-            <td style="padding:40px;">
-              <h2 style="color:#10b981;margin:0 0 24px;font-size:22px;font-weight:600;">
+            <td class="email-content" style="padding:40px;">
+              <h2 class="email-title" style="color:#10b981;margin:0 0 24px;font-size:22px;font-weight:600;">
                 Carta de Intención
               </h2>
 
@@ -1559,7 +1605,7 @@ function generateLetterEmailHTML(params: {
                     </p>
                     <table width="100%" cellpadding="4" cellspacing="0">
                       <tr>
-                        <td style="color:#9ca3af;font-size:14px;width:40%;">Código:</td>
+                        <td class="detail-label" style="color:#9ca3af;font-size:14px;width:40%;">Código:</td>
                         <td style="color:#ffffff;font-size:14px;font-weight:600;">${params.code}</td>
                       </tr>
                       <tr>
@@ -1595,7 +1641,7 @@ function generateLetterEmailHTML(params: {
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center">
-                    <a href="${params.acceptUrl}" style="display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:#ffffff;text-decoration:none;padding:16px 48px;border-radius:12px;font-size:16px;font-weight:700;letter-spacing:0.5px;">
+                    <a href="${params.acceptUrl}" class="cta-link" style="display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:#ffffff;text-decoration:none;padding:16px 48px;border-radius:12px;font-size:16px;font-weight:700;letter-spacing:0.5px;">
                       ✍️ Firmar Carta de Intención
                     </a>
                   </td>
@@ -1604,17 +1650,17 @@ function generateLetterEmailHTML(params: {
 
               <p style="color:#6b7280;font-size:13px;line-height:1.5;margin:24px 0 0;text-align:center;">
                 Si el botón no funciona, copie y pegue este enlace en su navegador:<br>
-                <a href="${params.acceptUrl}" style="color:#10b981;word-break:break-all;">${params.acceptUrl}</a>
+                <a href="${params.acceptUrl}" class="acceptance-url" style="color:#10b981;word-break:break-word;overflow-wrap:anywhere;">${params.acceptUrl}</a>
               </p>
             </td>
           </tr>
 
           <!-- Footer -->
           <tr>
-            <td style="background-color:#0d1117;padding:24px 40px;border-top:1px solid #1f2937;">
+            <td class="email-footer" style="background-color:#0d1117;padding:24px 40px;border-top:1px solid #1f2937;">
               <p style="color:#6b7280;font-size:12px;line-height:1.5;margin:0;text-align:center;">
-                Este email fue enviado por EVGreen, una marca de Green House Project S.A.S.<br>
-                NIT 901.856.696-1 | Bogotá, Colombia<br>
+                Este correo fue enviado por EVGreen, una línea de negocio de Green House Project SAS.<br>
+                NIT 901.447.678-0 | Bogotá, Colombia<br>
                 <a href="https://evgreen.lat" style="color:#10b981;">evgreen.lat</a> | 
                 <a href="mailto:gerencia@greenhproject.com" style="color:#10b981;">gerencia@greenhproject.com</a>
               </p>
