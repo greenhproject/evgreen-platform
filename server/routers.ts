@@ -51,6 +51,7 @@ import { campaignWizardRouter } from "./banners/campaign-wizard-router";
 import { buildLoyaltyRouter } from "./loyalty/loyalty-router";
 import { advertiserRouter, adminAdvertiserRouter } from "./routers/advertiser";
 import { buildOcpiRouter } from "./ocpi/ocpi-router";
+import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
 
 // ============================================================================
 // ROLE-BASED PROCEDURES
@@ -767,6 +768,11 @@ const stationsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Una estación privada no puede habilitarse para reporte SIEM." });
       }
       await db.updateChargingStation(input.id, stationData as any);
+      try {
+        await stageSiemLocationSnapshot(input.id);
+      } catch (error) {
+        console.warn(`[Stations] No se pudo preparar snapshot SIEM para estación ${input.id}:`, error);
+      }
       return { success: true };
     }),
   

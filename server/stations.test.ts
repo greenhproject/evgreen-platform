@@ -3,6 +3,12 @@ import { appRouter } from "./routers";
 import * as db from "./db";
 import type { TrpcContext } from "./_core/context";
 
+const siemSnapshot = vi.hoisted(() => ({ stage: vi.fn() }));
+
+vi.mock("./ocpi/ocpi-station-snapshot", () => ({
+  stageSiemLocationSnapshot: siemSnapshot.stage,
+}));
+
 // Mock all database functions used in routers
 vi.mock("./db", async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>;
@@ -180,6 +186,7 @@ describe("stations router", () => {
     beforeEach(() => {
       vi.mocked(db.getChargingStationById).mockResolvedValue(station as any);
       vi.mocked(db.updateChargingStation).mockResolvedValue(undefined as any);
+      siemSnapshot.stage.mockResolvedValue({ staged: true, externalRequest: false });
     });
 
     it("impide que el propietario no administrativo habilite el reporte SIEM", async () => {
@@ -195,6 +202,14 @@ describe("stations router", () => {
 
       await expect(caller.stations.update({ id: station.id, data: { isPublic: false } })).resolves.toEqual({ success: true });
       expect(db.updateChargingStation).toHaveBeenLastCalledWith(station.id, expect.objectContaining({ isPublic: false, siemReportingEnabled: false }));
+    });
+
+    it("prepara el snapshot SIEM solo después de persistir una edición autorizada", async () => {
+      const caller = appRouter.createCaller(createMockContext("admin"));
+      await expect(caller.stations.update({ id: station.id, data: { city: "Medellín" } })).resolves.toEqual({ success: true });
+
+      expect(db.updateChargingStation).toHaveBeenCalledWith(station.id, expect.objectContaining({ city: "Medellín" }));
+      expect(siemSnapshot.stage).toHaveBeenCalledWith(station.id);
     });
   });
 });

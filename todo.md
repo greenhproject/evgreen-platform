@@ -72,6 +72,9 @@
 - [x] Feature: proyectar cambios de estado de conectores desde la fuente única de verdad hacia la cola SIEM
 - [x] Test: cubrir deduplicación y aislamiento de eventos EVSE_STATUS por estación y organización
 - [x] Documentación: describir la proyección ConnectorStateService→cola SIEM y su garantía de cero tráfico externo
+- [x] Feature: actualizar el snapshot Location SIEM cuando Admin edite datos elegibles de una estación
+- [x] Test: cubrir el encolado idempotente tras edición y la exclusión de estaciones no SIEM
+- [x] Documentación: describir la actualización del snapshot SIEM después de editar una estación
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
