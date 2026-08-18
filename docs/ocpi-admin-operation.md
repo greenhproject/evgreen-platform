@@ -63,3 +63,7 @@ Las recepciones correctas y los rechazos de contrato quedan en `ocpi_sync_runs` 
 ## Controles aplicados
 
 La pantalla está protegida por rol administrador. Las pruebas cubren cifrado/descifrado, enmascaramiento, rechazo de URLs inseguras y el paquete mínimo requerido antes de activar OCPI. La suite del canal entrante también cubre token ausente, token inválido, inserción, rechazo por identidad inconsistente, validación de payload, aislamiento por socio, actualización idempotente y trazabilidad sin secretos. La cola añade cobertura de deduplicación, aislamiento de organización, transiciones dry-run y proyección segura de metadatos. El catálogo regulatorio exige una habilitación SIEM explícita por estación pública y conserva el aislamiento por tenant documentado en la auditoría SaaS.
+
+## Verificación administrativa
+
+La revisión publicada confirma que la ruta administrativa no expone el centro OCPI a visitantes sin sesión: fuera de una sesión autenticada la aplicación entrega su vista pública. La verificación visual interactiva requiere una sesión administrativa activa; cuando no está disponible, la calidad del centro se respalda por la compilación TypeScript, las pruebas tRPC y la revisión de los componentes. Se validaron los controles visibles de identidad, credenciales enmascaradas, endpoint entrante, catálogo regulatorio, cola SIEM y la advertencia explícita de que la transmisión automática permanece deshabilitada hasta la certificación oficial.

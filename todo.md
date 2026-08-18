@@ -75,6 +75,9 @@
 - [x] Feature: actualizar el snapshot Location SIEM cuando Admin edite datos elegibles de una estación
 - [x] Test: cubrir el encolado idempotente tras edición y la exclusión de estaciones no SIEM
 - [x] Documentación: describir la actualización del snapshot SIEM después de editar una estación
+- [x] UI: evitar que el control de sincronización automática sugiera un despacho externo aún no certificado
+- [x] Test: confirmar que la decisión de publicación OCPI sigue siendo dry-run sin credenciales oficiales
+- [x] QA: registrar la verificación del centro OCPI y los límites de acceso no autenticado del entorno publicado
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
