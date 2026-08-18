@@ -5,7 +5,11 @@
 
 ## Dictamen
 
-El núcleo SaaS quedó **funcional y protegido para la operación multiempresa**. La plataforma resuelve un tenant activo por solicitud, exige membresía para el portal organizacional y restringe por organización las operaciones sensibles verificadas durante la auditoría. La suite completa está en verde: **126 archivos y 1.958 pruebas**; TypeScript no reporta errores.
+El núcleo SaaS quedó **funcional y protegido para la operación multiempresa**. La plataforma resuelve un tenant activo por solicitud, exige membresía para el portal organizacional y restringe por organización las operaciones sensibles verificadas durante la auditoría. La suite completa está en verde: **135 archivos y 1.994 pruebas**; TypeScript no reporta errores.
+
+### Actualización de regresión — 18 de agosto de 2026
+
+La revalidación completa identificó dos pruebas de crowdfunding de espacios inestables por colisiones de códigos de postulación en la base compartida. Se fortaleció la asignación `SPE-AAAA-NNNN`: ahora ignora códigos heredados inválidos o fuera del formato oficial, selecciona el primer consecutivo libre de cuatro dígitos y reintenta una inserción que falle por la clave única. Se añadieron pruebas deterministas para ambos escenarios. La suite completa volvió a aprobar **135 archivos y 1.994 pruebas**.
 
 Esto no sustituye una prueba de penetración externa, la revisión de secretos de producción ni la aprobación contractual de un socio de roaming. Esas actividades siguen siendo controles operativos previos a habilitar integraciones de terceros, no defectos de aislamiento interno detectados en el código.
 

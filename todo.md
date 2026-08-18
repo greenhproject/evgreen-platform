@@ -26,7 +26,7 @@
 - [x] Audit: migrar o justificar todos los procedimientos tenant-sensibles del proyecto con tenantProcedure o checks explícitos por organizationId
 - [x] Fix: alinear las búsquedas internas de membresía con ctx.tenant.organizationId en tarifas, tickets, branding, dominio, billing y API keys
 - [x] Documentación: crear checklist trazable de readiness SaaS, visibilidad de red, ROAMING/OCPI y bloqueantes globales
-- [ ] QA de producción: resolver los fallos preexistentes de la suite completa antes de declarar release general completamente listo
+- [x] QA de producción: resolver los fallos preexistentes de la suite completa antes de declarar release general completamente listo
 - [ ] Feature: conectar el modo ROAMING con Cargame mediante OCPI antes de habilitar interoperabilidad externa real
 - [ ] Research: confirmar el programa de interoperabilidad, la versión OCPI, los endpoints y las credenciales sandbox de Cargame
 - [ ] Feature: implementar publicación y consumo OCPI bidireccional con Cargame, condicionado a acuerdo y credenciales oficiales
@@ -78,6 +78,12 @@
 - [x] UI: evitar que el control de sincronización automática sugiera un despacho externo aún no certificado
 - [x] Test: confirmar que la decisión de publicación OCPI sigue siendo dry-run sin credenciales oficiales
 - [x] QA: registrar la verificación del centro OCPI y los límites de acceso no autenticado del entorno publicado
+- [x] Test: eliminar colisiones de códigos fijos en pruebas de crowdfunding de espacios contra la base compartida
+- [x] Fix: reintentar de forma segura la creación de postulaciones cuando exista una colisión concurrente de código
+- [x] Test: cubrir la recuperación ante clave única duplicada durante la creación de espacios
+- [x] Test: simular ER_DUP_ENTRY y verificar que spaces.submit regenere el código y cree la postulación
+- [x] Test: confirmar que códigos heredados inválidos o fuera de cuatro dígitos no rompen el consecutivo oficial
+- [x] Documentación: registrar la corrección de consecutivos de espacios y el resultado de la suite completa
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

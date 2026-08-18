@@ -43,25 +43,48 @@ async function getDatabase() {
   return db;
 }
 
-async function generateSubmissionCode(): Promise<string> {
-  const db = await getDatabase();
+export async function generateSubmissionCode(db: any): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `SPE-${year}-`;
 
-  const [lastSubmission] = await db
+  const submissions = await db
     .select({ code: spaceSubmissions.code })
     .from(spaceSubmissions)
-    .where(like(spaceSubmissions.code, `${prefix}%`))
-    .orderBy(desc(spaceSubmissions.id))
-    .limit(1);
+    .where(like(spaceSubmissions.code, `${prefix}%`));
 
+  // Ignorar códigos legados inválidos o fuera del formato oficial y elegir el
+  // primer consecutivo libre de cuatro dígitos. Esto evita que valores anómalos
+  // como SPE-2026-0NaN o SPE-2026-764057 rompan futuras postulaciones.
+  const usedCodes = new Set(submissions.flatMap((submission: any) => {
+    const match = new RegExp(`^${prefix}(\\d+)$`).exec(submission.code ?? "");
+    const value = match ? Number.parseInt(match[1], 10) : NaN;
+    return Number.isInteger(value) && value >= 1 && value <= 9999 && match?.[1].length === 4 ? [value] : [];
+  }));
   let nextNum = 1;
-  if (lastSubmission) {
-    const lastNum = parseInt(lastSubmission.code.replace(prefix, ""), 10);
-    nextNum = lastNum + 1;
+  while (usedCodes.has(nextNum) && nextNum <= 9999) nextNum++;
+  if (nextNum > 9999) {
+    throw new TRPCError({ code: "CONFLICT", message: "Se agotó la numeración anual de postulaciones de espacios." });
   }
 
   return `${prefix}${nextNum.toString().padStart(4, "0")}`;
+}
+
+function isSubmissionCodeCollision(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("space_submissions_code_unique") || message.includes("Duplicate entry");
+}
+
+export async function insertSubmissionWithCodeRetry(db: any, buildValues: (code: string) => Record<string, unknown>, maxAttempts = 3) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const code = await generateSubmissionCode(db);
+    try {
+      const [result] = await db.insert(spaceSubmissions).values(buildValues(code));
+      return { code, result };
+    } catch (error) {
+      if (!isSubmissionCodeCollision(error) || attempt === maxAttempts - 1) throw error;
+    }
+  }
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo asignar un código de postulación." });
 }
 
 function generateLetterToken(): string {
@@ -150,40 +173,37 @@ export const spacesRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDatabase();
-      const code = await generateSubmissionCode();
-
-      // Insertar la postulación
-      const [result] = await db.insert(spaceSubmissions).values({
-        code,
-        submitterName: input.submitterName,
-        submitterEmail: input.submitterEmail,
-        submitterPhone: input.submitterPhone,
-        submitterCompany: input.submitterCompany || null,
-        submitterDocument: input.submitterDocument || null,
-        spaceName: input.spaceName,
-        spaceType: input.spaceType,
-        spaceTypeOther: input.spaceTypeOther || null,
-        address: input.address,
-        city: input.city,
-        department: input.department || null,
-        latitude: input.latitude || null,
-        longitude: input.longitude || null,
-        availableAreaM2: input.availableAreaM2 || null,
-        parkingSpots: input.parkingSpots || null,
-        transformerCapacityKva: input.transformerCapacityKva || null,
-        hasElectricalPanel: input.hasElectricalPanel ? 1 : 0,
-        electricalDistance: input.electricalDistance || null,
-        hasInternet: input.hasInternet ? 1 : 0,
-        operatingHoursStart: input.operatingHoursStart || "06:00",
-        operatingHoursEnd: input.operatingHoursEnd || "22:00",
-        is24Hours: input.is24Hours ? 1 : 0,
-        estimatedDailyVehicles: input.estimatedDailyVehicles || null,
-        estimatedEvPercent: input.estimatedEvPercent || null,
-        nearbyAttractions: input.nearbyAttractions || null,
-        socioeconomicStratum: input.socioeconomicStratum || null,
-        additionalNotes: input.additionalNotes || null,
-        spaceStatus: "pending",
-      });
+      const { code, result } = await insertSubmissionWithCodeRetry(db, (code) => ({
+            code,
+            submitterName: input.submitterName,
+            submitterEmail: input.submitterEmail,
+            submitterPhone: input.submitterPhone,
+            submitterCompany: input.submitterCompany || null,
+            submitterDocument: input.submitterDocument || null,
+            spaceName: input.spaceName,
+            spaceType: input.spaceType,
+            spaceTypeOther: input.spaceTypeOther || null,
+            address: input.address,
+            city: input.city,
+            department: input.department || null,
+            latitude: input.latitude || null,
+            longitude: input.longitude || null,
+            availableAreaM2: input.availableAreaM2 || null,
+            parkingSpots: input.parkingSpots || null,
+            transformerCapacityKva: input.transformerCapacityKva || null,
+            hasElectricalPanel: input.hasElectricalPanel ? 1 : 0,
+            electricalDistance: input.electricalDistance || null,
+            hasInternet: input.hasInternet ? 1 : 0,
+            operatingHoursStart: input.operatingHoursStart || "06:00",
+            operatingHoursEnd: input.operatingHoursEnd || "22:00",
+            is24Hours: input.is24Hours ? 1 : 0,
+            estimatedDailyVehicles: input.estimatedDailyVehicles || null,
+            estimatedEvPercent: input.estimatedEvPercent || null,
+            nearbyAttractions: input.nearbyAttractions || null,
+            socioeconomicStratum: input.socioeconomicStratum || null,
+            additionalNotes: input.additionalNotes || null,
+            spaceStatus: "pending",
+          }));
 
       const submissionId = result.insertId;
 
