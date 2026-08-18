@@ -69,6 +69,9 @@
 - [x] Test: cubrir transiciones integradas PENDING→FAILED/DEAD y confirmar que el listado no expone payloads ni secretos
 - [x] Test: verificar directamente que listOutboxEvents no selecciona payload ni dedupeKey sensible
 - [x] Documentación: describir la cola SIEM, sus estados dry-run y las condiciones para habilitar un despachador certificado
+- [x] Feature: proyectar cambios de estado de conectores desde la fuente única de verdad hacia la cola SIEM
+- [x] Test: cubrir deduplicación y aislamiento de eventos EVSE_STATUS por estación y organización
+- [x] Documentación: describir la proyección ConnectorStateService→cola SIEM y su garantía de cero tráfico externo
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

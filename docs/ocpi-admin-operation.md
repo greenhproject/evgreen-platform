@@ -46,6 +46,8 @@ El botón **Preparar cola** guarda el snapshot vigente de cada `Location` elegib
 
 La cola permanece en **dry-run**. Las acciones locales permiten comprobar de forma auditable los estados `PENDING`, `SENT`, `FAILED` y `DEAD`, pero no llaman endpoints externos. `SENT` en este modo significa únicamente **validado localmente**, no entregado a CargaME. Antes de conectar un despachador real se requiere completar el onboarding UPME, confirmar los módulos autorizados, instalar la cadena mTLS, implementar el flujo oficial de credenciales/JWT y aprobar una prueba de certificación. Solo ese adaptador certificado podrá leer la cola, ejecutar el envío y registrar el resultado real.
 
+Los cambios de conectores nacen exclusivamente en `ConnectorStateService`, la fuente única de verdad de estados EVGreen. Después de persistir y auditar una transición, el servicio convierte el estado interno a un estado OCPI equivalente y prepara un evento `EVSE_STATUS` para el EVSE afectado. La clave de deduplicación combina estación y EVSE, por lo que sucesivas transiciones reemplazan el snapshot pendiente correcto sin mezclar conectores ni organizaciones. Esta proyección es tolerante a fallos: un problema al preparar la cola nunca revierte ni bloquea el cambio operativo del cargador, y tampoco genera tráfico externo.
+
 ## Locations recibidas desde CargaME
 
 Cuando CargaME/UPME habilite el intercambio bilateral, se le debe entregar por canal seguro la URL `PUT https://app.evgreen.lat/ocpi/2.2.1/locations/{country_code}/{party_id}/{location_id}` y el **token entrante** configurado en Admin. El endpoint exige el encabezado `Authorization: Token <token>`; mientras no exista token, devuelve `503`, y con un token inválido devuelve `401` sin consultar la base de datos.
