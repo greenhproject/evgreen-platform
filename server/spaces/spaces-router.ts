@@ -128,6 +128,14 @@ export function getLetterShareLinkData(submission: { spaceStatus: string; letter
   };
 }
 
+export function getRotatedLetterShareLinkData(submission: { spaceStatus: string; letterToken: string | null; submitterName: string; spaceName: string }, nextToken: string) {
+  getLetterShareLinkData(submission);
+  if (!nextToken || nextToken === submission.letterToken) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo rotar el enlace de firma." });
+  }
+  return { acceptUrl: getLetterAcceptanceUrl(nextToken), revokedPreviousLink: true };
+}
+
 // ============================================================================
 // SPACES ROUTER
 // ============================================================================
@@ -857,6 +865,29 @@ export const spacesRouter = router({
 
         if (!submission) throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         return getLetterShareLinkData(submission);
+      }),
+
+    // ========================================================================
+    // ADMIN: Rotar enlace de firma para revocar un vínculo compartido
+    // ========================================================================
+    rotateLetterShareLink: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDatabase();
+        const [submission] = await db
+          .select({ id: spaceSubmissions.id, spaceStatus: spaceSubmissions.spaceStatus, letterToken: spaceSubmissions.letterToken, submitterName: spaceSubmissions.submitterName, spaceName: spaceSubmissions.spaceName })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+
+        if (!submission) throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
+        const letterToken = generateLetterToken();
+        const rotated = getRotatedLetterShareLinkData(submission, letterToken);
+        await db.update(spaceSubmissions)
+          .set({ letterToken, letterSentAt: new Date().toISOString().slice(0, 19).replace("T", " ") })
+          .where(eq(spaceSubmissions.id, input.id));
+
+        return rotated;
       }),
 
     // ========================================================================

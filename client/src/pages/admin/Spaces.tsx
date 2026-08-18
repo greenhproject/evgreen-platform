@@ -1048,6 +1048,7 @@ function SpaceDetailDialog({
   const updateStatusMutation = trpc.spaces.admin.updateStatus.useMutation();
   const sendLetterMutation = trpc.spaces.admin.sendLetter.useMutation();
   const getLetterShareLinkMutation = trpc.spaces.admin.getLetterShareLink.useMutation();
+  const rotateLetterShareLinkMutation = trpc.spaces.admin.rotateLetterShareLink.useMutation();
   const generateAIMutation = trpc.spaces.admin.generateAIScore.useMutation();
   const publishMutation = trpc.spaces.admin.publishToCrowdfunding.useMutation();
   const updateSpaceMutation = trpc.spaces.admin.updateSpace.useMutation();
@@ -1157,6 +1158,17 @@ function SpaceDetailDialog({
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   };
 
+  const handleRotateLetterShareLink = async () => {
+    try {
+      const result = await rotateLetterShareLinkMutation.mutateAsync({ id });
+      setLetterShareLink(result.acceptUrl);
+      toast.success("Enlace rotado. El vínculo anterior dejó de ser válido.");
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message || "No fue posible rotar el enlace de firma");
+    }
+  };
+
   const handleGenerateAI = async () => {
     try {
       const result = await generateAIMutation.mutateAsync({ id });
@@ -1241,7 +1253,7 @@ function SpaceDetailDialog({
                   <div><p className="font-medium text-purple-100">Enlace alterno de firma</p><p className="text-xs text-purple-200/80">Úsalo si el correo no llega. El enlace es único y solo funciona mientras la carta esté pendiente de firma.</p></div>
                   {!letterShareLink && <Button size="sm" variant="outline" onClick={handleGetLetterShareLink} disabled={getLetterShareLinkMutation.isPending} className="border-purple-400/50 text-purple-100 hover:bg-purple-500/20">{getLetterShareLinkMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-1 h-3.5 w-3.5" />}Obtener enlace</Button>}
                 </div>
-                {letterShareLink && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input value={letterShareLink} readOnly className="h-9 border-purple-400/30 bg-slate-950/40 text-xs text-purple-100" /><Button size="sm" variant="outline" onClick={handleCopyLetterLink} className="border-purple-400/50 text-purple-100 hover:bg-purple-500/20"><Copy className="mr-1 h-3.5 w-3.5" />Copiar</Button><Button size="sm" onClick={handleWhatsAppShare} className="bg-emerald-600 text-white hover:bg-emerald-700"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</Button></div>}
+                {letterShareLink && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input value={letterShareLink} readOnly className="h-9 border-purple-400/30 bg-slate-950/40 text-xs text-purple-100" /><Button size="sm" variant="outline" onClick={handleCopyLetterLink} className="border-purple-400/50 text-purple-100 hover:bg-purple-500/20"><Copy className="mr-1 h-3.5 w-3.5" />Copiar</Button><Button size="sm" onClick={handleWhatsAppShare} className="bg-emerald-600 text-white hover:bg-emerald-700"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</Button><Button size="sm" variant="outline" onClick={handleRotateLetterShareLink} disabled={rotateLetterShareLinkMutation.isPending} className="border-amber-400/50 text-amber-100 hover:bg-amber-500/20">{rotateLetterShareLinkMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}Rotar</Button></div>}
               </div>
             )}
               {/* Row 2: Permanent actions - always visible 2x2 grid */}

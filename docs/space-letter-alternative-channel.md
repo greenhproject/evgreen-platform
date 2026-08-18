@@ -14,7 +14,7 @@ Desde **Admin → Espacios**, el administrador debe abrir el detalle de una post
 | Carta pendiente de firma | Compartir solo con el contacto validado del espacio | El enlace abre la página de revisión y firma. |
 | Carta ya aceptada, aprobada o sin enviar | No se expone enlace alterno | Se evita reutilizar o divulgar un token no elegible. |
 
-El enlace debe compartirse únicamente con la persona responsable del espacio, pues da acceso a la acción de firma. Si se requiere invalidarlo por cambio de contacto o por sospecha de divulgación, Administración debe generar una nueva carta desde la postulación aprobada; el nuevo envío reemplaza el token anterior.
+El enlace debe compartirse únicamente con la persona responsable del espacio, pues da acceso a la acción de firma. Si cambia el contacto o existe sospecha de divulgación, Administración debe pulsar **Rotar** dentro del mismo bloque. La plataforma reemplaza el token, invalida de inmediato el vínculo anterior y muestra el nuevo enlace para copiar o compartir por WhatsApp, sin cambiar el estado de la postulación ni enviar un correo adicional.
 
 ## Diseño de correo móvil
 

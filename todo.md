@@ -90,6 +90,11 @@
 - [x] Test: cubrir la obtención administrativa segura de un enlace activo de firma y la exclusión de cartas no elegibles
 - [x] Test: verificar que la plantilla de carta preserve el CTA móvil, enlace visible y razón social legal correcta
 - [x] Documentación: describir el uso seguro de copiar y compartir por WhatsApp el enlace de firma desde Admin
+- [x] Feature: permitir rotar el token de una carta pendiente desde Admin y revocar el enlace compartido anterior
+- [x] Test: confirmar que el token anterior deja de ser válido al reenviar una carta pendiente
+- [x] Test: rotar una carta pendiente en base de datos y verificar que acceptLetter rechace el token anterior
+- [x] Test: verificar que, tras rotar la carta, el nuevo token quede persistido y sea el único enlace aceptado
+- [x] Documentación: explicar cuándo rotar un enlace de firma y cómo compartir el nuevo vínculo de forma segura
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

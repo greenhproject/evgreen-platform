@@ -7,7 +7,7 @@ import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
 import { spaceSubmissions } from "../../drizzle/schema";
-import { like, or } from "drizzle-orm";
+import { eq, like, or } from "drizzle-orm";
 
 // ============================================================================
 // HELPERS
@@ -390,6 +390,36 @@ describe("spaces.acceptLetter", () => {
         signerDocument: "1234567890",
       })
     ).rejects.toThrow("Token de carta de intención inválido");
+  });
+});
+
+describe("rotación administrativa de enlaces de carta", () => {
+  it("persiste solo el token nuevo y rechaza el vínculo anterior", async () => {
+    const publicCaller = appRouter.createCaller(createPublicContext());
+    const { submissionId } = await publicCaller.spaces.submit({
+      submitterName: "Rotación de enlace",
+      submitterEmail: "rotacion-enlace@example.com",
+      submitterPhone: "3001234567",
+      spaceName: "Espacio de rotación segura",
+      spaceType: "parking",
+      address: "Carrera 10 # 20-30",
+      city: "Bogotá",
+    });
+    const previousToken = `previous-${submissionId}`;
+    const db = await getDb();
+    await db!.update(spaceSubmissions).set({ spaceStatus: "letter_sent", letterToken: previousToken }).where(eq(spaceSubmissions.id, submissionId));
+
+    const adminCaller = appRouter.createCaller(createAdminContext());
+    const rotation = await adminCaller.spaces.admin.rotateLetterShareLink({ id: submissionId });
+    expect(rotation.revokedPreviousLink).toBe(true);
+    expect(rotation.acceptUrl).not.toContain(previousToken);
+
+    const [persisted] = await db!.select({ letterToken: spaceSubmissions.letterToken }).from(spaceSubmissions).where(eq(spaceSubmissions.id, submissionId)).limit(1);
+    expect(persisted.letterToken).toBe(rotation.acceptUrl.split("/").pop());
+    expect(persisted.letterToken).not.toBe(previousToken);
+
+    await expect(publicCaller.spaces.acceptLetter({ token: previousToken, signerName: "Persona Prueba", signerDocument: "123456789" }))
+      .rejects.toThrow("Token de carta de intención inválido o expirado");
   });
 });
 
