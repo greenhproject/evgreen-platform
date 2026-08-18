@@ -20,3 +20,5 @@ CREATE TABLE IF NOT EXISTS `ocpi_remote_locations` (
   UNIQUE KEY `uq_ocpi_remote_location_partner_location` (`provider`,`country_code`,`party_id`,`location_id`),
   KEY `idx_ocpi_remote_locations_provider_updated` (`provider`,`updated_at`)
 );
+
+ALTER TABLE `ocpi_sync_runs` MODIFY COLUMN `operation` enum('CATALOG_PREVIEW','LOCATION_PUBLISH','LOCATION_RECEIVED','LOCATION_REJECTED') NOT NULL;

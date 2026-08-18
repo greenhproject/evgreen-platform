@@ -44,6 +44,11 @@
 - [x] Feature: endpoints OCPI autenticados para recibir Locations del socio y consultar catálogo remoto desde Admin
 - [x] Test: validar aislamiento por socio, idempotencia de actualización y rechazo de credenciales ausentes
 - [x] Test: cubrir aislamiento por socio en OCPI inbound con el mismo Location ID para partners distintos
+- [x] Security: validar estrictamente la identidad OCPI y los campos mínimos del payload Location entrante
+- [x] Feature: registrar en la bitácora OCPI cada recepción válida o rechazada sin guardar secretos
+- [x] Test: cubrir payloads OCPI inválidos, inconsistencias de identidad y trazabilidad de recepciones
+- [x] Test: verificar que una Location válida genere el evento auditable LOCATION_RECEIVED con la identidad correcta
+- [x] Test: verificar que la auditoría de recepción válida no persista secretos ni encabezados sensibles
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

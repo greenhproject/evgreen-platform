@@ -505,7 +505,7 @@ export const evses = mysqlTable("evses", {
 export const ocpiSyncRuns = mysqlTable("ocpi_sync_runs", {
 	id: int().autoincrement().notNull(),
 	stationId: int(),
-	operation: mysqlEnum("ocpi_sync_operation", ['CATALOG_PREVIEW','LOCATION_PUBLISH']).notNull(),
+	operation: mysqlEnum("ocpi_sync_operation", ['CATALOG_PREVIEW','LOCATION_PUBLISH','LOCATION_RECEIVED','LOCATION_REJECTED']).notNull(),
 	status: mysqlEnum("ocpi_sync_status", ['PENDING','SKIPPED','SUCCESS','FAILED']).notNull(),
 	message: text(),
 	details: json(),
