@@ -157,6 +157,44 @@ export function buildLetterDispatchUpdate(letterToken: string, providerEmailId: 
   };
 }
 
+/**
+ * Autoriza una publicación excepcional sin alterar los datos de firma externa.
+ * La excepción solo aplica a una carta enviada que sigue pendiente de firma y
+ * exige una justificación de negocio que queda registrada en la postulación.
+ */
+export function getCrowdfundingPublicationDecision(
+  spaceStatus: string,
+  manualFormalizationReason?: string,
+  manualFormalizationEvidence?: string,
+) {
+  if (spaceStatus === "letter_accepted" || spaceStatus === "approved") {
+    return { isManualFormalization: false, reason: null as string | null, evidence: null as string | null };
+  }
+
+  if (spaceStatus === "letter_sent") {
+    const reason = manualFormalizationReason?.trim() ?? "";
+    const evidence = manualFormalizationEvidence?.trim() ?? "";
+    if (reason.length < 15) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Para formalizar internamente se requiere un motivo de al menos 15 caracteres.",
+      });
+    }
+    if (evidence.length < 5) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Para formalizar internamente se requiere evidencia o referencia de aprobación.",
+      });
+    }
+    return { isManualFormalization: true, reason, evidence };
+  }
+
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: "Solo se pueden publicar espacios aprobados, con carta aceptada o cartas enviadas formalizadas excepcionalmente.",
+  });
+}
+
 // ============================================================================
 // SPACES ROUTER
 // ============================================================================
@@ -1050,6 +1088,8 @@ Responde en formato JSON con la siguiente estructura:`;
         minimumInvestment: z.number().optional(),
         estimatedRoiPercent: z.string().optional(),
         estimatedPaybackMonths: z.number().int().optional(),
+        manualFormalizationReason: z.string().trim().min(15).max(2000).optional(),
+        manualFormalizationEvidence: z.string().trim().min(5).max(2000).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDatabase();
@@ -1064,12 +1104,11 @@ Responde en formato JSON con la siguiente estructura:`;
           throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
         }
 
-        if (submission.spaceStatus !== "letter_accepted" && submission.spaceStatus !== "approved") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Solo se pueden publicar espacios aprobados o con carta de intenci\u00f3n aceptada",
-          });
-        }
+        const publicationDecision = getCrowdfundingPublicationDecision(
+          submission.spaceStatus,
+          input.manualFormalizationReason,
+          input.manualFormalizationEvidence,
+        );
 
         let crowdfundingProjectId: number;
 
@@ -1114,15 +1153,28 @@ Responde en formato JSON con la siguiente estructura:`;
         }
 
         // Actualizar postulaci\u00f3n
+        const now = new Date().toISOString().slice(0, 19).replace("T", " ");
         await db.update(spaceSubmissions)
           .set({
             spaceStatus: "published",
             crowdfundingProjectId,
             estimatedInvestmentCop: input.targetAmount,
-          })
+            ...(publicationDecision.isManualFormalization
+              ? {
+                  manualFormalizationReason: publicationDecision.reason,
+                  manualFormalizationEvidence: publicationDecision.evidence,
+                  manualFormalizedAt: now,
+                  manualFormalizedBy: ctx.user.id,
+                }
+              : {}),
+          } as any)
           .where(eq(spaceSubmissions.id, input.id));
 
-        return { success: true, crowdfundingProjectId };
+        return {
+          success: true,
+          crowdfundingProjectId,
+          manualFormalization: publicationDecision.isManualFormalization,
+        };
       }),
 
     // ========================================================================

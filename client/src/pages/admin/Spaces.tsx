@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ManualFormalizationAudit, ManualFormalizationFields } from "@/components/spaces/ManualFormalizationAudit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
@@ -1065,6 +1066,8 @@ function SpaceDetailDialog({
     tarifaKwhCop: 1800,
   });
   const [publishAmount, setPublishAmount] = useState("");
+  const [manualFormalizationReason, setManualFormalizationReason] = useState("");
+  const [manualFormalizationEvidence, setManualFormalizationEvidence] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
@@ -1198,10 +1201,30 @@ function SpaceDetailDialog({
       toast.error("La meta de inversión debe ser al menos $1.000.000");
       return;
     }
+    const requiresManualFormalization = space.spaceStatus === "letter_sent";
+    if (requiresManualFormalization && manualFormalizationReason.trim().length < 15) {
+      toast.error("Describe el motivo de la formalización interna (mínimo 15 caracteres).");
+      return;
+    }
+    if (requiresManualFormalization && manualFormalizationEvidence.trim().length < 5) {
+      toast.error("Registra una evidencia o referencia de la aprobación interna.");
+      return;
+    }
     try {
-      await publishMutation.mutateAsync({ id, targetAmount: amount });
-      toast.success("Espacio publicado en el muro de crowdfunding");
+      const result = await publishMutation.mutateAsync({
+        id,
+        targetAmount: amount,
+        ...(requiresManualFormalization ? {
+          manualFormalizationReason: manualFormalizationReason.trim(),
+          manualFormalizationEvidence: manualFormalizationEvidence.trim(),
+        } : {}),
+      });
+      toast.success(result.manualFormalization
+        ? "Espacio formalizado internamente y publicado. La firma externa sigue pendiente."
+        : "Espacio publicado en el muro de crowdfunding");
       setShowPublishDialog(false);
+      setManualFormalizationReason("");
+      setManualFormalizationEvidence("");
       refetch();
       onRefresh();
     } catch (err: any) {
@@ -1254,9 +1277,9 @@ function SpaceDetailDialog({
                   Enviar carta
                 </Button>
               )}
-              {space.spaceStatus === "letter_accepted" && (
+              {(space.spaceStatus === "letter_accepted" || space.spaceStatus === "letter_sent") && (
                 <Button size="sm" onClick={() => setShowPublishDialog(true)} className="bg-green-600 hover:bg-green-700 text-white flex-shrink-0 text-xs">
-                  <Globe className="w-3.5 h-3.5 mr-1" /> Publicar
+                  <Globe className="w-3.5 h-3.5 mr-1" /> {space.spaceStatus === "letter_sent" ? "Formalizar y publicar" : "Publicar"}
                 </Button>
               )}
             </div>
@@ -1269,6 +1292,13 @@ function SpaceDetailDialog({
                 {letterShareLink && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input value={letterShareLink} readOnly className="h-9 border-purple-400/30 bg-slate-950/40 text-xs text-purple-100" /><Button size="sm" variant="outline" onClick={handleCopyLetterLink} className="border-purple-400/50 text-purple-100 hover:bg-purple-500/20"><Copy className="mr-1 h-3.5 w-3.5" />Copiar</Button><Button size="sm" onClick={handleWhatsAppShare} className="bg-emerald-600 text-white hover:bg-emerald-700"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</Button><Button size="sm" variant="outline" onClick={handleResendLetter} disabled={sendLetterMutation.isPending} className="border-sky-400/50 text-sky-100 hover:bg-sky-500/20">{sendLetterMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1 h-3.5 w-3.5" />}Reenviar</Button><Button size="sm" variant="outline" onClick={handleRotateLetterShareLink} disabled={rotateLetterShareLinkMutation.isPending} className="border-amber-400/50 text-amber-100 hover:bg-amber-500/20">{rotateLetterShareLinkMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}Rotar</Button></div>}
                 {letterDeliveryHistory && letterDeliveryHistory.length > 0 && <div className="mt-3 border-t border-purple-400/20 pt-2"><p className="text-[11px] font-medium uppercase tracking-wide text-purple-200">Historial de correo</p><div className="mt-1 space-y-1">{letterDeliveryHistory.slice(0, 4).map((event, index) => <div key={`${event.eventType}-${event.occurredAt}-${index}`} className="flex items-center justify-between gap-2 text-xs text-purple-100/90"><span>{({ SENT: "Enviado", DELIVERED: "Entregado", DELAYED: "Con retraso", BOUNCED: "Rebotado", FAILED: "Fallido", OPENED: "Abierto", CLICKED: "Enlace abierto", COMPLAINED: "Marcado como spam", SUPPRESSED: "Suprimido" } as Record<string, string>)[event.deliveryStatus] ?? event.eventType}</span><span className="shrink-0 text-purple-200/65">{new Date(event.occurredAt).toLocaleString("es-CO")}</span></div>)}</div></div>}
               </div>
+            )}
+            {(space as any).manualFormalizedAt && (space as any).manualFormalizationReason && (space as any).manualFormalizationEvidence && (
+              <ManualFormalizationAudit
+                formalizedAt={(space as any).manualFormalizedAt}
+                reason={(space as any).manualFormalizationReason}
+                evidence={(space as any).manualFormalizationEvidence}
+              />
             )}
               {/* Row 2: Permanent actions - always visible 2x2 grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -2117,6 +2147,14 @@ function SpaceDetailDialog({
             <p className="text-xs sm:text-sm text-gray-400">
               Al publicar, este espacio aparecerá en el muro de crowdfunding para que inversionistas puedan financiar la instalación.
             </p>
+            {space.spaceStatus === "letter_sent" && (
+              <ManualFormalizationFields
+                reason={manualFormalizationReason}
+                evidence={manualFormalizationEvidence}
+                onReasonChange={setManualFormalizationReason}
+                onEvidenceChange={setManualFormalizationEvidence}
+              />
+            )}
             <div>
               <Label className="text-gray-300 mb-1.5 block text-sm">Meta de inversión (COP) *</Label>
               <Input

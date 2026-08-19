@@ -393,6 +393,76 @@ describe("spaces.acceptLetter", () => {
   });
 });
 
+describe("publicación excepcional con formalización interna", () => {
+  it("publica una carta pendiente solo con motivo y persiste la auditoría del administrador", async () => {
+    const publicCaller = appRouter.createCaller(createPublicContext());
+    const adminCaller = appRouter.createCaller(createAdminContext());
+    const { submissionId } = await publicCaller.spaces.submit({
+      submitterName: "Formalización interna Test",
+      submitterEmail: "formalizacion-interna@example.com",
+      submitterPhone: "3000000999",
+      spaceName: "Espacio formalización interna Test",
+      spaceType: "parking",
+      address: "Carrera 15 # 20-30",
+      city: "Bogotá",
+    });
+
+    await adminCaller.spaces.admin.updateStatus({ id: submissionId, status: "approved" });
+    const db = await getDb();
+    await db!.update(spaceSubmissions)
+      .set({ spaceStatus: "letter_sent", letterToken: `manual-${submissionId}` })
+      .where(eq(spaceSubmissions.id, submissionId));
+
+    const result = await adminCaller.spaces.admin.publishToCrowdfunding({
+      id: submissionId,
+      targetAmount: 150000000,
+      manualFormalizationReason: "Acuerdo comercial confirmado por comité interno y responsable del espacio.",
+      manualFormalizationEvidence: "Acta de Comité Comercial 2026-08-19, aprobación registrada.",
+    });
+    expect(result.manualFormalization).toBe(true);
+
+    const detail = await adminCaller.spaces.admin.getById({ id: submissionId });
+    expect(detail.spaceStatus).toBe("published");
+    expect(detail.manualFormalizationReason).toContain("Acuerdo comercial confirmado");
+    expect(detail.manualFormalizationEvidence).toContain("Acta de Comité Comercial");
+    expect(detail.manualFormalizedBy).toBe(1);
+    expect(detail.manualFormalizedAt).toBeTruthy();
+    expect(detail.letterAcceptedAt).toBeNull();
+  });
+
+  it("rechaza la publicación excepcional sin motivo suficiente y a un rol no administrativo", async () => {
+    const publicCaller = appRouter.createCaller(createPublicContext());
+    const adminCaller = appRouter.createCaller(createAdminContext());
+    const userCaller = appRouter.createCaller(createUserContext());
+    const { submissionId } = await publicCaller.spaces.submit({
+      submitterName: "Permiso manual Test",
+      submitterEmail: "permiso-manual@example.com",
+      submitterPhone: "3000000888",
+      spaceName: "Espacio permiso manual Test",
+      spaceType: "parking",
+      address: "Carrera 30 # 10-20",
+      city: "Medellín",
+    });
+    const db = await getDb();
+    await db!.update(spaceSubmissions)
+      .set({ spaceStatus: "letter_sent", letterToken: `manual-denied-${submissionId}` })
+      .where(eq(spaceSubmissions.id, submissionId));
+
+    await expect(adminCaller.spaces.admin.publishToCrowdfunding({
+      id: submissionId,
+      targetAmount: 150000000,
+      manualFormalizationEvidence: "Acta interna",
+    })).rejects.toThrow("se requiere un motivo");
+
+    await expect(userCaller.spaces.admin.publishToCrowdfunding({
+      id: submissionId,
+      targetAmount: 150000000,
+      manualFormalizationReason: "Aprobación interna documentada y autorizada correctamente.",
+      manualFormalizationEvidence: "Acta interna 2026-08-19.",
+    })).rejects.toThrow();
+  });
+});
+
 describe("rotación administrativa de enlaces de carta", () => {
   it("persiste solo el token nuevo y rechaza el vínculo anterior", async () => {
     const publicCaller = appRouter.createCaller(createPublicContext());

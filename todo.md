@@ -116,13 +116,28 @@
 - [x] Documentación: describir la activación de webhooks de entrega y la lectura del historial de cartas en Admin
 - [ ] QA operativo: verificar en Resend y Admin el primer evento firmado generado por una nueva carta real enviada después de la publicación
 - [ ] QA operativo: reenviar SPE-2026-0103 autorizada y verificar evento firmado más historial administrativo
-- [ ] Fix: restaurar RESEND_WEBHOOK_SECRET en producción para que el receptor no responda 503
+- [x] Fix: reemplazar la dependencia de RESEND_WEBHOOK_SECRET por la clave cifrada administrada desde base de datos/UI para eliminar el 503
 - [ ] QA operativo: confirmar que los reintentos de email.sent y email.delivered obtienen respuesta 2xx y aparecen en Admin
-- [ ] Test: firmar un evento SVIX con RESEND_WEBHOOK_SECRET y verificar que el receptor local lo acepta
-- [ ] Feature: guardar la clave de firma de Resend cifrada en configuración de plataforma administrable desde UI
-- [ ] Feature: permitir a Admin consultar estado, actualizar y borrar la configuración del webhook sin exponer la clave
-- [ ] Security: usar la clave cifrada de base de datos para verificar webhooks y no depender de variables de entorno
-- [ ] Test: cubrir permisos Admin, enmascaramiento, cifrado y verificación de firma con la clave persistida
+- [x] Test: firmar un evento SVIX con la clave cifrada persistida y verificar que el receptor local lo acepta
+- [x] Feature: guardar la clave de firma de Resend cifrada en configuración de plataforma administrable desde UI
+- [x] Feature: permitir a Admin consultar estado, actualizar y borrar la configuración del webhook sin exponer la clave
+- [x] Security: usar la clave cifrada de base de datos para verificar webhooks y no depender de variables de entorno
+- [x] Test: cubrir permisos Admin, enmascaramiento, cifrado y verificación de firma con la clave persistida
+- [x] Feature: permitir a Admin formalizar internamente una carta pendiente para desbloquear la publicación de un espacio
+- [x] Feature: exigir un motivo obligatorio y registrar responsable, fecha y evidencia de aprobación excepcional
+- [x] Security: impedir la formalización manual desde roles no administrativos y no alterar la firma externa del cliente
+- [x] Test: cubrir publicación excepcional, auditoría, motivo obligatorio y denegación a roles no autorizados
+- [x] Test: ejecutar publishToCrowdfunding como Admin sobre carta pendiente y verificar auditoría persistida
+- [x] Test: verificar que un usuario no administrativo no puede formalizar ni publicar excepcionalmente un espacio
+- [x] Feature: persistir una evidencia explícita de aprobación excepcional como referencia, URL o acta interna
+- [x] UI: exigir y mostrar la evidencia de aprobación excepcional en el diálogo de formalización manual
+- [x] Test: cubrir persistencia y visualización de evidencia junto con motivo, responsable y fecha
+- [ ] QA UI: confirmar que Admin → Espacios muestra motivo, evidencia y fecha de formalización manual en el detalle y exige ambos campos en el diálogo
+- [x] Test: renderizar el resumen y los campos de formalización manual para comprobar motivo, evidencia, fecha y etiquetas obligatorias
+- [x] Test: renderizar el diálogo de formalización manual y verificar etiquetas y ayudas obligatorias de motivo y evidencia
+- [x] Documentación: describir cuándo usar la formalización interna, qué evidencia registrar y que no reemplaza una firma externa
+- [ ] QA: abrir Admin → Espacios y confirmar visualmente que SPE-2026-0103 muestra historial de entrega con estado DELIVERED después del replay exitoso
+- [ ] QA: reintentar y verificar explícitamente el evento email.sent de SPE-2026-0103 hasta obtener 2xx y proyección administrativa
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

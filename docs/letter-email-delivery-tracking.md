@@ -16,13 +16,13 @@ https://app.evgreen.lat/api/resend/webhook
 
 La revisión del endpoint confirmó que ya recibe los eventos de correo requeridos: `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.failed`, `email.opened`, `email.clicked`, `email.complained` y `email.suppressed`. El 18 de agosto de 2026 se actualizó exitosamente la suscripción para recibir **solo los 11 eventos `email.*`**, eliminando el tráfico no funcional de contactos, dominios y supresiones.
 
-Selecciona los eventos: `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.failed`, `email.opened`, `email.clicked`, `email.complained` y `email.suppressed`. Copia el *Webhook Signing Secret* del endpoint y configúralo como `RESEND_WEBHOOK_SECRET`. No se debe activar un endpoint sin esta clave.
+Selecciona los eventos: `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.failed`, `email.opened`, `email.clicked`, `email.complained` y `email.suppressed`. Copia el *Webhook Signing Secret* del endpoint y guárdalo en **Admin → Configuración → Notificaciones → Configuración de Email → Clave de firma del webhook**. La aplicación lo cifra antes de persistirlo, solo muestra que está configurado y no depende de variables de entorno ni de cambios de código.
 
 El receptor valida la firma Svix sobre el cuerpo crudo, procesa cada `svix-id` una sola vez y ordena el estado por la fecha del evento para que una entrega atrasada no reemplace un estado más reciente. Los eventos que no correspondan al identificador de una carta se ignoran sin crear registros.
 
 ### Incidencia de activación observada
 
-La prueba real de la carta `SPE-2026-0103` generó en Resend los eventos `email.sent` y `email.delivered`, pero el proveedor registró una respuesta **HTTP 503 Service Unavailable** al llamar al endpoint. Esto confirma que la suscripción está activa y que el bloqueo se limita a la disponibilidad de una clave de firma válida en la instancia publicada. La corrección en curso traslada esa clave a una configuración de plataforma cifrada y administrable desde Admin, evitando depender de una variable configurada por código.
+La prueba real de la carta `SPE-2026-0103` generó en Resend los eventos `email.sent` y `email.delivered`, pero el proveedor registró una respuesta **HTTP 503 Service Unavailable** al llamar al endpoint. Esto confirma que la suscripción está activa y que el bloqueo se limita a la disponibilidad de una clave de firma válida en la instancia publicada. La interfaz de configuración cifrada ya está publicada en `app.evgreen.lat`; queda cargar la clave de Resend en ella y confirmar el reintento exitoso del proveedor.
 
 ## Seguimiento operativo
 
