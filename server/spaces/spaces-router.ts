@@ -1811,7 +1811,11 @@ Responde en formato JSON con la siguiente estructura:`;
       platformSharePercent: z.number().min(1).max(99).default(30),
       installedPowerKw: z.number().optional(),
       tarifaKwhCop: z.number().default(1800),
-    }))
+      energyCostPerKwhCop: z.number().min(0).max(10000).default(700),
+    }).refine(
+      data => Math.abs(data.investorSharePercent + data.platformSharePercent - 100) < 0.001,
+      { message: "La participación de Inversionista y EVGreen debe sumar exactamente 100 % del margen neto" },
+    ))
     .mutation(async ({ input, ctx }) => {
       // Solo admins pueden generar prospectos
       if (ctx.user.role !== "admin") {
@@ -1877,6 +1881,7 @@ Responde en formato JSON con la siguiente estructura:`;
         platformSharePercent: input.platformSharePercent,
         installedPowerKw: input.installedPowerKw,
         tarifaKwhCop: input.tarifaKwhCop,
+        energyCostPerKwhCop: input.energyCostPerKwhCop,
         photos: photos.map(p => ({ url: p.photoUrl, caption: p.caption })),
         generatedAt: new Date(),
       });

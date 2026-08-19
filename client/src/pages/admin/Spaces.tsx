@@ -1078,6 +1078,7 @@ function SpaceDetailDialog({
     platformSharePercent: 30,
     installedPowerKw: undefined as number | undefined,
     tarifaKwhCop: 1800,
+    energyCostPerKwhCop: 700,
   });
   const [publishAmount, setPublishAmount] = useState("");
   const [manualFormalizationReason, setManualFormalizationReason] = useState("");
@@ -2316,10 +2317,10 @@ function SpaceDetailDialog({
               <h4 className="text-emerald-400 text-sm font-semibold flex items-center gap-2">
                 <Settings2 className="w-4 h-4" /> Modelo de Reparto de Ingresos
               </h4>
-              <p className="text-gray-500 text-xs">El aliado recibe su % del ingreso bruto. Inversor y EVGreen se reparten el resto.</p>
+              <p className="text-gray-500 text-xs">Ingreso bruto − costo de energía = margen bruto. El aliado participa sobre ese margen; Inversor y EVGreen se reparten exclusivamente el margen neto resultante.</p>
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">Aliado (% bruto)</Label>
+                  <Label className="text-gray-300 text-xs mb-1 block">Aliado (% margen bruto)</Label>
                   <Input
                     type="number" min={0} max={50}
                     value={prospectoConfig.allySharePercent}
@@ -2355,21 +2356,19 @@ function SpaceDetailDialog({
                   />
                 </div>
               </div>
-              {/* Barra visual de reparto 3 segmentos */}
+              {/* Barra visual del reparto neto: el aliado se descuenta antes. */}
               {(() => {
-                const allyEff = prospectoConfig.allySharePercent;
-                const net = 100 - allyEff;
-                const invEff = (prospectoConfig.investorSharePercent / 100) * net;
-                const platEff = (prospectoConfig.platformSharePercent / 100) * net;
+                const allyPct = prospectoConfig.allySharePercent;
+                const invNetPct = prospectoConfig.investorSharePercent;
+                const platformNetPct = prospectoConfig.platformSharePercent;
                 return (
                   <>
                     <div className="w-full h-3 rounded-full overflow-hidden flex">
-                      <div className="bg-blue-500 transition-all duration-300" style={{ width: `${allyEff}%` }} />
-                      <div className="bg-emerald-500 transition-all duration-300" style={{ width: `${invEff}%` }} />
+                      <div className="bg-emerald-500 transition-all duration-300" style={{ width: `${invNetPct}%` }} />
                       <div className="bg-gray-500 flex-1" />
                     </div>
                     <p className="text-gray-500 text-xs text-center">
-                      <span className="text-blue-400">Aliado {allyEff}%</span> · <span className="text-emerald-400">Inversor {invEff.toFixed(0)}%</span> · <span className="text-gray-400">EVGreen {platEff.toFixed(0)}%</span> <span className="text-gray-600">(% sobre bruto)</span>
+                      <span className="text-blue-400">Aliado {allyPct}% del margen bruto</span> · <span className="text-emerald-400">Inversor {invNetPct}%</span> · <span className="text-gray-400">EVGreen {platformNetPct}%</span> <span className="text-gray-600">(sobre margen neto)</span>
                     </p>
                   </>
                 );
@@ -2382,7 +2381,7 @@ function SpaceDetailDialog({
                 <TrendingUp className="w-4 h-4" /> Parámetros de Proyección
               </h4>
               <p className="text-xs text-gray-400 -mt-1">El modelo calcula 3 escenarios: pesimista (4h/día), realista (6h/día) y optimista (9h/día).</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Potencia instalada (kW)</Label>
                   <Input
@@ -2399,6 +2398,15 @@ function SpaceDetailDialog({
                     type="number" min={500}
                     value={prospectoConfig.tarifaKwhCop}
                     onChange={e => setProspectoConfig(c => ({ ...c, tarifaKwhCop: parseInt(e.target.value) || 1800 }))}
+                    className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
+                  />
+                </div>
+                <div>
+                  <Label className="text-gray-300 text-xs mb-1 block">Costo energía (COP/kWh)</Label>
+                  <Input
+                    type="number" min={0}
+                    value={prospectoConfig.energyCostPerKwhCop}
+                    onChange={e => setProspectoConfig(c => ({ ...c, energyCostPerKwhCop: Math.max(0, parseInt(e.target.value) || 0) }))}
                     className="bg-[#111827] border-[#374151] text-white h-8 text-sm"
                   />
                 </div>
@@ -2419,6 +2427,7 @@ function SpaceDetailDialog({
                     platformSharePercent: prospectoConfig.platformSharePercent,
                     installedPowerKw: prospectoConfig.installedPowerKw,
                     tarifaKwhCop: prospectoConfig.tarifaKwhCop,
+                    energyCostPerKwhCop: prospectoConfig.energyCostPerKwhCop,
                   });
                   if (result.pdfUrl) {
                     // Usar elemento <a> para compatibilidad con Android WebView

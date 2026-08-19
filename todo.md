@@ -169,6 +169,13 @@
 - [x] QA UI: capturar visualmente el historial de SPE-2026-0103 con email.sent y DELIVERED en Admin → Espacios
 - [x] QA operativo: capturar el resultado 2xx de Resend para el replay de email.sent y email.delivered
 - [x] QA UI: confirmar visualmente en Admin → Crowdfunding la comparación de valores heredados vs ajustados y el snapshot financiero
+- [x] Audit: contrastar las fórmulas financieras del prospecto SPE-2026-0129 con el flujo real de ingresos, costos, aliados y participaciones
+- [x] Feature: calcular ingreso bruto, costo energético configurable por kWh, comisión configurable del aliado y margen neto distribuible por espacio
+- [x] Feature: configurar y auditar porcentajes de reparto neto para inversionista y EVGreen, garantizando que la suma sea 100 %
+- [x] Fix: recalcular utilidad anual, ROI y payback desde la participación del inversionista sobre margen neto, sin usar ingresos brutos como retorno
+- [x] UI: mostrar en Espacios, Crowdfunding y Prospecto el puente financiero desglosado y los supuestos configurables aplicados
+- [x] Test: cubrir fórmulas, límites, configuración, reparto y consistencia del ROI/payback con cálculos deterministas
+- [ ] QA: regenerar y revisar visualmente el prospecto SPE-2026-0129 con el nuevo desglose financiero
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
