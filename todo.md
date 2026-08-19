@@ -179,7 +179,7 @@
 - [x] Bug: garantizar que “Mover en pipeline” abra únicamente el diálogo de transición de estado y nunca el flujo de formalización manual
 - [x] UX: mantener “Formalizar y publicar” como acción administrativa excepcional, separada y visible solo cuando corresponda
 - [x] Test: cubrir que el botón de pipeline usa transitionPipeline y que la formalización manual requiere su propia acción, motivo y evidencia
-- [ ] QA UI: comprobar que una carta enviada puede avanzar por el pipeline sin activar formalización manual y que el historial registra el movimiento
+- [x] QA UI: comprobar que una carta enviada puede avanzar por el pipeline sin activar formalización manual y que el historial registra el movimiento
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
