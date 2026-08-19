@@ -180,6 +180,11 @@
 - [x] UX: mantener “Formalizar y publicar” como acción administrativa excepcional, separada y visible solo cuando corresponda
 - [x] Test: cubrir que el botón de pipeline usa transitionPipeline y que la formalización manual requiere su propia acción, motivo y evidencia
 - [x] QA UI: comprobar que una carta enviada puede avanzar por el pipeline sin activar formalización manual y que el historial registra el movimiento
+- [x] Audit: rastrear la galería de fotos desde Espacios y el snapshot de Crowdfunding hasta la consulta pública de inversión
+- [x] Fix: exponer fotografías heredadas de Espacios en el payload público de los proyectos publicados, sin filtrar ni duplicar datos ajenos
+- [x] UI: mostrar galería real con foto principal, miniaturas, captions y estados vacíos claros en la ficha de inversión
+- [x] Test: cubrir que la consulta pública devuelve y aísla la galería heredada del espacio vinculado
+- [ ] QA UI: abrir TEXACO LA GLORIETA en /investors y confirmar sus fotos reales en la ficha pública
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
