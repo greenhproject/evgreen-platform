@@ -131,13 +131,16 @@ import {
   offlineTransactions,
   OfflineTransaction,
   InsertOfflineTransaction,
-  userVehicles,
-  UserVehicle,
-  InsertUserVehicle,
+	  userVehicles,
+	  UserVehicle,
+	  InsertUserVehicle,
+	  spaceSubmissions,
+	  spacePhotos,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ConnectorStatus, TriggeredBy } from "./charging/connector-state.service";
 import { toUtcIso } from "./utils/dates";
+import { mapInheritedSpacePhotos } from "./spaces/crowdfunding-inheritance";
 
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -4941,15 +4944,32 @@ export async function getCrowdfundingProjects(options?: {
       SELECT 
         p.*,
         (SELECT COUNT(*) FROM crowdfunding_participations WHERE projectId = p.id AND paymentStatus = 'COMPLETED') as investorCount,
-        s.spaceName as linkedSpaceName,
-        s.city as linkedSpaceCity,
-        s.submitterName as linkedSubmitterName,
-        s.space_status as linkedSpaceStatus,
-        COALESCE(s.latitude, cs.latitude) as linkedLatitude,
-        COALESCE(s.longitude, cs.longitude) as linkedLongitude
+	      s.spaceName as linkedSpaceName,
+	      s.city as linkedSpaceCity,
+	      s.submitterName as linkedSubmitterName,
+	      s.space_status as linkedSpaceStatus,
+	      s.estimatedInvestmentCop as inheritedTargetAmount,
+	      s.minimum_investment_cop as inheritedMinimumInvestment,
+	      s.estimated_roi_percent as inheritedRoiPercent,
+	      s.estimated_payback_months as inheritedPaybackMonths,
+	      s.estimatedPowerKw as inheritedTotalPowerKw,
+	      s.estimatedChargerCount as inheritedChargerCount,
+	      s.recommendedChargerType as inheritedChargerType,
+	      s.technicalScore as inheritedTechnicalScore,
+	      s.aiScore as inheritedAiScore,
+	      s.aiAnalysis as inheritedAiAnalysis,
+	      s.estimatedDailyVehicles as inheritedDailyVehicles,
+	      s.estimatedEvPercent as inheritedEvPercent,
+	      s.transformerCapacityKva as inheritedTransformerKva,
+	      s.availableAreaM2 as inheritedAvailableAreaM2,
+	      s.parkingSpots as inheritedParkingSpots,
+	      override_user.name as financialOverrideByName,
+	      COALESCE(s.latitude, cs.latitude) as linkedLatitude,
+	      COALESCE(s.longitude, cs.longitude) as linkedLongitude
       FROM crowdfunding_projects p
-      LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
-      LEFT JOIN charging_stations cs ON cs.id = p.stationId
+	      LEFT JOIN space_submissions s ON s.id = p.spaceSubmissionId
+	      LEFT JOIN charging_stations cs ON cs.id = p.stationId
+	      LEFT JOIN users override_user ON override_user.id = p.financial_override_by
     `;
     
     if (sanitizedStatus) {
@@ -4961,9 +4981,44 @@ export async function getCrowdfundingProjects(options?: {
     query += ` ORDER BY p.priority ASC, p.createdAt DESC`;
     
     const result = await db.execute(sql.raw(query));
-    const rows = ((result as any)[0] as CrowdfundingProject[]) || [];
-    // Normalizar hasSolarPanels de tinyint(1) a boolean
-    return rows.map(r => ({ ...r, hasSolarPanels: !!r.hasSolarPanels }));
+	    const rows = ((result as any)[0] as CrowdfundingProject[]) || [];
+	    const linkedSpaceIds = rows.map((row: any) => row.spaceSubmissionId).filter(Boolean) as number[];
+	    let photosBySpace: Record<number, Array<{ url: string; type: string; caption: string | null }>> = {};
+
+	    if (linkedSpaceIds.length > 0) {
+	      const inheritedPhotos = await db
+	        .select({
+	          submissionId: spacePhotos.submissionId,
+	          url: spacePhotos.photoUrl,
+	          type: spacePhotos.photoType,
+	          caption: spacePhotos.caption,
+			sortOrder: spacePhotos.sortOrder,
+	        })
+	        .from(spacePhotos)
+	        .where(inArray(spacePhotos.submissionId, linkedSpaceIds))
+	        .orderBy(spacePhotos.sortOrder);
+
+			photosBySpace = mapInheritedSpacePhotos(inheritedPhotos);
+	    }
+
+	    // Preferir la galería conservada en el snapshot; usar lectura viva solo en proyectos heredados antiguos.
+	    return rows.map((r: any) => {
+			let spaceInheritanceSnapshot: any = r.space_inheritance_snapshot || null;
+			if (typeof spaceInheritanceSnapshot === "string") {
+				try { spaceInheritanceSnapshot = JSON.parse(spaceInheritanceSnapshot); } catch { spaceInheritanceSnapshot = null; }
+			}
+			const snapshotPhotos = Array.isArray(spaceInheritanceSnapshot?.photos) ? spaceInheritanceSnapshot.photos : null;
+			return {
+				...r,
+				hasSolarPanels: !!r.hasSolarPanels,
+				spaceInheritanceSnapshot,
+				financialOverrideReason: r.financial_override_reason || null,
+				financialOverrideAt: r.financial_override_at || null,
+				financialOverrideBy: r.financial_override_by || null,
+				financialOverrideByName: r.financialOverrideByName || null,
+				inheritedPhotos: snapshotPhotos ?? (r.spaceSubmissionId ? photosBySpace[r.spaceSubmissionId] || [] : []),
+			};
+		});
   } catch (error) {
     console.error('[DB] Error getting crowdfunding projects:', error);
     return [];
@@ -5051,8 +5106,8 @@ export async function createCrowdfundingProject(data: {
 
 // Actualizar un proyecto de crowdfunding
 export async function updateCrowdfundingProject(
-  projectId: number,
-  data: Partial<{
+projectId: number,
+data: Partial<{
     name: string;
     description: string;
     city: string;
@@ -5074,20 +5129,28 @@ export async function updateCrowdfundingProject(
     operationalDate: Date;
     priority: number;
     stationId: number;
+		financialOverrideReason: string;
+		financialOverrideAt: string;
+		financialOverrideBy: number;
   }>
 ): Promise<void> {
-  const db = (await getDb())!;
-  if (!db) throw new Error("Database not available");
+const db = (await getDb())!;
+if (!db) throw new Error("Database not available");
   
   
-  const updates: string[] = [];
-  const values: any[] = [];
+const updates: string[] = [];
+const values: any[] = [];
+	const columnNames: Record<string, string> = {
+		financialOverrideReason: "financial_override_reason",
+		financialOverrideAt: "financial_override_at",
+		financialOverrideBy: "financial_override_by",
+	};
   
-  Object.entries(data).forEach(([key, value]) => {
-    if (value !== undefined) {
-      updates.push(`${key} = ?`);
-      values.push(value);
-    }
+Object.entries(data).forEach(([key, value]) => {
+if (value !== undefined) {
+      updates.push(`${columnNames[key] || key} = ?`);
+values.push(value);
+}
   });
   
   if (updates.length === 0) return;
@@ -5110,11 +5173,27 @@ export async function updateCrowdfundingProject(
   
   if (!setClause) return;
   
-  await db.execute(sql.raw(`
-    UPDATE crowdfunding_projects 
-    SET ${setClause}
+	  await db.execute(sql.raw(`
+	    UPDATE crowdfunding_projects 
+	    SET ${setClause}
+	    WHERE id = ${projectId}
+	  `));
+}
+
+export async function recordCrowdfundingFinancialOverride(
+  projectId: number,
+  data: { reason: string; byUserId: number; occurredAt: string },
+): Promise<void> {
+  const db = (await getDb())!;
+  if (!db) throw new Error("Database not available");
+
+  await db.execute(sql`
+    UPDATE crowdfunding_projects
+    SET financial_override_reason = ${data.reason},
+        financial_override_at = ${data.occurredAt},
+        financial_override_by = ${data.byUserId}
     WHERE id = ${projectId}
-  `));
+  `);
 }
 
 // Obtener participaciones de un proyecto

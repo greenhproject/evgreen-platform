@@ -41,6 +41,7 @@ import { maintenanceScheduleRouter } from "./maintenance/maintenance-schedule-ro
 import { buildApiKeysRouter } from "./api/api-keys-router";
 import { quotesRouter } from "./quotes/quotes-router";
 import { spacesRouter } from "./spaces/spaces-router";
+import { requiresFinancialOverride } from "./spaces/crowdfunding-inheritance";
 import { gestorRouter } from "./gestor/gestor-router";
 import { partnersRouter } from "./partners/partners-router";
 import { profilesRouter } from "./profiles/profiles-router";
@@ -4573,12 +4574,26 @@ const crowdfundingRouter = router({
       estimatedPaybackMonths: z.number().optional(),
       status: z.string().optional(),
       targetDate: z.date().optional(),
-      priority: z.number().optional(),
-      stationId: z.number().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      const { id, ...data } = input;
-      await db.updateCrowdfundingProject(id, data);
+	      priority: z.number().optional(),
+	      stationId: z.number().optional(),
+		financialOverrideReason: z.string().trim().min(15).max(2000).optional(),
+	    }))
+	    .mutation(async ({ input, ctx }) => {
+	      const { id, financialOverrideReason, ...data } = input;
+			const current = await db.getCrowdfundingProjectById(id);
+			if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Proyecto no encontrado" });
+			const editsInheritedFinancialData = requiresFinancialOverride(current, data as Record<string, unknown>);
+			if (editsInheritedFinancialData && !financialOverrideReason) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: "Indica el motivo de la excepción antes de cambiar valores heredados de Espacios." });
+			}
+			if (editsInheritedFinancialData) {
+				await db.recordCrowdfundingFinancialOverride(id, {
+					reason: financialOverrideReason!,
+					occurredAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+					byUserId: ctx.user.id,
+				});
+			}
+	      await db.updateCrowdfundingProject(id, data);
       return { success: true };
     }),
   

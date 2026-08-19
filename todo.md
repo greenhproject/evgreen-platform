@@ -132,7 +132,32 @@
 - [x] Feature: persistir una evidencia explícita de aprobación excepcional como referencia, URL o acta interna
 - [x] UI: exigir y mostrar la evidencia de aprobación excepcional en el diálogo de formalización manual
 - [x] Test: cubrir persistencia y visualización de evidencia junto con motivo, responsable y fecha
-- [ ] QA UI: confirmar que Admin → Espacios muestra motivo, evidencia y fecha de formalización manual en el detalle y exige ambos campos en el diálogo
+- [x] QA UI: confirmar que Admin → Espacios muestra motivo, evidencia y fecha de formalización manual en el detalle y exige ambos campos en el diálogo
+- [ ] QA UI: formalizar un espacio de prueba o abrir uno ya formalizado y confirmar visualmente en Admin → Espacios que el detalle muestra motivo, evidencia y fecha persistidos
+- [ ] QA UI: capturar evidencia verificable del resumen auditable renderizado tras formalización manual persistida antes de marcar la verificación como completa
+- [x] Audit: definir la fuente única de verdad para inversión, ROI y payback entre Espacios y Crowdfunding
+- [x] Feature: heredar automáticamente la proyección financiera de un espacio al crear o publicar su proyecto de crowdfunding
+- [x] Feature: diferenciar visualmente valores heredados de ajustes manuales con motivo auditable
+- [x] Test: cubrir consistencia financiera, herencia al publicar y reglas de excepción manual
+- [x] Audit: mapear todos los campos técnicos, comerciales, financieros y recursos del espacio hacia Crowdfunding
+- [x] Feature: precargar en Crowdfunding todos los datos aprobados del espacio sin redigitación administrativa
+- [x] Feature: conservar fotos, ubicación, análisis IA y supuestos de cálculo como snapshots heredados del espacio
+- [x] Test: cubrir la cobertura completa del mapeo y detectar campos obligatorios no heredados
+- [x] Feature: heredar fotos y metadatos del espacio hacia la ficha administrativa y pública de crowdfunding
+- [x] UI: mostrar una galería de imágenes heredadas en el borrador y proyecto publicado sin segunda carga
+- [x] Test: cubrir que las fotos vinculadas al espacio aparecen en el payload de crowdfunding y respetan el orden/captions
+- [x] Test: verificar que editar inversión, ROI, payback, potencia o ubicación en Espacios sincroniza el proyecto vinculado
+- [x] Feature: exigir motivo y registrar responsable al sobrescribir valores heredados en Crowdfunding
+- [x] Test: cubrir que la excepción financiera no puede guardarse sin motivo y conserva el snapshot original del espacio
+- [x] Test: verificar que editar campos no financieros o reenviar los mismos valores heredados no exige motivo de excepción
+- [x] Feature: mostrar en Crowdfunding el diff de valores heredados vs. ajustados y el historial de override con motivo, responsable y fecha
+- [x] Test: renderizar la comparación heredada y confirmar etiquetas de valor original, ajuste, motivo, responsable y fecha
+- [x] Feature: persistir la galería y metadatos heredados dentro del snapshot y conectarla a la ficha pública de crowdfunding
+- [x] Test: agregar prueba tRPC de override que rechace cambios sin motivo y preserve el snapshot original
+- [x] Test: agregar prueba de integración que edite un espacio y verifique la sincronización del proyecto vinculado
+- [x] Documentación: describir la fuente única de verdad de Espacios, snapshots heredados, galería y excepciones auditables de Crowdfunding
+- [ ] QA UI: confirmar en Admin → Crowdfunding que un proyecto vinculado muestra galería, valores heredados y comparación financiera
+- [x] Test: cubrir el payload real de Crowdfunding confirmando fotos ordenadas, captions y metadatos heredados
 - [x] Test: renderizar el resumen y los campos de formalización manual para comprobar motivo, evidencia, fecha y etiquetas obligatorias
 - [x] Test: renderizar el diálogo de formalización manual y verificar etiquetas y ayudas obligatorias de motivo y evidencia
 - [x] Documentación: describir cuándo usar la formalización interna, qué evidencia registrar y que no reemplaza una firma externa

@@ -6,7 +6,7 @@ import { describe, expect, it, vi, beforeAll, afterAll } from "vitest";
 import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import { getDb } from "../db";
-import { spaceSubmissions } from "../../drizzle/schema";
+import { spacePhotos, spaceSubmissions } from "../../drizzle/schema";
 import { eq, like, or } from "drizzle-orm";
 
 // ============================================================================
@@ -544,7 +544,7 @@ describe("spaces → crowdfunding integration", () => {
     expect(linkedCF!.linkedSubmitterName).toBe("CF Integration Test");
   });
 
-  it("no duplica CF al aprobar un espacio ya aprobado", async () => {
+	  it("no duplica CF al aprobar un espacio ya aprobado", async () => {
     // 1. Crear y aprobar
     const publicCtx = createPublicContext();
     const publicCaller = appRouter.createCaller(publicCtx);
@@ -583,10 +583,85 @@ describe("spaces → crowdfunding integration", () => {
     expect(detail2.crowdfundingProjectId).toBe(cfId1); // Mismo ID
 
     const cfAfter = await adminCaller.crowdfunding.getAllProjects();
-    expect(cfAfter.length).toBe(countBefore); // No se creó otro
-  });
+	    expect(cfAfter.length).toBe(countBefore); // No se creó otro
+	  });
 
-  it("getAllProjects incluye DRAFT para admin (includePrivate)", async () => {
+	  it("sincroniza inversión, retorno, potencia y ubicación al editar un espacio con proyecto vinculado", async () => {
+	    const publicCaller = appRouter.createCaller(createPublicContext());
+	    const adminCaller = appRouter.createCaller(createAdminContext());
+	    const { submissionId } = await publicCaller.spaces.submit({
+	      submitterName: "Herencia completa Test",
+	      submitterEmail: "herencia-completa@example.com",
+	      submitterPhone: "3001234567",
+	      spaceName: "Espacio herencia completa Test",
+	      spaceType: "mall",
+	      address: "Carrera 7 # 72-10",
+	      city: "Bogotá",
+	    });
+
+	    await adminCaller.spaces.admin.updateStatus({ id: submissionId, status: "approved" });
+	    const before = await adminCaller.spaces.admin.getById({ id: submissionId });
+
+	    await adminCaller.spaces.admin.updateSpace({
+	      id: submissionId,
+	      city: "Medellín",
+	      estimatedInvestmentCop: 950000000,
+	      minimumInvestmentCop: 15000000,
+	      estimatedRoiPercent: 78.5,
+	      estimatedPaybackMonths: 21,
+	      estimatedPowerKw: 300,
+	      estimatedChargerCount: 3,
+	      recommendedChargerType: "DC CCS2",
+	    });
+
+	    const projects = await adminCaller.crowdfunding.getAllProjects();
+	    const linked = projects.find((project: any) => project.id === before.crowdfundingProjectId) as any;
+	    expect(linked).toMatchObject({
+	      city: "Medellín",
+	      targetAmount: 950000000,
+	      minimumInvestment: 15000000,
+	      totalPowerKw: 300,
+	      chargerCount: 3,
+	      estimatedPaybackMonths: 21,
+	    });
+	    expect(Number(linked.estimatedRoiPercent)).toBe(78.5);
+	    expect(linked.spaceInheritanceSnapshot).toMatchObject({
+	      targetAmount: 950000000,
+	      city: "Medellín",
+	      estimatedPaybackMonths: 21,
+	    });
+	  });
+
+	  it("incluye en el payload real de Crowdfunding las fotos heredadas con orden y caption", async () => {
+	    const publicCaller = appRouter.createCaller(createPublicContext());
+	    const adminCaller = appRouter.createCaller(createAdminContext());
+	    const { submissionId } = await publicCaller.spaces.submit({
+	      submitterName: "Galería heredada Test",
+	      submitterEmail: "galeria-heredada@example.com",
+	      submitterPhone: "3001234567",
+	      spaceName: "Espacio galería heredada Test",
+	      spaceType: "parking",
+	      address: "Calle 100 # 15-20",
+	      city: "Bogotá",
+	    });
+	    const db = await getDb();
+	    await db!.insert(spacePhotos).values([
+      { submissionId, photoUrl: "https://cdn.example.test/site-overview.jpg", photoKey: `tests/${submissionId}/site-overview.jpg`, photoType: "general", caption: "Vista general", sortOrder: 2 },
+      { submissionId, photoUrl: "https://cdn.example.test/electrical-panel.jpg", photoKey: `tests/${submissionId}/electrical-panel.jpg`, photoType: "electrical_panel", caption: "Tablero eléctrico", sortOrder: 1 },
+	    ]);
+
+	    await adminCaller.spaces.admin.updateStatus({ id: submissionId, status: "approved" });
+	    const detail = await adminCaller.spaces.admin.getById({ id: submissionId });
+	    const linked = (await adminCaller.crowdfunding.getAllProjects()).find((project: any) => project.id === detail.crowdfundingProjectId) as any;
+
+	    expect(linked.inheritedPhotos).toEqual([
+	      { url: "https://cdn.example.test/electrical-panel.jpg", type: "electrical_panel", caption: "Tablero eléctrico" },
+	      { url: "https://cdn.example.test/site-overview.jpg", type: "general", caption: "Vista general" },
+	    ]);
+	    expect(linked.spaceInheritanceSnapshot.photos).toEqual(linked.inheritedPhotos);
+	  });
+
+	  it("getAllProjects incluye DRAFT para admin (includePrivate)", async () => {
     const adminCtx = createAdminContext();
     const adminCaller = appRouter.createCaller(adminCtx);
 

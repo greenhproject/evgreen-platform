@@ -419,6 +419,10 @@ export const crowdfundingProjects = mysqlTable("crowdfunding_projects", {
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
 	spaceSubmissionId: int(),
+	spaceInheritanceSnapshot: json("space_inheritance_snapshot"),
+	financialOverrideReason: text("financial_override_reason"),
+	financialOverrideAt: timestamp("financial_override_at", { mode: 'string' }),
+	financialOverrideBy: int("financial_override_by"),
 });
 
 export const demoRequests = mysqlTable("demoRequests", {
@@ -1580,9 +1584,14 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 	manualFormalizationEvidence: text("manual_formalization_evidence"),
 	manualFormalizedAt: timestamp("manual_formalized_at", { mode: 'string' }),
 	manualFormalizedBy: int("manual_formalized_by"),
-	crowdfundingProjectId: int(),
-	estimatedInvestmentCop: bigint({ mode: "number" }),
-	estimatedPowerKw: int(),
+		crowdfundingProjectId: int(),
+		estimatedInvestmentCop: bigint({ mode: "number" }),
+		minimumInvestmentCop: bigint("minimum_investment_cop", { mode: "number" }),
+		estimatedRoiPercent: decimal("estimated_roi_percent", { precision: 7, scale: 2 }),
+		estimatedPaybackMonths: int("estimated_payback_months"),
+		financialProjectionUpdatedAt: timestamp("financial_projection_updated_at", { mode: "string" }),
+		financialProjectionUpdatedBy: int("financial_projection_updated_by"),
+		estimatedPowerKw: int(),
 	estimatedChargerCount: int(),
 	recommendedChargerType: varchar({ length: 50 }),
 	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),

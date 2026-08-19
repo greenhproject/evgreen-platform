@@ -1320,8 +1320,11 @@ function SpaceDetailDialog({
                       longitude: space.longitude ? String(space.longitude) : "",
                       submitterName: space.submitterName, submitterEmail: space.submitterEmail,
                       submitterPhone: space.submitterPhone || "", submitterCompany: (space as any).submitterCompany || "",
-                      estimatedInvestmentCop: space.estimatedInvestmentCop || "",
-                      estimatedPowerKw: space.estimatedPowerKw || "",
+	                      estimatedInvestmentCop: space.estimatedInvestmentCop || "",
+						minimumInvestmentCop: (space as any).minimumInvestmentCop || "",
+						estimatedRoiPercent: (space as any).estimatedRoiPercent || "",
+						estimatedPaybackMonths: (space as any).estimatedPaybackMonths || "",
+	                      estimatedPowerKw: space.estimatedPowerKw || "",
                       estimatedChargerCount: space.estimatedChargerCount || "",
                       additionalNotes: space.additionalNotes || "",
                       nearbyAttractions: (space as any).nearbyAttractions || "",
@@ -1853,11 +1856,23 @@ function SpaceDetailDialog({
             {/* SECCIÓN: Inversión y comercial */}
             <div className="bg-[#0a0f1a] border border-[#374151] rounded-lg p-3">
               <p className="text-emerald-400 text-xs font-semibold mb-2 uppercase tracking-wide">💰 Datos Comerciales</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <div>
-                  <Label className="text-gray-300 text-xs mb-1 block">Inversión estimada (COP)</Label>
-                  <Input type="number" value={editForm.estimatedInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, estimatedInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
-                </div>
+	              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+	                <div>
+	                  <Label className="text-gray-300 text-xs mb-1 block">Inversión estimada (COP)</Label>
+	                  <Input type="number" value={editForm.estimatedInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, estimatedInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+	                </div>
+				<div>
+				  <Label className="text-gray-300 text-xs mb-1 block">Inversión mínima (COP)</Label>
+				  <Input type="number" value={editForm.minimumInvestmentCop || ""} onChange={e => setEditForm(p => ({ ...p, minimumInvestmentCop: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+				</div>
+				<div>
+				  <Label className="text-gray-300 text-xs mb-1 block">ROI estimado (%)</Label>
+				  <Input type="number" step="0.01" value={editForm.estimatedRoiPercent || ""} onChange={e => setEditForm(p => ({ ...p, estimatedRoiPercent: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+				</div>
+				<div>
+				  <Label className="text-gray-300 text-xs mb-1 block">Payback estimado (meses)</Label>
+				  <Input type="number" value={editForm.estimatedPaybackMonths || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPaybackMonths: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
+				</div>
                 <div>
                   <Label className="text-gray-300 text-xs mb-1 block">Potencia (kW)</Label>
                   <Input type="number" value={editForm.estimatedPowerKw || ""} onChange={e => setEditForm(p => ({ ...p, estimatedPowerKw: e.target.value }))} className="bg-[#111827] border-[#374151] text-white text-sm" />
@@ -2039,8 +2054,11 @@ function SpaceDetailDialog({
                 if (editForm.requiresNewTransformer !== undefined) payload.requiresNewTransformer = editForm.requiresNewTransformer;
                 if (editForm.proposedTransformerKva !== undefined) payload.proposedTransformerKva = editForm.proposedTransformerKva;
                 // Comerciales
-                if (editForm.estimatedInvestmentCop) payload.estimatedInvestmentCop = parseInt(editForm.estimatedInvestmentCop);
-                if (editForm.estimatedPowerKw) payload.estimatedPowerKw = parseInt(editForm.estimatedPowerKw);
+				if (editForm.estimatedInvestmentCop) payload.estimatedInvestmentCop = parseInt(editForm.estimatedInvestmentCop);
+				if (editForm.minimumInvestmentCop) payload.minimumInvestmentCop = parseInt(editForm.minimumInvestmentCop);
+				if (editForm.estimatedRoiPercent) payload.estimatedRoiPercent = parseFloat(editForm.estimatedRoiPercent);
+				if (editForm.estimatedPaybackMonths) payload.estimatedPaybackMonths = parseInt(editForm.estimatedPaybackMonths);
+				if (editForm.estimatedPowerKw) payload.estimatedPowerKw = parseInt(editForm.estimatedPowerKw);
                 if (editForm.estimatedChargerCount) payload.estimatedChargerCount = parseInt(editForm.estimatedChargerCount);
                 // IA manual
                 if (editForm.aiScore !== undefined) payload.aiScore = editForm.aiScore;

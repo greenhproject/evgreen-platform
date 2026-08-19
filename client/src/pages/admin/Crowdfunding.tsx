@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { InheritedFinancialAudit } from "@/components/crowdfunding/InheritedFinancialAudit";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,8 +67,10 @@ import {
   Link2,
   X,
   Send,
-  FileText,
-  ArrowRight
+	  FileText,
+	  ArrowRight,
+	  ImageIcon,
+	  Database,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -113,9 +116,29 @@ interface Project {
   spaceSubmissionId: number | null;
   linkedSpaceName: string | null;
   linkedSpaceCity: string | null;
-  linkedSubmitterName: string | null;
-  linkedSpaceStatus: string | null;
-  createdAt: Date;
+	linkedSubmitterName: string | null;
+	linkedSpaceStatus: string | null;
+	inheritedTargetAmount?: number | string | null;
+	inheritedMinimumInvestment?: number | string | null;
+	inheritedRoiPercent?: number | string | null;
+	inheritedPaybackMonths?: number | string | null;
+	inheritedTotalPowerKw?: number | string | null;
+	inheritedChargerCount?: number | string | null;
+	inheritedChargerType?: string | null;
+	inheritedTechnicalScore?: number | null;
+	inheritedAiScore?: number | null;
+	inheritedAiAnalysis?: string | null;
+	inheritedDailyVehicles?: number | null;
+	inheritedEvPercent?: number | null;
+	inheritedTransformerKva?: number | string | null;
+	inheritedAvailableAreaM2?: number | string | null;
+	inheritedParkingSpots?: number | null;
+	inheritedPhotos?: Array<{ url: string; type: string; caption: string | null }>;
+	spaceInheritanceSnapshot?: Record<string, unknown> | null;
+	financialOverrideReason?: string | null;
+	financialOverrideAt?: string | Date | null;
+	financialOverrideByName?: string | null;
+	createdAt: Date;
 }
 
 interface Participation {
@@ -173,8 +196,9 @@ export default function AdminCrowdfunding() {
   const [registerUserSearch, setRegisterUserSearch] = useState("");
   const [selectedRegisterUser, setSelectedRegisterUser] = useState<any>(null);
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState({ // estado del editor principal
     name: "",
+		financialOverrideReason: "",
     description: "",
     city: "",
     zone: "",
@@ -313,10 +337,11 @@ export default function AdminCrowdfunding() {
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      name: "",
-      description: "",
+const resetForm = () => {
+setFormData({
+name: "",
+		financialOverrideReason: "",
+description: "",
       city: "",
       zone: "",
       address: "",
@@ -359,23 +384,25 @@ export default function AdminCrowdfunding() {
     setSelectedRegisterUser(null);
   };
 
-  const handleEdit = (project: Project) => {
-    setEditingProject(project);
-    setFormData({
+	const handleEdit = (project: Project) => {
+		setEditingProject(project);
+		setFormData({
       name: project.name,
       description: project.description || "",
       city: project.city,
       zone: project.zone,
       address: project.address || "",
-      targetAmount: Number(project.targetAmount),
-      raisedAmount: Number(project.raisedAmount) || 0,
-      minimumInvestment: Number(project.minimumInvestment),
-      totalPowerKw: project.totalPowerKw || 480,
-      chargerCount: project.chargerCount || 4,
-      chargerPowerKw: project.chargerPowerKw || 120,
-      hasSolarPanels: project.hasSolarPanels,
-      estimatedRoiPercent: Number(project.estimatedRoiPercent) || 85,
-      estimatedPaybackMonths: Number(project.estimatedPaybackMonths) || 14,
+			targetAmount: Number(project.inheritedTargetAmount ?? project.targetAmount),
+			raisedAmount: Number(project.raisedAmount) || 0,
+			minimumInvestment: Number(project.inheritedMinimumInvestment ?? project.minimumInvestment),
+			totalPowerKw: Number(project.inheritedTotalPowerKw ?? project.totalPowerKw) || 480,
+			chargerCount: Number(project.inheritedChargerCount ?? project.chargerCount) || 4,
+			chargerPowerKw: project.inheritedTotalPowerKw && project.inheritedChargerCount
+				? Math.round(Number(project.inheritedTotalPowerKw) / Number(project.inheritedChargerCount))
+				: project.chargerPowerKw || 120,
+			hasSolarPanels: project.hasSolarPanels,
+			estimatedRoiPercent: Number(project.inheritedRoiPercent ?? project.estimatedRoiPercent) || 85,
+			estimatedPaybackMonths: Number(project.inheritedPaybackMonths ?? project.estimatedPaybackMonths) || 14,
       status: project.status,
       targetDate: project.targetDate ? new Date(project.targetDate).toISOString().split('T')[0] : "",
       priority: project.priority,
@@ -383,13 +410,27 @@ export default function AdminCrowdfunding() {
       investorSharePercent: (project as any).investorSharePercent || "70.00",
       hostSharePercent: (project as any).hostSharePercent || "10.00",
       energyPurchaseCostPerKwh: (project as any).energyPurchaseCostPerKwh || "800.00",
-      hostName: (project as any).hostName || "",
-      latitude: (project as any).latitude || "",
-      longitude: (project as any).longitude || "",
-    });
+	      hostName: (project as any).hostName || "",
+	      latitude: (project as any).latitude || "",
+	      longitude: (project as any).longitude || "",
+			financialOverrideReason: project.financialOverrideReason || "",
+	    });
   };
 
-  const handleSubmit = () => {
+const handleSubmit = () => {
+		const inheritedFinancialChanged = Boolean(editingProject?.spaceSubmissionId) && [
+			[formData.targetAmount, editingProject?.inheritedTargetAmount],
+			[formData.minimumInvestment, editingProject?.inheritedMinimumInvestment],
+			[formData.totalPowerKw, editingProject?.inheritedTotalPowerKw],
+			[formData.chargerCount, editingProject?.inheritedChargerCount],
+			[formData.estimatedRoiPercent, editingProject?.inheritedRoiPercent],
+			[formData.estimatedPaybackMonths, editingProject?.inheritedPaybackMonths],
+		].some(([current, inherited]) => inherited !== null && inherited !== undefined && Number(current) !== Number(inherited));
+
+		if (inheritedFinancialChanged && formData.financialOverrideReason.trim().length < 15) {
+			toast.error("Explica con al menos 15 caracteres por qué se ajusta la proyección heredada de Espacios.");
+			return;
+		}
     // Validar que EVGreen + Inversionista sumen 100% (el aliado es % separado sobre margen bruto)
     const evInvSum = parseFloat(formData.evgreenSharePercent || '0') + parseFloat(formData.investorSharePercent || '0');
     if (Math.abs(evInvSum - 100) > 0.1) {
@@ -406,10 +447,11 @@ export default function AdminCrowdfunding() {
     const data = {
       ...rest,
       targetDate: formData.targetDate ? new Date(formData.targetDate) : undefined,
-      hostName: formData.hostName || undefined,
-      latitude: formData.latitude || undefined,
-      longitude: formData.longitude || undefined,
-    };
+	      hostName: formData.hostName || undefined,
+	      latitude: formData.latitude || undefined,
+	      longitude: formData.longitude || undefined,
+			financialOverrideReason: inheritedFinancialChanged ? formData.financialOverrideReason.trim() : undefined,
+	    };
 
     if (editingProject) {
       updateMutation.mutate({ id: editingProject.id, ...data });
@@ -838,12 +880,20 @@ export default function AdminCrowdfunding() {
       <Dialog open={showCreateDialog} onOpenChange={(open) => {
         if (!open) { setShowCreateDialog(false); setEditingProject(null); resetForm(); }
       }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {editingProject ? "Editar Proyecto" : "Nuevo Proyecto de Inversión"}
-            </DialogTitle>
-          </DialogHeader>
+	        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+	          <DialogHeader>
+	            <DialogTitle>
+	              {editingProject ? "Editar Proyecto" : "Nuevo Proyecto de Inversión"}
+	            </DialogTitle>
+				{editingProject?.spaceSubmissionId && (
+					<div className="mt-2 flex items-start gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-cyan-100">
+						<Database className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+						<span>
+							<strong>Datos heredados de Espacios.</strong> Ubicación, evaluación técnica, proyección y fotos se cargan desde <strong>{editingProject.linkedSpaceName || "el espacio vinculado"}</strong> para evitar una segunda digitación.
+						</span>
+					</div>
+				)}
+	          </DialogHeader>
 
           <Tabs defaultValue="general" className="w-full">
             <TabsList className="grid w-full grid-cols-4">
@@ -853,8 +903,28 @@ export default function AdminCrowdfunding() {
               <TabsTrigger value="model">Modelo</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="general" className="space-y-4 mt-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+	            <TabsContent value="general" className="space-y-4 mt-4">
+				{editingProject?.spaceSubmissionId && (
+					<div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+						<div className="mb-2 flex items-center justify-between gap-3">
+							<div className="flex items-center gap-2 text-sm font-semibold text-white"><ImageIcon className="h-4 w-4 text-cyan-300" /> Galería heredada del sitio</div>
+							<Badge variant="outline" className="border-cyan-400/40 text-cyan-200">{editingProject.inheritedPhotos?.length || 0} fotos</Badge>
+						</div>
+						{editingProject.inheritedPhotos?.length ? (
+							<div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+								{editingProject.inheritedPhotos.map((photo, index) => (
+									<div key={`${photo.url}-${index}`} className="overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
+										<img src={photo.url} alt={photo.caption || `Foto ${index + 1} del espacio`} className="h-24 w-full object-cover" />
+										<div className="truncate px-2 py-1 text-[10px] text-slate-300">{photo.caption || photo.type}</div>
+									</div>
+								))}
+							</div>
+						) : (
+							<p className="text-xs text-slate-400">El espacio no tiene registros fotográficos cargados todavía.</p>
+						)}
+					</div>
+				)}
+	              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>Nombre del Proyecto</Label>
                   <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Electrolinera Norte" />
@@ -918,8 +988,22 @@ export default function AdminCrowdfunding() {
               </div>
             </TabsContent>
 
-            <TabsContent value="financial" className="space-y-4 mt-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+	            <TabsContent value="financial" className="space-y-4 mt-4">
+				{editingProject?.spaceSubmissionId && (
+					<div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+						<strong>Proyección heredada del espacio:</strong> los valores provienen de la evaluación técnica y financiera aprobada. Un cambio posterior debe justificarse como una excepción administrativa.
+					</div>
+				)}
+				{editingProject?.spaceSubmissionId && (
+					<InheritedFinancialAudit
+						snapshot={editingProject.spaceInheritanceSnapshot}
+						current={formData}
+						overrideReason={editingProject.financialOverrideReason}
+						overrideAt={editingProject.financialOverrideAt}
+						overrideByName={editingProject.financialOverrideByName}
+					/>
+				)}
+	              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>Meta de Inversión (COP)</Label>
                   <Input type="number" value={formData.targetAmount} onChange={(e) => setFormData({ ...formData, targetAmount: parseInt(e.target.value) || 0 })} />
@@ -939,6 +1023,19 @@ export default function AdminCrowdfunding() {
                   <Input type="number" value={formData.estimatedPaybackMonths} onChange={(e) => setFormData({ ...formData, estimatedPaybackMonths: parseInt(e.target.value) || 0 })} />
                 </div>
               </div>
+				{editingProject?.spaceSubmissionId && (
+					<div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+						<Label className="text-amber-100">Motivo del ajuste financiero (solo si cambias valores heredados)</Label>
+						<Textarea
+							value={formData.financialOverrideReason}
+							onChange={(e) => setFormData({ ...formData, financialOverrideReason: e.target.value })}
+							placeholder="Ej.: cotización actualizada, potencia validada en visita técnica o cambio de alcance aprobado."
+							rows={3}
+							className="mt-2"
+						/>
+						<p className="mt-1 text-xs text-amber-100/80">El motivo, responsable y fecha quedan auditados; el snapshot original de Espacios se conserva.</p>
+					</div>
+				)}
             </TabsContent>
 
             <TabsContent value="model" className="space-y-4 mt-4">

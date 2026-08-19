@@ -9,6 +9,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getDb } from "../db";
 import { getResendClient } from "../email/resend-client";
+import { buildCrowdfundingProjectInheritanceUpdate, getCrowdfundingInheritanceSnapshot } from "./crowdfunding-inheritance";
 import {
   spaceSubmissions,
   spacePhotos,
@@ -750,6 +751,9 @@ export const spacesRouter = router({
         trafficPotentialScore: z.number().int().min(0).max(10).optional(),
         // Datos de inversión estimados
         estimatedInvestmentCop: z.number().optional(),
+		minimumInvestmentCop: z.number().optional(),
+		estimatedRoiPercent: z.string().optional(),
+		estimatedPaybackMonths: z.number().int().optional(),
         estimatedPowerKw: z.number().int().optional(),
         estimatedChargerCount: z.number().int().optional(),
         recommendedChargerType: z.string().optional(),
@@ -768,6 +772,13 @@ export const spacesRouter = router({
         if (input.accessibilityScore !== undefined) updateData.accessibilityScore = input.accessibilityScore;
         if (input.trafficPotentialScore !== undefined) updateData.trafficPotentialScore = input.trafficPotentialScore;
         if (input.estimatedInvestmentCop !== undefined) updateData.estimatedInvestmentCop = input.estimatedInvestmentCop;
+		if (input.minimumInvestmentCop !== undefined) updateData.minimumInvestmentCop = input.minimumInvestmentCop;
+		if (input.estimatedRoiPercent !== undefined) updateData.estimatedRoiPercent = input.estimatedRoiPercent;
+		if (input.estimatedPaybackMonths !== undefined) updateData.estimatedPaybackMonths = input.estimatedPaybackMonths;
+		if (input.estimatedInvestmentCop !== undefined || input.minimumInvestmentCop !== undefined || input.estimatedRoiPercent !== undefined || input.estimatedPaybackMonths !== undefined) {
+			updateData.financialProjectionUpdatedAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+			updateData.financialProjectionUpdatedBy = ctx.user.id;
+		}
         if (input.estimatedPowerKw !== undefined) updateData.estimatedPowerKw = input.estimatedPowerKw;
         if (input.estimatedChargerCount !== undefined) updateData.estimatedChargerCount = input.estimatedChargerCount;
         if (input.recommendedChargerType) updateData.recommendedChargerType = input.recommendedChargerType;
@@ -790,27 +801,31 @@ export const spacesRouter = router({
             .where(eq(spaceSubmissions.id, input.id))
             .limit(1);
 
-          if (submission && !submission.crowdfundingProjectId) {
-            const targetAmount = submission.estimatedInvestmentCop || 1000000000;
+		  if (submission && !submission.crowdfundingProjectId) {
+			const inheritedPhotos = await db.select({
+				submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
+				caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
+			}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
+			const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
+			const targetAmount = inherited.targetAmount ?? 0;
             const [cfResult] = await db.insert(crowdfundingProjects).values({
-              name: `Punto de Carga - ${submission.spaceName}`,
-              description: `Punto de carga EV en ${submission.spaceName}, ${submission.city}. ${submission.address}`,
-              city: submission.city,
-              zone: submission.department || submission.city,
-              address: submission.address,
+				name: inherited.name,
+				description: inherited.description,
+				city: inherited.city,
+				zone: inherited.zone,
+				address: inherited.address,
               targetAmount,
-              minimumInvestment: 50000000,
-              totalPowerKw: submission.estimatedPowerKw || 120,
-              chargerCount: submission.estimatedChargerCount || 2,
-              chargerPowerKw: submission.estimatedPowerKw && submission.estimatedChargerCount
-                ? Math.round(submission.estimatedPowerKw / submission.estimatedChargerCount)
-                : 60,
+				minimumInvestment: inherited.minimumInvestment ?? 0,
+				totalPowerKw: inherited.totalPowerKw ?? 0,
+				chargerCount: inherited.chargerCount ?? 0,
+				chargerPowerKw: inherited.chargerPowerKw ?? 0,
                             hasSolarPanels: 0,
               raisedAmount: 0,
-              estimatedRoiPercent: "85.00",
-              estimatedPaybackMonths: 14,
+				estimatedRoiPercent: inherited.estimatedRoiPercent ?? "0.00",
+				estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? 0,
               status: "DRAFT",
               spaceSubmissionId: input.id,
+				spaceInheritanceSnapshot: inherited,
               createdById: ctx.user.id,
             });
             // Vincular el espacio con el proyecto CF
@@ -1084,7 +1099,7 @@ Responde en formato JSON con la siguiente estructura:`;
     publishToCrowdfunding: adminProcedure
       .input(z.object({
         id: z.number(),
-        targetAmount: z.number().min(1000000, "La meta de inversión debe ser al menos $1.000.000"),
+		targetAmount: z.number().min(1000000, "La meta de inversión debe ser al menos $1.000.000").optional(),
         minimumInvestment: z.number().optional(),
         estimatedRoiPercent: z.string().optional(),
         estimatedPaybackMonths: z.number().int().optional(),
@@ -1110,16 +1125,27 @@ Responde en formato JSON con la siguiente estructura:`;
           input.manualFormalizationEvidence,
         );
 
+		const inheritedPhotos = await db.select({
+			submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
+			caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
+		}).from(spacePhotos).where(eq(spacePhotos.submissionId, input.id)).orderBy(spacePhotos.sortOrder);
+		const inherited = getCrowdfundingInheritanceSnapshot(submission, inheritedPhotos);
+		const targetAmount = inherited.targetAmount ?? input.targetAmount;
+		if (!targetAmount) {
+			throw new TRPCError({ code: "BAD_REQUEST", message: "Completa la meta de inversión en Espacios antes de publicar." });
+		}
+
         let crowdfundingProjectId: number;
 
         if (submission.crowdfundingProjectId) {
-          // Ya existe un proyecto CF (creado auto al aprobar) → actualizar
-          await db.update(crowdfundingProjects)
-            .set({
-              targetAmount: input.targetAmount,
-              minimumInvestment: input.minimumInvestment || 50000000,
-              estimatedRoiPercent: input.estimatedRoiPercent || "85.00",
-              estimatedPaybackMonths: input.estimatedPaybackMonths || 14,
+	          // Ya existe un proyecto CF (creado auto al aprobar) → actualizar
+	          await db.update(crowdfundingProjects)
+	            .set({
+					spaceInheritanceSnapshot: inherited,
+					targetAmount,
+				minimumInvestment: inherited.minimumInvestment ?? input.minimumInvestment ?? 50000000,
+				estimatedRoiPercent: inherited.estimatedRoiPercent ?? input.estimatedRoiPercent ?? "85.00",
+				estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? input.estimatedPaybackMonths ?? 14,
               status: "OPEN",
               launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
             })
@@ -1128,25 +1154,24 @@ Responde en formato JSON con la siguiente estructura:`;
         } else {
           // Crear nuevo proyecto de crowdfunding
           const [cfResult] = await db.insert(crowdfundingProjects).values({
-            name: `Punto de Carga - ${submission.spaceName}`,
-            description: `Punto de carga EV en ${submission.spaceName}, ${submission.city}. ${submission.address}`,
-            city: submission.city,
-            zone: submission.department || submission.city,
-            address: submission.address,
-            targetAmount: input.targetAmount,
-            minimumInvestment: input.minimumInvestment || 50000000,
-            totalPowerKw: submission.estimatedPowerKw || 120,
-            chargerCount: submission.estimatedChargerCount || 2,
-            chargerPowerKw: submission.estimatedPowerKw && submission.estimatedChargerCount
-              ? Math.round(submission.estimatedPowerKw / submission.estimatedChargerCount)
-              : 60,
+			name: inherited.name,
+			description: inherited.description,
+			city: inherited.city,
+			zone: inherited.zone,
+			address: inherited.address,
+			targetAmount,
+			minimumInvestment: inherited.minimumInvestment ?? input.minimumInvestment ?? 50000000,
+			totalPowerKw: inherited.totalPowerKw ?? 120,
+			chargerCount: inherited.chargerCount ?? 2,
+			chargerPowerKw: inherited.chargerPowerKw ?? 60,
             hasSolarPanels: 0,
             raisedAmount: 0,
-            estimatedRoiPercent: input.estimatedRoiPercent || "85.00",
-            estimatedPaybackMonths: input.estimatedPaybackMonths || 14,
+			estimatedRoiPercent: inherited.estimatedRoiPercent ?? input.estimatedRoiPercent ?? "85.00",
+			estimatedPaybackMonths: inherited.estimatedPaybackMonths ?? input.estimatedPaybackMonths ?? 14,
             status: "OPEN",
             launchDate: new Date().toISOString().slice(0, 19).replace("T", " "),
             spaceSubmissionId: input.id,
+				spaceInheritanceSnapshot: inherited,
             createdById: ctx.user.id,
           });
           crowdfundingProjectId = cfResult.insertId;
@@ -1158,7 +1183,7 @@ Responde en formato JSON con la siguiente estructura:`;
           .set({
             spaceStatus: "published",
             crowdfundingProjectId,
-            estimatedInvestmentCop: input.targetAmount,
+			estimatedInvestmentCop: targetAmount,
             ...(publicationDecision.isManualFormalization
               ? {
                   manualFormalizationReason: publicationDecision.reason,
@@ -1210,6 +1235,9 @@ Responde en formato JSON con la siguiente estructura:`;
         submitterPhone: z.string().optional(),
         submitterCompany: z.string().optional(),
         estimatedInvestmentCop: optionalFormNumber(),
+        minimumInvestmentCop: optionalFormNumber(),
+        estimatedRoiPercent: optionalFormNumber(),
+        estimatedPaybackMonths: optionalFormInteger(),
         estimatedPowerKw: optionalFormInteger(),
         estimatedChargerCount: optionalFormInteger(),
         recommendedChargerType: z.string().optional(),
@@ -1227,7 +1255,7 @@ Responde en formato JSON con la siguiente estructura:`;
         requiresNewTransformer: z.boolean().optional(), // Se guarda en technicalNotes como JSON
         proposedTransformerKva: optionalFormNumber(), // kVA del transformador propuesto
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const db = await getDatabase();
         const { id, requiresNewTransformer, proposedTransformerKva, electricalDistanceM, ...updateFields } = input;
 
@@ -1239,6 +1267,15 @@ Responde en formato JSON con la siguiente estructura:`;
         }
         if (cleanFields.electricalDistance === undefined && electricalDistanceM !== undefined) {
           cleanFields.electricalDistance = electricalDistanceM;
+        }
+        if (
+          cleanFields.estimatedInvestmentCop !== undefined ||
+          cleanFields.minimumInvestmentCop !== undefined ||
+          cleanFields.estimatedRoiPercent !== undefined ||
+          cleanFields.estimatedPaybackMonths !== undefined
+        ) {
+          cleanFields.financialProjectionUpdatedAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+          cleanFields.financialProjectionUpdatedBy = ctx.user.id;
         }
 
         // Manejar transformador nuevo: merge en technicalNotes como JSON
@@ -1262,6 +1299,32 @@ Responde en formato JSON con la siguiente estructura:`;
         await db.update(spaceSubmissions)
           .set(cleanFields)
           .where(eq(spaceSubmissions.id, id));
+
+        const inheritedFields = [
+          "spaceName", "address", "city", "department", "latitude", "longitude",
+          "estimatedInvestmentCop", "minimumInvestmentCop", "estimatedRoiPercent",
+          "estimatedPaybackMonths", "estimatedPowerKw", "estimatedChargerCount",
+          "recommendedChargerType", "technicalScore", "technicalNotes", "aiScore", "aiAnalysis",
+        ];
+        if (inheritedFields.some((field) => cleanFields[field] !== undefined)) {
+          const [updatedSubmission] = await db
+            .select()
+            .from(spaceSubmissions)
+            .where(eq(spaceSubmissions.id, id))
+            .limit(1);
+
+	          if (updatedSubmission?.crowdfundingProjectId) {
+					const inheritedPhotos = await db.select({
+						submissionId: spacePhotos.submissionId, url: spacePhotos.photoUrl, type: spacePhotos.photoType,
+						caption: spacePhotos.caption, sortOrder: spacePhotos.sortOrder,
+					}).from(spacePhotos).where(eq(spacePhotos.submissionId, id)).orderBy(spacePhotos.sortOrder);
+	            const projectUpdate = buildCrowdfundingProjectInheritanceUpdate(updatedSubmission, inheritedPhotos);
+
+            await db.update(crowdfundingProjects)
+              .set(projectUpdate as any)
+              .where(eq(crowdfundingProjects.id, updatedSubmission.crowdfundingProjectId));
+          }
+        }
 
         return { success: true };
       }),
