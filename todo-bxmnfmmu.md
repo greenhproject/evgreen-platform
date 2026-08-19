@@ -6,7 +6,7 @@
 - [x] Validar en servidor los permisos y registrar la trazabilidad del cambio de estado.
 - [x] Enlazar el control de pipeline desde la navegación habitual del portal comercial.
 - [x] Añadir pruebas unitarias de reglas de transición y permisos.
-- [ ] Verificar visualmente el flujo y publicar la mejora.
+- [x] Verificar visualmente el flujo y publicar la mejora.
 - [x] Documentar el código fuente y las decisiones de la mejora en un archivo de texto.
 - [x] Ocultar acciones administrativas masivas para el rol comercial en la pantalla de espacios.
 - [x] Añadir pruebas de permisos para los procedimientos comerciales y administrativos del pipeline.
