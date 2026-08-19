@@ -175,7 +175,7 @@
 - [x] Fix: recalcular utilidad anual, ROI y payback desde la participación del inversionista sobre margen neto, sin usar ingresos brutos como retorno
 - [x] UI: mostrar en Espacios, Crowdfunding y Prospecto el puente financiero desglosado y los supuestos configurables aplicados
 - [x] Test: cubrir fórmulas, límites, configuración, reparto y consistencia del ROI/payback con cálculos deterministas
-- [ ] QA: regenerar y revisar visualmente el prospecto SPE-2026-0129 con el nuevo desglose financiero
+- [x] QA: regenerar y revisar visualmente el prospecto SPE-2026-0129 con el nuevo desglose financiero
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

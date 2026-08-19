@@ -56,3 +56,15 @@ Auditar el código fuente y la configuración financiera usada por Espacios/Crow
 1. dónde se calcula hoy el retorno del inversionista,
 2. qué variables son configurables y cuáles están implícitas o ausentes,
 3. cómo debe reestructurarse el prospecto para mostrar el puente completo: **bruto → costo kWh → margen bruto → aliado → neto → reparto inversionista/EVGreen → ROI/payback**.
+
+## Corrección implementada y generación publicada
+
+El 19 de agosto de 2026 se publicó el waterfall financiero canónico y se generó exitosamente una nueva versión del prospecto desde **Admin → Espacios** con estos parámetros configurables: tarifa de venta de `$1.800/kWh`, costo energético de `$700/kWh`, participación del aliado del `10 %` del margen bruto y reparto neto de `70 %` para inversionista / `30 %` para EVGreen.
+
+El nuevo archivo generado es: `SPE-2026-0129-prospecto-9i657b.pdf`. El diálogo publicado confirmó visualmente que el aliado se aplica sobre el margen bruto y que el costo de energía está incluido como parámetro explícito.
+
+La revisión visual del PDF confirmó el waterfall completo en cada escenario: ingreso bruto, costo de energía, margen bruto, aliado, margen neto, retorno mensual/anual del inversionista, ROI y recuperación. Esta primera regeneración tomó la potencia automática actual del espacio (`50 kW`). Para contrastar las cifras frente al documento original adjunto, que usaba el supuesto manual de `480 kW`, se debe regenerar una versión equivalente con esa potencia explícita; el cambio de potencia es un supuesto técnico, separado de la corrección financiera.
+
+Se generó una segunda versión comparable con `480 kW`, conservando tarifa de `$1.800/kWh`, costo energético de `$700/kWh`, aliado `10 %` del margen bruto e Inversionista/EVGreen `70 % / 30 %` del margen neto. Archivo generado: `SPE-2026-0129-prospecto-mbuods.pdf`.
+
+La página de proyección financiera fue revisada visualmente. Las cifras del escenario realista quedaron en: ingreso bruto mensual `$155.520.000`, costo energético `$60.480.000`, margen bruto `$95.040.000`, aliado `$9.504.000`, margen neto `$85.536.000`, retorno mensual del inversionista `$59.875.200`, retorno anual `$718.502.400`, ROI anual `71,9 %` y recuperación `1,4 años`. Los escenarios pesimista y optimista muestran el mismo puente y arrojan ROI de `47,9 %` y `107,8 %`, respectivamente.
