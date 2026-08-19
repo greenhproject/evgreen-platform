@@ -114,10 +114,10 @@
 - [x] Test: verificar que el reenvío administrativo falla en estados no elegibles sin alterar la trazabilidad previa
 - [x] Activación: registrar en Resend el endpoint público de eventos y seleccionar los tipos de correo de cartas
 - [x] Documentación: describir la activación de webhooks de entrega y la lectura del historial de cartas en Admin
-- [ ] QA operativo: verificar en Resend y Admin el primer evento firmado generado por una nueva carta real enviada después de la publicación
-- [ ] QA operativo: reenviar SPE-2026-0103 autorizada y verificar evento firmado más historial administrativo
+- [x] QA operativo: verificar en Resend y Admin el primer evento firmado generado por una nueva carta real enviada después de la publicación
+- [x] QA operativo: reenviar SPE-2026-0103 autorizada y verificar evento firmado más historial administrativo
 - [x] Fix: reemplazar la dependencia de RESEND_WEBHOOK_SECRET por la clave cifrada administrada desde base de datos/UI para eliminar el 503
-- [ ] QA operativo: confirmar que los reintentos de email.sent y email.delivered obtienen respuesta 2xx y aparecen en Admin
+- [x] QA operativo: confirmar que los reintentos de email.sent y email.delivered obtienen respuesta 2xx y aparecen en Admin
 - [x] Test: firmar un evento SVIX con la clave cifrada persistida y verificar que el receptor local lo acepta
 - [x] Feature: guardar la clave de firma de Resend cifrada en configuración de plataforma administrable desde UI
 - [x] Feature: permitir a Admin consultar estado, actualizar y borrar la configuración del webhook sin exponer la clave
@@ -164,8 +164,11 @@
 - [x] Test: renderizar el resumen y los campos de formalización manual para comprobar motivo, evidencia, fecha y etiquetas obligatorias
 - [x] Test: renderizar el diálogo de formalización manual y verificar etiquetas y ayudas obligatorias de motivo y evidencia
 - [x] Documentación: describir cuándo usar la formalización interna, qué evidencia registrar y que no reemplaza una firma externa
-- [ ] QA: abrir Admin → Espacios y confirmar visualmente que SPE-2026-0103 muestra historial de entrega con estado DELIVERED después del replay exitoso
-- [ ] QA: reintentar y verificar explícitamente el evento email.sent de SPE-2026-0103 hasta obtener 2xx y proyección administrativa
+- [x] QA: abrir Admin → Espacios y confirmar visualmente que SPE-2026-0103 muestra historial de entrega con estado DELIVERED después del replay exitoso
+- [x] QA: reintentar y verificar explícitamente el evento email.sent de SPE-2026-0103 hasta obtener 2xx y proyección administrativa
+- [x] QA UI: capturar visualmente el historial de SPE-2026-0103 con email.sent y DELIVERED en Admin → Espacios
+- [x] QA operativo: capturar el resultado 2xx de Resend para el replay de email.sent y email.delivered
+- [x] QA UI: confirmar visualmente en Admin → Crowdfunding la comparación de valores heredados vs ajustados y el snapshot financiero
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)

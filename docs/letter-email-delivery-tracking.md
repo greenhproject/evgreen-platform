@@ -20,9 +20,13 @@ Selecciona los eventos: `email.sent`, `email.delivered`, `email.delivery_delayed
 
 El receptor valida la firma Svix sobre el cuerpo crudo, procesa cada `svix-id` una sola vez y ordena el estado por la fecha del evento para que una entrega atrasada no reemplace un estado más reciente. Los eventos que no correspondan al identificador de una carta se ignoran sin crear registros.
 
-### Incidencia de activación observada
+### Incidencia y recuperación validadas
 
-La prueba real de la carta `SPE-2026-0103` generó en Resend los eventos `email.sent` y `email.delivered`, pero el proveedor registró una respuesta **HTTP 503 Service Unavailable** al llamar al endpoint. Esto confirma que la suscripción está activa y que el bloqueo se limita a la disponibilidad de una clave de firma válida en la instancia publicada. La interfaz de configuración cifrada ya está publicada en `app.evgreen.lat`; queda cargar la clave de Resend en ella y confirmar el reintento exitoso del proveedor.
+La primera prueba real de la carta `SPE-2026-0103` recibió una respuesta **HTTP 503 Service Unavailable**, causada por la ausencia de una clave de firma accesible en la instancia publicada. La clave se trasladó a **Admin → Configuración → Notificaciones → Configuración de Email**, donde se persiste cifrada en la base de datos. Tras guardarla desde la interfaz, Resend reintentó los eventos y el receptor registró correctamente `email.sent` y `email.delivered`.
+
+La comprobación publicada en **Admin → Espacios** mostró para `SPE-2026-0103` el estado **Correo: Entregado** y el historial visible con los eventos **Enviado** y **Entregado**, sin alterar la carta ni reenviar el correo durante la revisión.
+
+La revisión posterior del panel de Resend mostró el endpoint `https://app.evgreen.lat/api/resend/webhook` en estado **Enabled** y los eventos `email.sent` y `email.delivered` con resultado **Success**, confirmando respuestas HTTP exitosas posteriores a la configuración cifrada.
 
 ## Seguimiento operativo
 
