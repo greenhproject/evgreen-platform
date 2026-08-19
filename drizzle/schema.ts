@@ -1609,6 +1609,25 @@ export const spaceSubmissions = mysqlTable("space_submissions", {
 	index("idx_space_letter_email_id").on(table.letterEmailId),
 ]);
 
+/**
+ * Bitácora inmutable de los movimientos del pipeline de cada espacio.
+ * Conserva el estado anterior, el nuevo, el actor y la nota comercial o técnica
+ * que justificó el avance. El actor puede ser nulo para eventos públicos como
+ * la firma de la carta de intención.
+ */
+export const spaceStatusHistory = mysqlTable("space_status_history", {
+	id: int().autoincrement().notNull(),
+	submissionId: int("submission_id").notNull(),
+	fromStatus: mysqlEnum("from_status", ['pending','under_review','approved','rejected','letter_sent','letter_accepted','published','funded','in_construction','operational']).notNull(),
+	toStatus: mysqlEnum("to_status", ['pending','under_review','approved','rejected','letter_sent','letter_accepted','published','funded','in_construction','operational']).notNull(),
+	changedById: int("changed_by_id"),
+	changedByRole: varchar("changed_by_role", { length: 32 }),
+	note: text(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+}, (table) => [
+	index("idx_space_status_history_submission_created").on(table.submissionId, table.createdAt),
+]);
+
 export const letterEmailEvents = mysqlTable("letter_email_events", {
 	id: int().autoincrement().notNull(),
 	submissionId: int().notNull(),

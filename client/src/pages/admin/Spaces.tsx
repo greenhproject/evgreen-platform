@@ -7,6 +7,7 @@
  * RESPONSIVE: Optimizado para desktop, tablet y móvil
  */
 import { useState, useMemo } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +48,12 @@ const SPACE_TYPE_LABELS: Record<string, string> = {
   hotel: "Hotel", restaurant: "Restaurante", office_building: "Oficinas",
   residential: "Residencial", supermarket: "Supermercado", hospital: "Hospital",
   university: "Universidad", airport: "Aeropuerto", highway_rest: "Parador", other: "Otro",
+};
+
+const COMMERCIAL_NEXT_STEPS: Partial<Record<string, { status: "funded" | "in_construction" | "operational"; label: string; description: string }>> = {
+  published: { status: "funded", label: "Confirmar fondeo", description: "La meta de inversión fue completada para esta oferta." },
+  funded: { status: "in_construction", label: "Iniciar construcción", description: "La oferta pasa de fondeada a ejecución de obra." },
+  in_construction: { status: "operational", label: "Marcar operativo", description: "La estación queda lista para operación comercial." },
 };
 
 function formatCOP(value: number): string {
@@ -104,6 +111,8 @@ async function compressImageFile(file: File, maxDim: number, quality: number): P
 }
 
 export default function AdminSpaces() {
+  const { user } = useAuth();
+  const canManageAdministrativeActions = user?.role === "admin" || user?.role === "staff";
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -368,7 +377,7 @@ export default function AdminSpaces() {
       )}
 
       {/* Bulk Action Bar */}
-      {selectedIds.size > 0 && (
+      {canManageAdministrativeActions && selectedIds.size > 0 && (
         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <CheckSquare className="w-4 h-4 text-emerald-400" />
@@ -459,7 +468,7 @@ export default function AdminSpaces() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#1f2937]">
-                <th className="text-left px-3 py-3 w-10">
+                {canManageAdministrativeActions && <th className="text-left px-3 py-3 w-10">
                   <button onClick={toggleSelectAll} className="text-gray-400 hover:text-emerald-400 transition-colors">
                     {allSelected ? (
                       <CheckSquare className="w-4 h-4 text-emerald-400" />
@@ -469,7 +478,7 @@ export default function AdminSpaces() {
                       <Square className="w-4 h-4" />
                     )}
                   </button>
-                </th>
+                </th>}
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Código</th>
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Espacio</th>
                 <th className="text-left px-4 py-3 text-gray-400 font-medium">Postulante</th>
@@ -484,13 +493,13 @@ export default function AdminSpaces() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-12">
+                  <td colSpan={canManageAdministrativeActions ? 10 : 9} className="text-center py-12">
                     <Loader2 className="w-6 h-6 text-emerald-400 animate-spin mx-auto" />
                   </td>
                 </tr>
               ) : submissions.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-gray-500">
+                  <td colSpan={canManageAdministrativeActions ? 10 : 9} className="text-center py-12 text-gray-500">
                     No se encontraron postulaciones
                   </td>
                 </tr>
@@ -501,7 +510,7 @@ export default function AdminSpaces() {
                   const isSelected = selectedIds.has(sub.id);
                   return (
                     <tr key={sub.id} className={`border-b border-[#1f2937]/50 hover:bg-[#1f2937]/30 transition-colors ${isSelected ? "bg-emerald-500/5" : ""}`}>
-                      <td className="px-3 py-3">
+                      {canManageAdministrativeActions && <td className="px-3 py-3">
                         <button onClick={() => toggleSelect(sub.id)} className="text-gray-400 hover:text-emerald-400 transition-colors">
                           {isSelected ? (
                             <CheckSquare className="w-4 h-4 text-emerald-400" />
@@ -509,7 +518,7 @@ export default function AdminSpaces() {
                             <Square className="w-4 h-4" />
                           )}
                         </button>
-                      </td>
+                      </td>}
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs text-emerald-400">{sub.code}</span>
                       </td>
@@ -582,7 +591,7 @@ export default function AdminSpaces() {
       {/* Mobile Card List (visible only on mobile) */}
       <div className="md:hidden space-y-3">
         {/* Mobile select all */}
-        <div className="flex items-center justify-between px-1">
+        {canManageAdministrativeActions && <div className="flex items-center justify-between px-1">
           <button onClick={toggleSelectAll} className="flex items-center gap-2 text-xs text-gray-400 hover:text-emerald-400 transition-colors">
             {allSelected ? <CheckSquare className="w-4 h-4 text-emerald-400" /> : <Square className="w-4 h-4" />}
             <span>Seleccionar todos</span>
@@ -590,7 +599,7 @@ export default function AdminSpaces() {
           {selectedIds.size > 0 && (
             <span className="text-xs text-emerald-400">{selectedIds.size} seleccionados</span>
           )}
-        </div>
+        </div>}
 
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
@@ -611,9 +620,9 @@ export default function AdminSpaces() {
                 className={`w-full text-left bg-[#111827] border rounded-xl p-4 transition-colors ${isSelected ? "border-emerald-500/50 bg-emerald-500/5" : "border-[#1f2937]"}`}
               >
                 <div className="flex items-start gap-3">
-                  <button onClick={() => toggleSelect(sub.id)} className="mt-0.5 text-gray-400 hover:text-emerald-400 transition-colors flex-shrink-0">
+                  {canManageAdministrativeActions && <button onClick={() => toggleSelect(sub.id)} className="mt-0.5 text-gray-400 hover:text-emerald-400 transition-colors flex-shrink-0">
                     {isSelected ? <CheckSquare className="w-4 h-4 text-emerald-400" /> : <Square className="w-4 h-4" />}
-                  </button>
+                  </button>}
                   <div className="flex-1 min-w-0" onClick={() => setSelectedId(sub.id)}>
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="min-w-0 flex-1">
@@ -1045,7 +1054,9 @@ function SpaceDetailDialog({
   onClose: () => void;
   onRefresh: () => void;
 }) {
+  const { user } = useAuth();
   const { data: space, isLoading, refetch } = trpc.spaces.admin.getById.useQuery({ id });
+  const { data: statusHistory } = trpc.spaces.admin.getStatusHistory.useQuery({ id });
   const updateStatusMutation = trpc.spaces.admin.updateStatus.useMutation();
   const sendLetterMutation = trpc.spaces.admin.sendLetter.useMutation();
   const getLetterShareLinkMutation = trpc.spaces.admin.getLetterShareLink.useMutation();
@@ -1055,8 +1066,11 @@ function SpaceDetailDialog({
   const publishMutation = trpc.spaces.admin.publishToCrowdfunding.useMutation();
   const updateSpaceMutation = trpc.spaces.admin.updateSpace.useMutation();
   const deleteSpaceMutation = trpc.spaces.admin.deleteSpace.useMutation();
+  const advanceCommercialStageMutation = trpc.spaces.admin.advanceCommercialStage.useMutation();
   const generateProspectoMutation = trpc.spaces.generateProspectoPdf.useMutation();
   const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [showCommercialStageDialog, setShowCommercialStageDialog] = useState(false);
+  const [commercialStageNote, setCommercialStageNote] = useState("");
   const [showProspectoDialog, setShowProspectoDialog] = useState(false);
   const [prospectoConfig, setProspectoConfig] = useState({
     allySharePercent: 10,
@@ -1100,6 +1114,8 @@ function SpaceDetailDialog({
   const statusInfo = STATUS_LABELS[space.spaceStatus as string] || STATUS_LABELS.pending;
   const StatusIcon = statusInfo.icon;
   const aiAnalysis = space.aiAnalysis ? JSON.parse(space.aiAnalysis) : null;
+  const commercialNextStep = COMMERCIAL_NEXT_STEPS[space.spaceStatus as string];
+  const canManageAdministrativeDetails = user?.role === "admin" || user?.role === "staff";
 
   const handleStatusUpdate = async (status: string) => {
     try {
@@ -1232,6 +1248,39 @@ function SpaceDetailDialog({
     }
   };
 
+  const handlePipelineAction = async () => {
+    if (space.spaceStatus === "approved") {
+      await handleSendLetter();
+      return;
+    }
+    if (space.spaceStatus === "letter_sent" || space.spaceStatus === "letter_accepted") {
+      setShowPublishDialog(true);
+      return;
+    }
+    if (commercialNextStep) {
+      setCommercialStageNote("");
+      setShowCommercialStageDialog(true);
+    }
+  };
+
+  const handleCommercialStageAdvance = async () => {
+    if (!commercialNextStep) return;
+    try {
+      await advanceCommercialStageMutation.mutateAsync({
+        id,
+        targetStatus: commercialNextStep.status,
+        note: commercialStageNote.trim(),
+      });
+      toast.success(`Oferta movida a: ${STATUS_LABELS[commercialNextStep.status].label}`);
+      setShowCommercialStageDialog(false);
+      setCommercialStageNote("");
+      refetch();
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || "No fue posible mover la oferta en el pipeline");
+    }
+  };
+
   return (
     <>
       <Dialog open onOpenChange={onClose}>
@@ -1252,12 +1301,12 @@ function SpaceDetailDialog({
             <div className="flex flex-col gap-2">
             {/* Row 1: Status-specific actions */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-              {space.spaceStatus === "pending" && (
+              {canManageAdministrativeDetails && space.spaceStatus === "pending" && (
                 <Button size="sm" onClick={() => handleStatusUpdate("under_review")} className="bg-blue-600 hover:bg-blue-700 text-white flex-shrink-0 text-xs">
                   <Eye className="w-3.5 h-3.5 mr-1" /> Revisar
                 </Button>
               )}
-              {(space.spaceStatus === "pending" || space.spaceStatus === "under_review") && (
+              {canManageAdministrativeDetails && (space.spaceStatus === "pending" || space.spaceStatus === "under_review") && (
                 <>
                   <Button size="sm" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0 text-xs">
                     {generateAIMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Brain className="w-3.5 h-3.5 mr-1" />}
@@ -1272,14 +1321,19 @@ function SpaceDetailDialog({
                 </>
               )}
               {space.spaceStatus === "approved" && (
-                <Button size="sm" onClick={handleSendLetter} disabled={sendLetterMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0 text-xs">
+                <Button size="sm" onClick={handlePipelineAction} disabled={sendLetterMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0 text-xs">
                   {sendLetterMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
-                  Enviar carta
+                  Mover en pipeline
                 </Button>
               )}
               {(space.spaceStatus === "letter_accepted" || space.spaceStatus === "letter_sent") && (
-                <Button size="sm" onClick={() => setShowPublishDialog(true)} className="bg-green-600 hover:bg-green-700 text-white flex-shrink-0 text-xs">
-                  <Globe className="w-3.5 h-3.5 mr-1" /> {space.spaceStatus === "letter_sent" ? "Formalizar y publicar" : "Publicar"}
+                <Button size="sm" onClick={handlePipelineAction} className="bg-green-600 hover:bg-green-700 text-white flex-shrink-0 text-xs">
+                  <Globe className="w-3.5 h-3.5 mr-1" /> Mover en pipeline
+                </Button>
+              )}
+              {commercialNextStep && (
+                <Button size="sm" onClick={handlePipelineAction} className="bg-emerald-600 hover:bg-emerald-700 text-white flex-shrink-0 text-xs">
+                  <ArrowUpRight className="w-3.5 h-3.5 mr-1" /> Mover en pipeline
                 </Button>
               )}
             </div>
@@ -1305,11 +1359,11 @@ function SpaceDetailDialog({
                 <Button size="sm" onClick={() => setShowProspectoDialog(true)} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs w-full">
                   <FileDown className="w-3.5 h-3.5 mr-1" /> Prospecto PDF
                 </Button>
-                <Button size="sm" variant="outline" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="border-[#374151] text-gray-300 text-xs w-full">
+                {canManageAdministrativeDetails && <Button size="sm" variant="outline" onClick={handleGenerateAI} disabled={generateAIMutation.isPending} className="border-[#374151] text-gray-300 text-xs w-full">
                   {generateAIMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Brain className="w-3.5 h-3.5 mr-1" />}
                   Re-evaluar IA
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => {
+                </Button>}
+                {canManageAdministrativeDetails && <Button size="sm" variant="outline" onClick={() => {
                     // Pre-poblar con TODOS los datos actuales del espacio
                     const techNotes = (() => { try { return space.technicalNotes ? JSON.parse(space.technicalNotes) : {}; } catch { return {}; } })();
                     const ai = aiAnalysis || {};
@@ -1354,11 +1408,33 @@ function SpaceDetailDialog({
                     setShowEditDialog(true);
                   }} className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs w-full">
                   <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setShowDeleteDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs w-full">
+                </Button>}
+                {canManageAdministrativeDetails && <Button size="sm" variant="outline" onClick={() => setShowDeleteDialog(true)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs w-full">
                   <Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar
-                </Button>
+                </Button>}
               </div>
+            </div>
+
+            <div className="rounded-xl border border-[#374151] bg-[#0a0f1a] p-3 sm:p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-white flex items-center gap-2"><Clock className="w-4 h-4 text-emerald-400" /> Historial del pipeline</p>
+                <span className="text-[11px] text-gray-500">Últimos movimientos</span>
+              </div>
+              {statusHistory && statusHistory.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {statusHistory.slice(0, 4).map((event, index) => (
+                    <div key={`${event.fromStatus}-${event.toStatus}-${event.createdAt}-${index}`} className="flex flex-col gap-1 border-l-2 border-emerald-500/40 pl-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs text-gray-200">{STATUS_LABELS[event.fromStatus]?.label || event.fromStatus} <span className="text-emerald-400">→</span> {STATUS_LABELS[event.toStatus]?.label || event.toStatus}</p>
+                        {event.note && <p className="mt-0.5 text-[11px] text-gray-400">{event.note}</p>}
+                      </div>
+                      <p className="shrink-0 text-[10px] text-gray-500">{new Date(event.createdAt).toLocaleString("es-CO")}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">Los próximos movimientos quedarán registrados aquí.</p>
+              )}
             </div>
 
             {/* Content grid - single column on mobile, two columns on desktop */}
@@ -1670,6 +1746,27 @@ function SpaceDetailDialog({
             <Button onClick={handleReject} disabled={updateStatusMutation.isPending} className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto">
               {updateStatusMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <XCircle className="w-4 h-4 mr-1.5" />}
               Rechazar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCommercialStageDialog} onOpenChange={setShowCommercialStageDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-300"><ArrowUpRight className="w-5 h-5" /> {commercialNextStep?.label || "Mover en pipeline"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-300">{commercialNextStep?.description} Este avance queda registrado en el historial comercial.</p>
+            <div>
+              <Label className="mb-1.5 block text-sm text-gray-300">Nota de gestión *</Label>
+              <Textarea value={commercialStageNote} onChange={(event) => setCommercialStageNote(event.target.value)} placeholder="Ej.: Confirmación del comité de inversión recibida el 19 de agosto." rows={4} className="bg-[#0a0f1a] border-[#374151] text-white placeholder:text-gray-600 resize-none text-sm" />
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowCommercialStageDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={handleCommercialStageAdvance} disabled={advanceCommercialStageMutation.isPending || commercialStageNote.trim().length < 4} className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto">
+              {advanceCommercialStageMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />} Confirmar movimiento
             </Button>
           </DialogFooter>
         </DialogContent>

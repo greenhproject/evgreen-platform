@@ -1316,7 +1316,7 @@ function Router() {
 
         {/* Administración de Espacios */}
         <Route path="/admin/spaces">
-          <ProtectedRoute allowedRoles={["admin", "staff"]}>
+          <ProtectedRoute allowedRoles={["admin", "staff", "comercial"]}>
             <AdminLayout>
               <AdminSpaces />
             </AdminLayout>

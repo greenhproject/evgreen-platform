@@ -16,6 +16,7 @@ import {
   crowdfundingProjects,
   investorLeads,
   letterEmailEvents,
+  spaceStatusHistory,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, like, or, inArray, count, gte, lte, isNull, isNotNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
@@ -23,14 +24,24 @@ import { storagePut } from "../storage";
 import { invokeLLM } from "../_core/llm";
 import { buildEmailParams } from "../utils/email-helper";
 import { optionalFormInteger, optionalFormNumber } from "./space-input-normalization";
+import { canManageCommercialPipeline, canManageSpaceAdministration } from "./pipeline-access";
+import { assertCommercialTransition, type SpacePipelineStatus } from "./pipeline-transitions";
 
 // ============================================================================
 // ROLE GUARDS
 // ============================================================================
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+  if (!canManageSpaceAdministration(ctx.user.role)) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Se requiere rol de administrador." });
+  }
+  return next({ ctx });
+});
+
+/** Permite el seguimiento comercial sin abrir privilegios de administración masiva. */
+const commercialPipelineProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (!canManageCommercialPipeline(ctx.user.role)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "No tienes permiso para gestionar el pipeline comercial." });
   }
   return next({ ctx });
 });
@@ -43,6 +54,31 @@ async function getDatabase() {
   const db = (await getDb())!;
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Base de datos no disponible" });
   return db;
+}
+
+function toSqlTimestamp(date = new Date()) {
+  return date.toISOString().slice(0, 19).replace("T", " ");
+}
+
+async function recordSpaceStatusChange(
+  db: any,
+  input: {
+    submissionId: number;
+    fromStatus: SpacePipelineStatus;
+    toStatus: SpacePipelineStatus;
+    changedById?: number | null;
+    changedByRole?: string | null;
+    note?: string | null;
+  },
+) {
+  if (input.fromStatus === input.toStatus) return;
+  await db.insert(spaceStatusHistory).values({
+    ...input,
+    changedById: input.changedById ?? null,
+    changedByRole: input.changedByRole ?? null,
+    note: input.note?.trim() || null,
+    createdAt: toSqlTimestamp(),
+  } as any);
 }
 
 export async function generateSubmissionCode(db: any): Promise<string> {
@@ -447,6 +483,14 @@ export const spacesRouter = router({
         })
         .where(eq(spaceSubmissions.id, submission.id));
 
+      await recordSpaceStatusChange(db, {
+        submissionId: submission.id,
+        fromStatus: "letter_sent",
+        toStatus: "letter_accepted",
+        changedByRole: "external_signer",
+        note: `Carta de intención firmada por ${input.signerName}.`,
+      });
+
       // Enviar copia del PDF al firmante por email (trazabilidad)
       try {
         if (pdfUrl && submission.submitterEmail) {
@@ -597,7 +641,7 @@ export const spacesRouter = router({
   // ADMIN: Listar todas las postulaciones con filtros
   // ========================================================================
   admin: router({
-    list: adminProcedure
+    list: commercialPipelineProcedure
       .input(z.object({
         status: z.string().optional(),
         search: z.string().optional(),
@@ -707,7 +751,7 @@ export const spacesRouter = router({
     // ========================================================================
     // ADMIN: Obtener detalle de una postulación
     // ========================================================================
-    getById: adminProcedure
+    getById: commercialPipelineProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const db = await getDatabase();
@@ -729,6 +773,26 @@ export const spacesRouter = router({
           .orderBy(spacePhotos.sortOrder);
 
         return { ...submission, status: submission.spaceStatus, photos };
+      }),
+
+    // ========================================================================
+    // PIPELINE: Historial reciente de cambios de etapa
+    // ========================================================================
+    getStatusHistory: commercialPipelineProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDatabase();
+        return db.select({
+          fromStatus: spaceStatusHistory.fromStatus,
+          toStatus: spaceStatusHistory.toStatus,
+          changedByRole: spaceStatusHistory.changedByRole,
+          note: spaceStatusHistory.note,
+          createdAt: spaceStatusHistory.createdAt,
+        })
+          .from(spaceStatusHistory)
+          .where(eq(spaceStatusHistory.submissionId, input.id))
+          .orderBy(desc(spaceStatusHistory.createdAt))
+          .limit(12);
       }),
 
     // ========================================================================
@@ -761,6 +825,15 @@ export const spacesRouter = router({
       .mutation(async ({ input, ctx }) => {
         const db = await getDatabase();
 
+        const [currentSubmission] = await db
+          .select({ spaceStatus: spaceSubmissions.spaceStatus })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+        if (!currentSubmission) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
+        }
+
         const updateData: any = {
           spaceStatus: input.status,
         };
@@ -792,6 +865,15 @@ export const spacesRouter = router({
         await db.update(spaceSubmissions)
           .set(updateData)
           .where(eq(spaceSubmissions.id, input.id));
+
+        await recordSpaceStatusChange(db, {
+          submissionId: input.id,
+          fromStatus: currentSubmission.spaceStatus as SpacePipelineStatus,
+          toStatus: input.status as SpacePipelineStatus,
+          changedById: ctx.user.id,
+          changedByRole: ctx.user.role,
+          note: input.rejectionReason || "Actualización de etapa desde administración.",
+        });
 
         // ── Auto-crear proyecto crowdfunding DRAFT cuando se aprueba ──
         if (input.status === "approved") {
@@ -856,7 +938,7 @@ export const spacesRouter = router({
     // ========================================================================
     // ADMIN: Enviar carta de intención por email
     // ========================================================================
-    sendLetter: adminProcedure
+    sendLetter: commercialPipelineProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDatabase();
@@ -917,13 +999,22 @@ export const spacesRouter = router({
           .set(buildLetterDispatchUpdate(letterToken, result.data?.id) as any)
           .where(eq(spaceSubmissions.id, input.id));
 
+        await recordSpaceStatusChange(db, {
+          submissionId: input.id,
+          fromStatus: submission.spaceStatus as SpacePipelineStatus,
+          toStatus: "letter_sent",
+          changedById: ctx.user.id,
+          changedByRole: ctx.user.role,
+          note: submission.spaceStatus === "letter_sent" ? "Carta de intención reenviada." : "Carta de intención enviada al postulante.",
+        });
+
         return { success: true, emailId: result.data?.id, acceptUrl };
       }),
 
     // ========================================================================
     // ADMIN: Obtener enlace alterno de firma para compartir manualmente
     // ========================================================================
-    getLetterShareLink: adminProcedure
+    getLetterShareLink: commercialPipelineProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         const db = await getDatabase();
@@ -940,7 +1031,7 @@ export const spacesRouter = router({
     // ========================================================================
     // ADMIN: Historial seguro de entrega de la carta (sin payload del proveedor)
     // ========================================================================
-    getLetterDeliveryHistory: adminProcedure
+    getLetterDeliveryHistory: commercialPipelineProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const db = await getDatabase();
@@ -959,7 +1050,7 @@ export const spacesRouter = router({
     // ========================================================================
     // ADMIN: Rotar enlace de firma para revocar un vínculo compartido
     // ========================================================================
-    rotateLetterShareLink: adminProcedure
+    rotateLetterShareLink: commercialPipelineProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         const db = await getDatabase();
@@ -1096,7 +1187,7 @@ Responde en formato JSON con la siguiente estructura:`;
     // ========================================================================
     // ADMIN: Publicar espacio en crowdfunding
     // ========================================================================
-    publishToCrowdfunding: adminProcedure
+    publishToCrowdfunding: commercialPipelineProcedure
       .input(z.object({
         id: z.number(),
 		targetAmount: z.number().min(1000000, "La meta de inversión debe ser al menos $1.000.000").optional(),
@@ -1195,11 +1286,85 @@ Responde en formato JSON con la siguiente estructura:`;
           } as any)
           .where(eq(spaceSubmissions.id, input.id));
 
+        await recordSpaceStatusChange(db, {
+          submissionId: input.id,
+          fromStatus: submission.spaceStatus as SpacePipelineStatus,
+          toStatus: "published",
+          changedById: ctx.user.id,
+          changedByRole: ctx.user.role,
+          note: publicationDecision.isManualFormalization
+            ? "Oferta publicada con formalización interna registrada."
+            : "Oferta publicada para crowdfunding.",
+        });
+
         return {
           success: true,
           crowdfundingProjectId,
           manualFormalization: publicationDecision.isManualFormalization,
         };
+      }),
+
+    // ========================================================================
+    // PIPELINE COMERCIAL: Confirmar el siguiente hito posterior a publicación
+    // ========================================================================
+    advanceCommercialStage: commercialPipelineProcedure
+      .input(z.object({
+        id: z.number(),
+        targetStatus: z.enum(["funded", "in_construction", "operational"]),
+        note: z.string().trim().min(4, "Registra una nota comercial de al menos 4 caracteres.").max(500),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDatabase();
+        const [submission] = await db
+          .select({
+            id: spaceSubmissions.id,
+            spaceStatus: spaceSubmissions.spaceStatus,
+            crowdfundingProjectId: spaceSubmissions.crowdfundingProjectId,
+          })
+          .from(spaceSubmissions)
+          .where(eq(spaceSubmissions.id, input.id))
+          .limit(1);
+
+        if (!submission) throw new TRPCError({ code: "NOT_FOUND", message: "Postulación no encontrada" });
+
+        try {
+          assertCommercialTransition(
+            submission.spaceStatus as SpacePipelineStatus,
+            input.targetStatus as SpacePipelineStatus,
+          );
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : "No es posible avanzar la etapa comercial.",
+          });
+        }
+
+        const now = toSqlTimestamp();
+        await db.update(spaceSubmissions)
+          .set({ spaceStatus: input.targetStatus })
+          .where(eq(spaceSubmissions.id, input.id));
+
+        if (submission.crowdfundingProjectId) {
+          const projectUpdate = input.targetStatus === "funded"
+            ? { status: "FUNDED" as const, fundedDate: now }
+            : input.targetStatus === "operational"
+              ? { status: "COMPLETED" as const, operationalDate: now }
+              : { status: "IN_PROGRESS" as const };
+          await db.update(crowdfundingProjects)
+            .set(projectUpdate)
+            .where(eq(crowdfundingProjects.id, submission.crowdfundingProjectId));
+        }
+
+        await recordSpaceStatusChange(db, {
+          submissionId: submission.id,
+          fromStatus: submission.spaceStatus as SpacePipelineStatus,
+          toStatus: input.targetStatus as SpacePipelineStatus,
+          changedById: ctx.user.id,
+          changedByRole: ctx.user.role,
+          note: input.note,
+        });
+
+        return { success: true, status: input.targetStatus };
       }),
 
     // ========================================================================
@@ -1436,6 +1601,11 @@ Responde en formato JSON con la siguiente estructura:`;
         const db = await getDatabase();
         const { ids, status } = input;
 
+        const currentSubmissions = await db.select({
+          id: spaceSubmissions.id,
+          spaceStatus: spaceSubmissions.spaceStatus,
+        }).from(spaceSubmissions).where(inArray(spaceSubmissions.id, ids));
+
         const updateData: any = { spaceStatus: status };
         if (["under_review", "approved", "rejected"].includes(status)) {
           updateData.evaluatedBy = ctx.user.id;
@@ -1446,7 +1616,16 @@ Responde en formato JSON con la siguiente estructura:`;
           .set(updateData)
           .where(inArray(spaceSubmissions.id, ids));
 
-        return { success: true, updatedCount: ids.length };
+        await Promise.all(currentSubmissions.map((submission) => recordSpaceStatusChange(db, {
+          submissionId: submission.id,
+          fromStatus: submission.spaceStatus as SpacePipelineStatus,
+          toStatus: status as SpacePipelineStatus,
+          changedById: ctx.user.id,
+          changedByRole: ctx.user.role,
+          note: "Actualización masiva desde administración.",
+        })));
+
+        return { success: true, updatedCount: currentSubmissions.length };
       }),
 
     // ========================================================================

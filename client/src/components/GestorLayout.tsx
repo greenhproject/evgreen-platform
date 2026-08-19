@@ -10,6 +10,7 @@ import {
   BriefcaseBusiness,
   FileText,
   DollarSign,
+  MapPin,
   LogOut,
   Menu,
   Zap,
@@ -21,6 +22,7 @@ import { useState } from "react";
 const NAV_ITEMS = [
   { href: "/gestor", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/gestor/cartera", label: "Mi cartera", icon: BriefcaseBusiness },
+  { href: "/admin/spaces", label: "Pipeline de espacios", icon: MapPin },
   { href: "/gestor/cotizaciones", label: "Cotizaciones", icon: FileText },
   { href: "/gestor/liquidacion", label: "Liquidación", icon: DollarSign },
 ];
