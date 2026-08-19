@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { InheritedFinancialAudit } from "@/components/crowdfunding/InheritedFinancialAudit";
+import { InheritedSpaceGallery } from "@/components/crowdfunding/InheritedSpaceGallery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -904,26 +905,7 @@ const handleSubmit = () => {
             </TabsList>
 
 	            <TabsContent value="general" className="space-y-4 mt-4">
-				{editingProject?.spaceSubmissionId && (
-					<div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-						<div className="mb-2 flex items-center justify-between gap-3">
-							<div className="flex items-center gap-2 text-sm font-semibold text-white"><ImageIcon className="h-4 w-4 text-cyan-300" /> Galería heredada del sitio</div>
-							<Badge variant="outline" className="border-cyan-400/40 text-cyan-200">{editingProject.inheritedPhotos?.length || 0} fotos</Badge>
-						</div>
-						{editingProject.inheritedPhotos?.length ? (
-							<div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-								{editingProject.inheritedPhotos.map((photo, index) => (
-									<div key={`${photo.url}-${index}`} className="overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
-										<img src={photo.url} alt={photo.caption || `Foto ${index + 1} del espacio`} className="h-24 w-full object-cover" />
-										<div className="truncate px-2 py-1 text-[10px] text-slate-300">{photo.caption || photo.type}</div>
-									</div>
-								))}
-							</div>
-						) : (
-							<p className="text-xs text-slate-400">El espacio no tiene registros fotográficos cargados todavía.</p>
-						)}
-					</div>
-				)}
+					{editingProject?.spaceSubmissionId && <InheritedSpaceGallery photos={editingProject.inheritedPhotos || []} />}
 	              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>Nombre del Proyecto</Label>

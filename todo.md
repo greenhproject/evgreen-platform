@@ -145,6 +145,9 @@
 - [x] Test: cubrir la cobertura completa del mapeo y detectar campos obligatorios no heredados
 - [x] Feature: heredar fotos y metadatos del espacio hacia la ficha administrativa y pública de crowdfunding
 - [x] UI: mostrar una galería de imágenes heredadas en el borrador y proyecto publicado sin segunda carga
+- [ ] Fix UI: mostrar de forma visible la galería heredada en el editor de Crowdfunding para que Administración pueda verificar las fotos del sitio
+- [ ] QA UI: comprobar que un proyecto vinculado con fotos muestra miniaturas y captions heredados antes de publicarlo
+- [x] Test: renderizar la galería heredada del editor y comprobar que muestra miniaturas, orden y captions del espacio
 - [x] Test: cubrir que las fotos vinculadas al espacio aparecen en el payload de crowdfunding y respetan el orden/captions
 - [x] Test: verificar que editar inversión, ROI, payback, potencia o ubicación en Espacios sincroniza el proyecto vinculado
 - [x] Feature: exigir motivo y registrar responsable al sobrescribir valores heredados en Crowdfunding
