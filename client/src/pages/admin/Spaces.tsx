@@ -17,6 +17,7 @@ import { ManualFormalizationAudit, ManualFormalizationFields } from "@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { getSpacePipelineAction } from "@shared/space-pipeline-actions";
 import {
   MapPin, Search, Filter, Eye, Zap, Star, Send, Globe, Brain,
   CheckCircle2, XCircle, Clock, FileText, Loader2, ChevronLeft,
@@ -1069,6 +1070,7 @@ function SpaceDetailDialog({
   const advanceCommercialStageMutation = trpc.spaces.admin.advanceCommercialStage.useMutation();
   const generateProspectoMutation = trpc.spaces.generateProspectoPdf.useMutation();
   const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [showPipelineActionDialog, setShowPipelineActionDialog] = useState(false);
   const [showCommercialStageDialog, setShowCommercialStageDialog] = useState(false);
   const [commercialStageNote, setCommercialStageNote] = useState("");
   const [showProspectoDialog, setShowProspectoDialog] = useState(false);
@@ -1116,6 +1118,7 @@ function SpaceDetailDialog({
   const StatusIcon = statusInfo.icon;
   const aiAnalysis = space.aiAnalysis ? JSON.parse(space.aiAnalysis) : null;
   const commercialNextStep = COMMERCIAL_NEXT_STEPS[space.spaceStatus as string];
+  const pipelineAction = getSpacePipelineAction(space.spaceStatus as string);
   const canManageAdministrativeDetails = user?.role === "admin" || user?.role === "staff";
 
   const handleStatusUpdate = async (status: string) => {
@@ -1249,19 +1252,28 @@ function SpaceDetailDialog({
     }
   };
 
-  const handlePipelineAction = async () => {
-    if (space.spaceStatus === "approved") {
-      await handleSendLetter();
-      return;
-    }
-    if (space.spaceStatus === "letter_sent" || space.spaceStatus === "letter_accepted") {
-      setShowPublishDialog(true);
-      return;
-    }
+  const handlePipelineAction = () => {
     if (commercialNextStep) {
       setCommercialStageNote("");
       setShowCommercialStageDialog(true);
+      return;
     }
+    if (pipelineAction) setShowPipelineActionDialog(true);
+  };
+
+  const handlePipelineActionConfirmation = async () => {
+    if (!pipelineAction) return;
+    if (pipelineAction.kind === "send_letter") {
+      await handleSendLetter();
+      setShowPipelineActionDialog(false);
+      return;
+    }
+    if (pipelineAction.kind === "publish") {
+      setShowPipelineActionDialog(false);
+      setShowPublishDialog(true);
+      return;
+    }
+    setShowPipelineActionDialog(false);
   };
 
   const handleCommercialStageAdvance = async () => {
@@ -1321,13 +1333,7 @@ function SpaceDetailDialog({
                   </Button>
                 </>
               )}
-              {space.spaceStatus === "approved" && (
-                <Button size="sm" onClick={handlePipelineAction} disabled={sendLetterMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0 text-xs">
-                  {sendLetterMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
-                  Mover en pipeline
-                </Button>
-              )}
-              {(space.spaceStatus === "letter_accepted" || space.spaceStatus === "letter_sent") && (
+              {pipelineAction && !commercialNextStep && (
                 <Button size="sm" onClick={handlePipelineAction} className="bg-green-600 hover:bg-green-700 text-white flex-shrink-0 text-xs">
                   <Globe className="w-3.5 h-3.5 mr-1" /> Mover en pipeline
                 </Button>
@@ -1335,6 +1341,11 @@ function SpaceDetailDialog({
               {commercialNextStep && (
                 <Button size="sm" onClick={handlePipelineAction} className="bg-emerald-600 hover:bg-emerald-700 text-white flex-shrink-0 text-xs">
                   <ArrowUpRight className="w-3.5 h-3.5 mr-1" /> Mover en pipeline
+                </Button>
+              )}
+              {canManageAdministrativeDetails && space.spaceStatus === "letter_sent" && (
+                <Button size="sm" variant="outline" onClick={() => setShowPublishDialog(true)} className="border-amber-400/50 text-amber-200 hover:bg-amber-500/10 flex-shrink-0 text-xs">
+                  <AlertTriangle className="w-3.5 h-3.5 mr-1" /> Formalizar y publicar
                 </Button>
               )}
             </div>
@@ -1768,6 +1779,26 @@ function SpaceDetailDialog({
             <Button variant="outline" onClick={() => setShowCommercialStageDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">Cancelar</Button>
             <Button onClick={handleCommercialStageAdvance} disabled={advanceCommercialStageMutation.isPending || commercialStageNote.trim().length < 4} className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto">
               {advanceCommercialStageMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />} Confirmar movimiento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPipelineActionDialog} onOpenChange={setShowPipelineActionDialog}>
+        <DialogContent className="bg-[#111827] border-[#1f2937] text-white max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-300"><ArrowUpRight className="w-5 h-5" /> {pipelineAction?.title || "Mover en pipeline"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-300">{pipelineAction?.description}</p>
+            {pipelineAction?.kind === "await_external_signature" && (
+              <p className="rounded-lg border border-purple-400/25 bg-purple-500/10 p-3 text-xs text-purple-100">Para apoyar el cierre puedes usar el enlace alterno o reenviar el correo; no se alterará el estado ni se realizará una formalización interna.</p>
+            )}
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowPipelineActionDialog(false)} className="border-[#374151] text-gray-300 w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={handlePipelineActionConfirmation} disabled={sendLetterMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto">
+              {sendLetterMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />} {pipelineAction?.confirmLabel || "Confirmar"}
             </Button>
           </DialogFooter>
         </DialogContent>
