@@ -185,6 +185,9 @@
 - [x] UI: mostrar galería real con foto principal, miniaturas, captions y estados vacíos claros en la ficha de inversión
 - [x] Test: cubrir que la consulta pública devuelve y aísla la galería heredada del espacio vinculado
 - [ ] QA UI: abrir TEXACO LA GLORIETA en /investors y confirmar sus fotos reales en la ficha pública
+- [ ] Deck comercial: rediseñar la propuesta Zeus–EVGreen como alianza para hubs integrales de energía y multiservicios
+- [ ] Deck comercial: analizar el PDF entregado, validar contenido de Zeus y estructurar una narrativa de propuesta de valor más impactante
+- [ ] Deck comercial: producir y revisar una presentación visualmente coherente con identidad EVGreen y fuentes verificables
 
 ## Bugs Reportados — Módulo de Espacios (2026-08-06)
 - [x] Fix: títulos mostrando "// @ts-ignore" como texto visible en el detalle de espacio (JSX comments incorrectos)
@@ -4171,3 +4174,12 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Unificar oportunidades y estaciones vinculadas en una cartera mobile-first con métricas mensuales.
 - [x] Implementar liquidación auditable por día/mes sobre transacciones completadas, energía, gastos prorrateados y margen distribuible.
 - [x] Limitar la comisión comercial a la bolsa EVGreen para no afectar la participación del inversionista.
+
+## Deck de inversión — Estación de 480 kW (Excel de referencia)
+
+- [x] Analizar el CAPEX de referencia cercano a $1.500 millones y sus rubros desde el Excel aportado.
+- [x] Modelar escenarios pesimista, realista y optimista con margen bruto, aliado, margen neto y distribución 60/40.
+- [x] Comparar de forma responsable el CAPEX y el modelo operativo frente a una EDS tradicional, sin datos no verificables.
+- [x] Generar y revisar una presentación visual de inversión con supuestos, límites y riesgos claros.
+- [x] Deck confidencial: reemplazar el desglose monetario y porcentual de CAPEX por una solución llave en mano de COP 1.500 millones con categorías no valorizadas.
+- [x] Deck confidencial: revisar y publicar la versión sin precios internos, reservas ni porcentajes de costos.
