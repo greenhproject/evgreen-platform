@@ -4185,3 +4185,5 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Deck confidencial: revisar y publicar la versión sin precios internos, reservas ni porcentajes de costos.
 - [x] Deck técnico: regenerar las imágenes del hub para ubicar BESS, transformador y gabinetes técnicos a nivel de superficie, fuera de la circulación vehicular.
 - [x] Deck técnico: revisar y publicar la versión sin representaciones subterráneas irreales de equipos eléctricos.
+- [x] Deck operativo: comunicar cuatro cargadores DC y SLA de soporte 24/7 como parte del OPEX de EVGreen.
+- [x] Deck operativo: revisar y publicar la versión actualizada con capacidad y soporte incluidos.
