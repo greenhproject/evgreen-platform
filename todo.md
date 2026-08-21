@@ -4183,3 +4183,5 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Generar y revisar una presentación visual de inversión con supuestos, límites y riesgos claros.
 - [x] Deck confidencial: reemplazar el desglose monetario y porcentual de CAPEX por una solución llave en mano de COP 1.500 millones con categorías no valorizadas.
 - [x] Deck confidencial: revisar y publicar la versión sin precios internos, reservas ni porcentajes de costos.
+- [x] Deck técnico: regenerar las imágenes del hub para ubicar BESS, transformador y gabinetes técnicos a nivel de superficie, fuera de la circulación vehicular.
+- [x] Deck técnico: revisar y publicar la versión sin representaciones subterráneas irreales de equipos eléctricos.
