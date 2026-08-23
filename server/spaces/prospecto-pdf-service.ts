@@ -129,7 +129,7 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; forma
     // Compress and resize images to keep PDF under 5MB
     const sharp = (await import("sharp")).default;
     const imgBuffer = Buffer.from(response.data);
-    const contentType = response.headers["content-type"] || "";
+    const contentType = String(response.headers["content-type"] || "").toLowerCase();
     const isPng = contentType.includes("png") || url.toLowerCase().endsWith(".png");
     if (isPng) {
       // Preserve PNG transparency (for logos), just resize

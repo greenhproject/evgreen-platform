@@ -431,8 +431,13 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
         return getSettlementsByStation(input.stationId, input.limit);
       }),
 
-    /** Ver detalle completo de una liquidación */
-    getSettlementDetail: protectedProcedure
+    /**
+     * Ver detalle completo de una liquidación.
+     * Los inversionistas usan mySettlementDetail, que verifica su participación.
+     * Este procedimiento administrativo no puede aceptar un ID arbitrario de un
+     * usuario autenticado para evitar exposición horizontal de datos financieros.
+     */
+    getSettlementDetail: adminProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }: { input: { id: number } }) => {
         const detail = await getSettlementWithDetails(input.id);
@@ -586,7 +591,7 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
       }),
 
     /** Obtener historial de métricas de una estación */
-    getMetrics: protectedProcedure
+    getMetrics: adminProcedure
       .input(z.object({
         stationId: z.number(),
         limit: z.number().default(12),
@@ -596,7 +601,7 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
       }),
 
     /** Obtener última métrica de una estación */
-    getLatestMetric: protectedProcedure
+    getLatestMetric: adminProcedure
       .input(z.object({ stationId: z.number() }))
       .query(async ({ input }: { input: { stationId: number } }) => {
         return getLatestOperationalMetric(input.stationId);
@@ -848,14 +853,14 @@ export function buildFinancialRouter(router: any, protectedProcedure: any, admin
     // ========================================================================
 
     /** Obtener resumen del fondo de mantenimiento de una estación */
-    maintenanceFundSummary: protectedProcedure
+    maintenanceFundSummary: adminProcedure
       .input(z.object({ stationId: z.number() }))
       .query(async ({ input }: { input: { stationId: number } }) => {
         return getMaintenanceFundSummary(input.stationId);
       }),
 
     /** Obtener historial del fondo de mantenimiento */
-    maintenanceFundHistory: protectedProcedure
+    maintenanceFundHistory: adminProcedure
       .input(z.object({ stationId: z.number(), limit: z.number().default(50) }))
       .query(async ({ input }: { input: { stationId: number; limit: number } }) => {
         return getMaintenanceFundRecords(input.stationId, input.limit);

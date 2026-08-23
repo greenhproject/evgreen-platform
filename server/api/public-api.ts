@@ -36,12 +36,14 @@ interface ApiKeyUser {
 }
 
 async function authenticateApiKey(req: Request, res: Response, next: NextFunction) {
-  const apiKey = req.headers["x-api-key"] as string || req.query.api_key as string;
+  // Las claves nunca se aceptan en la URL: query strings suelen quedar en logs,
+  // historial, referrers y herramientas de observabilidad de terceros.
+  const apiKey = req.headers["x-api-key"] as string | undefined;
   
   if (!apiKey) {
     return res.status(401).json({
       error: "UNAUTHORIZED",
-      message: "API Key requerida. Incluye el header 'X-API-Key' o el query param 'api_key'.",
+      message: "API Key requerida. Incluye el header 'X-API-Key'.",
       docs: "/api-docs",
     });
   }

@@ -4187,3 +4187,14 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Deck técnico: revisar y publicar la versión sin representaciones subterráneas irreales de equipos eléctricos.
 - [x] Deck operativo: comunicar cuatro cargadores DC y SLA de soporte 24/7 como parte del OPEX de EVGreen.
 - [x] Deck operativo: revisar y publicar la versión actualizada con capacidad y soporte incluidos.
+- [x] Incident: diagnosticar por qué Google Maps muestra “For development purposes only” y un error de carga en el NOC publicado.
+- [ ] Fix: restaurar la autorización de Maps con una clave restringida a los dominios de EVGreen y las APIs estrictamente necesarias.
+- [ ] QA: validar en /admin/tv que el mapa publicado carga sin marca de desarrollo ni alerta de Google, sin afectar los datos de estaciones.
+
+## Auditoría de seguridad defensiva — 2026-08-21
+
+- [x] Establecer una línea base de seguridad: estado de compilación, dependencias, cabeceras HTTP y superficie pública.
+- [x] Revisar autenticación, autorización por rol, rutas administrativas y aislamiento multi-tenant sin realizar explotación activa.
+- [x] Revisar secretos, validación de entradas, CORS, cookies, limitación de solicitudes y endpoints expuestos.
+- [x] Corregir hallazgos verificables de bajo riesgo y añadir pruebas de regresión de seguridad.
+- [x] Elaborar informe de hallazgos, severidad, evidencia, remediación y riesgos residuales.

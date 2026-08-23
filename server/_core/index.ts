@@ -58,6 +58,11 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  // Railway termina TLS en su proxy. Confiar solo en el primer proxy permite
+  // obtener la IP real para los límites de solicitudes sin aceptar cabeceras
+  // X-Forwarded-* arbitrarias de más de un salto.
+  app.set("trust proxy", 1);
   
   // CRÍTICO: server.timeout DEBE ser 0 para permitir conexiones WebSocket OCPP de larga duración.
   // El timeout del servidor HTTP de Node.js aplica a TODAS las conexiones, incluyendo WebSocket.
@@ -248,8 +253,6 @@ async function startServer() {
   // ============================================
   app.get("/api/health", async (_req, res) => {
     try {
-      const { getPoolStats } = await import("../db");
-      const poolStats = getPoolStats();
       let dbOk = false;
       try {
         const { getDb } = await import("../db");
@@ -259,16 +262,8 @@ async function startServer() {
           dbOk = true;
         }
       } catch { dbOk = false; }
-      const mem = process.memoryUsage();
       res.json({
         status: dbOk ? 'healthy' : 'degraded',
-        uptime: Math.floor(process.uptime()),
-        database: { connected: dbOk, pool: poolStats },
-        memory: {
-          rss: Math.round(mem.rss / 1024 / 1024) + 'MB',
-          heapUsed: Math.round(mem.heapUsed / 1024 / 1024) + 'MB',
-          heapTotal: Math.round(mem.heapTotal / 1024 / 1024) + 'MB',
-        },
         timestamp: new Date().toISOString(),
       });
     } catch (error: any) {
