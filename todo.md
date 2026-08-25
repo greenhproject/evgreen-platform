@@ -4230,6 +4230,14 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Role: exponer Anunciante (advertiser) en el selector de roles de Administración.
 - [x] Test: validar que Anunciante redirige al portal de campañas y que los demás roles conservan sus destinos.
 - [ ] QA: asignar Anunciante a una cuenta y abrir /advertiser/dashboard sin redirección a la landing.
+- [ ] Admin Ads: mostrar perfiles de anunciantes pendientes en un centro de revisión accesible desde Administración.
+- [ ] Admin Ads: permitir aprobar, rechazar o suspender perfiles con motivo y trazabilidad del administrador responsable.
+- [ ] Test Admin Ads: cubrir permisos, transición de estados y bloqueo de campañas para perfiles no aprobados.
+- [ ] QA Admin Ads: aprobar un perfil pendiente y validar que puede crear campañas sin intervención manual en base de datos.
+- [x] Research Vardí: validar en fuentes oficiales las marcas vigentes del Grupo Vardí para catálogo de vehículos.
+- [x] Feature Vardí: incorporar Chery y marcas verificadas del Grupo Vardí en perfiles, vehículos y segmentación de campañas.
+- [x] Test Vardí: asegurar que el catálogo es consistente entre selección de vehículo y audiencia de anunciantes.
+- [ ] QA Vardí: confirmar que Chery y las marcas verificadas se ven en los formularios públicos y del portal de anuncios.
 
 ## Auditoría de seguridad defensiva — 2026-08-21
 

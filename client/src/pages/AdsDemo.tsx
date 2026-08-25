@@ -13,6 +13,7 @@ import {
   MapPin, Car, ChevronRight, Play, CheckCircle2, ArrowRight,
   Bot, Send, Loader2, Star, Shield, Globe
 } from "lucide-react";
+import { VEHICLE_BRANDS } from "@shared/vehicle-brands";
 
 // ─── Datos de demo ────────────────────────────────────────────────────────────
 
@@ -335,7 +336,6 @@ function ReachPredictor() {
   );
 
   const cities = ["Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena", "Bucaramanga"];
-  const brands = ["Tesla", "BYD", "BMW", "Mercedes-Benz", "Audi", "Hyundai", "Kia", "Renault"];
   const tiers = [
     { value: "", label: "Todos" },
     { value: "FREE", label: "Free" },
@@ -400,7 +400,7 @@ function ReachPredictor() {
           <Car className="w-3 h-3" /> Marcas de vehículo (opcional)
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {brands.map(brand => (
+          {VEHICLE_BRANDS.map(brand => (
             <button
               key={brand}
               onClick={() => toggleBrand(brand)}
