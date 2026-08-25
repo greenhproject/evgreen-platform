@@ -43,6 +43,7 @@ import { quotesRouter } from "./quotes/quotes-router";
 import { spacesRouter } from "./spaces/spaces-router";
 import { requiresFinancialOverride } from "./spaces/crowdfunding-inheritance";
 import { toIsoDateOrEmpty } from "./transactions/date-serialization";
+import { resolveNocScope } from "./noc/noc-access";
 import { gestorRouter } from "./gestor/gestor-router";
 import { partnersRouter } from "./partners/partners-router";
 import { profilesRouter } from "./profiles/profiles-router";
@@ -7393,11 +7394,19 @@ const whatsappRouter = router({
 // ============================================================================
 const nocRouter = router({
   // Obtener todos los datos del NOC en una sola query optimizada
-  getNetworkSnapshot: publicProcedure.query(async () => {
+  getNetworkSnapshot: protectedProcedure.query(async ({ ctx }) => {
     const { getAllConnections } = await import("./ocpp/connection-manager");
     const { dualCSMS } = await import("./ocpp/csms-dual");
     const dbInst = await getDb();
     if (!dbInst) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB no disponible" });
+
+    const scope = resolveNocScope({
+      role: ctx.user.role,
+      organizationId: ctx.tenant?.organizationId,
+    });
+    if (!scope) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "No tienes acceso operativo al NOC" });
+    }
 
     const { chargingStations, evses, transactions, users: usersTable } = await import("../drizzle/schema");
     const { desc, gte, count, sum, eq: eqOp, and: andOp, inArray } = await import("drizzle-orm");
@@ -7412,10 +7421,17 @@ const nocRouter = router({
     const startOfMonthStr = toMySQLDate(startOfMonth);
     const startOfWeekStr = toMySQLDate(startOfWeek);
 
-    // Todas las estaciones
-    const allStations = await dbInst.select().from(chargingStations).orderBy(chargingStations.name);
-    // Todos los EVSEs
-    const allEvses = await dbInst.select().from(evses);
+    // Soporte y operación EVGreen ven la red completa. Las organizaciones
+    // solo reciben sus propios activos, siempre sin información financiera.
+    const allStations = scope.mode === "organization"
+      ? await dbInst.select().from(chargingStations)
+        .where(eqOp(chargingStations.organizationId, scope.organizationId!))
+        .orderBy(chargingStations.name)
+      : await dbInst.select().from(chargingStations).orderBy(chargingStations.name);
+    const scopedStationIds = allStations.map(station => station.id);
+    const allEvses = scopedStationIds.length > 0
+      ? await dbInst.select().from(evses).where(inArray(evses.stationId, scopedStationIds))
+      : [];
     // Conexiones OCPP activas
     const liveConnections = getAllConnections();
     const csmsConns = dualCSMS.getConnectionsStatus();
@@ -7424,8 +7440,10 @@ const nocRouter = router({
     for (const c of liveConnections) if (c.isConnected) connectedIds.add(c.ocppIdentity);
 
     // Transacciones activas (IN_PROGRESS)
-    const activeTxs = await dbInst.select().from(transactions)
-      .where(eqOp(transactions.status, "IN_PROGRESS"));
+    const activeTxs = scopedStationIds.length > 0
+      ? await dbInst.select().from(transactions)
+        .where(andOp(eqOp(transactions.status, "IN_PROGRESS"), inArray(transactions.stationId, scopedStationIds)))
+      : [];
 
     // Potencia real de sesiones activas (desde memoria — MeterValues en tiempo real)
     const liveSessionPower = getAllActiveSessionsPower();
@@ -7625,7 +7643,7 @@ const nocRouter = router({
             return {
               id: tx.id,
               kwhConsumed: liveData ? liveData.currentKwh.toFixed(4) : tx.kwhConsumed,
-              totalCost: tx.totalCost,
+              totalCost: scope.canViewFinancials ? tx.totalCost : null,
               startTime: tx.startTime,
               currentPower: Math.round(realPower * 10) / 10,
               soc: liveData?.soc ?? null,
@@ -7647,6 +7665,11 @@ const nocRouter = router({
 
     return {
       timestamp: now,
+      access: {
+        scope: scope.mode,
+        canViewFinancials: scope.canViewFinancials,
+        canViewPersonalActivity: scope.canViewPersonalActivity,
+      },
       // KPIs globales
       kpis: {
         totalStations,
@@ -7659,24 +7682,24 @@ const nocRouter = router({
         today: {
           sessions: Number(todayStats[0]?.count || 0),
           kwh: parseFloat(todayStats[0]?.totalKwh?.toString() || "0"),
-          revenue: parseFloat(todayStats[0]?.totalRevenue?.toString() || "0"),
-          platformFee: parseFloat(todayStats[0]?.platformFee?.toString() || "0"),
+          revenue: scope.canViewFinancials ? parseFloat((todayStats[0] as any)?.totalRevenue?.toString() || "0") : null,
+          platformFee: scope.canViewFinancials ? parseFloat((todayStats[0] as any)?.platformFee?.toString() || "0") : null,
         },
         week: {
           sessions: Number(weekStats[0]?.count || 0),
           kwh: parseFloat(weekStats[0]?.totalKwh?.toString() || "0"),
-          revenue: parseFloat(weekStats[0]?.totalRevenue?.toString() || "0"),
+          revenue: scope.canViewFinancials ? parseFloat((weekStats[0] as any)?.totalRevenue?.toString() || "0") : null,
         },
         month: {
           sessions: Number(monthStats[0]?.count || 0),
           kwh: parseFloat(monthStats[0]?.totalKwh?.toString() || "0"),
-          revenue: parseFloat(monthStats[0]?.totalRevenue?.toString() || "0"),
+          revenue: scope.canViewFinancials ? parseFloat((monthStats[0] as any)?.totalRevenue?.toString() || "0") : null,
         },
       },
       // Estaciones enriquecidas
       stations: enrichedStations,
       // Ticker de actividad reciente
-      recentActivity: recentTxs.map(tx => ({
+      recentActivity: scope.canViewPersonalActivity ? recentTxs.map(tx => ({
         id: tx.id,
         stationName: stationMap.get(tx.stationId) || `Estación #${tx.stationId}`,
         userName: userMap.get(tx.userId) || `Usuario #${tx.userId}`,
@@ -7685,22 +7708,22 @@ const nocRouter = router({
         startTime: tx.startTime,
         endTime: tx.endTime,
         status: tx.status,
-      })),
+      })) : [],
       // Top estaciones
-      topStations: topStations.map(s => ({
+      topStations: scope.canViewFinancials ? topStations.map(s => ({
         stationId: s.stationId,
         name: s.name,
         sessions: Number(s.sessions),
         revenue: parseFloat(s.revenue || "0"),
         kwh: parseFloat(s.kwh || "0"),
-      })),
+      })) : [],
       // Datos por hora para gráfico
-      hourlyData: hourlyData.map(h => ({
+      hourlyData: scope.canViewFinancials ? hourlyData.map(h => ({
         hour: h.hour,
         sessions: Number(h.sessions),
         revenue: parseFloat(h.revenue || "0"),
         kwh: parseFloat(h.kwh || "0"),
-      })),
+      })) : [],
     };
   }),
 });

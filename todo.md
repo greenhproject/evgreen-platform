@@ -4213,6 +4213,14 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Fix: normalizar fechas Date y texto de transacciones antes de formatearlas en el detalle administrativo.
 - [x] Test: cubrir formato de fecha para transacciones con Date, ISO string, timestamp y valor ausente.
 - [ ] QA: abrir detalles de transacciones históricas y recientes sin 500 ni error de renderizado.
+- [x] UX NOC: agregar un botón visible de “Volver al menú” hacia el panel administrativo.
+- [x] Test NOC: cubrir la ruta de retorno del NOC y su etiqueta accesible.
+- [ ] QA NOC: validar en producción el retorno al menú desde escritorio y móvil.
+- [x] NOC SaaS: definir y aplicar matriz de visibilidad para administración, soporte, organización y roles técnicos.
+- [x] NOC SaaS: exponer métricas y estados operativos por tenant, sin ingresos, liquidaciones, tarifas ni márgenes para roles no financieros.
+- [x] NOC SaaS: permitir a Soporte monitorizar toda la red y a cada organización únicamente sus activos autorizados.
+- [x] Test NOC SaaS: cubrir aislamiento de tenant, alcance de soporte y ocultamiento de métricas financieras.
+- [ ] QA NOC SaaS: validar el NOC desde organización, soporte y administración en producción.
 
 ## Auditoría de seguridad defensiva — 2026-08-21
 

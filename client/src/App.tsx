@@ -1189,7 +1189,7 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/tv">
-          <ProtectedRoute allowedRoles={["admin"]}>
+          <ProtectedRoute allowedRoles={["admin", "staff", "engineer", "technician", "user"]}>
             <TVDashboard />
           </ProtectedRoute>
         </Route>
