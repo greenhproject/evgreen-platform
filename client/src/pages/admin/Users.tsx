@@ -37,7 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, MoreVertical, UserPlus, Users, Shield, Wrench, Briefcase, Eye, Copy, Hash, Pencil, Trash2, Tag, Wallet, Plus, Minus, RotateCcw, Loader2, Download, FileSpreadsheet, FileText, ChevronDown, ChevronUp, History, HandCoins } from "lucide-react";
+import { Search, MoreVertical, UserPlus, Users, Shield, Wrench, Briefcase, Eye, Copy, Hash, Pencil, Trash2, Tag, Wallet, Plus, Minus, RotateCcw, Loader2, Download, FileSpreadsheet, FileText, ChevronDown, ChevronUp, History, HandCoins, Megaphone } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -70,7 +70,7 @@ export default function AdminUsers() {
     name: "",
     email: "",
     phone: "",
-    role: "user" as "staff" | "technician" | "investor" | "user" | "admin" | "comercial" | "engineer" | "host",
+    role: "user" as "staff" | "technician" | "investor" | "user" | "admin" | "comercial" | "engineer" | "host" | "advertiser",
     isActive: true,
     companyName: "",
     taxId: "",
@@ -336,6 +336,7 @@ export default function AdminUsers() {
       comercial: { bg: "bg-orange-100 text-orange-700", icon: HandCoins, label: "Comercial" },
       engineer: { bg: "bg-cyan-100 text-cyan-700", icon: Wrench, label: "Ingeniero" },
       host: { bg: "bg-yellow-100 text-yellow-700", icon: Briefcase, label: "Host" },
+      advertiser: { bg: "bg-pink-100 text-pink-700", icon: Megaphone, label: "Anunciante" },
       user: { bg: "bg-gray-100 text-gray-700", icon: Users, label: "Usuario" },
     };
     const style = styles[role] || styles.user;
@@ -430,6 +431,7 @@ export default function AdminUsers() {
               <SelectItem value="investor">Inversionista</SelectItem>
               <SelectItem value="engineer">Ingeniero</SelectItem>
               <SelectItem value="host">Host</SelectItem>
+              <SelectItem value="advertiser">Anunciante</SelectItem>
               <SelectItem value="user">Usuario</SelectItem>
             </SelectContent>
           </Select>
@@ -568,6 +570,13 @@ export default function AdminUsers() {
                             >
                               <HandCoins className="w-4 h-4 mr-2" />
                               Hacer comercial
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => updateRoleMutation.mutate({ userId: user.id, role: "advertiser" })}
+                              disabled={user.role === "advertiser"}
+                            >
+                              <Megaphone className="w-4 h-4 mr-2" />
+                              Hacer anunciante
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => updateRoleMutation.mutate({ userId: user.id, role: "technician" })}
@@ -1010,6 +1019,7 @@ export default function AdminUsers() {
                     <SelectItem value="technician">Técnico</SelectItem>
                     <SelectItem value="engineer">Ingeniero</SelectItem>
                     <SelectItem value="host">Host</SelectItem>
+                    <SelectItem value="advertiser">Anunciante</SelectItem>
                     <SelectItem value="staff">Staff</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
                   </SelectContent>
