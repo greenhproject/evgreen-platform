@@ -4249,3 +4249,5 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Feature Admin Ads: agregar suspensión con motivo obligatorio, historial auditable de decisiones y controles exclusivamente administrativos.
 - [x] UI Admin Ads: priorizar perfiles pendientes, filtros por estado y detalle responsivo de contacto, empresa, presupuesto y trazabilidad.
 - [x] Test Admin Ads: cubrir transición aprobada, rechazada y suspendida, así como rechazo de acciones para roles no administrativos.
+- [x] UI Ads: rediseñar el predictor de alcance con jerarquía tecnológica, controles táctiles y métricas de mayor impacto visual.
+- [ ] QA UI Ads: validar visualmente el predictor en escritorio y móvil sin alterar la segmentación ni las métricas.
