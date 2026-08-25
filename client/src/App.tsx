@@ -14,6 +14,7 @@ import { useAuth } from "./_core/hooks/useAuth";
 import { isCapacitorNative, openLoginBrowser } from "@/const";
 import { loadMapScript } from "@/components/Map";
 import { trpc } from "@/lib/trpc";
+import { resolveAdvertiserAccess } from "@shared/advertiser-access";
 import { lazy, Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { Onboarding, useOnboarding } from "@/components/Onboarding";
 import { LoadingGuard } from "@/components/LoadingGuard";
@@ -744,6 +745,46 @@ function ProtectedRoute({
     const targetRoute = getHomeRouteByRole(user?.role);
     setLocation(targetRoute);
     return null;
+  }
+
+  return <>{children}</>;
+}
+
+/**
+ * Mantiene el contexto de entrada de Ads: el visitante ve login, una cuenta
+ * de usuario ve registro y solo el perfil advertiser/admin entra al portal.
+ * Así evitamos renderizar la landing pública sobre una URL de campañas.
+ */
+function AdvertiserPortalRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated, loading, refresh } = useAuth();
+  const access = resolveAdvertiserAccess(isAuthenticated, user?.role);
+
+  if (loading) {
+    return (
+      <LoadingGuard isLoading={true} timeoutMs={10000} onRetry={() => refresh()}>
+        <div />
+      </LoadingGuard>
+    );
+  }
+
+  if (access === "login" || access === "register") {
+    return <AdvertiserRegister />;
+  }
+
+  if (access === "forbidden") {
+    return (
+      <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center p-4">
+        <div className="max-w-md text-center rounded-2xl border border-white/10 bg-[#0d1526] p-8 text-white">
+          <h1 className="text-xl font-semibold">Acceso de anunciante requerido</h1>
+          <p className="mt-3 text-sm text-white/60">
+            Tu perfil actual pertenece a otro portal de EVGreen. Usa una cuenta de anunciante para gestionar campañas.
+          </p>
+          <a href="/ads" className="mt-6 inline-flex text-sm font-medium text-green-400 hover:text-green-300">
+            Conocer EVGreen Ads
+          </a>
+        </div>
+      </div>
+    );
   }
 
   return <>{children}</>;
@@ -1570,37 +1611,35 @@ function Router() {
 
         {/* Portal de Anunciantes — /register accesible para cualquier usuario autenticado */}
         <Route path="/advertiser/register">
-          <ProtectedRoute allowedRoles={["user", "advertiser", "admin", "staff", "investor", "technician", "engineer", "host", "comercial"]}>
-            <AdvertiserRegister />
-          </ProtectedRoute>
+          <AdvertiserRegister />
         </Route>
         {/* Rutas protegidas: solo rol advertiser (o admin para testing) */}
         <Route path="/advertiser/dashboard">
-          <ProtectedRoute allowedRoles={["advertiser", "admin"]}>
+          <AdvertiserPortalRoute>
             <AdvertiserDashboard />
-          </ProtectedRoute>
+          </AdvertiserPortalRoute>
         </Route>
         <Route path="/advertiser/campaigns/new">
-          <ProtectedRoute allowedRoles={["advertiser", "admin"]}>
+          <AdvertiserPortalRoute>
             <AdvertiserNewCampaign />
-          </ProtectedRoute>
+          </AdvertiserPortalRoute>
         </Route>
         <Route path="/advertiser/campaigns/:id">
           {(params) => (
-            <ProtectedRoute allowedRoles={["advertiser", "admin"]}>
+            <AdvertiserPortalRoute>
               <AdvertiserCampaignDetail id={params.id ?? ""} />
-            </ProtectedRoute>
+            </AdvertiserPortalRoute>
           )}
         </Route>
         <Route path="/advertiser/campaigns">
-          <ProtectedRoute allowedRoles={["advertiser", "admin"]}>
+          <AdvertiserPortalRoute>
             <AdvertiserCampaigns />
-          </ProtectedRoute>
+          </AdvertiserPortalRoute>
         </Route>
         <Route path="/advertiser">
-          <ProtectedRoute allowedRoles={["advertiser", "admin"]}>
+          <AdvertiserPortalRoute>
             <AdvertiserDashboard />
-          </ProtectedRoute>
+          </AdvertiserPortalRoute>
         </Route>
 
         {/* 404 */}

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { trpc } from "@/lib/trpc";
+import { getLoginUrl, trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,8 +19,8 @@ const INDUSTRIES = [
 
 export default function AdvertiserRegister() {
   const [, navigate] = useLocation();
-  // @ts-ignore
-  const { user, loginUrl } = useAuth();
+  const { user, refresh } = useAuth();
+  const loginUrl = getLoginUrl();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     companyName: "",
@@ -34,8 +34,9 @@ export default function AdvertiserRegister() {
   });
 
   const registerMutation = trpc.advertiser.register.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success("¡Registro exitoso!: Tu perfil está en revisión. Te notificaremos cuando sea aprobado.");
+      await refresh();
       navigate("/advertiser/dashboard");
     },
     onError: (err) => {
@@ -73,10 +74,11 @@ export default function AdvertiserRegister() {
     );
   }
 
-  if (existingProfile) {
-    navigate("/advertiser/dashboard");
-    return null;
-  }
+  useEffect(() => {
+    if (existingProfile) navigate("/advertiser/dashboard");
+  }, [existingProfile, navigate]);
+
+  if (existingProfile) return null;
 
   const handleSubmit = () => {
     if (!form.companyName.trim()) {

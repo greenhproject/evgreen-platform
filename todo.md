@@ -4196,6 +4196,10 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [ ] QA móvil: validar que el mapa de usuarios no muestra “For development purposes only” y que las estaciones permanecen visibles tras actualizar.
 - [ ] Maps CLI: verificar proyecto, APIs habilitadas y restricciones efectivas de la credencial mediante herramientas oficiales de Google Cloud.
 - [ ] Maps deploy: contrastar de forma no reveladora la clave compilada por Railway contra la variable actualmente desplegada y forzar un build si están desalineadas.
+- [x] Incident: diagnosticar por qué /advertiser/dashboard renderiza la landing pública en lugar del portal de anunciantes.
+- [x] Fix: registrar la ruta de anunciantes y redirigir usuarios sin rol al acceso/registro correcto, no a la landing.
+- [x] Test: cubrir acceso de admin, anunciante, usuario autenticado sin rol y visitante a /advertiser/dashboard.
+- [ ] QA: validar en producción que “Ver plataforma” abre el portal de anunciantes con una URL y estado coherentes.
 - [x] Incident: alinear el esquema de transacciones de Railway con las columnas requeridas por overstay.getMyStatus para eliminar el error 500.
 - [x] Test: cubrir que el estado de sobretiempo tolera registros históricos y no falla ante columnas/migraciones incompletas.
 - [ ] QA producción: validar que overstay.getMyStatus responde sin 500 después de la migración segura.

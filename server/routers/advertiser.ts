@@ -52,6 +52,13 @@ export const advertiserRouter = router({
       const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
+      if (ctx.user.role !== "user" && ctx.user.role !== "advertiser") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "El registro de anunciante requiere una cuenta de usuario independiente.",
+        });
+      }
+
       const existing = await db
         .select({ id: advertiserProfiles.id })
         .from(advertiserProfiles)
