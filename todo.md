@@ -4204,6 +4204,11 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Test: cubrir que el estado de sobretiempo tolera registros históricos y no falla ante columnas/migraciones incompletas.
 - [ ] QA producción: validar que overstay.getMyStatus responde sin 500 después de la migración segura.
 - [x] Fix: basar las búsquedas de sobretiempo en el estado canónico compatible de transacciones y evitar dependencia innecesaria de transactionStatus.
+- [x] Incident: diagnosticar las consultas OCPP no autorizadas que ejecuta el portal de organización para usuarios de gerencia.
+- [x] Fix: condicionar o retirar consultas OCPP técnicas fuera de los roles autorizados, sin relajar el control de acceso.
+- [x] Incident: alinear el esquema de configuración de facturación de organizaciones para eliminar organizations.getMyBilling 500.
+- [x] Test: cubrir la carga de configuración de organización sin llamadas OCPP para rol de gerencia y sin errores de esquema.
+- [ ] QA: validar con gerencia@greenhproject.com el portal de organización sin 403/500 en consola.
 
 ## Auditoría de seguridad defensiva — 2026-08-21
 

@@ -49,9 +49,10 @@ export default function OrgStations() {
   const { data: org } = (trpc.organizations as any).getMyOrg.useQuery();
   const { data: stations, isLoading, refetch } = (trpc.organizations as any).getMyStations.useQuery();
 
-  const { data: ocppConnections } = trpc.ocpp.getActiveConnections.useQuery(undefined, {
-    refetchInterval: 5000,
-  });
+  // El portal de organización usa el estado persistido de sus estaciones. La
+  // telemetría OCPP en vivo pertenece a los roles técnicos y no se consulta
+  // desde esta vista para no provocar solicitudes 403 ni exponer el monitor.
+  const ocppConnections: any[] = [];
 
   const isAdmin = org?.myRole === "admin";
 
@@ -70,7 +71,7 @@ export default function OrgStations() {
     s.address?.toLowerCase().includes(search.toLowerCase())
   ) || [];
 
-  const onlineCount = stations?.filter((s: any) => s.isOnline || getOCPPInfo(s)).length || 0;
+  const onlineCount = stations?.filter((s: any) => s.isOnline).length || 0;
   const offlineCount = (stations?.length || 0) - onlineCount;
 
   return (
@@ -130,7 +131,7 @@ export default function OrgStations() {
                 <p>No hay estaciones para mostrar en el mapa</p>
               </div>
             ) : (
-              <OrgStationsMap stations={stations} isAdmin={isAdmin} ocppConnections={ocppConnections || []} onConfigureStation={setConfigStation} />
+              <OrgStationsMap stations={stations} isAdmin={isAdmin} ocppConnections={ocppConnections} onConfigureStation={setConfigStation} />
             )}
           </div>
         </Card>

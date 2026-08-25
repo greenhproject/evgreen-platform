@@ -973,7 +973,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
         if (!feePercent && org?.plan) {
           const [defaults] = await db!.select({ transactionFeePercent: platformPricingDefaults.transactionFeePercent })
             // @ts-ignore
-            .from(platformPricingDefaults).where(eq(platformPricingDefaults.plan, (org as any).plan));
+            .from(platformPricingDefaults).where(eq(platformPricingDefaults.orgPlan, (org as any).plan));
           feePercent = parseFloat(defaults?.transactionFeePercent || "5");
         }
         const [result] = await db!.execute(sql`
@@ -1006,8 +1006,7 @@ export function buildOrganizationsRouter(router: any, adminProcedure: any) {
       }).from(organizations).where(eq(organizations.id, organizationId));
       if (!org) throw new TRPCError({ code: "NOT_FOUND" });
       const [planDefaults] = await db!.select().from(platformPricingDefaults)
-        // @ts-ignore
-        .where(eq(platformPricingDefaults.plan, (org as any).plan));
+        .where(eq(platformPricingDefaults.orgPlan, (org as any).plan));
       const billingHistory = await db!.select().from(orgBillingRecords)
         .where(eq(orgBillingRecords.organizationId, organizationId))
         .orderBy(desc(orgBillingRecords.createdAt)).limit(20);
