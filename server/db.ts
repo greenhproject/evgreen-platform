@@ -4243,10 +4243,7 @@ export async function getActiveTransactionByUserId(userId: number) {
     .where(
       and(
         eq(transactions.userId, userId),
-        or(
-          eq(transactions.status, "IN_PROGRESS"),
-          eq(transactions.transactionStatus, "IN_PROGRESS")
-        )
+        eq(transactions.status, "IN_PROGRESS")
       )
     )
     .orderBy(desc(transactions.startTime))

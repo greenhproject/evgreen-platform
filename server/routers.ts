@@ -5931,8 +5931,9 @@ const overstayRouter = router({
             .where(
               and(
                 eq(txTable.userId, ctx.user.id),
-                // @ts-expect-error -- Drizzle type mismatch: schema field type vs inferred type
-                eq(txTable.connectorStatus, "COMPLETED")
+                // `status` existe en todas las versiones de transactions y es
+                // la fuente canónica para el ciclo de vida de carga.
+                eq(txTable.status, "COMPLETED")
               )
             )
             .orderBy(desc(txTable.endTime))
