@@ -4190,6 +4190,10 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Incident: diagnosticar por qué Google Maps muestra “For development purposes only” y un error de carga en el NOC publicado.
 - [ ] Fix: restaurar la autorización de Maps con una clave restringida a los dominios de EVGreen y las APIs estrictamente necesarias.
 - [ ] QA: validar en /admin/tv que el mapa publicado carga sin marca de desarrollo ni alerta de Google, sin afectar los datos de estaciones.
+- [x] Incident: alinear la configuración de overrides con el lockfile para recuperar el build de producción bloqueado por pnpm.
+- [x] Bug: estabilizar el refresco de estaciones y marcadores para evitar que desaparezcan durante reconsultas o transiciones de carga.
+- [x] Test: cubrir la preservación del último snapshot válido de estaciones mientras una actualización se encuentra en curso.
+- [ ] QA móvil: validar que el mapa de usuarios no muestra “For development purposes only” y que las estaciones permanecen visibles tras actualizar.
 
 ## Auditoría de seguridad defensiva — 2026-08-21
 
