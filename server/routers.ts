@@ -42,6 +42,7 @@ import { buildApiKeysRouter } from "./api/api-keys-router";
 import { quotesRouter } from "./quotes/quotes-router";
 import { spacesRouter } from "./spaces/spaces-router";
 import { requiresFinancialOverride } from "./spaces/crowdfunding-inheritance";
+import { toIsoDateOrEmpty } from "./transactions/date-serialization";
 import { gestorRouter } from "./gestor/gestor-router";
 import { partnersRouter } from "./partners/partners-router";
 import { profilesRouter } from "./profiles/profiles-router";
@@ -2024,8 +2025,8 @@ const transactionsRouter = router({
         chargeMode: transaction.chargeMode || "full_charge",
 
         // Timestamps exactos
-        startTime: startTime,
-        endTime: endTime?.toISOString() || null,
+        startTime: toIsoDateOrEmpty(transaction.startTime),
+        endTime: toIsoDateOrEmpty(transaction.endTime) || null,
         chargeDurationMinutes,
 
         // Consumo
@@ -2049,8 +2050,8 @@ const transactionsRouter = router({
 
         // Timeline de overstay
         overstay: overstayCost > 0 ? {
-          gracePeriodEnd: endTime ? new Date(endTime.getTime() + gracePeriodMinutes * 60 * 1000).toISOString() : null,
-          overstayStartTime: overstayStartTime?.toISOString() || null,
+          gracePeriodEnd: endTime ? toIsoDateOrEmpty(new Date(endTime.getTime() + gracePeriodMinutes * 60 * 1000)) : null,
+          overstayStartTime: toIsoDateOrEmpty(overstayStartTime) || null,
           minutesBilled: overstayMinutesBilled,
           ratePerMinute: overstayPenaltyPerMin || effectivePrice.overstayPenaltyPerMin,
           totalCharged: overstayCost,
@@ -2085,7 +2086,7 @@ const transactionsRouter = router({
           type: wt.type,
           amount: parseFloat(wt.amount?.toString() || "0"),
           description: wt.description || "",
-          createdAt: wt.createdAt?.toISOString() || "",
+          createdAt: toIsoDateOrEmpty(wt.createdAt),
           status: wt.status,
         })),
 
@@ -2096,7 +2097,7 @@ const transactionsRouter = router({
           remainingAmount: parseFloat(d.remainingAmount?.toString() || "0"),
           reason: d.reason,
         debtStatus: (d as any).debtStatus,
-          createdAt: d.createdAt?.toISOString() || "",
+          createdAt: toIsoDateOrEmpty(d.createdAt),
         })),
 
         // Distribución de ingresos

@@ -4209,6 +4209,10 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Incident: alinear el esquema de configuración de facturación de organizaciones para eliminar organizations.getMyBilling 500.
 - [x] Test: cubrir la carga de configuración de organización sin llamadas OCPP para rol de gerencia y sin errores de esquema.
 - [ ] QA: validar con gerencia@greenhproject.com el portal de organización sin 403/500 en consola.
+- [x] Incident: diagnosticar el error de detalle de transacción `createdAt.toISOString is not a function` en Administración.
+- [x] Fix: normalizar fechas Date y texto de transacciones antes de formatearlas en el detalle administrativo.
+- [x] Test: cubrir formato de fecha para transacciones con Date, ISO string, timestamp y valor ausente.
+- [ ] QA: abrir detalles de transacciones históricas y recientes sin 500 ni error de renderizado.
 
 ## Auditoría de seguridad defensiva — 2026-08-21
 
