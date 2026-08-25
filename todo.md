@@ -4230,9 +4230,9 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Role: exponer Anunciante (advertiser) en el selector de roles de Administración.
 - [x] Test: validar que Anunciante redirige al portal de campañas y que los demás roles conservan sus destinos.
 - [ ] QA: asignar Anunciante a una cuenta y abrir /advertiser/dashboard sin redirección a la landing.
-- [ ] Admin Ads: mostrar perfiles de anunciantes pendientes en un centro de revisión accesible desde Administración.
-- [ ] Admin Ads: permitir aprobar, rechazar o suspender perfiles con motivo y trazabilidad del administrador responsable.
-- [ ] Test Admin Ads: cubrir permisos, transición de estados y bloqueo de campañas para perfiles no aprobados.
+- [x] Admin Ads: mostrar perfiles de anunciantes pendientes en un centro de revisión accesible desde Administración.
+- [x] Admin Ads: permitir aprobar, rechazar o suspender perfiles con motivo y trazabilidad del administrador responsable.
+- [x] Test Admin Ads: cubrir permisos, transición de estados y bloqueo de campañas para perfiles no aprobados.
 - [ ] QA Admin Ads: aprobar un perfil pendiente y validar que puede crear campañas sin intervención manual en base de datos.
 - [x] Research Vardí: validar en fuentes oficiales las marcas vigentes del Grupo Vardí para catálogo de vehículos.
 - [x] Feature Vardí: incorporar Chery y marcas verificadas del Grupo Vardí en perfiles, vehículos y segmentación de campañas.
@@ -4246,3 +4246,6 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Revisar secretos, validación de entradas, CORS, cookies, limitación de solicitudes y endpoints expuestos.
 - [x] Corregir hallazgos verificables de bajo riesgo y añadir pruebas de regresión de seguridad.
 - [x] Elaborar informe de hallazgos, severidad, evidencia, remediación y riesgos residuales.
+- [x] Feature Admin Ads: agregar suspensión con motivo obligatorio, historial auditable de decisiones y controles exclusivamente administrativos.
+- [x] UI Admin Ads: priorizar perfiles pendientes, filtros por estado y detalle responsivo de contacto, empresa, presupuesto y trazabilidad.
+- [x] Test Admin Ads: cubrir transición aprobada, rechazada y suspendida, así como rechazo de acciones para roles no administrativos.

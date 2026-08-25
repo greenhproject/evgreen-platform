@@ -2492,6 +2492,16 @@ export const advertiserProfiles = mysqlTable("advertiser_profiles", {
 	updatedAt: timestamp({ mode: 'string' }).defaultNow().onUpdateNow().notNull(),
 });
 
+/** Bitácora inmutable de decisiones administrativas sobre perfiles de anunciantes. */
+export const advertiserProfileReviewEvents = mysqlTable("advertiser_profile_review_events", {
+	id: int().autoincrement().notNull(),
+	profileId: int().notNull(),
+	action: mysqlEnum(['approved', 'rejected', 'suspended']).notNull(),
+	notes: text(),
+	actorId: int().notNull(),
+	createdAt: timestamp({ mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+});
+
 export const adCampaigns = mysqlTable("ad_campaigns", {
 	id: int().autoincrement().notNull(),
 	advertiserId: int().notNull(),
@@ -2538,6 +2548,8 @@ export const adCampaignCreatives = mysqlTable("ad_campaign_creatives", {
 // Types — Portal de Anunciantes
 export type InsertAdvertiserProfile = typeof advertiserProfiles.$inferInsert;
 export type AdvertiserProfile = typeof advertiserProfiles.$inferSelect;
+export type InsertAdvertiserProfileReviewEvent = typeof advertiserProfileReviewEvents.$inferInsert;
+export type AdvertiserProfileReviewEvent = typeof advertiserProfileReviewEvents.$inferSelect;
 export type InsertAdCampaign = typeof adCampaigns.$inferInsert;
 export type AdCampaign = typeof adCampaigns.$inferSelect;
 export type InsertAdCampaignCreative = typeof adCampaignCreatives.$inferInsert;
