@@ -25,7 +25,9 @@ export function resolveNocScope({ role, organizationId = null }: NocAccessInput)
   }
 
   if (organizationId) {
-    return { mode: "organization", organizationId, canViewFinancials: false, canViewPersonalActivity: false };
+    // Un tenant SaaS es un negocio independiente: puede ver únicamente sus
+    // propios KPI financieros, pero no actividad identificable de usuarios.
+    return { mode: "organization", organizationId, canViewFinancials: true, canViewPersonalActivity: false };
   }
 
   return null;

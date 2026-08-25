@@ -18,7 +18,7 @@ describe("resolveNocScope", () => {
 
   it("limita al usuario SaaS a la organización resuelta en su contexto", () => {
     expect(resolveNocScope({ role: "user", organizationId: 17 })).toEqual({
-      mode: "organization", organizationId: 17, canViewFinancials: false, canViewPersonalActivity: false,
+      mode: "organization", organizationId: 17, canViewFinancials: true, canViewPersonalActivity: false,
     });
     expect(resolveNocScope({ role: "user" })).toBeNull();
   });

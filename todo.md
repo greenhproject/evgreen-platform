@@ -4224,6 +4224,9 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] UX NOC SaaS: agregar “Monitor Operativo” al menú de Organización con acceso a /admin/tv limitado por tenant.
 - [x] Test NOC SaaS: cubrir que el enlace del menú de Organización usa la ruta segura del NOC.
 - [ ] QA NOC SaaS: validar el acceso y el retorno Organización → NOC → Organización.
+- [x] Fix NOC SaaS: permitir a cada organización visualizar únicamente sus KPI y actividad financiera propia en el NOC.
+- [x] Test NOC SaaS: verificar que organización recibe finanzas propias y que Soporte global no recibe ninguna métrica monetaria.
+- [ ] QA NOC SaaS: validar KPI financieros propios de Centro Comercial Andino EV sin exponer información de otros tenants.
 
 ## Auditoría de seguridad defensiva — 2026-08-21
 
