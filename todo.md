@@ -4221,6 +4221,9 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] NOC SaaS: permitir a Soporte monitorizar toda la red y a cada organización únicamente sus activos autorizados.
 - [x] Test NOC SaaS: cubrir aislamiento de tenant, alcance de soporte y ocultamiento de métricas financieras.
 - [ ] QA NOC SaaS: validar el NOC desde organización, soporte y administración en producción.
+- [x] UX NOC SaaS: agregar “Monitor Operativo” al menú de Organización con acceso a /admin/tv limitado por tenant.
+- [x] Test NOC SaaS: cubrir que el enlace del menú de Organización usa la ruta segura del NOC.
+- [ ] QA NOC SaaS: validar el acceso y el retorno Organización → NOC → Organización.
 
 ## Auditoría de seguridad defensiva — 2026-08-21
 
