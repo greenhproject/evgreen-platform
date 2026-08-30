@@ -1954,6 +1954,35 @@ export const userDataConsents = mysqlTable("user_data_consents", {
 	index("idx_consent_type").on(table.userId, table.consentType),
 ]);
 
+export const userOnboardingProgress = mysqlTable("user_onboarding_progress", {
+	id: int().autoincrement().notNull(),
+	userId: int("user_id").notNull(),
+	version: varchar({ length: 30 }).default('2026-08-v1').notNull(),
+	status: mysqlEnum("user_onboarding_status", ['IN_PROGRESS', 'COMPLETED', 'SKIPPED']).default('IN_PROGRESS').notNull(),
+	currentStep: int("current_step").default(1).notNull(),
+	startedAt: timestamp("started_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+	lastSavedAt: timestamp("last_saved_at", { mode: 'string' }).defaultNow().onUpdateNow().notNull(),
+	completedAt: timestamp("completed_at", { mode: 'string' }),
+	skippedAt: timestamp("skipped_at", { mode: 'string' }),
+},
+(table) => [
+	uniqueIndex("user_onboarding_progress_user_unique").on(table.userId),
+]);
+
+export const userOnboardingEvents = mysqlTable("user_onboarding_events", {
+	id: int().autoincrement().notNull(),
+	userId: int("user_id").notNull(),
+	eventType: varchar("event_type", { length: 60 }).notNull(),
+	granted: tinyint(),
+	policyVersion: varchar("policy_version", { length: 30 }),
+	ipAddress: varchar("ip_address", { length: 45 }),
+	userAgent: varchar("user_agent", { length: 512 }),
+	createdAt: timestamp("created_at", { mode: 'string' }).default('CURRENT_TIMESTAMP').notNull(),
+},
+(table) => [
+	index("user_onboarding_events_user_created_idx").on(table.userId, table.createdAt),
+]);
+
 export const userDebts = mysqlTable("user_debts", {
 	id: int().autoincrement().notNull(),
 	userId: int().notNull(),
@@ -2114,6 +2143,7 @@ export const users = mysqlTable("users", {
 	kindOfPerson: mysqlEnum("kind_of_person", ['PERSON_ENTITY','LEGAL_ENTITY']),
 	regime: mysqlEnum(['SIMPLIFIED_REGIME','COMMON_REGIME','NOT_RESPONSIBLE_FOR_IVA']),
 	alegraContactId: varchar({ length: 50 }),
+	electronicInvoiceOptIn: tinyint("electronic_invoice_opt_in").default(0).notNull(),
 	investorTypes: json(),
 	onboardingCompleted: tinyint().default(0),
 	onboardingStep: int().default(0),

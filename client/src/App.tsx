@@ -16,7 +16,7 @@ import { loadMapScript } from "@/components/Map";
 import { trpc } from "@/lib/trpc";
 import { resolveAdvertiserAccess } from "@shared/advertiser-access";
 import { lazy, Suspense, useEffect, useRef, useState, useCallback } from "react";
-import { Onboarding, useOnboarding } from "@/components/Onboarding";
+import { UserOnboardingGate } from "@/components/UserOnboardingWizard";
 import { LoadingGuard } from "@/components/LoadingGuard";
 import { Capacitor } from "@capacitor/core";
 
@@ -1653,16 +1653,14 @@ function Router() {
 
 
 function App() {
-  const { showOnboarding, isLoading: onboardingLoading, completeOnboarding } = useOnboarding();
-  const { isAuthenticated, loading: authLoading, refresh } = useAuth();
+  const { user, isAuthenticated, loading: authLoading, refresh } = useAuth();
   const [location] = useLocation();
 
   // Las rutas públicas se renderizan inmediatamente sin esperar auth
   const isPublic = isPublicPath(location);
 
   // Protección principal: si auth tarda más de 10s, mostrar opciones de recuperación
-  const isInitialLoading = !isPublic && (authLoading || onboardingLoading);
-  const shouldShowOnboarding = !isPublic && !onboardingLoading && !authLoading && isAuthenticated && showOnboarding;
+  const isInitialLoading = !isPublic && authLoading;
 
   return (
     <ErrorBoundary>
@@ -1674,18 +1672,15 @@ function App() {
             timeoutMs={10000} 
             onRetry={() => refresh()}
           >
-            {shouldShowOnboarding ? (
-              <Onboarding onComplete={completeOnboarding} />
-            ) : (
-              <>
-                <Router />
-                <Suspense fallback={null}>
-                  <ActiveChargingBanner />
-                  {isAuthenticated && <AIChatWidget />}
-                  <InstallBanner />
-                </Suspense>
-              </>
-            )}
+            <>
+              <Router />
+              <Suspense fallback={null}>
+                <ActiveChargingBanner />
+                {isAuthenticated && <AIChatWidget />}
+                <InstallBanner />
+              </Suspense>
+              {isAuthenticated && !isPublic && user?.role === "user" && <UserOnboardingGate />}
+            </>
           </LoadingGuard>
         </TooltipProvider>
       </ThemeProvider>

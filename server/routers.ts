@@ -53,6 +53,7 @@ import { saasRouter } from "./saas/saas-router";
 import { campaignWizardRouter } from "./banners/campaign-wizard-router";
 import { buildLoyaltyRouter } from "./loyalty/loyalty-router";
 import { advertiserRouter, adminAdvertiserRouter } from "./routers/advertiser";
+import { userOnboardingRouter } from "./routers/user-onboarding";
 import { buildOcpiRouter } from "./ocpi/ocpi-router";
 import { stageSiemLocationSnapshot } from "./ocpi/ocpi-station-snapshot";
 
@@ -7912,6 +7913,7 @@ export const appRouter = router({
   financial: buildFinancialRouter(router, protectedProcedure, adminProcedure),
   maintenanceSchedule: maintenanceScheduleRouter,
   onboarding: onboardingRouter,
+  userOnboarding: userOnboardingRouter,
   backup: backupRouter,
   apiKeys: buildApiKeysRouter(router, adminProcedure),
   refunds: refundsRouter,

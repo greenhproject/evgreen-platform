@@ -4251,3 +4251,8 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Test Admin Ads: cubrir transición aprobada, rechazada y suspendida, así como rechazo de acciones para roles no administrativos.
 - [x] UI Ads: rediseñar el predictor de alcance con jerarquía tecnológica, controles táctiles y métricas de mayor impacto visual.
 - [ ] QA UI Ads: validar visualmente el predictor en escritorio y móvil sin alterar la segmentación ni las métricas.
+- [x] Documento técnico: comparar ingresos diarios de cargadores de 120 kW, 40 kW y 7,5 kW en escenarios pesimista, realista y optimista.
+- [x] Lámina ejecutiva: explicar con métricas verificables por qué el 10 % de carga rápida puede superar el 15 % de carga AC/lenta en ingreso absoluto.
+- [x] Onboarding inicial: crear un wizard progresivo para usuarios nuevos que capture identidad, vehículo, preferencias y perfil fiscal sin fricción.
+- [x] Consentimiento onboarding: solicitar de forma independiente autorización de datos, notificaciones push y comunicaciones por WhatsApp, con trazabilidad y revocación desde Perfil.
+- [ ] QA onboarding: comprobar primera sesión, reanudación, salto de pasos, edición posterior y experiencia móvil antes de publicar.
