@@ -1,0 +1,218 @@
+{
+  "as_of": "2026-08-31",
+  "currency_basis": {
+    "primary": "COP",
+    "display_conversion": "USD",
+    "cop_per_usd": 3250.0
+  },
+  "core_assumptions": {
+    "wacc_or_remuneration_rate": 0.12,
+    "contract_years": 10.0,
+    "installed_power_kw_total": 480.0,
+    "station_count_target": 200,
+    "price_cop_per_kwh": 1800.0,
+    "energy_cost_cop_per_kwh": 750.0
+  },
+  "funding": {
+    "boot_capex_cop": 325000000000,
+    "boot_capex_usd": 100000000.0,
+    "capex_per_station_cop": 1625000000.0,
+    "capex_per_station_usd": 500000.0
+  },
+  "returns": {
+    "project_irr": 0.3256080508,
+    "npv_cop": 462165489785,
+    "npv_usd": 142204766.08769232
+  },
+  "operations": {
+    "sales_usd_by_year": [
+      4921309.971692308,
+      21747057.449230768,
+      43935507.75353846,
+      60664302.41876923,
+      68272313.176,
+      76703943.85323077,
+      86176880.91907692,
+      96819725.71261539,
+      108776961.83815384,
+      122210916.62523077
+    ],
+    "sales_usd_total_10_years": 690228919.7175385,
+    "ebitda_usd_by_year": [
+      3171797.792,
+      18587699.735692307,
+      39119275.70676923,
+      54725816.26646154,
+      62245755.796615385,
+      70599713.03538461,
+      79998459.82215385,
+      90571604.12861538,
+      102464762.57476923,
+      115841538.55753846
+    ],
+    "operating_stations_by_year": [
+      52,
+      128,
+      192,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200
+    ],
+    "closing_cash_balance_cop_by_year": [
+      0,
+      -28691657176,
+      -27500140221,
+      18182386735,
+      94420540857,
+      184643179063,
+      290380745683,
+      413571059901,
+      556391819345,
+      721290151498,
+      911015807007
+    ],
+    "sales_year_4_usd": 60664302.41876923,
+    "sales_year_10_usd": 122210916.62523077,
+    "ebitda_year_4_usd": 54725816.26646154,
+    "ebitda_year_10_usd": 115841538.55753846
+  },
+  "audit_flags": {
+    "cached_formula_error_count": 1697,
+    "cached_formula_error_sample": [
+      {
+        "sheet": "BOOT",
+        "cell": "W41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "X41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "Y41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "Z41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AA41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AB41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AC41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AD41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AE41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AF41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AG41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AH41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AI41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AJ41",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "W42",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "X42",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "Y42",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "Z42",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AA42",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AB42",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AC42",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AD42",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AE42",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AF42",
+        "error": "#NUM!"
+      },
+      {
+        "sheet": "BOOT",
+        "cell": "AG42",
+        "error": "#NUM!"
+      }
+    ],
+    "notes": [
+      "El modelo etiqueta algunas hojas como dólares, pero los flujos y el BOOT se muestran en COP; la conversión de exhibición utiliza el parámetro DÓLAR del propio archivo.",
+      "Las fórmulas con errores #NUM! aparecen después del horizonte de 10 años en la sección BOOT. No se utilizan para las cifras operativas del horizonte 0-10, pero deben corregirse antes de enviar el archivo fuente a diligencia.",
+      "La tasa de 12% se muestra en el archivo como tasa de remuneración / BOOT nominal; el IRR calculado en el flujo acumulado se presenta por separado y no debe confundirse con una promesa contractual de retorno."
+    ]
+  }
+}

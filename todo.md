@@ -4256,3 +4256,5 @@ Punto de partida ya identificado en la sección de estabilización: pool de MySQ
 - [x] Onboarding inicial: crear un wizard progresivo para usuarios nuevos que capture identidad, vehículo, preferencias y perfil fiscal sin fricción.
 - [x] Consentimiento onboarding: solicitar de forma independiente autorización de datos, notificaciones push y comunicaciones por WhatsApp, con trazabilidad y revocación desde Perfil.
 - [ ] QA onboarding: comprobar primera sesión, reanudación, salto de pasos, edición posterior y experiencia móvil antes de publicar.
+- [x] Presentación de inversión: auditar el modelo ELECTROLINERAS y construir un deck para levantar USD 100 millones destinados a 200 estaciones rápidas en Colombia.
+- [x] Presentación de inversión: validar CapEx, OpEx, estructura de pago y el retorno objetivo cercano a 12 % anual sin prometer resultados no sustentados.
