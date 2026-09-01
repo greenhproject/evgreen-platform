@@ -18,6 +18,7 @@ import { lazy, Suspense, useEffect, useRef, useState, useCallback } from "react"
 import { Onboarding, useOnboarding } from "@/components/Onboarding";
 import { LoadingGuard } from "@/components/LoadingGuard";
 import { Capacitor } from "@capacitor/core";
+import { useNotifications } from "@/hooks/useNotifications";
 
 // Páginas públicas (carga inmediata - landing)
 import Landing from "./pages/Landing";
@@ -1608,7 +1609,28 @@ function Router() {
 function App() {
   const { showOnboarding, isLoading: onboardingLoading, completeOnboarding } = useOnboarding();
   const { isAuthenticated, loading: authLoading, refresh } = useAuth();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+
+  // Registra los listeners nativos de push aquí (no solo dentro de
+  // NotificationPanel/Notifications.tsx), porque App() es el único
+  // componente que se monta sin importar la pantalla — /map y /scan
+  // ocultan el header (y con él NotificationPanel), así que si la
+  // inicialización solo vivía ahí, nunca se re-registraban los
+  // listeners tras un arranque en frío que aterrizara en esas rutas.
+  useNotifications();
+
+  // Navegación disparada desde fuera de React (ej. al tocar una notificación
+  // push nativa) — usa el router SPA en vez de recargar la WebView completa.
+  useEffect(() => {
+    const handleNativeNavigate = (event: Event) => {
+      const path = (event as CustomEvent<string>).detail;
+      if (typeof path === "string" && path.startsWith("/")) {
+        setLocation(path);
+      }
+    };
+    window.addEventListener("evgreen:native-navigate", handleNativeNavigate);
+    return () => window.removeEventListener("evgreen:native-navigate", handleNativeNavigate);
+  }, [setLocation]);
 
   // Las rutas públicas se renderizan inmediatamente sin esperar auth
   const isPublic = isPublicPath(location);

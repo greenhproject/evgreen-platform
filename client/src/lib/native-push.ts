@@ -44,11 +44,11 @@ interface InitNativePushOptions {
 export async function initNativePush(options: InitNativePushOptions): Promise<boolean> {
   if (!isCapacitorNative()) return false;
 
-  const { PushNotifications } = await import("@capacitor/push-notifications");
+  const { FirebaseMessaging } = await import("@capacitor-firebase/messaging");
 
   if (isAndroidNative()) {
     try {
-      await PushNotifications.createChannel({
+      await FirebaseMessaging.createChannel({
         id: ANDROID_CHANNEL_ID,
         name: "EVGreen",
         description: "Notificaciones de carga, saldo y estaciones",
@@ -61,11 +61,11 @@ export async function initNativePush(options: InitNativePushOptions): Promise<bo
     }
   }
 
-  const permStatus = await PushNotifications.checkPermissions();
+  const permStatus = await FirebaseMessaging.checkPermissions();
   let granted = permStatus.receive === "granted";
 
   if (!granted && permStatus.receive !== "denied") {
-    const requested = await PushNotifications.requestPermissions();
+    const requested = await FirebaseMessaging.requestPermissions();
     granted = requested.receive === "granted";
   }
 
@@ -74,34 +74,39 @@ export async function initNativePush(options: InitNativePushOptions): Promise<bo
     return false;
   }
 
-  await PushNotifications.removeAllListeners();
+  await FirebaseMessaging.removeAllListeners();
 
-  PushNotifications.addListener("registration", (token) => {
-    console.log("[NativePush] Token nativo obtenido");
-    options.onToken(token.value);
+  FirebaseMessaging.addListener("tokenReceived", (event) => {
+    console.log("[NativePush] Token FCM obtenido");
+    options.onToken(event.token);
   });
 
-  PushNotifications.addListener("registrationError", (err) => {
-    console.error("[NativePush] Error de registro:", err.error);
-  });
-
-  PushNotifications.addListener("pushNotificationReceived", (notification) => {
-    const title = notification.title || "EVGreen";
-    const body = notification.body || "";
+  FirebaseMessaging.addListener("notificationReceived", (event) => {
+    const title = event.notification.title || "EVGreen";
+    const body = event.notification.body || "";
     options.onForegroundNotification(title, body);
   });
 
-  PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
-    const path = getRouteForNotification(action.notification.data);
+  FirebaseMessaging.addListener("notificationActionPerformed", (event) => {
+    const path = getRouteForNotification(event.notification.data as Record<string, any> | undefined);
     options.onNotificationTap(path);
   });
 
-  await PushNotifications.register();
+  // getToken() resuelve el intercambio APNs -> FCM en iOS internamente y
+  // dispara "tokenReceived" (también lo devuelve directo aquí).
+  try {
+    const { token } = await FirebaseMessaging.getToken();
+    options.onToken(token);
+  } catch (err) {
+    console.error("[NativePush] Error obteniendo el token FCM:", err);
+  }
+
   return true;
 }
 
 export async function unregisterNativePush(): Promise<void> {
   if (!isCapacitorNative()) return;
-  const { PushNotifications } = await import("@capacitor/push-notifications");
-  await PushNotifications.removeAllListeners();
+  const { FirebaseMessaging } = await import("@capacitor-firebase/messaging");
+  await FirebaseMessaging.deleteToken().catch(() => {});
+  await FirebaseMessaging.removeAllListeners();
 }

@@ -22,9 +22,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.693.0
         version: 3.907.0
-      '@capacitor/push-notifications':
-        specifier: ^8.1.2
-        version: 8.1.2(@capacitor/core@8.4.1)
+      '@capacitor-firebase/messaging':
+        specifier: ^8.5.0
+        version: 8.5.0(@capacitor/core@8.4.1)(firebase@12.8.0)
       '@googlemaps/markerclusterer':
         specifier: ^2.6.2
         version: 2.6.2
@@ -680,6 +680,15 @@ packages:
     peerDependencies:
       vite: ^4.0.0 || ^5.0.0
 
+  '@capacitor-firebase/messaging@8.5.0':
+    resolution: {integrity: sha512-HHCZnGgpZsM7+u9hxQL3FE+9hKJczQbuUaXE04RnHvisFp5St7mLwQ2s/IaZn8b+BiDndfr9uJ2PsqEqw/raPw==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+      firebase: ^12.6.0
+    peerDependenciesMeta:
+      firebase:
+        optional: true
+
   '@capacitor/android@8.4.1':
     resolution: {integrity: sha512-igtDCJ7QQn0P2qHFD9p4KXaa6V1b2PRNt+MxjVwtjTm/BJvqmiazOJq6rPjwFSZnfHm6iFoZk8TfzHd44pyBGw==}
     peerDependencies:
@@ -707,11 +716,6 @@ packages:
     resolution: {integrity: sha512-EgcAk7NYheHMTyP3CUrA65qKs4D2UEAKgw44HI6Uk3dTw6KjLQkdLOQWvbeRncHaZ2gklfOojUoc5DlSw2lhYg==}
     peerDependencies:
       '@capacitor/core': ^8.4.0
-
-  '@capacitor/push-notifications@8.1.2':
-    resolution: {integrity: sha512-TQl4XxqJfNF+KbSYBFMXYYT5WXUaleVKXlByhh/8+KySMVNjp+l5OqAUoGe/sY1IAnGXEuUeCjA/WLZEVvGwrA==}
-    peerDependencies:
-      '@capacitor/core': '>=8.0.0'
 
   '@capacitor/status-bar@8.0.2':
     resolution: {integrity: sha512-WXs8YB8B9eEaPZz+bcdY6t2nForF1FLoj/JU0Dl9RRgQnddnS98FEEyDooQhaY7wivr000j4+SC1FyeJkrFO7A==}
@@ -7015,6 +7019,12 @@ snapshots:
       '@builder.io/jsx-loc-internals': 0.0.1
       vite: 7.1.9(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(tsx@4.20.6)
 
+  '@capacitor-firebase/messaging@8.5.0(@capacitor/core@8.4.1)(firebase@12.8.0)':
+    dependencies:
+      '@capacitor/core': 8.4.1
+    optionalDependencies:
+      firebase: 12.8.0
+
   '@capacitor/android@8.4.1(@capacitor/core@8.4.1)':
     dependencies:
       '@capacitor/core': 8.4.1
@@ -7054,10 +7064,6 @@ snapshots:
       tslib: 2.8.1
 
   '@capacitor/ios@8.4.1(@capacitor/core@8.4.1)':
-    dependencies:
-      '@capacitor/core': 8.4.1
-
-  '@capacitor/push-notifications@8.1.2(@capacitor/core@8.4.1)':
     dependencies:
       '@capacitor/core': 8.4.1
 

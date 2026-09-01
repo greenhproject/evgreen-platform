@@ -177,9 +177,9 @@ export default function UserNotifications() {
                 
                 {/* Botón de prueba */}
                 <div className="pt-2 border-t border-border/50">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="w-full"
                     onClick={sendTestNotification}
                   >
