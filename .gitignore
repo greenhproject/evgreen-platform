@@ -123,6 +123,9 @@ android/app/build/
 android/capacitor-cordova-android-plugins/build/
 ios/App/Pods/
 ios/App/DerivedData/
+ios/build_release/
+ios/build/
+ios/DerivedData/
 
 # Certificates and production secrets
 upload_cert.pem
