@@ -129,15 +129,23 @@ export async function sendPushNotification(
       },
       data: {
         type: notification.type,
-        clickAction: notification.clickAction || "/",
+        ...(notification.clickAction ? { clickAction: notification.clickAction } : {}),
         ...notification.data,
       },
       android: {
         priority: "high",
         notification: {
           color: style.color,
-          clickAction: notification.clickAction || "FLUTTER_NOTIFICATION_CLICK",
           channelId: "evgreen_notifications",
+          sound: "default",
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+            badge: 1,
+          },
         },
       },
       webpush: {
@@ -211,7 +219,7 @@ export async function sendPushNotificationToMultiple(
       },
       data: {
         type: notification.type,
-        clickAction: notification.clickAction || "/",
+        ...(notification.clickAction ? { clickAction: notification.clickAction } : {}),
         ...notification.data,
       },
       android: {
@@ -219,6 +227,15 @@ export async function sendPushNotificationToMultiple(
         notification: {
           color: style.color,
           channelId: "evgreen_notifications",
+          sound: "default",
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+            badge: 1,
+          },
         },
       },
       webpush: {

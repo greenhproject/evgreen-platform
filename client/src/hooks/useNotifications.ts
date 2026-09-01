@@ -4,10 +4,12 @@
  * con FCM como fallback si está configurado
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { isPushSupported } from "@/lib/firebase";
+import { isCapacitorNative } from "@/const";
+import { initNativePush, unregisterNativePush } from "@/lib/native-push";
 import {
   requestNotificationPermission,
   onForegroundMessage,
@@ -24,6 +26,33 @@ interface NotificationPreferences {
   chargingComplete: boolean;
   lowBalance: boolean;
   promotions: boolean;
+}
+
+// Caché local (no depende de red) de si el usuario ya activó push nativo.
+// Permite registrar los listeners nativos de inmediato al arrancar la app,
+// sin esperar la respuesta de getPreferences — evita el destello a la
+// pantalla por defecto en arranques en frío antes de navegar a la correcta.
+const NATIVE_PUSH_ENABLED_CACHE_KEY = "evgreen_native_push_enabled";
+
+function readNativePushEnabledCache(): boolean {
+  try {
+    return localStorage.getItem(NATIVE_PUSH_ENABLED_CACHE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeNativePushEnabledCache(enabled: boolean) {
+  try {
+    if (enabled) {
+      localStorage.setItem(NATIVE_PUSH_ENABLED_CACHE_KEY, "1");
+    } else {
+      localStorage.removeItem(NATIVE_PUSH_ENABLED_CACHE_KEY);
+    }
+  } catch {
+    // localStorage no disponible: simplemente no se cachea, el flujo
+    // basado en getPreferences sigue funcionando igual.
+  }
 }
 
 export function useNotifications() {
@@ -49,6 +78,13 @@ export function useNotifications() {
   // Inicializar estado
   useEffect(() => {
     const init = async () => {
+      if (isCapacitorNative()) {
+        // En nativo el soporte y el permiso se resuelven al activar (enableNotifications),
+        // ya que Capacitor no expone el estado sin antes chequear/pedir permisos.
+        setIsSupported(true);
+        return;
+      }
+
       const supported = isPushSupported();
       setIsSupported(supported);
 
@@ -79,6 +115,43 @@ export function useNotifications() {
     }
   }, [preferencesQuery.data]);
 
+  // Re-registrar los listeners nativos al arrancar la app si el usuario ya
+  // tenía las notificaciones activadas en una sesión anterior. Sin esto, tras
+  // matar y reabrir la app (o abrirla desde cero al tocar una notificación),
+  // no hay nada escuchando "notificationActionPerformed" y el tap no navega.
+  const nativeAutoInitDone = useRef(false);
+  const runNativeAutoInit = useCallback(() => {
+    if (nativeAutoInitDone.current) return;
+    nativeAutoInitDone.current = true;
+    initNativePush({
+      onToken: async (token) => {
+        await registerTokenMutation.mutateAsync({ fcmToken: token });
+      },
+      onForegroundNotification: (title, body) => {
+        toast.info(title, { description: body, duration: 5000 });
+      },
+      onNotificationTap: (path) => {
+        window.dispatchEvent(new CustomEvent("evgreen:native-navigate", { detail: path }));
+      },
+    }).then((registered) => {
+      if (registered) setIsEnabled(true);
+    });
+  }, [registerTokenMutation]);
+
+  // Camino rápido: caché local, no espera respuesta de red.
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    if (readNativePushEnabledCache()) runNativeAutoInit();
+  }, [runNativeAutoInit]);
+
+  // Respaldo: por si la caché local no existía o estaba desactualizada
+  // (ej. primer login en este dispositivo, o se activó desde otro dispositivo).
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    if (!preferencesQuery.data?.pushEnabled) return;
+    runNativeAutoInit();
+  }, [preferencesQuery.data?.pushEnabled, runNativeAutoInit]);
+
   // Escuchar notificaciones en primer plano
   useEffect(() => {
     if (!isEnabled) return;
@@ -99,7 +172,42 @@ export function useNotifications() {
     setError(null);
     try {
       console.log("[Push] Iniciando activación de notificaciones...");
-      
+
+      if (!isAuthenticated) {
+        toast.error("Debes iniciar sesión para activar notificaciones");
+        return;
+      }
+
+      // Rama nativa (Capacitor: iOS/Android) — usa el plugin de push nativo en vez de las APIs web
+      if (isCapacitorNative()) {
+        const nativeRegistered = await initNativePush({
+          onToken: async (token) => {
+            await registerTokenMutation.mutateAsync({ fcmToken: token });
+            console.log("[Push] Token nativo registrado en el servidor");
+          },
+          onForegroundNotification: (title, body) => {
+            toast.info(title, { description: body, duration: 5000 });
+          },
+          onNotificationTap: (path) => {
+            window.dispatchEvent(new CustomEvent("evgreen:native-navigate", { detail: path }));
+          },
+        });
+
+        setPermissionStatus(nativeRegistered ? "granted" : "denied");
+
+        if (nativeRegistered) {
+          nativeAutoInitDone.current = true;
+          writeNativePushEnabledCache(true);
+          setIsEnabled(true);
+          toast.success("Notificaciones push activadas correctamente");
+          preferencesQuery.refetch();
+        } else {
+          toast.error("Permiso de notificaciones denegado. Revisa la configuración de tu dispositivo.");
+          setError("Permiso denegado");
+        }
+        return;
+      }
+
       const granted = await requestNotificationPermission();
       setPermissionStatus(getNotificationPermission());
 
@@ -109,12 +217,7 @@ export function useNotifications() {
         return;
       }
 
-      console.log("[Push] Permiso concedido, verificando autenticación...");
-
-      if (!isAuthenticated) {
-        toast.error("Debes iniciar sesión para activar notificaciones");
-        return;
-      }
+      console.log("[Push] Permiso concedido...");
 
       let registered = false;
 
@@ -190,6 +293,8 @@ export function useNotifications() {
       if (isAuthenticated) {
         await unregisterTokenMutation.mutateAsync();
       }
+      await unregisterNativePush();
+      writeNativePushEnabledCache(false);
       setIsEnabled(false);
       toast.success("Notificaciones desactivadas");
       preferencesQuery.refetch();
