@@ -1643,7 +1643,12 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
-          <Toaster position="top-center" richColors />
+          <Toaster
+            position="top-center"
+            richColors
+            offset={{ top: "max(1rem, env(safe-area-inset-top))" }}
+            mobileOffset={{ top: "max(1rem, env(safe-area-inset-top))" }}
+          />
           <LoadingGuard 
             isLoading={isInitialLoading} 
             timeoutMs={10000} 

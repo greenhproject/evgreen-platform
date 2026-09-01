@@ -74,6 +74,22 @@ export async function initNativePush(options: InitNativePushOptions): Promise<bo
     return false;
   }
 
+  // En Android, el SDK de FCM a veces entrega el mensaje directamente a la app
+  // (en vez de dejar que el SO lo muestre solo) incluso recién minimizada, por
+  // una ventana de gracia de detección de foreground. Cuando eso pasa, si no
+  // publicamos nosotros mismos una notificación nativa, el usuario nunca ve
+  // nada. Publicamos siempre una notificación local en Android para que quede
+  // en la bandeja del sistema igual que en iOS (donde el SO ya lo hace solo).
+  if (isAndroidNative()) {
+    const { LocalNotifications } = await import("@capacitor/local-notifications");
+    await LocalNotifications.requestPermissions().catch(() => {});
+    await LocalNotifications.removeAllListeners();
+    LocalNotifications.addListener("localNotificationActionPerformed", (event) => {
+      const path = getRouteForNotification(event.notification.extra as Record<string, any> | undefined);
+      options.onNotificationTap(path);
+    });
+  }
+
   await FirebaseMessaging.removeAllListeners();
 
   FirebaseMessaging.addListener("tokenReceived", (event) => {
@@ -85,6 +101,27 @@ export async function initNativePush(options: InitNativePushOptions): Promise<bo
     const title = event.notification.title || "EVGreen";
     const body = event.notification.body || "";
     options.onForegroundNotification(title, body);
+
+    if (isAndroidNative()) {
+      import("@capacitor/local-notifications").then(({ LocalNotifications }) => {
+        LocalNotifications.schedule({
+          notifications: [
+            {
+              id: Date.now() % 2147483647,
+              title,
+              body,
+              channelId: ANDROID_CHANNEL_ID,
+              extra: event.notification.data,
+              // No necesitamos precisión de alarma (se muestra de inmediato, no
+              // agendada a futuro), y una exacta requiere un permiso que en
+              // Android 13+ el usuario debe conceder a mano — si la app está
+              // minimizada ni siquiera se puede mostrar ese diálogo.
+              isExactNotification: false,
+            },
+          ],
+        }).catch((err) => console.warn("[NativePush] No se pudo publicar la notificación local:", err));
+      });
+    }
   });
 
   FirebaseMessaging.addListener("notificationActionPerformed", (event) => {
@@ -109,4 +146,9 @@ export async function unregisterNativePush(): Promise<void> {
   const { FirebaseMessaging } = await import("@capacitor-firebase/messaging");
   await FirebaseMessaging.deleteToken().catch(() => {});
   await FirebaseMessaging.removeAllListeners();
+
+  if (isAndroidNative()) {
+    const { LocalNotifications } = await import("@capacitor/local-notifications");
+    await LocalNotifications.removeAllListeners();
+  }
 }

@@ -136,7 +136,6 @@ export async function sendPushNotification(
         priority: "high",
         notification: {
           color: style.color,
-          clickAction: notification.clickAction || "FLUTTER_NOTIFICATION_CLICK",
           channelId: "evgreen_notifications",
           sound: "default",
         },
